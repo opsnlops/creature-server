@@ -22,9 +22,11 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"github.com/honeycombio/honeycomb-opentelemetry-go"
 	"github.com/honeycombio/otel-launcher-go/launcher"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"log"
 	"time"
 
@@ -65,14 +67,22 @@ func main() {
 		log.Fatalf("did not connect: %v", err)
 	}
 	defer conn.Close()
-	c := pb.NewGreeterClient(conn)
+	c := pb.NewCreatureServerClient(conn)
 
 	// Contact the server and print out its response.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	r, err := c.SayHello(ctx, &pb.HelloRequest{Name: *name})
+	_, err = c.GetCreature(ctx, &pb.CreatureName{Name: *name})
 	if err != nil {
-		log.Fatalf("could not greet: %v", err)
+		log.Fatalf("could not get Bob: %v", err)
 	}
-	log.Printf("Greeting: %s", r.GetMessage())
+
+	// Get all of them
+	fmt.Println("Getting all of them")
+	_, err = c.GetCreatures(ctx, &emptypb.Empty{})
+	if err != nil {
+		log.Fatalf("could not everyone: %v", err)
+	}
+
+	//log.Printf("Greeting: %s", r.Creature())
 }

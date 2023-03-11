@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+option go_package = "opsnlops.io/creatures/network";
+option java_multiple_files = true;
+option java_package = "io.opsnlops.network";
+option java_outer_classname = "NetworkServerProto";
+
+package server;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+service CreatureServer {
+
+  // Fetches one from the database
+  rpc GetCreature (CreatureName) returns (Creature) {}
+
+  // Get all of them
+  rpc GetCreatures (google.protobuf.Empty) returns (stream Creature) {}
+
+}
+
+message CreatureName {
+  string name = 1;
+}
+
+
+message Creature {
+  string name = 1;
+  string id = 2;    // MongoDB _id field
+  google.protobuf.Timestamp last_updated = 3;
+  string sacn_ip = 4;
+  uint32 universe = 5;
+  uint32 dmx_base = 6;
+  uint32 number_of_motors = 7;
+
+  enum MotorType {
+    SERVO = 0;
+    STEPPER = 1;
+  }
+
+  message Motor {
+    MotorType type = 1;
+    uint32 number = 2;
+    uint32 max_value = 3;
+    uint32 min_value = 4;
+    float smoothing_value = 5;
+  }
+
+  repeated Motor motors = 8;
+
+}

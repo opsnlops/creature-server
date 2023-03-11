@@ -11,7 +11,7 @@ protoc --go_out=grpc/ \
        --go-grpc_out=grpc/ \
        --go-grpc_opt=paths=source_relative \
        -I ../messaging \
-       ../messaging/hellorld.proto
+       ../messaging/server.proto
 
 mkdir -p ../bin
 

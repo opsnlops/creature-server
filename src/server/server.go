@@ -1,22 +1,3 @@
-/*
- *
- * Copyright 2015 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
-
-// Package main implements a server for Greeter service.
 package main
 
 import (
@@ -25,8 +6,12 @@ import (
 	"fmt"
 	"github.com/honeycombio/honeycomb-opentelemetry-go"
 	"github.com/honeycombio/otel-launcher-go/launcher"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	grpcotel "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"log"
 	"net"
 	pb "opsnlops.io/creatures/grpc"
@@ -36,16 +21,30 @@ var (
 	port = flag.Int("port", 50051, "The server port")
 )
 
-// server is used to implement helloworld.GreeterServer.
 type server struct {
-	pb.UnimplementedGreeterServer
+	pb.UnimplementedCreatureServerServer
 }
 
-// SayHello implements helloworld.GreeterServer
-func (s *server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
+func (s *server) GetCreature(ctx context.Context, in *pb.CreatureName) (*pb.Creature, error) {
 	log.Printf("Received: %v", in.GetName())
-	return &pb.HelloReply{Message: "Hello " + in.GetName()}, nil
+	return &pb.Creature{}, nil
 }
+
+func (s *server) GetCreatures(in *emptypb.Empty, stream pb.CreatureServer_GetCreaturesServer) error {
+	log.Printf("Getting all creatures")
+
+	coll := mongoConn.Database("fakeDatabase").Collection("movies")
+	title := "Back to the Future"
+	var result bson.M
+	err := coll.FindOne(context.TODO(), bson.D{{"title", title}}).Decode(&result)
+	if err == mongo.ErrNoDocuments {
+		fmt.Printf("No document was found with the title %s\n", title)
+	}
+
+	return nil
+}
+
+var mongoConn *mongo.Client
 
 func main() {
 
@@ -68,12 +67,22 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
+	mongoConn, err = mongo.Connect(context.TODO(), options.Client().ApplyURI("mongodb://10.3.2.11"))
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := mongoConn.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
+
 	s := grpc.NewServer(
 		grpc.UnaryInterceptor(grpcotel.UnaryServerInterceptor()),
 		grpc.StreamInterceptor(grpcotel.StreamServerInterceptor()),
 	)
 
-	pb.RegisterGreeterServer(s, &server{})
+	pb.RegisterCreatureServerServer(s, &server{})
 	log.Printf("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
