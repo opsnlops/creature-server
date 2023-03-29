@@ -32,6 +32,9 @@ FetchContent_MakeAvailable(gRPC)
 find_package(mongocxx REQUIRED)
 find_package(bsoncxx REQUIRED)
 
+# Logging library
+add_subdirectory(quill)
+
 # Our source files
 file(GLOB SERVER_SRCS
         src/server/*
@@ -69,6 +72,7 @@ target_link_libraries(creature-server
         grpc++
         mongo::mongocxx_shared
         mongo::bsoncxx_shared
+        PRIVATE quill::quill
         )
 
 

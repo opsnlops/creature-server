@@ -19,6 +19,8 @@
 
 #include "messaging/server.grpc.pb.h"
 
+#include "quill/Quill.h"
+
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
@@ -29,6 +31,7 @@ using server::CreatureName;
 
 Status handleGetCreature(ServerContext* context, const CreatureName* request,
                          Creature* reply ) {
+    quill::Logger* logger = quill::get_logger();
 
     reply->set_name("Beaky");
     reply->set_id("adf");
@@ -37,21 +40,24 @@ Status handleGetCreature(ServerContext* context, const CreatureName* request,
     reply->set_dmx_base(1);
     reply->set_number_of_motors(6);
 
-    printf("did a creature\n");
+    LOG_DEBUG(logger, "did a creature");
 
     return Status::OK;
 }
 
 
 class CreatureServerImpl final : public CreatureServer::Service {
+    quill::Logger* logger = quill::get_logger();
+
     Status GetCreature(ServerContext* context, const CreatureName* request,
                        Creature* reply) override  {
-        printf("hello from here\n");
+        LOG_DEBUG(logger, "hello from here");
         return handleGetCreature(context, request, reply);
     }
 };
 
 void RunServer(uint16_t port) {
+    quill::Logger* logger = quill::get_logger();
     std::string server_address = absl::StrFormat("0.0.0.0:%d", port);
     CreatureServerImpl service;
 
@@ -63,7 +69,7 @@ void RunServer(uint16_t port) {
     builder.RegisterService(&service);
     // Finally assemble the server.
     std::unique_ptr<Server> server(builder.BuildAndStart());
-    std::cout << "Server listening on " << server_address << std::endl;
+    LOG_INFO(logger, "Server listening on {}", server_address);
 
     // Wait for the server to shutdown. Note that some other thread must be
     // responsible for shutting down the server for this call to ever return.
@@ -72,5 +78,19 @@ void RunServer(uint16_t port) {
 }
 
 int main(int argc, char** argv) {
+
+    quill::Config cfg;
+    cfg.enable_console_colours = true;
+    quill::configure(cfg);
+    quill::start();
+
+    quill::Logger* logger = quill::get_logger();
+    logger->set_log_level(quill::LogLevel::TraceL3);
+
+    // enable a backtrace that will get flushed when we log CRITICAL
+    logger->init_backtrace(2, quill::LogLevel::Critical);
+
+    LOG_INFO(logger, "starting server on point {}", 6666);
     RunServer(6666);
-    return 0;}
+    return 0;
+}
