@@ -32,6 +32,7 @@ RUN cd /build/mongo/mongo-cxx-driver-r3.7.1/build && \
 RUN mkdir -p /build/creature-server/src /build/creature-server/messaging
 COPY src/ /build/creature-server/src
 COPY messaging/ /build/creature-server/messaging
+COPY quill/ /build/creature-server/quill
 COPY CMakeLists.txt /build/creature-server/
 RUN ls -lart /build/creature-server/
 RUN cd /build/creature-server && \
