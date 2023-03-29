@@ -45,7 +45,7 @@ RUN cd /build/creature-server && \
 FROM debian:bookworm-slim as runtime
 
 # The Mongo libs need libsasl2 and libicu72
-RUN apt update && apt upgrade -y \
+RUN apt update && apt upgrade -y && \
     apt install -y libsasl2-2 libicu72 && \
     rm -rf /var/lib/apt/lists
 
