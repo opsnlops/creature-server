@@ -20,6 +20,8 @@ set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+find_package(spdlog REQUIRED)
+
 include(FetchContent)
 FetchContent_Declare(
         gRPC
@@ -31,9 +33,6 @@ FetchContent_MakeAvailable(gRPC)
 
 find_package(mongocxx REQUIRED)
 find_package(bsoncxx REQUIRED)
-
-# Logging library
-add_subdirectory(quill)
 
 # Our source files
 file(GLOB SERVER_SRCS
@@ -72,7 +71,7 @@ target_link_libraries(creature-server
         grpc++
         mongo::mongocxx_shared
         mongo::bsoncxx_shared
-        PRIVATE quill::quill
+        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         )
 
 
@@ -85,6 +84,7 @@ target_link_libraries(client
         PUBLIC
         protobuf::libprotobuf
         grpc++
+        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         )
 
 

@@ -7,7 +7,8 @@
 
 #include "messaging/server.grpc.pb.h"
 
-
+#include "spdlog/spdlog.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -15,6 +16,10 @@ using grpc::Status;
 using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
+
+using spdlog::info;
+using spdlog::debug;
+using spdlog::critical;
 
 
 class CreatureServerClient {
@@ -41,12 +46,10 @@ public:
 
         // Act upon its status.
         if (status.ok()) {
-            printf("ok!\n");
+            debug("ok!");
             return reply;
         } else {
-            printf("not okay\n");
-            std::cout << status.error_code() << ": " << status.error_message()
-                      << std::endl;
+            critical("not okay: {}: {}", status.error_code(), status.error_message());
             return reply;
         }
     }
@@ -57,12 +60,14 @@ private:
 
 int main(int argc, char** argv) {
 
+    auto console = spdlog::stdout_color_mt("console");
+
     // We indicate that the channel isn't authenticated (use of
     // InsecureChannelCredentials()).
     CreatureServerClient client(
             grpc::CreateChannel("localhost:6666", grpc::InsecureChannelCredentials()));
     Creature reply = client.GetCreature("Beaky");
-    printf("client gotten: %s, %s, %u\n", reply.name().c_str(), reply.sacn_ip().c_str(), reply.dmx_base());
+    info( "client gotten: {}, {}, {}", reply.name(), reply.sacn_ip(), reply.dmx_base());
 
 
     return 0;

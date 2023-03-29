@@ -8,7 +8,7 @@ RUN apt update && apt upgrade -y
 
 RUN apt install -y cmake libssl-dev libsasl2-dev clang git \
     libprotobuf-dev pkgconf libmongoclient-dev libbson-dev libpthreadpool-dev  \
-    libsystemd-dev ninja-build
+    libsystemd-dev ninja-build libspdlog-dev
 
 
 # Install the latest Mongo driver
@@ -32,7 +32,6 @@ RUN cd /build/mongo/mongo-cxx-driver-r3.7.1/build && \
 RUN mkdir -p /build/creature-server/src /build/creature-server/messaging
 COPY src/ /build/creature-server/src
 COPY messaging/ /build/creature-server/messaging
-COPY quill/ /build/creature-server/quill
 COPY CMakeLists.txt /build/creature-server/
 RUN ls -lart /build/creature-server/
 RUN cd /build/creature-server && \

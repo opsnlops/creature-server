@@ -19,7 +19,8 @@
 
 #include "messaging/server.grpc.pb.h"
 
-#include "quill/Quill.h"
+#include "spdlog/spdlog.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -29,9 +30,12 @@ using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
 
+using spdlog::info;
+using spdlog::debug;
+using spdlog::critical;
+
 Status handleGetCreature(ServerContext* context, const CreatureName* request,
                          Creature* reply ) {
-    quill::Logger* logger = quill::get_logger();
 
     reply->set_name("Beaky");
     reply->set_id("adf");
@@ -40,24 +44,22 @@ Status handleGetCreature(ServerContext* context, const CreatureName* request,
     reply->set_dmx_base(1);
     reply->set_number_of_motors(6);
 
-    LOG_DEBUG(logger, "did a creature");
+    debug("did a creature");
 
     return Status::OK;
 }
 
 
 class CreatureServerImpl final : public CreatureServer::Service {
-    quill::Logger* logger = quill::get_logger();
 
     Status GetCreature(ServerContext* context, const CreatureName* request,
                        Creature* reply) override  {
-        LOG_DEBUG(logger, "hello from here");
+        debug("hello from here");
         return handleGetCreature(context, request, reply);
     }
 };
 
 void RunServer(uint16_t port) {
-    quill::Logger* logger = quill::get_logger();
     std::string server_address = absl::StrFormat("0.0.0.0:%d", port);
     CreatureServerImpl service;
 
@@ -69,7 +71,7 @@ void RunServer(uint16_t port) {
     builder.RegisterService(&service);
     // Finally assemble the server.
     std::unique_ptr<Server> server(builder.BuildAndStart());
-    LOG_INFO(logger, "Server listening on {}", server_address);
+    info("Server listening on {}", server_address);
 
     // Wait for the server to shutdown. Note that some other thread must be
     // responsible for shutting down the server for this call to ever return.
@@ -79,18 +81,9 @@ void RunServer(uint16_t port) {
 
 int main(int argc, char** argv) {
 
-    quill::Config cfg;
-    cfg.enable_console_colours = true;
-    quill::configure(cfg);
-    quill::start();
+    spdlog::set_level(spdlog::level::trace);
 
-    quill::Logger* logger = quill::get_logger();
-    logger->set_log_level(quill::LogLevel::TraceL3);
-
-    // enable a backtrace that will get flushed when we log CRITICAL
-    logger->init_backtrace(2, quill::LogLevel::Critical);
-
-    LOG_INFO(logger, "starting server on point {}", 6666);
+    info("starting server on point {}", 6666);
     RunServer(6666);
     return 0;
 }
