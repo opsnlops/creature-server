@@ -24,7 +24,7 @@ using spdlog::critical;
 
 class CreatureServerClient {
 public:
-    CreatureServerClient(std::shared_ptr<Channel> channel)
+    explicit CreatureServerClient(const std::shared_ptr<Channel>& channel)
             : stub_(CreatureServer::NewStub(channel)) {}
 
     // Assembles the client's payload, sends it and presents the response back
@@ -61,6 +61,7 @@ private:
 int main(int argc, char** argv) {
 
     auto console = spdlog::stdout_color_mt("console");
+    spdlog::set_level(spdlog::level::trace);
 
     // We indicate that the channel isn't authenticated (use of
     // InsecureChannelCredentials()).

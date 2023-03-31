@@ -57,14 +57,44 @@ extern CreatureNameDefaultTypeInternal _CreatureName_default_instance_;
 class Creature_Motor;
 struct Creature_MotorDefaultTypeInternal;
 extern Creature_MotorDefaultTypeInternal _Creature_Motor_default_instance_;
+class Status;
+struct StatusDefaultTypeInternal;
+extern StatusDefaultTypeInternal _Status_default_instance_;
 }  // namespace server
 PROTOBUF_NAMESPACE_OPEN
 template<> ::server::Creature* Arena::CreateMaybeMessage<::server::Creature>(Arena*);
 template<> ::server::CreatureName* Arena::CreateMaybeMessage<::server::CreatureName>(Arena*);
 template<> ::server::Creature_Motor* Arena::CreateMaybeMessage<::server::Creature_Motor>(Arena*);
+template<> ::server::Status* Arena::CreateMaybeMessage<::server::Status>(Arena*);
 PROTOBUF_NAMESPACE_CLOSE
 namespace server {
 
+enum Status_StatusCode : int {
+  Status_StatusCode_OKAY = 0,
+  Status_StatusCode_ERROR = 1,
+  Status_StatusCode_FILE_NOT_FOUND = 2,
+  Status_StatusCode_Status_StatusCode_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
+  Status_StatusCode_Status_StatusCode_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
+};
+bool Status_StatusCode_IsValid(int value);
+constexpr Status_StatusCode Status_StatusCode_StatusCode_MIN = Status_StatusCode_OKAY;
+constexpr Status_StatusCode Status_StatusCode_StatusCode_MAX = Status_StatusCode_FILE_NOT_FOUND;
+constexpr int Status_StatusCode_StatusCode_ARRAYSIZE = Status_StatusCode_StatusCode_MAX + 1;
+
+const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* Status_StatusCode_descriptor();
+template<typename T>
+inline const std::string& Status_StatusCode_Name(T enum_t_value) {
+  static_assert(::std::is_same<T, Status_StatusCode>::value ||
+    ::std::is_integral<T>::value,
+    "Incorrect type passed to function Status_StatusCode_Name.");
+  return ::PROTOBUF_NAMESPACE_ID::internal::NameOfEnum(
+    Status_StatusCode_descriptor(), enum_t_value);
+}
+inline bool Status_StatusCode_Parse(
+    ::PROTOBUF_NAMESPACE_ID::ConstStringParam name, Status_StatusCode* value) {
+  return ::PROTOBUF_NAMESPACE_ID::internal::ParseNamedEnum<Status_StatusCode>(
+    Status_StatusCode_descriptor(), name, value);
+}
 enum Creature_MotorType : int {
   Creature_MotorType_SERVO = 0,
   Creature_MotorType_STEPPER = 1,
@@ -91,6 +121,218 @@ inline bool Creature_MotorType_Parse(
     Creature_MotorType_descriptor(), name, value);
 }
 // ===================================================================
+
+class Status final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.Status) */ {
+ public:
+  inline Status() : Status(nullptr) {}
+  ~Status() override;
+  explicit PROTOBUF_CONSTEXPR Status(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  Status(const Status& from);
+  Status(Status&& from) noexcept
+    : Status() {
+    *this = ::std::move(from);
+  }
+
+  inline Status& operator=(const Status& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline Status& operator=(Status&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const Status& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const Status* internal_default_instance() {
+    return reinterpret_cast<const Status*>(
+               &_Status_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    0;
+
+  friend void swap(Status& a, Status& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(Status* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(Status* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  Status* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<Status>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const Status& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const Status& from) {
+    Status::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(Status* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.Status";
+  }
+  protected:
+  explicit Status(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  typedef Status_StatusCode StatusCode;
+  static constexpr StatusCode OKAY =
+    Status_StatusCode_OKAY;
+  static constexpr StatusCode ERROR =
+    Status_StatusCode_ERROR;
+  static constexpr StatusCode FILE_NOT_FOUND =
+    Status_StatusCode_FILE_NOT_FOUND;
+  static inline bool StatusCode_IsValid(int value) {
+    return Status_StatusCode_IsValid(value);
+  }
+  static constexpr StatusCode StatusCode_MIN =
+    Status_StatusCode_StatusCode_MIN;
+  static constexpr StatusCode StatusCode_MAX =
+    Status_StatusCode_StatusCode_MAX;
+  static constexpr int StatusCode_ARRAYSIZE =
+    Status_StatusCode_StatusCode_ARRAYSIZE;
+  static inline const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor*
+  StatusCode_descriptor() {
+    return Status_StatusCode_descriptor();
+  }
+  template<typename T>
+  static inline const std::string& StatusCode_Name(T enum_t_value) {
+    static_assert(::std::is_same<T, StatusCode>::value ||
+      ::std::is_integral<T>::value,
+      "Incorrect type passed to function StatusCode_Name.");
+    return Status_StatusCode_Name(enum_t_value);
+  }
+  static inline bool StatusCode_Parse(::PROTOBUF_NAMESPACE_ID::ConstStringParam name,
+      StatusCode* value) {
+    return Status_StatusCode_Parse(name, value);
+  }
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kMessageFieldNumber = 2,
+    kHelpFieldNumber = 3,
+    kCodeFieldNumber = 1,
+  };
+  // string message = 2;
+  void clear_message();
+  const std::string& message() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_message(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_message();
+  PROTOBUF_NODISCARD std::string* release_message();
+  void set_allocated_message(std::string* message);
+  private:
+  const std::string& _internal_message() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_message(const std::string& value);
+  std::string* _internal_mutable_message();
+  public:
+
+  // string help = 3;
+  void clear_help();
+  const std::string& help() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_help(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_help();
+  PROTOBUF_NODISCARD std::string* release_help();
+  void set_allocated_help(std::string* help);
+  private:
+  const std::string& _internal_help() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_help(const std::string& value);
+  std::string* _internal_mutable_help();
+  public:
+
+  // .server.Status.StatusCode code = 1;
+  void clear_code();
+  ::server::Status_StatusCode code() const;
+  void set_code(::server::Status_StatusCode value);
+  private:
+  ::server::Status_StatusCode _internal_code() const;
+  void _internal_set_code(::server::Status_StatusCode value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.Status)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr message_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr help_;
+    int code_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
 
 class CreatureName final :
     public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.CreatureName) */ {
@@ -140,7 +382,7 @@ class CreatureName final :
                &_CreatureName_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    0;
+    1;
 
   friend void swap(CreatureName& a, CreatureName& b) {
     a.Swap(&b);
@@ -293,7 +535,7 @@ class Creature_Motor final :
                &_Creature_Motor_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    1;
+    2;
 
   friend void swap(Creature_Motor& a, Creature_Motor& b) {
     a.Swap(&b);
@@ -485,7 +727,7 @@ class Creature final :
                &_Creature_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    2;
+    3;
 
   friend void swap(Creature& a, Creature& b) {
     a.Swap(&b);
@@ -734,6 +976,130 @@ class Creature final :
   #pragma GCC diagnostic push
   #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif  // __GNUC__
+// Status
+
+// .server.Status.StatusCode code = 1;
+inline void Status::clear_code() {
+  _impl_.code_ = 0;
+}
+inline ::server::Status_StatusCode Status::_internal_code() const {
+  return static_cast< ::server::Status_StatusCode >(_impl_.code_);
+}
+inline ::server::Status_StatusCode Status::code() const {
+  // @@protoc_insertion_point(field_get:server.Status.code)
+  return _internal_code();
+}
+inline void Status::_internal_set_code(::server::Status_StatusCode value) {
+  
+  _impl_.code_ = value;
+}
+inline void Status::set_code(::server::Status_StatusCode value) {
+  _internal_set_code(value);
+  // @@protoc_insertion_point(field_set:server.Status.code)
+}
+
+// string message = 2;
+inline void Status::clear_message() {
+  _impl_.message_.ClearToEmpty();
+}
+inline const std::string& Status::message() const {
+  // @@protoc_insertion_point(field_get:server.Status.message)
+  return _internal_message();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void Status::set_message(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.message_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.Status.message)
+}
+inline std::string* Status::mutable_message() {
+  std::string* _s = _internal_mutable_message();
+  // @@protoc_insertion_point(field_mutable:server.Status.message)
+  return _s;
+}
+inline const std::string& Status::_internal_message() const {
+  return _impl_.message_.Get();
+}
+inline void Status::_internal_set_message(const std::string& value) {
+  
+  _impl_.message_.Set(value, GetArenaForAllocation());
+}
+inline std::string* Status::_internal_mutable_message() {
+  
+  return _impl_.message_.Mutable(GetArenaForAllocation());
+}
+inline std::string* Status::release_message() {
+  // @@protoc_insertion_point(field_release:server.Status.message)
+  return _impl_.message_.Release();
+}
+inline void Status::set_allocated_message(std::string* message) {
+  if (message != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.message_.SetAllocated(message, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.message_.IsDefault()) {
+    _impl_.message_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.Status.message)
+}
+
+// string help = 3;
+inline void Status::clear_help() {
+  _impl_.help_.ClearToEmpty();
+}
+inline const std::string& Status::help() const {
+  // @@protoc_insertion_point(field_get:server.Status.help)
+  return _internal_help();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void Status::set_help(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.help_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.Status.help)
+}
+inline std::string* Status::mutable_help() {
+  std::string* _s = _internal_mutable_help();
+  // @@protoc_insertion_point(field_mutable:server.Status.help)
+  return _s;
+}
+inline const std::string& Status::_internal_help() const {
+  return _impl_.help_.Get();
+}
+inline void Status::_internal_set_help(const std::string& value) {
+  
+  _impl_.help_.Set(value, GetArenaForAllocation());
+}
+inline std::string* Status::_internal_mutable_help() {
+  
+  return _impl_.help_.Mutable(GetArenaForAllocation());
+}
+inline std::string* Status::release_help() {
+  // @@protoc_insertion_point(field_release:server.Status.help)
+  return _impl_.help_.Release();
+}
+inline void Status::set_allocated_help(std::string* help) {
+  if (help != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.help_.SetAllocated(help, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.help_.IsDefault()) {
+    _impl_.help_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.Status.help)
+}
+
+// -------------------------------------------------------------------
+
 // CreatureName
 
 // string name = 1;
@@ -1236,6 +1602,8 @@ Creature::motors() const {
 
 // -------------------------------------------------------------------
 
+// -------------------------------------------------------------------
+
 
 // @@protoc_insertion_point(namespace_scope)
 
@@ -1243,6 +1611,11 @@ Creature::motors() const {
 
 PROTOBUF_NAMESPACE_OPEN
 
+template <> struct is_proto_enum< ::server::Status_StatusCode> : ::std::true_type {};
+template <>
+inline const EnumDescriptor* GetEnumDescriptor< ::server::Status_StatusCode>() {
+  return ::server::Status_StatusCode_descriptor();
+}
 template <> struct is_proto_enum< ::server::Creature_MotorType> : ::std::true_type {};
 template <>
 inline const EnumDescriptor* GetEnumDescriptor< ::server::Creature_MotorType>() {

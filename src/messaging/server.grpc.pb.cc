@@ -24,6 +24,7 @@ namespace server {
 static const char* CreatureServer_method_names[] = {
   "/server.CreatureServer/GetCreature",
   "/server.CreatureServer/GetCreatures",
+  "/server.CreatureServer/SaveCreature",
 };
 
 std::unique_ptr< CreatureServer::Stub> CreatureServer::NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options) {
@@ -35,6 +36,7 @@ std::unique_ptr< CreatureServer::Stub> CreatureServer::NewStub(const std::shared
 CreatureServer::Stub::Stub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options)
   : channel_(channel), rpcmethod_GetCreature_(CreatureServer_method_names[0], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   , rpcmethod_GetCreatures_(CreatureServer_method_names[1], options.suffix_for_stats(),::grpc::internal::RpcMethod::SERVER_STREAMING, channel)
+  , rpcmethod_SaveCreature_(CreatureServer_method_names[2], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   {}
 
 ::grpc::Status CreatureServer::Stub::GetCreature(::grpc::ClientContext* context, const ::server::CreatureName& request, ::server::Creature* response) {
@@ -76,6 +78,29 @@ void CreatureServer::Stub::async::GetCreatures(::grpc::ClientContext* context, c
   return ::grpc::internal::ClientAsyncReaderFactory< ::server::Creature>::Create(channel_.get(), cq, rpcmethod_GetCreatures_, context, request, false, nullptr);
 }
 
+::grpc::Status CreatureServer::Stub::SaveCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::server::Status* response) {
+  return ::grpc::internal::BlockingUnaryCall< ::server::Creature, ::server::Status, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), rpcmethod_SaveCreature_, context, request, response);
+}
+
+void CreatureServer::Stub::async::SaveCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::Status* response, std::function<void(::grpc::Status)> f) {
+  ::grpc::internal::CallbackUnaryCall< ::server::Creature, ::server::Status, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_SaveCreature_, context, request, response, std::move(f));
+}
+
+void CreatureServer::Stub::async::SaveCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::Status* response, ::grpc::ClientUnaryReactor* reactor) {
+  ::grpc::internal::ClientCallbackUnaryFactory::Create< ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_SaveCreature_, context, request, response, reactor);
+}
+
+::grpc::ClientAsyncResponseReader< ::server::Status>* CreatureServer::Stub::PrepareAsyncSaveCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
+  return ::grpc::internal::ClientAsyncResponseReaderHelper::Create< ::server::Status, ::server::Creature, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), cq, rpcmethod_SaveCreature_, context, request);
+}
+
+::grpc::ClientAsyncResponseReader< ::server::Status>* CreatureServer::Stub::AsyncSaveCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
+  auto* result =
+    this->PrepareAsyncSaveCreatureRaw(context, request, cq);
+  result->StartCall();
+  return result;
+}
+
 CreatureServer::Service::Service() {
   AddMethod(new ::grpc::internal::RpcServiceMethod(
       CreatureServer_method_names[0],
@@ -97,6 +122,16 @@ CreatureServer::Service::Service() {
              ::grpc::ServerWriter<::server::Creature>* writer) {
                return service->GetCreatures(ctx, req, writer);
              }, this)));
+  AddMethod(new ::grpc::internal::RpcServiceMethod(
+      CreatureServer_method_names[2],
+      ::grpc::internal::RpcMethod::NORMAL_RPC,
+      new ::grpc::internal::RpcMethodHandler< CreatureServer::Service, ::server::Creature, ::server::Status, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(
+          [](CreatureServer::Service* service,
+             ::grpc::ServerContext* ctx,
+             const ::server::Creature* req,
+             ::server::Status* resp) {
+               return service->SaveCreature(ctx, req, resp);
+             }, this)));
 }
 
 CreatureServer::Service::~Service() {
@@ -113,6 +148,13 @@ CreatureServer::Service::~Service() {
   (void) context;
   (void) request;
   (void) writer;
+  return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+}
+
+::grpc::Status CreatureServer::Service::SaveCreature(::grpc::ServerContext* context, const ::server::Creature* request, ::server::Status* response) {
+  (void) context;
+  (void) request;
+  (void) response;
   return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
 }
 

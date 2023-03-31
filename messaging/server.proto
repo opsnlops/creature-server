@@ -1,14 +1,17 @@
 syntax = "proto3";
 
-option go_package = "opsnlops.io/creatures/network";
+option go_package = "opsnlops.io/creatures/server";
 option java_multiple_files = true;
-option java_package = "io.opsnlops.network";
+option java_package = "io.opsnlops.creatures.server";
 option java_outer_classname = "NetworkServerProto";
 
 package server;
 
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+
+// TODO: This might be helpful later!
+// import "google/protobuf/wrappers.proto";
 
 service CreatureServer {
 
@@ -18,7 +21,26 @@ service CreatureServer {
   // Get all of them
   rpc GetCreatures (google.protobuf.Empty) returns (stream Creature) {}
 
+  // Save a creature to the database
+  rpc SaveCreature(Creature) returns (Status) {}
+
 }
+
+message Status {
+
+  StatusCode code = 1;
+  string message = 2;
+  string help = 3;
+
+  enum StatusCode {
+    OKAY = 0;
+    ERROR = 1;
+    FILE_NOT_FOUND = 2;
+  }
+
+}
+
+
 
 message CreatureName {
   string name = 1;
