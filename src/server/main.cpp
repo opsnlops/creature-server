@@ -1,26 +1,20 @@
 
 #include <cstdio>
-
-#include <iostream>
 #include <memory>
 #include <string>
 
-#include "absl/flags/flag.h"
-#include "absl/flags/parse.h"
 #include "absl/strings/str_format.h"
 
-#include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
-#include <grpcpp/health_check_service_interface.h>
 
-#include <grpcpp/ext/proto_server_reflection_plugin.h>
-#include <grpcpp/grpcpp.h>
-#include <grpcpp/health_check_service_interface.h>
 
 #include "messaging/server.grpc.pb.h"
 
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
+
+
+#include "server/database.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -33,6 +27,11 @@ using server::CreatureName;
 using spdlog::info;
 using spdlog::debug;
 using spdlog::critical;
+
+using creatures::Database;
+
+
+Database* db{};
 
 Status handleGetCreature(ServerContext* context, const CreatureName* request,
                          Creature* reply ) {
@@ -83,7 +82,12 @@ int main(int argc, char** argv) {
 
     spdlog::set_level(spdlog::level::trace);
 
-    info("starting server on point {}", 6666);
+    // Start up the database
+    db = new Database();
+
+
+
+    info("starting server on port {}", 6666);
     RunServer(6666);
     return 0;
 }
