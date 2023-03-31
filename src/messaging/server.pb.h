@@ -57,44 +57,18 @@ extern CreatureNameDefaultTypeInternal _CreatureName_default_instance_;
 class Creature_Motor;
 struct Creature_MotorDefaultTypeInternal;
 extern Creature_MotorDefaultTypeInternal _Creature_Motor_default_instance_;
-class Status;
-struct StatusDefaultTypeInternal;
-extern StatusDefaultTypeInternal _Status_default_instance_;
+class DatabaseInfo;
+struct DatabaseInfoDefaultTypeInternal;
+extern DatabaseInfoDefaultTypeInternal _DatabaseInfo_default_instance_;
 }  // namespace server
 PROTOBUF_NAMESPACE_OPEN
 template<> ::server::Creature* Arena::CreateMaybeMessage<::server::Creature>(Arena*);
 template<> ::server::CreatureName* Arena::CreateMaybeMessage<::server::CreatureName>(Arena*);
 template<> ::server::Creature_Motor* Arena::CreateMaybeMessage<::server::Creature_Motor>(Arena*);
-template<> ::server::Status* Arena::CreateMaybeMessage<::server::Status>(Arena*);
+template<> ::server::DatabaseInfo* Arena::CreateMaybeMessage<::server::DatabaseInfo>(Arena*);
 PROTOBUF_NAMESPACE_CLOSE
 namespace server {
 
-enum Status_StatusCode : int {
-  Status_StatusCode_OKAY = 0,
-  Status_StatusCode_ERROR = 1,
-  Status_StatusCode_FILE_NOT_FOUND = 2,
-  Status_StatusCode_Status_StatusCode_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
-  Status_StatusCode_Status_StatusCode_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
-};
-bool Status_StatusCode_IsValid(int value);
-constexpr Status_StatusCode Status_StatusCode_StatusCode_MIN = Status_StatusCode_OKAY;
-constexpr Status_StatusCode Status_StatusCode_StatusCode_MAX = Status_StatusCode_FILE_NOT_FOUND;
-constexpr int Status_StatusCode_StatusCode_ARRAYSIZE = Status_StatusCode_StatusCode_MAX + 1;
-
-const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* Status_StatusCode_descriptor();
-template<typename T>
-inline const std::string& Status_StatusCode_Name(T enum_t_value) {
-  static_assert(::std::is_same<T, Status_StatusCode>::value ||
-    ::std::is_integral<T>::value,
-    "Incorrect type passed to function Status_StatusCode_Name.");
-  return ::PROTOBUF_NAMESPACE_ID::internal::NameOfEnum(
-    Status_StatusCode_descriptor(), enum_t_value);
-}
-inline bool Status_StatusCode_Parse(
-    ::PROTOBUF_NAMESPACE_ID::ConstStringParam name, Status_StatusCode* value) {
-  return ::PROTOBUF_NAMESPACE_ID::internal::ParseNamedEnum<Status_StatusCode>(
-    Status_StatusCode_descriptor(), name, value);
-}
 enum Creature_MotorType : int {
   Creature_MotorType_SERVO = 0,
   Creature_MotorType_STEPPER = 1,
@@ -122,24 +96,24 @@ inline bool Creature_MotorType_Parse(
 }
 // ===================================================================
 
-class Status final :
-    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.Status) */ {
+class DatabaseInfo final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.DatabaseInfo) */ {
  public:
-  inline Status() : Status(nullptr) {}
-  ~Status() override;
-  explicit PROTOBUF_CONSTEXPR Status(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+  inline DatabaseInfo() : DatabaseInfo(nullptr) {}
+  ~DatabaseInfo() override;
+  explicit PROTOBUF_CONSTEXPR DatabaseInfo(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
 
-  Status(const Status& from);
-  Status(Status&& from) noexcept
-    : Status() {
+  DatabaseInfo(const DatabaseInfo& from);
+  DatabaseInfo(DatabaseInfo&& from) noexcept
+    : DatabaseInfo() {
     *this = ::std::move(from);
   }
 
-  inline Status& operator=(const Status& from) {
+  inline DatabaseInfo& operator=(const DatabaseInfo& from) {
     CopyFrom(from);
     return *this;
   }
-  inline Status& operator=(Status&& from) noexcept {
+  inline DatabaseInfo& operator=(DatabaseInfo&& from) noexcept {
     if (this == &from) return *this;
     if (GetOwningArena() == from.GetOwningArena()
   #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
@@ -162,20 +136,20 @@ class Status final :
   static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
     return default_instance().GetMetadata().reflection;
   }
-  static const Status& default_instance() {
+  static const DatabaseInfo& default_instance() {
     return *internal_default_instance();
   }
-  static inline const Status* internal_default_instance() {
-    return reinterpret_cast<const Status*>(
-               &_Status_default_instance_);
+  static inline const DatabaseInfo* internal_default_instance() {
+    return reinterpret_cast<const DatabaseInfo*>(
+               &_DatabaseInfo_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
     0;
 
-  friend void swap(Status& a, Status& b) {
+  friend void swap(DatabaseInfo& a, DatabaseInfo& b) {
     a.Swap(&b);
   }
-  inline void Swap(Status* other) {
+  inline void Swap(DatabaseInfo* other) {
     if (other == this) return;
   #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
     if (GetOwningArena() != nullptr &&
@@ -188,7 +162,7 @@ class Status final :
       ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
     }
   }
-  void UnsafeArenaSwap(Status* other) {
+  void UnsafeArenaSwap(DatabaseInfo* other) {
     if (other == this) return;
     GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
     InternalSwap(other);
@@ -196,14 +170,14 @@ class Status final :
 
   // implements Message ----------------------------------------------
 
-  Status* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
-    return CreateMaybeMessage<Status>(arena);
+  DatabaseInfo* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<DatabaseInfo>(arena);
   }
   using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
-  void CopyFrom(const Status& from);
+  void CopyFrom(const DatabaseInfo& from);
   using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
-  void MergeFrom( const Status& from) {
-    Status::MergeImpl(*this, from);
+  void MergeFrom( const DatabaseInfo& from) {
+    DatabaseInfo::MergeImpl(*this, from);
   }
   private:
   static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
@@ -221,15 +195,15 @@ class Status final :
   void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
   void SharedDtor();
   void SetCachedSize(int size) const final;
-  void InternalSwap(Status* other);
+  void InternalSwap(DatabaseInfo* other);
 
   private:
   friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
   static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
-    return "server.Status";
+    return "server.DatabaseInfo";
   }
   protected:
-  explicit Status(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+  explicit DatabaseInfo(::PROTOBUF_NAMESPACE_ID::Arena* arena,
                        bool is_message_owned = false);
   public:
 
@@ -240,46 +214,13 @@ class Status final :
 
   // nested types ----------------------------------------------------
 
-  typedef Status_StatusCode StatusCode;
-  static constexpr StatusCode OKAY =
-    Status_StatusCode_OKAY;
-  static constexpr StatusCode ERROR =
-    Status_StatusCode_ERROR;
-  static constexpr StatusCode FILE_NOT_FOUND =
-    Status_StatusCode_FILE_NOT_FOUND;
-  static inline bool StatusCode_IsValid(int value) {
-    return Status_StatusCode_IsValid(value);
-  }
-  static constexpr StatusCode StatusCode_MIN =
-    Status_StatusCode_StatusCode_MIN;
-  static constexpr StatusCode StatusCode_MAX =
-    Status_StatusCode_StatusCode_MAX;
-  static constexpr int StatusCode_ARRAYSIZE =
-    Status_StatusCode_StatusCode_ARRAYSIZE;
-  static inline const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor*
-  StatusCode_descriptor() {
-    return Status_StatusCode_descriptor();
-  }
-  template<typename T>
-  static inline const std::string& StatusCode_Name(T enum_t_value) {
-    static_assert(::std::is_same<T, StatusCode>::value ||
-      ::std::is_integral<T>::value,
-      "Incorrect type passed to function StatusCode_Name.");
-    return Status_StatusCode_Name(enum_t_value);
-  }
-  static inline bool StatusCode_Parse(::PROTOBUF_NAMESPACE_ID::ConstStringParam name,
-      StatusCode* value) {
-    return Status_StatusCode_Parse(name, value);
-  }
-
   // accessors -------------------------------------------------------
 
   enum : int {
-    kMessageFieldNumber = 2,
-    kHelpFieldNumber = 3,
-    kCodeFieldNumber = 1,
+    kMessageFieldNumber = 1,
+    kHelpFieldNumber = 2,
   };
-  // string message = 2;
+  // string message = 1;
   void clear_message();
   const std::string& message() const;
   template <typename ArgT0 = const std::string&, typename... ArgT>
@@ -293,7 +234,7 @@ class Status final :
   std::string* _internal_mutable_message();
   public:
 
-  // string help = 3;
+  // string help = 2;
   void clear_help();
   const std::string& help() const;
   template <typename ArgT0 = const std::string&, typename... ArgT>
@@ -307,16 +248,7 @@ class Status final :
   std::string* _internal_mutable_help();
   public:
 
-  // .server.Status.StatusCode code = 1;
-  void clear_code();
-  ::server::Status_StatusCode code() const;
-  void set_code(::server::Status_StatusCode value);
-  private:
-  ::server::Status_StatusCode _internal_code() const;
-  void _internal_set_code(::server::Status_StatusCode value);
-  public:
-
-  // @@protoc_insertion_point(class_scope:server.Status)
+  // @@protoc_insertion_point(class_scope:server.DatabaseInfo)
  private:
   class _Internal;
 
@@ -326,7 +258,6 @@ class Status final :
   struct Impl_ {
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr message_;
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr help_;
-    int code_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -976,64 +907,44 @@ class Creature final :
   #pragma GCC diagnostic push
   #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif  // __GNUC__
-// Status
+// DatabaseInfo
 
-// .server.Status.StatusCode code = 1;
-inline void Status::clear_code() {
-  _impl_.code_ = 0;
-}
-inline ::server::Status_StatusCode Status::_internal_code() const {
-  return static_cast< ::server::Status_StatusCode >(_impl_.code_);
-}
-inline ::server::Status_StatusCode Status::code() const {
-  // @@protoc_insertion_point(field_get:server.Status.code)
-  return _internal_code();
-}
-inline void Status::_internal_set_code(::server::Status_StatusCode value) {
-  
-  _impl_.code_ = value;
-}
-inline void Status::set_code(::server::Status_StatusCode value) {
-  _internal_set_code(value);
-  // @@protoc_insertion_point(field_set:server.Status.code)
-}
-
-// string message = 2;
-inline void Status::clear_message() {
+// string message = 1;
+inline void DatabaseInfo::clear_message() {
   _impl_.message_.ClearToEmpty();
 }
-inline const std::string& Status::message() const {
-  // @@protoc_insertion_point(field_get:server.Status.message)
+inline const std::string& DatabaseInfo::message() const {
+  // @@protoc_insertion_point(field_get:server.DatabaseInfo.message)
   return _internal_message();
 }
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
-void Status::set_message(ArgT0&& arg0, ArgT... args) {
+void DatabaseInfo::set_message(ArgT0&& arg0, ArgT... args) {
  
  _impl_.message_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
-  // @@protoc_insertion_point(field_set:server.Status.message)
+  // @@protoc_insertion_point(field_set:server.DatabaseInfo.message)
 }
-inline std::string* Status::mutable_message() {
+inline std::string* DatabaseInfo::mutable_message() {
   std::string* _s = _internal_mutable_message();
-  // @@protoc_insertion_point(field_mutable:server.Status.message)
+  // @@protoc_insertion_point(field_mutable:server.DatabaseInfo.message)
   return _s;
 }
-inline const std::string& Status::_internal_message() const {
+inline const std::string& DatabaseInfo::_internal_message() const {
   return _impl_.message_.Get();
 }
-inline void Status::_internal_set_message(const std::string& value) {
+inline void DatabaseInfo::_internal_set_message(const std::string& value) {
   
   _impl_.message_.Set(value, GetArenaForAllocation());
 }
-inline std::string* Status::_internal_mutable_message() {
+inline std::string* DatabaseInfo::_internal_mutable_message() {
   
   return _impl_.message_.Mutable(GetArenaForAllocation());
 }
-inline std::string* Status::release_message() {
-  // @@protoc_insertion_point(field_release:server.Status.message)
+inline std::string* DatabaseInfo::release_message() {
+  // @@protoc_insertion_point(field_release:server.DatabaseInfo.message)
   return _impl_.message_.Release();
 }
-inline void Status::set_allocated_message(std::string* message) {
+inline void DatabaseInfo::set_allocated_message(std::string* message) {
   if (message != nullptr) {
     
   } else {
@@ -1045,45 +956,45 @@ inline void Status::set_allocated_message(std::string* message) {
     _impl_.message_.Set("", GetArenaForAllocation());
   }
 #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  // @@protoc_insertion_point(field_set_allocated:server.Status.message)
+  // @@protoc_insertion_point(field_set_allocated:server.DatabaseInfo.message)
 }
 
-// string help = 3;
-inline void Status::clear_help() {
+// string help = 2;
+inline void DatabaseInfo::clear_help() {
   _impl_.help_.ClearToEmpty();
 }
-inline const std::string& Status::help() const {
-  // @@protoc_insertion_point(field_get:server.Status.help)
+inline const std::string& DatabaseInfo::help() const {
+  // @@protoc_insertion_point(field_get:server.DatabaseInfo.help)
   return _internal_help();
 }
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
-void Status::set_help(ArgT0&& arg0, ArgT... args) {
+void DatabaseInfo::set_help(ArgT0&& arg0, ArgT... args) {
  
  _impl_.help_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
-  // @@protoc_insertion_point(field_set:server.Status.help)
+  // @@protoc_insertion_point(field_set:server.DatabaseInfo.help)
 }
-inline std::string* Status::mutable_help() {
+inline std::string* DatabaseInfo::mutable_help() {
   std::string* _s = _internal_mutable_help();
-  // @@protoc_insertion_point(field_mutable:server.Status.help)
+  // @@protoc_insertion_point(field_mutable:server.DatabaseInfo.help)
   return _s;
 }
-inline const std::string& Status::_internal_help() const {
+inline const std::string& DatabaseInfo::_internal_help() const {
   return _impl_.help_.Get();
 }
-inline void Status::_internal_set_help(const std::string& value) {
+inline void DatabaseInfo::_internal_set_help(const std::string& value) {
   
   _impl_.help_.Set(value, GetArenaForAllocation());
 }
-inline std::string* Status::_internal_mutable_help() {
+inline std::string* DatabaseInfo::_internal_mutable_help() {
   
   return _impl_.help_.Mutable(GetArenaForAllocation());
 }
-inline std::string* Status::release_help() {
-  // @@protoc_insertion_point(field_release:server.Status.help)
+inline std::string* DatabaseInfo::release_help() {
+  // @@protoc_insertion_point(field_release:server.DatabaseInfo.help)
   return _impl_.help_.Release();
 }
-inline void Status::set_allocated_help(std::string* help) {
+inline void DatabaseInfo::set_allocated_help(std::string* help) {
   if (help != nullptr) {
     
   } else {
@@ -1095,7 +1006,7 @@ inline void Status::set_allocated_help(std::string* help) {
     _impl_.help_.Set("", GetArenaForAllocation());
   }
 #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  // @@protoc_insertion_point(field_set_allocated:server.Status.help)
+  // @@protoc_insertion_point(field_set_allocated:server.DatabaseInfo.help)
 }
 
 // -------------------------------------------------------------------
@@ -1611,11 +1522,6 @@ Creature::motors() const {
 
 PROTOBUF_NAMESPACE_OPEN
 
-template <> struct is_proto_enum< ::server::Status_StatusCode> : ::std::true_type {};
-template <>
-inline const EnumDescriptor* GetEnumDescriptor< ::server::Status_StatusCode>() {
-  return ::server::Status_StatusCode_descriptor();
-}
 template <> struct is_proto_enum< ::server::Creature_MotorType> : ::std::true_type {};
 template <>
 inline const EnumDescriptor* GetEnumDescriptor< ::server::Creature_MotorType>() {

@@ -21,21 +21,20 @@ namespace _pb = ::PROTOBUF_NAMESPACE_ID;
 namespace _pbi = _pb::internal;
 
 namespace server {
-PROTOBUF_CONSTEXPR Status::Status(
+PROTOBUF_CONSTEXPR DatabaseInfo::DatabaseInfo(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.message_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.help_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
-  , /*decltype(_impl_.code_)*/0
   , /*decltype(_impl_._cached_size_)*/{}} {}
-struct StatusDefaultTypeInternal {
-  PROTOBUF_CONSTEXPR StatusDefaultTypeInternal()
+struct DatabaseInfoDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR DatabaseInfoDefaultTypeInternal()
       : _instance(::_pbi::ConstantInitialized{}) {}
-  ~StatusDefaultTypeInternal() {}
+  ~DatabaseInfoDefaultTypeInternal() {}
   union {
-    Status _instance;
+    DatabaseInfo _instance;
   };
 };
-PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 StatusDefaultTypeInternal _Status_default_instance_;
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 DatabaseInfoDefaultTypeInternal _DatabaseInfo_default_instance_;
 PROTOBUF_CONSTEXPR CreatureName::CreatureName(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.name_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
@@ -88,19 +87,18 @@ struct CreatureDefaultTypeInternal {
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 CreatureDefaultTypeInternal _Creature_default_instance_;
 }  // namespace server
 static ::_pb::Metadata file_level_metadata_server_2eproto[4];
-static const ::_pb::EnumDescriptor* file_level_enum_descriptors_server_2eproto[2];
+static const ::_pb::EnumDescriptor* file_level_enum_descriptors_server_2eproto[1];
 static constexpr ::_pb::ServiceDescriptor const** file_level_service_descriptors_server_2eproto = nullptr;
 
 const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {
   ~0u,  // no _has_bits_
-  PROTOBUF_FIELD_OFFSET(::server::Status, _internal_metadata_),
+  PROTOBUF_FIELD_OFFSET(::server::DatabaseInfo, _internal_metadata_),
   ~0u,  // no _extensions_
   ~0u,  // no _oneof_case_
   ~0u,  // no _weak_field_map_
   ~0u,  // no _inlined_string_donated_
-  PROTOBUF_FIELD_OFFSET(::server::Status, _impl_.code_),
-  PROTOBUF_FIELD_OFFSET(::server::Status, _impl_.message_),
-  PROTOBUF_FIELD_OFFSET(::server::Status, _impl_.help_),
+  PROTOBUF_FIELD_OFFSET(::server::DatabaseInfo, _impl_.message_),
+  PROTOBUF_FIELD_OFFSET(::server::DatabaseInfo, _impl_.help_),
   ~0u,  // no _has_bits_
   PROTOBUF_FIELD_OFFSET(::server::CreatureName, _internal_metadata_),
   ~0u,  // no _extensions_
@@ -135,14 +133,14 @@ const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(p
   PROTOBUF_FIELD_OFFSET(::server::Creature, _impl_.motors_),
 };
 static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {
-  { 0, -1, -1, sizeof(::server::Status)},
-  { 9, -1, -1, sizeof(::server::CreatureName)},
-  { 16, -1, -1, sizeof(::server::Creature_Motor)},
-  { 27, -1, -1, sizeof(::server::Creature)},
+  { 0, -1, -1, sizeof(::server::DatabaseInfo)},
+  { 8, -1, -1, sizeof(::server::CreatureName)},
+  { 15, -1, -1, sizeof(::server::Creature_Motor)},
+  { 26, -1, -1, sizeof(::server::Creature)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
-  &::server::_Status_default_instance_._instance,
+  &::server::_DatabaseInfo_default_instance_._instance,
   &::server::_CreatureName_default_instance_._instance,
   &::server::_Creature_Motor_default_instance_._instance,
   &::server::_Creature_default_instance_._instance,
@@ -151,27 +149,25 @@ static const ::_pb::Message* const file_default_instances[] = {
 const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) =
   "\n\014server.proto\022\006server\032\033google/protobuf/"
   "empty.proto\032\037google/protobuf/timestamp.p"
-  "roto\"\207\001\n\006Status\022\'\n\004code\030\001 \001(\0162\031.server.S"
-  "tatus.StatusCode\022\017\n\007message\030\002 \001(\t\022\014\n\004hel"
-  "p\030\003 \001(\t\"5\n\nStatusCode\022\010\n\004OKAY\020\000\022\t\n\005ERROR"
-  "\020\001\022\022\n\016FILE_NOT_FOUND\020\002\"\034\n\014CreatureName\022\014"
-  "\n\004name\030\001 \001(\t\"\365\002\n\010Creature\022\014\n\004name\030\001 \001(\t\022"
-  "\n\n\002id\030\002 \001(\t\0220\n\014last_updated\030\003 \001(\0132\032.goog"
-  "le.protobuf.Timestamp\022\017\n\007sacn_ip\030\004 \001(\t\022\020"
-  "\n\010universe\030\005 \001(\r\022\020\n\010dmx_base\030\006 \001(\r\022\030\n\020nu"
-  "mber_of_motors\030\007 \001(\r\022&\n\006motors\030\010 \003(\0132\026.s"
-  "erver.Creature.Motor\032\200\001\n\005Motor\022(\n\004type\030\001"
-  " \001(\0162\032.server.Creature.MotorType\022\016\n\006numb"
-  "er\030\002 \001(\r\022\021\n\tmax_value\030\003 \001(\r\022\021\n\tmin_value"
-  "\030\004 \001(\r\022\027\n\017smoothing_value\030\005 \001(\002\"#\n\tMotor"
-  "Type\022\t\n\005SERVO\020\000\022\013\n\007STEPPER\020\0012\273\001\n\016Creatur"
-  "eServer\0227\n\013GetCreature\022\024.server.Creature"
-  "Name\032\020.server.Creature\"\000\022<\n\014GetCreatures"
-  "\022\026.google.protobuf.Empty\032\020.server.Creatu"
-  "re\"\0000\001\0222\n\014SaveCreature\022\020.server.Creature"
-  "\032\016.server.Status\"\000BR\n\034io.opsnlops.creatu"
-  "res.serverB\022NetworkServerProtoP\001Z\034opsnlo"
-  "ps.io/creatures/serverb\006proto3"
+  "roto\"-\n\014DatabaseInfo\022\017\n\007message\030\001 \001(\t\022\014\n"
+  "\004help\030\002 \001(\t\"\034\n\014CreatureName\022\014\n\004name\030\001 \001("
+  "\t\"\365\002\n\010Creature\022\014\n\004name\030\001 \001(\t\022\n\n\002id\030\002 \001(\t"
+  "\0220\n\014last_updated\030\003 \001(\0132\032.google.protobuf"
+  ".Timestamp\022\017\n\007sacn_ip\030\004 \001(\t\022\020\n\010universe\030"
+  "\005 \001(\r\022\020\n\010dmx_base\030\006 \001(\r\022\030\n\020number_of_mot"
+  "ors\030\007 \001(\r\022&\n\006motors\030\010 \003(\0132\026.server.Creat"
+  "ure.Motor\032\200\001\n\005Motor\022(\n\004type\030\001 \001(\0162\032.serv"
+  "er.Creature.MotorType\022\016\n\006number\030\002 \001(\r\022\021\n"
+  "\tmax_value\030\003 \001(\r\022\021\n\tmin_value\030\004 \001(\r\022\027\n\017s"
+  "moothing_value\030\005 \001(\002\"#\n\tMotorType\022\t\n\005SER"
+  "VO\020\000\022\013\n\007STEPPER\020\0012\301\001\n\016CreatureServer\0227\n\013"
+  "GetCreature\022\024.server.CreatureName\032\020.serv"
+  "er.Creature\"\000\022<\n\014GetCreatures\022\026.google.p"
+  "rotobuf.Empty\032\020.server.Creature\"\0000\001\0228\n\014S"
+  "aveCreature\022\020.server.Creature\032\024.server.D"
+  "atabaseInfo\"\000BR\n\034io.opsnlops.creatures.s"
+  "erverB\022NetworkServerProtoP\001Z\034opsnlops.io"
+  "/creatures/serverb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -179,7 +175,7 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 910, descriptor_table_protodef_server_2eproto,
+    false, false, 825, descriptor_table_protodef_server_2eproto,
     "server.proto",
     &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 4,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,
@@ -193,32 +189,9 @@ PROTOBUF_ATTRIBUTE_WEAK const ::_pbi::DescriptorTable* descriptor_table_server_2
 // Force running AddDescriptors() at dynamic initialization time.
 PROTOBUF_ATTRIBUTE_INIT_PRIORITY2 static ::_pbi::AddDescriptorsRunner dynamic_init_dummy_server_2eproto(&descriptor_table_server_2eproto);
 namespace server {
-const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* Status_StatusCode_descriptor() {
-  ::PROTOBUF_NAMESPACE_ID::internal::AssignDescriptors(&descriptor_table_server_2eproto);
-  return file_level_enum_descriptors_server_2eproto[0];
-}
-bool Status_StatusCode_IsValid(int value) {
-  switch (value) {
-    case 0:
-    case 1:
-    case 2:
-      return true;
-    default:
-      return false;
-  }
-}
-
-#if (__cplusplus < 201703) && (!defined(_MSC_VER) || (_MSC_VER >= 1900 && _MSC_VER < 1912))
-constexpr Status_StatusCode Status::OKAY;
-constexpr Status_StatusCode Status::ERROR;
-constexpr Status_StatusCode Status::FILE_NOT_FOUND;
-constexpr Status_StatusCode Status::StatusCode_MIN;
-constexpr Status_StatusCode Status::StatusCode_MAX;
-constexpr int Status::StatusCode_ARRAYSIZE;
-#endif  // (__cplusplus < 201703) && (!defined(_MSC_VER) || (_MSC_VER >= 1900 && _MSC_VER < 1912))
 const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* Creature_MotorType_descriptor() {
   ::PROTOBUF_NAMESPACE_ID::internal::AssignDescriptors(&descriptor_table_server_2eproto);
-  return file_level_enum_descriptors_server_2eproto[1];
+  return file_level_enum_descriptors_server_2eproto[0];
 }
 bool Creature_MotorType_IsValid(int value) {
   switch (value) {
@@ -240,23 +213,22 @@ constexpr int Creature::MotorType_ARRAYSIZE;
 
 // ===================================================================
 
-class Status::_Internal {
+class DatabaseInfo::_Internal {
  public:
 };
 
-Status::Status(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+DatabaseInfo::DatabaseInfo(::PROTOBUF_NAMESPACE_ID::Arena* arena,
                          bool is_message_owned)
   : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
   SharedCtor(arena, is_message_owned);
-  // @@protoc_insertion_point(arena_constructor:server.Status)
+  // @@protoc_insertion_point(arena_constructor:server.DatabaseInfo)
 }
-Status::Status(const Status& from)
+DatabaseInfo::DatabaseInfo(const DatabaseInfo& from)
   : ::PROTOBUF_NAMESPACE_ID::Message() {
-  Status* const _this = this; (void)_this;
+  DatabaseInfo* const _this = this; (void)_this;
   new (&_impl_) Impl_{
       decltype(_impl_.message_){}
     , decltype(_impl_.help_){}
-    , decltype(_impl_.code_){}
     , /*decltype(_impl_._cached_size_)*/{}};
 
   _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
@@ -276,18 +248,16 @@ Status::Status(const Status& from)
     _this->_impl_.help_.Set(from._internal_help(), 
       _this->GetArenaForAllocation());
   }
-  _this->_impl_.code_ = from._impl_.code_;
-  // @@protoc_insertion_point(copy_constructor:server.Status)
+  // @@protoc_insertion_point(copy_constructor:server.DatabaseInfo)
 }
 
-inline void Status::SharedCtor(
+inline void DatabaseInfo::SharedCtor(
     ::_pb::Arena* arena, bool is_message_owned) {
   (void)arena;
   (void)is_message_owned;
   new (&_impl_) Impl_{
       decltype(_impl_.message_){}
     , decltype(_impl_.help_){}
-    , decltype(_impl_.code_){0}
     , /*decltype(_impl_._cached_size_)*/{}
   };
   _impl_.message_.InitDefault();
@@ -300,8 +270,8 @@ inline void Status::SharedCtor(
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
 }
 
-Status::~Status() {
-  // @@protoc_insertion_point(destructor:server.Status)
+DatabaseInfo::~DatabaseInfo() {
+  // @@protoc_insertion_point(destructor:server.DatabaseInfo)
   if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
   (void)arena;
     return;
@@ -309,60 +279,50 @@ Status::~Status() {
   SharedDtor();
 }
 
-inline void Status::SharedDtor() {
+inline void DatabaseInfo::SharedDtor() {
   GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
   _impl_.message_.Destroy();
   _impl_.help_.Destroy();
 }
 
-void Status::SetCachedSize(int size) const {
+void DatabaseInfo::SetCachedSize(int size) const {
   _impl_._cached_size_.Set(size);
 }
 
-void Status::Clear() {
-// @@protoc_insertion_point(message_clear_start:server.Status)
+void DatabaseInfo::Clear() {
+// @@protoc_insertion_point(message_clear_start:server.DatabaseInfo)
   uint32_t cached_has_bits = 0;
   // Prevent compiler warnings about cached_has_bits being unused
   (void) cached_has_bits;
 
   _impl_.message_.ClearToEmpty();
   _impl_.help_.ClearToEmpty();
-  _impl_.code_ = 0;
   _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
 }
 
-const char* Status::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+const char* DatabaseInfo::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
 #define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
   while (!ctx->Done(&ptr)) {
     uint32_t tag;
     ptr = ::_pbi::ReadTag(ptr, &tag);
     switch (tag >> 3) {
-      // .server.Status.StatusCode code = 1;
+      // string message = 1;
       case 1:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 8)) {
-          uint64_t val = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
-          CHK_(ptr);
-          _internal_set_code(static_cast<::server::Status_StatusCode>(val));
-        } else
-          goto handle_unusual;
-        continue;
-      // string message = 2;
-      case 2:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
           auto str = _internal_mutable_message();
           ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
           CHK_(ptr);
-          CHK_(::_pbi::VerifyUTF8(str, "server.Status.message"));
+          CHK_(::_pbi::VerifyUTF8(str, "server.DatabaseInfo.message"));
         } else
           goto handle_unusual;
         continue;
-      // string help = 3;
-      case 3:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
+      // string help = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
           auto str = _internal_mutable_help();
           ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
           CHK_(ptr);
-          CHK_(::_pbi::VerifyUTF8(str, "server.Status.help"));
+          CHK_(::_pbi::VerifyUTF8(str, "server.DatabaseInfo.help"));
         } else
           goto handle_unusual;
         continue;
@@ -389,89 +349,76 @@ failure:
 #undef CHK_
 }
 
-uint8_t* Status::_InternalSerialize(
+uint8_t* DatabaseInfo::_InternalSerialize(
     uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
-  // @@protoc_insertion_point(serialize_to_array_start:server.Status)
+  // @@protoc_insertion_point(serialize_to_array_start:server.DatabaseInfo)
   uint32_t cached_has_bits = 0;
   (void) cached_has_bits;
 
-  // .server.Status.StatusCode code = 1;
-  if (this->_internal_code() != 0) {
-    target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteEnumToArray(
-      1, this->_internal_code(), target);
-  }
-
-  // string message = 2;
+  // string message = 1;
   if (!this->_internal_message().empty()) {
     ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
       this->_internal_message().data(), static_cast<int>(this->_internal_message().length()),
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
-      "server.Status.message");
+      "server.DatabaseInfo.message");
     target = stream->WriteStringMaybeAliased(
-        2, this->_internal_message(), target);
+        1, this->_internal_message(), target);
   }
 
-  // string help = 3;
+  // string help = 2;
   if (!this->_internal_help().empty()) {
     ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
       this->_internal_help().data(), static_cast<int>(this->_internal_help().length()),
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
-      "server.Status.help");
+      "server.DatabaseInfo.help");
     target = stream->WriteStringMaybeAliased(
-        3, this->_internal_help(), target);
+        2, this->_internal_help(), target);
   }
 
   if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
     target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
         _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
   }
-  // @@protoc_insertion_point(serialize_to_array_end:server.Status)
+  // @@protoc_insertion_point(serialize_to_array_end:server.DatabaseInfo)
   return target;
 }
 
-size_t Status::ByteSizeLong() const {
-// @@protoc_insertion_point(message_byte_size_start:server.Status)
+size_t DatabaseInfo::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:server.DatabaseInfo)
   size_t total_size = 0;
 
   uint32_t cached_has_bits = 0;
   // Prevent compiler warnings about cached_has_bits being unused
   (void) cached_has_bits;
 
-  // string message = 2;
+  // string message = 1;
   if (!this->_internal_message().empty()) {
     total_size += 1 +
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
         this->_internal_message());
   }
 
-  // string help = 3;
+  // string help = 2;
   if (!this->_internal_help().empty()) {
     total_size += 1 +
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
         this->_internal_help());
   }
 
-  // .server.Status.StatusCode code = 1;
-  if (this->_internal_code() != 0) {
-    total_size += 1 +
-      ::_pbi::WireFormatLite::EnumSize(this->_internal_code());
-  }
-
   return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
 }
 
-const ::PROTOBUF_NAMESPACE_ID::Message::ClassData Status::_class_data_ = {
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData DatabaseInfo::_class_data_ = {
     ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
-    Status::MergeImpl
+    DatabaseInfo::MergeImpl
 };
-const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*Status::GetClassData() const { return &_class_data_; }
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*DatabaseInfo::GetClassData() const { return &_class_data_; }
 
 
-void Status::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
-  auto* const _this = static_cast<Status*>(&to_msg);
-  auto& from = static_cast<const Status&>(from_msg);
-  // @@protoc_insertion_point(class_specific_merge_from_start:server.Status)
+void DatabaseInfo::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<DatabaseInfo*>(&to_msg);
+  auto& from = static_cast<const DatabaseInfo&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:server.DatabaseInfo)
   GOOGLE_DCHECK_NE(&from, _this);
   uint32_t cached_has_bits = 0;
   (void) cached_has_bits;
@@ -482,24 +429,21 @@ void Status::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBU
   if (!from._internal_help().empty()) {
     _this->_internal_set_help(from._internal_help());
   }
-  if (from._internal_code() != 0) {
-    _this->_internal_set_code(from._internal_code());
-  }
   _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
 }
 
-void Status::CopyFrom(const Status& from) {
-// @@protoc_insertion_point(class_specific_copy_from_start:server.Status)
+void DatabaseInfo::CopyFrom(const DatabaseInfo& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:server.DatabaseInfo)
   if (&from == this) return;
   Clear();
   MergeFrom(from);
 }
 
-bool Status::IsInitialized() const {
+bool DatabaseInfo::IsInitialized() const {
   return true;
 }
 
-void Status::InternalSwap(Status* other) {
+void DatabaseInfo::InternalSwap(DatabaseInfo* other) {
   using std::swap;
   auto* lhs_arena = GetArenaForAllocation();
   auto* rhs_arena = other->GetArenaForAllocation();
@@ -512,10 +456,9 @@ void Status::InternalSwap(Status* other) {
       &_impl_.help_, lhs_arena,
       &other->_impl_.help_, rhs_arena
   );
-  swap(_impl_.code_, other->_impl_.code_);
 }
 
-::PROTOBUF_NAMESPACE_ID::Metadata Status::GetMetadata() const {
+::PROTOBUF_NAMESPACE_ID::Metadata DatabaseInfo::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
       file_level_metadata_server_2eproto[0]);
@@ -1493,9 +1436,9 @@ void Creature::InternalSwap(Creature* other) {
 // @@protoc_insertion_point(namespace_scope)
 }  // namespace server
 PROTOBUF_NAMESPACE_OPEN
-template<> PROTOBUF_NOINLINE ::server::Status*
-Arena::CreateMaybeMessage< ::server::Status >(Arena* arena) {
-  return Arena::CreateMessageInternal< ::server::Status >(arena);
+template<> PROTOBUF_NOINLINE ::server::DatabaseInfo*
+Arena::CreateMaybeMessage< ::server::DatabaseInfo >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::server::DatabaseInfo >(arena);
 }
 template<> PROTOBUF_NOINLINE ::server::CreatureName*
 Arena::CreateMaybeMessage< ::server::CreatureName >(Arena* arena) {

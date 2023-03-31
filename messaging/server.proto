@@ -22,21 +22,14 @@ service CreatureServer {
   rpc GetCreatures (google.protobuf.Empty) returns (stream Creature) {}
 
   // Save a creature to the database
-  rpc SaveCreature(Creature) returns (Status) {}
+  rpc SaveCreature(Creature) returns (DatabaseInfo) {}
 
 }
 
-message Status {
+message DatabaseInfo {
 
-  StatusCode code = 1;
-  string message = 2;
-  string help = 3;
-
-  enum StatusCode {
-    OKAY = 0;
-    ERROR = 1;
-    FILE_NOT_FOUND = 2;
-  }
+  string message = 1;
+  string help = 2;
 
 }
 

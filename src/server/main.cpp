@@ -23,6 +23,7 @@ using grpc::Status;
 using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
+using server::DatabaseInfo;
 
 using spdlog::info;
 using spdlog::debug;
@@ -48,15 +49,28 @@ Status handleGetCreature(ServerContext* context, const CreatureName* request,
     return Status::OK;
 }
 
+Status handleSave(ServerContext* context, const Creature* request, DatabaseInfo* reply) {
+
+    debug("asking the server to save maybe?");
+    return db->saveCreature(request, reply);
+}
+
 
 class CreatureServerImpl final : public CreatureServer::Service {
 
     Status GetCreature(ServerContext* context, const CreatureName* request,
                        Creature* reply) override  {
-        debug("hello from here");
+        debug("hello from get");
         return handleGetCreature(context, request, reply);
     }
+
+    Status SaveCreature(ServerContext* context, const Creature* creature,
+                       DatabaseInfo* reply) override  {
+        debug("hello from save");
+        return handleSave(context, creature, reply);
+    }
 };
+
 
 void RunServer(uint16_t port) {
     std::string server_address = absl::StrFormat("0.0.0.0:%d", port);

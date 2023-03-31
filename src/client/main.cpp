@@ -54,6 +54,24 @@ public:
         }
     }
 
+    server::DatabaseInfo SaveCreature(const Creature& creature) {
+
+        ClientContext context;
+        server::DatabaseInfo reply;
+
+        Status status = stub_->SaveCreature(&context, creature, &reply);
+
+        if(status.ok()) {
+            debug("got an OK from the server on save! (%s)", reply.message());
+        } else {
+            spdlog::error("Unable to save a creature in the database: %s", reply.message());
+            spdlog::error("Mongo said: %s", status.error_message());
+        }
+
+        return reply;
+
+    }
+
 private:
     std::unique_ptr<CreatureServer::Stub> stub_;
 };
@@ -70,6 +88,14 @@ int main(int argc, char** argv) {
     Creature reply = client.GetCreature("Beaky");
     info( "client gotten: {}, {}, {}", reply.name(), reply.sacn_ip(), reply.dmx_base());
 
+
+    // Let's try to save one
+    server::Creature creature = server::Creature();
+    creature.set_name("Beaky");
+    creature.set_dmx_base(666);
+
+    client.SaveCreature(creature);
+    info("save done?");
 
     return 0;
 }
