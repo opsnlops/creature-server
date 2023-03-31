@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.18)
 
 
 project(creature-server
-        VERSION 0.2.0
+        VERSION "0.2.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -22,6 +22,11 @@ find_package(Threads REQUIRED)
 
 find_package(spdlog REQUIRED)
 
+# Protobuf
+find_package(Protobuf REQUIRED)
+message(STATUS "Using Protocol Buffers ${protobuf_VERSION}")
+
+# gRPC
 include(FetchContent)
 FetchContent_Declare(
         gRPC
@@ -31,13 +36,14 @@ FetchContent_Declare(
 set(FETCHCONTENT_QUIET OFF)
 FetchContent_MakeAvailable(gRPC)
 
+# MongoDB
 find_package(mongocxx REQUIRED)
 find_package(bsoncxx REQUIRED)
 
 # Our source files
 file(GLOB SERVER_SRCS
-        src/server/*
         src/messaging/*
+        src/server/*
         )
 
 file(GLOB clientFiles
@@ -47,7 +53,6 @@ file(GLOB clientFiles
 
 file(GLOB mongoTestFiles
         src/mongo-test/*
-        src/messaging/*
         )
 
 # Set up our includes
@@ -62,7 +67,6 @@ add_executable(creature-server
         ${SERVER_SRCS}
         ${Protobuf_LIBRARIES}
         ${libmongocxx_LIBRARIES}
-        ${libbsoncxx_LIBRARIES}
         )
 
 target_link_libraries(creature-server
@@ -77,7 +81,6 @@ target_link_libraries(creature-server
 
 add_executable(client
         ${clientFiles}
-        ${Protobuf_LIBRARIES}
         )
 
 target_link_libraries(client
@@ -85,6 +88,7 @@ target_link_libraries(client
         protobuf::libprotobuf
         grpc++
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
+        ${PROTOBUF_LIBRARIES}
         )
 
 
@@ -102,4 +106,5 @@ target_link_libraries(mongo-test
         mongo::mongocxx_shared
         mongo::bsoncxx_shared
         Threads::Threads
+        ${PROTOBUF_LIBRARIES}
         )
