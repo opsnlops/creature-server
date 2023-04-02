@@ -160,14 +160,16 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "er.Creature.MotorType\022\016\n\006number\030\002 \001(\r\022\021\n"
   "\tmax_value\030\003 \001(\r\022\021\n\tmin_value\030\004 \001(\r\022\027\n\017s"
   "moothing_value\030\005 \001(\002\"#\n\tMotorType\022\t\n\005SER"
-  "VO\020\000\022\013\n\007STEPPER\020\0012\301\001\n\016CreatureServer\0227\n\013"
+  "VO\020\000\022\013\n\007STEPPER\020\0012\377\001\n\016CreatureServer\0227\n\013"
   "GetCreature\022\024.server.CreatureName\032\020.serv"
   "er.Creature\"\000\022<\n\014GetCreatures\022\026.google.p"
-  "rotobuf.Empty\032\020.server.Creature\"\0000\001\0228\n\014S"
-  "aveCreature\022\020.server.Creature\032\024.server.D"
-  "atabaseInfo\"\000BR\n\034io.opsnlops.creatures.s"
-  "erverB\022NetworkServerProtoP\001Z\034opsnlops.io"
-  "/creatures/serverb\006proto3"
+  "rotobuf.Empty\032\020.server.Creature\"\0000\001\022:\n\016C"
+  "reateCreature\022\020.server.Creature\032\024.server"
+  ".DatabaseInfo\"\000\022:\n\016UpdateCreature\022\020.serv"
+  "er.Creature\032\024.server.DatabaseInfo\"\000BR\n\034i"
+  "o.opsnlops.creatures.serverB\022NetworkServ"
+  "erProtoP\001Z\034opsnlops.io/creatures/serverb"
+  "\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -175,7 +177,7 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 825, descriptor_table_protodef_server_2eproto,
+    false, false, 887, descriptor_table_protodef_server_2eproto,
     "server.proto",
     &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 4,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,

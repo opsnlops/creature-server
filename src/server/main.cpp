@@ -52,7 +52,7 @@ Status handleGetCreature(ServerContext* context, const CreatureName* request,
 Status handleSave(ServerContext* context, const Creature* request, DatabaseInfo* reply) {
 
     debug("asking the server to save maybe?");
-    return db->saveCreature(request, reply);
+    return db->createCreature(request, reply);
 }
 
 
@@ -64,7 +64,7 @@ class CreatureServerImpl final : public CreatureServer::Service {
         return handleGetCreature(context, request, reply);
     }
 
-    Status SaveCreature(ServerContext* context, const Creature* creature,
+    Status CreateCreature(ServerContext* context, const Creature* creature,
                        DatabaseInfo* reply) override  {
         debug("hello from save");
         return handleSave(context, creature, reply);
@@ -86,19 +86,21 @@ void RunServer(uint16_t port) {
     std::unique_ptr<Server> server(builder.BuildAndStart());
     info("Server listening on {}", server_address);
 
-    // Wait for the server to shutdown. Note that some other thread must be
-    // responsible for shutting down the server for this call to ever return.
     server->Wait();
-    printf("Bye!\n");
+    info("Bye!");
 }
 
 int main(int argc, char** argv) {
 
     spdlog::set_level(spdlog::level::trace);
 
-    // Start up the database
-    db = new Database();
+    // Fire up the Mono client
+    mongocxx::instance instance{};
+    mongocxx::uri uri(DB_URI);
+    mongocxx::pool mongo_pool(uri);
 
+    // Start up the database
+    db = new Database(mongo_pool);
 
 
     info("starting server on port {}", 6666);

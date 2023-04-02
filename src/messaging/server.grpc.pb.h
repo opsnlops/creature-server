@@ -56,13 +56,21 @@ class CreatureServer final {
     std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::server::Creature>> PrepareAsyncGetCreatures(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::server::Creature>>(PrepareAsyncGetCreaturesRaw(context, request, cq));
     }
-    // Save a creature to the database
-    virtual ::grpc::Status SaveCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::server::DatabaseInfo* response) = 0;
-    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>> AsyncSaveCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
-      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>>(AsyncSaveCreatureRaw(context, request, cq));
+    // Create a new creature in the database
+    virtual ::grpc::Status CreateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::server::DatabaseInfo* response) = 0;
+    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>> AsyncCreateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>>(AsyncCreateCreatureRaw(context, request, cq));
     }
-    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>> PrepareAsyncSaveCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
-      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>>(PrepareAsyncSaveCreatureRaw(context, request, cq));
+    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>> PrepareAsyncCreateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>>(PrepareAsyncCreateCreatureRaw(context, request, cq));
+    }
+    // Update an existing creature in the database
+    virtual ::grpc::Status UpdateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::server::DatabaseInfo* response) = 0;
+    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>> AsyncUpdateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>>(AsyncUpdateCreatureRaw(context, request, cq));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>> PrepareAsyncUpdateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>>(PrepareAsyncUpdateCreatureRaw(context, request, cq));
     }
     class async_interface {
      public:
@@ -72,9 +80,12 @@ class CreatureServer final {
       virtual void GetCreature(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, ::grpc::ClientUnaryReactor* reactor) = 0;
       // Get all of them
       virtual void GetCreatures(::grpc::ClientContext* context, const ::google::protobuf::Empty* request, ::grpc::ClientReadReactor< ::server::Creature>* reactor) = 0;
-      // Save a creature to the database
-      virtual void SaveCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, std::function<void(::grpc::Status)>) = 0;
-      virtual void SaveCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, ::grpc::ClientUnaryReactor* reactor) = 0;
+      // Create a new creature in the database
+      virtual void CreateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, std::function<void(::grpc::Status)>) = 0;
+      virtual void CreateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, ::grpc::ClientUnaryReactor* reactor) = 0;
+      // Update an existing creature in the database
+      virtual void UpdateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, std::function<void(::grpc::Status)>) = 0;
+      virtual void UpdateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, ::grpc::ClientUnaryReactor* reactor) = 0;
     };
     typedef class async_interface experimental_async_interface;
     virtual class async_interface* async() { return nullptr; }
@@ -85,8 +96,10 @@ class CreatureServer final {
     virtual ::grpc::ClientReaderInterface< ::server::Creature>* GetCreaturesRaw(::grpc::ClientContext* context, const ::google::protobuf::Empty& request) = 0;
     virtual ::grpc::ClientAsyncReaderInterface< ::server::Creature>* AsyncGetCreaturesRaw(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq, void* tag) = 0;
     virtual ::grpc::ClientAsyncReaderInterface< ::server::Creature>* PrepareAsyncGetCreaturesRaw(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) = 0;
-    virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>* AsyncSaveCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) = 0;
-    virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>* PrepareAsyncSaveCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>* AsyncCreateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>* PrepareAsyncCreateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>* AsyncUpdateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>* PrepareAsyncUpdateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) = 0;
   };
   class Stub final : public StubInterface {
    public:
@@ -107,12 +120,19 @@ class CreatureServer final {
     std::unique_ptr< ::grpc::ClientAsyncReader< ::server::Creature>> PrepareAsyncGetCreatures(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncReader< ::server::Creature>>(PrepareAsyncGetCreaturesRaw(context, request, cq));
     }
-    ::grpc::Status SaveCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::server::DatabaseInfo* response) override;
-    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>> AsyncSaveCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
-      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>>(AsyncSaveCreatureRaw(context, request, cq));
+    ::grpc::Status CreateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::server::DatabaseInfo* response) override;
+    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>> AsyncCreateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>>(AsyncCreateCreatureRaw(context, request, cq));
     }
-    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>> PrepareAsyncSaveCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
-      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>>(PrepareAsyncSaveCreatureRaw(context, request, cq));
+    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>> PrepareAsyncCreateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>>(PrepareAsyncCreateCreatureRaw(context, request, cq));
+    }
+    ::grpc::Status UpdateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::server::DatabaseInfo* response) override;
+    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>> AsyncUpdateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>>(AsyncUpdateCreatureRaw(context, request, cq));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>> PrepareAsyncUpdateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>>(PrepareAsyncUpdateCreatureRaw(context, request, cq));
     }
     class async final :
       public StubInterface::async_interface {
@@ -120,8 +140,10 @@ class CreatureServer final {
       void GetCreature(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, std::function<void(::grpc::Status)>) override;
       void GetCreature(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, ::grpc::ClientUnaryReactor* reactor) override;
       void GetCreatures(::grpc::ClientContext* context, const ::google::protobuf::Empty* request, ::grpc::ClientReadReactor< ::server::Creature>* reactor) override;
-      void SaveCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, std::function<void(::grpc::Status)>) override;
-      void SaveCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, ::grpc::ClientUnaryReactor* reactor) override;
+      void CreateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, std::function<void(::grpc::Status)>) override;
+      void CreateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, ::grpc::ClientUnaryReactor* reactor) override;
+      void UpdateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, std::function<void(::grpc::Status)>) override;
+      void UpdateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, ::grpc::ClientUnaryReactor* reactor) override;
      private:
       friend class Stub;
       explicit async(Stub* stub): stub_(stub) { }
@@ -138,11 +160,14 @@ class CreatureServer final {
     ::grpc::ClientReader< ::server::Creature>* GetCreaturesRaw(::grpc::ClientContext* context, const ::google::protobuf::Empty& request) override;
     ::grpc::ClientAsyncReader< ::server::Creature>* AsyncGetCreaturesRaw(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq, void* tag) override;
     ::grpc::ClientAsyncReader< ::server::Creature>* PrepareAsyncGetCreaturesRaw(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) override;
-    ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* AsyncSaveCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) override;
-    ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* PrepareAsyncSaveCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* AsyncCreateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* PrepareAsyncCreateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* AsyncUpdateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* PrepareAsyncUpdateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) override;
     const ::grpc::internal::RpcMethod rpcmethod_GetCreature_;
     const ::grpc::internal::RpcMethod rpcmethod_GetCreatures_;
-    const ::grpc::internal::RpcMethod rpcmethod_SaveCreature_;
+    const ::grpc::internal::RpcMethod rpcmethod_CreateCreature_;
+    const ::grpc::internal::RpcMethod rpcmethod_UpdateCreature_;
   };
   static std::unique_ptr<Stub> NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options = ::grpc::StubOptions());
 
@@ -154,8 +179,10 @@ class CreatureServer final {
     virtual ::grpc::Status GetCreature(::grpc::ServerContext* context, const ::server::CreatureName* request, ::server::Creature* response);
     // Get all of them
     virtual ::grpc::Status GetCreatures(::grpc::ServerContext* context, const ::google::protobuf::Empty* request, ::grpc::ServerWriter< ::server::Creature>* writer);
-    // Save a creature to the database
-    virtual ::grpc::Status SaveCreature(::grpc::ServerContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response);
+    // Create a new creature in the database
+    virtual ::grpc::Status CreateCreature(::grpc::ServerContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response);
+    // Update an existing creature in the database
+    virtual ::grpc::Status UpdateCreature(::grpc::ServerContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response);
   };
   template <class BaseClass>
   class WithAsyncMethod_GetCreature : public BaseClass {
@@ -198,26 +225,46 @@ class CreatureServer final {
     }
   };
   template <class BaseClass>
-  class WithAsyncMethod_SaveCreature : public BaseClass {
+  class WithAsyncMethod_CreateCreature : public BaseClass {
    private:
     void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
    public:
-    WithAsyncMethod_SaveCreature() {
+    WithAsyncMethod_CreateCreature() {
       ::grpc::Service::MarkMethodAsync(2);
     }
-    ~WithAsyncMethod_SaveCreature() override {
+    ~WithAsyncMethod_CreateCreature() override {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable synchronous version of this method
-    ::grpc::Status SaveCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+    ::grpc::Status CreateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    void RequestSaveCreature(::grpc::ServerContext* context, ::server::Creature* request, ::grpc::ServerAsyncResponseWriter< ::server::DatabaseInfo>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+    void RequestCreateCreature(::grpc::ServerContext* context, ::server::Creature* request, ::grpc::ServerAsyncResponseWriter< ::server::DatabaseInfo>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
       ::grpc::Service::RequestAsyncUnary(2, context, request, response, new_call_cq, notification_cq, tag);
     }
   };
-  typedef WithAsyncMethod_GetCreature<WithAsyncMethod_GetCreatures<WithAsyncMethod_SaveCreature<Service > > > AsyncService;
+  template <class BaseClass>
+  class WithAsyncMethod_UpdateCreature : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithAsyncMethod_UpdateCreature() {
+      ::grpc::Service::MarkMethodAsync(3);
+    }
+    ~WithAsyncMethod_UpdateCreature() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status UpdateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestUpdateCreature(::grpc::ServerContext* context, ::server::Creature* request, ::grpc::ServerAsyncResponseWriter< ::server::DatabaseInfo>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncUnary(3, context, request, response, new_call_cq, notification_cq, tag);
+    }
+  };
+  typedef WithAsyncMethod_GetCreature<WithAsyncMethod_GetCreatures<WithAsyncMethod_CreateCreature<WithAsyncMethod_UpdateCreature<Service > > > > AsyncService;
   template <class BaseClass>
   class WithCallbackMethod_GetCreature : public BaseClass {
    private:
@@ -268,33 +315,60 @@ class CreatureServer final {
       ::grpc::CallbackServerContext* /*context*/, const ::google::protobuf::Empty* /*request*/)  { return nullptr; }
   };
   template <class BaseClass>
-  class WithCallbackMethod_SaveCreature : public BaseClass {
+  class WithCallbackMethod_CreateCreature : public BaseClass {
    private:
     void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
    public:
-    WithCallbackMethod_SaveCreature() {
+    WithCallbackMethod_CreateCreature() {
       ::grpc::Service::MarkMethodCallback(2,
           new ::grpc::internal::CallbackUnaryHandler< ::server::Creature, ::server::DatabaseInfo>(
             [this](
-                   ::grpc::CallbackServerContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response) { return this->SaveCreature(context, request, response); }));}
-    void SetMessageAllocatorFor_SaveCreature(
+                   ::grpc::CallbackServerContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response) { return this->CreateCreature(context, request, response); }));}
+    void SetMessageAllocatorFor_CreateCreature(
         ::grpc::MessageAllocator< ::server::Creature, ::server::DatabaseInfo>* allocator) {
       ::grpc::internal::MethodHandler* const handler = ::grpc::Service::GetHandler(2);
       static_cast<::grpc::internal::CallbackUnaryHandler< ::server::Creature, ::server::DatabaseInfo>*>(handler)
               ->SetMessageAllocator(allocator);
     }
-    ~WithCallbackMethod_SaveCreature() override {
+    ~WithCallbackMethod_CreateCreature() override {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable synchronous version of this method
-    ::grpc::Status SaveCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+    ::grpc::Status CreateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    virtual ::grpc::ServerUnaryReactor* SaveCreature(
+    virtual ::grpc::ServerUnaryReactor* CreateCreature(
       ::grpc::CallbackServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/)  { return nullptr; }
   };
-  typedef WithCallbackMethod_GetCreature<WithCallbackMethod_GetCreatures<WithCallbackMethod_SaveCreature<Service > > > CallbackService;
+  template <class BaseClass>
+  class WithCallbackMethod_UpdateCreature : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithCallbackMethod_UpdateCreature() {
+      ::grpc::Service::MarkMethodCallback(3,
+          new ::grpc::internal::CallbackUnaryHandler< ::server::Creature, ::server::DatabaseInfo>(
+            [this](
+                   ::grpc::CallbackServerContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response) { return this->UpdateCreature(context, request, response); }));}
+    void SetMessageAllocatorFor_UpdateCreature(
+        ::grpc::MessageAllocator< ::server::Creature, ::server::DatabaseInfo>* allocator) {
+      ::grpc::internal::MethodHandler* const handler = ::grpc::Service::GetHandler(3);
+      static_cast<::grpc::internal::CallbackUnaryHandler< ::server::Creature, ::server::DatabaseInfo>*>(handler)
+              ->SetMessageAllocator(allocator);
+    }
+    ~WithCallbackMethod_UpdateCreature() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status UpdateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerUnaryReactor* UpdateCreature(
+      ::grpc::CallbackServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/)  { return nullptr; }
+  };
+  typedef WithCallbackMethod_GetCreature<WithCallbackMethod_GetCreatures<WithCallbackMethod_CreateCreature<WithCallbackMethod_UpdateCreature<Service > > > > CallbackService;
   typedef CallbackService ExperimentalCallbackService;
   template <class BaseClass>
   class WithGenericMethod_GetCreature : public BaseClass {
@@ -331,18 +405,35 @@ class CreatureServer final {
     }
   };
   template <class BaseClass>
-  class WithGenericMethod_SaveCreature : public BaseClass {
+  class WithGenericMethod_CreateCreature : public BaseClass {
    private:
     void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
    public:
-    WithGenericMethod_SaveCreature() {
+    WithGenericMethod_CreateCreature() {
       ::grpc::Service::MarkMethodGeneric(2);
     }
-    ~WithGenericMethod_SaveCreature() override {
+    ~WithGenericMethod_CreateCreature() override {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable synchronous version of this method
-    ::grpc::Status SaveCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+    ::grpc::Status CreateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+  };
+  template <class BaseClass>
+  class WithGenericMethod_UpdateCreature : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithGenericMethod_UpdateCreature() {
+      ::grpc::Service::MarkMethodGeneric(3);
+    }
+    ~WithGenericMethod_UpdateCreature() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status UpdateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
@@ -388,23 +479,43 @@ class CreatureServer final {
     }
   };
   template <class BaseClass>
-  class WithRawMethod_SaveCreature : public BaseClass {
+  class WithRawMethod_CreateCreature : public BaseClass {
    private:
     void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
    public:
-    WithRawMethod_SaveCreature() {
+    WithRawMethod_CreateCreature() {
       ::grpc::Service::MarkMethodRaw(2);
     }
-    ~WithRawMethod_SaveCreature() override {
+    ~WithRawMethod_CreateCreature() override {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable synchronous version of this method
-    ::grpc::Status SaveCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+    ::grpc::Status CreateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    void RequestSaveCreature(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncResponseWriter< ::grpc::ByteBuffer>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+    void RequestCreateCreature(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncResponseWriter< ::grpc::ByteBuffer>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
       ::grpc::Service::RequestAsyncUnary(2, context, request, response, new_call_cq, notification_cq, tag);
+    }
+  };
+  template <class BaseClass>
+  class WithRawMethod_UpdateCreature : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawMethod_UpdateCreature() {
+      ::grpc::Service::MarkMethodRaw(3);
+    }
+    ~WithRawMethod_UpdateCreature() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status UpdateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestUpdateCreature(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncResponseWriter< ::grpc::ByteBuffer>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncUnary(3, context, request, response, new_call_cq, notification_cq, tag);
     }
   };
   template <class BaseClass>
@@ -452,25 +563,47 @@ class CreatureServer final {
       ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/)  { return nullptr; }
   };
   template <class BaseClass>
-  class WithRawCallbackMethod_SaveCreature : public BaseClass {
+  class WithRawCallbackMethod_CreateCreature : public BaseClass {
    private:
     void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
    public:
-    WithRawCallbackMethod_SaveCreature() {
+    WithRawCallbackMethod_CreateCreature() {
       ::grpc::Service::MarkMethodRawCallback(2,
           new ::grpc::internal::CallbackUnaryHandler< ::grpc::ByteBuffer, ::grpc::ByteBuffer>(
             [this](
-                   ::grpc::CallbackServerContext* context, const ::grpc::ByteBuffer* request, ::grpc::ByteBuffer* response) { return this->SaveCreature(context, request, response); }));
+                   ::grpc::CallbackServerContext* context, const ::grpc::ByteBuffer* request, ::grpc::ByteBuffer* response) { return this->CreateCreature(context, request, response); }));
     }
-    ~WithRawCallbackMethod_SaveCreature() override {
+    ~WithRawCallbackMethod_CreateCreature() override {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable synchronous version of this method
-    ::grpc::Status SaveCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+    ::grpc::Status CreateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    virtual ::grpc::ServerUnaryReactor* SaveCreature(
+    virtual ::grpc::ServerUnaryReactor* CreateCreature(
+      ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/, ::grpc::ByteBuffer* /*response*/)  { return nullptr; }
+  };
+  template <class BaseClass>
+  class WithRawCallbackMethod_UpdateCreature : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawCallbackMethod_UpdateCreature() {
+      ::grpc::Service::MarkMethodRawCallback(3,
+          new ::grpc::internal::CallbackUnaryHandler< ::grpc::ByteBuffer, ::grpc::ByteBuffer>(
+            [this](
+                   ::grpc::CallbackServerContext* context, const ::grpc::ByteBuffer* request, ::grpc::ByteBuffer* response) { return this->UpdateCreature(context, request, response); }));
+    }
+    ~WithRawCallbackMethod_UpdateCreature() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status UpdateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerUnaryReactor* UpdateCreature(
       ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/, ::grpc::ByteBuffer* /*response*/)  { return nullptr; }
   };
   template <class BaseClass>
@@ -501,33 +634,60 @@ class CreatureServer final {
     virtual ::grpc::Status StreamedGetCreature(::grpc::ServerContext* context, ::grpc::ServerUnaryStreamer< ::server::CreatureName,::server::Creature>* server_unary_streamer) = 0;
   };
   template <class BaseClass>
-  class WithStreamedUnaryMethod_SaveCreature : public BaseClass {
+  class WithStreamedUnaryMethod_CreateCreature : public BaseClass {
    private:
     void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
    public:
-    WithStreamedUnaryMethod_SaveCreature() {
+    WithStreamedUnaryMethod_CreateCreature() {
       ::grpc::Service::MarkMethodStreamed(2,
         new ::grpc::internal::StreamedUnaryHandler<
           ::server::Creature, ::server::DatabaseInfo>(
             [this](::grpc::ServerContext* context,
                    ::grpc::ServerUnaryStreamer<
                      ::server::Creature, ::server::DatabaseInfo>* streamer) {
-                       return this->StreamedSaveCreature(context,
+                       return this->StreamedCreateCreature(context,
                          streamer);
                   }));
     }
-    ~WithStreamedUnaryMethod_SaveCreature() override {
+    ~WithStreamedUnaryMethod_CreateCreature() override {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable regular version of this method
-    ::grpc::Status SaveCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+    ::grpc::Status CreateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
     // replace default version of method with streamed unary
-    virtual ::grpc::Status StreamedSaveCreature(::grpc::ServerContext* context, ::grpc::ServerUnaryStreamer< ::server::Creature,::server::DatabaseInfo>* server_unary_streamer) = 0;
+    virtual ::grpc::Status StreamedCreateCreature(::grpc::ServerContext* context, ::grpc::ServerUnaryStreamer< ::server::Creature,::server::DatabaseInfo>* server_unary_streamer) = 0;
   };
-  typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_SaveCreature<Service > > StreamedUnaryService;
+  template <class BaseClass>
+  class WithStreamedUnaryMethod_UpdateCreature : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithStreamedUnaryMethod_UpdateCreature() {
+      ::grpc::Service::MarkMethodStreamed(3,
+        new ::grpc::internal::StreamedUnaryHandler<
+          ::server::Creature, ::server::DatabaseInfo>(
+            [this](::grpc::ServerContext* context,
+                   ::grpc::ServerUnaryStreamer<
+                     ::server::Creature, ::server::DatabaseInfo>* streamer) {
+                       return this->StreamedUpdateCreature(context,
+                         streamer);
+                  }));
+    }
+    ~WithStreamedUnaryMethod_UpdateCreature() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable regular version of this method
+    ::grpc::Status UpdateCreature(::grpc::ServerContext* /*context*/, const ::server::Creature* /*request*/, ::server::DatabaseInfo* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    // replace default version of method with streamed unary
+    virtual ::grpc::Status StreamedUpdateCreature(::grpc::ServerContext* context, ::grpc::ServerUnaryStreamer< ::server::Creature,::server::DatabaseInfo>* server_unary_streamer) = 0;
+  };
+  typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<Service > > > StreamedUnaryService;
   template <class BaseClass>
   class WithSplitStreamingMethod_GetCreatures : public BaseClass {
    private:
@@ -556,7 +716,7 @@ class CreatureServer final {
     virtual ::grpc::Status StreamedGetCreatures(::grpc::ServerContext* context, ::grpc::ServerSplitStreamer< ::google::protobuf::Empty,::server::Creature>* server_split_streamer) = 0;
   };
   typedef WithSplitStreamingMethod_GetCreatures<Service > SplitStreamedService;
-  typedef WithStreamedUnaryMethod_GetCreature<WithSplitStreamingMethod_GetCreatures<WithStreamedUnaryMethod_SaveCreature<Service > > > StreamedService;
+  typedef WithStreamedUnaryMethod_GetCreature<WithSplitStreamingMethod_GetCreatures<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<Service > > > > StreamedService;
 };
 
 }  // namespace server

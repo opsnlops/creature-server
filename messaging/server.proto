@@ -21,8 +21,11 @@ service CreatureServer {
   // Get all of them
   rpc GetCreatures (google.protobuf.Empty) returns (stream Creature) {}
 
-  // Save a creature to the database
-  rpc SaveCreature(Creature) returns (DatabaseInfo) {}
+  // Create a new creature in the database
+  rpc CreateCreature(Creature) returns (DatabaseInfo) {}
+
+  // Update an existing creature in the database
+  rpc UpdateCreature(Creature) returns (DatabaseInfo) {}
 
 }
 
