@@ -38,7 +38,6 @@ Status handleGetCreature(ServerContext* context, const CreatureName* request,
                          Creature* reply ) {
 
     reply->set_name("Beaky");
-    reply->set_id("adf");
     reply->set_sacn_ip("10.3.2.11");
     reply->set_universe(1);
     reply->set_dmx_base(1);

@@ -11,19 +11,22 @@
 #include <mongocxx/client.hpp>
 #include <mongocxx/instance.hpp>
 #include <mongocxx/pool.hpp>
+#include <mongocxx/exception/bulk_write_exception.hpp>
 
 #include <bsoncxx/builder/stream/document.hpp>
-#include <bsoncxx/builder/stream/helpers.hpp>
+#include <bsoncxx/builder/stream/array.hpp>
 
 #include <google/protobuf/timestamp.pb.h>
 #include <chrono>
 
+#include <fmt/format.h>
 
 using server::Creature;
 using server::CreatureName;
 
 using spdlog::info;
 using spdlog::debug;
+using spdlog::error;
 using spdlog::critical;
 using spdlog::trace;
 
@@ -86,50 +89,83 @@ namespace creatures {
 
 
         }
-        catch (const std::exception& e)
+        catch (const mongocxx::exception& e)
         {
+            // Was this an attempt to make a duplicate creature?
+            if(e.code().value() == 11000) {
+                error("attempted to insert a duplicate Creature in the database for name {}", creature->name());
+                status = grpc::Status(grpc::StatusCode::ALREADY_EXISTS, e.what());
+                reply->set_message("Unable to create new creature");
+                reply->set_help(fmt::format("Name {} already exists", creature->name()));
 
-            critical("Unable to connect to database: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INTERNAL, e.what());
-            reply->set_message("well shit");
-            reply->set_help(e.what());
+            }
+
+            else {
+                critical("Error updating database: {}", e.what());
+                status = grpc::Status(grpc::StatusCode::UNKNOWN, e.what(), fmt::to_string(e.code().value()));
+                reply->set_message(fmt::format("Unable to create Creature in database: {} ({})", e.what(), e.code().value()));
+                reply->set_help(e.code().message());
+            }
 
         }
 
         return status;
     }
 
-    /*
-     *   string name = 1;
-  string id = 2;    // MongoDB _id field
-  google.protobuf.Timestamp last_updated = 3;
-  string sacn_ip = 4;
-  uint32 universe = 5;
-  uint32 dmx_base = 6;
-  uint32 number_of_motors = 7;
-     */
-
     bsoncxx::document::value Database::creatureToBson(const Creature* creature) {
         using bsoncxx::builder::stream::document;
         using bsoncxx::builder::stream::finalize;
         using std::chrono::system_clock;
 
+        debug("converting a creature to bson");
+
+        bsoncxx::builder::stream::document builder{};
+        trace("builder made");
 
         // Convert the protobuf Timestamp to a std::chrono::system_clock::time_point
         system_clock::time_point last_updated = protobufTimestampToTimePoint(creature->last_updated());
+        try {
 
+            builder << "_id" << creature->name()
+                    << "sacn_ip" << creature->sacn_ip()
+                    << "last_updated" << bsoncxx::types::b_date{last_updated}
+                    << "universe" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->universe())}
+                    << "dmx_base" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->dmx_base())}
+                    << "number_of_motors" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->number_of_motors())};
+            trace("non-array fields added");
 
-        document builder{};
+            auto array_builder = builder << "motors" << bsoncxx::builder::stream::open_array;
+            trace("array_builder made");
+            for (int j = 0; j < creature->motors_size(); j++) {
 
-        builder << "name" << creature->name()
-                << "_id" << creature->id()
-                << "sacn_ip" << creature->sacn_ip()
-                << "last_updated" << bsoncxx::types::b_date{last_updated}
-                << "universe" << (std::int32_t)creature->universe()
-                << "dmx_base" << (std::int32_t)creature->dmx_base()
-                << "number_of_motors" << (std::int32_t)creature->number_of_motors();
+                const server::Creature_Motor &motor = creature->motors(j);
+                trace("adding motor {}", j);
 
-        return builder << finalize;
+                array_builder = array_builder << bsoncxx::builder::stream::open_document
+                                              << "type" << server::Creature_MotorType_Name(motor.type())
+                                              << "number" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.number())}
+                                              << "max_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.max_value())}
+                                              << "mix_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.min_value())}
+                                              << "smoothing_value" << bsoncxx::types::b_double{static_cast<double>(motor.smoothing_value())}
+                                              << bsoncxx::builder::stream::close_document;
+            }
+            trace("done adding motors");
+            array_builder << bsoncxx::builder::stream::close_array;
+
+        }
+        catch(const mongocxx::exception& e)
+        {
+            error("Problems making the document: {}", e.what());
+        }
+
+        // All done, close up the doc!
+        bsoncxx::document::value doc = builder.extract();
+        trace("extract done");
+
+        // Log this so I can see what was made
+        debug("Built doc: {}", bsoncxx::to_json(doc));
+
+        return doc;
     }
 
     std::chrono::system_clock::time_point Database::protobufTimestampToTimePoint(const google::protobuf::Timestamp& timestamp) {

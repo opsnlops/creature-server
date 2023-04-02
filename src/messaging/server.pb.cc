@@ -69,7 +69,6 @@ PROTOBUF_CONSTEXPR Creature::Creature(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.motors_)*/{}
   , /*decltype(_impl_.name_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
-  , /*decltype(_impl_.id_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.sacn_ip_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.last_updated_)*/nullptr
   , /*decltype(_impl_.universe_)*/0u
@@ -124,7 +123,6 @@ const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(p
   ~0u,  // no _weak_field_map_
   ~0u,  // no _inlined_string_donated_
   PROTOBUF_FIELD_OFFSET(::server::Creature, _impl_.name_),
-  PROTOBUF_FIELD_OFFSET(::server::Creature, _impl_.id_),
   PROTOBUF_FIELD_OFFSET(::server::Creature, _impl_.last_updated_),
   PROTOBUF_FIELD_OFFSET(::server::Creature, _impl_.sacn_ip_),
   PROTOBUF_FIELD_OFFSET(::server::Creature, _impl_.universe_),
@@ -151,25 +149,24 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "empty.proto\032\037google/protobuf/timestamp.p"
   "roto\"-\n\014DatabaseInfo\022\017\n\007message\030\001 \001(\t\022\014\n"
   "\004help\030\002 \001(\t\"\034\n\014CreatureName\022\014\n\004name\030\001 \001("
-  "\t\"\365\002\n\010Creature\022\014\n\004name\030\001 \001(\t\022\n\n\002id\030\002 \001(\t"
-  "\0220\n\014last_updated\030\003 \001(\0132\032.google.protobuf"
-  ".Timestamp\022\017\n\007sacn_ip\030\004 \001(\t\022\020\n\010universe\030"
-  "\005 \001(\r\022\020\n\010dmx_base\030\006 \001(\r\022\030\n\020number_of_mot"
-  "ors\030\007 \001(\r\022&\n\006motors\030\010 \003(\0132\026.server.Creat"
-  "ure.Motor\032\200\001\n\005Motor\022(\n\004type\030\001 \001(\0162\032.serv"
-  "er.Creature.MotorType\022\016\n\006number\030\002 \001(\r\022\021\n"
-  "\tmax_value\030\003 \001(\r\022\021\n\tmin_value\030\004 \001(\r\022\027\n\017s"
-  "moothing_value\030\005 \001(\002\"#\n\tMotorType\022\t\n\005SER"
-  "VO\020\000\022\013\n\007STEPPER\020\0012\377\001\n\016CreatureServer\0227\n\013"
-  "GetCreature\022\024.server.CreatureName\032\020.serv"
-  "er.Creature\"\000\022<\n\014GetCreatures\022\026.google.p"
-  "rotobuf.Empty\032\020.server.Creature\"\0000\001\022:\n\016C"
-  "reateCreature\022\020.server.Creature\032\024.server"
-  ".DatabaseInfo\"\000\022:\n\016UpdateCreature\022\020.serv"
-  "er.Creature\032\024.server.DatabaseInfo\"\000BR\n\034i"
-  "o.opsnlops.creatures.serverB\022NetworkServ"
-  "erProtoP\001Z\034opsnlops.io/creatures/serverb"
-  "\006proto3"
+  "\t\"\351\002\n\010Creature\022\014\n\004name\030\001 \001(\t\0220\n\014last_upd"
+  "ated\030\002 \001(\0132\032.google.protobuf.Timestamp\022\017"
+  "\n\007sacn_ip\030\003 \001(\t\022\020\n\010universe\030\004 \001(\r\022\020\n\010dmx"
+  "_base\030\005 \001(\r\022\030\n\020number_of_motors\030\006 \001(\r\022&\n"
+  "\006motors\030\007 \003(\0132\026.server.Creature.Motor\032\200\001"
+  "\n\005Motor\022(\n\004type\030\001 \001(\0162\032.server.Creature."
+  "MotorType\022\016\n\006number\030\002 \001(\r\022\021\n\tmax_value\030\003"
+  " \001(\r\022\021\n\tmin_value\030\004 \001(\r\022\027\n\017smoothing_val"
+  "ue\030\005 \001(\002\"#\n\tMotorType\022\t\n\005SERVO\020\000\022\013\n\007STEP"
+  "PER\020\0012\377\001\n\016CreatureServer\0227\n\013GetCreature\022"
+  "\024.server.CreatureName\032\020.server.Creature\""
+  "\000\022<\n\014GetCreatures\022\026.google.protobuf.Empt"
+  "y\032\020.server.Creature\"\0000\001\022:\n\016CreateCreatur"
+  "e\022\020.server.Creature\032\024.server.DatabaseInf"
+  "o\"\000\022:\n\016UpdateCreature\022\020.server.Creature\032"
+  "\024.server.DatabaseInfo\"\000BR\n\034io.opsnlops.c"
+  "reatures.serverB\022NetworkServerProtoP\001Z\034o"
+  "psnlops.io/creatures/serverb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -177,7 +174,7 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 887, descriptor_table_protodef_server_2eproto,
+    false, false, 875, descriptor_table_protodef_server_2eproto,
     "server.proto",
     &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 4,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,
@@ -996,7 +993,6 @@ Creature::Creature(const Creature& from)
   new (&_impl_) Impl_{
       decltype(_impl_.motors_){from._impl_.motors_}
     , decltype(_impl_.name_){}
-    , decltype(_impl_.id_){}
     , decltype(_impl_.sacn_ip_){}
     , decltype(_impl_.last_updated_){nullptr}
     , decltype(_impl_.universe_){}
@@ -1011,14 +1007,6 @@ Creature::Creature(const Creature& from)
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_name().empty()) {
     _this->_impl_.name_.Set(from._internal_name(), 
-      _this->GetArenaForAllocation());
-  }
-  _impl_.id_.InitDefault();
-  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
-    _impl_.id_.Set("", GetArenaForAllocation());
-  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  if (!from._internal_id().empty()) {
-    _this->_impl_.id_.Set(from._internal_id(), 
       _this->GetArenaForAllocation());
   }
   _impl_.sacn_ip_.InitDefault();
@@ -1045,7 +1033,6 @@ inline void Creature::SharedCtor(
   new (&_impl_) Impl_{
       decltype(_impl_.motors_){arena}
     , decltype(_impl_.name_){}
-    , decltype(_impl_.id_){}
     , decltype(_impl_.sacn_ip_){}
     , decltype(_impl_.last_updated_){nullptr}
     , decltype(_impl_.universe_){0u}
@@ -1056,10 +1043,6 @@ inline void Creature::SharedCtor(
   _impl_.name_.InitDefault();
   #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
     _impl_.name_.Set("", GetArenaForAllocation());
-  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  _impl_.id_.InitDefault();
-  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
-    _impl_.id_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   _impl_.sacn_ip_.InitDefault();
   #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -1080,7 +1063,6 @@ inline void Creature::SharedDtor() {
   GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
   _impl_.motors_.~RepeatedPtrField();
   _impl_.name_.Destroy();
-  _impl_.id_.Destroy();
   _impl_.sacn_ip_.Destroy();
   if (this != internal_default_instance()) delete _impl_.last_updated_;
 }
@@ -1097,7 +1079,6 @@ void Creature::Clear() {
 
   _impl_.motors_.Clear();
   _impl_.name_.ClearToEmpty();
-  _impl_.id_.ClearToEmpty();
   _impl_.sacn_ip_.ClearToEmpty();
   if (GetArenaForAllocation() == nullptr && _impl_.last_updated_ != nullptr) {
     delete _impl_.last_updated_;
@@ -1125,27 +1106,17 @@ const char* Creature::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx)
         } else
           goto handle_unusual;
         continue;
-      // string id = 2;
+      // .google.protobuf.Timestamp last_updated = 2;
       case 2:
         if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
-          auto str = _internal_mutable_id();
-          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
-          CHK_(ptr);
-          CHK_(::_pbi::VerifyUTF8(str, "server.Creature.id"));
-        } else
-          goto handle_unusual;
-        continue;
-      // .google.protobuf.Timestamp last_updated = 3;
-      case 3:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
           ptr = ctx->ParseMessage(_internal_mutable_last_updated(), ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
         continue;
-      // string sacn_ip = 4;
-      case 4:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 34)) {
+      // string sacn_ip = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
           auto str = _internal_mutable_sacn_ip();
           ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
           CHK_(ptr);
@@ -1153,40 +1124,40 @@ const char* Creature::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx)
         } else
           goto handle_unusual;
         continue;
-      // uint32 universe = 5;
-      case 5:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 40)) {
+      // uint32 universe = 4;
+      case 4:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 32)) {
           _impl_.universe_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
         continue;
-      // uint32 dmx_base = 6;
-      case 6:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 48)) {
+      // uint32 dmx_base = 5;
+      case 5:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 40)) {
           _impl_.dmx_base_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
         continue;
-      // uint32 number_of_motors = 7;
-      case 7:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 56)) {
+      // uint32 number_of_motors = 6;
+      case 6:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 48)) {
           _impl_.number_of_motors_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
         continue;
-      // repeated .server.Creature.Motor motors = 8;
-      case 8:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 66)) {
+      // repeated .server.Creature.Motor motors = 7;
+      case 7:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 58)) {
           ptr -= 1;
           do {
             ptr += 1;
             ptr = ctx->ParseMessage(_internal_add_motors(), ptr);
             CHK_(ptr);
             if (!ctx->DataAvailable(ptr)) break;
-          } while (::PROTOBUF_NAMESPACE_ID::internal::ExpectTag<66>(ptr));
+          } while (::PROTOBUF_NAMESPACE_ID::internal::ExpectTag<58>(ptr));
         } else
           goto handle_unusual;
         continue;
@@ -1229,57 +1200,47 @@ uint8_t* Creature::_InternalSerialize(
         1, this->_internal_name(), target);
   }
 
-  // string id = 2;
-  if (!this->_internal_id().empty()) {
-    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
-      this->_internal_id().data(), static_cast<int>(this->_internal_id().length()),
-      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
-      "server.Creature.id");
-    target = stream->WriteStringMaybeAliased(
-        2, this->_internal_id(), target);
-  }
-
-  // .google.protobuf.Timestamp last_updated = 3;
+  // .google.protobuf.Timestamp last_updated = 2;
   if (this->_internal_has_last_updated()) {
     target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
-      InternalWriteMessage(3, _Internal::last_updated(this),
+      InternalWriteMessage(2, _Internal::last_updated(this),
         _Internal::last_updated(this).GetCachedSize(), target, stream);
   }
 
-  // string sacn_ip = 4;
+  // string sacn_ip = 3;
   if (!this->_internal_sacn_ip().empty()) {
     ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
       this->_internal_sacn_ip().data(), static_cast<int>(this->_internal_sacn_ip().length()),
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
       "server.Creature.sacn_ip");
     target = stream->WriteStringMaybeAliased(
-        4, this->_internal_sacn_ip(), target);
+        3, this->_internal_sacn_ip(), target);
   }
 
-  // uint32 universe = 5;
+  // uint32 universe = 4;
   if (this->_internal_universe() != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(5, this->_internal_universe(), target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(4, this->_internal_universe(), target);
   }
 
-  // uint32 dmx_base = 6;
+  // uint32 dmx_base = 5;
   if (this->_internal_dmx_base() != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(6, this->_internal_dmx_base(), target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(5, this->_internal_dmx_base(), target);
   }
 
-  // uint32 number_of_motors = 7;
+  // uint32 number_of_motors = 6;
   if (this->_internal_number_of_motors() != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(7, this->_internal_number_of_motors(), target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(6, this->_internal_number_of_motors(), target);
   }
 
-  // repeated .server.Creature.Motor motors = 8;
+  // repeated .server.Creature.Motor motors = 7;
   for (unsigned i = 0,
       n = static_cast<unsigned>(this->_internal_motors_size()); i < n; i++) {
     const auto& repfield = this->_internal_motors(i);
     target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
-        InternalWriteMessage(8, repfield, repfield.GetCachedSize(), target, stream);
+        InternalWriteMessage(7, repfield, repfield.GetCachedSize(), target, stream);
   }
 
   if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
@@ -1298,7 +1259,7 @@ size_t Creature::ByteSizeLong() const {
   // Prevent compiler warnings about cached_has_bits being unused
   (void) cached_has_bits;
 
-  // repeated .server.Creature.Motor motors = 8;
+  // repeated .server.Creature.Motor motors = 7;
   total_size += 1UL * this->_internal_motors_size();
   for (const auto& msg : this->_impl_.motors_) {
     total_size +=
@@ -1312,38 +1273,31 @@ size_t Creature::ByteSizeLong() const {
         this->_internal_name());
   }
 
-  // string id = 2;
-  if (!this->_internal_id().empty()) {
-    total_size += 1 +
-      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
-        this->_internal_id());
-  }
-
-  // string sacn_ip = 4;
+  // string sacn_ip = 3;
   if (!this->_internal_sacn_ip().empty()) {
     total_size += 1 +
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
         this->_internal_sacn_ip());
   }
 
-  // .google.protobuf.Timestamp last_updated = 3;
+  // .google.protobuf.Timestamp last_updated = 2;
   if (this->_internal_has_last_updated()) {
     total_size += 1 +
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
         *_impl_.last_updated_);
   }
 
-  // uint32 universe = 5;
+  // uint32 universe = 4;
   if (this->_internal_universe() != 0) {
     total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_universe());
   }
 
-  // uint32 dmx_base = 6;
+  // uint32 dmx_base = 5;
   if (this->_internal_dmx_base() != 0) {
     total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_dmx_base());
   }
 
-  // uint32 number_of_motors = 7;
+  // uint32 number_of_motors = 6;
   if (this->_internal_number_of_motors() != 0) {
     total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_number_of_motors());
   }
@@ -1369,9 +1323,6 @@ void Creature::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTO
   _this->_impl_.motors_.MergeFrom(from._impl_.motors_);
   if (!from._internal_name().empty()) {
     _this->_internal_set_name(from._internal_name());
-  }
-  if (!from._internal_id().empty()) {
-    _this->_internal_set_id(from._internal_id());
   }
   if (!from._internal_sacn_ip().empty()) {
     _this->_internal_set_sacn_ip(from._internal_sacn_ip());
@@ -1412,10 +1363,6 @@ void Creature::InternalSwap(Creature* other) {
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
       &_impl_.name_, lhs_arena,
       &other->_impl_.name_, rhs_arena
-  );
-  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
-      &_impl_.id_, lhs_arena,
-      &other->_impl_.id_, rhs_arena
   );
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
       &_impl_.sacn_ip_, lhs_arena,

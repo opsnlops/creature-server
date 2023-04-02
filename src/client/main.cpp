@@ -4,6 +4,7 @@
 
 #include <grpcpp/grpcpp.h>
 
+#include <fmt/format.h>
 
 #include "messaging/server.grpc.pb.h"
 
@@ -22,6 +23,7 @@ using server::CreatureName;
 
 using spdlog::info;
 using spdlog::debug;
+using spdlog::error;
 using spdlog::critical;
 
 
@@ -66,9 +68,13 @@ public:
 
         if(status.ok()) {
             debug("got an OK from the server on save! ({})", reply.message());
-        } else {
-            spdlog::error("Unable to save a creature in the database: {}", reply.message());
-            spdlog::error("Mongo said: {}", status.error_message());
+        }
+        else if(status.error_code() == grpc::StatusCode::ALREADY_EXISTS) {
+           error("Creature {} already exists in the database", creature.name());
+        }
+        else {
+           error("Unable to save a creature in the database: {} ({})",
+                          status.error_message(), status.error_details());
         }
 
         return reply;
@@ -87,6 +93,8 @@ google::protobuf::Timestamp time_point_to_protobuf_timestamp(const std::chrono::
     timestamp.set_nanos(nanos_since_epoch.count() % 1000000000); // Only store nanoseconds part
     return timestamp;
 }
+
+
 
 
 int main(int argc, char** argv) {
@@ -111,12 +119,23 @@ int main(int argc, char** argv) {
 
     // Let's try to save one
     server::Creature creature = server::Creature();
-    creature.set_name("Beaky");
+    creature.set_name("Beaky4");
     creature.set_dmx_base(666);
     creature.set_number_of_motors(5);
     creature.set_universe(1);
     creature.set_sacn_ip("10.3.2.11");
-    //creature.set_allocated_last_updated(&current_timestamp);
+    *creature.mutable_last_updated() = current_timestamp;
+
+    for(int i = 0; i < 5; i++) {
+        ::Creature::Motor *motor = creature.add_motors();
+
+        motor->set_min_value(0);
+        motor->set_max_value(1234);
+        motor->set_smoothing_value(0.95f);
+        motor->set_number(i);
+        motor->set_type(::Creature::SERVO);
+    }
+
 
     client.CreateCreature(creature);
     info("save done?");

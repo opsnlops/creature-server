@@ -44,13 +44,12 @@ message CreatureName {
 
 
 message Creature {
-  string name = 1;
-  string id = 2;    // MongoDB _id field
-  google.protobuf.Timestamp last_updated = 3;
-  string sacn_ip = 4;
-  uint32 universe = 5;
-  uint32 dmx_base = 6;
-  uint32 number_of_motors = 7;
+  string name = 1;   // MongoDB _id field
+  google.protobuf.Timestamp last_updated = 2;
+  string sacn_ip = 3;
+  uint32 universe = 4;
+  uint32 dmx_base = 5;
+  uint32 number_of_motors = 6;
 
   enum MotorType {
     SERVO = 0;
@@ -65,6 +64,6 @@ message Creature {
     float smoothing_value = 5;
   }
 
-  repeated Motor motors = 8;
+  repeated Motor motors = 7;
 
 }

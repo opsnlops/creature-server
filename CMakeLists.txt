@@ -20,6 +20,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 
 # Protobuf
@@ -76,6 +77,7 @@ target_link_libraries(creature-server
         mongo::mongocxx_shared
         mongo::bsoncxx_shared
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
+        fmt::fmt
         )
 
 
@@ -89,6 +91,7 @@ target_link_libraries(client
         grpc++
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         ${PROTOBUF_LIBRARIES}
+        fmt::fmt
         )
 
 

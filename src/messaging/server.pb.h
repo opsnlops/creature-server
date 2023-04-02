@@ -763,16 +763,15 @@ class Creature final :
   // accessors -------------------------------------------------------
 
   enum : int {
-    kMotorsFieldNumber = 8,
+    kMotorsFieldNumber = 7,
     kNameFieldNumber = 1,
-    kIdFieldNumber = 2,
-    kSacnIpFieldNumber = 4,
-    kLastUpdatedFieldNumber = 3,
-    kUniverseFieldNumber = 5,
-    kDmxBaseFieldNumber = 6,
-    kNumberOfMotorsFieldNumber = 7,
+    kSacnIpFieldNumber = 3,
+    kLastUpdatedFieldNumber = 2,
+    kUniverseFieldNumber = 4,
+    kDmxBaseFieldNumber = 5,
+    kNumberOfMotorsFieldNumber = 6,
   };
-  // repeated .server.Creature.Motor motors = 8;
+  // repeated .server.Creature.Motor motors = 7;
   int motors_size() const;
   private:
   int _internal_motors_size() const;
@@ -804,21 +803,7 @@ class Creature final :
   std::string* _internal_mutable_name();
   public:
 
-  // string id = 2;
-  void clear_id();
-  const std::string& id() const;
-  template <typename ArgT0 = const std::string&, typename... ArgT>
-  void set_id(ArgT0&& arg0, ArgT... args);
-  std::string* mutable_id();
-  PROTOBUF_NODISCARD std::string* release_id();
-  void set_allocated_id(std::string* id);
-  private:
-  const std::string& _internal_id() const;
-  inline PROTOBUF_ALWAYS_INLINE void _internal_set_id(const std::string& value);
-  std::string* _internal_mutable_id();
-  public:
-
-  // string sacn_ip = 4;
+  // string sacn_ip = 3;
   void clear_sacn_ip();
   const std::string& sacn_ip() const;
   template <typename ArgT0 = const std::string&, typename... ArgT>
@@ -832,7 +817,7 @@ class Creature final :
   std::string* _internal_mutable_sacn_ip();
   public:
 
-  // .google.protobuf.Timestamp last_updated = 3;
+  // .google.protobuf.Timestamp last_updated = 2;
   bool has_last_updated() const;
   private:
   bool _internal_has_last_updated() const;
@@ -850,7 +835,7 @@ class Creature final :
       ::PROTOBUF_NAMESPACE_ID::Timestamp* last_updated);
   ::PROTOBUF_NAMESPACE_ID::Timestamp* unsafe_arena_release_last_updated();
 
-  // uint32 universe = 5;
+  // uint32 universe = 4;
   void clear_universe();
   uint32_t universe() const;
   void set_universe(uint32_t value);
@@ -859,7 +844,7 @@ class Creature final :
   void _internal_set_universe(uint32_t value);
   public:
 
-  // uint32 dmx_base = 6;
+  // uint32 dmx_base = 5;
   void clear_dmx_base();
   uint32_t dmx_base() const;
   void set_dmx_base(uint32_t value);
@@ -868,7 +853,7 @@ class Creature final :
   void _internal_set_dmx_base(uint32_t value);
   public:
 
-  // uint32 number_of_motors = 7;
+  // uint32 number_of_motors = 6;
   void clear_number_of_motors();
   uint32_t number_of_motors() const;
   void set_number_of_motors(uint32_t value);
@@ -887,7 +872,6 @@ class Creature final :
   struct Impl_ {
     ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::Creature_Motor > motors_;
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr name_;
-    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr id_;
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr sacn_ip_;
     ::PROTOBUF_NAMESPACE_ID::Timestamp* last_updated_;
     uint32_t universe_;
@@ -1221,57 +1205,7 @@ inline void Creature::set_allocated_name(std::string* name) {
   // @@protoc_insertion_point(field_set_allocated:server.Creature.name)
 }
 
-// string id = 2;
-inline void Creature::clear_id() {
-  _impl_.id_.ClearToEmpty();
-}
-inline const std::string& Creature::id() const {
-  // @@protoc_insertion_point(field_get:server.Creature.id)
-  return _internal_id();
-}
-template <typename ArgT0, typename... ArgT>
-inline PROTOBUF_ALWAYS_INLINE
-void Creature::set_id(ArgT0&& arg0, ArgT... args) {
- 
- _impl_.id_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
-  // @@protoc_insertion_point(field_set:server.Creature.id)
-}
-inline std::string* Creature::mutable_id() {
-  std::string* _s = _internal_mutable_id();
-  // @@protoc_insertion_point(field_mutable:server.Creature.id)
-  return _s;
-}
-inline const std::string& Creature::_internal_id() const {
-  return _impl_.id_.Get();
-}
-inline void Creature::_internal_set_id(const std::string& value) {
-  
-  _impl_.id_.Set(value, GetArenaForAllocation());
-}
-inline std::string* Creature::_internal_mutable_id() {
-  
-  return _impl_.id_.Mutable(GetArenaForAllocation());
-}
-inline std::string* Creature::release_id() {
-  // @@protoc_insertion_point(field_release:server.Creature.id)
-  return _impl_.id_.Release();
-}
-inline void Creature::set_allocated_id(std::string* id) {
-  if (id != nullptr) {
-    
-  } else {
-    
-  }
-  _impl_.id_.SetAllocated(id, GetArenaForAllocation());
-#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  if (_impl_.id_.IsDefault()) {
-    _impl_.id_.Set("", GetArenaForAllocation());
-  }
-#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  // @@protoc_insertion_point(field_set_allocated:server.Creature.id)
-}
-
-// .google.protobuf.Timestamp last_updated = 3;
+// .google.protobuf.Timestamp last_updated = 2;
 inline bool Creature::_internal_has_last_updated() const {
   return this != internal_default_instance() && _impl_.last_updated_ != nullptr;
 }
@@ -1356,7 +1290,7 @@ inline void Creature::set_allocated_last_updated(::PROTOBUF_NAMESPACE_ID::Timest
   // @@protoc_insertion_point(field_set_allocated:server.Creature.last_updated)
 }
 
-// string sacn_ip = 4;
+// string sacn_ip = 3;
 inline void Creature::clear_sacn_ip() {
   _impl_.sacn_ip_.ClearToEmpty();
 }
@@ -1406,7 +1340,7 @@ inline void Creature::set_allocated_sacn_ip(std::string* sacn_ip) {
   // @@protoc_insertion_point(field_set_allocated:server.Creature.sacn_ip)
 }
 
-// uint32 universe = 5;
+// uint32 universe = 4;
 inline void Creature::clear_universe() {
   _impl_.universe_ = 0u;
 }
@@ -1426,7 +1360,7 @@ inline void Creature::set_universe(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.universe)
 }
 
-// uint32 dmx_base = 6;
+// uint32 dmx_base = 5;
 inline void Creature::clear_dmx_base() {
   _impl_.dmx_base_ = 0u;
 }
@@ -1446,7 +1380,7 @@ inline void Creature::set_dmx_base(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.dmx_base)
 }
 
-// uint32 number_of_motors = 7;
+// uint32 number_of_motors = 6;
 inline void Creature::clear_number_of_motors() {
   _impl_.number_of_motors_ = 0u;
 }
@@ -1466,7 +1400,7 @@ inline void Creature::set_number_of_motors(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.number_of_motors)
 }
 
-// repeated .server.Creature.Motor motors = 8;
+// repeated .server.Creature.Motor motors = 7;
 inline int Creature::_internal_motors_size() const {
   return _impl_.motors_.size();
 }
