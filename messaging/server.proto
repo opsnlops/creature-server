@@ -36,12 +36,9 @@ message DatabaseInfo {
 
 }
 
-
-
 message CreatureName {
   string name = 1;
 }
-
 
 message Creature {
   string name = 1;   // MongoDB _id field
@@ -61,7 +58,7 @@ message Creature {
     uint32 number = 2;
     uint32 max_value = 3;
     uint32 min_value = 4;
-    float smoothing_value = 5;
+    double smoothing_value = 5;
   }
 
   repeated Motor motors = 7;

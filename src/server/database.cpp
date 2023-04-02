@@ -1,22 +1,29 @@
 
 #include <string>
+#include <cstdlib> // for std::abs
+#include <cstdint>
 
 #include "spdlog/spdlog.h"
 
 #include "messaging/server.pb.h"
 #include "server/database.h"
+#include "exception/exception.h"
 
 #include <grpcpp/grpcpp.h>
+#include <google/protobuf/timestamp.pb.h>
+
 #include <bsoncxx/json.hpp>
 #include <mongocxx/client.hpp>
 #include <mongocxx/instance.hpp>
 #include <mongocxx/pool.hpp>
+#include <bsoncxx/types.hpp>
 #include <mongocxx/exception/bulk_write_exception.hpp>
+#include <bsoncxx/decimal128.hpp>
+#include <bsoncxx/document/element.hpp>
+#include <bsoncxx/array/element.hpp>
 
 #include <bsoncxx/builder/stream/document.hpp>
-#include <bsoncxx/builder/stream/array.hpp>
 
-#include <google/protobuf/timestamp.pb.h>
 #include <chrono>
 
 #include <fmt/format.h>
@@ -64,6 +71,44 @@ namespace creatures {
 
         return grpc::Status::OK;
 
+    }
+
+    grpc::Status Database::getCreature(std::string name, Creature* creature) {
+
+        debug("attempting to find and load {} from the database", name);
+
+
+        auto collection = getCollection("creatures");
+        trace("collection located");
+
+        grpc::Status status;
+
+
+        try {
+            // Create a filter BSON document to match the target document
+            auto filter = bsoncxx::builder::stream::document{} << "_id" << name << bsoncxx::builder::stream::finalize;
+
+            // Find the document with the matching _id field
+            bsoncxx::stdx::optional<bsoncxx::document::value> result = collection.find_one(filter.view());
+
+            if (!result) {
+                info("creature '{}' not found", name);
+                throw creatures::CreatureNotFoundException(fmt::format("creature '{}' not found", name));
+            }
+
+            // Unwrap the optional to obtain the bsoncxx::document::value
+            bsoncxx::document::value found_document = *result;
+            creatureFromBson(found_document, creature);
+
+            debug("find completed!");
+
+            return grpc::Status::OK;
+        }
+        catch(const mongocxx::exception& e)
+        {
+            critical("an unhandled error happened while searching for a creature: {}", e.what());
+            throw InternalError(fmt::format("an unhandled error happened while searching for a creature: {}", e.what()));
+        }
     }
 
     grpc::Status Database::createCreature(const Creature* creature, server::DatabaseInfo* reply) {
@@ -142,7 +187,7 @@ namespace creatures {
                 trace("adding motor {}", j);
 
                 array_builder = array_builder << bsoncxx::builder::stream::open_document
-                                              << "type" << server::Creature_MotorType_Name(motor.type())
+                                              << "type" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.type())}
                                               << "number" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.number())}
                                               << "max_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.max_value())}
                                               << "mix_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.min_value())}
@@ -168,6 +213,164 @@ namespace creatures {
         return doc;
     }
 
+
+    void Database::creatureFromBson(const bsoncxx::document::value& doc, Creature* creature) {
+
+        debug("attempting to create a creature from a BSON document");
+
+
+        // Name is stored as `_id` in the database
+        bsoncxx::document::element element = doc["_id"];
+        if (element && element.type() == bsoncxx::type::k_utf8) {
+            bsoncxx::stdx::string_view string_value = element.get_string().value;
+            creature->set_name(std::string{string_value});
+            debug("set the name to {}", creature->name());
+        }
+        else {
+            throw creatures::DataFormatException("Field _id (name) was not a string in the database");
+        }
+
+        element = doc["sacn_ip"];
+        if (element && element.type() == bsoncxx::type::k_utf8) {
+            bsoncxx::stdx::string_view string_value = element.get_string().value;
+            creature->set_sacn_ip(std::string{string_value});
+            debug("set the sacn_ip to {}", creature->sacn_ip());
+        }
+        else {
+            throw creatures::DataFormatException("Field sacn_ip was not a string in the database");
+        }
+
+        // DMX Universe
+        element = doc["universe"];
+        if (element && element.type() == bsoncxx::type::k_int32) {
+            int32_t int32_value = element.get_int32().value;
+            creature->set_universe(int32_value);
+            debug("set the DMX universe to {}", creature->universe());
+        }
+        else {
+            throw creatures::DataFormatException("Field universe was not an int32 in the database");
+        }
+
+        // DMX Base Channel
+        element = doc["dmx_base"];
+        if (element && element.type() == bsoncxx::type::k_int32) {
+            int32_t int32_value = element.get_int32().value;
+            creature->set_dmx_base(int32_value);
+            debug("set the DMX base value to {}", creature->dmx_base());
+        }
+        else {
+            throw creatures::DataFormatException("Field dmx_base was not an int32 in the database");
+        }
+
+        // Number of motors
+        element = doc["number_of_motors"];
+        if (element && element.type() == bsoncxx::type::k_int32) {
+            int32_t int32_value = element.get_int32().value;
+            creature->set_number_of_motors(int32_value);
+            debug("set the number of motors to {}", creature->number_of_motors());
+        }
+        else {
+            throw creatures::DataFormatException("Field number_of_motors was not an int32 in the database");
+        }
+
+        // Last updated
+        element = doc["last_updated"];
+        *creature->mutable_last_updated() = convertMongoDateToProtobufTimestamp(element);
+
+
+        // Number of motors
+        element = doc["motors"];
+        if (element && element.type() == bsoncxx::type::k_array) {
+            bsoncxx::array::view array_view = element.get_array().value;
+
+            // Iterate through the array of objects
+            for (const bsoncxx::array::element& obj_element : array_view) {
+                // Ensure the element is a document (BSON object)
+                if (obj_element.type() == bsoncxx::type::k_document) {
+                    bsoncxx::document::view obj = obj_element.get_document().value;
+
+                    server::Creature_Motor* motor = creature->add_motors();
+
+
+                    // Motor type
+                    element = obj["type"];
+                    if(element && element.type() != bsoncxx::type::k_int32) {
+                        error("motor field 'type' is not an int");
+                        throw creatures::DataFormatException("motor field 'type' is not an int in the database");
+                    }
+
+                    int32_t motor_type = element.get_int32().value;
+
+                    // Check if the integer value is a valid MotorType enum value
+                    if (!server::Creature_MotorType_IsValid((motor_type))) {
+                        error("motor field 'type' does not map to our enum: {}", motor_type);
+                        throw creatures::DataFormatException(fmt::format("motor field 'type' does not map to our enum: {}", motor_type));
+                    }
+
+                    // Cast the int to the right value for our enum
+                    motor->set_type(static_cast<Creature::MotorType>(motor_type));
+                    debug("set the motor type to {}", motor->type());
+
+
+
+                    // Motor number
+                    element = obj["number"];
+                    if (element && element.type() == bsoncxx::type::k_int32) {
+                        int32_t int32_value = element.get_int32().value;
+                        motor->set_number(int32_value);
+                        debug("set the motor number to {}", motor->number());
+                    }
+                    else {
+                        error("motor field 'number' was not an int in the database");
+                        throw creatures::DataFormatException("motor field 'number' was not an int in the database");
+                    }
+
+
+
+                    // Max Value
+                    element = obj["max_value"];
+                    if (element && element.type() != bsoncxx::type::k_int32) {
+                        error("motor value 'max_value' is not an int");
+                        throw creatures::DataFormatException("motor value 'max_value' is not an int");
+                    }
+                    motor->set_max_value(element.get_int32().value);
+                    debug("set the motor max_value to {}", motor->max_value());
+
+
+                    // Min Value
+                    element = obj["max_value"];
+                    if (element && element.type() != bsoncxx::type::k_int32) {
+                        error("motor value 'min_value' is not an int");
+                        throw creatures::DataFormatException("motor value 'min_value' is not an int");
+                    }
+                    motor->set_min_value(element.get_int32().value);
+                    debug("set the motor min_value to {}", motor->min_value());
+
+
+
+                    // Smoothing
+                    element = obj["smoothing_value"];
+                    if (element && element.type() != bsoncxx::type::k_double) {
+                        error("motor value 'smoothing_value' is not a double");
+                        throw creatures::DataFormatException("motor value 'smoothing_value' is not a dobule");
+                    }
+                    motor->set_smoothing_value(element.get_double().value);
+                    debug("set the motor smoothing_value to {}", motor->smoothing_value());
+                }
+
+
+            }
+
+        }
+        else{
+            error("The field 'motors' was not an array in the database");
+            throw creatures::DataFormatException("Field 'motors' was not an array in the database");
+        }
+
+        debug("done loading creature");
+    }
+
+
     std::chrono::system_clock::time_point Database::protobufTimestampToTimePoint(const google::protobuf::Timestamp& timestamp) {
         using std::chrono::duration_cast;
         using std::chrono::nanoseconds;
@@ -178,5 +381,38 @@ namespace creatures {
         return system_clock::time_point{duration_cast<system_clock::duration>(duration)};
     }
 
+    google::protobuf::Timestamp Database::convertMongoDateToProtobufTimestamp(const bsoncxx::document::element& mongo_date_element) {
+        // Make sure the input BSON element has a Timestamp type
+        if (mongo_date_element.type() != bsoncxx::type::k_date) {
+            error("element type is not a k_date, cannot convert it to a protobuf timestamp. Type is: {}", bsoncxx::to_string(mongo_date_element.type()));
+            throw creatures::DataFormatException(
+                    fmt::format("Element type is not a k_timestamp, cannot convert it to a protobuf timestamp. Found type was: {}",
+                                bsoncxx::to_string(mongo_date_element.type())));
+        }
+
+        // Access the BSON Date value as a bsoncxx::types::b_date type
+        bsoncxx::types::b_date mongo_date = mongo_date_element.get_date();
+
+        // Convert the bsoncxx::types::b_date value to a std::chrono::milliseconds type
+        std::chrono::milliseconds millis_since_epoch = mongo_date.value;
+
+        // Convert the std::chrono::milliseconds to seconds and nanoseconds
+        std::int64_t seconds_since_epoch = std::chrono::duration_cast<std::chrono::seconds>(millis_since_epoch).count();
+
+        // Compute nanoseconds using a larger integer type to avoid narrowing conversion
+        std::int64_t nanoseconds_long = (std::abs(millis_since_epoch.count()) % 1000) * 1000000LL;
+
+        // Safely cast the result to std::int32_t
+        auto nanoseconds = static_cast<std::int32_t>(nanoseconds_long);
+
+        // Create a Protobuf Timestamp object
+        google::protobuf::Timestamp protobuf_timestamp;
+
+        // Set the Protobuf timestamp's seconds and nanoseconds fields
+        protobuf_timestamp.set_seconds(seconds_since_epoch);
+        protobuf_timestamp.set_nanos(nanoseconds);
+
+        return protobuf_timestamp;
+    }
 
 }

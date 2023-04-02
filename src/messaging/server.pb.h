@@ -581,13 +581,13 @@ class Creature_Motor final :
   void _internal_set_min_value(uint32_t value);
   public:
 
-  // float smoothing_value = 5;
+  // double smoothing_value = 5;
   void clear_smoothing_value();
-  float smoothing_value() const;
-  void set_smoothing_value(float value);
+  double smoothing_value() const;
+  void set_smoothing_value(double value);
   private:
-  float _internal_smoothing_value() const;
-  void _internal_set_smoothing_value(float value);
+  double _internal_smoothing_value() const;
+  void _internal_set_smoothing_value(double value);
   public:
 
   // @@protoc_insertion_point(class_scope:server.Creature.Motor)
@@ -602,7 +602,7 @@ class Creature_Motor final :
     uint32_t number_;
     uint32_t max_value_;
     uint32_t min_value_;
-    float smoothing_value_;
+    double smoothing_value_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -1131,22 +1131,22 @@ inline void Creature_Motor::set_min_value(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.Motor.min_value)
 }
 
-// float smoothing_value = 5;
+// double smoothing_value = 5;
 inline void Creature_Motor::clear_smoothing_value() {
   _impl_.smoothing_value_ = 0;
 }
-inline float Creature_Motor::_internal_smoothing_value() const {
+inline double Creature_Motor::_internal_smoothing_value() const {
   return _impl_.smoothing_value_;
 }
-inline float Creature_Motor::smoothing_value() const {
+inline double Creature_Motor::smoothing_value() const {
   // @@protoc_insertion_point(field_get:server.Creature.Motor.smoothing_value)
   return _internal_smoothing_value();
 }
-inline void Creature_Motor::_internal_set_smoothing_value(float value) {
+inline void Creature_Motor::_internal_set_smoothing_value(double value) {
   
   _impl_.smoothing_value_ = value;
 }
-inline void Creature_Motor::set_smoothing_value(float value) {
+inline void Creature_Motor::set_smoothing_value(double value) {
   _internal_set_smoothing_value(value);
   // @@protoc_insertion_point(field_set:server.Creature.Motor.smoothing_value)
 }

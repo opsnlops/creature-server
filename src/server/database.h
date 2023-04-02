@@ -19,10 +19,6 @@
 using server::Creature;
 using server::CreatureName;
 
-using spdlog::info;
-using spdlog::debug;
-using spdlog::critical;
-
 #include <grpcpp/grpcpp.h>
 #include "messaging/server.pb.h"
 
@@ -35,7 +31,9 @@ namespace creatures {
 
         grpc::Status createCreature(const Creature* creature, server::DatabaseInfo* reply);
         grpc::Status updateCreature(const Creature* creature, server::DatabaseInfo* reply);
-        Creature getCreature(CreatureName name);
+        grpc::Status getCreature(std::string name, Creature* creature);
+
+
 
         /**
          * Ping the database to make sure it's alive
@@ -48,7 +46,9 @@ namespace creatures {
         mongocxx::pool& pool;
         mongocxx::collection getCollection(std::string collectionName);
         bsoncxx::document::value creatureToBson(const Creature* creature);
-        std::chrono::system_clock::time_point protobufTimestampToTimePoint(const google::protobuf::Timestamp& timestamp);
+        void creatureFromBson(const bsoncxx::document::value& doc, Creature* creature);
+        static std::chrono::system_clock::time_point protobufTimestampToTimePoint(const google::protobuf::Timestamp& timestamp);
+        static google::protobuf::Timestamp convertMongoDateToProtobufTimestamp(const bsoncxx::document::element& mongo_timestamp_element);
     };
 
 

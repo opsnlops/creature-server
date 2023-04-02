@@ -157,7 +157,7 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "\n\005Motor\022(\n\004type\030\001 \001(\0162\032.server.Creature."
   "MotorType\022\016\n\006number\030\002 \001(\r\022\021\n\tmax_value\030\003"
   " \001(\r\022\021\n\tmin_value\030\004 \001(\r\022\027\n\017smoothing_val"
-  "ue\030\005 \001(\002\"#\n\tMotorType\022\t\n\005SERVO\020\000\022\013\n\007STEP"
+  "ue\030\005 \001(\001\"#\n\tMotorType\022\t\n\005SERVO\020\000\022\013\n\007STEP"
   "PER\020\0012\377\001\n\016CreatureServer\0227\n\013GetCreature\022"
   "\024.server.CreatureName\032\020.server.Creature\""
   "\000\022<\n\014GetCreatures\022\026.google.protobuf.Empt"
@@ -778,11 +778,11 @@ const char* Creature_Motor::_InternalParse(const char* ptr, ::_pbi::ParseContext
         } else
           goto handle_unusual;
         continue;
-      // float smoothing_value = 5;
+      // double smoothing_value = 5;
       case 5:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 45)) {
-          _impl_.smoothing_value_ = ::PROTOBUF_NAMESPACE_ID::internal::UnalignedLoad<float>(ptr);
-          ptr += sizeof(float);
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 41)) {
+          _impl_.smoothing_value_ = ::PROTOBUF_NAMESPACE_ID::internal::UnalignedLoad<double>(ptr);
+          ptr += sizeof(double);
         } else
           goto handle_unusual;
         continue;
@@ -840,14 +840,14 @@ uint8_t* Creature_Motor::_InternalSerialize(
     target = ::_pbi::WireFormatLite::WriteUInt32ToArray(4, this->_internal_min_value(), target);
   }
 
-  // float smoothing_value = 5;
-  static_assert(sizeof(uint32_t) == sizeof(float), "Code assumes uint32_t and float are the same size.");
-  float tmp_smoothing_value = this->_internal_smoothing_value();
-  uint32_t raw_smoothing_value;
+  // double smoothing_value = 5;
+  static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
+  double tmp_smoothing_value = this->_internal_smoothing_value();
+  uint64_t raw_smoothing_value;
   memcpy(&raw_smoothing_value, &tmp_smoothing_value, sizeof(tmp_smoothing_value));
   if (raw_smoothing_value != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteFloatToArray(5, this->_internal_smoothing_value(), target);
+    target = ::_pbi::WireFormatLite::WriteDoubleToArray(5, this->_internal_smoothing_value(), target);
   }
 
   if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
@@ -887,13 +887,13 @@ size_t Creature_Motor::ByteSizeLong() const {
     total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_min_value());
   }
 
-  // float smoothing_value = 5;
-  static_assert(sizeof(uint32_t) == sizeof(float), "Code assumes uint32_t and float are the same size.");
-  float tmp_smoothing_value = this->_internal_smoothing_value();
-  uint32_t raw_smoothing_value;
+  // double smoothing_value = 5;
+  static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
+  double tmp_smoothing_value = this->_internal_smoothing_value();
+  uint64_t raw_smoothing_value;
   memcpy(&raw_smoothing_value, &tmp_smoothing_value, sizeof(tmp_smoothing_value));
   if (raw_smoothing_value != 0) {
-    total_size += 1 + 4;
+    total_size += 1 + 8;
   }
 
   return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
@@ -926,9 +926,9 @@ void Creature_Motor::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const :
   if (from._internal_min_value() != 0) {
     _this->_internal_set_min_value(from._internal_min_value());
   }
-  static_assert(sizeof(uint32_t) == sizeof(float), "Code assumes uint32_t and float are the same size.");
-  float tmp_smoothing_value = from._internal_smoothing_value();
-  uint32_t raw_smoothing_value;
+  static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
+  double tmp_smoothing_value = from._internal_smoothing_value();
+  uint64_t raw_smoothing_value;
   memcpy(&raw_smoothing_value, &tmp_smoothing_value, sizeof(tmp_smoothing_value));
   if (raw_smoothing_value != 0) {
     _this->_internal_set_smoothing_value(from._internal_smoothing_value());

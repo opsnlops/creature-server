@@ -43,12 +43,14 @@ find_package(bsoncxx REQUIRED)
 
 # Our source files
 file(GLOB SERVER_SRCS
+        src/exception/*
         src/messaging/*
         src/server/*
         )
 
 file(GLOB clientFiles
         src/client/*
+        src/exception/*
         src/messaging/*
         )
 

@@ -1,6 +1,9 @@
 
 #include <iostream>
 #include <memory>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 
 #include <grpcpp/grpcpp.h>
 
@@ -21,11 +24,35 @@ using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
 
+using spdlog::trace;
 using spdlog::info;
 using spdlog::debug;
 using spdlog::error;
 using spdlog::critical;
 
+std::string ProtobufTimestampToHumanReadable(const google::protobuf::Timestamp& timestamp) {
+    // Combine seconds and nanoseconds into a single duration
+    auto seconds_duration = std::chrono::seconds(timestamp.seconds());
+    auto nanoseconds_duration = std::chrono::nanoseconds(timestamp.nanos());
+
+    // Convert the duration to a std::chrono::system_clock::time_point
+    std::chrono::system_clock::time_point tp = std::chrono::system_clock::from_time_t(0) + seconds_duration;
+    tp += std::chrono::duration_cast<std::chrono::system_clock::duration>(nanoseconds_duration);
+
+    // Convert the std::chrono::system_clock::time_point to a std::time_t
+    std::time_t time = std::chrono::system_clock::to_time_t(tp);
+
+    // Convert the std::time_t to a std::tm
+    std::tm tm{};
+    gmtime_r(&time, &tm);
+
+    // Format the std::tm into a human-readable string
+    char buffer[32];
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm);
+
+    // Return the formatted string
+    return {buffer};
+}
 
 class CreatureServerClient {
 public:
@@ -51,7 +78,10 @@ public:
 
         // Act upon its status.
         if (status.ok()) {
-            debug("ok!");
+            debug("✅ ok!");
+            return reply;
+        } else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
+            info("not found! 🚫");
             return reply;
         } else {
             critical("not okay: {}: {}", status.error_code(), status.error_message());
@@ -106,8 +136,15 @@ int main(int argc, char** argv) {
     // InsecureChannelCredentials()).
     CreatureServerClient client(
             grpc::CreateChannel("localhost:6666", grpc::InsecureChannelCredentials()));
-    Creature reply = client.GetCreature("Beaky");
-    info( "client gotten: {}, {}, {}", reply.name(), reply.sacn_ip(), reply.dmx_base());
+
+    info("Searching for a creature that should exist...");
+    Creature reply = client.GetCreature("Beaky3");
+    info( "client gotten: {}, {}, {}, {}",
+          reply.name(), reply.sacn_ip(), reply.dmx_base(), ProtobufTimestampToHumanReadable(reply.last_updated()));
+
+    info("Searching for a creature that should NOT exist...");
+    reply = client.GetCreature("Poop Face");
+    trace("doing somthing with the reply so the compiler doesn't eat it... {}", reply.name());
 
 
     // Get the current time as a std::chrono::system_clock::time_point
@@ -119,7 +156,7 @@ int main(int argc, char** argv) {
 
     // Let's try to save one
     server::Creature creature = server::Creature();
-    creature.set_name("Beaky4");
+    creature.set_name("Beaky3");
     creature.set_dmx_base(666);
     creature.set_number_of_motors(5);
     creature.set_universe(1);

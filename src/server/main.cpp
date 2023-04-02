@@ -13,8 +13,8 @@
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 
-
 #include "server/database.h"
+#include "exception/exception.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -37,15 +37,34 @@ Database* db{};
 Status handleGetCreature(ServerContext* context, const CreatureName* request,
                          Creature* reply ) {
 
-    reply->set_name("Beaky");
-    reply->set_sacn_ip("10.3.2.11");
-    reply->set_universe(1);
-    reply->set_dmx_base(1);
-    reply->set_number_of_motors(6);
+    debug("handleGetCreature() time!");
 
-    debug("did a creature");
+    grpc::Status status;
 
-    return Status::OK;
+    try {
+         db->getCreature(request->name(), reply);
+         debug("creature {} found in DB!", request->name());
+        status = grpc::Status(grpc::StatusCode::OK,
+                              fmt::format("Loaded creature {} successfully!", request->name()));
+        return status;
+
+    }
+    catch(const creatures::CreatureNotFoundException& e) {
+        info("creature {} not found", request->name());
+        status = grpc::Status(grpc::StatusCode::NOT_FOUND,
+                              e.what(),
+                              fmt::format("Creature name '{}' not found", request->name()));
+        return status;
+    }
+    catch(const creatures::DataFormatException& e) {
+        critical("Data format exception while looking for a creature: {}", e.what());
+        status = grpc::Status(grpc::StatusCode::INTERNAL,
+                              e.what(),
+                              "A data formatting error occured while looking for this creature");
+        return status;
+    }
+
+
 }
 
 Status handleSave(ServerContext* context, const Creature* request, DatabaseInfo* reply) {
