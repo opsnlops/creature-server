@@ -20,72 +20,72 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
   typealias Version = _2
 }
 
-struct Server_DatabaseInfo {
+public struct Server_DatabaseInfo {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var message: String = String()
+  public var message: String = String()
 
-  var help: String = String()
+  public var help: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Server_CreatureName {
+public struct Server_CreatureName {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var name: String = String()
+  public var name: String = String()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-struct Server_Creature {
+public struct Server_Creature {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   /// MongoDB _id field
-  var name: String = String()
+  public var name: String = String()
 
-  var lastUpdated: SwiftProtobuf.Google_Protobuf_Timestamp {
+  public var lastUpdated: SwiftProtobuf.Google_Protobuf_Timestamp {
     get {return _lastUpdated ?? SwiftProtobuf.Google_Protobuf_Timestamp()}
     set {_lastUpdated = newValue}
   }
   /// Returns true if `lastUpdated` has been explicitly set.
-  var hasLastUpdated: Bool {return self._lastUpdated != nil}
+  public var hasLastUpdated: Bool {return self._lastUpdated != nil}
   /// Clears the value of `lastUpdated`. Subsequent reads from it will return its default value.
-  mutating func clearLastUpdated() {self._lastUpdated = nil}
+  public mutating func clearLastUpdated() {self._lastUpdated = nil}
 
-  var sacnIp: String = String()
+  public var sacnIp: String = String()
 
-  var universe: UInt32 = 0
+  public var universe: UInt32 = 0
 
-  var dmxBase: UInt32 = 0
+  public var dmxBase: UInt32 = 0
 
-  var numberOfMotors: UInt32 = 0
+  public var numberOfMotors: UInt32 = 0
 
-  var motors: [Server_Creature.Motor] = []
+  public var motors: [Server_Creature.Motor] = []
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  enum MotorType: SwiftProtobuf.Enum {
-    typealias RawValue = Int
+  public enum MotorType: SwiftProtobuf.Enum {
+    public typealias RawValue = Int
     case servo // = 0
     case stepper // = 1
     case UNRECOGNIZED(Int)
 
-    init() {
+    public init() {
       self = .servo
     }
 
-    init?(rawValue: Int) {
+    public init?(rawValue: Int) {
       switch rawValue {
       case 0: self = .servo
       case 1: self = .stepper
@@ -93,7 +93,7 @@ struct Server_Creature {
       }
     }
 
-    var rawValue: Int {
+    public var rawValue: Int {
       switch self {
       case .servo: return 0
       case .stepper: return 1
@@ -103,27 +103,27 @@ struct Server_Creature {
 
   }
 
-  struct Motor {
+  public struct Motor {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
 
-    var type: Server_Creature.MotorType = .servo
+    public var type: Server_Creature.MotorType = .servo
 
-    var number: UInt32 = 0
+    public var number: UInt32 = 0
 
-    var maxValue: UInt32 = 0
+    public var maxValue: UInt32 = 0
 
-    var minValue: UInt32 = 0
+    public var minValue: UInt32 = 0
 
-    var smoothingValue: Double = 0
+    public var smoothingValue: Double = 0
 
-    var unknownFields = SwiftProtobuf.UnknownStorage()
+    public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-    init() {}
+    public init() {}
   }
 
-  init() {}
+  public init() {}
 
   fileprivate var _lastUpdated: SwiftProtobuf.Google_Protobuf_Timestamp? = nil
 }
@@ -132,7 +132,7 @@ struct Server_Creature {
 
 extension Server_Creature.MotorType: CaseIterable {
   // The compiler won't synthesize support with the UNRECOGNIZED case.
-  static var allCases: [Server_Creature.MotorType] = [
+  public static var allCases: [Server_Creature.MotorType] = [
     .servo,
     .stepper,
   ]
@@ -153,13 +153,13 @@ extension Server_Creature.Motor: @unchecked Sendable {}
 fileprivate let _protobuf_package = "server"
 
 extension Server_DatabaseInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".DatabaseInfo"
-  static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+  public static let protoMessageName: String = _protobuf_package + ".DatabaseInfo"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "message"),
     2: .same(proto: "help"),
   ]
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -172,7 +172,7 @@ extension Server_DatabaseInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.message.isEmpty {
       try visitor.visitSingularStringField(value: self.message, fieldNumber: 1)
     }
@@ -182,7 +182,7 @@ extension Server_DatabaseInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Server_DatabaseInfo, rhs: Server_DatabaseInfo) -> Bool {
+  public static func ==(lhs: Server_DatabaseInfo, rhs: Server_DatabaseInfo) -> Bool {
     if lhs.message != rhs.message {return false}
     if lhs.help != rhs.help {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -191,12 +191,12 @@ extension Server_DatabaseInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
 }
 
 extension Server_CreatureName: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".CreatureName"
-  static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+  public static let protoMessageName: String = _protobuf_package + ".CreatureName"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "name"),
   ]
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -208,14 +208,14 @@ extension Server_CreatureName: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.name.isEmpty {
       try visitor.visitSingularStringField(value: self.name, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Server_CreatureName, rhs: Server_CreatureName) -> Bool {
+  public static func ==(lhs: Server_CreatureName, rhs: Server_CreatureName) -> Bool {
     if lhs.name != rhs.name {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -223,8 +223,8 @@ extension Server_CreatureName: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
 }
 
 extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".Creature"
-  static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+  public static let protoMessageName: String = _protobuf_package + ".Creature"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "name"),
     2: .standard(proto: "last_updated"),
     3: .standard(proto: "sacn_ip"),
@@ -234,7 +234,7 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
     7: .same(proto: "motors"),
   ]
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -252,7 +252,7 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     // The use of inline closures is to circumvent an issue where the compiler
     // allocates stack space for every if/case branch local when no optimizations
     // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
@@ -281,7 +281,7 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Server_Creature, rhs: Server_Creature) -> Bool {
+  public static func ==(lhs: Server_Creature, rhs: Server_Creature) -> Bool {
     if lhs.name != rhs.name {return false}
     if lhs._lastUpdated != rhs._lastUpdated {return false}
     if lhs.sacnIp != rhs.sacnIp {return false}
@@ -295,15 +295,15 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
 }
 
 extension Server_Creature.MotorType: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     0: .same(proto: "SERVO"),
     1: .same(proto: "STEPPER"),
   ]
 }
 
 extension Server_Creature.Motor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = Server_Creature.protoMessageName + ".Motor"
-  static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+  public static let protoMessageName: String = Server_Creature.protoMessageName + ".Motor"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "type"),
     2: .same(proto: "number"),
     3: .standard(proto: "max_value"),
@@ -311,7 +311,7 @@ extension Server_Creature.Motor: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     5: .standard(proto: "smoothing_value"),
   ]
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -327,7 +327,7 @@ extension Server_Creature.Motor: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if self.type != .servo {
       try visitor.visitSingularEnumField(value: self.type, fieldNumber: 1)
     }
@@ -346,7 +346,7 @@ extension Server_Creature.Motor: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Server_Creature.Motor, rhs: Server_Creature.Motor) -> Bool {
+  public static func ==(lhs: Server_Creature.Motor, rhs: Server_Creature.Motor) -> Bool {
     if lhs.type != rhs.type {return false}
     if lhs.number != rhs.number {return false}
     if lhs.maxValue != rhs.maxValue {return false}

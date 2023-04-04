@@ -27,7 +27,7 @@ import SwiftProtobuf
 
 
 /// Usage: instantiate `Server_CreatureServerClient`, then call methods of this protocol to make API calls.
-internal protocol Server_CreatureServerClientProtocol: GRPCClient {
+public protocol Server_CreatureServerClientProtocol: GRPCClient {
   var serviceName: String { get }
   var interceptors: Server_CreatureServerClientInterceptorFactoryProtocol? { get }
 
@@ -54,7 +54,7 @@ internal protocol Server_CreatureServerClientProtocol: GRPCClient {
 }
 
 extension Server_CreatureServerClientProtocol {
-  internal var serviceName: String {
+  public var serviceName: String {
     return "server.CreatureServer"
   }
 
@@ -64,7 +64,7 @@ extension Server_CreatureServerClientProtocol {
   ///   - request: Request to send to GetCreature.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getCreature(
+  public func getCreature(
     _ request: Server_CreatureName,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Server_CreatureName, Server_Creature> {
@@ -83,7 +83,7 @@ extension Server_CreatureServerClientProtocol {
   ///   - callOptions: Call options.
   ///   - handler: A closure called when each response is received from the server.
   /// - Returns: A `ServerStreamingCall` with futures for the metadata and status.
-  internal func getCreatures(
+  public func getCreatures(
     _ request: SwiftProtobuf.Google_Protobuf_Empty,
     callOptions: CallOptions? = nil,
     handler: @escaping (Server_Creature) -> Void
@@ -103,7 +103,7 @@ extension Server_CreatureServerClientProtocol {
   ///   - request: Request to send to CreateCreature.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func createCreature(
+  public func createCreature(
     _ request: Server_Creature,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Server_Creature, Server_DatabaseInfo> {
@@ -121,7 +121,7 @@ extension Server_CreatureServerClientProtocol {
   ///   - request: Request to send to UpdateCreature.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func updateCreature(
+  public func updateCreature(
     _ request: Server_Creature,
     callOptions: CallOptions? = nil
   ) -> UnaryCall<Server_Creature, Server_DatabaseInfo> {
@@ -140,16 +140,16 @@ extension Server_CreatureServerClient: @unchecked Sendable {}
 #endif // compiler(>=5.6)
 
 @available(*, deprecated, renamed: "Server_CreatureServerNIOClient")
-internal final class Server_CreatureServerClient: Server_CreatureServerClientProtocol {
+public final class Server_CreatureServerClient: Server_CreatureServerClientProtocol {
   private let lock = Lock()
   private var _defaultCallOptions: CallOptions
   private var _interceptors: Server_CreatureServerClientInterceptorFactoryProtocol?
-  internal let channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions {
+  public let channel: GRPCChannel
+  public var defaultCallOptions: CallOptions {
     get { self.lock.withLock { return self._defaultCallOptions } }
     set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
   }
-  internal var interceptors: Server_CreatureServerClientInterceptorFactoryProtocol? {
+  public var interceptors: Server_CreatureServerClientInterceptorFactoryProtocol? {
     get { self.lock.withLock { return self._interceptors } }
     set { self.lock.withLockVoid { self._interceptors = newValue } }
   }
@@ -160,7 +160,7 @@ internal final class Server_CreatureServerClient: Server_CreatureServerClientPro
   ///   - channel: `GRPCChannel` to the service host.
   ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
   ///   - interceptors: A factory providing interceptors for each RPC.
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Server_CreatureServerClientInterceptorFactoryProtocol? = nil
@@ -171,10 +171,10 @@ internal final class Server_CreatureServerClient: Server_CreatureServerClientPro
   }
 }
 
-internal struct Server_CreatureServerNIOClient: Server_CreatureServerClientProtocol {
-  internal var channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions
-  internal var interceptors: Server_CreatureServerClientInterceptorFactoryProtocol?
+public struct Server_CreatureServerNIOClient: Server_CreatureServerClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Server_CreatureServerClientInterceptorFactoryProtocol?
 
   /// Creates a client for the server.CreatureServer service.
   ///
@@ -182,7 +182,7 @@ internal struct Server_CreatureServerNIOClient: Server_CreatureServerClientProto
   ///   - channel: `GRPCChannel` to the service host.
   ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
   ///   - interceptors: A factory providing interceptors for each RPC.
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Server_CreatureServerClientInterceptorFactoryProtocol? = nil
@@ -195,7 +195,7 @@ internal struct Server_CreatureServerNIOClient: Server_CreatureServerClientProto
 
 #if compiler(>=5.6)
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
+public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
   var interceptors: Server_CreatureServerClientInterceptorFactoryProtocol? { get }
 
@@ -222,15 +222,15 @@ internal protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Server_CreatureServerAsyncClientProtocol {
-  internal static var serviceDescriptor: GRPCServiceDescriptor {
+  public static var serviceDescriptor: GRPCServiceDescriptor {
     return Server_CreatureServerClientMetadata.serviceDescriptor
   }
 
-  internal var interceptors: Server_CreatureServerClientInterceptorFactoryProtocol? {
+  public var interceptors: Server_CreatureServerClientInterceptorFactoryProtocol? {
     return nil
   }
 
-  internal func makeGetCreatureCall(
+  public func makeGetCreatureCall(
     _ request: Server_CreatureName,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Server_CreatureName, Server_Creature> {
@@ -242,7 +242,7 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
-  internal func makeGetCreaturesCall(
+  public func makeGetCreaturesCall(
     _ request: SwiftProtobuf.Google_Protobuf_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncServerStreamingCall<SwiftProtobuf.Google_Protobuf_Empty, Server_Creature> {
@@ -254,7 +254,7 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
-  internal func makeCreateCreatureCall(
+  public func makeCreateCreatureCall(
     _ request: Server_Creature,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Server_Creature, Server_DatabaseInfo> {
@@ -266,7 +266,7 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
-  internal func makeUpdateCreatureCall(
+  public func makeUpdateCreatureCall(
     _ request: Server_Creature,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncUnaryCall<Server_Creature, Server_DatabaseInfo> {
@@ -281,7 +281,7 @@ extension Server_CreatureServerAsyncClientProtocol {
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension Server_CreatureServerAsyncClientProtocol {
-  internal func getCreature(
+  public func getCreature(
     _ request: Server_CreatureName,
     callOptions: CallOptions? = nil
   ) async throws -> Server_Creature {
@@ -293,7 +293,7 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
-  internal func getCreatures(
+  public func getCreatures(
     _ request: SwiftProtobuf.Google_Protobuf_Empty,
     callOptions: CallOptions? = nil
   ) -> GRPCAsyncResponseStream<Server_Creature> {
@@ -305,7 +305,7 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
-  internal func createCreature(
+  public func createCreature(
     _ request: Server_Creature,
     callOptions: CallOptions? = nil
   ) async throws -> Server_DatabaseInfo {
@@ -317,7 +317,7 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
-  internal func updateCreature(
+  public func updateCreature(
     _ request: Server_Creature,
     callOptions: CallOptions? = nil
   ) async throws -> Server_DatabaseInfo {
@@ -331,12 +331,12 @@ extension Server_CreatureServerAsyncClientProtocol {
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-internal struct Server_CreatureServerAsyncClient: Server_CreatureServerAsyncClientProtocol {
-  internal var channel: GRPCChannel
-  internal var defaultCallOptions: CallOptions
-  internal var interceptors: Server_CreatureServerClientInterceptorFactoryProtocol?
+public struct Server_CreatureServerAsyncClient: Server_CreatureServerAsyncClientProtocol {
+  public var channel: GRPCChannel
+  public var defaultCallOptions: CallOptions
+  public var interceptors: Server_CreatureServerClientInterceptorFactoryProtocol?
 
-  internal init(
+  public init(
     channel: GRPCChannel,
     defaultCallOptions: CallOptions = CallOptions(),
     interceptors: Server_CreatureServerClientInterceptorFactoryProtocol? = nil
@@ -349,7 +349,7 @@ internal struct Server_CreatureServerAsyncClient: Server_CreatureServerAsyncClie
 
 #endif // compiler(>=5.6)
 
-internal protocol Server_CreatureServerClientInterceptorFactoryProtocol: GRPCSendable {
+public protocol Server_CreatureServerClientInterceptorFactoryProtocol: GRPCSendable {
 
   /// - Returns: Interceptors to use when invoking 'getCreature'.
   func makeGetCreatureInterceptors() -> [ClientInterceptor<Server_CreatureName, Server_Creature>]
@@ -364,8 +364,8 @@ internal protocol Server_CreatureServerClientInterceptorFactoryProtocol: GRPCSen
   func makeUpdateCreatureInterceptors() -> [ClientInterceptor<Server_Creature, Server_DatabaseInfo>]
 }
 
-internal enum Server_CreatureServerClientMetadata {
-  internal static let serviceDescriptor = GRPCServiceDescriptor(
+public enum Server_CreatureServerClientMetadata {
+  public static let serviceDescriptor = GRPCServiceDescriptor(
     name: "CreatureServer",
     fullName: "server.CreatureServer",
     methods: [
@@ -376,26 +376,26 @@ internal enum Server_CreatureServerClientMetadata {
     ]
   )
 
-  internal enum Methods {
-    internal static let getCreature = GRPCMethodDescriptor(
+  public enum Methods {
+    public static let getCreature = GRPCMethodDescriptor(
       name: "GetCreature",
       path: "/server.CreatureServer/GetCreature",
       type: GRPCCallType.unary
     )
 
-    internal static let getCreatures = GRPCMethodDescriptor(
+    public static let getCreatures = GRPCMethodDescriptor(
       name: "GetCreatures",
       path: "/server.CreatureServer/GetCreatures",
       type: GRPCCallType.serverStreaming
     )
 
-    internal static let createCreature = GRPCMethodDescriptor(
+    public static let createCreature = GRPCMethodDescriptor(
       name: "CreateCreature",
       path: "/server.CreatureServer/CreateCreature",
       type: GRPCCallType.unary
     )
 
-    internal static let updateCreature = GRPCMethodDescriptor(
+    public static let updateCreature = GRPCMethodDescriptor(
       name: "UpdateCreature",
       path: "/server.CreatureServer/UpdateCreature",
       type: GRPCCallType.unary
