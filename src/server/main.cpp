@@ -45,7 +45,7 @@ Status handleGetCreature(ServerContext* context, const CreatureName* request,
          db->getCreature(request->name(), reply);
          debug("creature {} found in DB!", request->name());
         status = grpc::Status(grpc::StatusCode::OK,
-                              fmt::format("Loaded creature {} successfully!", request->name()));
+                              fmt::format("✅ Loaded creature {} successfully!", request->name()));
         return status;
 
     }
@@ -53,7 +53,7 @@ Status handleGetCreature(ServerContext* context, const CreatureName* request,
         info("creature {} not found", request->name());
         status = grpc::Status(grpc::StatusCode::NOT_FOUND,
                               e.what(),
-                              fmt::format("Creature name '{}' not found", request->name()));
+                              fmt::format("🚫 Creature name '{}' not found", request->name()));
         return status;
     }
     catch(const creatures::DataFormatException& e) {
