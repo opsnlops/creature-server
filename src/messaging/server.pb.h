@@ -51,6 +51,9 @@ namespace server {
 class Creature;
 struct CreatureDefaultTypeInternal;
 extern CreatureDefaultTypeInternal _Creature_default_instance_;
+class CreatureId;
+struct CreatureIdDefaultTypeInternal;
+extern CreatureIdDefaultTypeInternal _CreatureId_default_instance_;
 class CreatureName;
 struct CreatureNameDefaultTypeInternal;
 extern CreatureNameDefaultTypeInternal _CreatureName_default_instance_;
@@ -60,24 +63,33 @@ extern Creature_MotorDefaultTypeInternal _Creature_Motor_default_instance_;
 class DatabaseInfo;
 struct DatabaseInfoDefaultTypeInternal;
 extern DatabaseInfoDefaultTypeInternal _DatabaseInfo_default_instance_;
+class LogFilter;
+struct LogFilterDefaultTypeInternal;
+extern LogFilterDefaultTypeInternal _LogFilter_default_instance_;
+class LogLine;
+struct LogLineDefaultTypeInternal;
+extern LogLineDefaultTypeInternal _LogLine_default_instance_;
 }  // namespace server
 PROTOBUF_NAMESPACE_OPEN
 template<> ::server::Creature* Arena::CreateMaybeMessage<::server::Creature>(Arena*);
+template<> ::server::CreatureId* Arena::CreateMaybeMessage<::server::CreatureId>(Arena*);
 template<> ::server::CreatureName* Arena::CreateMaybeMessage<::server::CreatureName>(Arena*);
 template<> ::server::Creature_Motor* Arena::CreateMaybeMessage<::server::Creature_Motor>(Arena*);
 template<> ::server::DatabaseInfo* Arena::CreateMaybeMessage<::server::DatabaseInfo>(Arena*);
+template<> ::server::LogFilter* Arena::CreateMaybeMessage<::server::LogFilter>(Arena*);
+template<> ::server::LogLine* Arena::CreateMaybeMessage<::server::LogLine>(Arena*);
 PROTOBUF_NAMESPACE_CLOSE
 namespace server {
 
 enum Creature_MotorType : int {
-  Creature_MotorType_SERVO = 0,
-  Creature_MotorType_STEPPER = 1,
+  Creature_MotorType_servo = 0,
+  Creature_MotorType_stepper = 1,
   Creature_MotorType_Creature_MotorType_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
   Creature_MotorType_Creature_MotorType_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
 };
 bool Creature_MotorType_IsValid(int value);
-constexpr Creature_MotorType Creature_MotorType_MotorType_MIN = Creature_MotorType_SERVO;
-constexpr Creature_MotorType Creature_MotorType_MotorType_MAX = Creature_MotorType_STEPPER;
+constexpr Creature_MotorType Creature_MotorType_MotorType_MIN = Creature_MotorType_servo;
+constexpr Creature_MotorType Creature_MotorType_MotorType_MAX = Creature_MotorType_stepper;
 constexpr int Creature_MotorType_MotorType_ARRAYSIZE = Creature_MotorType_MotorType_MAX + 1;
 
 const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* Creature_MotorType_descriptor();
@@ -93,6 +105,36 @@ inline bool Creature_MotorType_Parse(
     ::PROTOBUF_NAMESPACE_ID::ConstStringParam name, Creature_MotorType* value) {
   return ::PROTOBUF_NAMESPACE_ID::internal::ParseNamedEnum<Creature_MotorType>(
     Creature_MotorType_descriptor(), name, value);
+}
+enum LogLevel : int {
+  trace = 0,
+  debug = 1,
+  info = 2,
+  warn = 3,
+  error = 4,
+  critical = 5,
+  fatal = 6,
+  LogLevel_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
+  LogLevel_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
+};
+bool LogLevel_IsValid(int value);
+constexpr LogLevel LogLevel_MIN = trace;
+constexpr LogLevel LogLevel_MAX = fatal;
+constexpr int LogLevel_ARRAYSIZE = LogLevel_MAX + 1;
+
+const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* LogLevel_descriptor();
+template<typename T>
+inline const std::string& LogLevel_Name(T enum_t_value) {
+  static_assert(::std::is_same<T, LogLevel>::value ||
+    ::std::is_integral<T>::value,
+    "Incorrect type passed to function LogLevel_Name.");
+  return ::PROTOBUF_NAMESPACE_ID::internal::NameOfEnum(
+    LogLevel_descriptor(), enum_t_value);
+}
+inline bool LogLevel_Parse(
+    ::PROTOBUF_NAMESPACE_ID::ConstStringParam name, LogLevel* value) {
+  return ::PROTOBUF_NAMESPACE_ID::internal::ParseNamedEnum<LogLevel>(
+    LogLevel_descriptor(), name, value);
 }
 // ===================================================================
 
@@ -265,6 +307,307 @@ class DatabaseInfo final :
 };
 // -------------------------------------------------------------------
 
+class LogFilter final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.LogFilter) */ {
+ public:
+  inline LogFilter() : LogFilter(nullptr) {}
+  ~LogFilter() override;
+  explicit PROTOBUF_CONSTEXPR LogFilter(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  LogFilter(const LogFilter& from);
+  LogFilter(LogFilter&& from) noexcept
+    : LogFilter() {
+    *this = ::std::move(from);
+  }
+
+  inline LogFilter& operator=(const LogFilter& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline LogFilter& operator=(LogFilter&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const LogFilter& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const LogFilter* internal_default_instance() {
+    return reinterpret_cast<const LogFilter*>(
+               &_LogFilter_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    1;
+
+  friend void swap(LogFilter& a, LogFilter& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(LogFilter* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(LogFilter* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  LogFilter* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<LogFilter>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const LogFilter& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const LogFilter& from) {
+    LogFilter::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(LogFilter* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.LogFilter";
+  }
+  protected:
+  explicit LogFilter(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kLevelFieldNumber = 1,
+  };
+  // .server.LogLevel level = 1;
+  void clear_level();
+  ::server::LogLevel level() const;
+  void set_level(::server::LogLevel value);
+  private:
+  ::server::LogLevel _internal_level() const;
+  void _internal_set_level(::server::LogLevel value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.LogFilter)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    int level_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
+
+class CreatureId final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.CreatureId) */ {
+ public:
+  inline CreatureId() : CreatureId(nullptr) {}
+  ~CreatureId() override;
+  explicit PROTOBUF_CONSTEXPR CreatureId(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  CreatureId(const CreatureId& from);
+  CreatureId(CreatureId&& from) noexcept
+    : CreatureId() {
+    *this = ::std::move(from);
+  }
+
+  inline CreatureId& operator=(const CreatureId& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CreatureId& operator=(CreatureId&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const CreatureId& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CreatureId* internal_default_instance() {
+    return reinterpret_cast<const CreatureId*>(
+               &_CreatureId_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    2;
+
+  friend void swap(CreatureId& a, CreatureId& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CreatureId* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CreatureId* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CreatureId* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CreatureId>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const CreatureId& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const CreatureId& from) {
+    CreatureId::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(CreatureId* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.CreatureId";
+  }
+  protected:
+  explicit CreatureId(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kIdFieldNumber = 1,
+  };
+  // bytes _id = 1;
+  void clear__id();
+  const std::string& _id() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set__id(ArgT0&& arg0, ArgT... args);
+  std::string* mutable__id();
+  PROTOBUF_NODISCARD std::string* release__id();
+  void set_allocated__id(std::string* _id);
+  private:
+  const std::string& _internal__id() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set__id(const std::string& value);
+  std::string* _internal_mutable__id();
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.CreatureId)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr _id_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
+
 class CreatureName final :
     public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.CreatureName) */ {
  public:
@@ -313,7 +656,7 @@ class CreatureName final :
                &_CreatureName_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    1;
+    3;
 
   friend void swap(CreatureName& a, CreatureName& b) {
     a.Swap(&b);
@@ -466,7 +809,7 @@ class Creature_Motor final :
                &_Creature_Motor_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    2;
+    4;
 
   friend void swap(Creature_Motor& a, Creature_Motor& b) {
     a.Swap(&b);
@@ -539,13 +882,28 @@ class Creature_Motor final :
   // accessors -------------------------------------------------------
 
   enum : int {
-    kTypeFieldNumber = 1,
-    kNumberFieldNumber = 2,
-    kMaxValueFieldNumber = 3,
-    kMinValueFieldNumber = 4,
-    kSmoothingValueFieldNumber = 5,
+    kIdFieldNumber = 1,
+    kTypeFieldNumber = 2,
+    kNumberFieldNumber = 3,
+    kMaxValueFieldNumber = 4,
+    kMinValueFieldNumber = 5,
+    kSmoothingValueFieldNumber = 6,
   };
-  // .server.Creature.MotorType type = 1;
+  // bytes _id = 1;
+  void clear__id();
+  const std::string& _id() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set__id(ArgT0&& arg0, ArgT... args);
+  std::string* mutable__id();
+  PROTOBUF_NODISCARD std::string* release__id();
+  void set_allocated__id(std::string* _id);
+  private:
+  const std::string& _internal__id() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set__id(const std::string& value);
+  std::string* _internal_mutable__id();
+  public:
+
+  // .server.Creature.MotorType type = 2;
   void clear_type();
   ::server::Creature_MotorType type() const;
   void set_type(::server::Creature_MotorType value);
@@ -554,7 +912,7 @@ class Creature_Motor final :
   void _internal_set_type(::server::Creature_MotorType value);
   public:
 
-  // uint32 number = 2;
+  // uint32 number = 3;
   void clear_number();
   uint32_t number() const;
   void set_number(uint32_t value);
@@ -563,7 +921,7 @@ class Creature_Motor final :
   void _internal_set_number(uint32_t value);
   public:
 
-  // uint32 max_value = 3;
+  // uint32 max_value = 4;
   void clear_max_value();
   uint32_t max_value() const;
   void set_max_value(uint32_t value);
@@ -572,7 +930,7 @@ class Creature_Motor final :
   void _internal_set_max_value(uint32_t value);
   public:
 
-  // uint32 min_value = 4;
+  // uint32 min_value = 5;
   void clear_min_value();
   uint32_t min_value() const;
   void set_min_value(uint32_t value);
@@ -581,7 +939,7 @@ class Creature_Motor final :
   void _internal_set_min_value(uint32_t value);
   public:
 
-  // double smoothing_value = 5;
+  // double smoothing_value = 6;
   void clear_smoothing_value();
   double smoothing_value() const;
   void set_smoothing_value(double value);
@@ -598,6 +956,7 @@ class Creature_Motor final :
   typedef void InternalArenaConstructable_;
   typedef void DestructorSkippable_;
   struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr _id_;
     int type_;
     uint32_t number_;
     uint32_t max_value_;
@@ -658,7 +1017,7 @@ class Creature final :
                &_Creature_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    3;
+    5;
 
   friend void swap(Creature& a, Creature& b) {
     a.Swap(&b);
@@ -731,10 +1090,10 @@ class Creature final :
   typedef Creature_Motor Motor;
 
   typedef Creature_MotorType MotorType;
-  static constexpr MotorType SERVO =
-    Creature_MotorType_SERVO;
-  static constexpr MotorType STEPPER =
-    Creature_MotorType_STEPPER;
+  static constexpr MotorType servo =
+    Creature_MotorType_servo;
+  static constexpr MotorType stepper =
+    Creature_MotorType_stepper;
   static inline bool MotorType_IsValid(int value) {
     return Creature_MotorType_IsValid(value);
   }
@@ -763,15 +1122,16 @@ class Creature final :
   // accessors -------------------------------------------------------
 
   enum : int {
-    kMotorsFieldNumber = 7,
-    kNameFieldNumber = 1,
-    kSacnIpFieldNumber = 3,
-    kLastUpdatedFieldNumber = 2,
-    kUniverseFieldNumber = 4,
-    kDmxBaseFieldNumber = 5,
-    kNumberOfMotorsFieldNumber = 6,
+    kMotorsFieldNumber = 8,
+    kIdFieldNumber = 1,
+    kNameFieldNumber = 2,
+    kSacnIpFieldNumber = 4,
+    kLastUpdatedFieldNumber = 3,
+    kUniverseFieldNumber = 5,
+    kDmxBaseFieldNumber = 6,
+    kNumberOfMotorsFieldNumber = 7,
   };
-  // repeated .server.Creature.Motor motors = 7;
+  // repeated .server.Creature.Motor motors = 8;
   int motors_size() const;
   private:
   int _internal_motors_size() const;
@@ -789,7 +1149,21 @@ class Creature final :
   const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::Creature_Motor >&
       motors() const;
 
-  // string name = 1;
+  // bytes _id = 1;
+  void clear__id();
+  const std::string& _id() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set__id(ArgT0&& arg0, ArgT... args);
+  std::string* mutable__id();
+  PROTOBUF_NODISCARD std::string* release__id();
+  void set_allocated__id(std::string* _id);
+  private:
+  const std::string& _internal__id() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set__id(const std::string& value);
+  std::string* _internal_mutable__id();
+  public:
+
+  // string name = 2;
   void clear_name();
   const std::string& name() const;
   template <typename ArgT0 = const std::string&, typename... ArgT>
@@ -803,7 +1177,7 @@ class Creature final :
   std::string* _internal_mutable_name();
   public:
 
-  // string sacn_ip = 3;
+  // string sacn_ip = 4;
   void clear_sacn_ip();
   const std::string& sacn_ip() const;
   template <typename ArgT0 = const std::string&, typename... ArgT>
@@ -817,7 +1191,7 @@ class Creature final :
   std::string* _internal_mutable_sacn_ip();
   public:
 
-  // .google.protobuf.Timestamp last_updated = 2;
+  // .google.protobuf.Timestamp last_updated = 3;
   bool has_last_updated() const;
   private:
   bool _internal_has_last_updated() const;
@@ -835,7 +1209,7 @@ class Creature final :
       ::PROTOBUF_NAMESPACE_ID::Timestamp* last_updated);
   ::PROTOBUF_NAMESPACE_ID::Timestamp* unsafe_arena_release_last_updated();
 
-  // uint32 universe = 4;
+  // uint32 universe = 5;
   void clear_universe();
   uint32_t universe() const;
   void set_universe(uint32_t value);
@@ -844,7 +1218,7 @@ class Creature final :
   void _internal_set_universe(uint32_t value);
   public:
 
-  // uint32 dmx_base = 5;
+  // uint32 dmx_base = 6;
   void clear_dmx_base();
   uint32_t dmx_base() const;
   void set_dmx_base(uint32_t value);
@@ -853,7 +1227,7 @@ class Creature final :
   void _internal_set_dmx_base(uint32_t value);
   public:
 
-  // uint32 number_of_motors = 6;
+  // uint32 number_of_motors = 7;
   void clear_number_of_motors();
   uint32_t number_of_motors() const;
   void set_number_of_motors(uint32_t value);
@@ -871,12 +1245,197 @@ class Creature final :
   typedef void DestructorSkippable_;
   struct Impl_ {
     ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::Creature_Motor > motors_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr _id_;
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr name_;
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr sacn_ip_;
     ::PROTOBUF_NAMESPACE_ID::Timestamp* last_updated_;
     uint32_t universe_;
     uint32_t dmx_base_;
     uint32_t number_of_motors_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
+
+class LogLine final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.LogLine) */ {
+ public:
+  inline LogLine() : LogLine(nullptr) {}
+  ~LogLine() override;
+  explicit PROTOBUF_CONSTEXPR LogLine(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  LogLine(const LogLine& from);
+  LogLine(LogLine&& from) noexcept
+    : LogLine() {
+    *this = ::std::move(from);
+  }
+
+  inline LogLine& operator=(const LogLine& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline LogLine& operator=(LogLine&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const LogLine& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const LogLine* internal_default_instance() {
+    return reinterpret_cast<const LogLine*>(
+               &_LogLine_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    6;
+
+  friend void swap(LogLine& a, LogLine& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(LogLine* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(LogLine* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  LogLine* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<LogLine>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const LogLine& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const LogLine& from) {
+    LogLine::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(LogLine* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.LogLine";
+  }
+  protected:
+  explicit LogLine(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kMessageFieldNumber = 3,
+    kTimestampFieldNumber = 2,
+    kLevelFieldNumber = 1,
+  };
+  // string message = 3;
+  void clear_message();
+  const std::string& message() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_message(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_message();
+  PROTOBUF_NODISCARD std::string* release_message();
+  void set_allocated_message(std::string* message);
+  private:
+  const std::string& _internal_message() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_message(const std::string& value);
+  std::string* _internal_mutable_message();
+  public:
+
+  // .google.protobuf.Timestamp timestamp = 2;
+  bool has_timestamp() const;
+  private:
+  bool _internal_has_timestamp() const;
+  public:
+  void clear_timestamp();
+  const ::PROTOBUF_NAMESPACE_ID::Timestamp& timestamp() const;
+  PROTOBUF_NODISCARD ::PROTOBUF_NAMESPACE_ID::Timestamp* release_timestamp();
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* mutable_timestamp();
+  void set_allocated_timestamp(::PROTOBUF_NAMESPACE_ID::Timestamp* timestamp);
+  private:
+  const ::PROTOBUF_NAMESPACE_ID::Timestamp& _internal_timestamp() const;
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* _internal_mutable_timestamp();
+  public:
+  void unsafe_arena_set_allocated_timestamp(
+      ::PROTOBUF_NAMESPACE_ID::Timestamp* timestamp);
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* unsafe_arena_release_timestamp();
+
+  // .server.LogLevel level = 1;
+  void clear_level();
+  ::server::LogLevel level() const;
+  void set_level(::server::LogLevel value);
+  private:
+  ::server::LogLevel _internal_level() const;
+  void _internal_set_level(::server::LogLevel value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.LogLine)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr message_;
+    ::PROTOBUF_NAMESPACE_ID::Timestamp* timestamp_;
+    int level_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -995,6 +1554,84 @@ inline void DatabaseInfo::set_allocated_help(std::string* help) {
 
 // -------------------------------------------------------------------
 
+// LogFilter
+
+// .server.LogLevel level = 1;
+inline void LogFilter::clear_level() {
+  _impl_.level_ = 0;
+}
+inline ::server::LogLevel LogFilter::_internal_level() const {
+  return static_cast< ::server::LogLevel >(_impl_.level_);
+}
+inline ::server::LogLevel LogFilter::level() const {
+  // @@protoc_insertion_point(field_get:server.LogFilter.level)
+  return _internal_level();
+}
+inline void LogFilter::_internal_set_level(::server::LogLevel value) {
+  
+  _impl_.level_ = value;
+}
+inline void LogFilter::set_level(::server::LogLevel value) {
+  _internal_set_level(value);
+  // @@protoc_insertion_point(field_set:server.LogFilter.level)
+}
+
+// -------------------------------------------------------------------
+
+// CreatureId
+
+// bytes _id = 1;
+inline void CreatureId::clear__id() {
+  _impl_._id_.ClearToEmpty();
+}
+inline const std::string& CreatureId::_id() const {
+  // @@protoc_insertion_point(field_get:server.CreatureId._id)
+  return _internal__id();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void CreatureId::set__id(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_._id_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.CreatureId._id)
+}
+inline std::string* CreatureId::mutable__id() {
+  std::string* _s = _internal_mutable__id();
+  // @@protoc_insertion_point(field_mutable:server.CreatureId._id)
+  return _s;
+}
+inline const std::string& CreatureId::_internal__id() const {
+  return _impl_._id_.Get();
+}
+inline void CreatureId::_internal_set__id(const std::string& value) {
+  
+  _impl_._id_.Set(value, GetArenaForAllocation());
+}
+inline std::string* CreatureId::_internal_mutable__id() {
+  
+  return _impl_._id_.Mutable(GetArenaForAllocation());
+}
+inline std::string* CreatureId::release__id() {
+  // @@protoc_insertion_point(field_release:server.CreatureId._id)
+  return _impl_._id_.Release();
+}
+inline void CreatureId::set_allocated__id(std::string* _id) {
+  if (_id != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_._id_.SetAllocated(_id, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_._id_.IsDefault()) {
+    _impl_._id_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.CreatureId._id)
+}
+
+// -------------------------------------------------------------------
+
 // CreatureName
 
 // string name = 1;
@@ -1051,7 +1688,57 @@ inline void CreatureName::set_allocated_name(std::string* name) {
 
 // Creature_Motor
 
-// .server.Creature.MotorType type = 1;
+// bytes _id = 1;
+inline void Creature_Motor::clear__id() {
+  _impl_._id_.ClearToEmpty();
+}
+inline const std::string& Creature_Motor::_id() const {
+  // @@protoc_insertion_point(field_get:server.Creature.Motor._id)
+  return _internal__id();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void Creature_Motor::set__id(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_._id_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.Creature.Motor._id)
+}
+inline std::string* Creature_Motor::mutable__id() {
+  std::string* _s = _internal_mutable__id();
+  // @@protoc_insertion_point(field_mutable:server.Creature.Motor._id)
+  return _s;
+}
+inline const std::string& Creature_Motor::_internal__id() const {
+  return _impl_._id_.Get();
+}
+inline void Creature_Motor::_internal_set__id(const std::string& value) {
+  
+  _impl_._id_.Set(value, GetArenaForAllocation());
+}
+inline std::string* Creature_Motor::_internal_mutable__id() {
+  
+  return _impl_._id_.Mutable(GetArenaForAllocation());
+}
+inline std::string* Creature_Motor::release__id() {
+  // @@protoc_insertion_point(field_release:server.Creature.Motor._id)
+  return _impl_._id_.Release();
+}
+inline void Creature_Motor::set_allocated__id(std::string* _id) {
+  if (_id != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_._id_.SetAllocated(_id, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_._id_.IsDefault()) {
+    _impl_._id_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.Creature.Motor._id)
+}
+
+// .server.Creature.MotorType type = 2;
 inline void Creature_Motor::clear_type() {
   _impl_.type_ = 0;
 }
@@ -1071,7 +1758,7 @@ inline void Creature_Motor::set_type(::server::Creature_MotorType value) {
   // @@protoc_insertion_point(field_set:server.Creature.Motor.type)
 }
 
-// uint32 number = 2;
+// uint32 number = 3;
 inline void Creature_Motor::clear_number() {
   _impl_.number_ = 0u;
 }
@@ -1091,7 +1778,7 @@ inline void Creature_Motor::set_number(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.Motor.number)
 }
 
-// uint32 max_value = 3;
+// uint32 max_value = 4;
 inline void Creature_Motor::clear_max_value() {
   _impl_.max_value_ = 0u;
 }
@@ -1111,7 +1798,7 @@ inline void Creature_Motor::set_max_value(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.Motor.max_value)
 }
 
-// uint32 min_value = 4;
+// uint32 min_value = 5;
 inline void Creature_Motor::clear_min_value() {
   _impl_.min_value_ = 0u;
 }
@@ -1131,7 +1818,7 @@ inline void Creature_Motor::set_min_value(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.Motor.min_value)
 }
 
-// double smoothing_value = 5;
+// double smoothing_value = 6;
 inline void Creature_Motor::clear_smoothing_value() {
   _impl_.smoothing_value_ = 0;
 }
@@ -1155,7 +1842,57 @@ inline void Creature_Motor::set_smoothing_value(double value) {
 
 // Creature
 
-// string name = 1;
+// bytes _id = 1;
+inline void Creature::clear__id() {
+  _impl_._id_.ClearToEmpty();
+}
+inline const std::string& Creature::_id() const {
+  // @@protoc_insertion_point(field_get:server.Creature._id)
+  return _internal__id();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void Creature::set__id(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_._id_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.Creature._id)
+}
+inline std::string* Creature::mutable__id() {
+  std::string* _s = _internal_mutable__id();
+  // @@protoc_insertion_point(field_mutable:server.Creature._id)
+  return _s;
+}
+inline const std::string& Creature::_internal__id() const {
+  return _impl_._id_.Get();
+}
+inline void Creature::_internal_set__id(const std::string& value) {
+  
+  _impl_._id_.Set(value, GetArenaForAllocation());
+}
+inline std::string* Creature::_internal_mutable__id() {
+  
+  return _impl_._id_.Mutable(GetArenaForAllocation());
+}
+inline std::string* Creature::release__id() {
+  // @@protoc_insertion_point(field_release:server.Creature._id)
+  return _impl_._id_.Release();
+}
+inline void Creature::set_allocated__id(std::string* _id) {
+  if (_id != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_._id_.SetAllocated(_id, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_._id_.IsDefault()) {
+    _impl_._id_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.Creature._id)
+}
+
+// string name = 2;
 inline void Creature::clear_name() {
   _impl_.name_.ClearToEmpty();
 }
@@ -1205,7 +1942,7 @@ inline void Creature::set_allocated_name(std::string* name) {
   // @@protoc_insertion_point(field_set_allocated:server.Creature.name)
 }
 
-// .google.protobuf.Timestamp last_updated = 2;
+// .google.protobuf.Timestamp last_updated = 3;
 inline bool Creature::_internal_has_last_updated() const {
   return this != internal_default_instance() && _impl_.last_updated_ != nullptr;
 }
@@ -1290,7 +2027,7 @@ inline void Creature::set_allocated_last_updated(::PROTOBUF_NAMESPACE_ID::Timest
   // @@protoc_insertion_point(field_set_allocated:server.Creature.last_updated)
 }
 
-// string sacn_ip = 3;
+// string sacn_ip = 4;
 inline void Creature::clear_sacn_ip() {
   _impl_.sacn_ip_.ClearToEmpty();
 }
@@ -1340,7 +2077,7 @@ inline void Creature::set_allocated_sacn_ip(std::string* sacn_ip) {
   // @@protoc_insertion_point(field_set_allocated:server.Creature.sacn_ip)
 }
 
-// uint32 universe = 4;
+// uint32 universe = 5;
 inline void Creature::clear_universe() {
   _impl_.universe_ = 0u;
 }
@@ -1360,7 +2097,7 @@ inline void Creature::set_universe(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.universe)
 }
 
-// uint32 dmx_base = 5;
+// uint32 dmx_base = 6;
 inline void Creature::clear_dmx_base() {
   _impl_.dmx_base_ = 0u;
 }
@@ -1380,7 +2117,7 @@ inline void Creature::set_dmx_base(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.dmx_base)
 }
 
-// uint32 number_of_motors = 6;
+// uint32 number_of_motors = 7;
 inline void Creature::clear_number_of_motors() {
   _impl_.number_of_motors_ = 0u;
 }
@@ -1400,7 +2137,7 @@ inline void Creature::set_number_of_motors(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.number_of_motors)
 }
 
-// repeated .server.Creature.Motor motors = 7;
+// repeated .server.Creature.Motor motors = 8;
 inline int Creature::_internal_motors_size() const {
   return _impl_.motors_.size();
 }
@@ -1440,9 +2177,174 @@ Creature::motors() const {
   return _impl_.motors_;
 }
 
+// -------------------------------------------------------------------
+
+// LogLine
+
+// .server.LogLevel level = 1;
+inline void LogLine::clear_level() {
+  _impl_.level_ = 0;
+}
+inline ::server::LogLevel LogLine::_internal_level() const {
+  return static_cast< ::server::LogLevel >(_impl_.level_);
+}
+inline ::server::LogLevel LogLine::level() const {
+  // @@protoc_insertion_point(field_get:server.LogLine.level)
+  return _internal_level();
+}
+inline void LogLine::_internal_set_level(::server::LogLevel value) {
+  
+  _impl_.level_ = value;
+}
+inline void LogLine::set_level(::server::LogLevel value) {
+  _internal_set_level(value);
+  // @@protoc_insertion_point(field_set:server.LogLine.level)
+}
+
+// .google.protobuf.Timestamp timestamp = 2;
+inline bool LogLine::_internal_has_timestamp() const {
+  return this != internal_default_instance() && _impl_.timestamp_ != nullptr;
+}
+inline bool LogLine::has_timestamp() const {
+  return _internal_has_timestamp();
+}
+inline const ::PROTOBUF_NAMESPACE_ID::Timestamp& LogLine::_internal_timestamp() const {
+  const ::PROTOBUF_NAMESPACE_ID::Timestamp* p = _impl_.timestamp_;
+  return p != nullptr ? *p : reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Timestamp&>(
+      ::PROTOBUF_NAMESPACE_ID::_Timestamp_default_instance_);
+}
+inline const ::PROTOBUF_NAMESPACE_ID::Timestamp& LogLine::timestamp() const {
+  // @@protoc_insertion_point(field_get:server.LogLine.timestamp)
+  return _internal_timestamp();
+}
+inline void LogLine::unsafe_arena_set_allocated_timestamp(
+    ::PROTOBUF_NAMESPACE_ID::Timestamp* timestamp) {
+  if (GetArenaForAllocation() == nullptr) {
+    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.timestamp_);
+  }
+  _impl_.timestamp_ = timestamp;
+  if (timestamp) {
+    
+  } else {
+    
+  }
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:server.LogLine.timestamp)
+}
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogLine::release_timestamp() {
+  
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* temp = _impl_.timestamp_;
+  _impl_.timestamp_ = nullptr;
+#ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
+  auto* old =  reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(temp);
+  temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  if (GetArenaForAllocation() == nullptr) { delete old; }
+#else  // PROTOBUF_FORCE_COPY_IN_RELEASE
+  if (GetArenaForAllocation() != nullptr) {
+    temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  }
+#endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
+  return temp;
+}
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogLine::unsafe_arena_release_timestamp() {
+  // @@protoc_insertion_point(field_release:server.LogLine.timestamp)
+  
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* temp = _impl_.timestamp_;
+  _impl_.timestamp_ = nullptr;
+  return temp;
+}
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogLine::_internal_mutable_timestamp() {
+  
+  if (_impl_.timestamp_ == nullptr) {
+    auto* p = CreateMaybeMessage<::PROTOBUF_NAMESPACE_ID::Timestamp>(GetArenaForAllocation());
+    _impl_.timestamp_ = p;
+  }
+  return _impl_.timestamp_;
+}
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogLine::mutable_timestamp() {
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* _msg = _internal_mutable_timestamp();
+  // @@protoc_insertion_point(field_mutable:server.LogLine.timestamp)
+  return _msg;
+}
+inline void LogLine::set_allocated_timestamp(::PROTOBUF_NAMESPACE_ID::Timestamp* timestamp) {
+  ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
+  if (message_arena == nullptr) {
+    delete reinterpret_cast< ::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.timestamp_);
+  }
+  if (timestamp) {
+    ::PROTOBUF_NAMESPACE_ID::Arena* submessage_arena =
+        ::PROTOBUF_NAMESPACE_ID::Arena::InternalGetOwningArena(
+                reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(timestamp));
+    if (message_arena != submessage_arena) {
+      timestamp = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
+          message_arena, timestamp, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  _impl_.timestamp_ = timestamp;
+  // @@protoc_insertion_point(field_set_allocated:server.LogLine.timestamp)
+}
+
+// string message = 3;
+inline void LogLine::clear_message() {
+  _impl_.message_.ClearToEmpty();
+}
+inline const std::string& LogLine::message() const {
+  // @@protoc_insertion_point(field_get:server.LogLine.message)
+  return _internal_message();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void LogLine::set_message(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.message_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.LogLine.message)
+}
+inline std::string* LogLine::mutable_message() {
+  std::string* _s = _internal_mutable_message();
+  // @@protoc_insertion_point(field_mutable:server.LogLine.message)
+  return _s;
+}
+inline const std::string& LogLine::_internal_message() const {
+  return _impl_.message_.Get();
+}
+inline void LogLine::_internal_set_message(const std::string& value) {
+  
+  _impl_.message_.Set(value, GetArenaForAllocation());
+}
+inline std::string* LogLine::_internal_mutable_message() {
+  
+  return _impl_.message_.Mutable(GetArenaForAllocation());
+}
+inline std::string* LogLine::release_message() {
+  // @@protoc_insertion_point(field_release:server.LogLine.message)
+  return _impl_.message_.Release();
+}
+inline void LogLine::set_allocated_message(std::string* message) {
+  if (message != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.message_.SetAllocated(message, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.message_.IsDefault()) {
+    _impl_.message_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.LogLine.message)
+}
+
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------
@@ -1460,6 +2362,11 @@ template <> struct is_proto_enum< ::server::Creature_MotorType> : ::std::true_ty
 template <>
 inline const EnumDescriptor* GetEnumDescriptor< ::server::Creature_MotorType>() {
   return ::server::Creature_MotorType_descriptor();
+}
+template <> struct is_proto_enum< ::server::LogLevel> : ::std::true_type {};
+template <>
+inline const EnumDescriptor* GetEnumDescriptor< ::server::LogLevel>() {
+  return ::server::LogLevel_descriptor();
 }
 
 PROTOBUF_NAMESPACE_CLOSE

@@ -14,11 +14,9 @@
 
 #include <bsoncxx/json.hpp>
 #include <mongocxx/client.hpp>
-#include <mongocxx/instance.hpp>
 #include <mongocxx/pool.hpp>
 #include <bsoncxx/types.hpp>
 #include <mongocxx/exception/bulk_write_exception.hpp>
-#include <bsoncxx/decimal128.hpp>
 #include <bsoncxx/document/element.hpp>
 #include <bsoncxx/array/element.hpp>
 
@@ -48,7 +46,7 @@ namespace creatures {
     }
 
 
-    mongocxx::collection Database::getCollection(std::string collectionName) {
+    mongocxx::collection Database::getCollection(const std::string& collectionName) {
 
         debug("connecting to a collection");
 
@@ -73,27 +71,31 @@ namespace creatures {
 
     }
 
-    grpc::Status Database::getCreature(std::string name, Creature* creature) {
-
-        debug("attempting to find and load {} from the database", name);
-
-
-        auto collection = getCollection("creatures");
-        trace("collection located");
+    grpc::Status Database::searchCreatures(const CreatureName* creatureName, Creature* creature) {
 
         grpc::Status status;
+        if(creatureName->name().empty()) {
+            info("an attempt to search for an empty name was made");
+            throw InvalidArgumentException("unable to search for Creatures because the name was empty");
+        }
 
+        // Okay, we know we have a non-empty name
+        std::string name = creatureName->name();
+        debug("attempting to search for a creature named {}", name);
+
+        auto collection = getCollection(COLLECTION_NAME);
+        trace("collection located");
 
         try {
             // Create a filter BSON document to match the target document
-            auto filter = bsoncxx::builder::stream::document{} << "_id" << name << bsoncxx::builder::stream::finalize;
+            auto filter = bsoncxx::builder::stream::document{} << "name" << name << bsoncxx::builder::stream::finalize;
 
             // Find the document with the matching _id field
             bsoncxx::stdx::optional<bsoncxx::document::value> result = collection.find_one(filter.view());
 
             if (!result) {
-                info("creature '{}' not found", name);
-                throw creatures::CreatureNotFoundException(fmt::format("creature '{}' not found", name));
+                info("no creatures named '{}' found", name);
+                throw creatures::CreatureNotFoundException(fmt::format("no creatures named '{}' found", name));
             }
 
             // Unwrap the optional to obtain the bsoncxx::document::value
@@ -111,18 +113,62 @@ namespace creatures {
         }
     }
 
+    grpc::Status Database::getCreature(const CreatureId* creatureId, Creature* creature) {
+
+        grpc::Status status;
+        if(creatureId->_id().empty()) {
+            info("an empty creatureID was passed into getCreature()");
+            throw InvalidArgumentException("unable to get a creature because the id was empty");
+        }
+
+        // Convert the ID into MongoID's ID
+        bsoncxx::oid id = bsoncxx::oid(creatureId->_id().data(), 12);
+        debug("attempting to search for a creature by ID: {}", id.to_string());
+
+        auto collection = getCollection(COLLECTION_NAME);
+        trace("collection located");
+
+        try {
+
+            // Create a filter BSON document to match the target document
+            auto filter = bsoncxx::builder::stream::document{} << "_id" << id << bsoncxx::builder::stream::finalize;
+            trace("filter doc: {}", bsoncxx::to_json(filter));
+
+            // Find the document with the matching _id field
+            bsoncxx::stdx::optional<bsoncxx::document::value> result = collection.find_one(filter.view());
+
+            if (!result) {
+                info("no creature with ID '{}' found", id.to_string());
+                throw creatures::CreatureNotFoundException(fmt::format("no creature id '{}' found", id.to_string()));
+            }
+
+            // Unwrap the optional to obtain the bsoncxx::document::value
+            bsoncxx::document::value found_document = *result;
+            creatureFromBson(found_document, creature);
+
+            debug("get completed!");
+
+            return grpc::Status::OK;
+        }
+        catch(const mongocxx::exception& e)
+        {
+            critical("an unhandled error happened while loading a creature by ID: {}", e.what());
+            throw InternalError(fmt::format("an unhandled error happened while loading a creature by ID: {}", e.what()));
+        }
+    }
+
     grpc::Status Database::createCreature(const Creature* creature, server::DatabaseInfo* reply) {
 
         debug("attempting to save a creature in the database");
 
-        auto collection = getCollection("creatures");
+        auto collection = getCollection(COLLECTION_NAME);
         trace("collection made");
 
         grpc::Status status;
 
         debug("name: {}", creature->name().c_str());
         try {
-            auto doc_value = creatureToBson(creature);
+            auto doc_value = creatureToBson(creature, true);
             trace("doc_value made");
             collection.insert_one(doc_value.view());
             trace("run_command done");
@@ -132,17 +178,15 @@ namespace creatures {
             status = grpc::Status::OK;
             reply->set_message("saved thingy in the thingy");
 
-
         }
         catch (const mongocxx::exception& e)
         {
             // Was this an attempt to make a duplicate creature?
             if(e.code().value() == 11000) {
-                error("attempted to insert a duplicate Creature in the database for name {}", creature->name());
+                error("attempted to insert a duplicate Creature in the database for id {}", creature->_id());
                 status = grpc::Status(grpc::StatusCode::ALREADY_EXISTS, e.what());
                 reply->set_message("Unable to create new creature");
-                reply->set_help(fmt::format("Name {} already exists", creature->name()));
-
+                reply->set_help(fmt::format("ID {} already exists", creature->_id()));
             }
 
             else {
@@ -157,7 +201,51 @@ namespace creatures {
         return status;
     }
 
-    bsoncxx::document::value Database::creatureToBson(const Creature* creature) {
+    grpc::Status Database::updateCreature(const Creature* creature, server::DatabaseInfo* reply) {
+
+        debug("attempting to update a creature in the database");
+
+        auto collection = getCollection(COLLECTION_NAME);
+        trace("collection made");
+
+        grpc::Status status;
+
+        debug("name: {}", creature->name().c_str());
+        try {
+            auto doc_value = creatureToBson(creature, false);
+            trace("doc_value made");
+
+            auto filter = bsoncxx::builder::stream::document{} << "_id" << creature->_id() << bsoncxx::builder::stream::finalize;
+            auto update = bsoncxx::builder::stream::document{} << "$set" << doc_value << bsoncxx::builder::stream::finalize;
+
+            mongocxx::stdx::optional<mongocxx::result::update> result =
+                    collection.update_one(filter.view(), update.view());
+            trace("update_one done");
+
+            if (result) {
+                debug("Matched {} documents", result->matched_count());
+                debug("Modified {} documents", result->modified_count());
+                reply->set_message("updated the creature in the database");
+                status = grpc::Status::OK;
+            } else {
+                error("No documents matched the filter on update");
+                reply->set_message("Unable to update, creature ID not found");
+                reply->set_help(fmt::format("ID {} id not found in the database", creature->_id()));
+                status = grpc::Status(grpc::StatusCode::NOT_FOUND, "Unable to update, creature ID not found");
+            }
+        }
+        catch (const mongocxx::exception& e)
+        {
+            critical("Error updating database: {}", e.what());
+            status = grpc::Status(grpc::StatusCode::UNKNOWN, e.what(), fmt::to_string(e.code().value()));
+            reply->set_message(fmt::format("Unable to update Creature in database: {} ({})", e.what(), e.code().value()));
+            reply->set_help(e.code().message());
+        }
+
+        return status;
+    }
+
+    bsoncxx::document::value Database::creatureToBson(const Creature* creature, bool assignNewId) {
         using bsoncxx::builder::stream::document;
         using bsoncxx::builder::stream::finalize;
         using std::chrono::system_clock;
@@ -167,11 +255,19 @@ namespace creatures {
         bsoncxx::builder::stream::document builder{};
         trace("builder made");
 
+        // Generate a new ID
+        bsoncxx::oid id;
+        if(!assignNewId) {
+            debug("reusing old ID");
+            id = bsoncxx::oid(creature->_id());
+        }
+
         // Convert the protobuf Timestamp to a std::chrono::system_clock::time_point
         system_clock::time_point last_updated = protobufTimestampToTimePoint(creature->last_updated());
         try {
 
-            builder << "_id" << creature->name()
+            builder << "_id" << id
+                    << "name" << creature->name()
                     << "sacn_ip" << creature->sacn_ip()
                     << "last_updated" << bsoncxx::types::b_date{last_updated}
                     << "universe" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->universe())}
@@ -186,7 +282,10 @@ namespace creatures {
                 const server::Creature_Motor &motor = creature->motors(j);
                 trace("adding motor {}", j);
 
+                // Assign a new ID
+                bsoncxx::oid motorId;
                 array_builder = array_builder << bsoncxx::builder::stream::open_document
+                                              << "_id" << motorId
                                               << "type" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.type())}
                                               << "number" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.number())}
                                               << "max_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.max_value())}
@@ -219,15 +318,25 @@ namespace creatures {
         debug("attempting to create a creature from a BSON document");
 
 
-        // Name is stored as `_id` in the database
         bsoncxx::document::element element = doc["_id"];
+        if( element && element.type() == bsoncxx::type::k_oid) {
+            const bsoncxx::oid& oid = element.get_oid().value;
+            const char* oid_data = oid.bytes();
+            creature->set__id(oid_data, bsoncxx::oid::k_oid_length);
+            debug("set the _id to {}", oid.to_string());
+        }
+        else {
+            throw creatures::DataFormatException("Field _id was not a bsoncxx::oid in the database");
+        }
+
+        element = doc["name"];
         if (element && element.type() == bsoncxx::type::k_utf8) {
             bsoncxx::stdx::string_view string_value = element.get_string().value;
             creature->set_name(std::string{string_value});
             debug("set the name to {}", creature->name());
         }
         else {
-            throw creatures::DataFormatException("Field _id (name) was not a string in the database");
+            throw creatures::DataFormatException("Field name was not a string in the database");
         }
 
         element = doc["sacn_ip"];

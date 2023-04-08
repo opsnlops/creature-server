@@ -26,6 +26,8 @@ static const char* CreatureServer_method_names[] = {
   "/server.CreatureServer/GetCreatures",
   "/server.CreatureServer/CreateCreature",
   "/server.CreatureServer/UpdateCreature",
+  "/server.CreatureServer/StreamLogs",
+  "/server.CreatureServer/SearchCreatures",
 };
 
 std::unique_ptr< CreatureServer::Stub> CreatureServer::NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options) {
@@ -39,25 +41,27 @@ CreatureServer::Stub::Stub(const std::shared_ptr< ::grpc::ChannelInterface>& cha
   , rpcmethod_GetCreatures_(CreatureServer_method_names[1], options.suffix_for_stats(),::grpc::internal::RpcMethod::SERVER_STREAMING, channel)
   , rpcmethod_CreateCreature_(CreatureServer_method_names[2], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   , rpcmethod_UpdateCreature_(CreatureServer_method_names[3], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
+  , rpcmethod_StreamLogs_(CreatureServer_method_names[4], options.suffix_for_stats(),::grpc::internal::RpcMethod::SERVER_STREAMING, channel)
+  , rpcmethod_SearchCreatures_(CreatureServer_method_names[5], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   {}
 
-::grpc::Status CreatureServer::Stub::GetCreature(::grpc::ClientContext* context, const ::server::CreatureName& request, ::server::Creature* response) {
-  return ::grpc::internal::BlockingUnaryCall< ::server::CreatureName, ::server::Creature, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), rpcmethod_GetCreature_, context, request, response);
+::grpc::Status CreatureServer::Stub::GetCreature(::grpc::ClientContext* context, const ::server::CreatureId& request, ::server::Creature* response) {
+  return ::grpc::internal::BlockingUnaryCall< ::server::CreatureId, ::server::Creature, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), rpcmethod_GetCreature_, context, request, response);
 }
 
-void CreatureServer::Stub::async::GetCreature(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, std::function<void(::grpc::Status)> f) {
-  ::grpc::internal::CallbackUnaryCall< ::server::CreatureName, ::server::Creature, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_GetCreature_, context, request, response, std::move(f));
+void CreatureServer::Stub::async::GetCreature(::grpc::ClientContext* context, const ::server::CreatureId* request, ::server::Creature* response, std::function<void(::grpc::Status)> f) {
+  ::grpc::internal::CallbackUnaryCall< ::server::CreatureId, ::server::Creature, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_GetCreature_, context, request, response, std::move(f));
 }
 
-void CreatureServer::Stub::async::GetCreature(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, ::grpc::ClientUnaryReactor* reactor) {
+void CreatureServer::Stub::async::GetCreature(::grpc::ClientContext* context, const ::server::CreatureId* request, ::server::Creature* response, ::grpc::ClientUnaryReactor* reactor) {
   ::grpc::internal::ClientCallbackUnaryFactory::Create< ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_GetCreature_, context, request, response, reactor);
 }
 
-::grpc::ClientAsyncResponseReader< ::server::Creature>* CreatureServer::Stub::PrepareAsyncGetCreatureRaw(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) {
-  return ::grpc::internal::ClientAsyncResponseReaderHelper::Create< ::server::Creature, ::server::CreatureName, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), cq, rpcmethod_GetCreature_, context, request);
+::grpc::ClientAsyncResponseReader< ::server::Creature>* CreatureServer::Stub::PrepareAsyncGetCreatureRaw(::grpc::ClientContext* context, const ::server::CreatureId& request, ::grpc::CompletionQueue* cq) {
+  return ::grpc::internal::ClientAsyncResponseReaderHelper::Create< ::server::Creature, ::server::CreatureId, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), cq, rpcmethod_GetCreature_, context, request);
 }
 
-::grpc::ClientAsyncResponseReader< ::server::Creature>* CreatureServer::Stub::AsyncGetCreatureRaw(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) {
+::grpc::ClientAsyncResponseReader< ::server::Creature>* CreatureServer::Stub::AsyncGetCreatureRaw(::grpc::ClientContext* context, const ::server::CreatureId& request, ::grpc::CompletionQueue* cq) {
   auto* result =
     this->PrepareAsyncGetCreatureRaw(context, request, cq);
   result->StartCall();
@@ -126,14 +130,53 @@ void CreatureServer::Stub::async::UpdateCreature(::grpc::ClientContext* context,
   return result;
 }
 
+::grpc::ClientReader< ::server::LogLine>* CreatureServer::Stub::StreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request) {
+  return ::grpc::internal::ClientReaderFactory< ::server::LogLine>::Create(channel_.get(), rpcmethod_StreamLogs_, context, request);
+}
+
+void CreatureServer::Stub::async::StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter* request, ::grpc::ClientReadReactor< ::server::LogLine>* reactor) {
+  ::grpc::internal::ClientCallbackReaderFactory< ::server::LogLine>::Create(stub_->channel_.get(), stub_->rpcmethod_StreamLogs_, context, request, reactor);
+}
+
+::grpc::ClientAsyncReader< ::server::LogLine>* CreatureServer::Stub::AsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) {
+  return ::grpc::internal::ClientAsyncReaderFactory< ::server::LogLine>::Create(channel_.get(), cq, rpcmethod_StreamLogs_, context, request, true, tag);
+}
+
+::grpc::ClientAsyncReader< ::server::LogLine>* CreatureServer::Stub::PrepareAsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) {
+  return ::grpc::internal::ClientAsyncReaderFactory< ::server::LogLine>::Create(channel_.get(), cq, rpcmethod_StreamLogs_, context, request, false, nullptr);
+}
+
+::grpc::Status CreatureServer::Stub::SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName& request, ::server::Creature* response) {
+  return ::grpc::internal::BlockingUnaryCall< ::server::CreatureName, ::server::Creature, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), rpcmethod_SearchCreatures_, context, request, response);
+}
+
+void CreatureServer::Stub::async::SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, std::function<void(::grpc::Status)> f) {
+  ::grpc::internal::CallbackUnaryCall< ::server::CreatureName, ::server::Creature, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_SearchCreatures_, context, request, response, std::move(f));
+}
+
+void CreatureServer::Stub::async::SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, ::grpc::ClientUnaryReactor* reactor) {
+  ::grpc::internal::ClientCallbackUnaryFactory::Create< ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_SearchCreatures_, context, request, response, reactor);
+}
+
+::grpc::ClientAsyncResponseReader< ::server::Creature>* CreatureServer::Stub::PrepareAsyncSearchCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) {
+  return ::grpc::internal::ClientAsyncResponseReaderHelper::Create< ::server::Creature, ::server::CreatureName, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), cq, rpcmethod_SearchCreatures_, context, request);
+}
+
+::grpc::ClientAsyncResponseReader< ::server::Creature>* CreatureServer::Stub::AsyncSearchCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) {
+  auto* result =
+    this->PrepareAsyncSearchCreaturesRaw(context, request, cq);
+  result->StartCall();
+  return result;
+}
+
 CreatureServer::Service::Service() {
   AddMethod(new ::grpc::internal::RpcServiceMethod(
       CreatureServer_method_names[0],
       ::grpc::internal::RpcMethod::NORMAL_RPC,
-      new ::grpc::internal::RpcMethodHandler< CreatureServer::Service, ::server::CreatureName, ::server::Creature, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(
+      new ::grpc::internal::RpcMethodHandler< CreatureServer::Service, ::server::CreatureId, ::server::Creature, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(
           [](CreatureServer::Service* service,
              ::grpc::ServerContext* ctx,
-             const ::server::CreatureName* req,
+             const ::server::CreatureId* req,
              ::server::Creature* resp) {
                return service->GetCreature(ctx, req, resp);
              }, this)));
@@ -167,12 +210,32 @@ CreatureServer::Service::Service() {
              ::server::DatabaseInfo* resp) {
                return service->UpdateCreature(ctx, req, resp);
              }, this)));
+  AddMethod(new ::grpc::internal::RpcServiceMethod(
+      CreatureServer_method_names[4],
+      ::grpc::internal::RpcMethod::SERVER_STREAMING,
+      new ::grpc::internal::ServerStreamingHandler< CreatureServer::Service, ::server::LogFilter, ::server::LogLine>(
+          [](CreatureServer::Service* service,
+             ::grpc::ServerContext* ctx,
+             const ::server::LogFilter* req,
+             ::grpc::ServerWriter<::server::LogLine>* writer) {
+               return service->StreamLogs(ctx, req, writer);
+             }, this)));
+  AddMethod(new ::grpc::internal::RpcServiceMethod(
+      CreatureServer_method_names[5],
+      ::grpc::internal::RpcMethod::NORMAL_RPC,
+      new ::grpc::internal::RpcMethodHandler< CreatureServer::Service, ::server::CreatureName, ::server::Creature, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(
+          [](CreatureServer::Service* service,
+             ::grpc::ServerContext* ctx,
+             const ::server::CreatureName* req,
+             ::server::Creature* resp) {
+               return service->SearchCreatures(ctx, req, resp);
+             }, this)));
 }
 
 CreatureServer::Service::~Service() {
 }
 
-::grpc::Status CreatureServer::Service::GetCreature(::grpc::ServerContext* context, const ::server::CreatureName* request, ::server::Creature* response) {
+::grpc::Status CreatureServer::Service::GetCreature(::grpc::ServerContext* context, const ::server::CreatureId* request, ::server::Creature* response) {
   (void) context;
   (void) request;
   (void) response;
@@ -194,6 +257,20 @@ CreatureServer::Service::~Service() {
 }
 
 ::grpc::Status CreatureServer::Service::UpdateCreature(::grpc::ServerContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response) {
+  (void) context;
+  (void) request;
+  (void) response;
+  return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+}
+
+::grpc::Status CreatureServer::Service::StreamLogs(::grpc::ServerContext* context, const ::server::LogFilter* request, ::grpc::ServerWriter< ::server::LogLine>* writer) {
+  (void) context;
+  (void) request;
+  (void) writer;
+  return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+}
+
+::grpc::Status CreatureServer::Service::SearchCreatures(::grpc::ServerContext* context, const ::server::CreatureName* request, ::server::Creature* response) {
   (void) context;
   (void) request;
   (void) response;

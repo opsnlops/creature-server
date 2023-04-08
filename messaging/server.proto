@@ -16,7 +16,7 @@ import "google/protobuf/timestamp.proto";
 service CreatureServer {
 
   // Fetches one from the database
-  rpc GetCreature (CreatureName) returns (Creature) {}
+  rpc GetCreature (CreatureId) returns (Creature) {}
 
   // Get all of them
   rpc GetCreatures (google.protobuf.Empty) returns (stream Creature) {}
@@ -27,13 +27,26 @@ service CreatureServer {
   // Update an existing creature in the database
   rpc UpdateCreature(Creature) returns (DatabaseInfo) {}
 
+  // Stream log messages from the server
+  rpc StreamLogs(LogFilter) returns (stream LogLine) {}
+
+  // Search for a Creature by name
+  rpc SearchCreatures (CreatureName) returns (Creature) {}
+
 }
 
 message DatabaseInfo {
-
   string message = 1;
   string help = 2;
 
+}
+
+message LogFilter {
+  LogLevel level = 1;
+}
+
+message CreatureId {
+  bytes _id = 1;
 }
 
 message CreatureName {
@@ -41,26 +54,43 @@ message CreatureName {
 }
 
 message Creature {
-  string name = 1;   // MongoDB _id field
-  google.protobuf.Timestamp last_updated = 2;
-  string sacn_ip = 3;
-  uint32 universe = 4;
-  uint32 dmx_base = 5;
-  uint32 number_of_motors = 6;
+  bytes _id = 1;
+  string name = 2;
+  google.protobuf.Timestamp last_updated = 3;
+  string sacn_ip = 4;
+  uint32 universe = 5;
+  uint32 dmx_base = 6;
+  uint32 number_of_motors = 7;
+  repeated Motor motors = 8;
 
   enum MotorType {
-    SERVO = 0;
-    STEPPER = 1;
+    servo = 0;
+    stepper = 1;
   }
 
   message Motor {
-    MotorType type = 1;
-    uint32 number = 2;
-    uint32 max_value = 3;
-    uint32 min_value = 4;
-    double smoothing_value = 5;
+    bytes _id = 1;
+    MotorType type = 2;
+    uint32 number = 3;
+    uint32 max_value = 4;
+    uint32 min_value = 5;
+    double smoothing_value = 6;
   }
+}
 
-  repeated Motor motors = 7;
 
+message LogLine {
+    LogLevel level = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    string message = 3;
+}
+
+enum LogLevel {
+  trace = 0;
+  debug = 1;
+  info = 2;
+  warn = 3;
+  error = 4;
+  critical = 5;
+  fatal = 6;
 }

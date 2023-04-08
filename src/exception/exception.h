@@ -72,5 +72,27 @@ namespace creatures {
         std::string message_;
     };
 
+    class InvalidArgumentException : public std::exception {
+    public:
+        // Constructor that takes an error message string
+        explicit InvalidArgumentException(const std::string& message)
+                : message_(message) {}
+
+        // Constructor that takes a C-style string error message
+        explicit InvalidArgumentException(const char* message)
+                : message_(message) {}
+
+        // Destructor
+        virtual ~InvalidArgumentException() noexcept {}
+
+        // Override the what() function to return the error message
+        virtual const char* what() const noexcept {
+            return message_.c_str();
+        }
+
+    private:
+        std::string message_;
+    };
+
 
 }

@@ -28,24 +28,24 @@ using server::DatabaseInfo;
 using spdlog::info;
 using spdlog::debug;
 using spdlog::critical;
+using spdlog::error;
 
 using creatures::Database;
 
 
 Database* db{};
 
-Status handleGetCreature(ServerContext* context, const CreatureName* request,
-                         Creature* reply ) {
+Status handleSearchCreatures(ServerContext* context, const CreatureName* request, Creature* reply ) {
 
     debug("handleGetCreature() time!");
 
     grpc::Status status;
 
     try {
-         db->getCreature(request->name(), reply);
+         db->searchCreatures(request, reply);
          debug("creature {} found in DB!", request->name());
         status = grpc::Status(grpc::StatusCode::OK,
-                              fmt::format("✅ Loaded creature {} successfully!", request->name()));
+                              fmt::format("✅ Searched for creature name '{}' successfully!", request->name()));
         return status;
 
     }
@@ -60,11 +60,54 @@ Status handleGetCreature(ServerContext* context, const CreatureName* request,
         critical("Data format exception while looking for a creature: {}", e.what());
         status = grpc::Status(grpc::StatusCode::INTERNAL,
                               e.what(),
-                              "A data formatting error occured while looking for this creature");
+                              "A data formatting error occurred while looking for this creature");
         return status;
     }
+    catch(const creatures::InvalidArgumentException& e) {
+        error("an empty name was passed into searchCreatures()");
+        status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                              e.what(),
+                              fmt::format("⚠️ A creature name must be supplied"));
+        return status;
+    }
+}
 
 
+Status handleGetCreature(ServerContext* context, const CreatureId* id, Creature* reply ) {
+
+    debug("handleGetCreature() time!");
+
+    grpc::Status status;
+
+    try {
+        db->getCreature(id, reply);
+        debug("creature found in DB on get!");
+        status = grpc::Status(grpc::StatusCode::OK,
+                              fmt::format("✅ Got creature by id successfully!"));
+        return status;
+
+    }
+    catch(const creatures::CreatureNotFoundException& e) {
+        info("creature id not found");
+        status = grpc::Status(grpc::StatusCode::NOT_FOUND,
+                              e.what(),
+                              fmt::format("🚫 Creature id not found"));
+        return status;
+    }
+    catch(const creatures::DataFormatException& e) {
+        critical("Data format exception while getting a creature by id: {}", e.what());
+        status = grpc::Status(grpc::StatusCode::INTERNAL,
+                              e.what(),
+                              "A data formatting error occurred while looking for a creature by id");
+        return status;
+    }
+    catch(const creatures::InvalidArgumentException& e) {
+        error("an empty name was passed into getCreature()");
+        status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                              e.what(),
+                              fmt::format("⚠️ A creature id must be supplied"));
+        return status;
+    }
 }
 
 Status handleSave(ServerContext* context, const Creature* request, DatabaseInfo* reply) {
@@ -76,16 +119,19 @@ Status handleSave(ServerContext* context, const Creature* request, DatabaseInfo*
 
 class CreatureServerImpl final : public CreatureServer::Service {
 
-    Status GetCreature(ServerContext* context, const CreatureName* request,
-                       Creature* reply) override  {
-        debug("hello from get");
-        return handleGetCreature(context, request, reply);
+    Status SearchCreatures(ServerContext* context, const CreatureName* request, Creature* reply) override  {
+        debug("calling handleSearchCreatures()");
+        return handleSearchCreatures(context, request, reply);
     }
 
-    Status CreateCreature(ServerContext* context, const Creature* creature,
-                       DatabaseInfo* reply) override  {
+    Status CreateCreature(ServerContext* context, const Creature* creature, DatabaseInfo* reply) override {
         debug("hello from save");
         return handleSave(context, creature, reply);
+    }
+
+    Status GetCreature(ServerContext* context, const CreatureId* id, Creature* reply) override  {
+        debug("calling getCreature()");
+        return handleGetCreature(context, id, reply);
     }
 };
 

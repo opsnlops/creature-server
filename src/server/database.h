@@ -15,9 +15,11 @@
 // TODO: Clean this up
 #define DB_URI  "mongodb://10.3.2.11"
 #define DB_NAME  "creature_server"
+#define COLLECTION_NAME "creatures"
 
 using server::Creature;
 using server::CreatureName;
+using server::CreatureId;
 
 #include <grpcpp/grpcpp.h>
 #include "messaging/server.pb.h"
@@ -31,7 +33,8 @@ namespace creatures {
 
         grpc::Status createCreature(const Creature* creature, server::DatabaseInfo* reply);
         grpc::Status updateCreature(const Creature* creature, server::DatabaseInfo* reply);
-        grpc::Status getCreature(std::string name, Creature* creature);
+        grpc::Status searchCreatures(const CreatureName* creatureName, Creature* creature);
+        grpc::Status getCreature(const CreatureId* creatureId, Creature* creature);
 
 
 
@@ -44,9 +47,9 @@ namespace creatures {
 
     private:
         mongocxx::pool& pool;
-        mongocxx::collection getCollection(std::string collectionName);
-        bsoncxx::document::value creatureToBson(const Creature* creature);
-        void creatureFromBson(const bsoncxx::document::value& doc, Creature* creature);
+        mongocxx::collection getCollection(const std::string& collectionName);
+        static bsoncxx::document::value creatureToBson(const Creature* creature, bool assignNewId);
+        static void creatureFromBson(const bsoncxx::document::value& doc, Creature* creature);
         static std::chrono::system_clock::time_point protobufTimestampToTimePoint(const google::protobuf::Timestamp& timestamp);
         static google::protobuf::Timestamp convertMongoDateToProtobufTimestamp(const bsoncxx::document::element& mongo_timestamp_element);
     };

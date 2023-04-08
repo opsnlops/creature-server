@@ -94,6 +94,7 @@ target_link_libraries(client
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         ${PROTOBUF_LIBRARIES}
         fmt::fmt
+        mongo::bsoncxx_shared
         )
 
 

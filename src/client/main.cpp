@@ -17,12 +17,15 @@
 #include <google/protobuf/timestamp.pb.h>
 #include <chrono>
 
+#include <bsoncxx/oid.hpp>
+
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
+using server::CreatureId;
 
 using spdlog::trace;
 using spdlog::info;
@@ -61,7 +64,7 @@ public:
 
     // Assembles the client's payload, sends it and presents the response back
     // from the server.
-    Creature GetCreature(const std::string& name) {
+    Creature SearchCreatures(const std::string& name) {
         // Data we are sending to the server.
         CreatureName request;
         request.set_name(name);
@@ -74,17 +77,45 @@ public:
         ClientContext context;
 
         // The actual RPC.
-        Status status = stub_->GetCreature(&context, request, &reply);
+        Status status = stub_->SearchCreatures(&context, request, &reply);
 
         // Act upon its status.
         if (status.ok()) {
-            debug("✅ ok!");
+            debug("✅ search ok!");
             return reply;
         } else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            info("not found! 🚫");
+            info("search not found! 🚫");
             return reply;
         } else {
-            critical("not okay: {}: {}", status.error_code(), status.error_message());
+            critical("search not okay: {}: {}", status.error_code(), status.error_message());
+            return reply;
+        }
+    }
+
+    Creature GetCreature(const CreatureId& id) {
+
+        debug("in GetCreature() with {}");
+
+
+        // Container for the data we expect from the server.
+        Creature reply;
+
+        // Context for the client. It could be used to convey extra information to
+        // the server and/or tweak certain RPC behaviors.
+        ClientContext context;
+
+        // The actual RPC.
+        Status status = stub_->GetCreature(&context, id, &reply);
+
+        // Act upon its status.
+        if (status.ok()) {
+            debug("✅ get ok!");
+            return reply;
+        } else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
+            info("get not found! 🚫");
+            return reply;
+        } else {
+            critical("get not okay: {}: {}", status.error_code(), status.error_message());
             return reply;
         }
     }
@@ -137,14 +168,14 @@ int main(int argc, char** argv) {
     CreatureServerClient client(
             grpc::CreateChannel("localhost:6666", grpc::InsecureChannelCredentials()));
 
-    info("Searching for a creature that should exist...");
-    Creature reply = client.GetCreature("Beaky3");
+    info("Searching for a creature name that should exist...");
+    Creature reply = client.SearchCreatures("Beaky1");
     info( "client gotten: {}, {}, {}, {}",
           reply.name(), reply.sacn_ip(), reply.dmx_base(), ProtobufTimestampToHumanReadable(reply.last_updated()));
 
     info("Searching for a creature that should NOT exist...");
-    reply = client.GetCreature("Poop Face");
-    trace("doing somthing with the reply so the compiler doesn't eat it... {}", reply.name());
+    reply = client.SearchCreatures("Poop Face");
+    trace("doing something with the reply so the compiler doesn't eat it... {}", reply.name());
 
 
     // Get the current time as a std::chrono::system_clock::time_point
@@ -156,7 +187,7 @@ int main(int argc, char** argv) {
 
     // Let's try to save one
     server::Creature creature = server::Creature();
-    creature.set_name("Beaky3");
+    creature.set_name("Beaky1");
     creature.set_dmx_base(666);
     creature.set_number_of_motors(5);
     creature.set_universe(1);
@@ -170,12 +201,29 @@ int main(int argc, char** argv) {
         motor->set_max_value(1234);
         motor->set_smoothing_value(0.95f);
         motor->set_number(i);
-        motor->set_type(::Creature::SERVO);
+
+        if(i % 2 == 0)
+            motor->set_type(::Creature::servo);
+        else
+            motor->set_type(::Creature::stepper);
     }
 
-
     client.CreateCreature(creature);
-    info("save done?");
+    info("create done");
+
+
+    // Try to get a creature by ID
+    std::string oid_string = "643103c64d9b9fdd700865c1";
+    info("attempting to search for ID {} in the database...", oid_string);
+
+    bsoncxx::oid oid(oid_string);
+    CreatureId creatureId;
+
+    const char* oid_data = oid.bytes();
+    creatureId.set__id(oid_data, bsoncxx::oid::k_oid_length);
+
+    reply = client.GetCreature(creatureId);
+    info("found creature named {} on a GetCreature call", reply.name());
 
     return 0;
 }
