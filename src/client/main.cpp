@@ -197,6 +197,7 @@ int main(int argc, char** argv) {
     for(int i = 0; i < 5; i++) {
         ::Creature::Motor *motor = creature.add_motors();
 
+        motor->set_name(fmt::format("Motor {} 🦾", i));      // Toss in some UTF-8 for testing
         motor->set_min_value(0);
         motor->set_max_value(1234);
         motor->set_smoothing_value(0.95f);
@@ -213,7 +214,7 @@ int main(int argc, char** argv) {
 
 
     // Try to get a creature by ID
-    std::string oid_string = "643103c64d9b9fdd700865c1";
+    std::string oid_string = "6431bcca27df97d5c40a5c81";
     info("attempting to search for ID {} in the database...", oid_string);
 
     bsoncxx::oid oid(oid_string);

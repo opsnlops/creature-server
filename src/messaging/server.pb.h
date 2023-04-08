@@ -883,11 +883,12 @@ class Creature_Motor final :
 
   enum : int {
     kIdFieldNumber = 1,
-    kTypeFieldNumber = 2,
-    kNumberFieldNumber = 3,
-    kMaxValueFieldNumber = 4,
-    kMinValueFieldNumber = 5,
-    kSmoothingValueFieldNumber = 6,
+    kNameFieldNumber = 2,
+    kTypeFieldNumber = 3,
+    kNumberFieldNumber = 4,
+    kMaxValueFieldNumber = 5,
+    kMinValueFieldNumber = 6,
+    kSmoothingValueFieldNumber = 7,
   };
   // bytes _id = 1;
   void clear__id();
@@ -903,7 +904,21 @@ class Creature_Motor final :
   std::string* _internal_mutable__id();
   public:
 
-  // .server.Creature.MotorType type = 2;
+  // string name = 2;
+  void clear_name();
+  const std::string& name() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_name(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_name();
+  PROTOBUF_NODISCARD std::string* release_name();
+  void set_allocated_name(std::string* name);
+  private:
+  const std::string& _internal_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_name(const std::string& value);
+  std::string* _internal_mutable_name();
+  public:
+
+  // .server.Creature.MotorType type = 3;
   void clear_type();
   ::server::Creature_MotorType type() const;
   void set_type(::server::Creature_MotorType value);
@@ -912,7 +927,7 @@ class Creature_Motor final :
   void _internal_set_type(::server::Creature_MotorType value);
   public:
 
-  // uint32 number = 3;
+  // uint32 number = 4;
   void clear_number();
   uint32_t number() const;
   void set_number(uint32_t value);
@@ -921,7 +936,7 @@ class Creature_Motor final :
   void _internal_set_number(uint32_t value);
   public:
 
-  // uint32 max_value = 4;
+  // uint32 max_value = 5;
   void clear_max_value();
   uint32_t max_value() const;
   void set_max_value(uint32_t value);
@@ -930,7 +945,7 @@ class Creature_Motor final :
   void _internal_set_max_value(uint32_t value);
   public:
 
-  // uint32 min_value = 5;
+  // uint32 min_value = 6;
   void clear_min_value();
   uint32_t min_value() const;
   void set_min_value(uint32_t value);
@@ -939,7 +954,7 @@ class Creature_Motor final :
   void _internal_set_min_value(uint32_t value);
   public:
 
-  // double smoothing_value = 6;
+  // double smoothing_value = 7;
   void clear_smoothing_value();
   double smoothing_value() const;
   void set_smoothing_value(double value);
@@ -957,6 +972,7 @@ class Creature_Motor final :
   typedef void DestructorSkippable_;
   struct Impl_ {
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr _id_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr name_;
     int type_;
     uint32_t number_;
     uint32_t max_value_;
@@ -1738,7 +1754,57 @@ inline void Creature_Motor::set_allocated__id(std::string* _id) {
   // @@protoc_insertion_point(field_set_allocated:server.Creature.Motor._id)
 }
 
-// .server.Creature.MotorType type = 2;
+// string name = 2;
+inline void Creature_Motor::clear_name() {
+  _impl_.name_.ClearToEmpty();
+}
+inline const std::string& Creature_Motor::name() const {
+  // @@protoc_insertion_point(field_get:server.Creature.Motor.name)
+  return _internal_name();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void Creature_Motor::set_name(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.Creature.Motor.name)
+}
+inline std::string* Creature_Motor::mutable_name() {
+  std::string* _s = _internal_mutable_name();
+  // @@protoc_insertion_point(field_mutable:server.Creature.Motor.name)
+  return _s;
+}
+inline const std::string& Creature_Motor::_internal_name() const {
+  return _impl_.name_.Get();
+}
+inline void Creature_Motor::_internal_set_name(const std::string& value) {
+  
+  _impl_.name_.Set(value, GetArenaForAllocation());
+}
+inline std::string* Creature_Motor::_internal_mutable_name() {
+  
+  return _impl_.name_.Mutable(GetArenaForAllocation());
+}
+inline std::string* Creature_Motor::release_name() {
+  // @@protoc_insertion_point(field_release:server.Creature.Motor.name)
+  return _impl_.name_.Release();
+}
+inline void Creature_Motor::set_allocated_name(std::string* name) {
+  if (name != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.name_.SetAllocated(name, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.name_.IsDefault()) {
+    _impl_.name_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.Creature.Motor.name)
+}
+
+// .server.Creature.MotorType type = 3;
 inline void Creature_Motor::clear_type() {
   _impl_.type_ = 0;
 }
@@ -1758,7 +1824,7 @@ inline void Creature_Motor::set_type(::server::Creature_MotorType value) {
   // @@protoc_insertion_point(field_set:server.Creature.Motor.type)
 }
 
-// uint32 number = 3;
+// uint32 number = 4;
 inline void Creature_Motor::clear_number() {
   _impl_.number_ = 0u;
 }
@@ -1778,7 +1844,7 @@ inline void Creature_Motor::set_number(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.Motor.number)
 }
 
-// uint32 max_value = 4;
+// uint32 max_value = 5;
 inline void Creature_Motor::clear_max_value() {
   _impl_.max_value_ = 0u;
 }
@@ -1798,7 +1864,7 @@ inline void Creature_Motor::set_max_value(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.Motor.max_value)
 }
 
-// uint32 min_value = 5;
+// uint32 min_value = 6;
 inline void Creature_Motor::clear_min_value() {
   _impl_.min_value_ = 0u;
 }
@@ -1818,7 +1884,7 @@ inline void Creature_Motor::set_min_value(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.Motor.min_value)
 }
 
-// double smoothing_value = 6;
+// double smoothing_value = 7;
 inline void Creature_Motor::clear_smoothing_value() {
   _impl_.smoothing_value_ = 0;
 }

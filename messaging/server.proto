@@ -70,11 +70,12 @@ message Creature {
 
   message Motor {
     bytes _id = 1;
-    MotorType type = 2;
-    uint32 number = 3;
-    uint32 max_value = 4;
-    uint32 min_value = 5;
-    double smoothing_value = 6;
+    string name = 2;
+    MotorType type = 3;
+    uint32 number = 4;
+    uint32 max_value = 5;
+    uint32 min_value = 6;
+    double smoothing_value = 7;
   }
 }
 

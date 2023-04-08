@@ -195,6 +195,8 @@ public struct Server_Creature {
 
     public var id: Data = Data()
 
+    public var name: String = String()
+
     public var type: Server_Creature.MotorType = .servo
 
     public var number: UInt32 = 0
@@ -503,11 +505,12 @@ extension Server_Creature.Motor: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
   public static let protoMessageName: String = Server_Creature.protoMessageName + ".Motor"
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .standard(proto: "_id"),
-    2: .same(proto: "type"),
-    3: .same(proto: "number"),
-    4: .standard(proto: "max_value"),
-    5: .standard(proto: "min_value"),
-    6: .standard(proto: "smoothing_value"),
+    2: .same(proto: "name"),
+    3: .same(proto: "type"),
+    4: .same(proto: "number"),
+    5: .standard(proto: "max_value"),
+    6: .standard(proto: "min_value"),
+    7: .standard(proto: "smoothing_value"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -517,11 +520,12 @@ extension Server_Creature.Motor: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularBytesField(value: &self.id) }()
-      case 2: try { try decoder.decodeSingularEnumField(value: &self.type) }()
-      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.number) }()
-      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.maxValue) }()
-      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.minValue) }()
-      case 6: try { try decoder.decodeSingularDoubleField(value: &self.smoothingValue) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.type) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.number) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.maxValue) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.minValue) }()
+      case 7: try { try decoder.decodeSingularDoubleField(value: &self.smoothingValue) }()
       default: break
       }
     }
@@ -531,26 +535,30 @@ extension Server_Creature.Motor: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if !self.id.isEmpty {
       try visitor.visitSingularBytesField(value: self.id, fieldNumber: 1)
     }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
+    }
     if self.type != .servo {
-      try visitor.visitSingularEnumField(value: self.type, fieldNumber: 2)
+      try visitor.visitSingularEnumField(value: self.type, fieldNumber: 3)
     }
     if self.number != 0 {
-      try visitor.visitSingularUInt32Field(value: self.number, fieldNumber: 3)
+      try visitor.visitSingularUInt32Field(value: self.number, fieldNumber: 4)
     }
     if self.maxValue != 0 {
-      try visitor.visitSingularUInt32Field(value: self.maxValue, fieldNumber: 4)
+      try visitor.visitSingularUInt32Field(value: self.maxValue, fieldNumber: 5)
     }
     if self.minValue != 0 {
-      try visitor.visitSingularUInt32Field(value: self.minValue, fieldNumber: 5)
+      try visitor.visitSingularUInt32Field(value: self.minValue, fieldNumber: 6)
     }
     if self.smoothingValue != 0 {
-      try visitor.visitSingularDoubleField(value: self.smoothingValue, fieldNumber: 6)
+      try visitor.visitSingularDoubleField(value: self.smoothingValue, fieldNumber: 7)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Server_Creature.Motor, rhs: Server_Creature.Motor) -> Bool {
     if lhs.id != rhs.id {return false}
+    if lhs.name != rhs.name {return false}
     if lhs.type != rhs.type {return false}
     if lhs.number != rhs.number {return false}
     if lhs.maxValue != rhs.maxValue {return false}

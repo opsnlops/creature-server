@@ -77,6 +77,7 @@ PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORIT
 PROTOBUF_CONSTEXPR Creature_Motor::Creature_Motor(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_._id_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.name_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.type_)*/0
   , /*decltype(_impl_.number_)*/0u
   , /*decltype(_impl_.max_value_)*/0u
@@ -169,6 +170,7 @@ const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(p
   ~0u,  // no _weak_field_map_
   ~0u,  // no _inlined_string_donated_
   PROTOBUF_FIELD_OFFSET(::server::Creature_Motor, _impl_._id_),
+  PROTOBUF_FIELD_OFFSET(::server::Creature_Motor, _impl_.name_),
   PROTOBUF_FIELD_OFFSET(::server::Creature_Motor, _impl_.type_),
   PROTOBUF_FIELD_OFFSET(::server::Creature_Motor, _impl_.number_),
   PROTOBUF_FIELD_OFFSET(::server::Creature_Motor, _impl_.max_value_),
@@ -204,8 +206,8 @@ static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protode
   { 15, -1, -1, sizeof(::server::CreatureId)},
   { 22, -1, -1, sizeof(::server::CreatureName)},
   { 29, -1, -1, sizeof(::server::Creature_Motor)},
-  { 41, -1, -1, sizeof(::server::Creature)},
-  { 55, -1, -1, sizeof(::server::LogLine)},
+  { 42, -1, -1, sizeof(::server::Creature)},
+  { 56, -1, -1, sizeof(::server::LogLine)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
@@ -224,34 +226,34 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "roto\"-\n\014DatabaseInfo\022\017\n\007message\030\001 \001(\t\022\014\n"
   "\004help\030\002 \001(\t\",\n\tLogFilter\022\037\n\005level\030\001 \001(\0162"
   "\020.server.LogLevel\"\031\n\nCreatureId\022\013\n\003_id\030\001"
-  " \001(\014\"\034\n\014CreatureName\022\014\n\004name\030\001 \001(\t\"\203\003\n\010C"
+  " \001(\014\"\034\n\014CreatureName\022\014\n\004name\030\001 \001(\t\"\221\003\n\010C"
   "reature\022\013\n\003_id\030\001 \001(\014\022\014\n\004name\030\002 \001(\t\0220\n\014la"
   "st_updated\030\003 \001(\0132\032.google.protobuf.Times"
   "tamp\022\017\n\007sacn_ip\030\004 \001(\t\022\020\n\010universe\030\005 \001(\r\022"
   "\020\n\010dmx_base\030\006 \001(\r\022\030\n\020number_of_motors\030\007 "
   "\001(\r\022&\n\006motors\030\010 \003(\0132\026.server.Creature.Mo"
-  "tor\032\215\001\n\005Motor\022\013\n\003_id\030\001 \001(\014\022(\n\004type\030\002 \001(\016"
-  "2\032.server.Creature.MotorType\022\016\n\006number\030\003"
-  " \001(\r\022\021\n\tmax_value\030\004 \001(\r\022\021\n\tmin_value\030\005 \001"
-  "(\r\022\027\n\017smoothing_value\030\006 \001(\001\"#\n\tMotorType"
-  "\022\t\n\005servo\020\000\022\013\n\007stepper\020\001\"j\n\007LogLine\022\037\n\005l"
-  "evel\030\001 \001(\0162\020.server.LogLevel\022-\n\ttimestam"
-  "p\030\002 \001(\0132\032.google.protobuf.Timestamp\022\017\n\007m"
-  "essage\030\003 \001(\t*X\n\010LogLevel\022\t\n\005trace\020\000\022\t\n\005d"
-  "ebug\020\001\022\010\n\004info\020\002\022\010\n\004warn\020\003\022\t\n\005error\020\004\022\014\n"
-  "\010critical\020\005\022\t\n\005fatal\020\0062\360\002\n\016CreatureServe"
-  "r\0225\n\013GetCreature\022\022.server.CreatureId\032\020.s"
-  "erver.Creature\"\000\022<\n\014GetCreatures\022\026.googl"
-  "e.protobuf.Empty\032\020.server.Creature\"\0000\001\022:"
-  "\n\016CreateCreature\022\020.server.Creature\032\024.ser"
-  "ver.DatabaseInfo\"\000\022:\n\016UpdateCreature\022\020.s"
-  "erver.Creature\032\024.server.DatabaseInfo\"\000\0224"
-  "\n\nStreamLogs\022\021.server.LogFilter\032\017.server"
-  ".LogLine\"\0000\001\022;\n\017SearchCreatures\022\024.server"
-  ".CreatureName\032\020.server.Creature\"\000BR\n\034io."
-  "opsnlops.creatures.serverB\022NetworkServer"
-  "ProtoP\001Z\034opsnlops.io/creatures/serverb\006p"
-  "roto3"
+  "tor\032\233\001\n\005Motor\022\013\n\003_id\030\001 \001(\014\022\014\n\004name\030\002 \001(\t"
+  "\022(\n\004type\030\003 \001(\0162\032.server.Creature.MotorTy"
+  "pe\022\016\n\006number\030\004 \001(\r\022\021\n\tmax_value\030\005 \001(\r\022\021\n"
+  "\tmin_value\030\006 \001(\r\022\027\n\017smoothing_value\030\007 \001("
+  "\001\"#\n\tMotorType\022\t\n\005servo\020\000\022\013\n\007stepper\020\001\"j"
+  "\n\007LogLine\022\037\n\005level\030\001 \001(\0162\020.server.LogLev"
+  "el\022-\n\ttimestamp\030\002 \001(\0132\032.google.protobuf."
+  "Timestamp\022\017\n\007message\030\003 \001(\t*X\n\010LogLevel\022\t"
+  "\n\005trace\020\000\022\t\n\005debug\020\001\022\010\n\004info\020\002\022\010\n\004warn\020\003"
+  "\022\t\n\005error\020\004\022\014\n\010critical\020\005\022\t\n\005fatal\020\0062\360\002\n"
+  "\016CreatureServer\0225\n\013GetCreature\022\022.server."
+  "CreatureId\032\020.server.Creature\"\000\022<\n\014GetCre"
+  "atures\022\026.google.protobuf.Empty\032\020.server."
+  "Creature\"\0000\001\022:\n\016CreateCreature\022\020.server."
+  "Creature\032\024.server.DatabaseInfo\"\000\022:\n\016Upda"
+  "teCreature\022\020.server.Creature\032\024.server.Da"
+  "tabaseInfo\"\000\0224\n\nStreamLogs\022\021.server.LogF"
+  "ilter\032\017.server.LogLine\"\0000\001\022;\n\017SearchCrea"
+  "tures\022\024.server.CreatureName\032\020.server.Cre"
+  "ature\"\000BR\n\034io.opsnlops.creatures.serverB"
+  "\022NetworkServerProtoP\001Z\034opsnlops.io/creat"
+  "ures/serverb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -259,7 +261,7 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 1285, descriptor_table_protodef_server_2eproto,
+    false, false, 1299, descriptor_table_protodef_server_2eproto,
     "server.proto",
     &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 7,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,
@@ -1166,6 +1168,7 @@ Creature_Motor::Creature_Motor(const Creature_Motor& from)
   Creature_Motor* const _this = this; (void)_this;
   new (&_impl_) Impl_{
       decltype(_impl_._id_){}
+    , decltype(_impl_.name_){}
     , decltype(_impl_.type_){}
     , decltype(_impl_.number_){}
     , decltype(_impl_.max_value_){}
@@ -1182,6 +1185,14 @@ Creature_Motor::Creature_Motor(const Creature_Motor& from)
     _this->_impl_._id_.Set(from._internal__id(), 
       _this->GetArenaForAllocation());
   }
+  _impl_.name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_name().empty()) {
+    _this->_impl_.name_.Set(from._internal_name(), 
+      _this->GetArenaForAllocation());
+  }
   ::memcpy(&_impl_.type_, &from._impl_.type_,
     static_cast<size_t>(reinterpret_cast<char*>(&_impl_.smoothing_value_) -
     reinterpret_cast<char*>(&_impl_.type_)) + sizeof(_impl_.smoothing_value_));
@@ -1194,6 +1205,7 @@ inline void Creature_Motor::SharedCtor(
   (void)is_message_owned;
   new (&_impl_) Impl_{
       decltype(_impl_._id_){}
+    , decltype(_impl_.name_){}
     , decltype(_impl_.type_){0}
     , decltype(_impl_.number_){0u}
     , decltype(_impl_.max_value_){0u}
@@ -1204,6 +1216,10 @@ inline void Creature_Motor::SharedCtor(
   _impl_._id_.InitDefault();
   #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
     _impl_._id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.name_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
 }
 
@@ -1219,6 +1235,7 @@ Creature_Motor::~Creature_Motor() {
 inline void Creature_Motor::SharedDtor() {
   GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
   _impl_._id_.Destroy();
+  _impl_.name_.Destroy();
 }
 
 void Creature_Motor::SetCachedSize(int size) const {
@@ -1232,6 +1249,7 @@ void Creature_Motor::Clear() {
   (void) cached_has_bits;
 
   _impl_._id_.ClearToEmpty();
+  _impl_.name_.ClearToEmpty();
   ::memset(&_impl_.type_, 0, static_cast<size_t>(
       reinterpret_cast<char*>(&_impl_.smoothing_value_) -
       reinterpret_cast<char*>(&_impl_.type_)) + sizeof(_impl_.smoothing_value_));
@@ -1253,42 +1271,52 @@ const char* Creature_Motor::_InternalParse(const char* ptr, ::_pbi::ParseContext
         } else
           goto handle_unusual;
         continue;
-      // .server.Creature.MotorType type = 2;
+      // string name = 2;
       case 2:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 16)) {
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
+          auto str = _internal_mutable_name();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "server.Creature.Motor.name"));
+        } else
+          goto handle_unusual;
+        continue;
+      // .server.Creature.MotorType type = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 24)) {
           uint64_t val = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
           CHK_(ptr);
           _internal_set_type(static_cast<::server::Creature_MotorType>(val));
         } else
           goto handle_unusual;
         continue;
-      // uint32 number = 3;
-      case 3:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 24)) {
+      // uint32 number = 4;
+      case 4:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 32)) {
           _impl_.number_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
         continue;
-      // uint32 max_value = 4;
-      case 4:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 32)) {
+      // uint32 max_value = 5;
+      case 5:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 40)) {
           _impl_.max_value_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
         continue;
-      // uint32 min_value = 5;
-      case 5:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 40)) {
+      // uint32 min_value = 6;
+      case 6:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 48)) {
           _impl_.min_value_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
         continue;
-      // double smoothing_value = 6;
-      case 6:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 49)) {
+      // double smoothing_value = 7;
+      case 7:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 57)) {
           _impl_.smoothing_value_ = ::PROTOBUF_NAMESPACE_ID::internal::UnalignedLoad<double>(ptr);
           ptr += sizeof(double);
         } else
@@ -1329,39 +1357,49 @@ uint8_t* Creature_Motor::_InternalSerialize(
         1, this->_internal__id(), target);
   }
 
-  // .server.Creature.MotorType type = 2;
+  // string name = 2;
+  if (!this->_internal_name().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_name().data(), static_cast<int>(this->_internal_name().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "server.Creature.Motor.name");
+    target = stream->WriteStringMaybeAliased(
+        2, this->_internal_name(), target);
+  }
+
+  // .server.Creature.MotorType type = 3;
   if (this->_internal_type() != 0) {
     target = stream->EnsureSpace(target);
     target = ::_pbi::WireFormatLite::WriteEnumToArray(
-      2, this->_internal_type(), target);
+      3, this->_internal_type(), target);
   }
 
-  // uint32 number = 3;
+  // uint32 number = 4;
   if (this->_internal_number() != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(3, this->_internal_number(), target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(4, this->_internal_number(), target);
   }
 
-  // uint32 max_value = 4;
+  // uint32 max_value = 5;
   if (this->_internal_max_value() != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(4, this->_internal_max_value(), target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(5, this->_internal_max_value(), target);
   }
 
-  // uint32 min_value = 5;
+  // uint32 min_value = 6;
   if (this->_internal_min_value() != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(5, this->_internal_min_value(), target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(6, this->_internal_min_value(), target);
   }
 
-  // double smoothing_value = 6;
+  // double smoothing_value = 7;
   static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
   double tmp_smoothing_value = this->_internal_smoothing_value();
   uint64_t raw_smoothing_value;
   memcpy(&raw_smoothing_value, &tmp_smoothing_value, sizeof(tmp_smoothing_value));
   if (raw_smoothing_value != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteDoubleToArray(6, this->_internal_smoothing_value(), target);
+    target = ::_pbi::WireFormatLite::WriteDoubleToArray(7, this->_internal_smoothing_value(), target);
   }
 
   if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
@@ -1387,28 +1425,35 @@ size_t Creature_Motor::ByteSizeLong() const {
         this->_internal__id());
   }
 
-  // .server.Creature.MotorType type = 2;
+  // string name = 2;
+  if (!this->_internal_name().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_name());
+  }
+
+  // .server.Creature.MotorType type = 3;
   if (this->_internal_type() != 0) {
     total_size += 1 +
       ::_pbi::WireFormatLite::EnumSize(this->_internal_type());
   }
 
-  // uint32 number = 3;
+  // uint32 number = 4;
   if (this->_internal_number() != 0) {
     total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_number());
   }
 
-  // uint32 max_value = 4;
+  // uint32 max_value = 5;
   if (this->_internal_max_value() != 0) {
     total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_max_value());
   }
 
-  // uint32 min_value = 5;
+  // uint32 min_value = 6;
   if (this->_internal_min_value() != 0) {
     total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_min_value());
   }
 
-  // double smoothing_value = 6;
+  // double smoothing_value = 7;
   static_assert(sizeof(uint64_t) == sizeof(double), "Code assumes uint64_t and double are the same size.");
   double tmp_smoothing_value = this->_internal_smoothing_value();
   uint64_t raw_smoothing_value;
@@ -1437,6 +1482,9 @@ void Creature_Motor::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const :
 
   if (!from._internal__id().empty()) {
     _this->_internal_set__id(from._internal__id());
+  }
+  if (!from._internal_name().empty()) {
+    _this->_internal_set_name(from._internal_name());
   }
   if (from._internal_type() != 0) {
     _this->_internal_set_type(from._internal_type());
@@ -1479,6 +1527,10 @@ void Creature_Motor::InternalSwap(Creature_Motor* other) {
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
       &_impl_._id_, lhs_arena,
       &other->_impl_._id_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.name_, lhs_arena,
+      &other->_impl_.name_, rhs_arena
   );
   ::PROTOBUF_NAMESPACE_ID::internal::memswap<
       PROTOBUF_FIELD_OFFSET(Creature_Motor, _impl_.smoothing_value_)

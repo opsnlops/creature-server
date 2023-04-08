@@ -2,6 +2,8 @@
 #include <string>
 #include <cstdlib> // for std::abs
 #include <cstdint>
+#include <iomanip>
+#include <sstream>
 
 #include "spdlog/spdlog.h"
 
@@ -282,15 +284,22 @@ namespace creatures {
                 const server::Creature_Motor &motor = creature->motors(j);
                 trace("adding motor {}", j);
 
+                // Convert the double value to a std::string with fixed precision. Boo floating point!
+                std::ostringstream str_smoothing_value;
+                str_smoothing_value << std::fixed << std::setprecision(4) << motor.smoothing_value();
+                std::string smoothing_value_str = str_smoothing_value.str();
+                bsoncxx::types::b_decimal128 decimal_smoothing_value(smoothing_value_str);
+
                 // Assign a new ID
                 bsoncxx::oid motorId;
                 array_builder = array_builder << bsoncxx::builder::stream::open_document
                                               << "_id" << motorId
+                                              << "name" << motor.name()
                                               << "type" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.type())}
                                               << "number" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.number())}
                                               << "max_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.max_value())}
                                               << "mix_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.min_value())}
-                                              << "smoothing_value" << bsoncxx::types::b_double{static_cast<double>(motor.smoothing_value())}
+                                              << "smoothing_value" << decimal_smoothing_value
                                               << bsoncxx::builder::stream::close_document;
             }
             trace("done adding motors");
@@ -400,6 +409,14 @@ namespace creatures {
 
                     server::Creature_Motor* motor = creature->add_motors();
 
+                    // Motor name
+                    element = obj["name"];
+                    if(element && element.type() != bsoncxx::type::k_utf8) {
+                        error("motor field 'name' was not a string in the database");
+                        throw creatures::DataFormatException("motor field 'name' was not a string in the database");
+                    }
+                    motor->set_name(std::string{element.get_string().value});
+                    debug("set the motor name to {}", motor->name());
 
                     // Motor type
                     element = obj["type"];
@@ -420,8 +437,6 @@ namespace creatures {
                     motor->set_type(static_cast<Creature::MotorType>(motor_type));
                     debug("set the motor type to {}", motor->type());
 
-
-
                     // Motor number
                     element = obj["number"];
                     if (element && element.type() == bsoncxx::type::k_int32) {
@@ -433,8 +448,6 @@ namespace creatures {
                         error("motor field 'number' was not an int in the database");
                         throw creatures::DataFormatException("motor field 'number' was not an int in the database");
                     }
-
-
 
                     // Max Value
                     element = obj["max_value"];
@@ -455,15 +468,25 @@ namespace creatures {
                     motor->set_min_value(element.get_int32().value);
                     debug("set the motor min_value to {}", motor->min_value());
 
-
-
                     // Smoothing
                     element = obj["smoothing_value"];
-                    if (element && element.type() != bsoncxx::type::k_double) {
-                        error("motor value 'smoothing_value' is not a double");
-                        throw creatures::DataFormatException("motor value 'smoothing_value' is not a dobule");
+                    if (element && element.type() != bsoncxx::type::k_decimal128) {
+                        error("motor value 'smoothing_value' is not a k_decimal128");
+                        throw creatures::DataFormatException("motor value 'smoothing_value' is not a k_decimal128");
                     }
-                    motor->set_smoothing_value(element.get_double().value);
+
+                    /*
+                     * Note to future me!
+                     *
+                     * I'm using the Decimal128 format here since Mongo wants to turn a double like
+                     * 0.95 into 0.94999999234, which looks goofy in the UI. There's no bridge from
+                     * Decimal128 to double without going into a string first, so that's where this
+                     * goes.
+                     */
+                    bsoncxx::types::b_decimal128 decimal_value = element.get_decimal128();
+                    std::string decimal_str = decimal_value.value.to_string();
+
+                    motor->set_smoothing_value(std::stod(decimal_str));
                     debug("set the motor smoothing_value to {}", motor->smoothing_value());
                 }
 
