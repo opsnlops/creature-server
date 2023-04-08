@@ -33,6 +33,25 @@ service CreatureServer {
   // Search for a Creature by name
   rpc SearchCreatures (CreatureName) returns (Creature) {}
 
+  rpc ListCreatures(CreatureFilter) returns (ListCreaturesResponse) {}
+
+}
+
+/*
+    Used to populate the list of creatures
+ */
+message CreatureIdentifier {
+  bytes _id = 1;
+  string name = 2;
+}
+
+message ListCreaturesResponse {
+  repeated CreatureIdentifier creaturesIds = 1;
+}
+
+message CreatureFilter {
+  string filter = 1;
+  SortBy sortBy = 2;
 }
 
 message DatabaseInfo {
@@ -94,4 +113,10 @@ enum LogLevel {
   error = 4;
   critical = 5;
   fatal = 6;
+}
+
+
+enum SortBy {
+  name = 0;
+  number = 1;
 }

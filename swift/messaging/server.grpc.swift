@@ -62,6 +62,11 @@ public protocol Server_CreatureServerClientProtocol: GRPCClient {
     _ request: Server_CreatureName,
     callOptions: CallOptions?
   ) -> UnaryCall<Server_CreatureName, Server_Creature>
+
+  func listCreatures(
+    _ request: Server_CreatureFilter,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Server_CreatureFilter, Server_ListCreaturesResponse>
 }
 
 extension Server_CreatureServerClientProtocol {
@@ -182,6 +187,24 @@ extension Server_CreatureServerClientProtocol {
       interceptors: self.interceptors?.makeSearchCreaturesInterceptors() ?? []
     )
   }
+
+  /// Unary call to ListCreatures
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ListCreatures.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  public func listCreatures(
+    _ request: Server_CreatureFilter,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Server_CreatureFilter, Server_ListCreaturesResponse> {
+    return self.makeUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.listCreatures.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListCreaturesInterceptors() ?? []
+    )
+  }
 }
 
 #if compiler(>=5.6)
@@ -278,6 +301,11 @@ public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
     _ request: Server_CreatureName,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Server_CreatureName, Server_Creature>
+
+  func makeListCreaturesCall(
+    _ request: Server_CreatureFilter,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Server_CreatureFilter, Server_ListCreaturesResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -361,6 +389,18 @@ extension Server_CreatureServerAsyncClientProtocol {
       interceptors: self.interceptors?.makeSearchCreaturesInterceptors() ?? []
     )
   }
+
+  public func makeListCreaturesCall(
+    _ request: Server_CreatureFilter,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Server_CreatureFilter, Server_ListCreaturesResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.listCreatures.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListCreaturesInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -436,6 +476,18 @@ extension Server_CreatureServerAsyncClientProtocol {
       interceptors: self.interceptors?.makeSearchCreaturesInterceptors() ?? []
     )
   }
+
+  public func listCreatures(
+    _ request: Server_CreatureFilter,
+    callOptions: CallOptions? = nil
+  ) async throws -> Server_ListCreaturesResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.listCreatures.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListCreaturesInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -476,6 +528,9 @@ public protocol Server_CreatureServerClientInterceptorFactoryProtocol: GRPCSenda
 
   /// - Returns: Interceptors to use when invoking 'searchCreatures'.
   func makeSearchCreaturesInterceptors() -> [ClientInterceptor<Server_CreatureName, Server_Creature>]
+
+  /// - Returns: Interceptors to use when invoking 'listCreatures'.
+  func makeListCreaturesInterceptors() -> [ClientInterceptor<Server_CreatureFilter, Server_ListCreaturesResponse>]
 }
 
 public enum Server_CreatureServerClientMetadata {
@@ -489,6 +544,7 @@ public enum Server_CreatureServerClientMetadata {
       Server_CreatureServerClientMetadata.Methods.updateCreature,
       Server_CreatureServerClientMetadata.Methods.streamLogs,
       Server_CreatureServerClientMetadata.Methods.searchCreatures,
+      Server_CreatureServerClientMetadata.Methods.listCreatures,
     ]
   )
 
@@ -526,6 +582,12 @@ public enum Server_CreatureServerClientMetadata {
     public static let searchCreatures = GRPCMethodDescriptor(
       name: "SearchCreatures",
       path: "/server.CreatureServer/SearchCreatures",
+      type: GRPCCallType.unary
+    )
+
+    public static let listCreatures = GRPCMethodDescriptor(
+      name: "ListCreatures",
+      path: "/server.CreatureServer/ListCreatures",
       type: GRPCCallType.unary
     )
   }

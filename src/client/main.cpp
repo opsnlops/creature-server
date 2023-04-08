@@ -26,6 +26,8 @@ using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
 using server::CreatureId;
+using server::ListCreaturesResponse;
+using server::CreatureFilter;
 
 using spdlog::trace;
 using spdlog::info;
@@ -142,6 +144,24 @@ public:
 
     }
 
+    server::ListCreaturesResponse ListCreatures(const CreatureFilter& filter) {
+
+        ClientContext context;
+        server::ListCreaturesResponse reply;
+
+        Status status = stub_->ListCreatures(&context, filter, &reply);
+
+        if(status.ok()) {
+            debug("got an OK from the server on a request to list all of the creatures");
+        }
+        else {
+            error("An error happened while trying to list all of the creatures: {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return reply;
+    }
+
 private:
     std::unique_ptr<CreatureServer::Stub> stub_;
 };
@@ -187,7 +207,7 @@ int main(int argc, char** argv) {
 
     // Let's try to save one
     server::Creature creature = server::Creature();
-    creature.set_name("Beaky1");
+    creature.set_name("Beaky2");
     creature.set_dmx_base(666);
     creature.set_number_of_motors(5);
     creature.set_universe(1);
@@ -214,7 +234,7 @@ int main(int argc, char** argv) {
 
 
     // Try to get a creature by ID
-    std::string oid_string = "6431bcca27df97d5c40a5c81";
+    std::string oid_string = "6431c48d6e9cc35e2d089263";
     info("attempting to search for ID {} in the database...", oid_string);
 
     bsoncxx::oid oid(oid_string);
@@ -225,6 +245,19 @@ int main(int argc, char** argv) {
 
     reply = client.GetCreature(creatureId);
     info("found creature named {} on a GetCreature call", reply.name());
+
+
+    // Try to list all the creatures
+    info("Now attempting to list all of the creatures!");
+
+    CreatureFilter filter = CreatureFilter();
+    filter.set_sortby(::server::SortBy::name);
+
+    auto list = client.ListCreatures(filter);
+     for(const auto& id : list.creaturesids() )
+     {
+         debug("Creature found {}", id.name());
+     }
 
     return 0;
 }

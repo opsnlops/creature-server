@@ -72,6 +72,16 @@ Status handleSearchCreatures(ServerContext* context, const CreatureName* request
     }
 }
 
+Status handleListCreatures(ServerContext* context, const CreatureFilter* filter, ListCreaturesResponse* response) {
+    debug("called handleListCreatures()");
+    grpc::Status status;
+
+    db->listCreatures(filter, response);
+    status = grpc::Status(grpc::StatusCode::OK,
+                          fmt::format("✅🦖Returned all creatures IDs and names"));
+    return status;
+}
+
 
 Status handleGetCreature(ServerContext* context, const CreatureId* id, Creature* reply ) {
 
@@ -132,6 +142,11 @@ class CreatureServerImpl final : public CreatureServer::Service {
     Status GetCreature(ServerContext* context, const CreatureId* id, Creature* reply) override  {
         debug("calling getCreature()");
         return handleGetCreature(context, id, reply);
+    }
+
+    Status ListCreatures(ServerContext* context, const CreatureFilter* filter, ListCreaturesResponse* response) override {
+        debug("calling listCreatures()");
+        return handleListCreatures(context, filter, response);
     }
 };
 

@@ -51,9 +51,15 @@ namespace server {
 class Creature;
 struct CreatureDefaultTypeInternal;
 extern CreatureDefaultTypeInternal _Creature_default_instance_;
+class CreatureFilter;
+struct CreatureFilterDefaultTypeInternal;
+extern CreatureFilterDefaultTypeInternal _CreatureFilter_default_instance_;
 class CreatureId;
 struct CreatureIdDefaultTypeInternal;
 extern CreatureIdDefaultTypeInternal _CreatureId_default_instance_;
+class CreatureIdentifier;
+struct CreatureIdentifierDefaultTypeInternal;
+extern CreatureIdentifierDefaultTypeInternal _CreatureIdentifier_default_instance_;
 class CreatureName;
 struct CreatureNameDefaultTypeInternal;
 extern CreatureNameDefaultTypeInternal _CreatureName_default_instance_;
@@ -63,6 +69,9 @@ extern Creature_MotorDefaultTypeInternal _Creature_Motor_default_instance_;
 class DatabaseInfo;
 struct DatabaseInfoDefaultTypeInternal;
 extern DatabaseInfoDefaultTypeInternal _DatabaseInfo_default_instance_;
+class ListCreaturesResponse;
+struct ListCreaturesResponseDefaultTypeInternal;
+extern ListCreaturesResponseDefaultTypeInternal _ListCreaturesResponse_default_instance_;
 class LogFilter;
 struct LogFilterDefaultTypeInternal;
 extern LogFilterDefaultTypeInternal _LogFilter_default_instance_;
@@ -72,10 +81,13 @@ extern LogLineDefaultTypeInternal _LogLine_default_instance_;
 }  // namespace server
 PROTOBUF_NAMESPACE_OPEN
 template<> ::server::Creature* Arena::CreateMaybeMessage<::server::Creature>(Arena*);
+template<> ::server::CreatureFilter* Arena::CreateMaybeMessage<::server::CreatureFilter>(Arena*);
 template<> ::server::CreatureId* Arena::CreateMaybeMessage<::server::CreatureId>(Arena*);
+template<> ::server::CreatureIdentifier* Arena::CreateMaybeMessage<::server::CreatureIdentifier>(Arena*);
 template<> ::server::CreatureName* Arena::CreateMaybeMessage<::server::CreatureName>(Arena*);
 template<> ::server::Creature_Motor* Arena::CreateMaybeMessage<::server::Creature_Motor>(Arena*);
 template<> ::server::DatabaseInfo* Arena::CreateMaybeMessage<::server::DatabaseInfo>(Arena*);
+template<> ::server::ListCreaturesResponse* Arena::CreateMaybeMessage<::server::ListCreaturesResponse>(Arena*);
 template<> ::server::LogFilter* Arena::CreateMaybeMessage<::server::LogFilter>(Arena*);
 template<> ::server::LogLine* Arena::CreateMaybeMessage<::server::LogLine>(Arena*);
 PROTOBUF_NAMESPACE_CLOSE
@@ -136,7 +148,522 @@ inline bool LogLevel_Parse(
   return ::PROTOBUF_NAMESPACE_ID::internal::ParseNamedEnum<LogLevel>(
     LogLevel_descriptor(), name, value);
 }
+enum SortBy : int {
+  name = 0,
+  number = 1,
+  SortBy_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
+  SortBy_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
+};
+bool SortBy_IsValid(int value);
+constexpr SortBy SortBy_MIN = name;
+constexpr SortBy SortBy_MAX = number;
+constexpr int SortBy_ARRAYSIZE = SortBy_MAX + 1;
+
+const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* SortBy_descriptor();
+template<typename T>
+inline const std::string& SortBy_Name(T enum_t_value) {
+  static_assert(::std::is_same<T, SortBy>::value ||
+    ::std::is_integral<T>::value,
+    "Incorrect type passed to function SortBy_Name.");
+  return ::PROTOBUF_NAMESPACE_ID::internal::NameOfEnum(
+    SortBy_descriptor(), enum_t_value);
+}
+inline bool SortBy_Parse(
+    ::PROTOBUF_NAMESPACE_ID::ConstStringParam name, SortBy* value) {
+  return ::PROTOBUF_NAMESPACE_ID::internal::ParseNamedEnum<SortBy>(
+    SortBy_descriptor(), name, value);
+}
 // ===================================================================
+
+class CreatureIdentifier final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.CreatureIdentifier) */ {
+ public:
+  inline CreatureIdentifier() : CreatureIdentifier(nullptr) {}
+  ~CreatureIdentifier() override;
+  explicit PROTOBUF_CONSTEXPR CreatureIdentifier(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  CreatureIdentifier(const CreatureIdentifier& from);
+  CreatureIdentifier(CreatureIdentifier&& from) noexcept
+    : CreatureIdentifier() {
+    *this = ::std::move(from);
+  }
+
+  inline CreatureIdentifier& operator=(const CreatureIdentifier& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CreatureIdentifier& operator=(CreatureIdentifier&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const CreatureIdentifier& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CreatureIdentifier* internal_default_instance() {
+    return reinterpret_cast<const CreatureIdentifier*>(
+               &_CreatureIdentifier_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    0;
+
+  friend void swap(CreatureIdentifier& a, CreatureIdentifier& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CreatureIdentifier* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CreatureIdentifier* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CreatureIdentifier* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CreatureIdentifier>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const CreatureIdentifier& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const CreatureIdentifier& from) {
+    CreatureIdentifier::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(CreatureIdentifier* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.CreatureIdentifier";
+  }
+  protected:
+  explicit CreatureIdentifier(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kIdFieldNumber = 1,
+    kNameFieldNumber = 2,
+  };
+  // bytes _id = 1;
+  void clear__id();
+  const std::string& _id() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set__id(ArgT0&& arg0, ArgT... args);
+  std::string* mutable__id();
+  PROTOBUF_NODISCARD std::string* release__id();
+  void set_allocated__id(std::string* _id);
+  private:
+  const std::string& _internal__id() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set__id(const std::string& value);
+  std::string* _internal_mutable__id();
+  public:
+
+  // string name = 2;
+  void clear_name();
+  const std::string& name() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_name(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_name();
+  PROTOBUF_NODISCARD std::string* release_name();
+  void set_allocated_name(std::string* name);
+  private:
+  const std::string& _internal_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_name(const std::string& value);
+  std::string* _internal_mutable_name();
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.CreatureIdentifier)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr _id_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr name_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
+
+class ListCreaturesResponse final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.ListCreaturesResponse) */ {
+ public:
+  inline ListCreaturesResponse() : ListCreaturesResponse(nullptr) {}
+  ~ListCreaturesResponse() override;
+  explicit PROTOBUF_CONSTEXPR ListCreaturesResponse(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  ListCreaturesResponse(const ListCreaturesResponse& from);
+  ListCreaturesResponse(ListCreaturesResponse&& from) noexcept
+    : ListCreaturesResponse() {
+    *this = ::std::move(from);
+  }
+
+  inline ListCreaturesResponse& operator=(const ListCreaturesResponse& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline ListCreaturesResponse& operator=(ListCreaturesResponse&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const ListCreaturesResponse& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const ListCreaturesResponse* internal_default_instance() {
+    return reinterpret_cast<const ListCreaturesResponse*>(
+               &_ListCreaturesResponse_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    1;
+
+  friend void swap(ListCreaturesResponse& a, ListCreaturesResponse& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(ListCreaturesResponse* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(ListCreaturesResponse* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  ListCreaturesResponse* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<ListCreaturesResponse>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const ListCreaturesResponse& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const ListCreaturesResponse& from) {
+    ListCreaturesResponse::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(ListCreaturesResponse* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.ListCreaturesResponse";
+  }
+  protected:
+  explicit ListCreaturesResponse(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kCreaturesIdsFieldNumber = 1,
+  };
+  // repeated .server.CreatureIdentifier creaturesIds = 1;
+  int creaturesids_size() const;
+  private:
+  int _internal_creaturesids_size() const;
+  public:
+  void clear_creaturesids();
+  ::server::CreatureIdentifier* mutable_creaturesids(int index);
+  ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::CreatureIdentifier >*
+      mutable_creaturesids();
+  private:
+  const ::server::CreatureIdentifier& _internal_creaturesids(int index) const;
+  ::server::CreatureIdentifier* _internal_add_creaturesids();
+  public:
+  const ::server::CreatureIdentifier& creaturesids(int index) const;
+  ::server::CreatureIdentifier* add_creaturesids();
+  const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::CreatureIdentifier >&
+      creaturesids() const;
+
+  // @@protoc_insertion_point(class_scope:server.ListCreaturesResponse)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::CreatureIdentifier > creaturesids_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
+
+class CreatureFilter final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.CreatureFilter) */ {
+ public:
+  inline CreatureFilter() : CreatureFilter(nullptr) {}
+  ~CreatureFilter() override;
+  explicit PROTOBUF_CONSTEXPR CreatureFilter(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  CreatureFilter(const CreatureFilter& from);
+  CreatureFilter(CreatureFilter&& from) noexcept
+    : CreatureFilter() {
+    *this = ::std::move(from);
+  }
+
+  inline CreatureFilter& operator=(const CreatureFilter& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CreatureFilter& operator=(CreatureFilter&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const CreatureFilter& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CreatureFilter* internal_default_instance() {
+    return reinterpret_cast<const CreatureFilter*>(
+               &_CreatureFilter_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    2;
+
+  friend void swap(CreatureFilter& a, CreatureFilter& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CreatureFilter* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CreatureFilter* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CreatureFilter* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CreatureFilter>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const CreatureFilter& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const CreatureFilter& from) {
+    CreatureFilter::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(CreatureFilter* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.CreatureFilter";
+  }
+  protected:
+  explicit CreatureFilter(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kFilterFieldNumber = 1,
+    kSortByFieldNumber = 2,
+  };
+  // string filter = 1;
+  void clear_filter();
+  const std::string& filter() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_filter(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_filter();
+  PROTOBUF_NODISCARD std::string* release_filter();
+  void set_allocated_filter(std::string* filter);
+  private:
+  const std::string& _internal_filter() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_filter(const std::string& value);
+  std::string* _internal_mutable_filter();
+  public:
+
+  // .server.SortBy sortBy = 2;
+  void clear_sortby();
+  ::server::SortBy sortby() const;
+  void set_sortby(::server::SortBy value);
+  private:
+  ::server::SortBy _internal_sortby() const;
+  void _internal_set_sortby(::server::SortBy value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.CreatureFilter)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr filter_;
+    int sortby_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
 
 class DatabaseInfo final :
     public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.DatabaseInfo) */ {
@@ -186,7 +713,7 @@ class DatabaseInfo final :
                &_DatabaseInfo_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    0;
+    3;
 
   friend void swap(DatabaseInfo& a, DatabaseInfo& b) {
     a.Swap(&b);
@@ -355,7 +882,7 @@ class LogFilter final :
                &_LogFilter_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    1;
+    4;
 
   friend void swap(LogFilter& a, LogFilter& b) {
     a.Swap(&b);
@@ -503,7 +1030,7 @@ class CreatureId final :
                &_CreatureId_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    2;
+    5;
 
   friend void swap(CreatureId& a, CreatureId& b) {
     a.Swap(&b);
@@ -656,7 +1183,7 @@ class CreatureName final :
                &_CreatureName_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    3;
+    6;
 
   friend void swap(CreatureName& a, CreatureName& b) {
     a.Swap(&b);
@@ -809,7 +1336,7 @@ class Creature_Motor final :
                &_Creature_Motor_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    4;
+    7;
 
   friend void swap(Creature_Motor& a, Creature_Motor& b) {
     a.Swap(&b);
@@ -1033,7 +1560,7 @@ class Creature final :
                &_Creature_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    5;
+    8;
 
   friend void swap(Creature& a, Creature& b) {
     a.Swap(&b);
@@ -1323,7 +1850,7 @@ class LogLine final :
                &_LogLine_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    6;
+    9;
 
   friend void swap(LogLine& a, LogLine& b) {
     a.Swap(&b);
@@ -1466,6 +1993,228 @@ class LogLine final :
   #pragma GCC diagnostic push
   #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif  // __GNUC__
+// CreatureIdentifier
+
+// bytes _id = 1;
+inline void CreatureIdentifier::clear__id() {
+  _impl_._id_.ClearToEmpty();
+}
+inline const std::string& CreatureIdentifier::_id() const {
+  // @@protoc_insertion_point(field_get:server.CreatureIdentifier._id)
+  return _internal__id();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void CreatureIdentifier::set__id(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_._id_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.CreatureIdentifier._id)
+}
+inline std::string* CreatureIdentifier::mutable__id() {
+  std::string* _s = _internal_mutable__id();
+  // @@protoc_insertion_point(field_mutable:server.CreatureIdentifier._id)
+  return _s;
+}
+inline const std::string& CreatureIdentifier::_internal__id() const {
+  return _impl_._id_.Get();
+}
+inline void CreatureIdentifier::_internal_set__id(const std::string& value) {
+  
+  _impl_._id_.Set(value, GetArenaForAllocation());
+}
+inline std::string* CreatureIdentifier::_internal_mutable__id() {
+  
+  return _impl_._id_.Mutable(GetArenaForAllocation());
+}
+inline std::string* CreatureIdentifier::release__id() {
+  // @@protoc_insertion_point(field_release:server.CreatureIdentifier._id)
+  return _impl_._id_.Release();
+}
+inline void CreatureIdentifier::set_allocated__id(std::string* _id) {
+  if (_id != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_._id_.SetAllocated(_id, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_._id_.IsDefault()) {
+    _impl_._id_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.CreatureIdentifier._id)
+}
+
+// string name = 2;
+inline void CreatureIdentifier::clear_name() {
+  _impl_.name_.ClearToEmpty();
+}
+inline const std::string& CreatureIdentifier::name() const {
+  // @@protoc_insertion_point(field_get:server.CreatureIdentifier.name)
+  return _internal_name();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void CreatureIdentifier::set_name(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.CreatureIdentifier.name)
+}
+inline std::string* CreatureIdentifier::mutable_name() {
+  std::string* _s = _internal_mutable_name();
+  // @@protoc_insertion_point(field_mutable:server.CreatureIdentifier.name)
+  return _s;
+}
+inline const std::string& CreatureIdentifier::_internal_name() const {
+  return _impl_.name_.Get();
+}
+inline void CreatureIdentifier::_internal_set_name(const std::string& value) {
+  
+  _impl_.name_.Set(value, GetArenaForAllocation());
+}
+inline std::string* CreatureIdentifier::_internal_mutable_name() {
+  
+  return _impl_.name_.Mutable(GetArenaForAllocation());
+}
+inline std::string* CreatureIdentifier::release_name() {
+  // @@protoc_insertion_point(field_release:server.CreatureIdentifier.name)
+  return _impl_.name_.Release();
+}
+inline void CreatureIdentifier::set_allocated_name(std::string* name) {
+  if (name != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.name_.SetAllocated(name, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.name_.IsDefault()) {
+    _impl_.name_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.CreatureIdentifier.name)
+}
+
+// -------------------------------------------------------------------
+
+// ListCreaturesResponse
+
+// repeated .server.CreatureIdentifier creaturesIds = 1;
+inline int ListCreaturesResponse::_internal_creaturesids_size() const {
+  return _impl_.creaturesids_.size();
+}
+inline int ListCreaturesResponse::creaturesids_size() const {
+  return _internal_creaturesids_size();
+}
+inline void ListCreaturesResponse::clear_creaturesids() {
+  _impl_.creaturesids_.Clear();
+}
+inline ::server::CreatureIdentifier* ListCreaturesResponse::mutable_creaturesids(int index) {
+  // @@protoc_insertion_point(field_mutable:server.ListCreaturesResponse.creaturesIds)
+  return _impl_.creaturesids_.Mutable(index);
+}
+inline ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::CreatureIdentifier >*
+ListCreaturesResponse::mutable_creaturesids() {
+  // @@protoc_insertion_point(field_mutable_list:server.ListCreaturesResponse.creaturesIds)
+  return &_impl_.creaturesids_;
+}
+inline const ::server::CreatureIdentifier& ListCreaturesResponse::_internal_creaturesids(int index) const {
+  return _impl_.creaturesids_.Get(index);
+}
+inline const ::server::CreatureIdentifier& ListCreaturesResponse::creaturesids(int index) const {
+  // @@protoc_insertion_point(field_get:server.ListCreaturesResponse.creaturesIds)
+  return _internal_creaturesids(index);
+}
+inline ::server::CreatureIdentifier* ListCreaturesResponse::_internal_add_creaturesids() {
+  return _impl_.creaturesids_.Add();
+}
+inline ::server::CreatureIdentifier* ListCreaturesResponse::add_creaturesids() {
+  ::server::CreatureIdentifier* _add = _internal_add_creaturesids();
+  // @@protoc_insertion_point(field_add:server.ListCreaturesResponse.creaturesIds)
+  return _add;
+}
+inline const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::CreatureIdentifier >&
+ListCreaturesResponse::creaturesids() const {
+  // @@protoc_insertion_point(field_list:server.ListCreaturesResponse.creaturesIds)
+  return _impl_.creaturesids_;
+}
+
+// -------------------------------------------------------------------
+
+// CreatureFilter
+
+// string filter = 1;
+inline void CreatureFilter::clear_filter() {
+  _impl_.filter_.ClearToEmpty();
+}
+inline const std::string& CreatureFilter::filter() const {
+  // @@protoc_insertion_point(field_get:server.CreatureFilter.filter)
+  return _internal_filter();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void CreatureFilter::set_filter(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.filter_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.CreatureFilter.filter)
+}
+inline std::string* CreatureFilter::mutable_filter() {
+  std::string* _s = _internal_mutable_filter();
+  // @@protoc_insertion_point(field_mutable:server.CreatureFilter.filter)
+  return _s;
+}
+inline const std::string& CreatureFilter::_internal_filter() const {
+  return _impl_.filter_.Get();
+}
+inline void CreatureFilter::_internal_set_filter(const std::string& value) {
+  
+  _impl_.filter_.Set(value, GetArenaForAllocation());
+}
+inline std::string* CreatureFilter::_internal_mutable_filter() {
+  
+  return _impl_.filter_.Mutable(GetArenaForAllocation());
+}
+inline std::string* CreatureFilter::release_filter() {
+  // @@protoc_insertion_point(field_release:server.CreatureFilter.filter)
+  return _impl_.filter_.Release();
+}
+inline void CreatureFilter::set_allocated_filter(std::string* filter) {
+  if (filter != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.filter_.SetAllocated(filter, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.filter_.IsDefault()) {
+    _impl_.filter_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.CreatureFilter.filter)
+}
+
+// .server.SortBy sortBy = 2;
+inline void CreatureFilter::clear_sortby() {
+  _impl_.sortby_ = 0;
+}
+inline ::server::SortBy CreatureFilter::_internal_sortby() const {
+  return static_cast< ::server::SortBy >(_impl_.sortby_);
+}
+inline ::server::SortBy CreatureFilter::sortby() const {
+  // @@protoc_insertion_point(field_get:server.CreatureFilter.sortBy)
+  return _internal_sortby();
+}
+inline void CreatureFilter::_internal_set_sortby(::server::SortBy value) {
+  
+  _impl_.sortby_ = value;
+}
+inline void CreatureFilter::set_sortby(::server::SortBy value) {
+  _internal_set_sortby(value);
+  // @@protoc_insertion_point(field_set:server.CreatureFilter.sortBy)
+}
+
+// -------------------------------------------------------------------
+
 // DatabaseInfo
 
 // string message = 1;
@@ -2417,6 +3166,12 @@ inline void LogLine::set_allocated_message(std::string* message) {
 
 // -------------------------------------------------------------------
 
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
 
 // @@protoc_insertion_point(namespace_scope)
 
@@ -2433,6 +3188,11 @@ template <> struct is_proto_enum< ::server::LogLevel> : ::std::true_type {};
 template <>
 inline const EnumDescriptor* GetEnumDescriptor< ::server::LogLevel>() {
   return ::server::LogLevel_descriptor();
+}
+template <> struct is_proto_enum< ::server::SortBy> : ::std::true_type {};
+template <>
+inline const EnumDescriptor* GetEnumDescriptor< ::server::SortBy>() {
+  return ::server::SortBy_descriptor();
 }
 
 PROTOBUF_NAMESPACE_CLOSE
