@@ -390,7 +390,7 @@ namespace creatures {
                                               << "type" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.type())}
                                               << "number" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.number())}
                                               << "max_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.max_value())}
-                                              << "mix_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.min_value())}
+                                              << "min_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.min_value())}
                                               << "smoothing_value" << decimal_smoothing_value
                                               << bsoncxx::builder::stream::close_document;
             }
@@ -552,7 +552,7 @@ namespace creatures {
 
 
                     // Min Value
-                    element = obj["max_value"];
+                    element = obj["min_value"];
                     if (element && element.type() != bsoncxx::type::k_int32) {
                         error("motor value 'min_value' is not an int");
                         throw creatures::DataFormatException("motor value 'min_value' is not an int");
