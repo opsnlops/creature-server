@@ -162,6 +162,24 @@ public:
         return reply;
     }
 
+    server::GetAllCreaturesResponse GetAllCreatures(const CreatureFilter& filter) {
+
+        ClientContext context;
+        server::GetAllCreaturesResponse reply;
+
+        Status status = stub_->GetAllCreatures(&context, filter, &reply);
+
+        if(status.ok()) {
+            debug("got an OK from the server on a request to get all of the creatures");
+        }
+        else {
+            error("An error happened while trying to list all of the creatures: {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return reply;
+    }
+
 private:
     std::unique_ptr<CreatureServer::Stub> stub_;
 };
@@ -207,20 +225,20 @@ int main(int argc, char** argv) {
 
     // Let's try to save one
     server::Creature creature = server::Creature();
-    creature.set_name("Beaky2");
-    creature.set_dmx_base(666);
-    creature.set_number_of_motors(5);
+    creature.set_name("Beaky8");
+    creature.set_dmx_base(34);
+    creature.set_number_of_motors(7);
     creature.set_universe(1);
     creature.set_sacn_ip("10.3.2.11");
     *creature.mutable_last_updated() = current_timestamp;
 
-    for(int i = 0; i < 5; i++) {
+    for(int i = 0; i < 7; i++) {
         ::Creature::Motor *motor = creature.add_motors();
 
         motor->set_name(fmt::format("Motor {} 🦾", i));      // Toss in some UTF-8 for testing
-        motor->set_min_value(0);
-        motor->set_max_value(1234);
-        motor->set_smoothing_value(0.95f);
+        motor->set_min_value(253);
+        motor->set_max_value(2934);
+        motor->set_smoothing_value(0.932f);
         motor->set_number(i);
 
         if(i % 2 == 0)
@@ -258,6 +276,20 @@ int main(int argc, char** argv) {
      {
          debug("Creature found {}", id.name());
      }
+
+
+    // Get ALLLLLL of the creatures
+    info("Now attempting to get ALLLLLLL of the creatures!");
+
+    filter = CreatureFilter();
+    filter.set_sortby(::server::SortBy::name);
+
+    auto everyone = client.GetAllCreatures(filter);
+    for(const auto& c : everyone.creatures() )
+    {
+        debug("Creature found {} with {} motors", c.name(), c.number_of_motors());
+    }
+
 
     return 0;
 }

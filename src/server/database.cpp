@@ -77,6 +77,46 @@ namespace creatures {
 
     }
 
+    grpc::Status Database::getAllCreatures(const CreatureFilter* filter, GetAllCreaturesResponse* creatureList) {
+        grpc::Status status;
+        info("getting all of the creatures");
+
+        auto collection = getCollection(COLLECTION_NAME);
+        trace("collection obtained");
+
+        document query_doc{};
+        document sort_doc{};
+
+        switch(filter->sortby()) {
+            case server::SortBy::number:
+                sort_doc << "number" << 1;
+                debug("sorting by number");
+                break;
+
+                // Default is by name
+            default:
+                sort_doc << "name" << 1;
+                debug("sorting by name");
+                break;
+        }
+
+        mongocxx::options::find opts{};
+        opts.sort(sort_doc.view());
+        mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
+
+        for (auto&& doc : cursor) {
+
+            auto creature = creatureList->add_creatures();
+            creatureFromBson(doc, creature);
+
+            debug("loaded {}", creature->name());
+        }
+
+        status = grpc::Status::OK;
+        return status;
+
+    }
+
     grpc::Status Database::listCreatures(const CreatureFilter* filter, ListCreaturesResponse* creatureList) {
 
         grpc::Status status;
@@ -374,7 +414,7 @@ namespace creatures {
     }
 
 
-    void Database::creatureFromBson(const bsoncxx::document::value& doc, Creature* creature) {
+    void Database::creatureFromBson(const bsoncxx::document::view& doc, Creature* creature) {
 
         debug("attempting to create a creature from a BSON document");
 

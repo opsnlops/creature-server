@@ -7,7 +7,7 @@ option java_outer_classname = "NetworkServerProto";
 
 package server;
 
-import "google/protobuf/empty.proto";
+//import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 // TODO: This might be helpful later!
@@ -19,7 +19,7 @@ service CreatureServer {
   rpc GetCreature (CreatureId) returns (Creature) {}
 
   // Get all of them
-  rpc GetCreatures (google.protobuf.Empty) returns (stream Creature) {}
+  rpc GetAllCreatures (CreatureFilter) returns (GetAllCreaturesResponse) {}
 
   // Create a new creature in the database
   rpc CreateCreature(Creature) returns (DatabaseInfo) {}
@@ -47,6 +47,10 @@ message CreatureIdentifier {
 
 message ListCreaturesResponse {
   repeated CreatureIdentifier creaturesIds = 1;
+}
+
+message GetAllCreaturesResponse {
+  repeated Creature creatures = 1;
 }
 
 message CreatureFilter {

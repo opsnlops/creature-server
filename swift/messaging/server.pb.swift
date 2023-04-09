@@ -148,6 +148,18 @@ public struct Server_ListCreaturesResponse {
   public init() {}
 }
 
+public struct Server_GetAllCreaturesResponse {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var creatures: [Server_Creature] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public struct Server_CreatureFilter {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -341,6 +353,7 @@ extension Server_LogLevel: @unchecked Sendable {}
 extension Server_SortBy: @unchecked Sendable {}
 extension Server_CreatureIdentifier: @unchecked Sendable {}
 extension Server_ListCreaturesResponse: @unchecked Sendable {}
+extension Server_GetAllCreaturesResponse: @unchecked Sendable {}
 extension Server_CreatureFilter: @unchecked Sendable {}
 extension Server_DatabaseInfo: @unchecked Sendable {}
 extension Server_LogFilter: @unchecked Sendable {}
@@ -440,6 +453,38 @@ extension Server_ListCreaturesResponse: SwiftProtobuf.Message, SwiftProtobuf._Me
 
   public static func ==(lhs: Server_ListCreaturesResponse, rhs: Server_ListCreaturesResponse) -> Bool {
     if lhs.creaturesIds != rhs.creaturesIds {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_GetAllCreaturesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".GetAllCreaturesResponse"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "creatures"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.creatures) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.creatures.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.creatures, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_GetAllCreaturesResponse, rhs: Server_GetAllCreaturesResponse) -> Bool {
+    if lhs.creatures != rhs.creatures {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

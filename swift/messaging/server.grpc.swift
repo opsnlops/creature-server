@@ -36,11 +36,10 @@ public protocol Server_CreatureServerClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Server_CreatureId, Server_Creature>
 
-  func getCreatures(
-    _ request: SwiftProtobuf.Google_Protobuf_Empty,
-    callOptions: CallOptions?,
-    handler: @escaping (Server_Creature) -> Void
-  ) -> ServerStreamingCall<SwiftProtobuf.Google_Protobuf_Empty, Server_Creature>
+  func getAllCreatures(
+    _ request: Server_CreatureFilter,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Server_CreatureFilter, Server_GetAllCreaturesResponse>
 
   func createCreature(
     _ request: Server_Creature,
@@ -95,21 +94,18 @@ extension Server_CreatureServerClientProtocol {
   /// Get all of them
   ///
   /// - Parameters:
-  ///   - request: Request to send to GetCreatures.
+  ///   - request: Request to send to GetAllCreatures.
   ///   - callOptions: Call options.
-  ///   - handler: A closure called when each response is received from the server.
-  /// - Returns: A `ServerStreamingCall` with futures for the metadata and status.
-  public func getCreatures(
-    _ request: SwiftProtobuf.Google_Protobuf_Empty,
-    callOptions: CallOptions? = nil,
-    handler: @escaping (Server_Creature) -> Void
-  ) -> ServerStreamingCall<SwiftProtobuf.Google_Protobuf_Empty, Server_Creature> {
-    return self.makeServerStreamingCall(
-      path: Server_CreatureServerClientMetadata.Methods.getCreatures.path,
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  public func getAllCreatures(
+    _ request: Server_CreatureFilter,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Server_CreatureFilter, Server_GetAllCreaturesResponse> {
+    return self.makeUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.getAllCreatures.path,
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetCreaturesInterceptors() ?? [],
-      handler: handler
+      interceptors: self.interceptors?.makeGetAllCreaturesInterceptors() ?? []
     )
   }
 
@@ -277,10 +273,10 @@ public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Server_CreatureId, Server_Creature>
 
-  func makeGetCreaturesCall(
-    _ request: SwiftProtobuf.Google_Protobuf_Empty,
+  func makeGetAllCreaturesCall(
+    _ request: Server_CreatureFilter,
     callOptions: CallOptions?
-  ) -> GRPCAsyncServerStreamingCall<SwiftProtobuf.Google_Protobuf_Empty, Server_Creature>
+  ) -> GRPCAsyncUnaryCall<Server_CreatureFilter, Server_GetAllCreaturesResponse>
 
   func makeCreateCreatureCall(
     _ request: Server_Creature,
@@ -330,15 +326,15 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
-  public func makeGetCreaturesCall(
-    _ request: SwiftProtobuf.Google_Protobuf_Empty,
+  public func makeGetAllCreaturesCall(
+    _ request: Server_CreatureFilter,
     callOptions: CallOptions? = nil
-  ) -> GRPCAsyncServerStreamingCall<SwiftProtobuf.Google_Protobuf_Empty, Server_Creature> {
-    return self.makeAsyncServerStreamingCall(
-      path: Server_CreatureServerClientMetadata.Methods.getCreatures.path,
+  ) -> GRPCAsyncUnaryCall<Server_CreatureFilter, Server_GetAllCreaturesResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.getAllCreatures.path,
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetCreaturesInterceptors() ?? []
+      interceptors: self.interceptors?.makeGetAllCreaturesInterceptors() ?? []
     )
   }
 
@@ -417,15 +413,15 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
-  public func getCreatures(
-    _ request: SwiftProtobuf.Google_Protobuf_Empty,
+  public func getAllCreatures(
+    _ request: Server_CreatureFilter,
     callOptions: CallOptions? = nil
-  ) -> GRPCAsyncResponseStream<Server_Creature> {
-    return self.performAsyncServerStreamingCall(
-      path: Server_CreatureServerClientMetadata.Methods.getCreatures.path,
+  ) async throws -> Server_GetAllCreaturesResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.getAllCreatures.path,
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetCreaturesInterceptors() ?? []
+      interceptors: self.interceptors?.makeGetAllCreaturesInterceptors() ?? []
     )
   }
 
@@ -514,8 +510,8 @@ public protocol Server_CreatureServerClientInterceptorFactoryProtocol: GRPCSenda
   /// - Returns: Interceptors to use when invoking 'getCreature'.
   func makeGetCreatureInterceptors() -> [ClientInterceptor<Server_CreatureId, Server_Creature>]
 
-  /// - Returns: Interceptors to use when invoking 'getCreatures'.
-  func makeGetCreaturesInterceptors() -> [ClientInterceptor<SwiftProtobuf.Google_Protobuf_Empty, Server_Creature>]
+  /// - Returns: Interceptors to use when invoking 'getAllCreatures'.
+  func makeGetAllCreaturesInterceptors() -> [ClientInterceptor<Server_CreatureFilter, Server_GetAllCreaturesResponse>]
 
   /// - Returns: Interceptors to use when invoking 'createCreature'.
   func makeCreateCreatureInterceptors() -> [ClientInterceptor<Server_Creature, Server_DatabaseInfo>]
@@ -539,7 +535,7 @@ public enum Server_CreatureServerClientMetadata {
     fullName: "server.CreatureServer",
     methods: [
       Server_CreatureServerClientMetadata.Methods.getCreature,
-      Server_CreatureServerClientMetadata.Methods.getCreatures,
+      Server_CreatureServerClientMetadata.Methods.getAllCreatures,
       Server_CreatureServerClientMetadata.Methods.createCreature,
       Server_CreatureServerClientMetadata.Methods.updateCreature,
       Server_CreatureServerClientMetadata.Methods.streamLogs,
@@ -555,10 +551,10 @@ public enum Server_CreatureServerClientMetadata {
       type: GRPCCallType.unary
     )
 
-    public static let getCreatures = GRPCMethodDescriptor(
-      name: "GetCreatures",
-      path: "/server.CreatureServer/GetCreatures",
-      type: GRPCCallType.serverStreaming
+    public static let getAllCreatures = GRPCMethodDescriptor(
+      name: "GetAllCreatures",
+      path: "/server.CreatureServer/GetAllCreatures",
+      type: GRPCCallType.unary
     )
 
     public static let createCreature = GRPCMethodDescriptor(

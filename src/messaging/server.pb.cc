@@ -48,6 +48,19 @@ struct ListCreaturesResponseDefaultTypeInternal {
   };
 };
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 ListCreaturesResponseDefaultTypeInternal _ListCreaturesResponse_default_instance_;
+PROTOBUF_CONSTEXPR GetAllCreaturesResponse::GetAllCreaturesResponse(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.creatures_)*/{}
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct GetAllCreaturesResponseDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR GetAllCreaturesResponseDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~GetAllCreaturesResponseDefaultTypeInternal() {}
+  union {
+    GetAllCreaturesResponse _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 GetAllCreaturesResponseDefaultTypeInternal _GetAllCreaturesResponse_default_instance_;
 PROTOBUF_CONSTEXPR CreatureFilter::CreatureFilter(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.filter_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
@@ -170,7 +183,7 @@ struct LogLineDefaultTypeInternal {
 };
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 LogLineDefaultTypeInternal _LogLine_default_instance_;
 }  // namespace server
-static ::_pb::Metadata file_level_metadata_server_2eproto[10];
+static ::_pb::Metadata file_level_metadata_server_2eproto[11];
 static const ::_pb::EnumDescriptor* file_level_enum_descriptors_server_2eproto[3];
 static constexpr ::_pb::ServiceDescriptor const** file_level_service_descriptors_server_2eproto = nullptr;
 
@@ -190,6 +203,13 @@ const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(p
   ~0u,  // no _weak_field_map_
   ~0u,  // no _inlined_string_donated_
   PROTOBUF_FIELD_OFFSET(::server::ListCreaturesResponse, _impl_.creaturesids_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::server::GetAllCreaturesResponse, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::server::GetAllCreaturesResponse, _impl_.creatures_),
   ~0u,  // no _has_bits_
   PROTOBUF_FIELD_OFFSET(::server::CreatureFilter, _internal_metadata_),
   ~0u,  // no _extensions_
@@ -267,19 +287,21 @@ const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(p
 static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {
   { 0, -1, -1, sizeof(::server::CreatureIdentifier)},
   { 8, -1, -1, sizeof(::server::ListCreaturesResponse)},
-  { 15, -1, -1, sizeof(::server::CreatureFilter)},
-  { 23, -1, -1, sizeof(::server::DatabaseInfo)},
-  { 31, -1, -1, sizeof(::server::LogFilter)},
-  { 38, -1, -1, sizeof(::server::CreatureId)},
-  { 45, -1, -1, sizeof(::server::CreatureName)},
-  { 52, -1, -1, sizeof(::server::Creature_Motor)},
-  { 65, -1, -1, sizeof(::server::Creature)},
-  { 79, -1, -1, sizeof(::server::LogLine)},
+  { 15, -1, -1, sizeof(::server::GetAllCreaturesResponse)},
+  { 22, -1, -1, sizeof(::server::CreatureFilter)},
+  { 30, -1, -1, sizeof(::server::DatabaseInfo)},
+  { 38, -1, -1, sizeof(::server::LogFilter)},
+  { 45, -1, -1, sizeof(::server::CreatureId)},
+  { 52, -1, -1, sizeof(::server::CreatureName)},
+  { 59, -1, -1, sizeof(::server::Creature_Motor)},
+  { 72, -1, -1, sizeof(::server::Creature)},
+  { 86, -1, -1, sizeof(::server::LogLine)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
   &::server::_CreatureIdentifier_default_instance_._instance,
   &::server::_ListCreaturesResponse_default_instance_._instance,
+  &::server::_GetAllCreaturesResponse_default_instance_._instance,
   &::server::_CreatureFilter_default_instance_._instance,
   &::server::_DatabaseInfo_default_instance_._instance,
   &::server::_LogFilter_default_instance_._instance,
@@ -291,56 +313,57 @@ static const ::_pb::Message* const file_default_instances[] = {
 };
 
 const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) =
-  "\n\014server.proto\022\006server\032\033google/protobuf/"
-  "empty.proto\032\037google/protobuf/timestamp.p"
-  "roto\"/\n\022CreatureIdentifier\022\013\n\003_id\030\001 \001(\014\022"
-  "\014\n\004name\030\002 \001(\t\"I\n\025ListCreaturesResponse\0220"
-  "\n\014creaturesIds\030\001 \003(\0132\032.server.CreatureId"
-  "entifier\"@\n\016CreatureFilter\022\016\n\006filter\030\001 \001"
-  "(\t\022\036\n\006sortBy\030\002 \001(\0162\016.server.SortBy\"-\n\014Da"
-  "tabaseInfo\022\017\n\007message\030\001 \001(\t\022\014\n\004help\030\002 \001("
-  "\t\",\n\tLogFilter\022\037\n\005level\030\001 \001(\0162\020.server.L"
-  "ogLevel\"\031\n\nCreatureId\022\013\n\003_id\030\001 \001(\014\"\034\n\014Cr"
-  "eatureName\022\014\n\004name\030\001 \001(\t\"\221\003\n\010Creature\022\013\n"
-  "\003_id\030\001 \001(\014\022\014\n\004name\030\002 \001(\t\0220\n\014last_updated"
-  "\030\003 \001(\0132\032.google.protobuf.Timestamp\022\017\n\007sa"
-  "cn_ip\030\004 \001(\t\022\020\n\010universe\030\005 \001(\r\022\020\n\010dmx_bas"
-  "e\030\006 \001(\r\022\030\n\020number_of_motors\030\007 \001(\r\022&\n\006mot"
-  "ors\030\010 \003(\0132\026.server.Creature.Motor\032\233\001\n\005Mo"
-  "tor\022\013\n\003_id\030\001 \001(\014\022\014\n\004name\030\002 \001(\t\022(\n\004type\030\003"
-  " \001(\0162\032.server.Creature.MotorType\022\016\n\006numb"
-  "er\030\004 \001(\r\022\021\n\tmax_value\030\005 \001(\r\022\021\n\tmin_value"
-  "\030\006 \001(\r\022\027\n\017smoothing_value\030\007 \001(\001\"#\n\tMotor"
-  "Type\022\t\n\005servo\020\000\022\013\n\007stepper\020\001\"j\n\007LogLine\022"
-  "\037\n\005level\030\001 \001(\0162\020.server.LogLevel\022-\n\ttime"
-  "stamp\030\002 \001(\0132\032.google.protobuf.Timestamp\022"
-  "\017\n\007message\030\003 \001(\t*X\n\010LogLevel\022\t\n\005trace\020\000\022"
-  "\t\n\005debug\020\001\022\010\n\004info\020\002\022\010\n\004warn\020\003\022\t\n\005error\020"
-  "\004\022\014\n\010critical\020\005\022\t\n\005fatal\020\006*\036\n\006SortBy\022\010\n\004"
-  "name\020\000\022\n\n\006number\020\0012\272\003\n\016CreatureServer\0225\n"
-  "\013GetCreature\022\022.server.CreatureId\032\020.serve"
-  "r.Creature\"\000\022<\n\014GetCreatures\022\026.google.pr"
-  "otobuf.Empty\032\020.server.Creature\"\0000\001\022:\n\016Cr"
-  "eateCreature\022\020.server.Creature\032\024.server."
-  "DatabaseInfo\"\000\022:\n\016UpdateCreature\022\020.serve"
-  "r.Creature\032\024.server.DatabaseInfo\"\000\0224\n\nSt"
-  "reamLogs\022\021.server.LogFilter\032\017.server.Log"
-  "Line\"\0000\001\022;\n\017SearchCreatures\022\024.server.Cre"
-  "atureName\032\020.server.Creature\"\000\022H\n\rListCre"
-  "atures\022\026.server.CreatureFilter\032\035.server."
-  "ListCreaturesResponse\"\000BR\n\034io.opsnlops.c"
-  "reatures.serverB\022NetworkServerProtoP\001Z\034o"
-  "psnlops.io/creatures/serverb\006proto3"
+  "\n\014server.proto\022\006server\032\037google/protobuf/"
+  "timestamp.proto\"/\n\022CreatureIdentifier\022\013\n"
+  "\003_id\030\001 \001(\014\022\014\n\004name\030\002 \001(\t\"I\n\025ListCreature"
+  "sResponse\0220\n\014creaturesIds\030\001 \003(\0132\032.server"
+  ".CreatureIdentifier\">\n\027GetAllCreaturesRe"
+  "sponse\022#\n\tcreatures\030\001 \003(\0132\020.server.Creat"
+  "ure\"@\n\016CreatureFilter\022\016\n\006filter\030\001 \001(\t\022\036\n"
+  "\006sortBy\030\002 \001(\0162\016.server.SortBy\"-\n\014Databas"
+  "eInfo\022\017\n\007message\030\001 \001(\t\022\014\n\004help\030\002 \001(\t\",\n\t"
+  "LogFilter\022\037\n\005level\030\001 \001(\0162\020.server.LogLev"
+  "el\"\031\n\nCreatureId\022\013\n\003_id\030\001 \001(\014\"\034\n\014Creatur"
+  "eName\022\014\n\004name\030\001 \001(\t\"\221\003\n\010Creature\022\013\n\003_id\030"
+  "\001 \001(\014\022\014\n\004name\030\002 \001(\t\0220\n\014last_updated\030\003 \001("
+  "\0132\032.google.protobuf.Timestamp\022\017\n\007sacn_ip"
+  "\030\004 \001(\t\022\020\n\010universe\030\005 \001(\r\022\020\n\010dmx_base\030\006 \001"
+  "(\r\022\030\n\020number_of_motors\030\007 \001(\r\022&\n\006motors\030\010"
+  " \003(\0132\026.server.Creature.Motor\032\233\001\n\005Motor\022\013"
+  "\n\003_id\030\001 \001(\014\022\014\n\004name\030\002 \001(\t\022(\n\004type\030\003 \001(\0162"
+  "\032.server.Creature.MotorType\022\016\n\006number\030\004 "
+  "\001(\r\022\021\n\tmax_value\030\005 \001(\r\022\021\n\tmin_value\030\006 \001("
+  "\r\022\027\n\017smoothing_value\030\007 \001(\001\"#\n\tMotorType\022"
+  "\t\n\005servo\020\000\022\013\n\007stepper\020\001\"j\n\007LogLine\022\037\n\005le"
+  "vel\030\001 \001(\0162\020.server.LogLevel\022-\n\ttimestamp"
+  "\030\002 \001(\0132\032.google.protobuf.Timestamp\022\017\n\007me"
+  "ssage\030\003 \001(\t*X\n\010LogLevel\022\t\n\005trace\020\000\022\t\n\005de"
+  "bug\020\001\022\010\n\004info\020\002\022\010\n\004warn\020\003\022\t\n\005error\020\004\022\014\n\010"
+  "critical\020\005\022\t\n\005fatal\020\006*\036\n\006SortBy\022\010\n\004name\020"
+  "\000\022\n\n\006number\020\0012\312\003\n\016CreatureServer\0225\n\013GetC"
+  "reature\022\022.server.CreatureId\032\020.server.Cre"
+  "ature\"\000\022L\n\017GetAllCreatures\022\026.server.Crea"
+  "tureFilter\032\037.server.GetAllCreaturesRespo"
+  "nse\"\000\022:\n\016CreateCreature\022\020.server.Creatur"
+  "e\032\024.server.DatabaseInfo\"\000\022:\n\016UpdateCreat"
+  "ure\022\020.server.Creature\032\024.server.DatabaseI"
+  "nfo\"\000\0224\n\nStreamLogs\022\021.server.LogFilter\032\017"
+  ".server.LogLine\"\0000\001\022;\n\017SearchCreatures\022\024"
+  ".server.CreatureName\032\020.server.Creature\"\000"
+  "\022H\n\rListCreatures\022\026.server.CreatureFilte"
+  "r\032\035.server.ListCreaturesResponse\"\000BR\n\034io"
+  ".opsnlops.creatures.serverB\022NetworkServe"
+  "rProtoP\001Z\034opsnlops.io/creatures/serverb\006"
+  "proto3"
   ;
-static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
-  &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
+static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[1] = {
   &::descriptor_table_google_2fprotobuf_2ftimestamp_2eproto,
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 1595, descriptor_table_protodef_server_2eproto,
+    false, false, 1646, descriptor_table_protodef_server_2eproto,
     "server.proto",
-    &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 10,
+    &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 1, 11,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,
     file_level_metadata_server_2eproto, file_level_enum_descriptors_server_2eproto,
     file_level_service_descriptors_server_2eproto,
@@ -842,6 +865,191 @@ void ListCreaturesResponse::InternalSwap(ListCreaturesResponse* other) {
 
 // ===================================================================
 
+class GetAllCreaturesResponse::_Internal {
+ public:
+};
+
+GetAllCreaturesResponse::GetAllCreaturesResponse(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:server.GetAllCreaturesResponse)
+}
+GetAllCreaturesResponse::GetAllCreaturesResponse(const GetAllCreaturesResponse& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  GetAllCreaturesResponse* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.creatures_){from._impl_.creatures_}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  // @@protoc_insertion_point(copy_constructor:server.GetAllCreaturesResponse)
+}
+
+inline void GetAllCreaturesResponse::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.creatures_){arena}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+}
+
+GetAllCreaturesResponse::~GetAllCreaturesResponse() {
+  // @@protoc_insertion_point(destructor:server.GetAllCreaturesResponse)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void GetAllCreaturesResponse::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.creatures_.~RepeatedPtrField();
+}
+
+void GetAllCreaturesResponse::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void GetAllCreaturesResponse::Clear() {
+// @@protoc_insertion_point(message_clear_start:server.GetAllCreaturesResponse)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.creatures_.Clear();
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* GetAllCreaturesResponse::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // repeated .server.Creature creatures = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
+          ptr -= 1;
+          do {
+            ptr += 1;
+            ptr = ctx->ParseMessage(_internal_add_creatures(), ptr);
+            CHK_(ptr);
+            if (!ctx->DataAvailable(ptr)) break;
+          } while (::PROTOBUF_NAMESPACE_ID::internal::ExpectTag<10>(ptr));
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* GetAllCreaturesResponse::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:server.GetAllCreaturesResponse)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // repeated .server.Creature creatures = 1;
+  for (unsigned i = 0,
+      n = static_cast<unsigned>(this->_internal_creatures_size()); i < n; i++) {
+    const auto& repfield = this->_internal_creatures(i);
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+        InternalWriteMessage(1, repfield, repfield.GetCachedSize(), target, stream);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:server.GetAllCreaturesResponse)
+  return target;
+}
+
+size_t GetAllCreaturesResponse::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:server.GetAllCreaturesResponse)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // repeated .server.Creature creatures = 1;
+  total_size += 1UL * this->_internal_creatures_size();
+  for (const auto& msg : this->_impl_.creatures_) {
+    total_size +=
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(msg);
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData GetAllCreaturesResponse::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    GetAllCreaturesResponse::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetAllCreaturesResponse::GetClassData() const { return &_class_data_; }
+
+
+void GetAllCreaturesResponse::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<GetAllCreaturesResponse*>(&to_msg);
+  auto& from = static_cast<const GetAllCreaturesResponse&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:server.GetAllCreaturesResponse)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  _this->_impl_.creatures_.MergeFrom(from._impl_.creatures_);
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void GetAllCreaturesResponse::CopyFrom(const GetAllCreaturesResponse& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:server.GetAllCreaturesResponse)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool GetAllCreaturesResponse::IsInitialized() const {
+  return true;
+}
+
+void GetAllCreaturesResponse::InternalSwap(GetAllCreaturesResponse* other) {
+  using std::swap;
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  _impl_.creatures_.InternalSwap(&other->_impl_.creatures_);
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata GetAllCreaturesResponse::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
+      file_level_metadata_server_2eproto[2]);
+}
+
+// ===================================================================
+
 class CreatureFilter::_Internal {
  public:
 };
@@ -1070,7 +1278,7 @@ void CreatureFilter::InternalSwap(CreatureFilter* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata CreatureFilter::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[2]);
+      file_level_metadata_server_2eproto[3]);
 }
 
 // ===================================================================
@@ -1323,7 +1531,7 @@ void DatabaseInfo::InternalSwap(DatabaseInfo* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata DatabaseInfo::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[3]);
+      file_level_metadata_server_2eproto[4]);
 }
 
 // ===================================================================
@@ -1504,7 +1712,7 @@ void LogFilter::InternalSwap(LogFilter* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata LogFilter::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[4]);
+      file_level_metadata_server_2eproto[5]);
 }
 
 // ===================================================================
@@ -1702,7 +1910,7 @@ void CreatureId::InternalSwap(CreatureId* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata CreatureId::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[5]);
+      file_level_metadata_server_2eproto[6]);
 }
 
 // ===================================================================
@@ -1905,7 +2113,7 @@ void CreatureName::InternalSwap(CreatureName* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata CreatureName::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[6]);
+      file_level_metadata_server_2eproto[7]);
 }
 
 // ===================================================================
@@ -2300,7 +2508,7 @@ void Creature_Motor::InternalSwap(Creature_Motor* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata Creature_Motor::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[7]);
+      file_level_metadata_server_2eproto[8]);
 }
 
 // ===================================================================
@@ -2763,7 +2971,7 @@ void Creature::InternalSwap(Creature* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata Creature::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[8]);
+      file_level_metadata_server_2eproto[9]);
 }
 
 // ===================================================================
@@ -3048,7 +3256,7 @@ void LogLine::InternalSwap(LogLine* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata LogLine::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[9]);
+      file_level_metadata_server_2eproto[10]);
 }
 
 // @@protoc_insertion_point(namespace_scope)
@@ -3061,6 +3269,10 @@ Arena::CreateMaybeMessage< ::server::CreatureIdentifier >(Arena* arena) {
 template<> PROTOBUF_NOINLINE ::server::ListCreaturesResponse*
 Arena::CreateMaybeMessage< ::server::ListCreaturesResponse >(Arena* arena) {
   return Arena::CreateMessageInternal< ::server::ListCreaturesResponse >(arena);
+}
+template<> PROTOBUF_NOINLINE ::server::GetAllCreaturesResponse*
+Arena::CreateMaybeMessage< ::server::GetAllCreaturesResponse >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::server::GetAllCreaturesResponse >(arena);
 }
 template<> PROTOBUF_NOINLINE ::server::CreatureFilter*
 Arena::CreateMaybeMessage< ::server::CreatureFilter >(Arena* arena) {

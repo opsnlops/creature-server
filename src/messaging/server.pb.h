@@ -31,7 +31,6 @@
 #include <google/protobuf/extension_set.h>  // IWYU pragma: export
 #include <google/protobuf/generated_enum_reflection.h>
 #include <google/protobuf/unknown_field_set.h>
-#include <google/protobuf/empty.pb.h>
 #include <google/protobuf/timestamp.pb.h>
 // @@protoc_insertion_point(includes)
 #include <google/protobuf/port_def.inc>
@@ -69,6 +68,9 @@ extern Creature_MotorDefaultTypeInternal _Creature_Motor_default_instance_;
 class DatabaseInfo;
 struct DatabaseInfoDefaultTypeInternal;
 extern DatabaseInfoDefaultTypeInternal _DatabaseInfo_default_instance_;
+class GetAllCreaturesResponse;
+struct GetAllCreaturesResponseDefaultTypeInternal;
+extern GetAllCreaturesResponseDefaultTypeInternal _GetAllCreaturesResponse_default_instance_;
 class ListCreaturesResponse;
 struct ListCreaturesResponseDefaultTypeInternal;
 extern ListCreaturesResponseDefaultTypeInternal _ListCreaturesResponse_default_instance_;
@@ -87,6 +89,7 @@ template<> ::server::CreatureIdentifier* Arena::CreateMaybeMessage<::server::Cre
 template<> ::server::CreatureName* Arena::CreateMaybeMessage<::server::CreatureName>(Arena*);
 template<> ::server::Creature_Motor* Arena::CreateMaybeMessage<::server::Creature_Motor>(Arena*);
 template<> ::server::DatabaseInfo* Arena::CreateMaybeMessage<::server::DatabaseInfo>(Arena*);
+template<> ::server::GetAllCreaturesResponse* Arena::CreateMaybeMessage<::server::GetAllCreaturesResponse>(Arena*);
 template<> ::server::ListCreaturesResponse* Arena::CreateMaybeMessage<::server::ListCreaturesResponse>(Arena*);
 template<> ::server::LogFilter* Arena::CreateMaybeMessage<::server::LogFilter>(Arena*);
 template<> ::server::LogLine* Arena::CreateMaybeMessage<::server::LogLine>(Arena*);
@@ -501,6 +504,163 @@ class ListCreaturesResponse final :
 };
 // -------------------------------------------------------------------
 
+class GetAllCreaturesResponse final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.GetAllCreaturesResponse) */ {
+ public:
+  inline GetAllCreaturesResponse() : GetAllCreaturesResponse(nullptr) {}
+  ~GetAllCreaturesResponse() override;
+  explicit PROTOBUF_CONSTEXPR GetAllCreaturesResponse(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  GetAllCreaturesResponse(const GetAllCreaturesResponse& from);
+  GetAllCreaturesResponse(GetAllCreaturesResponse&& from) noexcept
+    : GetAllCreaturesResponse() {
+    *this = ::std::move(from);
+  }
+
+  inline GetAllCreaturesResponse& operator=(const GetAllCreaturesResponse& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline GetAllCreaturesResponse& operator=(GetAllCreaturesResponse&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const GetAllCreaturesResponse& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const GetAllCreaturesResponse* internal_default_instance() {
+    return reinterpret_cast<const GetAllCreaturesResponse*>(
+               &_GetAllCreaturesResponse_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    2;
+
+  friend void swap(GetAllCreaturesResponse& a, GetAllCreaturesResponse& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(GetAllCreaturesResponse* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(GetAllCreaturesResponse* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  GetAllCreaturesResponse* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<GetAllCreaturesResponse>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const GetAllCreaturesResponse& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const GetAllCreaturesResponse& from) {
+    GetAllCreaturesResponse::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(GetAllCreaturesResponse* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.GetAllCreaturesResponse";
+  }
+  protected:
+  explicit GetAllCreaturesResponse(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kCreaturesFieldNumber = 1,
+  };
+  // repeated .server.Creature creatures = 1;
+  int creatures_size() const;
+  private:
+  int _internal_creatures_size() const;
+  public:
+  void clear_creatures();
+  ::server::Creature* mutable_creatures(int index);
+  ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::Creature >*
+      mutable_creatures();
+  private:
+  const ::server::Creature& _internal_creatures(int index) const;
+  ::server::Creature* _internal_add_creatures();
+  public:
+  const ::server::Creature& creatures(int index) const;
+  ::server::Creature* add_creatures();
+  const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::Creature >&
+      creatures() const;
+
+  // @@protoc_insertion_point(class_scope:server.GetAllCreaturesResponse)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::Creature > creatures_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
+
 class CreatureFilter final :
     public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.CreatureFilter) */ {
  public:
@@ -549,7 +709,7 @@ class CreatureFilter final :
                &_CreatureFilter_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    2;
+    3;
 
   friend void swap(CreatureFilter& a, CreatureFilter& b) {
     a.Swap(&b);
@@ -713,7 +873,7 @@ class DatabaseInfo final :
                &_DatabaseInfo_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    3;
+    4;
 
   friend void swap(DatabaseInfo& a, DatabaseInfo& b) {
     a.Swap(&b);
@@ -882,7 +1042,7 @@ class LogFilter final :
                &_LogFilter_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    4;
+    5;
 
   friend void swap(LogFilter& a, LogFilter& b) {
     a.Swap(&b);
@@ -1030,7 +1190,7 @@ class CreatureId final :
                &_CreatureId_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    5;
+    6;
 
   friend void swap(CreatureId& a, CreatureId& b) {
     a.Swap(&b);
@@ -1183,7 +1343,7 @@ class CreatureName final :
                &_CreatureName_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    6;
+    7;
 
   friend void swap(CreatureName& a, CreatureName& b) {
     a.Swap(&b);
@@ -1336,7 +1496,7 @@ class Creature_Motor final :
                &_Creature_Motor_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    7;
+    8;
 
   friend void swap(Creature_Motor& a, Creature_Motor& b) {
     a.Swap(&b);
@@ -1560,7 +1720,7 @@ class Creature final :
                &_Creature_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    8;
+    9;
 
   friend void swap(Creature& a, Creature& b) {
     a.Swap(&b);
@@ -1850,7 +2010,7 @@ class LogLine final :
                &_LogLine_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    9;
+    10;
 
   friend void swap(LogLine& a, LogLine& b) {
     a.Swap(&b);
@@ -2137,6 +2297,50 @@ inline const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::CreatureIdenti
 ListCreaturesResponse::creaturesids() const {
   // @@protoc_insertion_point(field_list:server.ListCreaturesResponse.creaturesIds)
   return _impl_.creaturesids_;
+}
+
+// -------------------------------------------------------------------
+
+// GetAllCreaturesResponse
+
+// repeated .server.Creature creatures = 1;
+inline int GetAllCreaturesResponse::_internal_creatures_size() const {
+  return _impl_.creatures_.size();
+}
+inline int GetAllCreaturesResponse::creatures_size() const {
+  return _internal_creatures_size();
+}
+inline void GetAllCreaturesResponse::clear_creatures() {
+  _impl_.creatures_.Clear();
+}
+inline ::server::Creature* GetAllCreaturesResponse::mutable_creatures(int index) {
+  // @@protoc_insertion_point(field_mutable:server.GetAllCreaturesResponse.creatures)
+  return _impl_.creatures_.Mutable(index);
+}
+inline ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::Creature >*
+GetAllCreaturesResponse::mutable_creatures() {
+  // @@protoc_insertion_point(field_mutable_list:server.GetAllCreaturesResponse.creatures)
+  return &_impl_.creatures_;
+}
+inline const ::server::Creature& GetAllCreaturesResponse::_internal_creatures(int index) const {
+  return _impl_.creatures_.Get(index);
+}
+inline const ::server::Creature& GetAllCreaturesResponse::creatures(int index) const {
+  // @@protoc_insertion_point(field_get:server.GetAllCreaturesResponse.creatures)
+  return _internal_creatures(index);
+}
+inline ::server::Creature* GetAllCreaturesResponse::_internal_add_creatures() {
+  return _impl_.creatures_.Add();
+}
+inline ::server::Creature* GetAllCreaturesResponse::add_creatures() {
+  ::server::Creature* _add = _internal_add_creatures();
+  // @@protoc_insertion_point(field_add:server.GetAllCreaturesResponse.creatures)
+  return _add;
+}
+inline const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::server::Creature >&
+GetAllCreaturesResponse::creatures() const {
+  // @@protoc_insertion_point(field_list:server.GetAllCreaturesResponse.creatures)
+  return _impl_.creatures_;
 }
 
 // -------------------------------------------------------------------
@@ -3154,6 +3358,8 @@ inline void LogLine::set_allocated_message(std::string* message) {
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------
