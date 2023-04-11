@@ -6,7 +6,6 @@
 #include "server/creature-server.h"
 #include "server/database.h"
 
-
 using spdlog::info;
 using spdlog::debug;
 using spdlog::error;

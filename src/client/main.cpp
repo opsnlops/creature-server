@@ -22,10 +22,13 @@
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
+using grpc::ClientWriter;
 using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
 using server::CreatureId;
+using server::Frame;
+using server::FrameResponse;
 using server::ListCreaturesResponse;
 using server::CreatureFilter;
 
@@ -180,6 +183,52 @@ public:
         return reply;
     }
 
+    server::FrameResponse StreamFrames() {
+        FrameResponse response;
+        ClientContext context;
+        // Create a writer for the stream of frames
+        std::unique_ptr<ClientWriter<Frame>> writer(stub_->StreamFrames(&context, &response));
+
+        // Some frames to the stream
+        for (int i = 0; i < 10; i++) {
+
+            Frame frame = Frame();
+
+            // Send five test frames
+            frame.set_creature_name("Beaky");
+            frame.set_dmx_offset(56);
+            frame.set_universe(1);
+
+            char data[5] = {0x1, 0x2, 0x3, 0x4, 0x5};
+            frame.set_frame(data);
+            writer->Write(frame);
+
+            debug("sent");
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+        }
+
+        // Close the stream
+        writer->WritesDone();
+
+        // Receive the response and check the status
+        Status status = writer->Finish();
+        if (status.ok()) {
+
+            info("server said: {}", status.error_message());
+            response.set_message("Done!");
+            return response;
+        } else {
+
+            auto errorMessage = fmt::format("Error processing frames: {}", status.error_message());
+            error(errorMessage);
+
+            response.set_message(errorMessage);
+            return response;
+        }
+    }
+
 private:
     std::unique_ptr<CreatureServer::Stub> stub_;
 };
@@ -289,6 +338,10 @@ int main(int argc, char** argv) {
     {
         debug("Creature found {} with {} motors", c.name(), c.number_of_motors());
     }
+
+
+    info("Attempting to stream frames");
+    client.StreamFrames();
 
 
     return 0;

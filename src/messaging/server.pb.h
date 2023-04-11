@@ -2281,7 +2281,8 @@ class Frame final :
 
   enum : int {
     kCreatureNameFieldNumber = 3,
-    kFrameFieldNumber = 4,
+    kSacnIpFieldNumber = 4,
+    kFrameFieldNumber = 10,
     kUniverseFieldNumber = 1,
     kDmxOffsetFieldNumber = 2,
   };
@@ -2299,7 +2300,21 @@ class Frame final :
   std::string* _internal_mutable_creature_name();
   public:
 
-  // bytes frame = 4;
+  // string sacn_ip = 4;
+  void clear_sacn_ip();
+  const std::string& sacn_ip() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_sacn_ip(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_sacn_ip();
+  PROTOBUF_NODISCARD std::string* release_sacn_ip();
+  void set_allocated_sacn_ip(std::string* sacn_ip);
+  private:
+  const std::string& _internal_sacn_ip() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_sacn_ip(const std::string& value);
+  std::string* _internal_mutable_sacn_ip();
+  public:
+
+  // bytes frame = 10;
   void clear_frame();
   const std::string& frame() const;
   template <typename ArgT0 = const std::string&, typename... ArgT>
@@ -2340,6 +2355,7 @@ class Frame final :
   typedef void DestructorSkippable_;
   struct Impl_ {
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr creature_name_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr sacn_ip_;
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr frame_;
     uint32_t universe_;
     uint32_t dmx_offset_;
@@ -3985,7 +4001,57 @@ inline void Frame::set_allocated_creature_name(std::string* creature_name) {
   // @@protoc_insertion_point(field_set_allocated:server.Frame.creature_name)
 }
 
-// bytes frame = 4;
+// string sacn_ip = 4;
+inline void Frame::clear_sacn_ip() {
+  _impl_.sacn_ip_.ClearToEmpty();
+}
+inline const std::string& Frame::sacn_ip() const {
+  // @@protoc_insertion_point(field_get:server.Frame.sacn_ip)
+  return _internal_sacn_ip();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void Frame::set_sacn_ip(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.sacn_ip_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.Frame.sacn_ip)
+}
+inline std::string* Frame::mutable_sacn_ip() {
+  std::string* _s = _internal_mutable_sacn_ip();
+  // @@protoc_insertion_point(field_mutable:server.Frame.sacn_ip)
+  return _s;
+}
+inline const std::string& Frame::_internal_sacn_ip() const {
+  return _impl_.sacn_ip_.Get();
+}
+inline void Frame::_internal_set_sacn_ip(const std::string& value) {
+  
+  _impl_.sacn_ip_.Set(value, GetArenaForAllocation());
+}
+inline std::string* Frame::_internal_mutable_sacn_ip() {
+  
+  return _impl_.sacn_ip_.Mutable(GetArenaForAllocation());
+}
+inline std::string* Frame::release_sacn_ip() {
+  // @@protoc_insertion_point(field_release:server.Frame.sacn_ip)
+  return _impl_.sacn_ip_.Release();
+}
+inline void Frame::set_allocated_sacn_ip(std::string* sacn_ip) {
+  if (sacn_ip != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.sacn_ip_.SetAllocated(sacn_ip, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.sacn_ip_.IsDefault()) {
+    _impl_.sacn_ip_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.Frame.sacn_ip)
+}
+
+// bytes frame = 10;
 inline void Frame::clear_frame() {
   _impl_.frame_.ClearToEmpty();
 }
