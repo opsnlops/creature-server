@@ -189,6 +189,7 @@ PROTOBUF_CONSTEXPR Frame::Frame(
   , /*decltype(_impl_.frame_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.universe_)*/0u
   , /*decltype(_impl_.dmx_offset_)*/0u
+  , /*decltype(_impl_.number_of_motors_)*/0u
   , /*decltype(_impl_._cached_size_)*/{}} {}
 struct FrameDefaultTypeInternal {
   PROTOBUF_CONSTEXPR FrameDefaultTypeInternal()
@@ -338,6 +339,7 @@ const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(p
   PROTOBUF_FIELD_OFFSET(::server::Frame, _impl_.dmx_offset_),
   PROTOBUF_FIELD_OFFSET(::server::Frame, _impl_.creature_name_),
   PROTOBUF_FIELD_OFFSET(::server::Frame, _impl_.sacn_ip_),
+  PROTOBUF_FIELD_OFFSET(::server::Frame, _impl_.number_of_motors_),
   PROTOBUF_FIELD_OFFSET(::server::Frame, _impl_.frame_),
   ~0u,  // no _has_bits_
   PROTOBUF_FIELD_OFFSET(::server::FrameResponse, _internal_metadata_),
@@ -369,8 +371,8 @@ static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protode
   { 72, -1, -1, sizeof(::server::Creature)},
   { 86, -1, -1, sizeof(::server::LogLine)},
   { 95, -1, -1, sizeof(::server::Frame)},
-  { 106, -1, -1, sizeof(::server::FrameResponse)},
-  { 114, -1, -1, sizeof(::server::ServerStatus)},
+  { 107, -1, -1, sizeof(::server::FrameResponse)},
+  { 115, -1, -1, sizeof(::server::ServerStatus)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
@@ -416,33 +418,33 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "\013\n\007stepper\020\001\"j\n\007LogLine\022\037\n\005level\030\001 \001(\0162\020"
   ".server.LogLevel\022-\n\ttimestamp\030\002 \001(\0132\032.go"
   "ogle.protobuf.Timestamp\022\017\n\007message\030\003 \001(\t"
-  "\"d\n\005Frame\022\020\n\010universe\030\001 \001(\r\022\022\n\ndmx_offse"
+  "\"~\n\005Frame\022\020\n\010universe\030\001 \001(\r\022\022\n\ndmx_offse"
   "t\030\002 \001(\r\022\025\n\rcreature_name\030\003 \001(\t\022\017\n\007sacn_i"
-  "p\030\004 \001(\t\022\r\n\005frame\030\n \001(\014\":\n\rFrameResponse\022"
-  "\030\n\020frames_processed\030\001 \001(\r\022\017\n\007message\030\002 \001"
-  "(\t\"X\n\014ServerStatus\022\030\n\020frames_processed\030\001"
-  " \001(\004\022.\n\nstarted_at\030\002 \001(\0132\032.google.protob"
-  "uf.Timestamp*X\n\010LogLevel\022\t\n\005trace\020\000\022\t\n\005d"
-  "ebug\020\001\022\010\n\004info\020\002\022\010\n\004warn\020\003\022\t\n\005error\020\004\022\014\n"
-  "\010critical\020\005\022\t\n\005fatal\020\006*\036\n\006SortBy\022\010\n\004name"
-  "\020\000\022\n\n\006number\020\0012\307\004\n\016CreatureServer\0225\n\013Get"
-  "Creature\022\022.server.CreatureId\032\020.server.Cr"
-  "eature\"\000\022L\n\017GetAllCreatures\022\026.server.Cre"
-  "atureFilter\032\037.server.GetAllCreaturesResp"
-  "onse\"\000\022:\n\016CreateCreature\022\020.server.Creatu"
-  "re\032\024.server.DatabaseInfo\"\000\022:\n\016UpdateCrea"
-  "ture\022\020.server.Creature\032\024.server.Database"
-  "Info\"\000\0224\n\nStreamLogs\022\021.server.LogFilter\032"
-  "\017.server.LogLine\"\0000\001\022;\n\017SearchCreatures\022"
-  "\024.server.CreatureName\032\020.server.Creature\""
-  "\000\022H\n\rListCreatures\022\026.server.CreatureFilt"
-  "er\032\035.server.ListCreaturesResponse\"\000\0228\n\014S"
-  "treamFrames\022\r.server.Frame\032\025.server.Fram"
-  "eResponse\"\000(\001\022A\n\017GetServerStatus\022\026.googl"
-  "e.protobuf.Empty\032\024.server.ServerStatus\"\000"
-  "BR\n\034io.opsnlops.creatures.serverB\022Networ"
-  "kServerProtoP\001Z\034opsnlops.io/creatures/se"
-  "rverb\006proto3"
+  "p\030\004 \001(\t\022\030\n\020number_of_motors\030\005 \001(\r\022\r\n\005fra"
+  "me\030\n \001(\014\":\n\rFrameResponse\022\030\n\020frames_proc"
+  "essed\030\001 \001(\r\022\017\n\007message\030\002 \001(\t\"X\n\014ServerSt"
+  "atus\022\030\n\020frames_processed\030\001 \001(\004\022.\n\nstarte"
+  "d_at\030\002 \001(\0132\032.google.protobuf.Timestamp*X"
+  "\n\010LogLevel\022\t\n\005trace\020\000\022\t\n\005debug\020\001\022\010\n\004info"
+  "\020\002\022\010\n\004warn\020\003\022\t\n\005error\020\004\022\014\n\010critical\020\005\022\t\n"
+  "\005fatal\020\006*\036\n\006SortBy\022\010\n\004name\020\000\022\n\n\006number\020\001"
+  "2\307\004\n\016CreatureServer\0225\n\013GetCreature\022\022.ser"
+  "ver.CreatureId\032\020.server.Creature\"\000\022L\n\017Ge"
+  "tAllCreatures\022\026.server.CreatureFilter\032\037."
+  "server.GetAllCreaturesResponse\"\000\022:\n\016Crea"
+  "teCreature\022\020.server.Creature\032\024.server.Da"
+  "tabaseInfo\"\000\022:\n\016UpdateCreature\022\020.server."
+  "Creature\032\024.server.DatabaseInfo\"\000\0224\n\nStre"
+  "amLogs\022\021.server.LogFilter\032\017.server.LogLi"
+  "ne\"\0000\001\022;\n\017SearchCreatures\022\024.server.Creat"
+  "ureName\032\020.server.Creature\"\000\022H\n\rListCreat"
+  "ures\022\026.server.CreatureFilter\032\035.server.Li"
+  "stCreaturesResponse\"\000\0228\n\014StreamFrames\022\r."
+  "server.Frame\032\025.server.FrameResponse\"\000(\001\022"
+  "A\n\017GetServerStatus\022\026.google.protobuf.Emp"
+  "ty\032\024.server.ServerStatus\"\000BR\n\034io.opsnlop"
+  "s.creatures.serverB\022NetworkServerProtoP\001"
+  "Z\034opsnlops.io/creatures/serverb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -450,7 +452,7 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 2052, descriptor_table_protodef_server_2eproto,
+    false, false, 2078, descriptor_table_protodef_server_2eproto,
     "server.proto",
     &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 14,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,
@@ -3369,6 +3371,7 @@ Frame::Frame(const Frame& from)
     , decltype(_impl_.frame_){}
     , decltype(_impl_.universe_){}
     , decltype(_impl_.dmx_offset_){}
+    , decltype(_impl_.number_of_motors_){}
     , /*decltype(_impl_._cached_size_)*/{}};
 
   _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
@@ -3397,8 +3400,8 @@ Frame::Frame(const Frame& from)
       _this->GetArenaForAllocation());
   }
   ::memcpy(&_impl_.universe_, &from._impl_.universe_,
-    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.dmx_offset_) -
-    reinterpret_cast<char*>(&_impl_.universe_)) + sizeof(_impl_.dmx_offset_));
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.number_of_motors_) -
+    reinterpret_cast<char*>(&_impl_.universe_)) + sizeof(_impl_.number_of_motors_));
   // @@protoc_insertion_point(copy_constructor:server.Frame)
 }
 
@@ -3412,6 +3415,7 @@ inline void Frame::SharedCtor(
     , decltype(_impl_.frame_){}
     , decltype(_impl_.universe_){0u}
     , decltype(_impl_.dmx_offset_){0u}
+    , decltype(_impl_.number_of_motors_){0u}
     , /*decltype(_impl_._cached_size_)*/{}
   };
   _impl_.creature_name_.InitDefault();
@@ -3458,8 +3462,8 @@ void Frame::Clear() {
   _impl_.sacn_ip_.ClearToEmpty();
   _impl_.frame_.ClearToEmpty();
   ::memset(&_impl_.universe_, 0, static_cast<size_t>(
-      reinterpret_cast<char*>(&_impl_.dmx_offset_) -
-      reinterpret_cast<char*>(&_impl_.universe_)) + sizeof(_impl_.dmx_offset_));
+      reinterpret_cast<char*>(&_impl_.number_of_motors_) -
+      reinterpret_cast<char*>(&_impl_.universe_)) + sizeof(_impl_.number_of_motors_));
   _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
 }
 
@@ -3502,6 +3506,14 @@ const char* Frame::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
           ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
           CHK_(ptr);
           CHK_(::_pbi::VerifyUTF8(str, "server.Frame.sacn_ip"));
+        } else
+          goto handle_unusual;
+        continue;
+      // uint32 number_of_motors = 5;
+      case 5:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 40)) {
+          _impl_.number_of_motors_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
         } else
           goto handle_unusual;
         continue;
@@ -3575,6 +3587,12 @@ uint8_t* Frame::_InternalSerialize(
         4, this->_internal_sacn_ip(), target);
   }
 
+  // uint32 number_of_motors = 5;
+  if (this->_internal_number_of_motors() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(5, this->_internal_number_of_motors(), target);
+  }
+
   // bytes frame = 10;
   if (!this->_internal_frame().empty()) {
     target = stream->WriteBytesMaybeAliased(
@@ -3628,6 +3646,11 @@ size_t Frame::ByteSizeLong() const {
     total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_dmx_offset());
   }
 
+  // uint32 number_of_motors = 5;
+  if (this->_internal_number_of_motors() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_number_of_motors());
+  }
+
   return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
 }
 
@@ -3661,6 +3684,9 @@ void Frame::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF
   if (from._internal_dmx_offset() != 0) {
     _this->_internal_set_dmx_offset(from._internal_dmx_offset());
   }
+  if (from._internal_number_of_motors() != 0) {
+    _this->_internal_set_number_of_motors(from._internal_number_of_motors());
+  }
   _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
 }
 
@@ -3693,8 +3719,8 @@ void Frame::InternalSwap(Frame* other) {
       &other->_impl_.frame_, rhs_arena
   );
   ::PROTOBUF_NAMESPACE_ID::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(Frame, _impl_.dmx_offset_)
-      + sizeof(Frame::_impl_.dmx_offset_)
+      PROTOBUF_FIELD_OFFSET(Frame, _impl_.number_of_motors_)
+      + sizeof(Frame::_impl_.number_of_motors_)
       - PROTOBUF_FIELD_OFFSET(Frame, _impl_.universe_)>(
           reinterpret_cast<char*>(&_impl_.universe_),
           reinterpret_cast<char*>(&other->_impl_.universe_));

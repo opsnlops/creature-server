@@ -2285,6 +2285,7 @@ class Frame final :
     kFrameFieldNumber = 10,
     kUniverseFieldNumber = 1,
     kDmxOffsetFieldNumber = 2,
+    kNumberOfMotorsFieldNumber = 5,
   };
   // string creature_name = 3;
   void clear_creature_name();
@@ -2346,6 +2347,15 @@ class Frame final :
   void _internal_set_dmx_offset(uint32_t value);
   public:
 
+  // uint32 number_of_motors = 5;
+  void clear_number_of_motors();
+  uint32_t number_of_motors() const;
+  void set_number_of_motors(uint32_t value);
+  private:
+  uint32_t _internal_number_of_motors() const;
+  void _internal_set_number_of_motors(uint32_t value);
+  public:
+
   // @@protoc_insertion_point(class_scope:server.Frame)
  private:
   class _Internal;
@@ -2359,6 +2369,7 @@ class Frame final :
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr frame_;
     uint32_t universe_;
     uint32_t dmx_offset_;
+    uint32_t number_of_motors_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -4049,6 +4060,26 @@ inline void Frame::set_allocated_sacn_ip(std::string* sacn_ip) {
   }
 #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   // @@protoc_insertion_point(field_set_allocated:server.Frame.sacn_ip)
+}
+
+// uint32 number_of_motors = 5;
+inline void Frame::clear_number_of_motors() {
+  _impl_.number_of_motors_ = 0u;
+}
+inline uint32_t Frame::_internal_number_of_motors() const {
+  return _impl_.number_of_motors_;
+}
+inline uint32_t Frame::number_of_motors() const {
+  // @@protoc_insertion_point(field_get:server.Frame.number_of_motors)
+  return _internal_number_of_motors();
+}
+inline void Frame::_internal_set_number_of_motors(uint32_t value) {
+  
+  _impl_.number_of_motors_ = value;
+}
+inline void Frame::set_number_of_motors(uint32_t value) {
+  _internal_set_number_of_motors(value);
+  // @@protoc_insertion_point(field_set:server.Frame.number_of_motors)
 }
 
 // bytes frame = 10;

@@ -137,6 +137,7 @@ message Frame {
   uint32 dmx_offset = 2;
   string creature_name = 3;
   string sacn_ip = 4;
+  uint32 number_of_motors = 5;
   bytes frame = 10;
 }
 

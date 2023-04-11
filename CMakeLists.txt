@@ -46,6 +46,7 @@ file(GLOB SERVER_SRCS
         src/exception/*
         src/messaging/*
         src/server/*
+        lib/libe131/src/*
         )
 
 file(GLOB clientFiles
@@ -61,6 +62,7 @@ file(GLOB mongoTestFiles
 # Set up our includes
 include_directories(
         src/
+        lib/libe131/src
         ${Protobuf_INCLUDE_DIRS}
         ${LIBMONGOCXX_INCLUDE_DIR}
         ${LIBBSONCXX_INCLUDE_DIR}
