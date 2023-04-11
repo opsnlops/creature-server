@@ -7,7 +7,7 @@ option java_outer_classname = "NetworkServerProto";
 
 package server;
 
-//import "google/protobuf/empty.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 // TODO: This might be helpful later!
@@ -34,6 +34,10 @@ service CreatureServer {
   rpc SearchCreatures (CreatureName) returns (Creature) {}
 
   rpc ListCreatures(CreatureFilter) returns (ListCreaturesResponse) {}
+
+  rpc StreamFrames(stream Frame) returns (FrameResponse) {}
+
+  rpc GetServerStatus(google.protobuf.Empty) returns (ServerStatus) {}
 
 }
 
@@ -123,4 +127,24 @@ enum LogLevel {
 enum SortBy {
   name = 0;
   number = 1;
+}
+
+/**
+  One frame to send to a creature
+ */
+message Frame {
+  uint32 universe = 1;
+  uint32 dmx_offset = 2;
+  string creature_name = 3;
+  bytes frame = 4;
+}
+
+message FrameResponse {
+  uint32 frames_processed = 1;
+  string message = 2;
+}
+
+message ServerStatus {
+  uint64 frames_processed = 1;
+  google.protobuf.Timestamp started_at = 2;
 }

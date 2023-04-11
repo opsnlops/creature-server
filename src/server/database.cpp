@@ -28,9 +28,6 @@
 #include <bsoncxx/builder/stream/document.hpp>
 
 
-
-
-
 using server::Creature;
 using server::CreatureName;
 
@@ -52,7 +49,7 @@ namespace creatures {
     }
 
 
-    mongocxx::collection Database::getCollection(const std::string& collectionName) {
+    mongocxx::collection Database::getCollection(const std::string &collectionName) {
 
         debug("connecting to a collection");
 
@@ -77,7 +74,7 @@ namespace creatures {
 
     }
 
-    grpc::Status Database::getAllCreatures(const CreatureFilter* filter, GetAllCreaturesResponse* creatureList) {
+    grpc::Status Database::getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList) {
         grpc::Status status;
         info("getting all of the creatures");
 
@@ -87,7 +84,7 @@ namespace creatures {
         document query_doc{};
         document sort_doc{};
 
-        switch(filter->sortby()) {
+        switch (filter->sortby()) {
             case server::SortBy::number:
                 sort_doc << "number" << 1;
                 debug("sorting by number");
@@ -104,7 +101,7 @@ namespace creatures {
         opts.sort(sort_doc.view());
         mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
 
-        for (auto&& doc : cursor) {
+        for (auto &&doc: cursor) {
 
             auto creature = creatureList->add_creatures();
             creatureFromBson(doc, creature);
@@ -117,7 +114,7 @@ namespace creatures {
 
     }
 
-    grpc::Status Database::listCreatures(const CreatureFilter* filter, ListCreaturesResponse* creatureList) {
+    grpc::Status Database::listCreatures(const CreatureFilter *filter, ListCreaturesResponse *creatureList) {
 
         grpc::Status status;
         info("getting the list of creatures");
@@ -129,13 +126,13 @@ namespace creatures {
         document projection_doc{};
         document sort_doc{};
 
-        switch(filter->sortby()) {
+        switch (filter->sortby()) {
             case server::SortBy::number:
                 sort_doc << "number" << 1;
                 debug("sorting by number");
                 break;
 
-            // Default is by name
+                // Default is by name
             default:
                 sort_doc << "name" << 1;
                 debug("sorting by name");
@@ -150,7 +147,7 @@ namespace creatures {
         opts.sort(sort_doc.view());
         mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
 
-        for (auto&& doc : cursor) {
+        for (auto &&doc: cursor) {
 
             auto creatureId = creatureList->add_creaturesids();
             creatureIdentifierFromBson(doc, creatureId);
@@ -165,10 +162,10 @@ namespace creatures {
     }
 
 
-    grpc::Status Database::searchCreatures(const CreatureName* creatureName, Creature* creature) {
+    grpc::Status Database::searchCreatures(const CreatureName *creatureName, Creature *creature) {
 
         grpc::Status status;
-        if(creatureName->name().empty()) {
+        if (creatureName->name().empty()) {
             info("an attempt to search for an empty name was made");
             throw InvalidArgumentException("unable to search for Creatures because the name was empty");
         }
@@ -200,17 +197,17 @@ namespace creatures {
 
             return grpc::Status::OK;
         }
-        catch(const mongocxx::exception& e)
-        {
+        catch (const mongocxx::exception &e) {
             critical("an unhandled error happened while searching for a creature: {}", e.what());
-            throw InternalError(fmt::format("an unhandled error happened while searching for a creature: {}", e.what()));
+            throw InternalError(
+                    fmt::format("an unhandled error happened while searching for a creature: {}", e.what()));
         }
     }
 
-    grpc::Status Database::getCreature(const CreatureId* creatureId, Creature* creature) {
+    grpc::Status Database::getCreature(const CreatureId *creatureId, Creature *creature) {
 
         grpc::Status status;
-        if(creatureId->_id().empty()) {
+        if (creatureId->_id().empty()) {
             info("an empty creatureID was passed into getCreature()");
             throw InvalidArgumentException("unable to get a creature because the id was empty");
         }
@@ -244,14 +241,14 @@ namespace creatures {
 
             return grpc::Status::OK;
         }
-        catch(const mongocxx::exception& e)
-        {
+        catch (const mongocxx::exception &e) {
             critical("an unhandled error happened while loading a creature by ID: {}", e.what());
-            throw InternalError(fmt::format("an unhandled error happened while loading a creature by ID: {}", e.what()));
+            throw InternalError(
+                    fmt::format("an unhandled error happened while loading a creature by ID: {}", e.what()));
         }
     }
 
-    grpc::Status Database::createCreature(const Creature* creature, server::DatabaseInfo* reply) {
+    grpc::Status Database::createCreature(const Creature *creature, server::DatabaseInfo *reply) {
 
         debug("attempting to save a creature in the database");
 
@@ -273,20 +270,18 @@ namespace creatures {
             reply->set_message("saved thingy in the thingy");
 
         }
-        catch (const mongocxx::exception& e)
-        {
+        catch (const mongocxx::exception &e) {
             // Was this an attempt to make a duplicate creature?
-            if(e.code().value() == 11000) {
+            if (e.code().value() == 11000) {
                 error("attempted to insert a duplicate Creature in the database for id {}", creature->_id());
                 status = grpc::Status(grpc::StatusCode::ALREADY_EXISTS, e.what());
                 reply->set_message("Unable to create new creature");
                 reply->set_help(fmt::format("ID {} already exists", creature->_id()));
-            }
-
-            else {
+            } else {
                 critical("Error updating database: {}", e.what());
                 status = grpc::Status(grpc::StatusCode::UNKNOWN, e.what(), fmt::to_string(e.code().value()));
-                reply->set_message(fmt::format("Unable to create Creature in database: {} ({})", e.what(), e.code().value()));
+                reply->set_message(
+                        fmt::format("Unable to create Creature in database: {} ({})", e.what(), e.code().value()));
                 reply->set_help(e.code().message());
             }
 
@@ -295,7 +290,7 @@ namespace creatures {
         return status;
     }
 
-    grpc::Status Database::updateCreature(const Creature* creature, server::DatabaseInfo* reply) {
+    grpc::Status Database::updateCreature(const Creature *creature, server::DatabaseInfo *reply) {
 
         debug("attempting to update a creature in the database");
 
@@ -309,8 +304,10 @@ namespace creatures {
             auto doc_value = creatureToBson(creature, false);
             trace("doc_value made");
 
-            auto filter = bsoncxx::builder::stream::document{} << "_id" << creature->_id() << bsoncxx::builder::stream::finalize;
-            auto update = bsoncxx::builder::stream::document{} << "$set" << doc_value << bsoncxx::builder::stream::finalize;
+            auto filter = bsoncxx::builder::stream::document{} << "_id" << creature->_id()
+                                                               << bsoncxx::builder::stream::finalize;
+            auto update =
+                    bsoncxx::builder::stream::document{} << "$set" << doc_value << bsoncxx::builder::stream::finalize;
 
             mongocxx::stdx::optional<mongocxx::result::update> result =
                     collection.update_one(filter.view(), update.view());
@@ -328,18 +325,18 @@ namespace creatures {
                 status = grpc::Status(grpc::StatusCode::NOT_FOUND, "Unable to update, creature ID not found");
             }
         }
-        catch (const mongocxx::exception& e)
-        {
+        catch (const mongocxx::exception &e) {
             critical("Error updating database: {}", e.what());
             status = grpc::Status(grpc::StatusCode::UNKNOWN, e.what(), fmt::to_string(e.code().value()));
-            reply->set_message(fmt::format("Unable to update Creature in database: {} ({})", e.what(), e.code().value()));
+            reply->set_message(
+                    fmt::format("Unable to update Creature in database: {} ({})", e.what(), e.code().value()));
             reply->set_help(e.code().message());
         }
 
         return status;
     }
 
-    bsoncxx::document::value Database::creatureToBson(const Creature* creature, bool assignNewId) {
+    bsoncxx::document::value Database::creatureToBson(const Creature *creature, bool assignNewId) {
         using bsoncxx::builder::stream::document;
         using bsoncxx::builder::stream::finalize;
         using std::chrono::system_clock;
@@ -351,7 +348,7 @@ namespace creatures {
 
         // Generate a new ID
         bsoncxx::oid id;
-        if(!assignNewId) {
+        if (!assignNewId) {
             debug("reusing old ID");
             id = bsoncxx::oid(creature->_id());
         }
@@ -366,7 +363,8 @@ namespace creatures {
                     << "last_updated" << bsoncxx::types::b_date{last_updated}
                     << "universe" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->universe())}
                     << "dmx_base" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->dmx_base())}
-                    << "number_of_motors" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->number_of_motors())};
+                    << "number_of_motors"
+                    << bsoncxx::types::b_int32{static_cast<int32_t>(creature->number_of_motors())};
             trace("non-array fields added");
 
             auto array_builder = builder << "motors" << bsoncxx::builder::stream::open_array;
@@ -388,9 +386,12 @@ namespace creatures {
                                               << "_id" << motorId
                                               << "name" << motor.name()
                                               << "type" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.type())}
-                                              << "number" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.number())}
-                                              << "max_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.max_value())}
-                                              << "min_value" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.min_value())}
+                                              << "number"
+                                              << bsoncxx::types::b_int32{static_cast<int32_t>(motor.number())}
+                                              << "max_value"
+                                              << bsoncxx::types::b_int32{static_cast<int32_t>(motor.max_value())}
+                                              << "min_value"
+                                              << bsoncxx::types::b_int32{static_cast<int32_t>(motor.min_value())}
                                               << "smoothing_value" << decimal_smoothing_value
                                               << bsoncxx::builder::stream::close_document;
             }
@@ -398,8 +399,7 @@ namespace creatures {
             array_builder << bsoncxx::builder::stream::close_array;
 
         }
-        catch(const mongocxx::exception& e)
-        {
+        catch (const mongocxx::exception &e) {
             error("Problems making the document: {}", e.what());
         }
 
@@ -414,19 +414,18 @@ namespace creatures {
     }
 
 
-    void Database::creatureFromBson(const bsoncxx::document::view& doc, Creature* creature) {
+    void Database::creatureFromBson(const bsoncxx::document::view &doc, Creature *creature) {
 
         debug("attempting to create a creature from a BSON document");
 
 
         bsoncxx::document::element element = doc["_id"];
-        if( element && element.type() == bsoncxx::type::k_oid) {
-            const bsoncxx::oid& oid = element.get_oid().value;
-            const char* oid_data = oid.bytes();
+        if (element && element.type() == bsoncxx::type::k_oid) {
+            const bsoncxx::oid &oid = element.get_oid().value;
+            const char *oid_data = oid.bytes();
             creature->set__id(oid_data, bsoncxx::oid::k_oid_length);
             debug("set the _id to {}", oid.to_string());
-        }
-        else {
+        } else {
             throw creatures::DataFormatException("Field _id was not a bsoncxx::oid in the database");
         }
 
@@ -435,8 +434,7 @@ namespace creatures {
             bsoncxx::stdx::string_view string_value = element.get_string().value;
             creature->set_name(std::string{string_value});
             debug("set the name to {}", creature->name());
-        }
-        else {
+        } else {
             throw creatures::DataFormatException("Field name was not a string in the database");
         }
 
@@ -445,8 +443,7 @@ namespace creatures {
             bsoncxx::stdx::string_view string_value = element.get_string().value;
             creature->set_sacn_ip(std::string{string_value});
             debug("set the sacn_ip to {}", creature->sacn_ip());
-        }
-        else {
+        } else {
             throw creatures::DataFormatException("Field sacn_ip was not a string in the database");
         }
 
@@ -456,8 +453,7 @@ namespace creatures {
             int32_t int32_value = element.get_int32().value;
             creature->set_universe(int32_value);
             debug("set the DMX universe to {}", creature->universe());
-        }
-        else {
+        } else {
             throw creatures::DataFormatException("Field universe was not an int32 in the database");
         }
 
@@ -467,8 +463,7 @@ namespace creatures {
             int32_t int32_value = element.get_int32().value;
             creature->set_dmx_base(int32_value);
             debug("set the DMX base value to {}", creature->dmx_base());
-        }
-        else {
+        } else {
             throw creatures::DataFormatException("Field dmx_base was not an int32 in the database");
         }
 
@@ -478,8 +473,7 @@ namespace creatures {
             int32_t int32_value = element.get_int32().value;
             creature->set_number_of_motors(int32_value);
             debug("set the number of motors to {}", creature->number_of_motors());
-        }
-        else {
+        } else {
             throw creatures::DataFormatException("Field number_of_motors was not an int32 in the database");
         }
 
@@ -494,16 +488,16 @@ namespace creatures {
             bsoncxx::array::view array_view = element.get_array().value;
 
             // Iterate through the array of objects
-            for (const bsoncxx::array::element& obj_element : array_view) {
+            for (const bsoncxx::array::element &obj_element: array_view) {
                 // Ensure the element is a document (BSON object)
                 if (obj_element.type() == bsoncxx::type::k_document) {
                     bsoncxx::document::view obj = obj_element.get_document().value;
 
-                    server::Creature_Motor* motor = creature->add_motors();
+                    server::Creature_Motor *motor = creature->add_motors();
 
                     // Motor name
                     element = obj["name"];
-                    if(element && element.type() != bsoncxx::type::k_utf8) {
+                    if (element && element.type() != bsoncxx::type::k_utf8) {
                         error("motor field 'name' was not a string in the database");
                         throw creatures::DataFormatException("motor field 'name' was not a string in the database");
                     }
@@ -512,7 +506,7 @@ namespace creatures {
 
                     // Motor type
                     element = obj["type"];
-                    if(element && element.type() != bsoncxx::type::k_int32) {
+                    if (element && element.type() != bsoncxx::type::k_int32) {
                         error("motor field 'type' is not an int");
                         throw creatures::DataFormatException("motor field 'type' is not an int in the database");
                     }
@@ -522,7 +516,8 @@ namespace creatures {
                     // Check if the integer value is a valid MotorType enum value
                     if (!server::Creature_MotorType_IsValid((motor_type))) {
                         error("motor field 'type' does not map to our enum: {}", motor_type);
-                        throw creatures::DataFormatException(fmt::format("motor field 'type' does not map to our enum: {}", motor_type));
+                        throw creatures::DataFormatException(
+                                fmt::format("motor field 'type' does not map to our enum: {}", motor_type));
                     }
 
                     // Cast the int to the right value for our enum
@@ -535,8 +530,7 @@ namespace creatures {
                         int32_t int32_value = element.get_int32().value;
                         motor->set_number(int32_value);
                         debug("set the motor number to {}", motor->number());
-                    }
-                    else {
+                    } else {
                         error("motor field 'number' was not an int in the database");
                         throw creatures::DataFormatException("motor field 'number' was not an int in the database");
                     }
@@ -585,8 +579,7 @@ namespace creatures {
 
             }
 
-        }
-        else{
+        } else {
             error("The field 'motors' was not an array in the database");
             throw creatures::DataFormatException("Field 'motors' was not an array in the database");
         }
@@ -595,20 +588,18 @@ namespace creatures {
     }
 
 
-
-
-    void Database::creatureIdentifierFromBson(const bsoncxx::document::view& doc, server::CreatureIdentifier* identifier) {
+    void
+    Database::creatureIdentifierFromBson(const bsoncxx::document::view &doc, server::CreatureIdentifier *identifier) {
 
         debug("attempting to create a creatureIdentifier from a BSON document");
 
         bsoncxx::document::element element = doc["_id"];
-        if( element && element.type() == bsoncxx::type::k_oid) {
-            const bsoncxx::oid& oid = element.get_oid().value;
-            const char* oid_data = oid.bytes();
+        if (element && element.type() == bsoncxx::type::k_oid) {
+            const bsoncxx::oid &oid = element.get_oid().value;
+            const char *oid_data = oid.bytes();
             identifier->set__id(oid_data, bsoncxx::oid::k_oid_length);
             trace("set the _id to {}", oid.to_string());
-        }
-        else {
+        } else {
             throw creatures::DataFormatException("Field '_id' was not a bsoncxx::oid in the database");
         }
 
@@ -617,8 +608,7 @@ namespace creatures {
             bsoncxx::stdx::string_view string_value = element.get_string().value;
             identifier->set_name(std::string{string_value});
             trace("set the name to {}", identifier->name());
-        }
-        else {
+        } else {
             throw creatures::DataFormatException("Field 'name' was not a string in the database");
         }
 
@@ -626,8 +616,8 @@ namespace creatures {
     }
 
 
-
-    std::chrono::system_clock::time_point Database::protobufTimestampToTimePoint(const google::protobuf::Timestamp& timestamp) {
+    std::chrono::system_clock::time_point
+    Database::protobufTimestampToTimePoint(const google::protobuf::Timestamp &timestamp) {
         using std::chrono::duration_cast;
         using std::chrono::nanoseconds;
         using std::chrono::seconds;
@@ -637,13 +627,16 @@ namespace creatures {
         return system_clock::time_point{duration_cast<system_clock::duration>(duration)};
     }
 
-    google::protobuf::Timestamp Database::convertMongoDateToProtobufTimestamp(const bsoncxx::document::element& mongo_date_element) {
+    google::protobuf::Timestamp
+    Database::convertMongoDateToProtobufTimestamp(const bsoncxx::document::element &mongo_date_element) {
         // Make sure the input BSON element has a Timestamp type
         if (mongo_date_element.type() != bsoncxx::type::k_date) {
-            error("element type is not a k_date, cannot convert it to a protobuf timestamp. Type is: {}", bsoncxx::to_string(mongo_date_element.type()));
+            error("element type is not a k_date, cannot convert it to a protobuf timestamp. Type is: {}",
+                  bsoncxx::to_string(mongo_date_element.type()));
             throw creatures::DataFormatException(
-                    fmt::format("Element type is not a k_timestamp, cannot convert it to a protobuf timestamp. Found type was: {}",
-                                bsoncxx::to_string(mongo_date_element.type())));
+                    fmt::format(
+                            "Element type is not a k_timestamp, cannot convert it to a protobuf timestamp. Found type was: {}",
+                            bsoncxx::to_string(mongo_date_element.type())));
         }
 
         // Access the BSON Date value as a bsoncxx::types::b_date type

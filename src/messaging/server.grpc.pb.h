@@ -95,6 +95,22 @@ class CreatureServer final {
     std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::ListCreaturesResponse>> PrepareAsyncListCreatures(::grpc::ClientContext* context, const ::server::CreatureFilter& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::ListCreaturesResponse>>(PrepareAsyncListCreaturesRaw(context, request, cq));
     }
+    std::unique_ptr< ::grpc::ClientWriterInterface< ::server::Frame>> StreamFrames(::grpc::ClientContext* context, ::server::FrameResponse* response) {
+      return std::unique_ptr< ::grpc::ClientWriterInterface< ::server::Frame>>(StreamFramesRaw(context, response));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncWriterInterface< ::server::Frame>> AsyncStreamFrames(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::CompletionQueue* cq, void* tag) {
+      return std::unique_ptr< ::grpc::ClientAsyncWriterInterface< ::server::Frame>>(AsyncStreamFramesRaw(context, response, cq, tag));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncWriterInterface< ::server::Frame>> PrepareAsyncStreamFrames(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncWriterInterface< ::server::Frame>>(PrepareAsyncStreamFramesRaw(context, response, cq));
+    }
+    virtual ::grpc::Status GetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::server::ServerStatus* response) = 0;
+    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::ServerStatus>> AsyncGetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::ServerStatus>>(AsyncGetServerStatusRaw(context, request, cq));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::ServerStatus>> PrepareAsyncGetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::ServerStatus>>(PrepareAsyncGetServerStatusRaw(context, request, cq));
+    }
     class async_interface {
      public:
       virtual ~async_interface() {}
@@ -117,6 +133,9 @@ class CreatureServer final {
       virtual void SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, ::grpc::ClientUnaryReactor* reactor) = 0;
       virtual void ListCreatures(::grpc::ClientContext* context, const ::server::CreatureFilter* request, ::server::ListCreaturesResponse* response, std::function<void(::grpc::Status)>) = 0;
       virtual void ListCreatures(::grpc::ClientContext* context, const ::server::CreatureFilter* request, ::server::ListCreaturesResponse* response, ::grpc::ClientUnaryReactor* reactor) = 0;
+      virtual void StreamFrames(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::ClientWriteReactor< ::server::Frame>* reactor) = 0;
+      virtual void GetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty* request, ::server::ServerStatus* response, std::function<void(::grpc::Status)>) = 0;
+      virtual void GetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty* request, ::server::ServerStatus* response, ::grpc::ClientUnaryReactor* reactor) = 0;
     };
     typedef class async_interface experimental_async_interface;
     virtual class async_interface* async() { return nullptr; }
@@ -137,6 +156,11 @@ class CreatureServer final {
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::Creature>* PrepareAsyncSearchCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::ListCreaturesResponse>* AsyncListCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureFilter& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::ListCreaturesResponse>* PrepareAsyncListCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureFilter& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientWriterInterface< ::server::Frame>* StreamFramesRaw(::grpc::ClientContext* context, ::server::FrameResponse* response) = 0;
+    virtual ::grpc::ClientAsyncWriterInterface< ::server::Frame>* AsyncStreamFramesRaw(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::CompletionQueue* cq, void* tag) = 0;
+    virtual ::grpc::ClientAsyncWriterInterface< ::server::Frame>* PrepareAsyncStreamFramesRaw(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::ServerStatus>* AsyncGetServerStatusRaw(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::ServerStatus>* PrepareAsyncGetServerStatusRaw(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) = 0;
   };
   class Stub final : public StubInterface {
    public:
@@ -192,6 +216,22 @@ class CreatureServer final {
     std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::ListCreaturesResponse>> PrepareAsyncListCreatures(::grpc::ClientContext* context, const ::server::CreatureFilter& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::ListCreaturesResponse>>(PrepareAsyncListCreaturesRaw(context, request, cq));
     }
+    std::unique_ptr< ::grpc::ClientWriter< ::server::Frame>> StreamFrames(::grpc::ClientContext* context, ::server::FrameResponse* response) {
+      return std::unique_ptr< ::grpc::ClientWriter< ::server::Frame>>(StreamFramesRaw(context, response));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncWriter< ::server::Frame>> AsyncStreamFrames(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::CompletionQueue* cq, void* tag) {
+      return std::unique_ptr< ::grpc::ClientAsyncWriter< ::server::Frame>>(AsyncStreamFramesRaw(context, response, cq, tag));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncWriter< ::server::Frame>> PrepareAsyncStreamFrames(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncWriter< ::server::Frame>>(PrepareAsyncStreamFramesRaw(context, response, cq));
+    }
+    ::grpc::Status GetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::server::ServerStatus* response) override;
+    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::ServerStatus>> AsyncGetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::ServerStatus>>(AsyncGetServerStatusRaw(context, request, cq));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::ServerStatus>> PrepareAsyncGetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::ServerStatus>>(PrepareAsyncGetServerStatusRaw(context, request, cq));
+    }
     class async final :
       public StubInterface::async_interface {
      public:
@@ -208,6 +248,9 @@ class CreatureServer final {
       void SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, ::grpc::ClientUnaryReactor* reactor) override;
       void ListCreatures(::grpc::ClientContext* context, const ::server::CreatureFilter* request, ::server::ListCreaturesResponse* response, std::function<void(::grpc::Status)>) override;
       void ListCreatures(::grpc::ClientContext* context, const ::server::CreatureFilter* request, ::server::ListCreaturesResponse* response, ::grpc::ClientUnaryReactor* reactor) override;
+      void StreamFrames(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::ClientWriteReactor< ::server::Frame>* reactor) override;
+      void GetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty* request, ::server::ServerStatus* response, std::function<void(::grpc::Status)>) override;
+      void GetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty* request, ::server::ServerStatus* response, ::grpc::ClientUnaryReactor* reactor) override;
      private:
       friend class Stub;
       explicit async(Stub* stub): stub_(stub) { }
@@ -234,6 +277,11 @@ class CreatureServer final {
     ::grpc::ClientAsyncResponseReader< ::server::Creature>* PrepareAsyncSearchCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::server::ListCreaturesResponse>* AsyncListCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureFilter& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::server::ListCreaturesResponse>* PrepareAsyncListCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureFilter& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientWriter< ::server::Frame>* StreamFramesRaw(::grpc::ClientContext* context, ::server::FrameResponse* response) override;
+    ::grpc::ClientAsyncWriter< ::server::Frame>* AsyncStreamFramesRaw(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::CompletionQueue* cq, void* tag) override;
+    ::grpc::ClientAsyncWriter< ::server::Frame>* PrepareAsyncStreamFramesRaw(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientAsyncResponseReader< ::server::ServerStatus>* AsyncGetServerStatusRaw(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientAsyncResponseReader< ::server::ServerStatus>* PrepareAsyncGetServerStatusRaw(::grpc::ClientContext* context, const ::google::protobuf::Empty& request, ::grpc::CompletionQueue* cq) override;
     const ::grpc::internal::RpcMethod rpcmethod_GetCreature_;
     const ::grpc::internal::RpcMethod rpcmethod_GetAllCreatures_;
     const ::grpc::internal::RpcMethod rpcmethod_CreateCreature_;
@@ -241,6 +289,8 @@ class CreatureServer final {
     const ::grpc::internal::RpcMethod rpcmethod_StreamLogs_;
     const ::grpc::internal::RpcMethod rpcmethod_SearchCreatures_;
     const ::grpc::internal::RpcMethod rpcmethod_ListCreatures_;
+    const ::grpc::internal::RpcMethod rpcmethod_StreamFrames_;
+    const ::grpc::internal::RpcMethod rpcmethod_GetServerStatus_;
   };
   static std::unique_ptr<Stub> NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options = ::grpc::StubOptions());
 
@@ -261,6 +311,8 @@ class CreatureServer final {
     // Search for a Creature by name
     virtual ::grpc::Status SearchCreatures(::grpc::ServerContext* context, const ::server::CreatureName* request, ::server::Creature* response);
     virtual ::grpc::Status ListCreatures(::grpc::ServerContext* context, const ::server::CreatureFilter* request, ::server::ListCreaturesResponse* response);
+    virtual ::grpc::Status StreamFrames(::grpc::ServerContext* context, ::grpc::ServerReader< ::server::Frame>* reader, ::server::FrameResponse* response);
+    virtual ::grpc::Status GetServerStatus(::grpc::ServerContext* context, const ::google::protobuf::Empty* request, ::server::ServerStatus* response);
   };
   template <class BaseClass>
   class WithAsyncMethod_GetCreature : public BaseClass {
@@ -402,7 +454,47 @@ class CreatureServer final {
       ::grpc::Service::RequestAsyncUnary(6, context, request, response, new_call_cq, notification_cq, tag);
     }
   };
-  typedef WithAsyncMethod_GetCreature<WithAsyncMethod_GetAllCreatures<WithAsyncMethod_CreateCreature<WithAsyncMethod_UpdateCreature<WithAsyncMethod_StreamLogs<WithAsyncMethod_SearchCreatures<WithAsyncMethod_ListCreatures<Service > > > > > > > AsyncService;
+  template <class BaseClass>
+  class WithAsyncMethod_StreamFrames : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithAsyncMethod_StreamFrames() {
+      ::grpc::Service::MarkMethodAsync(7);
+    }
+    ~WithAsyncMethod_StreamFrames() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status StreamFrames(::grpc::ServerContext* /*context*/, ::grpc::ServerReader< ::server::Frame>* /*reader*/, ::server::FrameResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestStreamFrames(::grpc::ServerContext* context, ::grpc::ServerAsyncReader< ::server::FrameResponse, ::server::Frame>* reader, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncClientStreaming(7, context, reader, new_call_cq, notification_cq, tag);
+    }
+  };
+  template <class BaseClass>
+  class WithAsyncMethod_GetServerStatus : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithAsyncMethod_GetServerStatus() {
+      ::grpc::Service::MarkMethodAsync(8);
+    }
+    ~WithAsyncMethod_GetServerStatus() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status GetServerStatus(::grpc::ServerContext* /*context*/, const ::google::protobuf::Empty* /*request*/, ::server::ServerStatus* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestGetServerStatus(::grpc::ServerContext* context, ::google::protobuf::Empty* request, ::grpc::ServerAsyncResponseWriter< ::server::ServerStatus>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncUnary(8, context, request, response, new_call_cq, notification_cq, tag);
+    }
+  };
+  typedef WithAsyncMethod_GetCreature<WithAsyncMethod_GetAllCreatures<WithAsyncMethod_CreateCreature<WithAsyncMethod_UpdateCreature<WithAsyncMethod_StreamLogs<WithAsyncMethod_SearchCreatures<WithAsyncMethod_ListCreatures<WithAsyncMethod_StreamFrames<WithAsyncMethod_GetServerStatus<Service > > > > > > > > > AsyncService;
   template <class BaseClass>
   class WithCallbackMethod_GetCreature : public BaseClass {
    private:
@@ -587,7 +679,56 @@ class CreatureServer final {
     virtual ::grpc::ServerUnaryReactor* ListCreatures(
       ::grpc::CallbackServerContext* /*context*/, const ::server::CreatureFilter* /*request*/, ::server::ListCreaturesResponse* /*response*/)  { return nullptr; }
   };
-  typedef WithCallbackMethod_GetCreature<WithCallbackMethod_GetAllCreatures<WithCallbackMethod_CreateCreature<WithCallbackMethod_UpdateCreature<WithCallbackMethod_StreamLogs<WithCallbackMethod_SearchCreatures<WithCallbackMethod_ListCreatures<Service > > > > > > > CallbackService;
+  template <class BaseClass>
+  class WithCallbackMethod_StreamFrames : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithCallbackMethod_StreamFrames() {
+      ::grpc::Service::MarkMethodCallback(7,
+          new ::grpc::internal::CallbackClientStreamingHandler< ::server::Frame, ::server::FrameResponse>(
+            [this](
+                   ::grpc::CallbackServerContext* context, ::server::FrameResponse* response) { return this->StreamFrames(context, response); }));
+    }
+    ~WithCallbackMethod_StreamFrames() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status StreamFrames(::grpc::ServerContext* /*context*/, ::grpc::ServerReader< ::server::Frame>* /*reader*/, ::server::FrameResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerReadReactor< ::server::Frame>* StreamFrames(
+      ::grpc::CallbackServerContext* /*context*/, ::server::FrameResponse* /*response*/)  { return nullptr; }
+  };
+  template <class BaseClass>
+  class WithCallbackMethod_GetServerStatus : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithCallbackMethod_GetServerStatus() {
+      ::grpc::Service::MarkMethodCallback(8,
+          new ::grpc::internal::CallbackUnaryHandler< ::google::protobuf::Empty, ::server::ServerStatus>(
+            [this](
+                   ::grpc::CallbackServerContext* context, const ::google::protobuf::Empty* request, ::server::ServerStatus* response) { return this->GetServerStatus(context, request, response); }));}
+    void SetMessageAllocatorFor_GetServerStatus(
+        ::grpc::MessageAllocator< ::google::protobuf::Empty, ::server::ServerStatus>* allocator) {
+      ::grpc::internal::MethodHandler* const handler = ::grpc::Service::GetHandler(8);
+      static_cast<::grpc::internal::CallbackUnaryHandler< ::google::protobuf::Empty, ::server::ServerStatus>*>(handler)
+              ->SetMessageAllocator(allocator);
+    }
+    ~WithCallbackMethod_GetServerStatus() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status GetServerStatus(::grpc::ServerContext* /*context*/, const ::google::protobuf::Empty* /*request*/, ::server::ServerStatus* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerUnaryReactor* GetServerStatus(
+      ::grpc::CallbackServerContext* /*context*/, const ::google::protobuf::Empty* /*request*/, ::server::ServerStatus* /*response*/)  { return nullptr; }
+  };
+  typedef WithCallbackMethod_GetCreature<WithCallbackMethod_GetAllCreatures<WithCallbackMethod_CreateCreature<WithCallbackMethod_UpdateCreature<WithCallbackMethod_StreamLogs<WithCallbackMethod_SearchCreatures<WithCallbackMethod_ListCreatures<WithCallbackMethod_StreamFrames<WithCallbackMethod_GetServerStatus<Service > > > > > > > > > CallbackService;
   typedef CallbackService ExperimentalCallbackService;
   template <class BaseClass>
   class WithGenericMethod_GetCreature : public BaseClass {
@@ -704,6 +845,40 @@ class CreatureServer final {
     }
     // disable synchronous version of this method
     ::grpc::Status ListCreatures(::grpc::ServerContext* /*context*/, const ::server::CreatureFilter* /*request*/, ::server::ListCreaturesResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+  };
+  template <class BaseClass>
+  class WithGenericMethod_StreamFrames : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithGenericMethod_StreamFrames() {
+      ::grpc::Service::MarkMethodGeneric(7);
+    }
+    ~WithGenericMethod_StreamFrames() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status StreamFrames(::grpc::ServerContext* /*context*/, ::grpc::ServerReader< ::server::Frame>* /*reader*/, ::server::FrameResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+  };
+  template <class BaseClass>
+  class WithGenericMethod_GetServerStatus : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithGenericMethod_GetServerStatus() {
+      ::grpc::Service::MarkMethodGeneric(8);
+    }
+    ~WithGenericMethod_GetServerStatus() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status GetServerStatus(::grpc::ServerContext* /*context*/, const ::google::protobuf::Empty* /*request*/, ::server::ServerStatus* /*response*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
@@ -846,6 +1021,46 @@ class CreatureServer final {
     }
     void RequestListCreatures(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncResponseWriter< ::grpc::ByteBuffer>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
       ::grpc::Service::RequestAsyncUnary(6, context, request, response, new_call_cq, notification_cq, tag);
+    }
+  };
+  template <class BaseClass>
+  class WithRawMethod_StreamFrames : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawMethod_StreamFrames() {
+      ::grpc::Service::MarkMethodRaw(7);
+    }
+    ~WithRawMethod_StreamFrames() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status StreamFrames(::grpc::ServerContext* /*context*/, ::grpc::ServerReader< ::server::Frame>* /*reader*/, ::server::FrameResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestStreamFrames(::grpc::ServerContext* context, ::grpc::ServerAsyncReader< ::grpc::ByteBuffer, ::grpc::ByteBuffer>* reader, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncClientStreaming(7, context, reader, new_call_cq, notification_cq, tag);
+    }
+  };
+  template <class BaseClass>
+  class WithRawMethod_GetServerStatus : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawMethod_GetServerStatus() {
+      ::grpc::Service::MarkMethodRaw(8);
+    }
+    ~WithRawMethod_GetServerStatus() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status GetServerStatus(::grpc::ServerContext* /*context*/, const ::google::protobuf::Empty* /*request*/, ::server::ServerStatus* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestGetServerStatus(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncResponseWriter< ::grpc::ByteBuffer>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncUnary(8, context, request, response, new_call_cq, notification_cq, tag);
     }
   };
   template <class BaseClass>
@@ -1000,6 +1215,50 @@ class CreatureServer final {
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
     virtual ::grpc::ServerUnaryReactor* ListCreatures(
+      ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/, ::grpc::ByteBuffer* /*response*/)  { return nullptr; }
+  };
+  template <class BaseClass>
+  class WithRawCallbackMethod_StreamFrames : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawCallbackMethod_StreamFrames() {
+      ::grpc::Service::MarkMethodRawCallback(7,
+          new ::grpc::internal::CallbackClientStreamingHandler< ::grpc::ByteBuffer, ::grpc::ByteBuffer>(
+            [this](
+                   ::grpc::CallbackServerContext* context, ::grpc::ByteBuffer* response) { return this->StreamFrames(context, response); }));
+    }
+    ~WithRawCallbackMethod_StreamFrames() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status StreamFrames(::grpc::ServerContext* /*context*/, ::grpc::ServerReader< ::server::Frame>* /*reader*/, ::server::FrameResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerReadReactor< ::grpc::ByteBuffer>* StreamFrames(
+      ::grpc::CallbackServerContext* /*context*/, ::grpc::ByteBuffer* /*response*/)  { return nullptr; }
+  };
+  template <class BaseClass>
+  class WithRawCallbackMethod_GetServerStatus : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawCallbackMethod_GetServerStatus() {
+      ::grpc::Service::MarkMethodRawCallback(8,
+          new ::grpc::internal::CallbackUnaryHandler< ::grpc::ByteBuffer, ::grpc::ByteBuffer>(
+            [this](
+                   ::grpc::CallbackServerContext* context, const ::grpc::ByteBuffer* request, ::grpc::ByteBuffer* response) { return this->GetServerStatus(context, request, response); }));
+    }
+    ~WithRawCallbackMethod_GetServerStatus() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status GetServerStatus(::grpc::ServerContext* /*context*/, const ::google::protobuf::Empty* /*request*/, ::server::ServerStatus* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerUnaryReactor* GetServerStatus(
       ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/, ::grpc::ByteBuffer* /*response*/)  { return nullptr; }
   };
   template <class BaseClass>
@@ -1164,7 +1423,34 @@ class CreatureServer final {
     // replace default version of method with streamed unary
     virtual ::grpc::Status StreamedListCreatures(::grpc::ServerContext* context, ::grpc::ServerUnaryStreamer< ::server::CreatureFilter,::server::ListCreaturesResponse>* server_unary_streamer) = 0;
   };
-  typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_GetAllCreatures<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<WithStreamedUnaryMethod_SearchCreatures<WithStreamedUnaryMethod_ListCreatures<Service > > > > > > StreamedUnaryService;
+  template <class BaseClass>
+  class WithStreamedUnaryMethod_GetServerStatus : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithStreamedUnaryMethod_GetServerStatus() {
+      ::grpc::Service::MarkMethodStreamed(8,
+        new ::grpc::internal::StreamedUnaryHandler<
+          ::google::protobuf::Empty, ::server::ServerStatus>(
+            [this](::grpc::ServerContext* context,
+                   ::grpc::ServerUnaryStreamer<
+                     ::google::protobuf::Empty, ::server::ServerStatus>* streamer) {
+                       return this->StreamedGetServerStatus(context,
+                         streamer);
+                  }));
+    }
+    ~WithStreamedUnaryMethod_GetServerStatus() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable regular version of this method
+    ::grpc::Status GetServerStatus(::grpc::ServerContext* /*context*/, const ::google::protobuf::Empty* /*request*/, ::server::ServerStatus* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    // replace default version of method with streamed unary
+    virtual ::grpc::Status StreamedGetServerStatus(::grpc::ServerContext* context, ::grpc::ServerUnaryStreamer< ::google::protobuf::Empty,::server::ServerStatus>* server_unary_streamer) = 0;
+  };
+  typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_GetAllCreatures<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<WithStreamedUnaryMethod_SearchCreatures<WithStreamedUnaryMethod_ListCreatures<WithStreamedUnaryMethod_GetServerStatus<Service > > > > > > > StreamedUnaryService;
   template <class BaseClass>
   class WithSplitStreamingMethod_StreamLogs : public BaseClass {
    private:
@@ -1193,7 +1479,7 @@ class CreatureServer final {
     virtual ::grpc::Status StreamedStreamLogs(::grpc::ServerContext* context, ::grpc::ServerSplitStreamer< ::server::LogFilter,::server::LogLine>* server_split_streamer) = 0;
   };
   typedef WithSplitStreamingMethod_StreamLogs<Service > SplitStreamedService;
-  typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_GetAllCreatures<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<WithSplitStreamingMethod_StreamLogs<WithStreamedUnaryMethod_SearchCreatures<WithStreamedUnaryMethod_ListCreatures<Service > > > > > > > StreamedService;
+  typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_GetAllCreatures<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<WithSplitStreamingMethod_StreamLogs<WithStreamedUnaryMethod_SearchCreatures<WithStreamedUnaryMethod_ListCreatures<WithStreamedUnaryMethod_GetServerStatus<Service > > > > > > > > StreamedService;
 };
 
 }  // namespace server

@@ -66,6 +66,15 @@ public protocol Server_CreatureServerClientProtocol: GRPCClient {
     _ request: Server_CreatureFilter,
     callOptions: CallOptions?
   ) -> UnaryCall<Server_CreatureFilter, Server_ListCreaturesResponse>
+
+  func streamFrames(
+    callOptions: CallOptions?
+  ) -> ClientStreamingCall<Server_Frame, Server_FrameResponse>
+
+  func getServerStatus(
+    _ request: SwiftProtobuf.Google_Protobuf_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<SwiftProtobuf.Google_Protobuf_Empty, Server_ServerStatus>
 }
 
 extension Server_CreatureServerClientProtocol {
@@ -201,6 +210,42 @@ extension Server_CreatureServerClientProtocol {
       interceptors: self.interceptors?.makeListCreaturesInterceptors() ?? []
     )
   }
+
+  /// Client streaming call to StreamFrames
+  ///
+  /// Callers should use the `send` method on the returned object to send messages
+  /// to the server. The caller should send an `.end` after the final message has been sent.
+  ///
+  /// - Parameters:
+  ///   - callOptions: Call options.
+  /// - Returns: A `ClientStreamingCall` with futures for the metadata, status and response.
+  public func streamFrames(
+    callOptions: CallOptions? = nil
+  ) -> ClientStreamingCall<Server_Frame, Server_FrameResponse> {
+    return self.makeClientStreamingCall(
+      path: Server_CreatureServerClientMetadata.Methods.streamFrames.path,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeStreamFramesInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetServerStatus
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetServerStatus.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  public func getServerStatus(
+    _ request: SwiftProtobuf.Google_Protobuf_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<SwiftProtobuf.Google_Protobuf_Empty, Server_ServerStatus> {
+    return self.makeUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.getServerStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetServerStatusInterceptors() ?? []
+    )
+  }
 }
 
 #if compiler(>=5.6)
@@ -302,6 +347,15 @@ public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
     _ request: Server_CreatureFilter,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Server_CreatureFilter, Server_ListCreaturesResponse>
+
+  func makeStreamFramesCall(
+    callOptions: CallOptions?
+  ) -> GRPCAsyncClientStreamingCall<Server_Frame, Server_FrameResponse>
+
+  func makeGetServerStatusCall(
+    _ request: SwiftProtobuf.Google_Protobuf_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<SwiftProtobuf.Google_Protobuf_Empty, Server_ServerStatus>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -397,6 +451,28 @@ extension Server_CreatureServerAsyncClientProtocol {
       interceptors: self.interceptors?.makeListCreaturesInterceptors() ?? []
     )
   }
+
+  public func makeStreamFramesCall(
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncClientStreamingCall<Server_Frame, Server_FrameResponse> {
+    return self.makeAsyncClientStreamingCall(
+      path: Server_CreatureServerClientMetadata.Methods.streamFrames.path,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeStreamFramesInterceptors() ?? []
+    )
+  }
+
+  public func makeGetServerStatusCall(
+    _ request: SwiftProtobuf.Google_Protobuf_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<SwiftProtobuf.Google_Protobuf_Empty, Server_ServerStatus> {
+    return self.makeAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.getServerStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetServerStatusInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -484,6 +560,42 @@ extension Server_CreatureServerAsyncClientProtocol {
       interceptors: self.interceptors?.makeListCreaturesInterceptors() ?? []
     )
   }
+
+  public func streamFrames<RequestStream>(
+    _ requests: RequestStream,
+    callOptions: CallOptions? = nil
+  ) async throws -> Server_FrameResponse where RequestStream: Sequence, RequestStream.Element == Server_Frame {
+    return try await self.performAsyncClientStreamingCall(
+      path: Server_CreatureServerClientMetadata.Methods.streamFrames.path,
+      requests: requests,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeStreamFramesInterceptors() ?? []
+    )
+  }
+
+  public func streamFrames<RequestStream>(
+    _ requests: RequestStream,
+    callOptions: CallOptions? = nil
+  ) async throws -> Server_FrameResponse where RequestStream: AsyncSequence & Sendable, RequestStream.Element == Server_Frame {
+    return try await self.performAsyncClientStreamingCall(
+      path: Server_CreatureServerClientMetadata.Methods.streamFrames.path,
+      requests: requests,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeStreamFramesInterceptors() ?? []
+    )
+  }
+
+  public func getServerStatus(
+    _ request: SwiftProtobuf.Google_Protobuf_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Server_ServerStatus {
+    return try await self.performAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.getServerStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetServerStatusInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -527,6 +639,12 @@ public protocol Server_CreatureServerClientInterceptorFactoryProtocol: GRPCSenda
 
   /// - Returns: Interceptors to use when invoking 'listCreatures'.
   func makeListCreaturesInterceptors() -> [ClientInterceptor<Server_CreatureFilter, Server_ListCreaturesResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'streamFrames'.
+  func makeStreamFramesInterceptors() -> [ClientInterceptor<Server_Frame, Server_FrameResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getServerStatus'.
+  func makeGetServerStatusInterceptors() -> [ClientInterceptor<SwiftProtobuf.Google_Protobuf_Empty, Server_ServerStatus>]
 }
 
 public enum Server_CreatureServerClientMetadata {
@@ -541,6 +659,8 @@ public enum Server_CreatureServerClientMetadata {
       Server_CreatureServerClientMetadata.Methods.streamLogs,
       Server_CreatureServerClientMetadata.Methods.searchCreatures,
       Server_CreatureServerClientMetadata.Methods.listCreatures,
+      Server_CreatureServerClientMetadata.Methods.streamFrames,
+      Server_CreatureServerClientMetadata.Methods.getServerStatus,
     ]
   )
 
@@ -584,6 +704,18 @@ public enum Server_CreatureServerClientMetadata {
     public static let listCreatures = GRPCMethodDescriptor(
       name: "ListCreatures",
       path: "/server.CreatureServer/ListCreatures",
+      type: GRPCCallType.unary
+    )
+
+    public static let streamFrames = GRPCMethodDescriptor(
+      name: "StreamFrames",
+      path: "/server.CreatureServer/StreamFrames",
+      type: GRPCCallType.clientStreaming
+    )
+
+    public static let getServerStatus = GRPCMethodDescriptor(
+      name: "GetServerStatus",
+      path: "/server.CreatureServer/GetServerStatus",
       type: GRPCCallType.unary
     )
   }

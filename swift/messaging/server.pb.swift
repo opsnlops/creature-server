@@ -348,6 +348,63 @@ public struct Server_LogLine {
   fileprivate var _timestamp: SwiftProtobuf.Google_Protobuf_Timestamp? = nil
 }
 
+///*
+///One frame to send to a creature
+public struct Server_Frame {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var universe: UInt32 = 0
+
+  public var dmxOffset: UInt32 = 0
+
+  public var creatureName: String = String()
+
+  public var frame: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public struct Server_FrameResponse {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var framesProcessed: UInt32 = 0
+
+  public var message: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public struct Server_ServerStatus {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var framesProcessed: UInt64 = 0
+
+  public var startedAt: SwiftProtobuf.Google_Protobuf_Timestamp {
+    get {return _startedAt ?? SwiftProtobuf.Google_Protobuf_Timestamp()}
+    set {_startedAt = newValue}
+  }
+  /// Returns true if `startedAt` has been explicitly set.
+  public var hasStartedAt: Bool {return self._startedAt != nil}
+  /// Clears the value of `startedAt`. Subsequent reads from it will return its default value.
+  public mutating func clearStartedAt() {self._startedAt = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _startedAt: SwiftProtobuf.Google_Protobuf_Timestamp? = nil
+}
+
 #if swift(>=5.5) && canImport(_Concurrency)
 extension Server_LogLevel: @unchecked Sendable {}
 extension Server_SortBy: @unchecked Sendable {}
@@ -363,6 +420,9 @@ extension Server_Creature: @unchecked Sendable {}
 extension Server_Creature.MotorType: @unchecked Sendable {}
 extension Server_Creature.Motor: @unchecked Sendable {}
 extension Server_LogLine: @unchecked Sendable {}
+extension Server_Frame: @unchecked Sendable {}
+extension Server_FrameResponse: @unchecked Sendable {}
+extension Server_ServerStatus: @unchecked Sendable {}
 #endif  // swift(>=5.5) && canImport(_Concurrency)
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
@@ -858,6 +918,136 @@ extension Server_LogLine: SwiftProtobuf.Message, SwiftProtobuf._MessageImplement
     if lhs.level != rhs.level {return false}
     if lhs._timestamp != rhs._timestamp {return false}
     if lhs.message != rhs.message {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Frame"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "universe"),
+    2: .standard(proto: "dmx_offset"),
+    3: .standard(proto: "creature_name"),
+    4: .same(proto: "frame"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.universe) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.dmxOffset) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.creatureName) }()
+      case 4: try { try decoder.decodeSingularBytesField(value: &self.frame) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.universe != 0 {
+      try visitor.visitSingularUInt32Field(value: self.universe, fieldNumber: 1)
+    }
+    if self.dmxOffset != 0 {
+      try visitor.visitSingularUInt32Field(value: self.dmxOffset, fieldNumber: 2)
+    }
+    if !self.creatureName.isEmpty {
+      try visitor.visitSingularStringField(value: self.creatureName, fieldNumber: 3)
+    }
+    if !self.frame.isEmpty {
+      try visitor.visitSingularBytesField(value: self.frame, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_Frame, rhs: Server_Frame) -> Bool {
+    if lhs.universe != rhs.universe {return false}
+    if lhs.dmxOffset != rhs.dmxOffset {return false}
+    if lhs.creatureName != rhs.creatureName {return false}
+    if lhs.frame != rhs.frame {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_FrameResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".FrameResponse"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .standard(proto: "frames_processed"),
+    2: .same(proto: "message"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.framesProcessed) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.framesProcessed != 0 {
+      try visitor.visitSingularUInt32Field(value: self.framesProcessed, fieldNumber: 1)
+    }
+    if !self.message.isEmpty {
+      try visitor.visitSingularStringField(value: self.message, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_FrameResponse, rhs: Server_FrameResponse) -> Bool {
+    if lhs.framesProcessed != rhs.framesProcessed {return false}
+    if lhs.message != rhs.message {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_ServerStatus: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ServerStatus"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .standard(proto: "frames_processed"),
+    2: .standard(proto: "started_at"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.framesProcessed) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._startedAt) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.framesProcessed != 0 {
+      try visitor.visitSingularUInt64Field(value: self.framesProcessed, fieldNumber: 1)
+    }
+    try { if let v = self._startedAt {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_ServerStatus, rhs: Server_ServerStatus) -> Bool {
+    if lhs.framesProcessed != rhs.framesProcessed {return false}
+    if lhs._startedAt != rhs._startedAt {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

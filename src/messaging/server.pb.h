@@ -31,6 +31,7 @@
 #include <google/protobuf/extension_set.h>  // IWYU pragma: export
 #include <google/protobuf/generated_enum_reflection.h>
 #include <google/protobuf/unknown_field_set.h>
+#include <google/protobuf/empty.pb.h>
 #include <google/protobuf/timestamp.pb.h>
 // @@protoc_insertion_point(includes)
 #include <google/protobuf/port_def.inc>
@@ -68,6 +69,12 @@ extern Creature_MotorDefaultTypeInternal _Creature_Motor_default_instance_;
 class DatabaseInfo;
 struct DatabaseInfoDefaultTypeInternal;
 extern DatabaseInfoDefaultTypeInternal _DatabaseInfo_default_instance_;
+class Frame;
+struct FrameDefaultTypeInternal;
+extern FrameDefaultTypeInternal _Frame_default_instance_;
+class FrameResponse;
+struct FrameResponseDefaultTypeInternal;
+extern FrameResponseDefaultTypeInternal _FrameResponse_default_instance_;
 class GetAllCreaturesResponse;
 struct GetAllCreaturesResponseDefaultTypeInternal;
 extern GetAllCreaturesResponseDefaultTypeInternal _GetAllCreaturesResponse_default_instance_;
@@ -80,6 +87,9 @@ extern LogFilterDefaultTypeInternal _LogFilter_default_instance_;
 class LogLine;
 struct LogLineDefaultTypeInternal;
 extern LogLineDefaultTypeInternal _LogLine_default_instance_;
+class ServerStatus;
+struct ServerStatusDefaultTypeInternal;
+extern ServerStatusDefaultTypeInternal _ServerStatus_default_instance_;
 }  // namespace server
 PROTOBUF_NAMESPACE_OPEN
 template<> ::server::Creature* Arena::CreateMaybeMessage<::server::Creature>(Arena*);
@@ -89,10 +99,13 @@ template<> ::server::CreatureIdentifier* Arena::CreateMaybeMessage<::server::Cre
 template<> ::server::CreatureName* Arena::CreateMaybeMessage<::server::CreatureName>(Arena*);
 template<> ::server::Creature_Motor* Arena::CreateMaybeMessage<::server::Creature_Motor>(Arena*);
 template<> ::server::DatabaseInfo* Arena::CreateMaybeMessage<::server::DatabaseInfo>(Arena*);
+template<> ::server::Frame* Arena::CreateMaybeMessage<::server::Frame>(Arena*);
+template<> ::server::FrameResponse* Arena::CreateMaybeMessage<::server::FrameResponse>(Arena*);
 template<> ::server::GetAllCreaturesResponse* Arena::CreateMaybeMessage<::server::GetAllCreaturesResponse>(Arena*);
 template<> ::server::ListCreaturesResponse* Arena::CreateMaybeMessage<::server::ListCreaturesResponse>(Arena*);
 template<> ::server::LogFilter* Arena::CreateMaybeMessage<::server::LogFilter>(Arena*);
 template<> ::server::LogLine* Arena::CreateMaybeMessage<::server::LogLine>(Arena*);
+template<> ::server::ServerStatus* Arena::CreateMaybeMessage<::server::ServerStatus>(Arena*);
 PROTOBUF_NAMESPACE_CLOSE
 namespace server {
 
@@ -2144,6 +2157,529 @@ class LogLine final :
   union { Impl_ _impl_; };
   friend struct ::TableStruct_server_2eproto;
 };
+// -------------------------------------------------------------------
+
+class Frame final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.Frame) */ {
+ public:
+  inline Frame() : Frame(nullptr) {}
+  ~Frame() override;
+  explicit PROTOBUF_CONSTEXPR Frame(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  Frame(const Frame& from);
+  Frame(Frame&& from) noexcept
+    : Frame() {
+    *this = ::std::move(from);
+  }
+
+  inline Frame& operator=(const Frame& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline Frame& operator=(Frame&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const Frame& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const Frame* internal_default_instance() {
+    return reinterpret_cast<const Frame*>(
+               &_Frame_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    11;
+
+  friend void swap(Frame& a, Frame& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(Frame* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(Frame* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  Frame* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<Frame>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const Frame& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const Frame& from) {
+    Frame::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(Frame* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.Frame";
+  }
+  protected:
+  explicit Frame(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kCreatureNameFieldNumber = 3,
+    kFrameFieldNumber = 4,
+    kUniverseFieldNumber = 1,
+    kDmxOffsetFieldNumber = 2,
+  };
+  // string creature_name = 3;
+  void clear_creature_name();
+  const std::string& creature_name() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_creature_name(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_creature_name();
+  PROTOBUF_NODISCARD std::string* release_creature_name();
+  void set_allocated_creature_name(std::string* creature_name);
+  private:
+  const std::string& _internal_creature_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_creature_name(const std::string& value);
+  std::string* _internal_mutable_creature_name();
+  public:
+
+  // bytes frame = 4;
+  void clear_frame();
+  const std::string& frame() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_frame(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_frame();
+  PROTOBUF_NODISCARD std::string* release_frame();
+  void set_allocated_frame(std::string* frame);
+  private:
+  const std::string& _internal_frame() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_frame(const std::string& value);
+  std::string* _internal_mutable_frame();
+  public:
+
+  // uint32 universe = 1;
+  void clear_universe();
+  uint32_t universe() const;
+  void set_universe(uint32_t value);
+  private:
+  uint32_t _internal_universe() const;
+  void _internal_set_universe(uint32_t value);
+  public:
+
+  // uint32 dmx_offset = 2;
+  void clear_dmx_offset();
+  uint32_t dmx_offset() const;
+  void set_dmx_offset(uint32_t value);
+  private:
+  uint32_t _internal_dmx_offset() const;
+  void _internal_set_dmx_offset(uint32_t value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.Frame)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr creature_name_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr frame_;
+    uint32_t universe_;
+    uint32_t dmx_offset_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
+
+class FrameResponse final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.FrameResponse) */ {
+ public:
+  inline FrameResponse() : FrameResponse(nullptr) {}
+  ~FrameResponse() override;
+  explicit PROTOBUF_CONSTEXPR FrameResponse(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  FrameResponse(const FrameResponse& from);
+  FrameResponse(FrameResponse&& from) noexcept
+    : FrameResponse() {
+    *this = ::std::move(from);
+  }
+
+  inline FrameResponse& operator=(const FrameResponse& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline FrameResponse& operator=(FrameResponse&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const FrameResponse& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const FrameResponse* internal_default_instance() {
+    return reinterpret_cast<const FrameResponse*>(
+               &_FrameResponse_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    12;
+
+  friend void swap(FrameResponse& a, FrameResponse& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(FrameResponse* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(FrameResponse* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  FrameResponse* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<FrameResponse>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const FrameResponse& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const FrameResponse& from) {
+    FrameResponse::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(FrameResponse* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.FrameResponse";
+  }
+  protected:
+  explicit FrameResponse(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kMessageFieldNumber = 2,
+    kFramesProcessedFieldNumber = 1,
+  };
+  // string message = 2;
+  void clear_message();
+  const std::string& message() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_message(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_message();
+  PROTOBUF_NODISCARD std::string* release_message();
+  void set_allocated_message(std::string* message);
+  private:
+  const std::string& _internal_message() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_message(const std::string& value);
+  std::string* _internal_mutable_message();
+  public:
+
+  // uint32 frames_processed = 1;
+  void clear_frames_processed();
+  uint32_t frames_processed() const;
+  void set_frames_processed(uint32_t value);
+  private:
+  uint32_t _internal_frames_processed() const;
+  void _internal_set_frames_processed(uint32_t value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.FrameResponse)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr message_;
+    uint32_t frames_processed_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
+
+class ServerStatus final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.ServerStatus) */ {
+ public:
+  inline ServerStatus() : ServerStatus(nullptr) {}
+  ~ServerStatus() override;
+  explicit PROTOBUF_CONSTEXPR ServerStatus(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  ServerStatus(const ServerStatus& from);
+  ServerStatus(ServerStatus&& from) noexcept
+    : ServerStatus() {
+    *this = ::std::move(from);
+  }
+
+  inline ServerStatus& operator=(const ServerStatus& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline ServerStatus& operator=(ServerStatus&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const ServerStatus& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const ServerStatus* internal_default_instance() {
+    return reinterpret_cast<const ServerStatus*>(
+               &_ServerStatus_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    13;
+
+  friend void swap(ServerStatus& a, ServerStatus& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(ServerStatus* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(ServerStatus* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  ServerStatus* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<ServerStatus>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const ServerStatus& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const ServerStatus& from) {
+    ServerStatus::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(ServerStatus* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.ServerStatus";
+  }
+  protected:
+  explicit ServerStatus(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kStartedAtFieldNumber = 2,
+    kFramesProcessedFieldNumber = 1,
+  };
+  // .google.protobuf.Timestamp started_at = 2;
+  bool has_started_at() const;
+  private:
+  bool _internal_has_started_at() const;
+  public:
+  void clear_started_at();
+  const ::PROTOBUF_NAMESPACE_ID::Timestamp& started_at() const;
+  PROTOBUF_NODISCARD ::PROTOBUF_NAMESPACE_ID::Timestamp* release_started_at();
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* mutable_started_at();
+  void set_allocated_started_at(::PROTOBUF_NAMESPACE_ID::Timestamp* started_at);
+  private:
+  const ::PROTOBUF_NAMESPACE_ID::Timestamp& _internal_started_at() const;
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* _internal_mutable_started_at();
+  public:
+  void unsafe_arena_set_allocated_started_at(
+      ::PROTOBUF_NAMESPACE_ID::Timestamp* started_at);
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* unsafe_arena_release_started_at();
+
+  // uint64 frames_processed = 1;
+  void clear_frames_processed();
+  uint64_t frames_processed() const;
+  void set_frames_processed(uint64_t value);
+  private:
+  uint64_t _internal_frames_processed() const;
+  void _internal_set_frames_processed(uint64_t value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.ServerStatus)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::Timestamp* started_at_;
+    uint64_t frames_processed_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
 // ===================================================================
 
 
@@ -3355,9 +3891,342 @@ inline void LogLine::set_allocated_message(std::string* message) {
   // @@protoc_insertion_point(field_set_allocated:server.LogLine.message)
 }
 
+// -------------------------------------------------------------------
+
+// Frame
+
+// uint32 universe = 1;
+inline void Frame::clear_universe() {
+  _impl_.universe_ = 0u;
+}
+inline uint32_t Frame::_internal_universe() const {
+  return _impl_.universe_;
+}
+inline uint32_t Frame::universe() const {
+  // @@protoc_insertion_point(field_get:server.Frame.universe)
+  return _internal_universe();
+}
+inline void Frame::_internal_set_universe(uint32_t value) {
+  
+  _impl_.universe_ = value;
+}
+inline void Frame::set_universe(uint32_t value) {
+  _internal_set_universe(value);
+  // @@protoc_insertion_point(field_set:server.Frame.universe)
+}
+
+// uint32 dmx_offset = 2;
+inline void Frame::clear_dmx_offset() {
+  _impl_.dmx_offset_ = 0u;
+}
+inline uint32_t Frame::_internal_dmx_offset() const {
+  return _impl_.dmx_offset_;
+}
+inline uint32_t Frame::dmx_offset() const {
+  // @@protoc_insertion_point(field_get:server.Frame.dmx_offset)
+  return _internal_dmx_offset();
+}
+inline void Frame::_internal_set_dmx_offset(uint32_t value) {
+  
+  _impl_.dmx_offset_ = value;
+}
+inline void Frame::set_dmx_offset(uint32_t value) {
+  _internal_set_dmx_offset(value);
+  // @@protoc_insertion_point(field_set:server.Frame.dmx_offset)
+}
+
+// string creature_name = 3;
+inline void Frame::clear_creature_name() {
+  _impl_.creature_name_.ClearToEmpty();
+}
+inline const std::string& Frame::creature_name() const {
+  // @@protoc_insertion_point(field_get:server.Frame.creature_name)
+  return _internal_creature_name();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void Frame::set_creature_name(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.creature_name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.Frame.creature_name)
+}
+inline std::string* Frame::mutable_creature_name() {
+  std::string* _s = _internal_mutable_creature_name();
+  // @@protoc_insertion_point(field_mutable:server.Frame.creature_name)
+  return _s;
+}
+inline const std::string& Frame::_internal_creature_name() const {
+  return _impl_.creature_name_.Get();
+}
+inline void Frame::_internal_set_creature_name(const std::string& value) {
+  
+  _impl_.creature_name_.Set(value, GetArenaForAllocation());
+}
+inline std::string* Frame::_internal_mutable_creature_name() {
+  
+  return _impl_.creature_name_.Mutable(GetArenaForAllocation());
+}
+inline std::string* Frame::release_creature_name() {
+  // @@protoc_insertion_point(field_release:server.Frame.creature_name)
+  return _impl_.creature_name_.Release();
+}
+inline void Frame::set_allocated_creature_name(std::string* creature_name) {
+  if (creature_name != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.creature_name_.SetAllocated(creature_name, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.creature_name_.IsDefault()) {
+    _impl_.creature_name_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.Frame.creature_name)
+}
+
+// bytes frame = 4;
+inline void Frame::clear_frame() {
+  _impl_.frame_.ClearToEmpty();
+}
+inline const std::string& Frame::frame() const {
+  // @@protoc_insertion_point(field_get:server.Frame.frame)
+  return _internal_frame();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void Frame::set_frame(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.frame_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.Frame.frame)
+}
+inline std::string* Frame::mutable_frame() {
+  std::string* _s = _internal_mutable_frame();
+  // @@protoc_insertion_point(field_mutable:server.Frame.frame)
+  return _s;
+}
+inline const std::string& Frame::_internal_frame() const {
+  return _impl_.frame_.Get();
+}
+inline void Frame::_internal_set_frame(const std::string& value) {
+  
+  _impl_.frame_.Set(value, GetArenaForAllocation());
+}
+inline std::string* Frame::_internal_mutable_frame() {
+  
+  return _impl_.frame_.Mutable(GetArenaForAllocation());
+}
+inline std::string* Frame::release_frame() {
+  // @@protoc_insertion_point(field_release:server.Frame.frame)
+  return _impl_.frame_.Release();
+}
+inline void Frame::set_allocated_frame(std::string* frame) {
+  if (frame != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.frame_.SetAllocated(frame, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.frame_.IsDefault()) {
+    _impl_.frame_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.Frame.frame)
+}
+
+// -------------------------------------------------------------------
+
+// FrameResponse
+
+// uint32 frames_processed = 1;
+inline void FrameResponse::clear_frames_processed() {
+  _impl_.frames_processed_ = 0u;
+}
+inline uint32_t FrameResponse::_internal_frames_processed() const {
+  return _impl_.frames_processed_;
+}
+inline uint32_t FrameResponse::frames_processed() const {
+  // @@protoc_insertion_point(field_get:server.FrameResponse.frames_processed)
+  return _internal_frames_processed();
+}
+inline void FrameResponse::_internal_set_frames_processed(uint32_t value) {
+  
+  _impl_.frames_processed_ = value;
+}
+inline void FrameResponse::set_frames_processed(uint32_t value) {
+  _internal_set_frames_processed(value);
+  // @@protoc_insertion_point(field_set:server.FrameResponse.frames_processed)
+}
+
+// string message = 2;
+inline void FrameResponse::clear_message() {
+  _impl_.message_.ClearToEmpty();
+}
+inline const std::string& FrameResponse::message() const {
+  // @@protoc_insertion_point(field_get:server.FrameResponse.message)
+  return _internal_message();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void FrameResponse::set_message(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.message_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.FrameResponse.message)
+}
+inline std::string* FrameResponse::mutable_message() {
+  std::string* _s = _internal_mutable_message();
+  // @@protoc_insertion_point(field_mutable:server.FrameResponse.message)
+  return _s;
+}
+inline const std::string& FrameResponse::_internal_message() const {
+  return _impl_.message_.Get();
+}
+inline void FrameResponse::_internal_set_message(const std::string& value) {
+  
+  _impl_.message_.Set(value, GetArenaForAllocation());
+}
+inline std::string* FrameResponse::_internal_mutable_message() {
+  
+  return _impl_.message_.Mutable(GetArenaForAllocation());
+}
+inline std::string* FrameResponse::release_message() {
+  // @@protoc_insertion_point(field_release:server.FrameResponse.message)
+  return _impl_.message_.Release();
+}
+inline void FrameResponse::set_allocated_message(std::string* message) {
+  if (message != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.message_.SetAllocated(message, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.message_.IsDefault()) {
+    _impl_.message_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.FrameResponse.message)
+}
+
+// -------------------------------------------------------------------
+
+// ServerStatus
+
+// uint64 frames_processed = 1;
+inline void ServerStatus::clear_frames_processed() {
+  _impl_.frames_processed_ = uint64_t{0u};
+}
+inline uint64_t ServerStatus::_internal_frames_processed() const {
+  return _impl_.frames_processed_;
+}
+inline uint64_t ServerStatus::frames_processed() const {
+  // @@protoc_insertion_point(field_get:server.ServerStatus.frames_processed)
+  return _internal_frames_processed();
+}
+inline void ServerStatus::_internal_set_frames_processed(uint64_t value) {
+  
+  _impl_.frames_processed_ = value;
+}
+inline void ServerStatus::set_frames_processed(uint64_t value) {
+  _internal_set_frames_processed(value);
+  // @@protoc_insertion_point(field_set:server.ServerStatus.frames_processed)
+}
+
+// .google.protobuf.Timestamp started_at = 2;
+inline bool ServerStatus::_internal_has_started_at() const {
+  return this != internal_default_instance() && _impl_.started_at_ != nullptr;
+}
+inline bool ServerStatus::has_started_at() const {
+  return _internal_has_started_at();
+}
+inline const ::PROTOBUF_NAMESPACE_ID::Timestamp& ServerStatus::_internal_started_at() const {
+  const ::PROTOBUF_NAMESPACE_ID::Timestamp* p = _impl_.started_at_;
+  return p != nullptr ? *p : reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Timestamp&>(
+      ::PROTOBUF_NAMESPACE_ID::_Timestamp_default_instance_);
+}
+inline const ::PROTOBUF_NAMESPACE_ID::Timestamp& ServerStatus::started_at() const {
+  // @@protoc_insertion_point(field_get:server.ServerStatus.started_at)
+  return _internal_started_at();
+}
+inline void ServerStatus::unsafe_arena_set_allocated_started_at(
+    ::PROTOBUF_NAMESPACE_ID::Timestamp* started_at) {
+  if (GetArenaForAllocation() == nullptr) {
+    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.started_at_);
+  }
+  _impl_.started_at_ = started_at;
+  if (started_at) {
+    
+  } else {
+    
+  }
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:server.ServerStatus.started_at)
+}
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* ServerStatus::release_started_at() {
+  
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* temp = _impl_.started_at_;
+  _impl_.started_at_ = nullptr;
+#ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
+  auto* old =  reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(temp);
+  temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  if (GetArenaForAllocation() == nullptr) { delete old; }
+#else  // PROTOBUF_FORCE_COPY_IN_RELEASE
+  if (GetArenaForAllocation() != nullptr) {
+    temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  }
+#endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
+  return temp;
+}
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* ServerStatus::unsafe_arena_release_started_at() {
+  // @@protoc_insertion_point(field_release:server.ServerStatus.started_at)
+  
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* temp = _impl_.started_at_;
+  _impl_.started_at_ = nullptr;
+  return temp;
+}
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* ServerStatus::_internal_mutable_started_at() {
+  
+  if (_impl_.started_at_ == nullptr) {
+    auto* p = CreateMaybeMessage<::PROTOBUF_NAMESPACE_ID::Timestamp>(GetArenaForAllocation());
+    _impl_.started_at_ = p;
+  }
+  return _impl_.started_at_;
+}
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* ServerStatus::mutable_started_at() {
+  ::PROTOBUF_NAMESPACE_ID::Timestamp* _msg = _internal_mutable_started_at();
+  // @@protoc_insertion_point(field_mutable:server.ServerStatus.started_at)
+  return _msg;
+}
+inline void ServerStatus::set_allocated_started_at(::PROTOBUF_NAMESPACE_ID::Timestamp* started_at) {
+  ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
+  if (message_arena == nullptr) {
+    delete reinterpret_cast< ::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.started_at_);
+  }
+  if (started_at) {
+    ::PROTOBUF_NAMESPACE_ID::Arena* submessage_arena =
+        ::PROTOBUF_NAMESPACE_ID::Arena::InternalGetOwningArena(
+                reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(started_at));
+    if (message_arena != submessage_arena) {
+      started_at = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
+          message_arena, started_at, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  _impl_.started_at_ = started_at;
+  // @@protoc_insertion_point(field_set_allocated:server.ServerStatus.started_at)
+}
+
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------
