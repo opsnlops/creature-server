@@ -14,7 +14,7 @@ namespace creatures {
         ~DMX();
 
         void init(std::string ip_address, uint32_t universe, uint32_t number_of_motors);
-        void send(const uint8_t data[]);
+        void send(uint8_t* data, uint8_t count);
 
     private:
 
@@ -28,6 +28,5 @@ namespace creatures {
         uint32_t dmx_offset{};
         e131_packet_t packet{};
         e131_addr_t dest{};
-
     };
 }

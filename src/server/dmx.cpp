@@ -34,8 +34,6 @@ namespace creatures {
 
     void DMX::init(std::string client_ip, uint32_t dmx_universe, uint32_t numMotors) {
 
-
-
         this->number_of_motors = numMotors;
         this->universe = dmx_universe;
         this->ip_address = std::move(client_ip);
@@ -58,25 +56,25 @@ namespace creatures {
             error("unable to set e131 destination");
 
         // This is helpful for debugging
-        e131_pkt_dump(stdout, &packet);
+        //e131_pkt_dump(stdout, &packet);
 
         debug("socket created");
     }
 
-    void DMX::send(const uint8_t* data) {
+
+    void DMX::send(uint8_t* data, uint8_t count) {
 
         trace("sending update");
 
-#warning No error checking, buffer overruns everywhere
-        for (size_t pos = 0; pos < number_of_motors; pos++) {
-            packet.dmp.prop_val[pos + dmx_offset] = data[pos];
-            trace("pos {}, data {}", (pos + dmx_offset), data[pos]);
+        for (size_t pos = 0; pos < count; pos++) {
+            packet.dmp.prop_val[pos + 1] = data[pos];
+            trace("pos {}, data {}", (pos + dmx_offset + 1), data[pos]);
         }
         if (e131_send(socketFd, &packet, &dest) < 0) {
             error("unable to send e131 packet");
             e131_pkt_dump(stdout, &packet);
         }
-        e131_pkt_dump(stdout, &packet);
+        //e131_pkt_dump(stdout, &packet);
         packet.frame.seq_number++;
 
     }

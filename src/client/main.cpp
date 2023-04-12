@@ -190,19 +190,26 @@ public:
         std::unique_ptr<ClientWriter<Frame>> writer(stub_->StreamFrames(&context, &response));
 
         // Some frames to the stream
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i <= 10000; i += 10) {
 
             Frame frame = Frame();
 
             // Send five test frames
             frame.set_creature_name("Beaky");
-            frame.set_dmx_offset(1);
-            frame.set_universe(1);
-            frame.set_sacn_ip("10.3.2.11");
-            frame.set_number_of_motors(9);
+            frame.set_dmx_offset(0);
+            frame.set_universe(3);
+            frame.set_sacn_ip("10.9.1.104");
+            frame.set_number_of_motors(4);
 
-            char data[9] = {10, 20, 40, 50, 70, 80, 90, 100, 110};
-            frame.set_frame(data);
+            char notdata[9] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9};
+
+            std::vector<uint8_t> data;
+            data.push_back(255);
+            data.push_back(129);
+            data.push_back(i);
+            data.push_back(255);
+
+            frame.set_frame(data.data(), 4);
             writer->Write(frame);
 
             debug("sent");

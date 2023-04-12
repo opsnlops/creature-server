@@ -28,33 +28,28 @@ Status creatures::CreatureServerImpl::StreamFrames(ServerContext* context,
 
     sender->init(frame.sacn_ip(), frame.universe(), frame.number_of_motors());
 
-
-    auto data = (uint8_t*)malloc(sizeof(uint8_t) * frame.number_of_motors());
-
     // Process the incoming stream of frames
     do {
 
-        info("frame contents for {}:\n", frame.creature_name());
+        info("frame contents for {}:", frame.creature_name());
         const std::string& frame_data = frame.frame();
-
-#warning FIX THIS vvvvvvvvvv
-        // TODO BWAHAHAHAHAHAHA THIS IS GONNA CRASH
+        uint8_t buffer[frame.number_of_motors()];
 
         int i = 0;
         for (uint8_t byte : frame_data) {
             debug(" - 0x{:02x}", byte);
-            data[i] = byte;
+            buffer[i++] = byte;
         }
         info("done");
 
-        sender->send(data);
+        sender->send(buffer, frame.number_of_motors());
+
         // Increment the frame count
         frame_count++;
     } while (reader->Read(&frame));
     info("end of frames from client");
 
     delete sender;
-    free(data);
 
     // Set the response
     response->set_frames_processed(frame_count);
