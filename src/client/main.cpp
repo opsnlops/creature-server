@@ -1,23 +1,20 @@
 
-#include <iostream>
-#include <memory>
+#include <chrono>
 #include <ctime>
-#include <iomanip>
+#include <memory>
 #include <sstream>
+#include <thread>
 
-#include <grpcpp/grpcpp.h>
-
+#include <bsoncxx/oid.hpp>
 #include <fmt/format.h>
+#include <google/protobuf/timestamp.pb.h>
+#include <grpcpp/grpcpp.h>
 
 #include "messaging/server.grpc.pb.h"
 
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 
-#include <google/protobuf/timestamp.pb.h>
-#include <chrono>
-
-#include <bsoncxx/oid.hpp>
 
 using grpc::Channel;
 using grpc::ClientContext;
