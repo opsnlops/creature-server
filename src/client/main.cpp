@@ -1,8 +1,6 @@
 
 #include <chrono>
 #include <ctime>
-#include <memory>
-#include <sstream>
 #include <thread>
 
 #include <bsoncxx/oid.hpp>
@@ -15,6 +13,7 @@
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 
+#include "client/server-client.h"
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -59,185 +58,7 @@ std::string ProtobufTimestampToHumanReadable(const google::protobuf::Timestamp& 
     return {buffer};
 }
 
-class CreatureServerClient {
-public:
-    explicit CreatureServerClient(const std::shared_ptr<Channel>& channel)
-            : stub_(CreatureServer::NewStub(channel)) {}
 
-    // Assembles the client's payload, sends it and presents the response back
-    // from the server.
-    Creature SearchCreatures(const std::string& name) {
-        // Data we are sending to the server.
-        CreatureName request;
-        request.set_name(name);
-
-        // Container for the data we expect from the server.
-        Creature reply;
-
-        // Context for the client. It could be used to convey extra information to
-        // the server and/or tweak certain RPC behaviors.
-        ClientContext context;
-
-        // The actual RPC.
-        Status status = stub_->SearchCreatures(&context, request, &reply);
-
-        // Act upon its status.
-        if (status.ok()) {
-            debug("✅ search ok!");
-            return reply;
-        } else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            info("search not found! 🚫");
-            return reply;
-        } else {
-            critical("search not okay: {}: {}", status.error_code(), status.error_message());
-            return reply;
-        }
-    }
-
-    Creature GetCreature(const CreatureId& id) {
-
-        debug("in GetCreature() with {}");
-
-
-        // Container for the data we expect from the server.
-        Creature reply;
-
-        // Context for the client. It could be used to convey extra information to
-        // the server and/or tweak certain RPC behaviors.
-        ClientContext context;
-
-        // The actual RPC.
-        Status status = stub_->GetCreature(&context, id, &reply);
-
-        // Act upon its status.
-        if (status.ok()) {
-            debug("✅ get ok!");
-            return reply;
-        } else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            info("get not found! 🚫");
-            return reply;
-        } else {
-            critical("get not okay: {}: {}", status.error_code(), status.error_message());
-            return reply;
-        }
-    }
-
-    server::DatabaseInfo CreateCreature(const Creature& creature) {
-
-        ClientContext context;
-        server::DatabaseInfo reply;
-
-        Status status = stub_->CreateCreature(&context, creature, &reply);
-
-        if(status.ok()) {
-            debug("got an OK from the server on save! ({})", reply.message());
-        }
-        else if(status.error_code() == grpc::StatusCode::ALREADY_EXISTS) {
-           error("Creature {} already exists in the database", creature.name());
-        }
-        else {
-           error("Unable to save a creature in the database: {} ({})",
-                          status.error_message(), status.error_details());
-        }
-
-        return reply;
-
-    }
-
-    server::ListCreaturesResponse ListCreatures(const CreatureFilter& filter) {
-
-        ClientContext context;
-        server::ListCreaturesResponse reply;
-
-        Status status = stub_->ListCreatures(&context, filter, &reply);
-
-        if(status.ok()) {
-            debug("got an OK from the server on a request to list all of the creatures");
-        }
-        else {
-            error("An error happened while trying to list all of the creatures: {} ({})",
-                  status.error_message(), status.error_details());
-        }
-
-        return reply;
-    }
-
-    server::GetAllCreaturesResponse GetAllCreatures(const CreatureFilter& filter) {
-
-        ClientContext context;
-        server::GetAllCreaturesResponse reply;
-
-        Status status = stub_->GetAllCreatures(&context, filter, &reply);
-
-        if(status.ok()) {
-            debug("got an OK from the server on a request to get all of the creatures");
-        }
-        else {
-            error("An error happened while trying to list all of the creatures: {} ({})",
-                  status.error_message(), status.error_details());
-        }
-
-        return reply;
-    }
-
-    server::FrameResponse StreamFrames() {
-        FrameResponse response;
-        ClientContext context;
-        // Create a writer for the stream of frames
-        std::unique_ptr<ClientWriter<Frame>> writer(stub_->StreamFrames(&context, &response));
-
-        // Some frames to the stream
-        for (int i = 0; i <= 1000; i += 10) {
-
-            Frame frame = Frame();
-
-            // Send five test frames
-            frame.set_creature_name("Beaky");
-            frame.set_dmx_offset(0);
-            frame.set_universe(3);
-            frame.set_sacn_ip("10.9.1.104");
-            frame.set_number_of_motors(4);
-
-            char notdata[9] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9};
-
-            std::vector<uint8_t> data;
-            data.push_back(255);
-            data.push_back(129);
-            data.push_back(i);
-            data.push_back(255);
-
-            frame.set_frame(data.data(), 4);
-            writer->Write(frame);
-
-            debug("sent");
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-
-        }
-
-        // Close the stream
-        writer->WritesDone();
-
-        // Receive the response and check the status
-        Status status = writer->Finish();
-        if (status.ok()) {
-
-            info("server said: {}", status.error_message());
-            response.set_message("Done!");
-            return response;
-        } else {
-
-            auto errorMessage = fmt::format("Error processing frames: {}", status.error_message());
-            error(errorMessage);
-
-            response.set_message(errorMessage);
-            return response;
-        }
-    }
-
-private:
-    std::unique_ptr<CreatureServer::Stub> stub_;
-};
 
 google::protobuf::Timestamp time_point_to_protobuf_timestamp(const std::chrono::system_clock::time_point& time_point) {
     google::protobuf::Timestamp timestamp;

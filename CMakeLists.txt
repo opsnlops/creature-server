@@ -59,6 +59,13 @@ file(GLOB mongoTestFiles
         src/mongo-test/*
         )
 
+file(GLOB logReaderFiles
+        src/client/*.h
+        src/exception/*
+        src/messaging/*
+        src/log-monitor/*
+        )
+
 # Set up our includes
 include_directories(
         src/
@@ -98,6 +105,19 @@ target_link_libraries(client
         mongo::bsoncxx_shared
         )
 
+add_executable(logreader
+        ${logReaderFiles}
+        )
+
+target_link_libraries(logreader
+        PUBLIC
+        protobuf::libprotobuf
+        grpc++
+        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
+        ${PROTOBUF_LIBRARIES}
+        fmt::fmt
+        mongo::bsoncxx_shared
+        )
 
 add_executable(mongo-test
         ${mongoTestFiles}

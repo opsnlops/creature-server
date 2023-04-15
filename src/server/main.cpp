@@ -40,13 +40,15 @@ using spdlog::error;
 
 using creatures::Database;
 
+using moodycamel::ConcurrentQueue;
+
 
 Database *db{};
 
 
-void RunServer(uint16_t port) {
+void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue) {
     std::string server_address = absl::StrFormat("0.0.0.0:%d", port);
-    creatures::CreatureServerImpl service;
+    creatures::CreatureServerImpl service(log_queue);
 
     ServerBuilder builder;
     // Listen on the given address without any authentication mechanism.
@@ -71,7 +73,7 @@ int main(int argc, char **argv) {
     console_sink->set_level(spdlog::level::debug);
 
     // Queue logger
-    moodycamel::ConcurrentQueue<LogItem> log_queue;
+    ConcurrentQueue<LogItem> log_queue;
     auto queue_sink = std::make_shared<spdlog::sinks::CreatureLogSink<std::mutex>>(log_queue);
     queue_sink->set_level(spdlog::level::trace);
 
@@ -95,6 +97,6 @@ int main(int argc, char **argv) {
 
 
     info("starting server on port {}", 6666);
-    RunServer(6666);
+    RunServer(6666, log_queue);
     return 0;
 }
