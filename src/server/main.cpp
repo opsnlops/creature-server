@@ -1,6 +1,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "absl/strings/str_format.h"
@@ -12,9 +13,14 @@
 
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
+#include "spdlog/common.h"
+
 
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "server/logging/concurrentqueue.h"
+#include "server/logging/creature_log_sink.h"
+
 #include "exception/exception.h"
 
 using grpc::Server;
@@ -25,6 +31,7 @@ using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
 using server::DatabaseInfo;
+using server::LogItem;
 
 using spdlog::info;
 using spdlog::debug;
@@ -57,7 +64,26 @@ void RunServer(uint16_t port) {
 
 int main(int argc, char **argv) {
 
-    spdlog::set_level(spdlog::level::trace);
+    // Configure logging
+
+    // Console logger
+    auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    console_sink->set_level(spdlog::level::debug);
+
+    // Queue logger
+    moodycamel::ConcurrentQueue<LogItem> log_queue;
+    auto queue_sink = std::make_shared<spdlog::sinks::CreatureLogSink<std::mutex>>(log_queue);
+    queue_sink->set_level(spdlog::level::trace);
+
+    // There's no need to set a name, it's just noise
+    spdlog::logger logger("", {console_sink, queue_sink});
+    logger.set_level(spdlog::level::trace);
+
+    // Take over the default logger with our new one
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
+
+
+    debug("Hello from spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
 
     // Fire up the Mono client
     mongocxx::instance instance{};

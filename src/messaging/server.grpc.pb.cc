@@ -143,20 +143,20 @@ void CreatureServer::Stub::async::UpdateCreature(::grpc::ClientContext* context,
   return result;
 }
 
-::grpc::ClientReader< ::server::LogLine>* CreatureServer::Stub::StreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request) {
-  return ::grpc::internal::ClientReaderFactory< ::server::LogLine>::Create(channel_.get(), rpcmethod_StreamLogs_, context, request);
+::grpc::ClientReader< ::server::LogItem>* CreatureServer::Stub::StreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request) {
+  return ::grpc::internal::ClientReaderFactory< ::server::LogItem>::Create(channel_.get(), rpcmethod_StreamLogs_, context, request);
 }
 
-void CreatureServer::Stub::async::StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter* request, ::grpc::ClientReadReactor< ::server::LogLine>* reactor) {
-  ::grpc::internal::ClientCallbackReaderFactory< ::server::LogLine>::Create(stub_->channel_.get(), stub_->rpcmethod_StreamLogs_, context, request, reactor);
+void CreatureServer::Stub::async::StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter* request, ::grpc::ClientReadReactor< ::server::LogItem>* reactor) {
+  ::grpc::internal::ClientCallbackReaderFactory< ::server::LogItem>::Create(stub_->channel_.get(), stub_->rpcmethod_StreamLogs_, context, request, reactor);
 }
 
-::grpc::ClientAsyncReader< ::server::LogLine>* CreatureServer::Stub::AsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) {
-  return ::grpc::internal::ClientAsyncReaderFactory< ::server::LogLine>::Create(channel_.get(), cq, rpcmethod_StreamLogs_, context, request, true, tag);
+::grpc::ClientAsyncReader< ::server::LogItem>* CreatureServer::Stub::AsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) {
+  return ::grpc::internal::ClientAsyncReaderFactory< ::server::LogItem>::Create(channel_.get(), cq, rpcmethod_StreamLogs_, context, request, true, tag);
 }
 
-::grpc::ClientAsyncReader< ::server::LogLine>* CreatureServer::Stub::PrepareAsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) {
-  return ::grpc::internal::ClientAsyncReaderFactory< ::server::LogLine>::Create(channel_.get(), cq, rpcmethod_StreamLogs_, context, request, false, nullptr);
+::grpc::ClientAsyncReader< ::server::LogItem>* CreatureServer::Stub::PrepareAsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) {
+  return ::grpc::internal::ClientAsyncReaderFactory< ::server::LogItem>::Create(channel_.get(), cq, rpcmethod_StreamLogs_, context, request, false, nullptr);
 }
 
 ::grpc::Status CreatureServer::Stub::SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName& request, ::server::Creature* response) {
@@ -288,11 +288,11 @@ CreatureServer::Service::Service() {
   AddMethod(new ::grpc::internal::RpcServiceMethod(
       CreatureServer_method_names[4],
       ::grpc::internal::RpcMethod::SERVER_STREAMING,
-      new ::grpc::internal::ServerStreamingHandler< CreatureServer::Service, ::server::LogFilter, ::server::LogLine>(
+      new ::grpc::internal::ServerStreamingHandler< CreatureServer::Service, ::server::LogFilter, ::server::LogItem>(
           [](CreatureServer::Service* service,
              ::grpc::ServerContext* ctx,
              const ::server::LogFilter* req,
-             ::grpc::ServerWriter<::server::LogLine>* writer) {
+             ::grpc::ServerWriter<::server::LogItem>* writer) {
                return service->StreamLogs(ctx, req, writer);
              }, this)));
   AddMethod(new ::grpc::internal::RpcServiceMethod(
@@ -368,7 +368,7 @@ CreatureServer::Service::~Service() {
   return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
 }
 
-::grpc::Status CreatureServer::Service::StreamLogs(::grpc::ServerContext* context, const ::server::LogFilter* request, ::grpc::ServerWriter< ::server::LogLine>* writer) {
+::grpc::Status CreatureServer::Service::StreamLogs(::grpc::ServerContext* context, const ::server::LogFilter* request, ::grpc::ServerWriter< ::server::LogItem>* writer) {
   (void) context;
   (void) request;
   (void) writer;

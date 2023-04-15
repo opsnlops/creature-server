@@ -28,7 +28,8 @@ public enum Server_LogLevel: SwiftProtobuf.Enum {
   case warn // = 3
   case error // = 4
   case critical // = 5
-  case fatal // = 6
+  case off // = 6
+  case unknown // = 7
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -43,7 +44,8 @@ public enum Server_LogLevel: SwiftProtobuf.Enum {
     case 3: self = .warn
     case 4: self = .error
     case 5: self = .critical
-    case 6: self = .fatal
+    case 6: self = .off
+    case 7: self = .unknown
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -56,7 +58,8 @@ public enum Server_LogLevel: SwiftProtobuf.Enum {
     case .warn: return 3
     case .error: return 4
     case .critical: return 5
-    case .fatal: return 6
+    case .off: return 6
+    case .unknown: return 7
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -74,7 +77,8 @@ extension Server_LogLevel: CaseIterable {
     .warn,
     .error,
     .critical,
-    .fatal,
+    .off,
+    .unknown,
   ]
 }
 
@@ -323,7 +327,9 @@ extension Server_Creature.MotorType: CaseIterable {
 
 #endif  // swift(>=4.2)
 
-public struct Server_LogLine {
+///log_clock::time_point log_time, source_loc loc, string_view_t logger_name, level::level_enum lvl, string_view_t msg);
+///source_loc(const char *filename_in, int line_in, const char *funcname_in)
+public struct Server_LogItem {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -340,6 +346,10 @@ public struct Server_LogLine {
   public mutating func clearTimestamp() {self._timestamp = nil}
 
   public var message: String = String()
+
+  public var loggerName: String = String()
+
+  public var threadID: UInt32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -423,7 +433,7 @@ extension Server_CreatureName: @unchecked Sendable {}
 extension Server_Creature: @unchecked Sendable {}
 extension Server_Creature.MotorType: @unchecked Sendable {}
 extension Server_Creature.Motor: @unchecked Sendable {}
-extension Server_LogLine: @unchecked Sendable {}
+extension Server_LogItem: @unchecked Sendable {}
 extension Server_Frame: @unchecked Sendable {}
 extension Server_FrameResponse: @unchecked Sendable {}
 extension Server_ServerStatus: @unchecked Sendable {}
@@ -441,7 +451,8 @@ extension Server_LogLevel: SwiftProtobuf._ProtoNameProviding {
     3: .same(proto: "warn"),
     4: .same(proto: "error"),
     5: .same(proto: "critical"),
-    6: .same(proto: "fatal"),
+    6: .same(proto: "off"),
+    7: .same(proto: "unknown"),
   ]
 }
 
@@ -879,12 +890,14 @@ extension Server_Creature.Motor: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
   }
 }
 
-extension Server_LogLine: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".LogLine"
+extension Server_LogItem: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".LogItem"
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "level"),
     2: .same(proto: "timestamp"),
     3: .same(proto: "message"),
+    4: .standard(proto: "logger_name"),
+    5: .standard(proto: "thread_id"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -896,6 +909,8 @@ extension Server_LogLine: SwiftProtobuf.Message, SwiftProtobuf._MessageImplement
       case 1: try { try decoder.decodeSingularEnumField(value: &self.level) }()
       case 2: try { try decoder.decodeSingularMessageField(value: &self._timestamp) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.loggerName) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.threadID) }()
       default: break
       }
     }
@@ -915,13 +930,21 @@ extension Server_LogLine: SwiftProtobuf.Message, SwiftProtobuf._MessageImplement
     if !self.message.isEmpty {
       try visitor.visitSingularStringField(value: self.message, fieldNumber: 3)
     }
+    if !self.loggerName.isEmpty {
+      try visitor.visitSingularStringField(value: self.loggerName, fieldNumber: 4)
+    }
+    if self.threadID != 0 {
+      try visitor.visitSingularUInt32Field(value: self.threadID, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: Server_LogLine, rhs: Server_LogLine) -> Bool {
+  public static func ==(lhs: Server_LogItem, rhs: Server_LogItem) -> Bool {
     if lhs.level != rhs.level {return false}
     if lhs._timestamp != rhs._timestamp {return false}
     if lhs.message != rhs.message {return false}
+    if lhs.loggerName != rhs.loggerName {return false}
+    if lhs.threadID != rhs.threadID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -5,6 +5,8 @@ option java_multiple_files = true;
 option java_package = "io.opsnlops.creatures.server";
 option java_outer_classname = "NetworkServerProto";
 
+option optimize_for = SPEED;
+
 package server;
 
 import "google/protobuf/empty.proto";
@@ -28,13 +30,15 @@ service CreatureServer {
   rpc UpdateCreature(Creature) returns (DatabaseInfo) {}
 
   // Stream log messages from the server
-  rpc StreamLogs(LogFilter) returns (stream LogLine) {}
+  rpc StreamLogs(LogFilter) returns (stream LogItem) {}
 
   // Search for a Creature by name
   rpc SearchCreatures (CreatureName) returns (Creature) {}
 
   rpc ListCreatures(CreatureFilter) returns (ListCreaturesResponse) {}
 
+  // Stream frames from the client to a Creature. Used for real time control, if
+  // that's something I want to do.
   rpc StreamFrames(stream Frame) returns (FrameResponse) {}
 
   rpc GetServerStatus(google.protobuf.Empty) returns (ServerStatus) {}
@@ -107,10 +111,14 @@ message Creature {
 }
 
 
-message LogLine {
+//log_clock::time_point log_time, source_loc loc, string_view_t logger_name, level::level_enum lvl, string_view_t msg);
+//source_loc(const char *filename_in, int line_in, const char *funcname_in)
+message LogItem {
     LogLevel level = 1;
     google.protobuf.Timestamp timestamp = 2;
     string message = 3;
+    string logger_name = 4;
+    uint32 thread_id = 5;
 }
 
 enum LogLevel {
@@ -120,7 +128,8 @@ enum LogLevel {
   warn = 3;
   error = 4;
   critical = 5;
-  fatal = 6;
+  off = 6;
+  unknown = 7;
 }
 
 

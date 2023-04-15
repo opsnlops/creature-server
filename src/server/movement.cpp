@@ -31,16 +31,16 @@ Status creatures::CreatureServerImpl::StreamFrames(ServerContext* context,
     // Process the incoming stream of frames
     do {
 
-        info("frame contents for {}:", frame.creature_name());
+        debug("received frame {} for {}", frame_count, frame.creature_name());
         const std::string& frame_data = frame.frame();
         uint8_t buffer[frame.number_of_motors()];
 
         int i = 0;
         for (uint8_t byte : frame_data) {
-            debug(" - 0x{:02x}", byte);
+            trace("byte {}: 0x{:02x}", i, byte);
             buffer[i++] = byte;
         }
-        info("done");
+        debug("frame transmitted");
 
         sender->send(buffer, frame.number_of_motors());
 

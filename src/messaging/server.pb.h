@@ -84,9 +84,9 @@ extern ListCreaturesResponseDefaultTypeInternal _ListCreaturesResponse_default_i
 class LogFilter;
 struct LogFilterDefaultTypeInternal;
 extern LogFilterDefaultTypeInternal _LogFilter_default_instance_;
-class LogLine;
-struct LogLineDefaultTypeInternal;
-extern LogLineDefaultTypeInternal _LogLine_default_instance_;
+class LogItem;
+struct LogItemDefaultTypeInternal;
+extern LogItemDefaultTypeInternal _LogItem_default_instance_;
 class ServerStatus;
 struct ServerStatusDefaultTypeInternal;
 extern ServerStatusDefaultTypeInternal _ServerStatus_default_instance_;
@@ -104,7 +104,7 @@ template<> ::server::FrameResponse* Arena::CreateMaybeMessage<::server::FrameRes
 template<> ::server::GetAllCreaturesResponse* Arena::CreateMaybeMessage<::server::GetAllCreaturesResponse>(Arena*);
 template<> ::server::ListCreaturesResponse* Arena::CreateMaybeMessage<::server::ListCreaturesResponse>(Arena*);
 template<> ::server::LogFilter* Arena::CreateMaybeMessage<::server::LogFilter>(Arena*);
-template<> ::server::LogLine* Arena::CreateMaybeMessage<::server::LogLine>(Arena*);
+template<> ::server::LogItem* Arena::CreateMaybeMessage<::server::LogItem>(Arena*);
 template<> ::server::ServerStatus* Arena::CreateMaybeMessage<::server::ServerStatus>(Arena*);
 PROTOBUF_NAMESPACE_CLOSE
 namespace server {
@@ -141,13 +141,14 @@ enum LogLevel : int {
   warn = 3,
   error = 4,
   critical = 5,
-  fatal = 6,
+  off = 6,
+  unknown = 7,
   LogLevel_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
   LogLevel_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
 };
 bool LogLevel_IsValid(int value);
 constexpr LogLevel LogLevel_MIN = trace;
-constexpr LogLevel LogLevel_MAX = fatal;
+constexpr LogLevel LogLevel_MAX = unknown;
 constexpr int LogLevel_ARRAYSIZE = LogLevel_MAX + 1;
 
 const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* LogLevel_descriptor();
@@ -1975,24 +1976,24 @@ class Creature final :
 };
 // -------------------------------------------------------------------
 
-class LogLine final :
-    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.LogLine) */ {
+class LogItem final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.LogItem) */ {
  public:
-  inline LogLine() : LogLine(nullptr) {}
-  ~LogLine() override;
-  explicit PROTOBUF_CONSTEXPR LogLine(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+  inline LogItem() : LogItem(nullptr) {}
+  ~LogItem() override;
+  explicit PROTOBUF_CONSTEXPR LogItem(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
 
-  LogLine(const LogLine& from);
-  LogLine(LogLine&& from) noexcept
-    : LogLine() {
+  LogItem(const LogItem& from);
+  LogItem(LogItem&& from) noexcept
+    : LogItem() {
     *this = ::std::move(from);
   }
 
-  inline LogLine& operator=(const LogLine& from) {
+  inline LogItem& operator=(const LogItem& from) {
     CopyFrom(from);
     return *this;
   }
-  inline LogLine& operator=(LogLine&& from) noexcept {
+  inline LogItem& operator=(LogItem&& from) noexcept {
     if (this == &from) return *this;
     if (GetOwningArena() == from.GetOwningArena()
   #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
@@ -2015,20 +2016,20 @@ class LogLine final :
   static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
     return default_instance().GetMetadata().reflection;
   }
-  static const LogLine& default_instance() {
+  static const LogItem& default_instance() {
     return *internal_default_instance();
   }
-  static inline const LogLine* internal_default_instance() {
-    return reinterpret_cast<const LogLine*>(
-               &_LogLine_default_instance_);
+  static inline const LogItem* internal_default_instance() {
+    return reinterpret_cast<const LogItem*>(
+               &_LogItem_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
     10;
 
-  friend void swap(LogLine& a, LogLine& b) {
+  friend void swap(LogItem& a, LogItem& b) {
     a.Swap(&b);
   }
-  inline void Swap(LogLine* other) {
+  inline void Swap(LogItem* other) {
     if (other == this) return;
   #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
     if (GetOwningArena() != nullptr &&
@@ -2041,7 +2042,7 @@ class LogLine final :
       ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
     }
   }
-  void UnsafeArenaSwap(LogLine* other) {
+  void UnsafeArenaSwap(LogItem* other) {
     if (other == this) return;
     GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
     InternalSwap(other);
@@ -2049,14 +2050,14 @@ class LogLine final :
 
   // implements Message ----------------------------------------------
 
-  LogLine* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
-    return CreateMaybeMessage<LogLine>(arena);
+  LogItem* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<LogItem>(arena);
   }
   using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
-  void CopyFrom(const LogLine& from);
+  void CopyFrom(const LogItem& from);
   using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
-  void MergeFrom( const LogLine& from) {
-    LogLine::MergeImpl(*this, from);
+  void MergeFrom( const LogItem& from) {
+    LogItem::MergeImpl(*this, from);
   }
   private:
   static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
@@ -2074,15 +2075,15 @@ class LogLine final :
   void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
   void SharedDtor();
   void SetCachedSize(int size) const final;
-  void InternalSwap(LogLine* other);
+  void InternalSwap(LogItem* other);
 
   private:
   friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
   static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
-    return "server.LogLine";
+    return "server.LogItem";
   }
   protected:
-  explicit LogLine(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+  explicit LogItem(::PROTOBUF_NAMESPACE_ID::Arena* arena,
                        bool is_message_owned = false);
   public:
 
@@ -2097,8 +2098,10 @@ class LogLine final :
 
   enum : int {
     kMessageFieldNumber = 3,
+    kLoggerNameFieldNumber = 4,
     kTimestampFieldNumber = 2,
     kLevelFieldNumber = 1,
+    kThreadIdFieldNumber = 5,
   };
   // string message = 3;
   void clear_message();
@@ -2112,6 +2115,20 @@ class LogLine final :
   const std::string& _internal_message() const;
   inline PROTOBUF_ALWAYS_INLINE void _internal_set_message(const std::string& value);
   std::string* _internal_mutable_message();
+  public:
+
+  // string logger_name = 4;
+  void clear_logger_name();
+  const std::string& logger_name() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_logger_name(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_logger_name();
+  PROTOBUF_NODISCARD std::string* release_logger_name();
+  void set_allocated_logger_name(std::string* logger_name);
+  private:
+  const std::string& _internal_logger_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_logger_name(const std::string& value);
+  std::string* _internal_mutable_logger_name();
   public:
 
   // .google.protobuf.Timestamp timestamp = 2;
@@ -2141,7 +2158,16 @@ class LogLine final :
   void _internal_set_level(::server::LogLevel value);
   public:
 
-  // @@protoc_insertion_point(class_scope:server.LogLine)
+  // uint32 thread_id = 5;
+  void clear_thread_id();
+  uint32_t thread_id() const;
+  void set_thread_id(uint32_t value);
+  private:
+  uint32_t _internal_thread_id() const;
+  void _internal_set_thread_id(uint32_t value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.LogItem)
  private:
   class _Internal;
 
@@ -2150,8 +2176,10 @@ class LogLine final :
   typedef void DestructorSkippable_;
   struct Impl_ {
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr message_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr logger_name_;
     ::PROTOBUF_NAMESPACE_ID::Timestamp* timestamp_;
     int level_;
+    uint32_t thread_id_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -3761,45 +3789,45 @@ Creature::motors() const {
 
 // -------------------------------------------------------------------
 
-// LogLine
+// LogItem
 
 // .server.LogLevel level = 1;
-inline void LogLine::clear_level() {
+inline void LogItem::clear_level() {
   _impl_.level_ = 0;
 }
-inline ::server::LogLevel LogLine::_internal_level() const {
+inline ::server::LogLevel LogItem::_internal_level() const {
   return static_cast< ::server::LogLevel >(_impl_.level_);
 }
-inline ::server::LogLevel LogLine::level() const {
-  // @@protoc_insertion_point(field_get:server.LogLine.level)
+inline ::server::LogLevel LogItem::level() const {
+  // @@protoc_insertion_point(field_get:server.LogItem.level)
   return _internal_level();
 }
-inline void LogLine::_internal_set_level(::server::LogLevel value) {
+inline void LogItem::_internal_set_level(::server::LogLevel value) {
   
   _impl_.level_ = value;
 }
-inline void LogLine::set_level(::server::LogLevel value) {
+inline void LogItem::set_level(::server::LogLevel value) {
   _internal_set_level(value);
-  // @@protoc_insertion_point(field_set:server.LogLine.level)
+  // @@protoc_insertion_point(field_set:server.LogItem.level)
 }
 
 // .google.protobuf.Timestamp timestamp = 2;
-inline bool LogLine::_internal_has_timestamp() const {
+inline bool LogItem::_internal_has_timestamp() const {
   return this != internal_default_instance() && _impl_.timestamp_ != nullptr;
 }
-inline bool LogLine::has_timestamp() const {
+inline bool LogItem::has_timestamp() const {
   return _internal_has_timestamp();
 }
-inline const ::PROTOBUF_NAMESPACE_ID::Timestamp& LogLine::_internal_timestamp() const {
+inline const ::PROTOBUF_NAMESPACE_ID::Timestamp& LogItem::_internal_timestamp() const {
   const ::PROTOBUF_NAMESPACE_ID::Timestamp* p = _impl_.timestamp_;
   return p != nullptr ? *p : reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Timestamp&>(
       ::PROTOBUF_NAMESPACE_ID::_Timestamp_default_instance_);
 }
-inline const ::PROTOBUF_NAMESPACE_ID::Timestamp& LogLine::timestamp() const {
-  // @@protoc_insertion_point(field_get:server.LogLine.timestamp)
+inline const ::PROTOBUF_NAMESPACE_ID::Timestamp& LogItem::timestamp() const {
+  // @@protoc_insertion_point(field_get:server.LogItem.timestamp)
   return _internal_timestamp();
 }
-inline void LogLine::unsafe_arena_set_allocated_timestamp(
+inline void LogItem::unsafe_arena_set_allocated_timestamp(
     ::PROTOBUF_NAMESPACE_ID::Timestamp* timestamp) {
   if (GetArenaForAllocation() == nullptr) {
     delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.timestamp_);
@@ -3810,9 +3838,9 @@ inline void LogLine::unsafe_arena_set_allocated_timestamp(
   } else {
     
   }
-  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:server.LogLine.timestamp)
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:server.LogItem.timestamp)
 }
-inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogLine::release_timestamp() {
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogItem::release_timestamp() {
   
   ::PROTOBUF_NAMESPACE_ID::Timestamp* temp = _impl_.timestamp_;
   _impl_.timestamp_ = nullptr;
@@ -3827,14 +3855,14 @@ inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogLine::release_timestamp() {
 #endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
   return temp;
 }
-inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogLine::unsafe_arena_release_timestamp() {
-  // @@protoc_insertion_point(field_release:server.LogLine.timestamp)
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogItem::unsafe_arena_release_timestamp() {
+  // @@protoc_insertion_point(field_release:server.LogItem.timestamp)
   
   ::PROTOBUF_NAMESPACE_ID::Timestamp* temp = _impl_.timestamp_;
   _impl_.timestamp_ = nullptr;
   return temp;
 }
-inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogLine::_internal_mutable_timestamp() {
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogItem::_internal_mutable_timestamp() {
   
   if (_impl_.timestamp_ == nullptr) {
     auto* p = CreateMaybeMessage<::PROTOBUF_NAMESPACE_ID::Timestamp>(GetArenaForAllocation());
@@ -3842,12 +3870,12 @@ inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogLine::_internal_mutable_timestamp(
   }
   return _impl_.timestamp_;
 }
-inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogLine::mutable_timestamp() {
+inline ::PROTOBUF_NAMESPACE_ID::Timestamp* LogItem::mutable_timestamp() {
   ::PROTOBUF_NAMESPACE_ID::Timestamp* _msg = _internal_mutable_timestamp();
-  // @@protoc_insertion_point(field_mutable:server.LogLine.timestamp)
+  // @@protoc_insertion_point(field_mutable:server.LogItem.timestamp)
   return _msg;
 }
-inline void LogLine::set_allocated_timestamp(::PROTOBUF_NAMESPACE_ID::Timestamp* timestamp) {
+inline void LogItem::set_allocated_timestamp(::PROTOBUF_NAMESPACE_ID::Timestamp* timestamp) {
   ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
   if (message_arena == nullptr) {
     delete reinterpret_cast< ::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.timestamp_);
@@ -3865,45 +3893,45 @@ inline void LogLine::set_allocated_timestamp(::PROTOBUF_NAMESPACE_ID::Timestamp*
     
   }
   _impl_.timestamp_ = timestamp;
-  // @@protoc_insertion_point(field_set_allocated:server.LogLine.timestamp)
+  // @@protoc_insertion_point(field_set_allocated:server.LogItem.timestamp)
 }
 
 // string message = 3;
-inline void LogLine::clear_message() {
+inline void LogItem::clear_message() {
   _impl_.message_.ClearToEmpty();
 }
-inline const std::string& LogLine::message() const {
-  // @@protoc_insertion_point(field_get:server.LogLine.message)
+inline const std::string& LogItem::message() const {
+  // @@protoc_insertion_point(field_get:server.LogItem.message)
   return _internal_message();
 }
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
-void LogLine::set_message(ArgT0&& arg0, ArgT... args) {
+void LogItem::set_message(ArgT0&& arg0, ArgT... args) {
  
  _impl_.message_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
-  // @@protoc_insertion_point(field_set:server.LogLine.message)
+  // @@protoc_insertion_point(field_set:server.LogItem.message)
 }
-inline std::string* LogLine::mutable_message() {
+inline std::string* LogItem::mutable_message() {
   std::string* _s = _internal_mutable_message();
-  // @@protoc_insertion_point(field_mutable:server.LogLine.message)
+  // @@protoc_insertion_point(field_mutable:server.LogItem.message)
   return _s;
 }
-inline const std::string& LogLine::_internal_message() const {
+inline const std::string& LogItem::_internal_message() const {
   return _impl_.message_.Get();
 }
-inline void LogLine::_internal_set_message(const std::string& value) {
+inline void LogItem::_internal_set_message(const std::string& value) {
   
   _impl_.message_.Set(value, GetArenaForAllocation());
 }
-inline std::string* LogLine::_internal_mutable_message() {
+inline std::string* LogItem::_internal_mutable_message() {
   
   return _impl_.message_.Mutable(GetArenaForAllocation());
 }
-inline std::string* LogLine::release_message() {
-  // @@protoc_insertion_point(field_release:server.LogLine.message)
+inline std::string* LogItem::release_message() {
+  // @@protoc_insertion_point(field_release:server.LogItem.message)
   return _impl_.message_.Release();
 }
-inline void LogLine::set_allocated_message(std::string* message) {
+inline void LogItem::set_allocated_message(std::string* message) {
   if (message != nullptr) {
     
   } else {
@@ -3915,7 +3943,77 @@ inline void LogLine::set_allocated_message(std::string* message) {
     _impl_.message_.Set("", GetArenaForAllocation());
   }
 #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  // @@protoc_insertion_point(field_set_allocated:server.LogLine.message)
+  // @@protoc_insertion_point(field_set_allocated:server.LogItem.message)
+}
+
+// string logger_name = 4;
+inline void LogItem::clear_logger_name() {
+  _impl_.logger_name_.ClearToEmpty();
+}
+inline const std::string& LogItem::logger_name() const {
+  // @@protoc_insertion_point(field_get:server.LogItem.logger_name)
+  return _internal_logger_name();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void LogItem::set_logger_name(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.logger_name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.LogItem.logger_name)
+}
+inline std::string* LogItem::mutable_logger_name() {
+  std::string* _s = _internal_mutable_logger_name();
+  // @@protoc_insertion_point(field_mutable:server.LogItem.logger_name)
+  return _s;
+}
+inline const std::string& LogItem::_internal_logger_name() const {
+  return _impl_.logger_name_.Get();
+}
+inline void LogItem::_internal_set_logger_name(const std::string& value) {
+  
+  _impl_.logger_name_.Set(value, GetArenaForAllocation());
+}
+inline std::string* LogItem::_internal_mutable_logger_name() {
+  
+  return _impl_.logger_name_.Mutable(GetArenaForAllocation());
+}
+inline std::string* LogItem::release_logger_name() {
+  // @@protoc_insertion_point(field_release:server.LogItem.logger_name)
+  return _impl_.logger_name_.Release();
+}
+inline void LogItem::set_allocated_logger_name(std::string* logger_name) {
+  if (logger_name != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.logger_name_.SetAllocated(logger_name, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.logger_name_.IsDefault()) {
+    _impl_.logger_name_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.LogItem.logger_name)
+}
+
+// uint32 thread_id = 5;
+inline void LogItem::clear_thread_id() {
+  _impl_.thread_id_ = 0u;
+}
+inline uint32_t LogItem::_internal_thread_id() const {
+  return _impl_.thread_id_;
+}
+inline uint32_t LogItem::thread_id() const {
+  // @@protoc_insertion_point(field_get:server.LogItem.thread_id)
+  return _internal_thread_id();
+}
+inline void LogItem::_internal_set_thread_id(uint32_t value) {
+  
+  _impl_.thread_id_ = value;
+}
+inline void LogItem::set_thread_id(uint32_t value) {
+  _internal_set_thread_id(value);
+  // @@protoc_insertion_point(field_set:server.LogItem.thread_id)
 }
 
 // -------------------------------------------------------------------

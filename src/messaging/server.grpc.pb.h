@@ -71,14 +71,14 @@ class CreatureServer final {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>>(PrepareAsyncUpdateCreatureRaw(context, request, cq));
     }
     // Stream log messages from the server
-    std::unique_ptr< ::grpc::ClientReaderInterface< ::server::LogLine>> StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request) {
-      return std::unique_ptr< ::grpc::ClientReaderInterface< ::server::LogLine>>(StreamLogsRaw(context, request));
+    std::unique_ptr< ::grpc::ClientReaderInterface< ::server::LogItem>> StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request) {
+      return std::unique_ptr< ::grpc::ClientReaderInterface< ::server::LogItem>>(StreamLogsRaw(context, request));
     }
-    std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::server::LogLine>> AsyncStreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) {
-      return std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::server::LogLine>>(AsyncStreamLogsRaw(context, request, cq, tag));
+    std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::server::LogItem>> AsyncStreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) {
+      return std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::server::LogItem>>(AsyncStreamLogsRaw(context, request, cq, tag));
     }
-    std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::server::LogLine>> PrepareAsyncStreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) {
-      return std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::server::LogLine>>(PrepareAsyncStreamLogsRaw(context, request, cq));
+    std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::server::LogItem>> PrepareAsyncStreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::server::LogItem>>(PrepareAsyncStreamLogsRaw(context, request, cq));
     }
     // Search for a Creature by name
     virtual ::grpc::Status SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName& request, ::server::Creature* response) = 0;
@@ -95,6 +95,8 @@ class CreatureServer final {
     std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::ListCreaturesResponse>> PrepareAsyncListCreatures(::grpc::ClientContext* context, const ::server::CreatureFilter& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::ListCreaturesResponse>>(PrepareAsyncListCreaturesRaw(context, request, cq));
     }
+    // Stream frames from the client to a Creature. Used for real time control, if
+    // that's something I want to do.
     std::unique_ptr< ::grpc::ClientWriterInterface< ::server::Frame>> StreamFrames(::grpc::ClientContext* context, ::server::FrameResponse* response) {
       return std::unique_ptr< ::grpc::ClientWriterInterface< ::server::Frame>>(StreamFramesRaw(context, response));
     }
@@ -127,12 +129,14 @@ class CreatureServer final {
       virtual void UpdateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, std::function<void(::grpc::Status)>) = 0;
       virtual void UpdateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, ::grpc::ClientUnaryReactor* reactor) = 0;
       // Stream log messages from the server
-      virtual void StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter* request, ::grpc::ClientReadReactor< ::server::LogLine>* reactor) = 0;
+      virtual void StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter* request, ::grpc::ClientReadReactor< ::server::LogItem>* reactor) = 0;
       // Search for a Creature by name
       virtual void SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, std::function<void(::grpc::Status)>) = 0;
       virtual void SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, ::grpc::ClientUnaryReactor* reactor) = 0;
       virtual void ListCreatures(::grpc::ClientContext* context, const ::server::CreatureFilter* request, ::server::ListCreaturesResponse* response, std::function<void(::grpc::Status)>) = 0;
       virtual void ListCreatures(::grpc::ClientContext* context, const ::server::CreatureFilter* request, ::server::ListCreaturesResponse* response, ::grpc::ClientUnaryReactor* reactor) = 0;
+      // Stream frames from the client to a Creature. Used for real time control, if
+      // that's something I want to do.
       virtual void StreamFrames(::grpc::ClientContext* context, ::server::FrameResponse* response, ::grpc::ClientWriteReactor< ::server::Frame>* reactor) = 0;
       virtual void GetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty* request, ::server::ServerStatus* response, std::function<void(::grpc::Status)>) = 0;
       virtual void GetServerStatus(::grpc::ClientContext* context, const ::google::protobuf::Empty* request, ::server::ServerStatus* response, ::grpc::ClientUnaryReactor* reactor) = 0;
@@ -149,9 +153,9 @@ class CreatureServer final {
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>* PrepareAsyncCreateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>* AsyncUpdateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>* PrepareAsyncUpdateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) = 0;
-    virtual ::grpc::ClientReaderInterface< ::server::LogLine>* StreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request) = 0;
-    virtual ::grpc::ClientAsyncReaderInterface< ::server::LogLine>* AsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) = 0;
-    virtual ::grpc::ClientAsyncReaderInterface< ::server::LogLine>* PrepareAsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientReaderInterface< ::server::LogItem>* StreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request) = 0;
+    virtual ::grpc::ClientAsyncReaderInterface< ::server::LogItem>* AsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) = 0;
+    virtual ::grpc::ClientAsyncReaderInterface< ::server::LogItem>* PrepareAsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::Creature>* AsyncSearchCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::Creature>* PrepareAsyncSearchCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::ListCreaturesResponse>* AsyncListCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureFilter& request, ::grpc::CompletionQueue* cq) = 0;
@@ -193,14 +197,14 @@ class CreatureServer final {
     std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>> PrepareAsyncUpdateCreature(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>>(PrepareAsyncUpdateCreatureRaw(context, request, cq));
     }
-    std::unique_ptr< ::grpc::ClientReader< ::server::LogLine>> StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request) {
-      return std::unique_ptr< ::grpc::ClientReader< ::server::LogLine>>(StreamLogsRaw(context, request));
+    std::unique_ptr< ::grpc::ClientReader< ::server::LogItem>> StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request) {
+      return std::unique_ptr< ::grpc::ClientReader< ::server::LogItem>>(StreamLogsRaw(context, request));
     }
-    std::unique_ptr< ::grpc::ClientAsyncReader< ::server::LogLine>> AsyncStreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) {
-      return std::unique_ptr< ::grpc::ClientAsyncReader< ::server::LogLine>>(AsyncStreamLogsRaw(context, request, cq, tag));
+    std::unique_ptr< ::grpc::ClientAsyncReader< ::server::LogItem>> AsyncStreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) {
+      return std::unique_ptr< ::grpc::ClientAsyncReader< ::server::LogItem>>(AsyncStreamLogsRaw(context, request, cq, tag));
     }
-    std::unique_ptr< ::grpc::ClientAsyncReader< ::server::LogLine>> PrepareAsyncStreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) {
-      return std::unique_ptr< ::grpc::ClientAsyncReader< ::server::LogLine>>(PrepareAsyncStreamLogsRaw(context, request, cq));
+    std::unique_ptr< ::grpc::ClientAsyncReader< ::server::LogItem>> PrepareAsyncStreamLogs(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncReader< ::server::LogItem>>(PrepareAsyncStreamLogsRaw(context, request, cq));
     }
     ::grpc::Status SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName& request, ::server::Creature* response) override;
     std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::Creature>> AsyncSearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) {
@@ -243,7 +247,7 @@ class CreatureServer final {
       void CreateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, ::grpc::ClientUnaryReactor* reactor) override;
       void UpdateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, std::function<void(::grpc::Status)>) override;
       void UpdateCreature(::grpc::ClientContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response, ::grpc::ClientUnaryReactor* reactor) override;
-      void StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter* request, ::grpc::ClientReadReactor< ::server::LogLine>* reactor) override;
+      void StreamLogs(::grpc::ClientContext* context, const ::server::LogFilter* request, ::grpc::ClientReadReactor< ::server::LogItem>* reactor) override;
       void SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, std::function<void(::grpc::Status)>) override;
       void SearchCreatures(::grpc::ClientContext* context, const ::server::CreatureName* request, ::server::Creature* response, ::grpc::ClientUnaryReactor* reactor) override;
       void ListCreatures(::grpc::ClientContext* context, const ::server::CreatureFilter* request, ::server::ListCreaturesResponse* response, std::function<void(::grpc::Status)>) override;
@@ -270,9 +274,9 @@ class CreatureServer final {
     ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* PrepareAsyncCreateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* AsyncUpdateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* PrepareAsyncUpdateCreatureRaw(::grpc::ClientContext* context, const ::server::Creature& request, ::grpc::CompletionQueue* cq) override;
-    ::grpc::ClientReader< ::server::LogLine>* StreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request) override;
-    ::grpc::ClientAsyncReader< ::server::LogLine>* AsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) override;
-    ::grpc::ClientAsyncReader< ::server::LogLine>* PrepareAsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientReader< ::server::LogItem>* StreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request) override;
+    ::grpc::ClientAsyncReader< ::server::LogItem>* AsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq, void* tag) override;
+    ::grpc::ClientAsyncReader< ::server::LogItem>* PrepareAsyncStreamLogsRaw(::grpc::ClientContext* context, const ::server::LogFilter& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::server::Creature>* AsyncSearchCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::server::Creature>* PrepareAsyncSearchCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureName& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::server::ListCreaturesResponse>* AsyncListCreaturesRaw(::grpc::ClientContext* context, const ::server::CreatureFilter& request, ::grpc::CompletionQueue* cq) override;
@@ -307,10 +311,12 @@ class CreatureServer final {
     // Update an existing creature in the database
     virtual ::grpc::Status UpdateCreature(::grpc::ServerContext* context, const ::server::Creature* request, ::server::DatabaseInfo* response);
     // Stream log messages from the server
-    virtual ::grpc::Status StreamLogs(::grpc::ServerContext* context, const ::server::LogFilter* request, ::grpc::ServerWriter< ::server::LogLine>* writer);
+    virtual ::grpc::Status StreamLogs(::grpc::ServerContext* context, const ::server::LogFilter* request, ::grpc::ServerWriter< ::server::LogItem>* writer);
     // Search for a Creature by name
     virtual ::grpc::Status SearchCreatures(::grpc::ServerContext* context, const ::server::CreatureName* request, ::server::Creature* response);
     virtual ::grpc::Status ListCreatures(::grpc::ServerContext* context, const ::server::CreatureFilter* request, ::server::ListCreaturesResponse* response);
+    // Stream frames from the client to a Creature. Used for real time control, if
+    // that's something I want to do.
     virtual ::grpc::Status StreamFrames(::grpc::ServerContext* context, ::grpc::ServerReader< ::server::Frame>* reader, ::server::FrameResponse* response);
     virtual ::grpc::Status GetServerStatus(::grpc::ServerContext* context, const ::google::protobuf::Empty* request, ::server::ServerStatus* response);
   };
@@ -406,11 +412,11 @@ class CreatureServer final {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable synchronous version of this method
-    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogLine>* /*writer*/) override {
+    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogItem>* /*writer*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    void RequestStreamLogs(::grpc::ServerContext* context, ::server::LogFilter* request, ::grpc::ServerAsyncWriter< ::server::LogLine>* writer, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+    void RequestStreamLogs(::grpc::ServerContext* context, ::server::LogFilter* request, ::grpc::ServerAsyncWriter< ::server::LogItem>* writer, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
       ::grpc::Service::RequestAsyncServerStreaming(4, context, request, writer, new_call_cq, notification_cq, tag);
     }
   };
@@ -610,7 +616,7 @@ class CreatureServer final {
    public:
     WithCallbackMethod_StreamLogs() {
       ::grpc::Service::MarkMethodCallback(4,
-          new ::grpc::internal::CallbackServerStreamingHandler< ::server::LogFilter, ::server::LogLine>(
+          new ::grpc::internal::CallbackServerStreamingHandler< ::server::LogFilter, ::server::LogItem>(
             [this](
                    ::grpc::CallbackServerContext* context, const ::server::LogFilter* request) { return this->StreamLogs(context, request); }));
     }
@@ -618,11 +624,11 @@ class CreatureServer final {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable synchronous version of this method
-    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogLine>* /*writer*/) override {
+    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogItem>* /*writer*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    virtual ::grpc::ServerWriteReactor< ::server::LogLine>* StreamLogs(
+    virtual ::grpc::ServerWriteReactor< ::server::LogItem>* StreamLogs(
       ::grpc::CallbackServerContext* /*context*/, const ::server::LogFilter* /*request*/)  { return nullptr; }
   };
   template <class BaseClass>
@@ -810,7 +816,7 @@ class CreatureServer final {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable synchronous version of this method
-    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogLine>* /*writer*/) override {
+    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogItem>* /*writer*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
@@ -975,7 +981,7 @@ class CreatureServer final {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable synchronous version of this method
-    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogLine>* /*writer*/) override {
+    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogItem>* /*writer*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
@@ -1166,7 +1172,7 @@ class CreatureServer final {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable synchronous version of this method
-    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogLine>* /*writer*/) override {
+    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogItem>* /*writer*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
@@ -1459,10 +1465,10 @@ class CreatureServer final {
     WithSplitStreamingMethod_StreamLogs() {
       ::grpc::Service::MarkMethodStreamed(4,
         new ::grpc::internal::SplitServerStreamingHandler<
-          ::server::LogFilter, ::server::LogLine>(
+          ::server::LogFilter, ::server::LogItem>(
             [this](::grpc::ServerContext* context,
                    ::grpc::ServerSplitStreamer<
-                     ::server::LogFilter, ::server::LogLine>* streamer) {
+                     ::server::LogFilter, ::server::LogItem>* streamer) {
                        return this->StreamedStreamLogs(context,
                          streamer);
                   }));
@@ -1471,12 +1477,12 @@ class CreatureServer final {
       BaseClassMustBeDerivedFromService(this);
     }
     // disable regular version of this method
-    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogLine>* /*writer*/) override {
+    ::grpc::Status StreamLogs(::grpc::ServerContext* /*context*/, const ::server::LogFilter* /*request*/, ::grpc::ServerWriter< ::server::LogItem>* /*writer*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
     // replace default version of method with split streamed
-    virtual ::grpc::Status StreamedStreamLogs(::grpc::ServerContext* context, ::grpc::ServerSplitStreamer< ::server::LogFilter,::server::LogLine>* server_split_streamer) = 0;
+    virtual ::grpc::Status StreamedStreamLogs(::grpc::ServerContext* context, ::grpc::ServerSplitStreamer< ::server::LogFilter,::server::LogItem>* server_split_streamer) = 0;
   };
   typedef WithSplitStreamingMethod_StreamLogs<Service > SplitStreamedService;
   typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_GetAllCreatures<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<WithSplitStreamingMethod_StreamLogs<WithStreamedUnaryMethod_SearchCreatures<WithStreamedUnaryMethod_ListCreatures<WithStreamedUnaryMethod_GetServerStatus<Service > > > > > > > > StreamedService;

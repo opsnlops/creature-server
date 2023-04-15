@@ -46,6 +46,7 @@ file(GLOB SERVER_SRCS
         src/exception/*
         src/messaging/*
         src/server/*
+        src/server/logging/*
         )
 
 file(GLOB clientFiles

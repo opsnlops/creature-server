@@ -187,7 +187,7 @@ public:
         std::unique_ptr<ClientWriter<Frame>> writer(stub_->StreamFrames(&context, &response));
 
         // Some frames to the stream
-        for (int i = 0; i <= 10000; i += 10) {
+        for (int i = 0; i <= 1000; i += 10) {
 
             Frame frame = Frame();
 

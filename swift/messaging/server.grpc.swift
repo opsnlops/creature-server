@@ -54,8 +54,8 @@ public protocol Server_CreatureServerClientProtocol: GRPCClient {
   func streamLogs(
     _ request: Server_LogFilter,
     callOptions: CallOptions?,
-    handler: @escaping (Server_LogLine) -> Void
-  ) -> ServerStreamingCall<Server_LogFilter, Server_LogLine>
+    handler: @escaping (Server_LogItem) -> Void
+  ) -> ServerStreamingCall<Server_LogFilter, Server_LogItem>
 
   func searchCreatures(
     _ request: Server_CreatureName,
@@ -164,8 +164,8 @@ extension Server_CreatureServerClientProtocol {
   public func streamLogs(
     _ request: Server_LogFilter,
     callOptions: CallOptions? = nil,
-    handler: @escaping (Server_LogLine) -> Void
-  ) -> ServerStreamingCall<Server_LogFilter, Server_LogLine> {
+    handler: @escaping (Server_LogItem) -> Void
+  ) -> ServerStreamingCall<Server_LogFilter, Server_LogItem> {
     return self.makeServerStreamingCall(
       path: Server_CreatureServerClientMetadata.Methods.streamLogs.path,
       request: request,
@@ -211,7 +211,8 @@ extension Server_CreatureServerClientProtocol {
     )
   }
 
-  /// Client streaming call to StreamFrames
+  /// Stream frames from the client to a Creature. Used for real time control, if
+  /// that's something I want to do.
   ///
   /// Callers should use the `send` method on the returned object to send messages
   /// to the server. The caller should send an `.end` after the final message has been sent.
@@ -336,7 +337,7 @@ public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
   func makeStreamLogsCall(
     _ request: Server_LogFilter,
     callOptions: CallOptions?
-  ) -> GRPCAsyncServerStreamingCall<Server_LogFilter, Server_LogLine>
+  ) -> GRPCAsyncServerStreamingCall<Server_LogFilter, Server_LogItem>
 
   func makeSearchCreaturesCall(
     _ request: Server_CreatureName,
@@ -419,7 +420,7 @@ extension Server_CreatureServerAsyncClientProtocol {
   public func makeStreamLogsCall(
     _ request: Server_LogFilter,
     callOptions: CallOptions? = nil
-  ) -> GRPCAsyncServerStreamingCall<Server_LogFilter, Server_LogLine> {
+  ) -> GRPCAsyncServerStreamingCall<Server_LogFilter, Server_LogItem> {
     return self.makeAsyncServerStreamingCall(
       path: Server_CreatureServerClientMetadata.Methods.streamLogs.path,
       request: request,
@@ -528,7 +529,7 @@ extension Server_CreatureServerAsyncClientProtocol {
   public func streamLogs(
     _ request: Server_LogFilter,
     callOptions: CallOptions? = nil
-  ) -> GRPCAsyncResponseStream<Server_LogLine> {
+  ) -> GRPCAsyncResponseStream<Server_LogItem> {
     return self.performAsyncServerStreamingCall(
       path: Server_CreatureServerClientMetadata.Methods.streamLogs.path,
       request: request,
@@ -632,7 +633,7 @@ public protocol Server_CreatureServerClientInterceptorFactoryProtocol: GRPCSenda
   func makeUpdateCreatureInterceptors() -> [ClientInterceptor<Server_Creature, Server_DatabaseInfo>]
 
   /// - Returns: Interceptors to use when invoking 'streamLogs'.
-  func makeStreamLogsInterceptors() -> [ClientInterceptor<Server_LogFilter, Server_LogLine>]
+  func makeStreamLogsInterceptors() -> [ClientInterceptor<Server_LogFilter, Server_LogItem>]
 
   /// - Returns: Interceptors to use when invoking 'searchCreatures'.
   func makeSearchCreaturesInterceptors() -> [ClientInterceptor<Server_CreatureName, Server_Creature>]

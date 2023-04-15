@@ -167,21 +167,23 @@ struct CreatureDefaultTypeInternal {
   };
 };
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 CreatureDefaultTypeInternal _Creature_default_instance_;
-PROTOBUF_CONSTEXPR LogLine::LogLine(
+PROTOBUF_CONSTEXPR LogItem::LogItem(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.message_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.logger_name_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.timestamp_)*/nullptr
   , /*decltype(_impl_.level_)*/0
+  , /*decltype(_impl_.thread_id_)*/0u
   , /*decltype(_impl_._cached_size_)*/{}} {}
-struct LogLineDefaultTypeInternal {
-  PROTOBUF_CONSTEXPR LogLineDefaultTypeInternal()
+struct LogItemDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR LogItemDefaultTypeInternal()
       : _instance(::_pbi::ConstantInitialized{}) {}
-  ~LogLineDefaultTypeInternal() {}
+  ~LogItemDefaultTypeInternal() {}
   union {
-    LogLine _instance;
+    LogItem _instance;
   };
 };
-PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 LogLineDefaultTypeInternal _LogLine_default_instance_;
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 LogItemDefaultTypeInternal _LogItem_default_instance_;
 PROTOBUF_CONSTEXPR Frame::Frame(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.creature_name_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
@@ -321,14 +323,16 @@ const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(p
   PROTOBUF_FIELD_OFFSET(::server::Creature, _impl_.number_of_motors_),
   PROTOBUF_FIELD_OFFSET(::server::Creature, _impl_.motors_),
   ~0u,  // no _has_bits_
-  PROTOBUF_FIELD_OFFSET(::server::LogLine, _internal_metadata_),
+  PROTOBUF_FIELD_OFFSET(::server::LogItem, _internal_metadata_),
   ~0u,  // no _extensions_
   ~0u,  // no _oneof_case_
   ~0u,  // no _weak_field_map_
   ~0u,  // no _inlined_string_donated_
-  PROTOBUF_FIELD_OFFSET(::server::LogLine, _impl_.level_),
-  PROTOBUF_FIELD_OFFSET(::server::LogLine, _impl_.timestamp_),
-  PROTOBUF_FIELD_OFFSET(::server::LogLine, _impl_.message_),
+  PROTOBUF_FIELD_OFFSET(::server::LogItem, _impl_.level_),
+  PROTOBUF_FIELD_OFFSET(::server::LogItem, _impl_.timestamp_),
+  PROTOBUF_FIELD_OFFSET(::server::LogItem, _impl_.message_),
+  PROTOBUF_FIELD_OFFSET(::server::LogItem, _impl_.logger_name_),
+  PROTOBUF_FIELD_OFFSET(::server::LogItem, _impl_.thread_id_),
   ~0u,  // no _has_bits_
   PROTOBUF_FIELD_OFFSET(::server::Frame, _internal_metadata_),
   ~0u,  // no _extensions_
@@ -369,10 +373,10 @@ static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protode
   { 52, -1, -1, sizeof(::server::CreatureName)},
   { 59, -1, -1, sizeof(::server::Creature_Motor)},
   { 72, -1, -1, sizeof(::server::Creature)},
-  { 86, -1, -1, sizeof(::server::LogLine)},
-  { 95, -1, -1, sizeof(::server::Frame)},
-  { 107, -1, -1, sizeof(::server::FrameResponse)},
-  { 115, -1, -1, sizeof(::server::ServerStatus)},
+  { 86, -1, -1, sizeof(::server::LogItem)},
+  { 97, -1, -1, sizeof(::server::Frame)},
+  { 109, -1, -1, sizeof(::server::FrameResponse)},
+  { 117, -1, -1, sizeof(::server::ServerStatus)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
@@ -386,7 +390,7 @@ static const ::_pb::Message* const file_default_instances[] = {
   &::server::_CreatureName_default_instance_._instance,
   &::server::_Creature_Motor_default_instance_._instance,
   &::server::_Creature_default_instance_._instance,
-  &::server::_LogLine_default_instance_._instance,
+  &::server::_LogItem_default_instance_._instance,
   &::server::_Frame_default_instance_._instance,
   &::server::_FrameResponse_default_instance_._instance,
   &::server::_ServerStatus_default_instance_._instance,
@@ -415,36 +419,38 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "eature.MotorType\022\016\n\006number\030\004 \001(\r\022\021\n\tmax_"
   "value\030\005 \001(\r\022\021\n\tmin_value\030\006 \001(\r\022\027\n\017smooth"
   "ing_value\030\007 \001(\001\"#\n\tMotorType\022\t\n\005servo\020\000\022"
-  "\013\n\007stepper\020\001\"j\n\007LogLine\022\037\n\005level\030\001 \001(\0162\020"
-  ".server.LogLevel\022-\n\ttimestamp\030\002 \001(\0132\032.go"
-  "ogle.protobuf.Timestamp\022\017\n\007message\030\003 \001(\t"
-  "\"~\n\005Frame\022\020\n\010universe\030\001 \001(\r\022\022\n\ndmx_offse"
-  "t\030\002 \001(\r\022\025\n\rcreature_name\030\003 \001(\t\022\017\n\007sacn_i"
-  "p\030\004 \001(\t\022\030\n\020number_of_motors\030\005 \001(\r\022\r\n\005fra"
-  "me\030\n \001(\014\":\n\rFrameResponse\022\030\n\020frames_proc"
-  "essed\030\001 \001(\r\022\017\n\007message\030\002 \001(\t\"X\n\014ServerSt"
-  "atus\022\030\n\020frames_processed\030\001 \001(\004\022.\n\nstarte"
-  "d_at\030\002 \001(\0132\032.google.protobuf.Timestamp*X"
-  "\n\010LogLevel\022\t\n\005trace\020\000\022\t\n\005debug\020\001\022\010\n\004info"
-  "\020\002\022\010\n\004warn\020\003\022\t\n\005error\020\004\022\014\n\010critical\020\005\022\t\n"
-  "\005fatal\020\006*\036\n\006SortBy\022\010\n\004name\020\000\022\n\n\006number\020\001"
-  "2\307\004\n\016CreatureServer\0225\n\013GetCreature\022\022.ser"
-  "ver.CreatureId\032\020.server.Creature\"\000\022L\n\017Ge"
-  "tAllCreatures\022\026.server.CreatureFilter\032\037."
-  "server.GetAllCreaturesResponse\"\000\022:\n\016Crea"
-  "teCreature\022\020.server.Creature\032\024.server.Da"
-  "tabaseInfo\"\000\022:\n\016UpdateCreature\022\020.server."
-  "Creature\032\024.server.DatabaseInfo\"\000\0224\n\nStre"
-  "amLogs\022\021.server.LogFilter\032\017.server.LogLi"
-  "ne\"\0000\001\022;\n\017SearchCreatures\022\024.server.Creat"
-  "ureName\032\020.server.Creature\"\000\022H\n\rListCreat"
-  "ures\022\026.server.CreatureFilter\032\035.server.Li"
-  "stCreaturesResponse\"\000\0228\n\014StreamFrames\022\r."
-  "server.Frame\032\025.server.FrameResponse\"\000(\001\022"
-  "A\n\017GetServerStatus\022\026.google.protobuf.Emp"
-  "ty\032\024.server.ServerStatus\"\000BR\n\034io.opsnlop"
-  "s.creatures.serverB\022NetworkServerProtoP\001"
-  "Z\034opsnlops.io/creatures/serverb\006proto3"
+  "\013\n\007stepper\020\001\"\222\001\n\007LogItem\022\037\n\005level\030\001 \001(\0162"
+  "\020.server.LogLevel\022-\n\ttimestamp\030\002 \001(\0132\032.g"
+  "oogle.protobuf.Timestamp\022\017\n\007message\030\003 \001("
+  "\t\022\023\n\013logger_name\030\004 \001(\t\022\021\n\tthread_id\030\005 \001("
+  "\r\"~\n\005Frame\022\020\n\010universe\030\001 \001(\r\022\022\n\ndmx_offs"
+  "et\030\002 \001(\r\022\025\n\rcreature_name\030\003 \001(\t\022\017\n\007sacn_"
+  "ip\030\004 \001(\t\022\030\n\020number_of_motors\030\005 \001(\r\022\r\n\005fr"
+  "ame\030\n \001(\014\":\n\rFrameResponse\022\030\n\020frames_pro"
+  "cessed\030\001 \001(\r\022\017\n\007message\030\002 \001(\t\"X\n\014ServerS"
+  "tatus\022\030\n\020frames_processed\030\001 \001(\004\022.\n\nstart"
+  "ed_at\030\002 \001(\0132\032.google.protobuf.Timestamp*"
+  "c\n\010LogLevel\022\t\n\005trace\020\000\022\t\n\005debug\020\001\022\010\n\004inf"
+  "o\020\002\022\010\n\004warn\020\003\022\t\n\005error\020\004\022\014\n\010critical\020\005\022\007"
+  "\n\003off\020\006\022\013\n\007unknown\020\007*\036\n\006SortBy\022\010\n\004name\020\000"
+  "\022\n\n\006number\020\0012\307\004\n\016CreatureServer\0225\n\013GetCr"
+  "eature\022\022.server.CreatureId\032\020.server.Crea"
+  "ture\"\000\022L\n\017GetAllCreatures\022\026.server.Creat"
+  "ureFilter\032\037.server.GetAllCreaturesRespon"
+  "se\"\000\022:\n\016CreateCreature\022\020.server.Creature"
+  "\032\024.server.DatabaseInfo\"\000\022:\n\016UpdateCreatu"
+  "re\022\020.server.Creature\032\024.server.DatabaseIn"
+  "fo\"\000\0224\n\nStreamLogs\022\021.server.LogFilter\032\017."
+  "server.LogItem\"\0000\001\022;\n\017SearchCreatures\022\024."
+  "server.CreatureName\032\020.server.Creature\"\000\022"
+  "H\n\rListCreatures\022\026.server.CreatureFilter"
+  "\032\035.server.ListCreaturesResponse\"\000\0228\n\014Str"
+  "eamFrames\022\r.server.Frame\032\025.server.FrameR"
+  "esponse\"\000(\001\022A\n\017GetServerStatus\022\026.google."
+  "protobuf.Empty\032\024.server.ServerStatus\"\000BT"
+  "\n\034io.opsnlops.creatures.serverB\022NetworkS"
+  "erverProtoH\001P\001Z\034opsnlops.io/creatures/se"
+  "rverb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -452,7 +458,7 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 2078, descriptor_table_protodef_server_2eproto,
+    false, false, 2132, descriptor_table_protodef_server_2eproto,
     "server.proto",
     &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 14,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,
@@ -500,6 +506,7 @@ bool LogLevel_IsValid(int value) {
     case 4:
     case 5:
     case 6:
+    case 7:
       return true;
     default:
       return false;
@@ -3067,34 +3074,36 @@ void Creature::InternalSwap(Creature* other) {
 
 // ===================================================================
 
-class LogLine::_Internal {
+class LogItem::_Internal {
  public:
-  static const ::PROTOBUF_NAMESPACE_ID::Timestamp& timestamp(const LogLine* msg);
+  static const ::PROTOBUF_NAMESPACE_ID::Timestamp& timestamp(const LogItem* msg);
 };
 
 const ::PROTOBUF_NAMESPACE_ID::Timestamp&
-LogLine::_Internal::timestamp(const LogLine* msg) {
+LogItem::_Internal::timestamp(const LogItem* msg) {
   return *msg->_impl_.timestamp_;
 }
-void LogLine::clear_timestamp() {
+void LogItem::clear_timestamp() {
   if (GetArenaForAllocation() == nullptr && _impl_.timestamp_ != nullptr) {
     delete _impl_.timestamp_;
   }
   _impl_.timestamp_ = nullptr;
 }
-LogLine::LogLine(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+LogItem::LogItem(::PROTOBUF_NAMESPACE_ID::Arena* arena,
                          bool is_message_owned)
   : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
   SharedCtor(arena, is_message_owned);
-  // @@protoc_insertion_point(arena_constructor:server.LogLine)
+  // @@protoc_insertion_point(arena_constructor:server.LogItem)
 }
-LogLine::LogLine(const LogLine& from)
+LogItem::LogItem(const LogItem& from)
   : ::PROTOBUF_NAMESPACE_ID::Message() {
-  LogLine* const _this = this; (void)_this;
+  LogItem* const _this = this; (void)_this;
   new (&_impl_) Impl_{
       decltype(_impl_.message_){}
+    , decltype(_impl_.logger_name_){}
     , decltype(_impl_.timestamp_){nullptr}
     , decltype(_impl_.level_){}
+    , decltype(_impl_.thread_id_){}
     , /*decltype(_impl_._cached_size_)*/{}};
 
   _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
@@ -3106,31 +3115,47 @@ LogLine::LogLine(const LogLine& from)
     _this->_impl_.message_.Set(from._internal_message(), 
       _this->GetArenaForAllocation());
   }
+  _impl_.logger_name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.logger_name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_logger_name().empty()) {
+    _this->_impl_.logger_name_.Set(from._internal_logger_name(), 
+      _this->GetArenaForAllocation());
+  }
   if (from._internal_has_timestamp()) {
     _this->_impl_.timestamp_ = new ::PROTOBUF_NAMESPACE_ID::Timestamp(*from._impl_.timestamp_);
   }
-  _this->_impl_.level_ = from._impl_.level_;
-  // @@protoc_insertion_point(copy_constructor:server.LogLine)
+  ::memcpy(&_impl_.level_, &from._impl_.level_,
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.thread_id_) -
+    reinterpret_cast<char*>(&_impl_.level_)) + sizeof(_impl_.thread_id_));
+  // @@protoc_insertion_point(copy_constructor:server.LogItem)
 }
 
-inline void LogLine::SharedCtor(
+inline void LogItem::SharedCtor(
     ::_pb::Arena* arena, bool is_message_owned) {
   (void)arena;
   (void)is_message_owned;
   new (&_impl_) Impl_{
       decltype(_impl_.message_){}
+    , decltype(_impl_.logger_name_){}
     , decltype(_impl_.timestamp_){nullptr}
     , decltype(_impl_.level_){0}
+    , decltype(_impl_.thread_id_){0u}
     , /*decltype(_impl_._cached_size_)*/{}
   };
   _impl_.message_.InitDefault();
   #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
     _impl_.message_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.logger_name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.logger_name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
 }
 
-LogLine::~LogLine() {
-  // @@protoc_insertion_point(destructor:server.LogLine)
+LogItem::~LogItem() {
+  // @@protoc_insertion_point(destructor:server.LogItem)
   if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
   (void)arena;
     return;
@@ -3138,32 +3163,36 @@ LogLine::~LogLine() {
   SharedDtor();
 }
 
-inline void LogLine::SharedDtor() {
+inline void LogItem::SharedDtor() {
   GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
   _impl_.message_.Destroy();
+  _impl_.logger_name_.Destroy();
   if (this != internal_default_instance()) delete _impl_.timestamp_;
 }
 
-void LogLine::SetCachedSize(int size) const {
+void LogItem::SetCachedSize(int size) const {
   _impl_._cached_size_.Set(size);
 }
 
-void LogLine::Clear() {
-// @@protoc_insertion_point(message_clear_start:server.LogLine)
+void LogItem::Clear() {
+// @@protoc_insertion_point(message_clear_start:server.LogItem)
   uint32_t cached_has_bits = 0;
   // Prevent compiler warnings about cached_has_bits being unused
   (void) cached_has_bits;
 
   _impl_.message_.ClearToEmpty();
+  _impl_.logger_name_.ClearToEmpty();
   if (GetArenaForAllocation() == nullptr && _impl_.timestamp_ != nullptr) {
     delete _impl_.timestamp_;
   }
   _impl_.timestamp_ = nullptr;
-  _impl_.level_ = 0;
+  ::memset(&_impl_.level_, 0, static_cast<size_t>(
+      reinterpret_cast<char*>(&_impl_.thread_id_) -
+      reinterpret_cast<char*>(&_impl_.level_)) + sizeof(_impl_.thread_id_));
   _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
 }
 
-const char* LogLine::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+const char* LogItem::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
 #define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
   while (!ctx->Done(&ptr)) {
     uint32_t tag;
@@ -3192,7 +3221,25 @@ const char* LogLine::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) 
           auto str = _internal_mutable_message();
           ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
           CHK_(ptr);
-          CHK_(::_pbi::VerifyUTF8(str, "server.LogLine.message"));
+          CHK_(::_pbi::VerifyUTF8(str, "server.LogItem.message"));
+        } else
+          goto handle_unusual;
+        continue;
+      // string logger_name = 4;
+      case 4:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 34)) {
+          auto str = _internal_mutable_logger_name();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "server.LogItem.logger_name"));
+        } else
+          goto handle_unusual;
+        continue;
+      // uint32 thread_id = 5;
+      case 5:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 40)) {
+          _impl_.thread_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
         } else
           goto handle_unusual;
         continue;
@@ -3219,9 +3266,9 @@ failure:
 #undef CHK_
 }
 
-uint8_t* LogLine::_InternalSerialize(
+uint8_t* LogItem::_InternalSerialize(
     uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
-  // @@protoc_insertion_point(serialize_to_array_start:server.LogLine)
+  // @@protoc_insertion_point(serialize_to_array_start:server.LogItem)
   uint32_t cached_has_bits = 0;
   (void) cached_has_bits;
 
@@ -3244,21 +3291,37 @@ uint8_t* LogLine::_InternalSerialize(
     ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
       this->_internal_message().data(), static_cast<int>(this->_internal_message().length()),
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
-      "server.LogLine.message");
+      "server.LogItem.message");
     target = stream->WriteStringMaybeAliased(
         3, this->_internal_message(), target);
+  }
+
+  // string logger_name = 4;
+  if (!this->_internal_logger_name().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_logger_name().data(), static_cast<int>(this->_internal_logger_name().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "server.LogItem.logger_name");
+    target = stream->WriteStringMaybeAliased(
+        4, this->_internal_logger_name(), target);
+  }
+
+  // uint32 thread_id = 5;
+  if (this->_internal_thread_id() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(5, this->_internal_thread_id(), target);
   }
 
   if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
     target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
         _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
   }
-  // @@protoc_insertion_point(serialize_to_array_end:server.LogLine)
+  // @@protoc_insertion_point(serialize_to_array_end:server.LogItem)
   return target;
 }
 
-size_t LogLine::ByteSizeLong() const {
-// @@protoc_insertion_point(message_byte_size_start:server.LogLine)
+size_t LogItem::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:server.LogItem)
   size_t total_size = 0;
 
   uint32_t cached_has_bits = 0;
@@ -3270,6 +3333,13 @@ size_t LogLine::ByteSizeLong() const {
     total_size += 1 +
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
         this->_internal_message());
+  }
+
+  // string logger_name = 4;
+  if (!this->_internal_logger_name().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_logger_name());
   }
 
   // .google.protobuf.Timestamp timestamp = 2;
@@ -3285,26 +3355,34 @@ size_t LogLine::ByteSizeLong() const {
       ::_pbi::WireFormatLite::EnumSize(this->_internal_level());
   }
 
+  // uint32 thread_id = 5;
+  if (this->_internal_thread_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_thread_id());
+  }
+
   return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
 }
 
-const ::PROTOBUF_NAMESPACE_ID::Message::ClassData LogLine::_class_data_ = {
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData LogItem::_class_data_ = {
     ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
-    LogLine::MergeImpl
+    LogItem::MergeImpl
 };
-const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*LogLine::GetClassData() const { return &_class_data_; }
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*LogItem::GetClassData() const { return &_class_data_; }
 
 
-void LogLine::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
-  auto* const _this = static_cast<LogLine*>(&to_msg);
-  auto& from = static_cast<const LogLine&>(from_msg);
-  // @@protoc_insertion_point(class_specific_merge_from_start:server.LogLine)
+void LogItem::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<LogItem*>(&to_msg);
+  auto& from = static_cast<const LogItem&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:server.LogItem)
   GOOGLE_DCHECK_NE(&from, _this);
   uint32_t cached_has_bits = 0;
   (void) cached_has_bits;
 
   if (!from._internal_message().empty()) {
     _this->_internal_set_message(from._internal_message());
+  }
+  if (!from._internal_logger_name().empty()) {
+    _this->_internal_set_logger_name(from._internal_logger_name());
   }
   if (from._internal_has_timestamp()) {
     _this->_internal_mutable_timestamp()->::PROTOBUF_NAMESPACE_ID::Timestamp::MergeFrom(
@@ -3313,21 +3391,24 @@ void LogLine::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOB
   if (from._internal_level() != 0) {
     _this->_internal_set_level(from._internal_level());
   }
+  if (from._internal_thread_id() != 0) {
+    _this->_internal_set_thread_id(from._internal_thread_id());
+  }
   _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
 }
 
-void LogLine::CopyFrom(const LogLine& from) {
-// @@protoc_insertion_point(class_specific_copy_from_start:server.LogLine)
+void LogItem::CopyFrom(const LogItem& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:server.LogItem)
   if (&from == this) return;
   Clear();
   MergeFrom(from);
 }
 
-bool LogLine::IsInitialized() const {
+bool LogItem::IsInitialized() const {
   return true;
 }
 
-void LogLine::InternalSwap(LogLine* other) {
+void LogItem::InternalSwap(LogItem* other) {
   using std::swap;
   auto* lhs_arena = GetArenaForAllocation();
   auto* rhs_arena = other->GetArenaForAllocation();
@@ -3336,15 +3417,19 @@ void LogLine::InternalSwap(LogLine* other) {
       &_impl_.message_, lhs_arena,
       &other->_impl_.message_, rhs_arena
   );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.logger_name_, lhs_arena,
+      &other->_impl_.logger_name_, rhs_arena
+  );
   ::PROTOBUF_NAMESPACE_ID::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(LogLine, _impl_.level_)
-      + sizeof(LogLine::_impl_.level_)
-      - PROTOBUF_FIELD_OFFSET(LogLine, _impl_.timestamp_)>(
+      PROTOBUF_FIELD_OFFSET(LogItem, _impl_.thread_id_)
+      + sizeof(LogItem::_impl_.thread_id_)
+      - PROTOBUF_FIELD_OFFSET(LogItem, _impl_.timestamp_)>(
           reinterpret_cast<char*>(&_impl_.timestamp_),
           reinterpret_cast<char*>(&other->_impl_.timestamp_));
 }
 
-::PROTOBUF_NAMESPACE_ID::Metadata LogLine::GetMetadata() const {
+::PROTOBUF_NAMESPACE_ID::Metadata LogItem::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
       file_level_metadata_server_2eproto[10]);
@@ -4235,9 +4320,9 @@ template<> PROTOBUF_NOINLINE ::server::Creature*
 Arena::CreateMaybeMessage< ::server::Creature >(Arena* arena) {
   return Arena::CreateMessageInternal< ::server::Creature >(arena);
 }
-template<> PROTOBUF_NOINLINE ::server::LogLine*
-Arena::CreateMaybeMessage< ::server::LogLine >(Arena* arena) {
-  return Arena::CreateMessageInternal< ::server::LogLine >(arena);
+template<> PROTOBUF_NOINLINE ::server::LogItem*
+Arena::CreateMaybeMessage< ::server::LogItem >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::server::LogItem >(arena);
 }
 template<> PROTOBUF_NOINLINE ::server::Frame*
 Arena::CreateMaybeMessage< ::server::Frame >(Arena* arena) {
