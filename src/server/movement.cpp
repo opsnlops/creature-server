@@ -13,7 +13,9 @@ using spdlog::error;
 using spdlog::critical;
 using spdlog::trace;
 
-
+/**
+ * Send frames from a client to a Creature
+ */
 Status creatures::CreatureServerImpl::StreamFrames(ServerContext* context,
                                                    ServerReader<Frame>* reader,
                                                    FrameResponse* response) {
@@ -27,11 +29,12 @@ Status creatures::CreatureServerImpl::StreamFrames(ServerContext* context,
     DMX* sender = new DMX();
 
     sender->init(frame.sacn_ip(), frame.universe(), frame.number_of_motors());
+    info("sending frames to {}", frame.creature_name());
 
     // Process the incoming stream of frames
     do {
 
-        debug("received frame {} for {}", frame_count, frame.creature_name());
+        trace("received frame {} for {}", frame_count, frame.creature_name());
         const std::string& frame_data = frame.frame();
         uint8_t buffer[frame.number_of_motors()];
 
@@ -40,15 +43,18 @@ Status creatures::CreatureServerImpl::StreamFrames(ServerContext* context,
             trace("byte {}: 0x{:02x}", i, byte);
             buffer[i++] = byte;
         }
-        debug("frame transmitted");
+        trace("frame transmitted");
 
         sender->send(buffer, frame.number_of_motors());
 
-        // Increment the frame count
-        frame_count++;
-    } while (reader->Read(&frame));
-    info("end of frames from client");
+        // Log a message every 100 frames
+        if(++frame_count % 100 == 0)
+            debug("transmitted {} frames to {}", frame_count, frame.creature_name());
 
+
+    } while (reader->Read(&frame));
+
+    info("end of frames from client. {} total", frame_count);
     delete sender;
 
     // Set the response

@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
     spdlog::set_level(spdlog::level::trace);
 
     CreatureServerClient client(
-            grpc::CreateChannel("localhost:6666", grpc::InsecureChannelCredentials()));
+            grpc::CreateChannel("10.3.2.11:6666", grpc::InsecureChannelCredentials()));
 
     info("connecting to server...");
 
