@@ -542,7 +542,7 @@ namespace creatures {
                         throw creatures::DataFormatException("motor value 'max_value' is not an int");
                     }
                     motor->set_max_value(element.get_int32().value);
-                    debug("set the motor max_value to {}", motor->max_value());
+                    trace("set the motor max_value to {}", motor->max_value());
 
 
                     // Min Value
