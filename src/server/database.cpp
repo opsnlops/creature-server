@@ -250,7 +250,7 @@ namespace creatures {
 
     grpc::Status Database::createCreature(const Creature *creature, server::DatabaseInfo *reply) {
 
-        debug("attempting to save a creature in the database");
+        info("attempting to save a creature in the database");
 
         auto collection = getCollection(COLLECTION_NAME);
         trace("collection made");
@@ -264,7 +264,7 @@ namespace creatures {
             collection.insert_one(doc_value.view());
             trace("run_command done");
 
-            info("save something in the database maybe?");
+            info("saved creature in the database");
 
             status = grpc::Status::OK;
             reply->set_message("saved thingy in the thingy");
@@ -349,7 +349,7 @@ namespace creatures {
         // Generate a new ID
         bsoncxx::oid id;
         if (!assignNewId) {
-            debug("reusing old ID");
+            trace("reusing old ID");
             id = bsoncxx::oid(creature->_id());
         }
 
@@ -408,7 +408,7 @@ namespace creatures {
         trace("extract done");
 
         // Log this so I can see what was made
-        debug("Built doc: {}", bsoncxx::to_json(doc));
+        trace("Built doc: {}", bsoncxx::to_json(doc));
 
         return doc;
     }
@@ -416,7 +416,7 @@ namespace creatures {
 
     void Database::creatureFromBson(const bsoncxx::document::view &doc, Creature *creature) {
 
-        debug("attempting to create a creature from a BSON document");
+        trace("attempting to create a creature from a BSON document");
 
 
         bsoncxx::document::element element = doc["_id"];
@@ -424,7 +424,7 @@ namespace creatures {
             const bsoncxx::oid &oid = element.get_oid().value;
             const char *oid_data = oid.bytes();
             creature->set__id(oid_data, bsoncxx::oid::k_oid_length);
-            debug("set the _id to {}", oid.to_string());
+            trace("set the _id to {}", oid.to_string());
         } else {
             throw creatures::DataFormatException("Field _id was not a bsoncxx::oid in the database");
         }
@@ -433,7 +433,7 @@ namespace creatures {
         if (element && element.type() == bsoncxx::type::k_utf8) {
             bsoncxx::stdx::string_view string_value = element.get_string().value;
             creature->set_name(std::string{string_value});
-            debug("set the name to {}", creature->name());
+            trace("set the name to {}", creature->name());
         } else {
             throw creatures::DataFormatException("Field name was not a string in the database");
         }
@@ -442,7 +442,7 @@ namespace creatures {
         if (element && element.type() == bsoncxx::type::k_utf8) {
             bsoncxx::stdx::string_view string_value = element.get_string().value;
             creature->set_sacn_ip(std::string{string_value});
-            debug("set the sacn_ip to {}", creature->sacn_ip());
+            trace("set the sacn_ip to {}", creature->sacn_ip());
         } else {
             throw creatures::DataFormatException("Field sacn_ip was not a string in the database");
         }
@@ -452,7 +452,7 @@ namespace creatures {
         if (element && element.type() == bsoncxx::type::k_int32) {
             int32_t int32_value = element.get_int32().value;
             creature->set_universe(int32_value);
-            debug("set the DMX universe to {}", creature->universe());
+            trace("set the DMX universe to {}", creature->universe());
         } else {
             throw creatures::DataFormatException("Field universe was not an int32 in the database");
         }
@@ -462,7 +462,7 @@ namespace creatures {
         if (element && element.type() == bsoncxx::type::k_int32) {
             int32_t int32_value = element.get_int32().value;
             creature->set_dmx_base(int32_value);
-            debug("set the DMX base value to {}", creature->dmx_base());
+            trace("set the DMX base value to {}", creature->dmx_base());
         } else {
             throw creatures::DataFormatException("Field dmx_base was not an int32 in the database");
         }
@@ -472,7 +472,7 @@ namespace creatures {
         if (element && element.type() == bsoncxx::type::k_int32) {
             int32_t int32_value = element.get_int32().value;
             creature->set_number_of_motors(int32_value);
-            debug("set the number of motors to {}", creature->number_of_motors());
+            trace("set the number of motors to {}", creature->number_of_motors());
         } else {
             throw creatures::DataFormatException("Field number_of_motors was not an int32 in the database");
         }
@@ -502,7 +502,7 @@ namespace creatures {
                         throw creatures::DataFormatException("motor field 'name' was not a string in the database");
                     }
                     motor->set_name(std::string{element.get_string().value});
-                    debug("set the motor name to {}", motor->name());
+                    trace("set the motor name to {}", motor->name());
 
                     // Motor type
                     element = obj["type"];
@@ -522,14 +522,14 @@ namespace creatures {
 
                     // Cast the int to the right value for our enum
                     motor->set_type(static_cast<Creature::MotorType>(motor_type));
-                    debug("set the motor type to {}", motor->type());
+                    trace("set the motor type to {}", motor->type());
 
                     // Motor number
                     element = obj["number"];
                     if (element && element.type() == bsoncxx::type::k_int32) {
                         int32_t int32_value = element.get_int32().value;
                         motor->set_number(int32_value);
-                        debug("set the motor number to {}", motor->number());
+                        trace("set the motor number to {}", motor->number());
                     } else {
                         error("motor field 'number' was not an int in the database");
                         throw creatures::DataFormatException("motor field 'number' was not an int in the database");
@@ -552,7 +552,7 @@ namespace creatures {
                         throw creatures::DataFormatException("motor value 'min_value' is not an int");
                     }
                     motor->set_min_value(element.get_int32().value);
-                    debug("set the motor min_value to {}", motor->min_value());
+                    trace("set the motor min_value to {}", motor->min_value());
 
                     // Smoothing
                     element = obj["smoothing_value"];
@@ -573,7 +573,7 @@ namespace creatures {
                     std::string decimal_str = decimal_value.value.to_string();
 
                     motor->set_smoothing_value(std::stod(decimal_str));
-                    debug("set the motor smoothing_value to {}", motor->smoothing_value());
+                    trace("set the motor smoothing_value to {}", motor->smoothing_value());
                 }
 
 
@@ -591,7 +591,7 @@ namespace creatures {
     void
     Database::creatureIdentifierFromBson(const bsoncxx::document::view &doc, server::CreatureIdentifier *identifier) {
 
-        debug("attempting to create a creatureIdentifier from a BSON document");
+        trace("attempting to create a creatureIdentifier from a BSON document");
 
         bsoncxx::document::element element = doc["_id"];
         if (element && element.type() == bsoncxx::type::k_oid) {
