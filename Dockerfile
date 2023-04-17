@@ -13,11 +13,11 @@ RUN apt install -y cmake libssl-dev libsasl2-dev clang git \
 
 # Install the latest Mongo driver
 RUN mkdir -p /build/mongo
-ADD https://github.com/mongodb/mongo-c-driver/releases/download/1.23.2/mongo-c-driver-1.23.2.tar.gz /build/mongo/c-driver.tar.gz
+ADD https://github.com/mongodb/mongo-c-driver/releases/download/1.23.3/mongo-c-driver-1.23.3.tar.gz /build/mongo/c-driver.tar.gz
 ADD https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.7.1/mongo-cxx-driver-r3.7.1.tar.gz /build/mongo/cxx-driver.tar.gz
 RUN cd /build/mongo && tar -xzvf c-driver.tar.gz && tar -xzvf cxx-driver.tar.gz
 
-RUN cd /build/mongo/mongo-c-driver-1.23.2/build && \
+RUN cd /build/mongo/mongo-c-driver-1.23.3/build && \
     cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
     ninja && \
     ninja install

@@ -32,7 +32,7 @@ include(FetchContent)
 FetchContent_Declare(
         gRPC
         GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG        v1.53.0
+        GIT_TAG        v1.54.x
 )
 set(FETCHCONTENT_QUIET OFF)
 FetchContent_MakeAvailable(gRPC)

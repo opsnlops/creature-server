@@ -138,6 +138,14 @@ enum SortBy {
   number = 1;
 }
 
+
+enum CreatureType {
+  parrot = 0;
+  wled_light = 1;
+
+  other = 999;
+}
+
 /**
   One frame to send to a creature
  */
@@ -158,4 +166,31 @@ message FrameResponse {
 message ServerStatus {
   uint64 frames_processed = 1;
   google.protobuf.Timestamp started_at = 2;
+}
+
+
+
+
+/**
+ Animation document that's stored in the database!
+
+ These are what run on the creatures themselves
+ */
+message Animation {
+  message Metadata {
+    string title = 1;
+    int32 frames_per_second = 2;
+    int32 number_of_frames = 3;
+    CreatureType creature_type = 4;
+    int32 number_of_motors = 5;
+    string notes = 6;
+  }
+
+  message Frame {
+    repeated bytes bytes = 1;
+  }
+
+  bytes _id = 1;
+  Metadata metadata = 2;
+  repeated Frame frames = 3;
 }
