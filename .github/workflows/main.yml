@@ -29,5 +29,5 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/creature-server:$(date +%s)
+          tags: ${{ secrets.DOCKER_LOGIN_USERNAME }}/creature-server:$(date +%s)
   
