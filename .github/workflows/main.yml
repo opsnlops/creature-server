@@ -1,4 +1,4 @@
-name: Docker Image CI
+name: Build Docker Image
 
 on:
   push:
@@ -7,12 +7,27 @@ on:
     branches: [ "main" ]
 
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v3
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag opsnlops/creature-userver:$(date +%s)
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN_USERNAME }}
+          password: ${{ secrets.DOCKER_LOGIN_TOKEN }}
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      -
+        name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/creature-server:$(date +%s)
+  
