@@ -1,3 +1,6 @@
 [submodule "lib/concurrentqueue"]
 	path = lib/concurrentqueue
 	url = git@github.com:cameron314/concurrentqueue.git
+[submodule "lib/mdns_cpp"]
+	path = lib/mdns_cpp
+	url = git@github.com:gocarlos/mdns_cpp.git

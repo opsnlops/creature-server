@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <string>
 
 #include <bsoncxx/json.hpp>
@@ -8,24 +9,26 @@
 #include <mongocxx/instance.hpp>
 #include <mongocxx/pool.hpp>
 
+#include <grpcpp/grpcpp.h>
+#include "messaging/server.pb.h"
 
 #include <google/protobuf/timestamp.pb.h>
-#include <chrono>
+
 
 // TODO: Clean this up
 #define DB_URI  "mongodb://10.3.2.11"
 #define DB_NAME  "creature_server"
 #define COLLECTION_NAME "creatures"
 
+using server::Animation;
 using server::Creature;
 using server::CreatureFilter;
 using server::CreatureName;
 using server::CreatureId;
+using server::DatabaseInfo;
 using server::GetAllCreaturesResponse;
 using server::ListCreaturesResponse;
 
-#include <grpcpp/grpcpp.h>
-#include "messaging/server.pb.h"
 
 namespace creatures {
 
@@ -34,9 +37,9 @@ namespace creatures {
     public:
         explicit Database(mongocxx::pool &pool);
 
-        grpc::Status createCreature(const Creature *creature, server::DatabaseInfo *reply);
+        grpc::Status createCreature(const Creature *creature, DatabaseInfo *reply);
 
-        grpc::Status updateCreature(const Creature *creature, server::DatabaseInfo *reply);
+        grpc::Status updateCreature(const Creature *creature, DatabaseInfo *reply);
 
         grpc::Status searchCreatures(const CreatureName *creatureName, Creature *creature);
 
@@ -46,6 +49,8 @@ namespace creatures {
 
         grpc::Status listCreatures(const CreatureFilter *filter, ListCreaturesResponse *creatureList);
 
+
+        grpc::Status createAnimation(const Animation *animation, DatabaseInfo *reply);
 
         /**
          * Ping the database to make sure it's alive

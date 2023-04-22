@@ -3,12 +3,10 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 
 #include "absl/strings/str_format.h"
-
 #include <grpcpp/grpcpp.h>
-
-
 #include "messaging/server.grpc.pb.h"
 
 #include "spdlog/spdlog.h"

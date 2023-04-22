@@ -41,11 +41,18 @@ FetchContent_MakeAvailable(gRPC)
 find_package(mongocxx REQUIRED)
 find_package(bsoncxx REQUIRED)
 
+# SDL
+find_package(SDL2 REQUIRED)
+
+# mDNS
+add_subdirectory(lib/mdns_cpp)
+
 # Our source files
 file(GLOB SERVER_SRCS
         src/exception/*
         src/messaging/*
         src/server/*
+        src/server/animation/*
         src/server/logging/*
         )
 
@@ -72,6 +79,7 @@ include_directories(
         ${Protobuf_INCLUDE_DIRS}
         ${LIBMONGOCXX_INCLUDE_DIR}
         ${LIBBSONCXX_INCLUDE_DIR}
+        ${SDL2_INCLUDE_DIRS}
 )
 
 add_executable(creature-server

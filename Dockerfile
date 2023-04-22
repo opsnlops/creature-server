@@ -8,7 +8,7 @@ RUN apt update && apt upgrade -y
 
 RUN apt install -y cmake libssl-dev libsasl2-dev clang git \
     libprotobuf-dev pkgconf libmongoclient-dev libbson-dev libpthreadpool-dev  \
-    libsystemd-dev ninja-build libspdlog-dev
+    libsystemd-dev ninja-build libspdlog-dev libsdl2-mixer-dev
 
 
 # Install the latest Mongo driver
@@ -46,7 +46,7 @@ FROM debian:bookworm-slim as runtime
 
 # Some of our libs need runtime bits
 RUN apt update && apt upgrade -y && \
-    apt install -y libsasl2-2 libicu72 libspdlog1.10 libprotobuf32 && \
+    apt install -y libsasl2-2 libicu72 libspdlog1.10 libprotobuf32 libsdl2-mixer-2.0-0 && \
     rm -rf /var/lib/apt/lists
 
 RUN mkdir /app
