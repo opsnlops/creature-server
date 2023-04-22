@@ -44,8 +44,6 @@ find_package(bsoncxx REQUIRED)
 # SDL
 find_package(SDL2 REQUIRED)
 
-# mDNS
-add_subdirectory(lib/mdns_cpp)
 
 # Our source files
 file(GLOB SERVER_SRCS
