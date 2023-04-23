@@ -50,6 +50,12 @@ service CreatureServer {
    */
   rpc CreateAnimation(Animation) returns (DatabaseInfo) {}
 
+
+  /**
+    Returns a list of the animations that match a filter
+   */
+  rpc ListAnimations(AnimationFilter) returns (ListAnimationsResponse) {}
+
 }
 
 /*
@@ -186,7 +192,7 @@ message ServerStatus {
 message Animation {
   message Metadata {
     string title = 1;
-    int32 frames_per_second = 2;
+    int32 milliseconds_per_frame = 2;
     int32 number_of_frames = 3;
     CreatureType creature_type = 4;
     int32 number_of_motors = 5;
@@ -200,4 +206,17 @@ message Animation {
   bytes _id = 1;
   Metadata metadata = 2;
   repeated Frame frames = 3;
+}
+
+message AnimationFilter {
+  CreatureType type = 1;
+}
+
+message ListAnimationsResponse {
+  repeated AnimationIdentifier animations = 1;
+}
+
+message AnimationIdentifier {
+  bytes _id  = 1;
+  Animation.Metadata metadata = 2;
 }

@@ -32,6 +32,7 @@
 #define COLLECTION_NAME "creatures"
 
 using server::Animation;
+using server::Animation_Metadata;
 using server::Creature;
 using server::CreatureFilter;
 using server::CreatureName;
@@ -89,7 +90,10 @@ namespace creatures {
         convertMongoDateToProtobufTimestamp(const bsoncxx::document::element &mongo_timestamp_element);
 
         static bsoncxx::document::value animationToBson(const Animation *animation, bool assignNewId);
+        static bsoncxx::document::value metadataToBson(const Animation *animation);
+        static uint32_t framesToBson(bsoncxx::builder::stream::document &doc, const Animation *animation);
     };
+
 
 
 }

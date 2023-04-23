@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
     animation.set__id(id.to_string());
     metadata.set_title("Example Animation");
     metadata.set_number_of_motors(4);
-    metadata.set_frames_per_second(25);
+    metadata.set_milliseconds_per_frame(40);
     metadata.set_creature_type( server::CreatureType::wled_light);
     metadata.set_notes("First note! 🐰");
     metadata.set_number_of_frames(10);

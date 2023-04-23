@@ -494,7 +494,7 @@ public struct Server_Animation {
 
     public var title: String = String()
 
-    public var framesPerSecond: Int32 = 0
+    public var millisecondsPerFrame: Int32 = 0
 
     public var numberOfFrames: Int32 = 0
 
@@ -526,6 +526,53 @@ public struct Server_Animation {
   fileprivate var _metadata: Server_Animation.Metadata? = nil
 }
 
+public struct Server_AnimationFilter {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var type: Server_CreatureType = .parrot
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public struct Server_ListAnimationsResponse {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var animations: [Server_AnimationIdentifier] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public struct Server_AnimationIdentifier {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: Data = Data()
+
+  public var metadata: Server_Animation.Metadata {
+    get {return _metadata ?? Server_Animation.Metadata()}
+    set {_metadata = newValue}
+  }
+  /// Returns true if `metadata` has been explicitly set.
+  public var hasMetadata: Bool {return self._metadata != nil}
+  /// Clears the value of `metadata`. Subsequent reads from it will return its default value.
+  public mutating func clearMetadata() {self._metadata = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _metadata: Server_Animation.Metadata? = nil
+}
+
 #if swift(>=5.5) && canImport(_Concurrency)
 extension Server_LogLevel: @unchecked Sendable {}
 extension Server_SortBy: @unchecked Sendable {}
@@ -548,6 +595,9 @@ extension Server_ServerStatus: @unchecked Sendable {}
 extension Server_Animation: @unchecked Sendable {}
 extension Server_Animation.Metadata: @unchecked Sendable {}
 extension Server_Animation.Frame: @unchecked Sendable {}
+extension Server_AnimationFilter: @unchecked Sendable {}
+extension Server_ListAnimationsResponse: @unchecked Sendable {}
+extension Server_AnimationIdentifier: @unchecked Sendable {}
 #endif  // swift(>=5.5) && canImport(_Concurrency)
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
@@ -1263,7 +1313,7 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
   public static let protoMessageName: String = Server_Animation.protoMessageName + ".Metadata"
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "title"),
-    2: .standard(proto: "frames_per_second"),
+    2: .standard(proto: "milliseconds_per_frame"),
     3: .standard(proto: "number_of_frames"),
     4: .standard(proto: "creature_type"),
     5: .standard(proto: "number_of_motors"),
@@ -1277,7 +1327,7 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.title) }()
-      case 2: try { try decoder.decodeSingularInt32Field(value: &self.framesPerSecond) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.millisecondsPerFrame) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.numberOfFrames) }()
       case 4: try { try decoder.decodeSingularEnumField(value: &self.creatureType) }()
       case 5: try { try decoder.decodeSingularInt32Field(value: &self.numberOfMotors) }()
@@ -1291,8 +1341,8 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if !self.title.isEmpty {
       try visitor.visitSingularStringField(value: self.title, fieldNumber: 1)
     }
-    if self.framesPerSecond != 0 {
-      try visitor.visitSingularInt32Field(value: self.framesPerSecond, fieldNumber: 2)
+    if self.millisecondsPerFrame != 0 {
+      try visitor.visitSingularInt32Field(value: self.millisecondsPerFrame, fieldNumber: 2)
     }
     if self.numberOfFrames != 0 {
       try visitor.visitSingularInt32Field(value: self.numberOfFrames, fieldNumber: 3)
@@ -1311,7 +1361,7 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
 
   public static func ==(lhs: Server_Animation.Metadata, rhs: Server_Animation.Metadata) -> Bool {
     if lhs.title != rhs.title {return false}
-    if lhs.framesPerSecond != rhs.framesPerSecond {return false}
+    if lhs.millisecondsPerFrame != rhs.millisecondsPerFrame {return false}
     if lhs.numberOfFrames != rhs.numberOfFrames {return false}
     if lhs.creatureType != rhs.creatureType {return false}
     if lhs.numberOfMotors != rhs.numberOfMotors {return false}
@@ -1348,6 +1398,112 @@ extension Server_Animation.Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageI
 
   public static func ==(lhs: Server_Animation.Frame, rhs: Server_Animation.Frame) -> Bool {
     if lhs.bytes != rhs.bytes {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_AnimationFilter: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AnimationFilter"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "type"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.type) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.type != .parrot {
+      try visitor.visitSingularEnumField(value: self.type, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_AnimationFilter, rhs: Server_AnimationFilter) -> Bool {
+    if lhs.type != rhs.type {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_ListAnimationsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ListAnimationsResponse"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "animations"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.animations) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.animations.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.animations, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_ListAnimationsResponse, rhs: Server_ListAnimationsResponse) -> Bool {
+    if lhs.animations != rhs.animations {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_AnimationIdentifier: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AnimationIdentifier"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .standard(proto: "_id"),
+    2: .same(proto: "metadata"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._metadata) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.id.isEmpty {
+      try visitor.visitSingularBytesField(value: self.id, fieldNumber: 1)
+    }
+    try { if let v = self._metadata {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_AnimationIdentifier, rhs: Server_AnimationIdentifier) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs._metadata != rhs._metadata {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
