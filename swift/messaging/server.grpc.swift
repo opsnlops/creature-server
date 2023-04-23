@@ -75,6 +75,11 @@ public protocol Server_CreatureServerClientProtocol: GRPCClient {
     _ request: SwiftProtobuf.Google_Protobuf_Empty,
     callOptions: CallOptions?
   ) -> UnaryCall<SwiftProtobuf.Google_Protobuf_Empty, Server_ServerStatus>
+
+  func createAnimation(
+    _ request: Server_Animation,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Server_Animation, Server_DatabaseInfo>
 }
 
 extension Server_CreatureServerClientProtocol {
@@ -247,6 +252,27 @@ extension Server_CreatureServerClientProtocol {
       interceptors: self.interceptors?.makeGetServerStatusInterceptors() ?? []
     )
   }
+
+  ///*
+  ///Save a new animation in the database
+  ///
+  ///Defined in server/animation/database.cpp
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to CreateAnimation.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  public func createAnimation(
+    _ request: Server_Animation,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Server_Animation, Server_DatabaseInfo> {
+    return self.makeUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.createAnimation.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeCreateAnimationInterceptors() ?? []
+    )
+  }
 }
 
 #if compiler(>=5.6)
@@ -357,6 +383,11 @@ public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
     _ request: SwiftProtobuf.Google_Protobuf_Empty,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<SwiftProtobuf.Google_Protobuf_Empty, Server_ServerStatus>
+
+  func makeCreateAnimationCall(
+    _ request: Server_Animation,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Server_Animation, Server_DatabaseInfo>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -472,6 +503,18 @@ extension Server_CreatureServerAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetServerStatusInterceptors() ?? []
+    )
+  }
+
+  public func makeCreateAnimationCall(
+    _ request: Server_Animation,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Server_Animation, Server_DatabaseInfo> {
+    return self.makeAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.createAnimation.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeCreateAnimationInterceptors() ?? []
     )
   }
 }
@@ -597,6 +640,18 @@ extension Server_CreatureServerAsyncClientProtocol {
       interceptors: self.interceptors?.makeGetServerStatusInterceptors() ?? []
     )
   }
+
+  public func createAnimation(
+    _ request: Server_Animation,
+    callOptions: CallOptions? = nil
+  ) async throws -> Server_DatabaseInfo {
+    return try await self.performAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.createAnimation.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeCreateAnimationInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -646,6 +701,9 @@ public protocol Server_CreatureServerClientInterceptorFactoryProtocol: GRPCSenda
 
   /// - Returns: Interceptors to use when invoking 'getServerStatus'.
   func makeGetServerStatusInterceptors() -> [ClientInterceptor<SwiftProtobuf.Google_Protobuf_Empty, Server_ServerStatus>]
+
+  /// - Returns: Interceptors to use when invoking 'createAnimation'.
+  func makeCreateAnimationInterceptors() -> [ClientInterceptor<Server_Animation, Server_DatabaseInfo>]
 }
 
 public enum Server_CreatureServerClientMetadata {
@@ -662,6 +720,7 @@ public enum Server_CreatureServerClientMetadata {
       Server_CreatureServerClientMetadata.Methods.listCreatures,
       Server_CreatureServerClientMetadata.Methods.streamFrames,
       Server_CreatureServerClientMetadata.Methods.getServerStatus,
+      Server_CreatureServerClientMetadata.Methods.createAnimation,
     ]
   )
 
@@ -717,6 +776,12 @@ public enum Server_CreatureServerClientMetadata {
     public static let getServerStatus = GRPCMethodDescriptor(
       name: "GetServerStatus",
       path: "/server.CreatureServer/GetServerStatus",
+      type: GRPCCallType.unary
+    )
+
+    public static let createAnimation = GRPCMethodDescriptor(
+      name: "CreateAnimation",
+      path: "/server.CreatureServer/CreateAnimation",
       type: GRPCCallType.unary
     )
   }

@@ -24,6 +24,7 @@ using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 using grpc::ClientWriter;
+using server::Animation;
 using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
@@ -244,6 +245,28 @@ public:
         if (!status.ok()) {
             std::cerr << "StreamLogs RPC failed: " << status.error_message() << " (#" << status.error_code() << ")" << std::endl;
         }
+    }
+
+    server::DatabaseInfo CreateAnimation(const Animation& animation) {
+
+        ClientContext context;
+        server::DatabaseInfo reply;
+
+        Status status = stub_->CreateAnimation(&context, animation, &reply);
+
+        if(status.ok()) {
+            debug("got an OK from the server on save! ({})", reply.message());
+        }
+        else if(status.error_code() == grpc::StatusCode::ALREADY_EXISTS) {
+            error("Animation {} already exists in the database", animation.metadata().title());
+        }
+        else {
+            error("Unable to save an animation in the database: {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return reply;
+
     }
 
 private:

@@ -19,6 +19,9 @@ using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 using grpc::ClientWriter;
+using server::Animation;
+using server::Animation_Metadata;
+using server::Animation_Frame;
 using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
@@ -170,6 +173,30 @@ int main(int argc, char** argv) {
     info("Attempting to stream frames");
     client.StreamFrames();
 
+
+    // Create a simple animation and save it in the database
+    Animation animation = Animation();
+    Animation_Metadata metadata = Animation_Metadata();
+    bsoncxx::oid id;
+    animation.set__id(id.to_string());
+    metadata.set_title("Example Animation");
+    metadata.set_number_of_motors(4);
+    metadata.set_frames_per_second(25);
+    metadata.set_creature_type( server::CreatureType::wled_light);
+    metadata.set_notes("First note! 🐰");
+    metadata.set_number_of_frames(10);
+    *animation.mutable_metadata() = metadata;
+
+
+    // Make some frames!
+    for(int i = 0; i < 10; i++) {
+        auto frame = animation.add_frames();
+        for(int j = 0; j < 4; j ++) {
+            frame->add_bytes("A");
+        }
+    }
+
+    client.CreateAnimation(animation);
 
     return 0;
 }

@@ -94,6 +94,7 @@ target_link_libraries(creature-server
         mongo::bsoncxx_shared
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
+        ${SDL2_LIBRARIES}
         )
 
 

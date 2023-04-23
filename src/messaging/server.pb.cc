@@ -522,7 +522,7 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "\n\005error\020\004\022\014\n\010critical\020\005\022\007\n\003off\020\006\022\013\n\007unkn"
   "own\020\007*\036\n\006SortBy\022\010\n\004name\020\000\022\n\n\006number\020\001*6\n"
   "\014CreatureType\022\n\n\006parrot\020\000\022\016\n\nwled_light\020"
-  "\001\022\n\n\005other\020\347\0072\307\004\n\016CreatureServer\0225\n\013GetC"
+  "\001\022\n\n\005other\020\347\0072\205\005\n\016CreatureServer\0225\n\013GetC"
   "reature\022\022.server.CreatureId\032\020.server.Cre"
   "ature\"\000\022L\n\017GetAllCreatures\022\026.server.Crea"
   "tureFilter\032\037.server.GetAllCreaturesRespo"
@@ -536,10 +536,11 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "r\032\035.server.ListCreaturesResponse\"\000\0228\n\014St"
   "reamFrames\022\r.server.Frame\032\025.server.Frame"
   "Response\"\000(\001\022A\n\017GetServerStatus\022\026.google"
-  ".protobuf.Empty\032\024.server.ServerStatus\"\000B"
-  "T\n\034io.opsnlops.creatures.serverB\022Network"
-  "ServerProtoH\001P\001Z\034opsnlops.io/creatures/s"
-  "erverb\006proto3"
+  ".protobuf.Empty\032\024.server.ServerStatus\"\000\022"
+  "<\n\017CreateAnimation\022\021.server.Animation\032\024."
+  "server.DatabaseInfo\"\000BT\n\034io.opsnlops.cre"
+  "atures.serverB\022NetworkServerProtoH\001P\001Z\034o"
+  "psnlops.io/creatures/serverb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -547,7 +548,7 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 2493, descriptor_table_protodef_server_2eproto,
+    false, false, 2555, descriptor_table_protodef_server_2eproto,
     "server.proto",
     &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 17,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,

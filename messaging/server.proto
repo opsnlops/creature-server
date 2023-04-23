@@ -43,6 +43,13 @@ service CreatureServer {
 
   rpc GetServerStatus(google.protobuf.Empty) returns (ServerStatus) {}
 
+  /**
+    Save a new animation in the database
+
+    Defined in server/animation/database.cpp
+   */
+  rpc CreateAnimation(Animation) returns (DatabaseInfo) {}
+
 }
 
 /*

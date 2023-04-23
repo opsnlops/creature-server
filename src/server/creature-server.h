@@ -57,6 +57,8 @@ namespace creatures {
 
         Status StreamFrames(ServerContext* context, ServerReader<Frame>* reader, FrameResponse* response) override;
 
+        Status CreateAnimation(ServerContext *context, const Animation *animation, DatabaseInfo *reply) override;
+
     private:
         ConcurrentQueue<LogItem>& log_queue;
     };

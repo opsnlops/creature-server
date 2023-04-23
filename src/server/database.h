@@ -9,6 +9,17 @@
 #include <mongocxx/instance.hpp>
 #include <mongocxx/pool.hpp>
 
+#include <bsoncxx/json.hpp>
+#include <mongocxx/client.hpp>
+#include <mongocxx/pool.hpp>
+#include <bsoncxx/types.hpp>
+#include <mongocxx/exception/bulk_write_exception.hpp>
+#include <bsoncxx/document/element.hpp>
+#include <bsoncxx/array/element.hpp>
+#include <mongocxx/cursor.hpp>
+
+#include <bsoncxx/builder/stream/document.hpp>
+
 #include <grpcpp/grpcpp.h>
 #include "messaging/server.pb.h"
 
@@ -25,6 +36,7 @@ using server::Creature;
 using server::CreatureFilter;
 using server::CreatureName;
 using server::CreatureId;
+using server::CreatureIdentifier;
 using server::DatabaseInfo;
 using server::GetAllCreaturesResponse;
 using server::ListCreaturesResponse;
@@ -49,7 +61,6 @@ namespace creatures {
 
         grpc::Status listCreatures(const CreatureFilter *filter, ListCreaturesResponse *creatureList);
 
-
         grpc::Status createAnimation(const Animation *animation, DatabaseInfo *reply);
 
         /**
@@ -69,13 +80,15 @@ namespace creatures {
         static void creatureFromBson(const bsoncxx::document::view &doc, Creature *creature);
 
         static void
-        creatureIdentifierFromBson(const bsoncxx::document::view &doc, server::CreatureIdentifier *identifier);
+        creatureIdentifierFromBson(const bsoncxx::document::view &doc, CreatureIdentifier *identifier);
 
         static std::chrono::system_clock::time_point
         protobufTimestampToTimePoint(const google::protobuf::Timestamp &timestamp);
 
         static google::protobuf::Timestamp
         convertMongoDateToProtobufTimestamp(const bsoncxx::document::element &mongo_timestamp_element);
+
+        static bsoncxx::document::value animationToBson(const Animation *animation);
     };
 
 
