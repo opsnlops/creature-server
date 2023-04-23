@@ -1,16 +1,13 @@
 
 #include "spdlog/spdlog.h"
 
-#include <bsoncxx/json.hpp>
-#include <mongocxx/client.hpp>
-#include <mongocxx/pool.hpp>
-#include <bsoncxx/types.hpp>
-#include <mongocxx/exception/bulk_write_exception.hpp>
-#include <bsoncxx/document/element.hpp>
-#include <bsoncxx/array/element.hpp>
-#include <mongocxx/cursor.hpp>
-
 #include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/exception/exception.hpp>
+#include <bsoncxx/json.hpp>
+#include <bsoncxx/types.hpp>
+
+#include <mongocxx/client.hpp>
+#include <mongocxx/exception/bulk_write_exception.hpp>
 
 
 #include "server/database.h"
@@ -91,7 +88,7 @@ namespace creatures {
 
         // Create a BSON doc with this animation
         try {
-            auto doc_view = animationToBson(animation);
+            auto doc_view = animationToBson(animation, false);
             trace("doc_value made: {}", bsoncxx::to_json(doc_view));
 
             collection.insert_one(doc_view.view());
@@ -123,60 +120,80 @@ namespace creatures {
             reply->set_message(fmt::format("Unable to create new Animation: {}", e.what()));
             reply->set_help("Sorry! 💜");
         }
+        catch (const bsoncxx::exception &e) {
+            error("unable to convert the incoming animation to BSON: {}", e.what());
+            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, e.what());
+            reply->set_message(fmt::format("Unable to create new animation: {}", e.what()));
+            reply->set_help(fmt::format("Check to make sure the message is well-formed"));
+        }
 
         return status;
     }
 
 
-    bsoncxx::document::value Database::animationToBson(const server::Animation *animation) {
+    bsoncxx::document::value Database::animationToBson(const server::Animation *animation, bool assignNewId) {
 
         trace("converting an animation to BSON");
 
-        // If the _id is empty, don't go any further
-        if(animation->_id().empty()) {
-            error("Unable to save animation in database, _id is empty");
-            throw DataFormatException("`_id` is empty");
+        bsoncxx::oid id;
+
+        if(!assignNewId) {
+
+            trace("attempting to re-use the old id");
+
+            // If the _id is empty, don't go any further
+            if (animation->_id().empty()) {
+                error("Unable to save animation in database, _id is empty");
+                throw DataFormatException("`_id` is empty");
+            }
+            trace("incoming id size: {}", animation->_id().size());
+            id = bsoncxx::oid(animation->_id().data(), animation->_id().size());
         }
 
         bsoncxx::builder::stream::document doc{};
+        try {
+            doc << "_id" << id;
+            trace("_id set");
 
-        doc << "_id" << bsoncxx::oid(animation->_id());
-        trace("_id set");
-
-        auto metadata = bsoncxx::builder::stream::document{}
-                << "title" << animation->metadata().title()
-                << "frames_per_second"
-                << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().frames_per_second())}
-                << "number_of_frames"
-                << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().number_of_frames())}
-                << "creature_type"
-                << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().creature_type())}
-                << "number_of_motors"
-                << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().number_of_motors())}
-                << "notes" << animation->metadata().notes()
-                << bsoncxx::builder::stream::finalize;
-        doc << "metadata" << metadata;
-        trace("metadata created");
+            auto metadata = bsoncxx::builder::stream::document{}
+                    << "title" << animation->metadata().title()
+                    << "frames_per_second"
+                    << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().frames_per_second())}
+                    << "number_of_frames"
+                    << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().number_of_frames())}
+                    << "creature_type"
+                    << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().creature_type())}
+                    << "number_of_motors"
+                    << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().number_of_motors())}
+                    << "notes" << animation->metadata().notes()
+                    << bsoncxx::builder::stream::finalize;
+            doc << "metadata" << metadata;
+            trace("metadata created, title: {}", animation->metadata().title());
 
 
-        auto frames = doc << "frames" << bsoncxx::builder::stream::open_array;
+            auto frames = doc << "frames" << bsoncxx::builder::stream::open_array;
 
-        trace("starting to add frames");
-        uint32_t frameCount = 0;
+            trace("starting to add frames");
+            uint32_t frameCount = 0;
 
-        for (const auto &f: animation->frames()) {
-            const auto *byteData = reinterpret_cast<const uint8_t *>(f.bytes().data());
-            size_t byteSize = f.bytes().size();
-            std::vector<uint8_t> byteVector(byteData, byteData + byteSize);
-            frames << bsoncxx::types::b_binary{bsoncxx::binary_sub_type::k_binary,
-                                               static_cast<uint32_t>(byteVector.size()), byteVector.data()};
-            frameCount++;
+            for (const auto &f: animation->frames()) {
+                const auto *byteData = reinterpret_cast<const uint8_t *>(f.bytes().data());
+                size_t byteSize = f.bytes().size();
+                std::vector<uint8_t> byteVector(byteData, byteData + byteSize);
+                frames << bsoncxx::types::b_binary{bsoncxx::binary_sub_type::k_binary,
+                                                   static_cast<uint32_t>(byteVector.size()), byteVector.data()};
+                frameCount++;
+            }
+
+            frames << bsoncxx::builder::stream::close_array;
+            trace("done adding frames, added {} total", frameCount);
+
+            return doc.extract();
         }
-
-        frames << bsoncxx::builder::stream::close_array;
-        trace("done adding frames, added {} total", frameCount);
-
-        return doc.extract();
+        catch (const bsoncxx::exception& e) {
+            error("Error encoding the animation to BSON: {}", e.what());
+            throw e;
+        }
     }
 
 }

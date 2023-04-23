@@ -88,7 +88,7 @@ namespace creatures {
         static google::protobuf::Timestamp
         convertMongoDateToProtobufTimestamp(const bsoncxx::document::element &mongo_timestamp_element);
 
-        static bsoncxx::document::value animationToBson(const Animation *animation);
+        static bsoncxx::document::value animationToBson(const Animation *animation, bool assignNewId);
     };
 
 
