@@ -13,6 +13,7 @@
 #include "server/logging/creature_log_sink.h"
 
 using google::protobuf::Empty;
+
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
@@ -20,6 +21,8 @@ using grpc::ServerReader;
 using grpc::ServerWriter;
 using grpc::Status;
 
+using server::Animation;
+using server::AnimationFilter;
 using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
@@ -28,11 +31,13 @@ using server::CreatureFilter;
 using server::DatabaseInfo;
 using server::Frame;
 using server::FrameResponse;
-using server::ListCreaturesResponse;
 using server::GetAllCreaturesResponse;
-using server::ServerStatus;
+using server::ListAnimationsResponse;
+using server::ListCreaturesResponse;
 using server::LogFilter;
 using server::LogItem;
+using server::ServerStatus;
+
 
 using moodycamel::ConcurrentQueue;
 
@@ -58,6 +63,8 @@ namespace creatures {
         Status StreamFrames(ServerContext* context, ServerReader<Frame>* reader, FrameResponse* response) override;
 
         Status CreateAnimation(ServerContext *context, const Animation *animation, DatabaseInfo *reply) override;
+
+        Status ListAnimations(ServerContext *context, const AnimationFilter *request, ListAnimationsResponse *response) override;
 
     private:
         ConcurrentQueue<LogItem>& log_queue;

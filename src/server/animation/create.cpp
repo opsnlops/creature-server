@@ -16,16 +16,12 @@
 
 #include "server/animation/animation.h"
 
-using spdlog::info;
+using spdlog::trace;
 using spdlog::debug;
+using spdlog::info;
+using spdlog::warn;
 using spdlog::error;
 using spdlog::critical;
-using spdlog::trace;
-
-using bsoncxx::builder::stream::document;
-using bsoncxx::builder::basic::make_document;
-using bsoncxx::builder::basic::kvp;
-
 
 extern creatures::Database *db;
 
@@ -75,7 +71,7 @@ namespace creatures {
 
             info("saved new animation in the database 💃🏽");
 
-            status = grpc::Status::OK;
+            status = grpc::Status(grpc::StatusCode::OK, "✅ Saved new animation in the database");
             reply->set_message("✅ Saved new animation in the database");
         }
         catch (const mongocxx::exception &e) {

@@ -18,28 +18,34 @@
 
 #include "spdlog/spdlog.h"
 
-
-
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 using grpc::ClientWriter;
+
 using server::Animation;
+using server::Animation_Metadata;
+using server::AnimationFilter;
+using server::AnimationIdentifier;
 using server::CreatureServer;
 using server::Creature;
-using server::CreatureName;
+using server::CreatureFilter;
 using server::CreatureId;
+using server::CreatureName;
 using server::Frame;
 using server::FrameResponse;
+using server::ListAnimationsResponse;
 using server::ListCreaturesResponse;
-using server::CreatureFilter;
 using server::LogItem;
 using server::LogLevel;
 using server::LogFilter;
 
+
+
 using spdlog::trace;
-using spdlog::info;
 using spdlog::debug;
+using spdlog::info;
+using spdlog::warn;
 using spdlog::error;
 using spdlog::critical;
 
@@ -267,6 +273,28 @@ public:
 
         return reply;
 
+    }
+
+
+    server::ListAnimationsResponse ListAnimations(const AnimationFilter& filter) {
+
+        ClientContext context;
+        server::ListAnimationsResponse reply;
+
+        Status status = stub_->ListAnimations(&context, filter, &reply);
+
+        if(status.ok()) {
+            debug("Got an OK from the server while trying to list all of the animations for creature type {}", filter.type());
+        }
+        else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
+            info("No animations for creature type {} found. (This might be expected!)", filter.type());
+        }
+        else {
+            error("An error occured while trying to get all of the animations for creature type {}: {} ({})",
+                  filter.type(), status.error_message(), status.error_details());
+        }
+
+        return reply;
     }
 
 private:

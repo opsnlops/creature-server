@@ -84,7 +84,7 @@ namespace creatures {
         try {
             auto metadata = bsoncxx::builder::stream::document{}
                     << "title" << animation->metadata().title()
-                    << "millisecond_per_frame"
+                    << "milliseconds_per_frame"
                     << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().milliseconds_per_frame())}
                     << "number_of_frames"
                     << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().number_of_frames())}
@@ -129,5 +129,114 @@ namespace creatures {
             throw e;
         }
     }
+
+    /**
+     * Creates an Animation.Metadata from a BSON doc
+     *
+     * @param doc the doc to look at
+     * @param metadata a Animation_Metadata to fill out
+     */
+    void Database::bsonToAnimationMetadata(const bsoncxx::document::view &doc, Animation_Metadata *metadata) {
+
+        trace("attempting to build an Animation.Metadata from BSON");
+
+        bsoncxx::document::element element = doc["title"];
+        if (!element) {
+            error("Animation.Metadata value 'title' is not found");
+            throw creatures::DataFormatException("Animation.Metadata value 'title' is not found");
+        }
+
+        if (element.type() != bsoncxx::type::k_utf8) {
+            error("Animation.Metadata value 'title' is not a string");
+            throw creatures::DataFormatException("Animation.Metadata value 'title' is not a string");
+        }
+        bsoncxx::stdx::string_view string_value = element.get_string().value;
+        metadata->set_title(std::string{string_value});
+        trace("set the title to {}", metadata->title());
+
+
+        element = doc["milliseconds_per_frame"];
+        if (!element) {
+            error("Animation.Metadata value 'milliseconds_per_frame' is not found");
+            throw creatures::DataFormatException("Animation.Metadata value 'milliseconds_per_frame' is not found");
+        }
+        if (element.type() != bsoncxx::type::k_int32) {
+            error("Animation.Metadata value 'milliseconds_per_frame' is not an int");
+            throw creatures::DataFormatException("Animation.Metadata value 'milliseconds_per_frame' is not an int");
+        }
+        metadata->set_milliseconds_per_frame(element.get_int32().value);
+        trace("set the milliseconds_per_frame to {}", metadata->milliseconds_per_frame());
+
+
+        element = doc["number_of_frames"];
+        if (!element) {
+            error("Animation.Metadata value 'number_of_frames' is not found");
+            throw creatures::DataFormatException("Animation.Metadata value 'number_of_frames' is not found");
+        }
+        if (element.type() != bsoncxx::type::k_int32) {
+            error("Animation.Metadata value 'number_of_frames' is not an int");
+            throw creatures::DataFormatException("Animation.Metadata value 'number_of_frames' is not an int");
+        }
+        metadata->set_number_of_frames(element.get_int32().value);
+        trace("set the number_of_frames to {}", metadata->number_of_frames());
+
+
+        element = doc["number_of_motors"];
+        if (!element) {
+            error("Animation.Metadata value 'number_of_motors' is not found");
+            throw creatures::DataFormatException("Animation.Metadata value 'number_of_motors' is not found");
+        }
+        if (element.type() != bsoncxx::type::k_int32) {
+            error("Animation.Metadata value 'number_of_motors' is not an int");
+            throw creatures::DataFormatException("Animation.Metadata value 'number_of_motors' is not an int");
+        }
+        metadata->set_number_of_motors(element.get_int32().value);
+        trace("set the number_of_motors to {}", metadata->number_of_motors());
+
+
+
+
+        // Creature type, which is an enum, so there's extra work to do
+        element = doc["creature_type"];
+        if (!element) {
+            error("Animation.Metadata value 'creature_type' is not found");
+            throw creatures::DataFormatException("Animation.Metadata value 'creature_type' is not found");
+        }
+        if (element.type() != bsoncxx::type::k_int32) {
+            error("Animation.Metadata value 'creature_type' is not an int");
+            throw creatures::DataFormatException("Animation.Metadata value 'creature_type' is not an int");
+        }
+        int32_t creature_type = element.get_int32().value;
+
+        // Check if the integer matches up to CreatureType
+        if (!server::CreatureType_IsValid(creature_type)) {
+            error("Animation.Metadata field 'creature_type' does not map to our enum: {}", creature_type);
+            throw creatures::DataFormatException(
+                    fmt::format("Animation.Metadata field 'creature_type' does not map to our enum: {}", creature_type));
+        }
+        metadata->set_creature_type(static_cast<server::CreatureType>(creature_type));
+        trace("set the creature type to {}", metadata->creature_type());
+
+
+        // And finally, the notes!
+        element = doc["notes"];
+        if (!element) {
+            error("Animation.Metadata value 'notes' is not found");
+            throw creatures::DataFormatException("Animation.Metadata value 'notes' is not found");
+        }
+        if (element.type() != bsoncxx::type::k_utf8) {
+            error("Animation.Metadata value 'notes' is not an int");
+            throw creatures::DataFormatException("Animation.Metadata value 'notes' is not a string");
+        }
+        string_value = element.get_string().value;
+        metadata->set_notes(std::string{string_value});
+        trace("set the notes to {}", metadata->notes());
+
+
+        trace("all done creating a metadata from BSON!");
+
+    }
+
+
 
 }

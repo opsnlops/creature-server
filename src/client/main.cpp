@@ -19,21 +19,28 @@ using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 using grpc::ClientWriter;
+
 using server::Animation;
 using server::Animation_Metadata;
-using server::Animation_Frame;
+using server::AnimationFilter;
+using server::AnimationIdentifier;
 using server::CreatureServer;
 using server::Creature;
-using server::CreatureName;
+using server::CreatureFilter;
 using server::CreatureId;
+using server::CreatureName;
 using server::Frame;
 using server::FrameResponse;
+using server::ListAnimationsResponse;
 using server::ListCreaturesResponse;
-using server::CreatureFilter;
+using server::LogItem;
+using server::LogLevel;
+using server::LogFilter;
 
 using spdlog::trace;
-using spdlog::info;
 using spdlog::debug;
+using spdlog::info;
+using spdlog::warn;
 using spdlog::error;
 using spdlog::critical;
 
@@ -197,6 +204,17 @@ int main(int argc, char** argv) {
     }
 
     client.CreateAnimation(animation);
+
+
+
+    // List all the animations for WLED lights
+    AnimationFilter animationFilter = AnimationFilter();
+    animationFilter.set_type(server::CreatureType::wled_light);
+
+    ListAnimationsResponse response = client.ListAnimations(animationFilter);
+    for (const auto& a: response.animations())
+        info("Found: {}", a.metadata().title());
+
 
     return 0;
 }
