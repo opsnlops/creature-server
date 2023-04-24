@@ -4,6 +4,8 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <atomic>
+#include <csignal>
 
 #include "absl/strings/str_format.h"
 #include <grpcpp/grpcpp.h>
@@ -16,6 +18,7 @@
 
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "server/eventloop/eventloop.h"
 #include "server/logging/concurrentqueue.h"
 #include "server/logging/creature_log_sink.h"
 
@@ -37,11 +40,20 @@ using spdlog::critical;
 using spdlog::error;
 
 using creatures::Database;
+using creatures::EventLoop;
 
 using moodycamel::ConcurrentQueue;
 
-
+std::atomic<bool> eventLoopRunning{true};
 Database *db{};
+
+
+// Signal handler to stop the event loop
+void signal_handler(int signal) {
+    if (signal == SIGINT) {
+        eventLoopRunning = false;
+    }
+}
 
 
 void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue) {
@@ -93,8 +105,13 @@ int main(int argc, char **argv) {
     // Start up the database
     db = new Database(mongo_pool);
 
+    // Start up the event loop
+    std::thread eventLoopThread(&creatures::EventLoop::main_loop);
+
+
 
     info("starting server on port {}", 6666);
     RunServer(6666, log_queue);
+    eventLoopThread.join();
     return 0;
 }
