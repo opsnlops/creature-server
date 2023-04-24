@@ -104,17 +104,17 @@ namespace creatures {
     }
 
     uint32_t Database::framesToBson(bsoncxx::builder::stream::document &doc, const server::Animation *animation) {
-
         try {
             auto frames = doc << "frames" << bsoncxx::builder::stream::open_array;
 
             trace("starting to add frames");
             uint32_t frameCount = 0;
 
-            for (const auto &f: animation->frames()) {
-                const auto *byteData = reinterpret_cast<const uint8_t *>(f.bytes().data());
-                size_t byteSize = f.bytes().size();
-                std::vector<uint8_t> byteVector(byteData, byteData + byteSize);
+            for (const auto &f : animation->frames()) {
+                std::vector<uint8_t> byteVector;
+                for (const auto &byteBlock : f.bytes()) {
+                    byteVector.insert(byteVector.end(), byteBlock.begin(), byteBlock.end());
+                }
                 frames << bsoncxx::types::b_binary{bsoncxx::binary_sub_type::k_binary,
                                                    static_cast<uint32_t>(byteVector.size()), byteVector.data()};
                 frameCount++;
@@ -124,7 +124,7 @@ namespace creatures {
 
             return frameCount;
         }
-        catch (const bsoncxx::exception& e) {
+        catch (const bsoncxx::exception &e) {
             error("Error encoding the animation frames to BSON: {}", e.what());
             throw e;
         }

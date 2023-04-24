@@ -2,6 +2,9 @@
 #include <chrono>
 #include <ctime>
 #include <thread>
+#include <iostream>
+#include <iomanip>
+#include <sstream>
 
 #include <bsoncxx/oid.hpp>
 #include <fmt/format.h>
@@ -43,6 +46,22 @@ using spdlog::info;
 using spdlog::warn;
 using spdlog::error;
 using spdlog::critical;
+
+void displayFrames(const Animation& animation) {
+    int frameCounter = 0;
+    for (const auto& frame : animation.frames()) {
+        std::ostringstream byteStream;
+        byteStream << std::hex << std::setfill('0');
+        for (const auto& byteBlock : frame.bytes()) {
+            for (unsigned char byte : byteBlock) {
+                byteStream << std::setw(2) << static_cast<int>(byte) << " ";
+            }
+        }
+
+        std::cout << "Frame " << frameCounter << ": [ " << byteStream.str() << "]" << std::endl;
+        frameCounter++;
+    }
+}
 
 std::string ProtobufTimestampToHumanReadable(const google::protobuf::Timestamp& timestamp) {
     // Combine seconds and nanoseconds into a single duration
@@ -220,7 +239,7 @@ int main(int argc, char** argv) {
     // Attempt to load an animation
     debug("attempting to load an animation");
 
-    std::string animation_oid_string = "6445ef7e71727101ee0239c7";
+    std::string animation_oid_string = "644601e0ef20b72e000523fb";
     info("attempting to search for animation ID {} in the database...", animation_oid_string);
 
     bsoncxx::oid animation_oid(animation_oid_string);
@@ -232,11 +251,7 @@ int main(int argc, char** argv) {
     Animation testAnimation = client.GetAnimation(animationId);
     info("found! Title: {}, number of frames: {}", testAnimation.metadata().title(), testAnimation.frames_size());
 
-    for( const auto& f : testAnimation.frames()) {
-
-        debug("dumping frame...");
-        debug(f.DebugString());
-    }
+    displayFrames(testAnimation);
 
     return 0;
 }
