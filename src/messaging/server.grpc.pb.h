@@ -133,6 +133,13 @@ class CreatureServer final {
     std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::ListAnimationsResponse>> PrepareAsyncListAnimations(::grpc::ClientContext* context, const ::server::AnimationFilter& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::ListAnimationsResponse>>(PrepareAsyncListAnimationsRaw(context, request, cq));
     }
+    virtual ::grpc::Status GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId& request, ::server::Animation* response) = 0;
+    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::Animation>> AsyncGetAnimation(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::Animation>>(AsyncGetAnimationRaw(context, request, cq));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::Animation>> PrepareAsyncGetAnimation(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::server::Animation>>(PrepareAsyncGetAnimationRaw(context, request, cq));
+    }
     class async_interface {
      public:
       virtual ~async_interface() {}
@@ -170,6 +177,8 @@ class CreatureServer final {
       // Returns a list of the animations that match a filter
       virtual void ListAnimations(::grpc::ClientContext* context, const ::server::AnimationFilter* request, ::server::ListAnimationsResponse* response, std::function<void(::grpc::Status)>) = 0;
       virtual void ListAnimations(::grpc::ClientContext* context, const ::server::AnimationFilter* request, ::server::ListAnimationsResponse* response, ::grpc::ClientUnaryReactor* reactor) = 0;
+      virtual void GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId* request, ::server::Animation* response, std::function<void(::grpc::Status)>) = 0;
+      virtual void GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId* request, ::server::Animation* response, ::grpc::ClientUnaryReactor* reactor) = 0;
     };
     typedef class async_interface experimental_async_interface;
     virtual class async_interface* async() { return nullptr; }
@@ -199,6 +208,8 @@ class CreatureServer final {
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::DatabaseInfo>* PrepareAsyncCreateAnimationRaw(::grpc::ClientContext* context, const ::server::Animation& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::ListAnimationsResponse>* AsyncListAnimationsRaw(::grpc::ClientContext* context, const ::server::AnimationFilter& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::ListAnimationsResponse>* PrepareAsyncListAnimationsRaw(::grpc::ClientContext* context, const ::server::AnimationFilter& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::Animation>* AsyncGetAnimationRaw(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientAsyncResponseReaderInterface< ::server::Animation>* PrepareAsyncGetAnimationRaw(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) = 0;
   };
   class Stub final : public StubInterface {
    public:
@@ -284,6 +295,13 @@ class CreatureServer final {
     std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::ListAnimationsResponse>> PrepareAsyncListAnimations(::grpc::ClientContext* context, const ::server::AnimationFilter& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::ListAnimationsResponse>>(PrepareAsyncListAnimationsRaw(context, request, cq));
     }
+    ::grpc::Status GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId& request, ::server::Animation* response) override;
+    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::Animation>> AsyncGetAnimation(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::Animation>>(AsyncGetAnimationRaw(context, request, cq));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::Animation>> PrepareAsyncGetAnimation(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::server::Animation>>(PrepareAsyncGetAnimationRaw(context, request, cq));
+    }
     class async final :
       public StubInterface::async_interface {
      public:
@@ -307,6 +325,8 @@ class CreatureServer final {
       void CreateAnimation(::grpc::ClientContext* context, const ::server::Animation* request, ::server::DatabaseInfo* response, ::grpc::ClientUnaryReactor* reactor) override;
       void ListAnimations(::grpc::ClientContext* context, const ::server::AnimationFilter* request, ::server::ListAnimationsResponse* response, std::function<void(::grpc::Status)>) override;
       void ListAnimations(::grpc::ClientContext* context, const ::server::AnimationFilter* request, ::server::ListAnimationsResponse* response, ::grpc::ClientUnaryReactor* reactor) override;
+      void GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId* request, ::server::Animation* response, std::function<void(::grpc::Status)>) override;
+      void GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId* request, ::server::Animation* response, ::grpc::ClientUnaryReactor* reactor) override;
      private:
       friend class Stub;
       explicit async(Stub* stub): stub_(stub) { }
@@ -342,6 +362,8 @@ class CreatureServer final {
     ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* PrepareAsyncCreateAnimationRaw(::grpc::ClientContext* context, const ::server::Animation& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::server::ListAnimationsResponse>* AsyncListAnimationsRaw(::grpc::ClientContext* context, const ::server::AnimationFilter& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::server::ListAnimationsResponse>* PrepareAsyncListAnimationsRaw(::grpc::ClientContext* context, const ::server::AnimationFilter& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientAsyncResponseReader< ::server::Animation>* AsyncGetAnimationRaw(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientAsyncResponseReader< ::server::Animation>* PrepareAsyncGetAnimationRaw(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) override;
     const ::grpc::internal::RpcMethod rpcmethod_GetCreature_;
     const ::grpc::internal::RpcMethod rpcmethod_GetAllCreatures_;
     const ::grpc::internal::RpcMethod rpcmethod_CreateCreature_;
@@ -353,6 +375,7 @@ class CreatureServer final {
     const ::grpc::internal::RpcMethod rpcmethod_GetServerStatus_;
     const ::grpc::internal::RpcMethod rpcmethod_CreateAnimation_;
     const ::grpc::internal::RpcMethod rpcmethod_ListAnimations_;
+    const ::grpc::internal::RpcMethod rpcmethod_GetAnimation_;
   };
   static std::unique_ptr<Stub> NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options = ::grpc::StubOptions());
 
@@ -385,6 +408,7 @@ class CreatureServer final {
     // *
     // Returns a list of the animations that match a filter
     virtual ::grpc::Status ListAnimations(::grpc::ServerContext* context, const ::server::AnimationFilter* request, ::server::ListAnimationsResponse* response);
+    virtual ::grpc::Status GetAnimation(::grpc::ServerContext* context, const ::server::AnimationId* request, ::server::Animation* response);
   };
   template <class BaseClass>
   class WithAsyncMethod_GetCreature : public BaseClass {
@@ -606,7 +630,27 @@ class CreatureServer final {
       ::grpc::Service::RequestAsyncUnary(10, context, request, response, new_call_cq, notification_cq, tag);
     }
   };
-  typedef WithAsyncMethod_GetCreature<WithAsyncMethod_GetAllCreatures<WithAsyncMethod_CreateCreature<WithAsyncMethod_UpdateCreature<WithAsyncMethod_StreamLogs<WithAsyncMethod_SearchCreatures<WithAsyncMethod_ListCreatures<WithAsyncMethod_StreamFrames<WithAsyncMethod_GetServerStatus<WithAsyncMethod_CreateAnimation<WithAsyncMethod_ListAnimations<Service > > > > > > > > > > > AsyncService;
+  template <class BaseClass>
+  class WithAsyncMethod_GetAnimation : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithAsyncMethod_GetAnimation() {
+      ::grpc::Service::MarkMethodAsync(11);
+    }
+    ~WithAsyncMethod_GetAnimation() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status GetAnimation(::grpc::ServerContext* /*context*/, const ::server::AnimationId* /*request*/, ::server::Animation* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestGetAnimation(::grpc::ServerContext* context, ::server::AnimationId* request, ::grpc::ServerAsyncResponseWriter< ::server::Animation>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncUnary(11, context, request, response, new_call_cq, notification_cq, tag);
+    }
+  };
+  typedef WithAsyncMethod_GetCreature<WithAsyncMethod_GetAllCreatures<WithAsyncMethod_CreateCreature<WithAsyncMethod_UpdateCreature<WithAsyncMethod_StreamLogs<WithAsyncMethod_SearchCreatures<WithAsyncMethod_ListCreatures<WithAsyncMethod_StreamFrames<WithAsyncMethod_GetServerStatus<WithAsyncMethod_CreateAnimation<WithAsyncMethod_ListAnimations<WithAsyncMethod_GetAnimation<Service > > > > > > > > > > > > AsyncService;
   template <class BaseClass>
   class WithCallbackMethod_GetCreature : public BaseClass {
    private:
@@ -894,7 +938,34 @@ class CreatureServer final {
     virtual ::grpc::ServerUnaryReactor* ListAnimations(
       ::grpc::CallbackServerContext* /*context*/, const ::server::AnimationFilter* /*request*/, ::server::ListAnimationsResponse* /*response*/)  { return nullptr; }
   };
-  typedef WithCallbackMethod_GetCreature<WithCallbackMethod_GetAllCreatures<WithCallbackMethod_CreateCreature<WithCallbackMethod_UpdateCreature<WithCallbackMethod_StreamLogs<WithCallbackMethod_SearchCreatures<WithCallbackMethod_ListCreatures<WithCallbackMethod_StreamFrames<WithCallbackMethod_GetServerStatus<WithCallbackMethod_CreateAnimation<WithCallbackMethod_ListAnimations<Service > > > > > > > > > > > CallbackService;
+  template <class BaseClass>
+  class WithCallbackMethod_GetAnimation : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithCallbackMethod_GetAnimation() {
+      ::grpc::Service::MarkMethodCallback(11,
+          new ::grpc::internal::CallbackUnaryHandler< ::server::AnimationId, ::server::Animation>(
+            [this](
+                   ::grpc::CallbackServerContext* context, const ::server::AnimationId* request, ::server::Animation* response) { return this->GetAnimation(context, request, response); }));}
+    void SetMessageAllocatorFor_GetAnimation(
+        ::grpc::MessageAllocator< ::server::AnimationId, ::server::Animation>* allocator) {
+      ::grpc::internal::MethodHandler* const handler = ::grpc::Service::GetHandler(11);
+      static_cast<::grpc::internal::CallbackUnaryHandler< ::server::AnimationId, ::server::Animation>*>(handler)
+              ->SetMessageAllocator(allocator);
+    }
+    ~WithCallbackMethod_GetAnimation() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status GetAnimation(::grpc::ServerContext* /*context*/, const ::server::AnimationId* /*request*/, ::server::Animation* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerUnaryReactor* GetAnimation(
+      ::grpc::CallbackServerContext* /*context*/, const ::server::AnimationId* /*request*/, ::server::Animation* /*response*/)  { return nullptr; }
+  };
+  typedef WithCallbackMethod_GetCreature<WithCallbackMethod_GetAllCreatures<WithCallbackMethod_CreateCreature<WithCallbackMethod_UpdateCreature<WithCallbackMethod_StreamLogs<WithCallbackMethod_SearchCreatures<WithCallbackMethod_ListCreatures<WithCallbackMethod_StreamFrames<WithCallbackMethod_GetServerStatus<WithCallbackMethod_CreateAnimation<WithCallbackMethod_ListAnimations<WithCallbackMethod_GetAnimation<Service > > > > > > > > > > > > CallbackService;
   typedef CallbackService ExperimentalCallbackService;
   template <class BaseClass>
   class WithGenericMethod_GetCreature : public BaseClass {
@@ -1079,6 +1150,23 @@ class CreatureServer final {
     }
     // disable synchronous version of this method
     ::grpc::Status ListAnimations(::grpc::ServerContext* /*context*/, const ::server::AnimationFilter* /*request*/, ::server::ListAnimationsResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+  };
+  template <class BaseClass>
+  class WithGenericMethod_GetAnimation : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithGenericMethod_GetAnimation() {
+      ::grpc::Service::MarkMethodGeneric(11);
+    }
+    ~WithGenericMethod_GetAnimation() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status GetAnimation(::grpc::ServerContext* /*context*/, const ::server::AnimationId* /*request*/, ::server::Animation* /*response*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
@@ -1301,6 +1389,26 @@ class CreatureServer final {
     }
     void RequestListAnimations(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncResponseWriter< ::grpc::ByteBuffer>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
       ::grpc::Service::RequestAsyncUnary(10, context, request, response, new_call_cq, notification_cq, tag);
+    }
+  };
+  template <class BaseClass>
+  class WithRawMethod_GetAnimation : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawMethod_GetAnimation() {
+      ::grpc::Service::MarkMethodRaw(11);
+    }
+    ~WithRawMethod_GetAnimation() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status GetAnimation(::grpc::ServerContext* /*context*/, const ::server::AnimationId* /*request*/, ::server::Animation* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestGetAnimation(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncResponseWriter< ::grpc::ByteBuffer>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncUnary(11, context, request, response, new_call_cq, notification_cq, tag);
     }
   };
   template <class BaseClass>
@@ -1546,6 +1654,28 @@ class CreatureServer final {
       ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/, ::grpc::ByteBuffer* /*response*/)  { return nullptr; }
   };
   template <class BaseClass>
+  class WithRawCallbackMethod_GetAnimation : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawCallbackMethod_GetAnimation() {
+      ::grpc::Service::MarkMethodRawCallback(11,
+          new ::grpc::internal::CallbackUnaryHandler< ::grpc::ByteBuffer, ::grpc::ByteBuffer>(
+            [this](
+                   ::grpc::CallbackServerContext* context, const ::grpc::ByteBuffer* request, ::grpc::ByteBuffer* response) { return this->GetAnimation(context, request, response); }));
+    }
+    ~WithRawCallbackMethod_GetAnimation() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status GetAnimation(::grpc::ServerContext* /*context*/, const ::server::AnimationId* /*request*/, ::server::Animation* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerUnaryReactor* GetAnimation(
+      ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/, ::grpc::ByteBuffer* /*response*/)  { return nullptr; }
+  };
+  template <class BaseClass>
   class WithStreamedUnaryMethod_GetCreature : public BaseClass {
    private:
     void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
@@ -1788,7 +1918,34 @@ class CreatureServer final {
     // replace default version of method with streamed unary
     virtual ::grpc::Status StreamedListAnimations(::grpc::ServerContext* context, ::grpc::ServerUnaryStreamer< ::server::AnimationFilter,::server::ListAnimationsResponse>* server_unary_streamer) = 0;
   };
-  typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_GetAllCreatures<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<WithStreamedUnaryMethod_SearchCreatures<WithStreamedUnaryMethod_ListCreatures<WithStreamedUnaryMethod_GetServerStatus<WithStreamedUnaryMethod_CreateAnimation<WithStreamedUnaryMethod_ListAnimations<Service > > > > > > > > > StreamedUnaryService;
+  template <class BaseClass>
+  class WithStreamedUnaryMethod_GetAnimation : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithStreamedUnaryMethod_GetAnimation() {
+      ::grpc::Service::MarkMethodStreamed(11,
+        new ::grpc::internal::StreamedUnaryHandler<
+          ::server::AnimationId, ::server::Animation>(
+            [this](::grpc::ServerContext* context,
+                   ::grpc::ServerUnaryStreamer<
+                     ::server::AnimationId, ::server::Animation>* streamer) {
+                       return this->StreamedGetAnimation(context,
+                         streamer);
+                  }));
+    }
+    ~WithStreamedUnaryMethod_GetAnimation() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable regular version of this method
+    ::grpc::Status GetAnimation(::grpc::ServerContext* /*context*/, const ::server::AnimationId* /*request*/, ::server::Animation* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    // replace default version of method with streamed unary
+    virtual ::grpc::Status StreamedGetAnimation(::grpc::ServerContext* context, ::grpc::ServerUnaryStreamer< ::server::AnimationId,::server::Animation>* server_unary_streamer) = 0;
+  };
+  typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_GetAllCreatures<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<WithStreamedUnaryMethod_SearchCreatures<WithStreamedUnaryMethod_ListCreatures<WithStreamedUnaryMethod_GetServerStatus<WithStreamedUnaryMethod_CreateAnimation<WithStreamedUnaryMethod_ListAnimations<WithStreamedUnaryMethod_GetAnimation<Service > > > > > > > > > > StreamedUnaryService;
   template <class BaseClass>
   class WithSplitStreamingMethod_StreamLogs : public BaseClass {
    private:
@@ -1817,7 +1974,7 @@ class CreatureServer final {
     virtual ::grpc::Status StreamedStreamLogs(::grpc::ServerContext* context, ::grpc::ServerSplitStreamer< ::server::LogFilter,::server::LogItem>* server_split_streamer) = 0;
   };
   typedef WithSplitStreamingMethod_StreamLogs<Service > SplitStreamedService;
-  typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_GetAllCreatures<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<WithSplitStreamingMethod_StreamLogs<WithStreamedUnaryMethod_SearchCreatures<WithStreamedUnaryMethod_ListCreatures<WithStreamedUnaryMethod_GetServerStatus<WithStreamedUnaryMethod_CreateAnimation<WithStreamedUnaryMethod_ListAnimations<Service > > > > > > > > > > StreamedService;
+  typedef WithStreamedUnaryMethod_GetCreature<WithStreamedUnaryMethod_GetAllCreatures<WithStreamedUnaryMethod_CreateCreature<WithStreamedUnaryMethod_UpdateCreature<WithSplitStreamingMethod_StreamLogs<WithStreamedUnaryMethod_SearchCreatures<WithStreamedUnaryMethod_ListCreatures<WithStreamedUnaryMethod_GetServerStatus<WithStreamedUnaryMethod_CreateAnimation<WithStreamedUnaryMethod_ListAnimations<WithStreamedUnaryMethod_GetAnimation<Service > > > > > > > > > > > StreamedService;
 };
 
 }  // namespace server

@@ -238,5 +238,43 @@ namespace creatures {
     }
 
 
+    /**
+     * Loads frame data from MongoDB
+     *
+     * @param doc a bsoncxx::document::view with an element called "frames" to read
+     * @param animation the animation to populate
+     */
+    void Database::populateFramesFromBson(const bsoncxx::document::view &doc, Animation *animation) {
+
+        trace("trying to populate the frames from BSON");
+
+        try {
+            auto framesView = doc["frames"].get_array().value;
+
+            for (const auto &frameElem : framesView) {
+                const bsoncxx::types::b_binary frameBinary = frameElem.get_binary();
+
+                // Ensure the binary data is of the expected subtype
+                if (frameBinary.sub_type != bsoncxx::binary_sub_type::k_binary) {
+                    error("Frame binary data has an unexpected sub-type");
+                    throw DataFormatException("Frame binary data has an unexpected sub-type");
+                }
+
+                // Create a new Frame protobuf message
+                server::Animation::Frame* frame = animation->add_frames();
+
+                // Add the binary data to the bytes field
+                frame->add_bytes(reinterpret_cast<const char*>(frameBinary.bytes), frameBinary.size);
+
+            }
+            trace("loaded {} byte arrays", animation->frames().size());
+        }
+        catch (const bsoncxx::exception& e) {
+            error("Error decoding the animation frames from BSON: {}", e.what());
+            throw DataFormatException(fmt::format("Error decoding the animation frames from BSON: {}", e.what()));
+        }
+    }
+
+
 
 }

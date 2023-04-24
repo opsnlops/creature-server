@@ -526,6 +526,18 @@ public struct Server_Animation {
   fileprivate var _metadata: Server_Animation.Metadata? = nil
 }
 
+public struct Server_AnimationId {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public struct Server_AnimationFilter {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -595,6 +607,7 @@ extension Server_ServerStatus: @unchecked Sendable {}
 extension Server_Animation: @unchecked Sendable {}
 extension Server_Animation.Metadata: @unchecked Sendable {}
 extension Server_Animation.Frame: @unchecked Sendable {}
+extension Server_AnimationId: @unchecked Sendable {}
 extension Server_AnimationFilter: @unchecked Sendable {}
 extension Server_ListAnimationsResponse: @unchecked Sendable {}
 extension Server_AnimationIdentifier: @unchecked Sendable {}
@@ -1398,6 +1411,38 @@ extension Server_Animation.Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageI
 
   public static func ==(lhs: Server_Animation.Frame, rhs: Server_Animation.Frame) -> Bool {
     if lhs.bytes != rhs.bytes {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_AnimationId: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AnimationId"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .standard(proto: "_id"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.id) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularBytesField(value: self.id, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_AnimationId, rhs: Server_AnimationId) -> Bool {
+    if lhs.id != rhs.id {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

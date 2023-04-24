@@ -34,6 +34,7 @@
 using server::Animation;
 using server::Animation_Metadata;
 using server::AnimationFilter;
+using server::AnimationId;
 using server::Creature;
 using server::CreatureFilter;
 using server::CreatureName;
@@ -68,6 +69,8 @@ namespace creatures {
 
         grpc::Status listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList);
 
+        grpc::Status getAnimation(const AnimationId *animationId, Animation *animation);
+
         /**
          * Ping the database to make sure it's alive
          *
@@ -97,6 +100,7 @@ namespace creatures {
         static bsoncxx::document::value metadataToBson(const Animation *animation);
         static uint32_t framesToBson(bsoncxx::builder::stream::document &doc, const Animation *animation);
         static void bsonToAnimationMetadata(const bsoncxx::document::view &doc, Animation_Metadata *metadata);
+        static void populateFramesFromBson(const bsoncxx::document::view &doc, Animation *animation);
     };
 
 

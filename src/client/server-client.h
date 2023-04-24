@@ -26,6 +26,7 @@ using grpc::ClientWriter;
 using server::Animation;
 using server::Animation_Metadata;
 using server::AnimationFilter;
+using server::AnimationId;
 using server::AnimationIdentifier;
 using server::CreatureServer;
 using server::Creature;
@@ -290,8 +291,29 @@ public:
             info("No animations for creature type {} found. (This might be expected!)", filter.type());
         }
         else {
-            error("An error occured while trying to get all of the animations for creature type {}: {} ({})",
+            error("An error occurred while trying to get all of the animations for creature type {}: {} ({})",
                   filter.type(), status.error_message(), status.error_details());
+        }
+
+        return reply;
+    }
+
+    server::Animation GetAnimation(const AnimationId& id) {
+
+        ClientContext context;
+        Animation reply;
+
+        Status status = stub_->GetAnimation(&context, id, &reply);
+
+        if(status.ok()) {
+            debug("Got an OK while loading one animation");
+        }
+        else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
+            info("Animation not found. (This might be expected!)");
+        }
+        else {
+            error("An error happened while loading an animation. ID {}: {} ({})",
+                  id._id(), status.error_message(), status.error_details());
         }
 
         return reply;

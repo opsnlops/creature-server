@@ -216,5 +216,27 @@ int main(int argc, char** argv) {
         info("Found: {}", a.metadata().title());
 
 
+
+    // Attempt to load an animation
+    debug("attempting to load an animation");
+
+    std::string animation_oid_string = "6445ef7e71727101ee0239c7";
+    info("attempting to search for animation ID {} in the database...", animation_oid_string);
+
+    bsoncxx::oid animation_oid(animation_oid_string);
+    AnimationId animationId;
+
+    const char* animation_oid_data = animation_oid.bytes();
+    animationId.set__id(animation_oid_data, bsoncxx::oid::k_oid_length);
+
+    Animation testAnimation = client.GetAnimation(animationId);
+    info("found! Title: {}, number of frames: {}", testAnimation.metadata().title(), testAnimation.frames_size());
+
+    for( const auto& f : testAnimation.frames()) {
+
+        debug("dumping frame...");
+        debug(f.DebugString());
+    }
+
     return 0;
 }

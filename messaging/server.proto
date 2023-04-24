@@ -56,6 +56,8 @@ service CreatureServer {
    */
   rpc ListAnimations(AnimationFilter) returns (ListAnimationsResponse) {}
 
+  rpc GetAnimation(AnimationId) returns (Animation) {}
+
 }
 
 /*
@@ -206,6 +208,10 @@ message Animation {
   bytes _id = 1;
   Metadata metadata = 2;
   repeated Frame frames = 3;
+}
+
+message AnimationId {
+  bytes _id = 1;
 }
 
 message AnimationFilter {

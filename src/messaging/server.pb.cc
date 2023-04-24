@@ -276,6 +276,19 @@ struct AnimationDefaultTypeInternal {
   };
 };
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 AnimationDefaultTypeInternal _Animation_default_instance_;
+PROTOBUF_CONSTEXPR AnimationId::AnimationId(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_._id_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct AnimationIdDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR AnimationIdDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~AnimationIdDefaultTypeInternal() {}
+  union {
+    AnimationId _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 AnimationIdDefaultTypeInternal _AnimationId_default_instance_;
 PROTOBUF_CONSTEXPR AnimationFilter::AnimationFilter(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.type_)*/0
@@ -317,7 +330,7 @@ struct AnimationIdentifierDefaultTypeInternal {
 };
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 AnimationIdentifierDefaultTypeInternal _AnimationIdentifier_default_instance_;
 }  // namespace server
-static ::_pb::Metadata file_level_metadata_server_2eproto[20];
+static ::_pb::Metadata file_level_metadata_server_2eproto[21];
 static const ::_pb::EnumDescriptor* file_level_enum_descriptors_server_2eproto[4];
 static constexpr ::_pb::ServiceDescriptor const** file_level_service_descriptors_server_2eproto = nullptr;
 
@@ -476,6 +489,13 @@ const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(p
   PROTOBUF_FIELD_OFFSET(::server::Animation, _impl_.metadata_),
   PROTOBUF_FIELD_OFFSET(::server::Animation, _impl_.frames_),
   ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::server::AnimationId, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::server::AnimationId, _impl_._id_),
+  ~0u,  // no _has_bits_
   PROTOBUF_FIELD_OFFSET(::server::AnimationFilter, _internal_metadata_),
   ~0u,  // no _extensions_
   ~0u,  // no _oneof_case_
@@ -516,9 +536,10 @@ static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protode
   { 125, -1, -1, sizeof(::server::Animation_Metadata)},
   { 137, -1, -1, sizeof(::server::Animation_Frame)},
   { 144, -1, -1, sizeof(::server::Animation)},
-  { 153, -1, -1, sizeof(::server::AnimationFilter)},
-  { 160, -1, -1, sizeof(::server::ListAnimationsResponse)},
-  { 167, -1, -1, sizeof(::server::AnimationIdentifier)},
+  { 153, -1, -1, sizeof(::server::AnimationId)},
+  { 160, -1, -1, sizeof(::server::AnimationFilter)},
+  { 167, -1, -1, sizeof(::server::ListAnimationsResponse)},
+  { 174, -1, -1, sizeof(::server::AnimationIdentifier)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
@@ -539,6 +560,7 @@ static const ::_pb::Message* const file_default_instances[] = {
   &::server::_Animation_Metadata_default_instance_._instance,
   &::server::_Animation_Frame_default_instance_._instance,
   &::server::_Animation_default_instance_._instance,
+  &::server::_AnimationId_default_instance_._instance,
   &::server::_AnimationFilter_default_instance_._instance,
   &::server::_ListAnimationsResponse_default_instance_._instance,
   &::server::_AnimationIdentifier_default_instance_._instance,
@@ -585,38 +607,40 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "r_frame\030\002 \001(\005\022\030\n\020number_of_frames\030\003 \001(\005\022"
   "+\n\rcreature_type\030\004 \001(\0162\024.server.Creature"
   "Type\022\030\n\020number_of_motors\030\005 \001(\005\022\r\n\005notes\030"
-  "\006 \001(\t\032\026\n\005Frame\022\r\n\005bytes\030\001 \003(\014\"5\n\017Animati"
-  "onFilter\022\"\n\004type\030\001 \001(\0162\024.server.Creature"
-  "Type\"I\n\026ListAnimationsResponse\022/\n\nanimat"
-  "ions\030\001 \003(\0132\033.server.AnimationIdentifier\""
-  "P\n\023AnimationIdentifier\022\013\n\003_id\030\001 \001(\014\022,\n\010m"
-  "etadata\030\002 \001(\0132\032.server.Animation.Metadat"
-  "a*c\n\010LogLevel\022\t\n\005trace\020\000\022\t\n\005debug\020\001\022\010\n\004i"
-  "nfo\020\002\022\010\n\004warn\020\003\022\t\n\005error\020\004\022\014\n\010critical\020\005"
-  "\022\007\n\003off\020\006\022\013\n\007unknown\020\007*\036\n\006SortBy\022\010\n\004name"
-  "\020\000\022\n\n\006number\020\001*6\n\014CreatureType\022\n\n\006parrot"
-  "\020\000\022\016\n\nwled_light\020\001\022\n\n\005other\020\347\0072\322\005\n\016Creat"
-  "ureServer\0225\n\013GetCreature\022\022.server.Creatu"
-  "reId\032\020.server.Creature\"\000\022L\n\017GetAllCreatu"
-  "res\022\026.server.CreatureFilter\032\037.server.Get"
-  "AllCreaturesResponse\"\000\022:\n\016CreateCreature"
-  "\022\020.server.Creature\032\024.server.DatabaseInfo"
-  "\"\000\022:\n\016UpdateCreature\022\020.server.Creature\032\024"
-  ".server.DatabaseInfo\"\000\0224\n\nStreamLogs\022\021.s"
-  "erver.LogFilter\032\017.server.LogItem\"\0000\001\022;\n\017"
-  "SearchCreatures\022\024.server.CreatureName\032\020."
-  "server.Creature\"\000\022H\n\rListCreatures\022\026.ser"
-  "ver.CreatureFilter\032\035.server.ListCreature"
-  "sResponse\"\000\0228\n\014StreamFrames\022\r.server.Fra"
-  "me\032\025.server.FrameResponse\"\000(\001\022A\n\017GetServ"
-  "erStatus\022\026.google.protobuf.Empty\032\024.serve"
-  "r.ServerStatus\"\000\022<\n\017CreateAnimation\022\021.se"
-  "rver.Animation\032\024.server.DatabaseInfo\"\000\022K"
-  "\n\016ListAnimations\022\027.server.AnimationFilte"
-  "r\032\036.server.ListAnimationsResponse\"\000BT\n\034i"
-  "o.opsnlops.creatures.serverB\022NetworkServ"
-  "erProtoH\001P\001Z\034opsnlops.io/creatures/serve"
-  "rb\006proto3"
+  "\006 \001(\t\032\026\n\005Frame\022\r\n\005bytes\030\001 \003(\014\"\032\n\013Animati"
+  "onId\022\013\n\003_id\030\001 \001(\014\"5\n\017AnimationFilter\022\"\n\004"
+  "type\030\001 \001(\0162\024.server.CreatureType\"I\n\026List"
+  "AnimationsResponse\022/\n\nanimations\030\001 \003(\0132\033"
+  ".server.AnimationIdentifier\"P\n\023Animation"
+  "Identifier\022\013\n\003_id\030\001 \001(\014\022,\n\010metadata\030\002 \001("
+  "\0132\032.server.Animation.Metadata*c\n\010LogLeve"
+  "l\022\t\n\005trace\020\000\022\t\n\005debug\020\001\022\010\n\004info\020\002\022\010\n\004war"
+  "n\020\003\022\t\n\005error\020\004\022\014\n\010critical\020\005\022\007\n\003off\020\006\022\013\n"
+  "\007unknown\020\007*\036\n\006SortBy\022\010\n\004name\020\000\022\n\n\006number"
+  "\020\001*6\n\014CreatureType\022\n\n\006parrot\020\000\022\016\n\nwled_l"
+  "ight\020\001\022\n\n\005other\020\347\0072\214\006\n\016CreatureServer\0225\n"
+  "\013GetCreature\022\022.server.CreatureId\032\020.serve"
+  "r.Creature\"\000\022L\n\017GetAllCreatures\022\026.server"
+  ".CreatureFilter\032\037.server.GetAllCreatures"
+  "Response\"\000\022:\n\016CreateCreature\022\020.server.Cr"
+  "eature\032\024.server.DatabaseInfo\"\000\022:\n\016Update"
+  "Creature\022\020.server.Creature\032\024.server.Data"
+  "baseInfo\"\000\0224\n\nStreamLogs\022\021.server.LogFil"
+  "ter\032\017.server.LogItem\"\0000\001\022;\n\017SearchCreatu"
+  "res\022\024.server.CreatureName\032\020.server.Creat"
+  "ure\"\000\022H\n\rListCreatures\022\026.server.Creature"
+  "Filter\032\035.server.ListCreaturesResponse\"\000\022"
+  "8\n\014StreamFrames\022\r.server.Frame\032\025.server."
+  "FrameResponse\"\000(\001\022A\n\017GetServerStatus\022\026.g"
+  "oogle.protobuf.Empty\032\024.server.ServerStat"
+  "us\"\000\022<\n\017CreateAnimation\022\021.server.Animati"
+  "on\032\024.server.DatabaseInfo\"\000\022K\n\016ListAnimat"
+  "ions\022\027.server.AnimationFilter\032\036.server.L"
+  "istAnimationsResponse\"\000\0228\n\014GetAnimation\022"
+  "\023.server.AnimationId\032\021.server.Animation\""
+  "\000BT\n\034io.opsnlops.creatures.serverB\022Netwo"
+  "rkServerProtoH\001P\001Z\034opsnlops.io/creatures"
+  "/serverb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -624,9 +648,9 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 2849, descriptor_table_protodef_server_2eproto,
+    false, false, 2935, descriptor_table_protodef_server_2eproto,
     "server.proto",
-    &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 20,
+    &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 21,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,
     file_level_metadata_server_2eproto, file_level_enum_descriptors_server_2eproto,
     file_level_service_descriptors_server_2eproto,
@@ -5283,6 +5307,204 @@ void Animation::InternalSwap(Animation* other) {
 
 // ===================================================================
 
+class AnimationId::_Internal {
+ public:
+};
+
+AnimationId::AnimationId(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:server.AnimationId)
+}
+AnimationId::AnimationId(const AnimationId& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  AnimationId* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_._id_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_._id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_._id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal__id().empty()) {
+    _this->_impl_._id_.Set(from._internal__id(), 
+      _this->GetArenaForAllocation());
+  }
+  // @@protoc_insertion_point(copy_constructor:server.AnimationId)
+}
+
+inline void AnimationId::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_._id_){}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_._id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_._id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+AnimationId::~AnimationId() {
+  // @@protoc_insertion_point(destructor:server.AnimationId)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void AnimationId::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_._id_.Destroy();
+}
+
+void AnimationId::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void AnimationId::Clear() {
+// @@protoc_insertion_point(message_clear_start:server.AnimationId)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_._id_.ClearToEmpty();
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* AnimationId::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // bytes _id = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
+          auto str = _internal_mutable__id();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* AnimationId::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:server.AnimationId)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // bytes _id = 1;
+  if (!this->_internal__id().empty()) {
+    target = stream->WriteBytesMaybeAliased(
+        1, this->_internal__id(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:server.AnimationId)
+  return target;
+}
+
+size_t AnimationId::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:server.AnimationId)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // bytes _id = 1;
+  if (!this->_internal__id().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::BytesSize(
+        this->_internal__id());
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData AnimationId::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    AnimationId::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*AnimationId::GetClassData() const { return &_class_data_; }
+
+
+void AnimationId::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<AnimationId*>(&to_msg);
+  auto& from = static_cast<const AnimationId&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:server.AnimationId)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal__id().empty()) {
+    _this->_internal_set__id(from._internal__id());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void AnimationId::CopyFrom(const AnimationId& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:server.AnimationId)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool AnimationId::IsInitialized() const {
+  return true;
+}
+
+void AnimationId::InternalSwap(AnimationId* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_._id_, lhs_arena,
+      &other->_impl_._id_, rhs_arena
+  );
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata AnimationId::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
+      file_level_metadata_server_2eproto[17]);
+}
+
+// ===================================================================
+
 class AnimationFilter::_Internal {
  public:
 };
@@ -5459,7 +5681,7 @@ void AnimationFilter::InternalSwap(AnimationFilter* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata AnimationFilter::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[17]);
+      file_level_metadata_server_2eproto[18]);
 }
 
 // ===================================================================
@@ -5644,7 +5866,7 @@ void ListAnimationsResponse::InternalSwap(ListAnimationsResponse* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata ListAnimationsResponse::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[18]);
+      file_level_metadata_server_2eproto[19]);
 }
 
 // ===================================================================
@@ -5884,7 +6106,7 @@ void AnimationIdentifier::InternalSwap(AnimationIdentifier* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata AnimationIdentifier::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
-      file_level_metadata_server_2eproto[19]);
+      file_level_metadata_server_2eproto[20]);
 }
 
 // @@protoc_insertion_point(namespace_scope)
@@ -5957,6 +6179,10 @@ Arena::CreateMaybeMessage< ::server::Animation_Frame >(Arena* arena) {
 template<> PROTOBUF_NOINLINE ::server::Animation*
 Arena::CreateMaybeMessage< ::server::Animation >(Arena* arena) {
   return Arena::CreateMessageInternal< ::server::Animation >(arena);
+}
+template<> PROTOBUF_NOINLINE ::server::AnimationId*
+Arena::CreateMaybeMessage< ::server::AnimationId >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::server::AnimationId >(arena);
 }
 template<> PROTOBUF_NOINLINE ::server::AnimationFilter*
 Arena::CreateMaybeMessage< ::server::AnimationFilter >(Arena* arena) {
