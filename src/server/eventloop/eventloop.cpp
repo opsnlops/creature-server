@@ -3,6 +3,7 @@
 #include <thread>
 #include <atomic>
 #include <csignal>
+#include <memory>
 
 #include "spdlog/spdlog.h"
 
