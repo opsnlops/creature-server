@@ -1,7 +1,7 @@
 
 #include "spdlog/spdlog.h"
 
-#include <cstring>
+#include <string>
 #include <utility>
 
 #include "server/dmx.h"

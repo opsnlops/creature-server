@@ -23,12 +23,27 @@ extern std::atomic<bool> eventLoopRunning;
 
 namespace creatures {
 
-    EventLoop::EventLoop() {
+    EventLoop::EventLoop()  : eventScheduler(std::make_unique<EventScheduler>()) {
         debug("event loop created");
+
     }
 
     EventLoop::~EventLoop() {
+
+        eventLoopThread.join();
         debug("farewell, event loop!");
+    }
+
+
+
+
+    void EventLoop::run() {
+
+        frameCount = 0;
+
+        debug("firing off event loop thread!");
+        eventLoopThread = std::thread(&creatures::EventLoop::main_loop, this);
+        debug("event loop thread running!");
     }
 
 
@@ -42,7 +57,10 @@ namespace creatures {
 
         while (eventLoopRunning) {
 
-            debug("⌚️ tick");
+            // Increment the frame counter for this pass
+            frameCount++;
+
+            //debug("⌚️ tick");
 
 
 
@@ -68,5 +86,13 @@ namespace creatures {
 
     }
 
+
+    uint64_t EventLoop::getCurrentFrameNumber() const {
+        return frameCount;
+    }
+
+    void EventLoop::scheduleEvent(std::shared_ptr<Event> e) {
+        eventScheduler->event_queue.push(e);
+    }
 
 }

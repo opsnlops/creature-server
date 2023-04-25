@@ -26,7 +26,8 @@ Status creatures::CreatureServerImpl::StreamFrames(ServerContext* context,
 
     // Grab the first one now, so we can set up the DMX client
     reader->Read(&frame);
-    DMX* sender = new DMX();
+    auto sender = std::make_unique<DMX>();
+    trace("sender made");
 
     sender->init(frame.sacn_ip(), frame.universe(), frame.number_of_motors());
     info("sending frames to {}", frame.creature_name());
@@ -55,7 +56,6 @@ Status creatures::CreatureServerImpl::StreamFrames(ServerContext* context,
     } while (reader->Read(&frame));
 
     info("end of frames from client. {} total", frame_count);
-    delete sender;
 
     // Set the response
     response->set_frames_processed(frame_count);

@@ -45,7 +45,7 @@ using creatures::EventLoop;
 using moodycamel::ConcurrentQueue;
 
 std::atomic<bool> eventLoopRunning{true};
-Database *db{};
+std::shared_ptr<Database> db{};
 
 
 // Signal handler to stop the event loop
@@ -76,7 +76,9 @@ void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue) {
 
 int main(int argc, char **argv) {
 
-    // Configure logging
+    // Fire up the signal handlers
+    std::signal(SIGINT, signal_handler);
+
 
     // Console logger
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
@@ -103,15 +105,15 @@ int main(int argc, char **argv) {
     mongocxx::pool mongo_pool(uri);
 
     // Start up the database
-    db = new Database(mongo_pool);
+    db = std::make_shared<Database>(mongo_pool);
 
     // Start up the event loop
-    std::thread eventLoopThread(&creatures::EventLoop::main_loop);
-
+    std::unique_ptr<EventLoop> eventLoop = std::make_unique<EventLoop>();
+    eventLoop->run();
 
 
     info("starting server on port {}", 6666);
     RunServer(6666, log_queue);
-    eventLoopThread.join();
+
     return 0;
 }
