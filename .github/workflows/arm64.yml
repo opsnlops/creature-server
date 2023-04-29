@@ -7,8 +7,8 @@ on:
     branches: [ "main" ]
 
 jobs:
+  build:
     runs-on: buildjet-4vcpu-ubuntu-2204-arm
-    build:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -26,4 +26,3 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ${{ secrets.DOCKER_LOGIN_USERNAME }}/creature-server:arm64
-  
