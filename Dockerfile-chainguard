@@ -1,0 +1,81 @@
+
+
+# docker buildx build --platform linux/amd64,linux/arm64
+
+FROM cgr.dev/chainguard/wolfi-base as build
+
+RUN apk update && \
+    apk add gcc glibc-dev ninja cmake pkgconf protobuf-dev libsystemd libzstd1 zlib openssl-dev cyrus-sasl-dev git perl-dev
+
+
+# Install the latest Mongo driver
+RUN mkdir -p /build/mongo
+ADD https://github.com/mongodb/mongo-c-driver/releases/download/1.23.3/mongo-c-driver-1.23.3.tar.gz /build/mongo/c-driver.tar.gz
+ADD https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.7.1/mongo-cxx-driver-r3.7.1.tar.gz /build/mongo/cxx-driver.tar.gz
+RUN cd /build/mongo && tar -xzvf c-driver.tar.gz && tar -xzvf cxx-driver.tar.gz
+
+RUN cd /build/mongo/mongo-c-driver-1.23.3/build && \
+    cmake -DENABLE_STATIC=ON -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
+    ninja && \
+    ninja install
+
+RUN cd /build/mongo/mongo-cxx-driver-r3.7.1/build && \
+    cmake -DENABLE_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
+    ninja && \
+    ninja install
+
+# spdlog
+RUN mkdir -p /build/spdlog && cd /build/spdlog && git clone https://github.com/gabime/spdlog.git && \
+    cd spdlog && mkdir build && cd build && \
+    cmake -DENABLE_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
+    ninja && ninja install
+
+# fmt
+RUN mkdir -p /build/fmt
+ADD https://github.com/fmtlib/fmt/archive/refs/tags/9.1.0.tar.gz /build/fmt
+RUN cd /build/fmt && tar -xzvf 9.1.0.tar.gz
+RUN cd /build/fmt/fmt-9.1.0 && \
+    mkdir build && cd build && \
+    cmake -DENABLE_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
+    ninja && ninja install
+
+# SDL
+RUN mkdir -p /build/sdl
+ADD https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.26.5.tar.gz /build/sdl
+RUN cd /build/sdl && tar -xzvf release-2.26.5.tar.gz
+RUN cd /build/sdl/SDL-release-2.26.5 && \
+    mkdir build && cd build && \
+    cmake -DENABLE_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
+    ninja && ninja install
+
+
+
+
+# Build our stuff
+RUN mkdir -p /build/creature-server/src /build/creature-server/messaging
+COPY src/ /build/creature-server/src
+COPY messaging/ /build/creature-server/messaging
+COPY CMakeLists.txt /build/creature-server/
+RUN ls -lart /build/creature-server/
+RUN cd /build/creature-server && \
+    mkdir build && \
+    cd build && \
+    cmake -DENABLE_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
+    ninja
+
+
+# Now build a small runtime
+FROM cgr.dev/chainguard/wolfi-base:latest as runtime
+
+# Some of our libs need runtime bits
+RUN apk update && \
+    apk add libprotobuf libsystemd libzstd1 zlib openssl cyrus-sasl
+
+#RUN mkdir /app
+COPY --from=build /app /app
+COPY --from=build /build/creature-server/build/creature-server /app/creature-server
+COPY --from=build /build/creature-server/build/mongo-test /app/mongo-test
+
+EXPOSE 6666
+
+CMD ["/app/creature-server"]
