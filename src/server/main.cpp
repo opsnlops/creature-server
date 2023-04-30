@@ -1,28 +1,26 @@
 
-#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <atomic>
 #include <csignal>
 
+// gRPC
 #include "absl/strings/str_format.h"
 #include <grpcpp/grpcpp.h>
 #include "messaging/server.grpc.pb.h"
 
+// spdlog
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
-#include "spdlog/common.h"
 
-
+// Our stuff
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/logging/concurrentqueue.h"
 #include "server/logging/creature_log_sink.h"
 
-#include "exception/exception.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -44,14 +42,25 @@ using creatures::EventLoop;
 
 using moodycamel::ConcurrentQueue;
 
-std::atomic<bool> eventLoopRunning{true};
-std::shared_ptr<Database> db{};
+namespace creatures {
+    std::atomic<bool> eventLoopRunning{true};
+    std::shared_ptr<Database> db{};
+    std::unique_ptr<Server> grpcServer;
+}
 
 
 // Signal handler to stop the event loop
 void signal_handler(int signal) {
     if (signal == SIGINT) {
-        eventLoopRunning = false;
+        info("stopping the event loop");
+        creatures::eventLoopRunning = false;
+
+        // If the server is running, stop it
+        if(creatures::grpcServer) {
+            info("stopping the gRPC service");
+            creatures::grpcServer->Shutdown(std::chrono::system_clock::now());
+            creatures::grpcServer.reset();
+        }
     }
 }
 
@@ -61,16 +70,14 @@ void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue) {
     creatures::CreatureServerImpl service(log_queue);
 
     ServerBuilder builder;
-    // Listen on the given address without any authentication mechanism.
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-    // Register "service" as the instance through which we'll communicate with
-    // clients. In this case it corresponds to an *synchronous* service.
     builder.RegisterService(&service);
-    // Finally assemble the server.
-    std::unique_ptr<Server> server(builder.BuildAndStart());
+
+    // 🚜 Build and start!
+    creatures::grpcServer = builder.BuildAndStart();
     info("Server listening on {}", server_address);
 
-    server->Wait();
+    creatures::grpcServer->Wait();
     info("Bye!");
 }
 
@@ -105,12 +112,11 @@ int main(int argc, char **argv) {
     mongocxx::pool mongo_pool(uri);
 
     // Start up the database
-    db = std::make_shared<Database>(mongo_pool);
+    creatures::db = std::make_shared<Database>(mongo_pool);
 
     // Start up the event loop
     std::unique_ptr<EventLoop> eventLoop = std::make_unique<EventLoop>();
     eventLoop->run();
-
 
     info("starting server on port {}", 6666);
     RunServer(6666, log_queue);

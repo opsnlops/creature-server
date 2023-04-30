@@ -29,9 +29,9 @@ using server::Animation_Metadata;
 using server::AnimationFilter;
 using server::ListAnimationsResponse;
 
-extern creatures::Database *db;
-
 namespace creatures {
+
+    extern std::shared_ptr<Database> db;
 
     Status CreatureServerImpl::ListAnimations(ServerContext *context,
                                               const AnimationFilter *request,

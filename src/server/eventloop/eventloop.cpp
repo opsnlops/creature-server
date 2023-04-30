@@ -19,10 +19,9 @@ using spdlog::warn;
 using spdlog::error;
 using spdlog::critical;
 
-extern std::atomic<bool> eventLoopRunning;
-
-
 namespace creatures {
+
+    extern std::atomic<bool> eventLoopRunning;
 
     EventLoop::EventLoop()  : eventScheduler(std::make_unique<EventScheduler>()) {
         debug("event loop created");

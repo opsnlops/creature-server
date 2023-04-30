@@ -24,7 +24,6 @@
 #include <bsoncxx/document/element.hpp>
 #include <bsoncxx/array/element.hpp>
 #include <mongocxx/cursor.hpp>
-#include <bsoncxx/exception/exception.hpp>
 
 #include <bsoncxx/builder/stream/document.hpp>
 

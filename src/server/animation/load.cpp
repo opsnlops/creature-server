@@ -31,10 +31,10 @@ using server::Animation_Metadata;
 using server::AnimationFilter;
 using server::ListAnimationsResponse;
 
-extern creatures::Database *db;
 
 namespace creatures {
 
+    extern std::shared_ptr<Database> db;
 
     Status CreatureServerImpl::GetAnimation(ServerContext *context, const AnimationId *id, Animation *animation) {
 

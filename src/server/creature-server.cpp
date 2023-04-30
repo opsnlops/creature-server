@@ -12,9 +12,10 @@ using spdlog::error;
 using spdlog::critical;
 using spdlog::trace;
 
-extern creatures::Database *db;
 
 namespace creatures {
+
+    extern std::shared_ptr<Database> db;
 
     Status CreatureServerImpl::SearchCreatures(ServerContext *context, const CreatureName *request, Creature *reply) {
         debug("calling handleSearchCreatures()");

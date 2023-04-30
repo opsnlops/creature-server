@@ -23,11 +23,12 @@ using spdlog::warn;
 using spdlog::error;
 using spdlog::critical;
 
-extern creatures::Database *db;
+
+
 
 namespace creatures {
 
-
+    extern std::shared_ptr<Database> db;
 
     /**
      * Save a new animation in the database
