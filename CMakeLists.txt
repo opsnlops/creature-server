@@ -20,7 +20,11 @@ set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+# fmt
 find_package(fmt REQUIRED)
+set(FMT_LOCALE ON)
+
+# spdlog
 find_package(spdlog REQUIRED)
 
 # Protobuf

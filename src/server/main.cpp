@@ -1,9 +1,10 @@
 
+#include <atomic>
+#include <csignal>
+#include <locale>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <atomic>
-#include <csignal>
 
 // gRPC
 #include "absl/strings/str_format.h"
@@ -33,10 +34,12 @@ using server::CreatureName;
 using server::DatabaseInfo;
 using server::LogItem;
 
-using spdlog::info;
+using spdlog::trace;
 using spdlog::debug;
-using spdlog::critical;
+using spdlog::info;
+using spdlog::warn;
 using spdlog::error;
+using spdlog::critical;
 
 using creatures::Database;
 using creatures::EventLoop;
@@ -83,11 +86,13 @@ void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue) {
     info("Bye!");
 }
 
-int main(int argc, char **argv) {
+int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
 
     // Fire up the signal handlers
     std::signal(SIGINT, signal_handler);
 
+    // Set up our locale
+    std::locale::global(std::locale("en_US.UTF-8"));
 
     // Console logger
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
@@ -105,8 +110,11 @@ int main(int argc, char **argv) {
     // Take over the default logger with our new one
     spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
 
-
+    // Leave some version info to be found
     debug("Hello from spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
+    debug("Using fmt version {}", FMT_VERSION);
+    debug("Using MongoDB C++ driver version {}", MONGOCXX_VERSION_STRING);
+    debug("Using MongoDB URI {}", DB_URI);
 
     // Fire up the Mono client
     mongocxx::instance instance{};
@@ -115,15 +123,14 @@ int main(int argc, char **argv) {
 
     // Start up the database
     creatures::db = std::make_shared<Database>(mongo_pool);
+    debug("Mongo pool up and running");
 
     // Start up the event loop
     creatures::eventLoop = std::make_unique<EventLoop>();
     creatures::eventLoop->run();
 
     // Seed the tick task
-    auto tickEvent = std::make_shared<creatures::TickEvent>(10);
-
-
+    auto tickEvent = std::make_shared<creatures::TickEvent>(10000);
     creatures::eventLoop->scheduleEvent(tickEvent);
 
 
