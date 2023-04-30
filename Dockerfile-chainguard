@@ -66,7 +66,7 @@ FROM cgr.dev/chainguard/wolfi-base:latest as runtime
 
 # Some of our libs need runtime bits
 RUN apk update && \
-    apk add libprotobuf libsystemd libzstd1 zlib openssl cyrus-sasl
+    apk add libprotobuf libsystemd libzstd1 zlib openssl cyrus-sasl glibc-locale-en
 
 #RUN mkdir /app
 COPY --from=build /app /app
