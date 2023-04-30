@@ -7,11 +7,11 @@
 
 namespace creatures {
 
-
-    class TickEvent : public Event {
+    class TickEvent : public EventBase<TickEvent> {
     public:
-        explicit TickEvent(uint64_t frame) : Event(frame) {}
-        void execute() override;
+        using EventBase::EventBase;
+        void executeImpl();
     };
+
 
 }

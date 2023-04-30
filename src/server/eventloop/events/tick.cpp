@@ -1,5 +1,4 @@
 
-
 #include "spdlog/spdlog.h"
 
 #include "server/eventloop/events/types.h"
@@ -19,10 +18,10 @@ namespace creatures {
 
     extern std::shared_ptr<EventLoop> eventLoop;
 
-    void TickEvent::execute() {
+    void TickEvent::executeImpl() {
 
         // Just go tick!
-        debug("⌚️ tick");
+        debug("⌚️ Hello from frame {:L}!", eventLoop->getCurrentFrameNumber());
 
         // Make another event
         auto nextTick = std::make_shared<TickEvent>(this->frameNumber + TICK_TIME_FRAMES);
