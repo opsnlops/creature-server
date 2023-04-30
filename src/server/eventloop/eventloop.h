@@ -1,7 +1,9 @@
 
 #pragma once
 
+#include <queue>
 #include <memory>
+#include <mutex>
 
 #include "spdlog/spdlog.h"
 
@@ -22,7 +24,7 @@ namespace creatures {
 
         void scheduleEvent(std::shared_ptr<Event> e);
 
-        uint64_t getCurrentFrameNumber() const;
+        [[nodiscard]] uint64_t getCurrentFrameNumber() const;
 
     private:
 
@@ -33,6 +35,7 @@ namespace creatures {
         uint64_t frameCount = 0;
 
         std::unique_ptr<EventScheduler> eventScheduler;
+        std::mutex eventQueueMutex;
     };
 
 }

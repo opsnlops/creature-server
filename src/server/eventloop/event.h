@@ -13,7 +13,7 @@ namespace creatures {
      */
     class Event {
     public:
-        virtual ~Event() = default;
+        explicit Event(uint64_t frame) : frameNumber(frame) {}
         virtual void execute() = 0;
 
         uint64_t frameNumber = 0;
@@ -28,8 +28,6 @@ namespace creatures {
     class EventScheduler {
     public:
         EventScheduler() = default;
-
-        void addEvent(std::shared_ptr<Event> e);
         std::priority_queue<std::shared_ptr<Event>, std::vector<std::shared_ptr<Event>>, EventComparator> event_queue;
     };
 

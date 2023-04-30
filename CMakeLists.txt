@@ -54,6 +54,7 @@ file(GLOB SERVER_SRCS
         src/server/creature/*
         src/server/dmx/*
         src/server/eventloop/*
+        src/server/eventloop/events/*
         src/server/logging/*
         )
 

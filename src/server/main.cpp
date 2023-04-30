@@ -18,6 +18,7 @@
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
+#include "server/eventloop/events/types.h"
 #include "server/logging/concurrentqueue.h"
 #include "server/logging/creature_log_sink.h"
 
@@ -46,6 +47,7 @@ namespace creatures {
     std::atomic<bool> eventLoopRunning{true};
     std::shared_ptr<Database> db{};
     std::unique_ptr<Server> grpcServer;
+    std::shared_ptr<EventLoop> eventLoop;
 }
 
 
@@ -115,8 +117,16 @@ int main(int argc, char **argv) {
     creatures::db = std::make_shared<Database>(mongo_pool);
 
     // Start up the event loop
-    std::unique_ptr<EventLoop> eventLoop = std::make_unique<EventLoop>();
-    eventLoop->run();
+    creatures::eventLoop = std::make_unique<EventLoop>();
+    creatures::eventLoop->run();
+
+    // Seed the tick task
+    auto tickEvent = std::make_shared<creatures::TickEvent>(10);
+
+
+    creatures::eventLoop->scheduleEvent(tickEvent);
+
+
 
     info("starting server on port {}", 6666);
     RunServer(6666, log_queue);
