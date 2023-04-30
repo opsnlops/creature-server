@@ -76,7 +76,7 @@ namespace creatures {
          *
          * @return Status::OK if the DB is okay
          */
-        static grpc::Status ping();
+        grpc::Status ping();
 
     private:
         mongocxx::pool &pool;

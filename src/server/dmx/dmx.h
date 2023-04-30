@@ -5,7 +5,7 @@
 #include <iomanip>
 #include <string>
 
-#include "server/e131.h"
+#include "e131.h"
 
 namespace creatures {
 

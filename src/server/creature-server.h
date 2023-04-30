@@ -71,14 +71,7 @@ namespace creatures {
     private:
         ConcurrentQueue<LogItem>& log_queue;
     };
-
-
-    Status handleSearchCreatures(ServerContext *context, const CreatureName *request, Creature *reply);
-    Status handleListCreatures(ServerContext *context, const CreatureFilter *filter, ListCreaturesResponse *response);
-    Status handleGetAllCreatures(ServerContext *context, const CreatureFilter *filter, GetAllCreaturesResponse *response);
-    Status handleGetCreature(ServerContext *context, const CreatureId *id, Creature *reply);
-    Status handleSave(ServerContext *context, const Creature *request, DatabaseInfo *reply);
-
+    
 }
 
 

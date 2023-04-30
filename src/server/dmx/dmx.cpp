@@ -4,7 +4,7 @@
 #include <string>
 #include <utility>
 
-#include "server/dmx.h"
+#include "dmx.h"
 
 using spdlog::info;
 using spdlog::debug;

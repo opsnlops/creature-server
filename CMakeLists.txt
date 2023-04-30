@@ -51,6 +51,8 @@ file(GLOB SERVER_SRCS
         src/messaging/*
         src/server/*
         src/server/animation/*
+        src/server/creature/*
+        src/server/dmx/*
         src/server/eventloop/*
         src/server/logging/*
         )
