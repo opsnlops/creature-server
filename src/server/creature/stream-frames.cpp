@@ -1,10 +1,11 @@
 
 #include "spdlog/spdlog.h"
 
+#include "server/config.h"
 #include "exception/exception.h"
 #include "server/creature-server.h"
-#include "server/dmx/dmx.h"
-
+#include "server/eventloop/eventloop.h"
+#include "server/eventloop/events/types.h"
 
 using spdlog::trace;
 using spdlog::debug;
@@ -26,12 +27,14 @@ namespace creatures {
         Frame frame;
         int32_t frame_count = 0;
 
+        extern std::shared_ptr<EventLoop> eventLoop;
+
         // Grab the first one now, so we can set up the DMX client
         reader->Read(&frame);
-        auto sender = std::make_unique<DMX>();
+        //auto sender = std::make_unique<DMX>();
         trace("sender made");
 
-        sender->init(frame.sacn_ip(), frame.universe(), frame.number_of_motors());
+        //sender->init(frame.sacn_ip(), frame.universe(), frame.number_of_motors());
         info("sending frames to {}", frame.creature_name());
 
         // Process the incoming stream of frames
@@ -39,21 +42,28 @@ namespace creatures {
 
             trace("received frame {} for {}", frame_count, frame.creature_name());
             const std::string &frame_data = frame.frame();
-            uint8_t buffer[frame.number_of_motors()];
 
-            int i = 0;
+            // Create a new event and schedule it for the next frame
+            auto event = std::make_shared<DMXEvent>(eventLoop->getNextFrameNumber());
+            event->clientIP = frame.sacn_ip();
+            event->numMotors = frame.number_of_motors();
+            event->dmxUniverse = frame.universe();
+            event->dmxOffset = frame.dmx_offset();
+            event->data.reserve(frame.number_of_motors());
+
             for (uint8_t byte: frame_data) {
+#if DEBUG_STREAM_FRAMES
                 trace("byte {}: 0x{:02x}", i, byte);
-                buffer[i++] = byte;
+#endif
+                event->data.push_back(byte);
             }
-            trace("frame transmitted");
+            trace("DMX event created");
 
-            sender->send(buffer, frame.number_of_motors());
+            eventLoop->scheduleEvent(event);
 
             // Log a message every 100 frames
             if (++frame_count % 100 == 0)
                 debug("transmitted {} frames to {}", frame_count, frame.creature_name());
-
 
         } while (reader->Read(&frame));
 

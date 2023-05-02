@@ -16,12 +16,15 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 
 // Our stuff
+#include "server/config.h"
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "server/dmx/dmx.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/logging/concurrentqueue.h"
 #include "server/logging/creature_log_sink.h"
+#include "util/cache.h"
 
 
 using grpc::Server;
@@ -51,6 +54,7 @@ namespace creatures {
     std::shared_ptr<Database> db{};
     std::unique_ptr<Server> grpcServer;
     std::shared_ptr<EventLoop> eventLoop;
+    std::shared_ptr<ObjectCache<std::string, DMX>> dmxCache;
 }
 
 
@@ -125,12 +129,16 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     creatures::db = std::make_shared<Database>(mongo_pool);
     debug("Mongo pool up and running");
 
+    // Create the DMX cache
+    creatures::dmxCache = std::make_shared<creatures::ObjectCache<std::string, creatures::DMX>>();
+    debug("DMX cache made");
+
     // Start up the event loop
     creatures::eventLoop = std::make_unique<EventLoop>();
     creatures::eventLoop->run();
 
     // Seed the tick task
-    auto tickEvent = std::make_shared<creatures::TickEvent>(10000);
+    auto tickEvent = std::make_shared<creatures::TickEvent>(TICK_TIME_FRAMES);
     creatures::eventLoop->scheduleEvent(tickEvent);
 
 

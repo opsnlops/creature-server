@@ -4,6 +4,7 @@
 #include <iostream>
 #include <iomanip>
 #include <string>
+#include <vector>
 
 #include "e131.h"
 
@@ -16,7 +17,7 @@ namespace creatures {
         ~DMX();
 
         void init(std::string ip_address, uint32_t universe, uint32_t number_of_motors);
-        void send(uint8_t* data, uint8_t count);
+        void send(const std::vector<uint8_t>& data);
 
     private:
 

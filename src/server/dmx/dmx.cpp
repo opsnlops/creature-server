@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 
+#include "server/config.h"
 #include "dmx.h"
 
 using spdlog::info;
@@ -38,7 +39,7 @@ namespace creatures {
         this->universe = dmx_universe;
         this->ip_address = std::move(client_ip);
 
-        debug("starting up the DMX client: motors: {}, universe: {}, ip: {}", number_of_motors, universe,ip_address);
+        debug("starting up a DMX client: motors: {}, universe: {}, ip: {}", number_of_motors, universe,ip_address);
 
         // create a socket for E1.31
         if ((socketFd = e131_socket()) < 0) {
@@ -62,14 +63,18 @@ namespace creatures {
     }
 
 
-    void DMX::send(uint8_t* data, uint8_t count) {
+    void DMX::send(const std::vector<uint8_t>& data) {
 
-        trace("sending update");
+        trace("sending update {}", packet.frame.seq_number);
 
+        size_t count = data.size();
         for (size_t pos = 0; pos < count; pos++) {
             packet.dmp.prop_val[pos + 1] = data[pos];
+#if DEBUG_DMX_SENDER
             trace("pos {}, data {}", (pos + dmx_offset + 1), data[pos]);
+#endif
         }
+
         if (e131_send(socketFd, &packet, &dest) < 0) {
             error("unable to send e131 packet");
             e131_pkt_dump(stdout, &packet);

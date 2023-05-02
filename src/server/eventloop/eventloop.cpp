@@ -35,9 +35,7 @@ namespace creatures {
         debug("farewell, event loop!");
     }
 
-
-
-
+    
     void EventLoop::run() {
 
         frameCount = 0;
@@ -67,7 +65,7 @@ namespace creatures {
 
                 {
                     std::unique_lock<std::mutex> lock(eventQueueMutex); // Unlocks when it goes out of scope
-                    if (!eventScheduler->event_queue.empty() && eventScheduler->event_queue.top()->frameNumber == frameCount) {
+                    if (!eventScheduler->event_queue.empty() && eventScheduler->event_queue.top()->frameNumber <= frameCount) {
                         event = eventScheduler->event_queue.top();
                         eventScheduler->event_queue.pop();
                     } else {
@@ -77,6 +75,7 @@ namespace creatures {
 
                 if (event) {
                     event->execute();
+                    eventsExecuted++;
                 }
             }
 
@@ -100,6 +99,18 @@ namespace creatures {
 
     uint64_t EventLoop::getCurrentFrameNumber() const {
         return frameCount;
+    }
+
+    uint64_t EventLoop::getNextFrameNumber() const {
+        return frameCount+1;
+    }
+
+    uint32_t EventLoop::getQueueSize() const {
+        return eventScheduler->event_queue.size();
+    }
+
+    uint64_t EventLoop::getEventsExecuted() const {
+        return eventsExecuted;
     }
 
     void EventLoop::scheduleEvent(std::shared_ptr<Event> e) {

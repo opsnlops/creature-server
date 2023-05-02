@@ -60,6 +60,7 @@ file(GLOB SERVER_SRCS
         src/server/eventloop/*
         src/server/eventloop/events/*
         src/server/logging/*
+        src/util/*
         )
 
 file(GLOB clientFiles
