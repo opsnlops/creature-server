@@ -10,7 +10,7 @@
 #include "spdlog/spdlog.h"
 
 
-
+#include "server/config.h"
 #include "server/eventloop/eventloop.h"
 
 
@@ -25,7 +25,7 @@ namespace creatures {
 
     extern std::atomic<bool> eventLoopRunning;
 
-    EventLoop::EventLoop()  : eventScheduler(std::make_unique<EventScheduler>()) {
+    EventLoop::EventLoop() : eventScheduler(std::make_unique<EventScheduler>()) {
         debug("event loop created");
     }
 
@@ -35,7 +35,7 @@ namespace creatures {
         debug("farewell, event loop!");
     }
 
-    
+
     void EventLoop::run() {
 
         frameCount = 0;
@@ -51,7 +51,7 @@ namespace creatures {
         using namespace std::chrono;
         info("✨ eventloop running!");
 
-        auto target_delta = milliseconds(EVENT_LOOP_PERIOD_MS); // defined in eventloop.h
+        auto target_delta = milliseconds(EVENT_LOOP_PERIOD_MS);
         auto next_target_time = high_resolution_clock::now() + target_delta;
 
         while (eventLoopRunning) {
@@ -65,7 +65,8 @@ namespace creatures {
 
                 {
                     std::unique_lock<std::mutex> lock(eventQueueMutex); // Unlocks when it goes out of scope
-                    if (!eventScheduler->event_queue.empty() && eventScheduler->event_queue.top()->frameNumber <= frameCount) {
+                    if (!eventScheduler->event_queue.empty() &&
+                        eventScheduler->event_queue.top()->frameNumber <= frameCount) {
                         event = eventScheduler->event_queue.top();
                         eventScheduler->event_queue.pop();
                     } else {
@@ -73,9 +74,21 @@ namespace creatures {
                     }
                 }
 
-                if (event) {
-                    event->execute();
-                    eventsExecuted++;
+                // Run the event in a try/catch, in case something happens. I don't want one bad event
+                // to bring down the system. I want it to log and keep on going.
+                try {
+
+                    if (event) {
+                        event->execute();
+                        eventsExecuted++;
+                    }
+
+                } catch (const std::runtime_error &e) {
+                    critical("An unhandled runtime error occurred on event {}: {}", eventsExecuted, e.what());
+                } catch (const std::exception &e) {
+                    critical("An unhandled exception was thrown on event {}: {}", eventsExecuted, e.what());
+                } catch (...) {
+                    critical("An unknown error occurred on event {}!", eventsExecuted);
                 }
             }
 
@@ -102,7 +115,7 @@ namespace creatures {
     }
 
     uint64_t EventLoop::getNextFrameNumber() const {
-        return frameCount+1;
+        return frameCount + 1;
     }
 
     uint32_t EventLoop::getQueueSize() const {

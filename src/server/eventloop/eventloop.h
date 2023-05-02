@@ -9,8 +9,6 @@
 
 #include "server/eventloop/event.h"
 
-#define EVENT_LOOP_PERIOD_MS    1
-
 
 namespace creatures {
 
@@ -25,9 +23,9 @@ namespace creatures {
         void scheduleEvent(std::shared_ptr<Event> e);
 
         [[nodiscard]] uint64_t getCurrentFrameNumber() const;
-        uint64_t getNextFrameNumber() const;
-        uint32_t getQueueSize() const;
-        uint64_t getEventsExecuted() const;
+        [[nodiscard]] uint64_t getNextFrameNumber() const;
+        [[nodiscard]] uint32_t getQueueSize() const;
+        [[nodiscard]] uint64_t getEventsExecuted() const;
 
     private:
 

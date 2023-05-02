@@ -108,6 +108,12 @@ extern LogFilterDefaultTypeInternal _LogFilter_default_instance_;
 class LogItem;
 struct LogItemDefaultTypeInternal;
 extern LogItemDefaultTypeInternal _LogItem_default_instance_;
+class PlayAnimationRequest;
+struct PlayAnimationRequestDefaultTypeInternal;
+extern PlayAnimationRequestDefaultTypeInternal _PlayAnimationRequest_default_instance_;
+class PlayAnimationResponse;
+struct PlayAnimationResponseDefaultTypeInternal;
+extern PlayAnimationResponseDefaultTypeInternal _PlayAnimationResponse_default_instance_;
 class ServerStatus;
 struct ServerStatusDefaultTypeInternal;
 extern ServerStatusDefaultTypeInternal _ServerStatus_default_instance_;
@@ -133,6 +139,8 @@ template<> ::server::ListAnimationsResponse* Arena::CreateMaybeMessage<::server:
 template<> ::server::ListCreaturesResponse* Arena::CreateMaybeMessage<::server::ListCreaturesResponse>(Arena*);
 template<> ::server::LogFilter* Arena::CreateMaybeMessage<::server::LogFilter>(Arena*);
 template<> ::server::LogItem* Arena::CreateMaybeMessage<::server::LogItem>(Arena*);
+template<> ::server::PlayAnimationRequest* Arena::CreateMaybeMessage<::server::PlayAnimationRequest>(Arena*);
+template<> ::server::PlayAnimationResponse* Arena::CreateMaybeMessage<::server::PlayAnimationResponse>(Arena*);
 template<> ::server::ServerStatus* Arena::CreateMaybeMessage<::server::ServerStatus>(Arena*);
 PROTOBUF_NAMESPACE_CLOSE
 namespace server {
@@ -3992,6 +4000,339 @@ class AnimationIdentifier final :
   union { Impl_ _impl_; };
   friend struct ::TableStruct_server_2eproto;
 };
+// -------------------------------------------------------------------
+
+class PlayAnimationRequest final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.PlayAnimationRequest) */ {
+ public:
+  inline PlayAnimationRequest() : PlayAnimationRequest(nullptr) {}
+  ~PlayAnimationRequest() override;
+  explicit PROTOBUF_CONSTEXPR PlayAnimationRequest(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  PlayAnimationRequest(const PlayAnimationRequest& from);
+  PlayAnimationRequest(PlayAnimationRequest&& from) noexcept
+    : PlayAnimationRequest() {
+    *this = ::std::move(from);
+  }
+
+  inline PlayAnimationRequest& operator=(const PlayAnimationRequest& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline PlayAnimationRequest& operator=(PlayAnimationRequest&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const PlayAnimationRequest& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const PlayAnimationRequest* internal_default_instance() {
+    return reinterpret_cast<const PlayAnimationRequest*>(
+               &_PlayAnimationRequest_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    21;
+
+  friend void swap(PlayAnimationRequest& a, PlayAnimationRequest& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(PlayAnimationRequest* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(PlayAnimationRequest* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  PlayAnimationRequest* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<PlayAnimationRequest>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const PlayAnimationRequest& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const PlayAnimationRequest& from) {
+    PlayAnimationRequest::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(PlayAnimationRequest* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.PlayAnimationRequest";
+  }
+  protected:
+  explicit PlayAnimationRequest(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kCreatureIdFieldNumber = 1,
+    kAnimationIdFieldNumber = 2,
+  };
+  // bytes creatureId = 1;
+  void clear_creatureid();
+  const std::string& creatureid() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_creatureid(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_creatureid();
+  PROTOBUF_NODISCARD std::string* release_creatureid();
+  void set_allocated_creatureid(std::string* creatureid);
+  private:
+  const std::string& _internal_creatureid() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_creatureid(const std::string& value);
+  std::string* _internal_mutable_creatureid();
+  public:
+
+  // bytes animationId = 2;
+  void clear_animationid();
+  const std::string& animationid() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_animationid(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_animationid();
+  PROTOBUF_NODISCARD std::string* release_animationid();
+  void set_allocated_animationid(std::string* animationid);
+  private:
+  const std::string& _internal_animationid() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_animationid(const std::string& value);
+  std::string* _internal_mutable_animationid();
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.PlayAnimationRequest)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr creatureid_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr animationid_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
+
+class PlayAnimationResponse final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.PlayAnimationResponse) */ {
+ public:
+  inline PlayAnimationResponse() : PlayAnimationResponse(nullptr) {}
+  ~PlayAnimationResponse() override;
+  explicit PROTOBUF_CONSTEXPR PlayAnimationResponse(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  PlayAnimationResponse(const PlayAnimationResponse& from);
+  PlayAnimationResponse(PlayAnimationResponse&& from) noexcept
+    : PlayAnimationResponse() {
+    *this = ::std::move(from);
+  }
+
+  inline PlayAnimationResponse& operator=(const PlayAnimationResponse& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline PlayAnimationResponse& operator=(PlayAnimationResponse&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const PlayAnimationResponse& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const PlayAnimationResponse* internal_default_instance() {
+    return reinterpret_cast<const PlayAnimationResponse*>(
+               &_PlayAnimationResponse_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    22;
+
+  friend void swap(PlayAnimationResponse& a, PlayAnimationResponse& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(PlayAnimationResponse* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(PlayAnimationResponse* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  PlayAnimationResponse* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<PlayAnimationResponse>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const PlayAnimationResponse& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const PlayAnimationResponse& from) {
+    PlayAnimationResponse::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(PlayAnimationResponse* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.PlayAnimationResponse";
+  }
+  protected:
+  explicit PlayAnimationResponse(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kStatusFieldNumber = 1,
+    kNumberOfFramesQueuedFieldNumber = 2,
+  };
+  // string status = 1;
+  void clear_status();
+  const std::string& status() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_status(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_status();
+  PROTOBUF_NODISCARD std::string* release_status();
+  void set_allocated_status(std::string* status);
+  private:
+  const std::string& _internal_status() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_status(const std::string& value);
+  std::string* _internal_mutable_status();
+  public:
+
+  // int32 number_of_frames_queued = 2;
+  void clear_number_of_frames_queued();
+  int32_t number_of_frames_queued() const;
+  void set_number_of_frames_queued(int32_t value);
+  private:
+  int32_t _internal_number_of_frames_queued() const;
+  void _internal_set_number_of_frames_queued(int32_t value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.PlayAnimationResponse)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr status_;
+    int32_t number_of_frames_queued_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
 // ===================================================================
 
 
@@ -6383,9 +6724,191 @@ inline void AnimationIdentifier::set_allocated_metadata(::server::Animation_Meta
   // @@protoc_insertion_point(field_set_allocated:server.AnimationIdentifier.metadata)
 }
 
+// -------------------------------------------------------------------
+
+// PlayAnimationRequest
+
+// bytes creatureId = 1;
+inline void PlayAnimationRequest::clear_creatureid() {
+  _impl_.creatureid_.ClearToEmpty();
+}
+inline const std::string& PlayAnimationRequest::creatureid() const {
+  // @@protoc_insertion_point(field_get:server.PlayAnimationRequest.creatureId)
+  return _internal_creatureid();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void PlayAnimationRequest::set_creatureid(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.creatureid_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.PlayAnimationRequest.creatureId)
+}
+inline std::string* PlayAnimationRequest::mutable_creatureid() {
+  std::string* _s = _internal_mutable_creatureid();
+  // @@protoc_insertion_point(field_mutable:server.PlayAnimationRequest.creatureId)
+  return _s;
+}
+inline const std::string& PlayAnimationRequest::_internal_creatureid() const {
+  return _impl_.creatureid_.Get();
+}
+inline void PlayAnimationRequest::_internal_set_creatureid(const std::string& value) {
+  
+  _impl_.creatureid_.Set(value, GetArenaForAllocation());
+}
+inline std::string* PlayAnimationRequest::_internal_mutable_creatureid() {
+  
+  return _impl_.creatureid_.Mutable(GetArenaForAllocation());
+}
+inline std::string* PlayAnimationRequest::release_creatureid() {
+  // @@protoc_insertion_point(field_release:server.PlayAnimationRequest.creatureId)
+  return _impl_.creatureid_.Release();
+}
+inline void PlayAnimationRequest::set_allocated_creatureid(std::string* creatureid) {
+  if (creatureid != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.creatureid_.SetAllocated(creatureid, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.creatureid_.IsDefault()) {
+    _impl_.creatureid_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.PlayAnimationRequest.creatureId)
+}
+
+// bytes animationId = 2;
+inline void PlayAnimationRequest::clear_animationid() {
+  _impl_.animationid_.ClearToEmpty();
+}
+inline const std::string& PlayAnimationRequest::animationid() const {
+  // @@protoc_insertion_point(field_get:server.PlayAnimationRequest.animationId)
+  return _internal_animationid();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void PlayAnimationRequest::set_animationid(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.animationid_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.PlayAnimationRequest.animationId)
+}
+inline std::string* PlayAnimationRequest::mutable_animationid() {
+  std::string* _s = _internal_mutable_animationid();
+  // @@protoc_insertion_point(field_mutable:server.PlayAnimationRequest.animationId)
+  return _s;
+}
+inline const std::string& PlayAnimationRequest::_internal_animationid() const {
+  return _impl_.animationid_.Get();
+}
+inline void PlayAnimationRequest::_internal_set_animationid(const std::string& value) {
+  
+  _impl_.animationid_.Set(value, GetArenaForAllocation());
+}
+inline std::string* PlayAnimationRequest::_internal_mutable_animationid() {
+  
+  return _impl_.animationid_.Mutable(GetArenaForAllocation());
+}
+inline std::string* PlayAnimationRequest::release_animationid() {
+  // @@protoc_insertion_point(field_release:server.PlayAnimationRequest.animationId)
+  return _impl_.animationid_.Release();
+}
+inline void PlayAnimationRequest::set_allocated_animationid(std::string* animationid) {
+  if (animationid != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.animationid_.SetAllocated(animationid, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.animationid_.IsDefault()) {
+    _impl_.animationid_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.PlayAnimationRequest.animationId)
+}
+
+// -------------------------------------------------------------------
+
+// PlayAnimationResponse
+
+// string status = 1;
+inline void PlayAnimationResponse::clear_status() {
+  _impl_.status_.ClearToEmpty();
+}
+inline const std::string& PlayAnimationResponse::status() const {
+  // @@protoc_insertion_point(field_get:server.PlayAnimationResponse.status)
+  return _internal_status();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void PlayAnimationResponse::set_status(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.status_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.PlayAnimationResponse.status)
+}
+inline std::string* PlayAnimationResponse::mutable_status() {
+  std::string* _s = _internal_mutable_status();
+  // @@protoc_insertion_point(field_mutable:server.PlayAnimationResponse.status)
+  return _s;
+}
+inline const std::string& PlayAnimationResponse::_internal_status() const {
+  return _impl_.status_.Get();
+}
+inline void PlayAnimationResponse::_internal_set_status(const std::string& value) {
+  
+  _impl_.status_.Set(value, GetArenaForAllocation());
+}
+inline std::string* PlayAnimationResponse::_internal_mutable_status() {
+  
+  return _impl_.status_.Mutable(GetArenaForAllocation());
+}
+inline std::string* PlayAnimationResponse::release_status() {
+  // @@protoc_insertion_point(field_release:server.PlayAnimationResponse.status)
+  return _impl_.status_.Release();
+}
+inline void PlayAnimationResponse::set_allocated_status(std::string* status) {
+  if (status != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.status_.SetAllocated(status, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.status_.IsDefault()) {
+    _impl_.status_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.PlayAnimationResponse.status)
+}
+
+// int32 number_of_frames_queued = 2;
+inline void PlayAnimationResponse::clear_number_of_frames_queued() {
+  _impl_.number_of_frames_queued_ = 0;
+}
+inline int32_t PlayAnimationResponse::_internal_number_of_frames_queued() const {
+  return _impl_.number_of_frames_queued_;
+}
+inline int32_t PlayAnimationResponse::number_of_frames_queued() const {
+  // @@protoc_insertion_point(field_get:server.PlayAnimationResponse.number_of_frames_queued)
+  return _internal_number_of_frames_queued();
+}
+inline void PlayAnimationResponse::_internal_set_number_of_frames_queued(int32_t value) {
+  
+  _impl_.number_of_frames_queued_ = value;
+}
+inline void PlayAnimationResponse::set_number_of_frames_queued(int32_t value) {
+  _internal_set_number_of_frames_queued(value);
+  // @@protoc_insertion_point(field_set:server.PlayAnimationResponse.number_of_frames_queued)
+}
+
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------

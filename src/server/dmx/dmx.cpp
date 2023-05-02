@@ -4,8 +4,9 @@
 #include <string>
 #include <utility>
 
-#include "server/config.h"
 #include "dmx.h"
+#include "server/config.h"
+
 
 using spdlog::info;
 using spdlog::debug;
@@ -13,11 +14,6 @@ using spdlog::error;
 using spdlog::critical;
 using spdlog::trace;
 
-/**
- * This is a big mess
- *
- * I bootstrapped myself from the old creature-utils package
- */
 
 namespace creatures {
 
@@ -32,6 +28,10 @@ namespace creatures {
         debug("set the host banner to: {}, len: {}", hostBanner, hostBannerLength);
     }
 
+
+    uint8_t DMX::getSequenceNumber() const {
+        return packet.frame.seq_number;
+    }
 
     void DMX::init(std::string client_ip, uint32_t dmx_universe, uint32_t numMotors) {
 
@@ -56,20 +56,28 @@ namespace creatures {
         if (e131_unicast_dest(&dest, ip_address.c_str(), E131_DEFAULT_PORT) < 0)
             error("unable to set e131 destination");
 
+#if DEBUG_DMX_SENDER
         // This is helpful for debugging
-        //e131_pkt_dump(stdout, &packet);
-
+        e131_pkt_dump(stdout, &packet);
+#endif
         debug("socket created");
     }
 
-
+    /**
+     * Send data to the target
+     *
+     * @param data a vector with the data to send
+     */
     void DMX::send(const std::vector<uint8_t>& data) {
 
+#if DEBUG_DMX_SENDER
         trace("sending update {}", packet.frame.seq_number);
-
+#endif
+        // Pack the vector into the array
         size_t count = data.size();
         for (size_t pos = 0; pos < count; pos++) {
             packet.dmp.prop_val[pos + 1] = data[pos];
+
 #if DEBUG_DMX_SENDER
             trace("pos {}, data {}", (pos + dmx_offset + 1), data[pos]);
 #endif

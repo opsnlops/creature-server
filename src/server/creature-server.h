@@ -36,6 +36,8 @@ using server::ListAnimationsResponse;
 using server::ListCreaturesResponse;
 using server::LogFilter;
 using server::LogItem;
+using server::PlayAnimationRequest;
+using server::PlayAnimationResponse;
 using server::ServerStatus;
 
 
@@ -67,6 +69,8 @@ namespace creatures {
         Status ListAnimations(ServerContext *context, const AnimationFilter *request, ListAnimationsResponse *response) override;
 
         Status GetAnimation(ServerContext *context, const AnimationId *id, Animation *animation) override;
+
+        Status PlayAnimation(ServerContext *context, const PlayAnimationRequest *request, PlayAnimationResponse *response) override;
 
     private:
         ConcurrentQueue<LogItem>& log_queue;

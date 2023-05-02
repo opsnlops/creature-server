@@ -90,6 +90,11 @@ public protocol Server_CreatureServerClientProtocol: GRPCClient {
     _ request: Server_AnimationId,
     callOptions: CallOptions?
   ) -> UnaryCall<Server_AnimationId, Server_Animation>
+
+  func playAnimation(
+    _ request: Server_PlayAnimationRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Server_PlayAnimationRequest, Server_PlayAnimationResponse>
 }
 
 extension Server_CreatureServerClientProtocol {
@@ -320,6 +325,24 @@ extension Server_CreatureServerClientProtocol {
       interceptors: self.interceptors?.makeGetAnimationInterceptors() ?? []
     )
   }
+
+  /// Request that an animation get played on a creature
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to PlayAnimation.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  public func playAnimation(
+    _ request: Server_PlayAnimationRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Server_PlayAnimationRequest, Server_PlayAnimationResponse> {
+    return self.makeUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.playAnimation.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makePlayAnimationInterceptors() ?? []
+    )
+  }
 }
 
 #if compiler(>=5.6)
@@ -445,6 +468,11 @@ public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
     _ request: Server_AnimationId,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Server_AnimationId, Server_Animation>
+
+  func makePlayAnimationCall(
+    _ request: Server_PlayAnimationRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Server_PlayAnimationRequest, Server_PlayAnimationResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -596,6 +624,18 @@ extension Server_CreatureServerAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetAnimationInterceptors() ?? []
+    )
+  }
+
+  public func makePlayAnimationCall(
+    _ request: Server_PlayAnimationRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Server_PlayAnimationRequest, Server_PlayAnimationResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.playAnimation.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makePlayAnimationInterceptors() ?? []
     )
   }
 }
@@ -757,6 +797,18 @@ extension Server_CreatureServerAsyncClientProtocol {
       interceptors: self.interceptors?.makeGetAnimationInterceptors() ?? []
     )
   }
+
+  public func playAnimation(
+    _ request: Server_PlayAnimationRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Server_PlayAnimationResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.playAnimation.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makePlayAnimationInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -815,6 +867,9 @@ public protocol Server_CreatureServerClientInterceptorFactoryProtocol: GRPCSenda
 
   /// - Returns: Interceptors to use when invoking 'getAnimation'.
   func makeGetAnimationInterceptors() -> [ClientInterceptor<Server_AnimationId, Server_Animation>]
+
+  /// - Returns: Interceptors to use when invoking 'playAnimation'.
+  func makePlayAnimationInterceptors() -> [ClientInterceptor<Server_PlayAnimationRequest, Server_PlayAnimationResponse>]
 }
 
 public enum Server_CreatureServerClientMetadata {
@@ -834,6 +889,7 @@ public enum Server_CreatureServerClientMetadata {
       Server_CreatureServerClientMetadata.Methods.createAnimation,
       Server_CreatureServerClientMetadata.Methods.listAnimations,
       Server_CreatureServerClientMetadata.Methods.getAnimation,
+      Server_CreatureServerClientMetadata.Methods.playAnimation,
     ]
   )
 
@@ -907,6 +963,12 @@ public enum Server_CreatureServerClientMetadata {
     public static let getAnimation = GRPCMethodDescriptor(
       name: "GetAnimation",
       path: "/server.CreatureServer/GetAnimation",
+      type: GRPCCallType.unary
+    )
+
+    public static let playAnimation = GRPCMethodDescriptor(
+      name: "PlayAnimation",
+      path: "/server.CreatureServer/PlayAnimation",
       type: GRPCCallType.unary
     )
   }

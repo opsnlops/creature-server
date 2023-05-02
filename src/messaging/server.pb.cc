@@ -329,8 +329,36 @@ struct AnimationIdentifierDefaultTypeInternal {
   };
 };
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 AnimationIdentifierDefaultTypeInternal _AnimationIdentifier_default_instance_;
+PROTOBUF_CONSTEXPR PlayAnimationRequest::PlayAnimationRequest(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.creatureid_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.animationid_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct PlayAnimationRequestDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR PlayAnimationRequestDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~PlayAnimationRequestDefaultTypeInternal() {}
+  union {
+    PlayAnimationRequest _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 PlayAnimationRequestDefaultTypeInternal _PlayAnimationRequest_default_instance_;
+PROTOBUF_CONSTEXPR PlayAnimationResponse::PlayAnimationResponse(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.status_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.number_of_frames_queued_)*/0
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct PlayAnimationResponseDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR PlayAnimationResponseDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~PlayAnimationResponseDefaultTypeInternal() {}
+  union {
+    PlayAnimationResponse _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 PlayAnimationResponseDefaultTypeInternal _PlayAnimationResponse_default_instance_;
 }  // namespace server
-static ::_pb::Metadata file_level_metadata_server_2eproto[21];
+static ::_pb::Metadata file_level_metadata_server_2eproto[23];
 static const ::_pb::EnumDescriptor* file_level_enum_descriptors_server_2eproto[4];
 static constexpr ::_pb::ServiceDescriptor const** file_level_service_descriptors_server_2eproto = nullptr;
 
@@ -517,6 +545,22 @@ const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(p
   ~0u,  // no _inlined_string_donated_
   PROTOBUF_FIELD_OFFSET(::server::AnimationIdentifier, _impl_._id_),
   PROTOBUF_FIELD_OFFSET(::server::AnimationIdentifier, _impl_.metadata_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::server::PlayAnimationRequest, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::server::PlayAnimationRequest, _impl_.creatureid_),
+  PROTOBUF_FIELD_OFFSET(::server::PlayAnimationRequest, _impl_.animationid_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::server::PlayAnimationResponse, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::server::PlayAnimationResponse, _impl_.status_),
+  PROTOBUF_FIELD_OFFSET(::server::PlayAnimationResponse, _impl_.number_of_frames_queued_),
 };
 static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {
   { 0, -1, -1, sizeof(::server::CreatureIdentifier)},
@@ -540,6 +584,8 @@ static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protode
   { 160, -1, -1, sizeof(::server::AnimationFilter)},
   { 167, -1, -1, sizeof(::server::ListAnimationsResponse)},
   { 174, -1, -1, sizeof(::server::AnimationIdentifier)},
+  { 182, -1, -1, sizeof(::server::PlayAnimationRequest)},
+  { 190, -1, -1, sizeof(::server::PlayAnimationResponse)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
@@ -564,6 +610,8 @@ static const ::_pb::Message* const file_default_instances[] = {
   &::server::_AnimationFilter_default_instance_._instance,
   &::server::_ListAnimationsResponse_default_instance_._instance,
   &::server::_AnimationIdentifier_default_instance_._instance,
+  &::server::_PlayAnimationRequest_default_instance_._instance,
+  &::server::_PlayAnimationResponse_default_instance_._instance,
 };
 
 const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) =
@@ -613,34 +661,39 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "AnimationsResponse\022/\n\nanimations\030\001 \003(\0132\033"
   ".server.AnimationIdentifier\"P\n\023Animation"
   "Identifier\022\013\n\003_id\030\001 \001(\014\022,\n\010metadata\030\002 \001("
-  "\0132\032.server.Animation.Metadata*c\n\010LogLeve"
-  "l\022\t\n\005trace\020\000\022\t\n\005debug\020\001\022\010\n\004info\020\002\022\010\n\004war"
-  "n\020\003\022\t\n\005error\020\004\022\014\n\010critical\020\005\022\007\n\003off\020\006\022\013\n"
-  "\007unknown\020\007*\036\n\006SortBy\022\010\n\004name\020\000\022\n\n\006number"
-  "\020\001*6\n\014CreatureType\022\n\n\006parrot\020\000\022\016\n\nwled_l"
-  "ight\020\001\022\n\n\005other\020\347\0072\214\006\n\016CreatureServer\0225\n"
-  "\013GetCreature\022\022.server.CreatureId\032\020.serve"
-  "r.Creature\"\000\022L\n\017GetAllCreatures\022\026.server"
-  ".CreatureFilter\032\037.server.GetAllCreatures"
-  "Response\"\000\022:\n\016CreateCreature\022\020.server.Cr"
-  "eature\032\024.server.DatabaseInfo\"\000\022:\n\016Update"
-  "Creature\022\020.server.Creature\032\024.server.Data"
-  "baseInfo\"\000\0224\n\nStreamLogs\022\021.server.LogFil"
-  "ter\032\017.server.LogItem\"\0000\001\022;\n\017SearchCreatu"
-  "res\022\024.server.CreatureName\032\020.server.Creat"
-  "ure\"\000\022H\n\rListCreatures\022\026.server.Creature"
-  "Filter\032\035.server.ListCreaturesResponse\"\000\022"
-  "8\n\014StreamFrames\022\r.server.Frame\032\025.server."
-  "FrameResponse\"\000(\001\022A\n\017GetServerStatus\022\026.g"
-  "oogle.protobuf.Empty\032\024.server.ServerStat"
-  "us\"\000\022<\n\017CreateAnimation\022\021.server.Animati"
-  "on\032\024.server.DatabaseInfo\"\000\022K\n\016ListAnimat"
-  "ions\022\027.server.AnimationFilter\032\036.server.L"
-  "istAnimationsResponse\"\000\0228\n\014GetAnimation\022"
-  "\023.server.AnimationId\032\021.server.Animation\""
-  "\000BT\n\034io.opsnlops.creatures.serverB\022Netwo"
-  "rkServerProtoH\001P\001Z\034opsnlops.io/creatures"
-  "/serverb\006proto3"
+  "\0132\032.server.Animation.Metadata\"\?\n\024PlayAni"
+  "mationRequest\022\022\n\ncreatureId\030\001 \001(\014\022\023\n\013ani"
+  "mationId\030\002 \001(\014\"H\n\025PlayAnimationResponse\022"
+  "\016\n\006status\030\001 \001(\t\022\037\n\027number_of_frames_queu"
+  "ed\030\002 \001(\005*c\n\010LogLevel\022\t\n\005trace\020\000\022\t\n\005debug"
+  "\020\001\022\010\n\004info\020\002\022\010\n\004warn\020\003\022\t\n\005error\020\004\022\014\n\010cri"
+  "tical\020\005\022\007\n\003off\020\006\022\013\n\007unknown\020\007*\036\n\006SortBy\022"
+  "\010\n\004name\020\000\022\n\n\006number\020\001*6\n\014CreatureType\022\n\n"
+  "\006parrot\020\000\022\016\n\nwled_light\020\001\022\n\n\005other\020\347\0072\334\006"
+  "\n\016CreatureServer\0225\n\013GetCreature\022\022.server"
+  ".CreatureId\032\020.server.Creature\"\000\022L\n\017GetAl"
+  "lCreatures\022\026.server.CreatureFilter\032\037.ser"
+  "ver.GetAllCreaturesResponse\"\000\022:\n\016CreateC"
+  "reature\022\020.server.Creature\032\024.server.Datab"
+  "aseInfo\"\000\022:\n\016UpdateCreature\022\020.server.Cre"
+  "ature\032\024.server.DatabaseInfo\"\000\0224\n\nStreamL"
+  "ogs\022\021.server.LogFilter\032\017.server.LogItem\""
+  "\0000\001\022;\n\017SearchCreatures\022\024.server.Creature"
+  "Name\032\020.server.Creature\"\000\022H\n\rListCreature"
+  "s\022\026.server.CreatureFilter\032\035.server.ListC"
+  "reaturesResponse\"\000\0228\n\014StreamFrames\022\r.ser"
+  "ver.Frame\032\025.server.FrameResponse\"\000(\001\022A\n\017"
+  "GetServerStatus\022\026.google.protobuf.Empty\032"
+  "\024.server.ServerStatus\"\000\022<\n\017CreateAnimati"
+  "on\022\021.server.Animation\032\024.server.DatabaseI"
+  "nfo\"\000\022K\n\016ListAnimations\022\027.server.Animati"
+  "onFilter\032\036.server.ListAnimationsResponse"
+  "\"\000\0228\n\014GetAnimation\022\023.server.AnimationId\032"
+  "\021.server.Animation\"\000\022N\n\rPlayAnimation\022\034."
+  "server.PlayAnimationRequest\032\035.server.Pla"
+  "yAnimationResponse\"\000BT\n\034io.opsnlops.crea"
+  "tures.serverB\022NetworkServerProtoH\001P\001Z\034op"
+  "snlops.io/creatures/serverb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -648,9 +701,9 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 2935, descriptor_table_protodef_server_2eproto,
+    false, false, 3154, descriptor_table_protodef_server_2eproto,
     "server.proto",
-    &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 21,
+    &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 23,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,
     file_level_metadata_server_2eproto, file_level_enum_descriptors_server_2eproto,
     file_level_service_descriptors_server_2eproto,
@@ -6109,6 +6162,479 @@ void AnimationIdentifier::InternalSwap(AnimationIdentifier* other) {
       file_level_metadata_server_2eproto[20]);
 }
 
+// ===================================================================
+
+class PlayAnimationRequest::_Internal {
+ public:
+};
+
+PlayAnimationRequest::PlayAnimationRequest(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:server.PlayAnimationRequest)
+}
+PlayAnimationRequest::PlayAnimationRequest(const PlayAnimationRequest& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  PlayAnimationRequest* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.creatureid_){}
+    , decltype(_impl_.animationid_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.creatureid_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.creatureid_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_creatureid().empty()) {
+    _this->_impl_.creatureid_.Set(from._internal_creatureid(), 
+      _this->GetArenaForAllocation());
+  }
+  _impl_.animationid_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.animationid_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_animationid().empty()) {
+    _this->_impl_.animationid_.Set(from._internal_animationid(), 
+      _this->GetArenaForAllocation());
+  }
+  // @@protoc_insertion_point(copy_constructor:server.PlayAnimationRequest)
+}
+
+inline void PlayAnimationRequest::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.creatureid_){}
+    , decltype(_impl_.animationid_){}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.creatureid_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.creatureid_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.animationid_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.animationid_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+PlayAnimationRequest::~PlayAnimationRequest() {
+  // @@protoc_insertion_point(destructor:server.PlayAnimationRequest)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void PlayAnimationRequest::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.creatureid_.Destroy();
+  _impl_.animationid_.Destroy();
+}
+
+void PlayAnimationRequest::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void PlayAnimationRequest::Clear() {
+// @@protoc_insertion_point(message_clear_start:server.PlayAnimationRequest)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.creatureid_.ClearToEmpty();
+  _impl_.animationid_.ClearToEmpty();
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* PlayAnimationRequest::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // bytes creatureId = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
+          auto str = _internal_mutable_creatureid();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // bytes animationId = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
+          auto str = _internal_mutable_animationid();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* PlayAnimationRequest::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:server.PlayAnimationRequest)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // bytes creatureId = 1;
+  if (!this->_internal_creatureid().empty()) {
+    target = stream->WriteBytesMaybeAliased(
+        1, this->_internal_creatureid(), target);
+  }
+
+  // bytes animationId = 2;
+  if (!this->_internal_animationid().empty()) {
+    target = stream->WriteBytesMaybeAliased(
+        2, this->_internal_animationid(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:server.PlayAnimationRequest)
+  return target;
+}
+
+size_t PlayAnimationRequest::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:server.PlayAnimationRequest)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // bytes creatureId = 1;
+  if (!this->_internal_creatureid().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::BytesSize(
+        this->_internal_creatureid());
+  }
+
+  // bytes animationId = 2;
+  if (!this->_internal_animationid().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::BytesSize(
+        this->_internal_animationid());
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData PlayAnimationRequest::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    PlayAnimationRequest::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*PlayAnimationRequest::GetClassData() const { return &_class_data_; }
+
+
+void PlayAnimationRequest::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<PlayAnimationRequest*>(&to_msg);
+  auto& from = static_cast<const PlayAnimationRequest&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:server.PlayAnimationRequest)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal_creatureid().empty()) {
+    _this->_internal_set_creatureid(from._internal_creatureid());
+  }
+  if (!from._internal_animationid().empty()) {
+    _this->_internal_set_animationid(from._internal_animationid());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void PlayAnimationRequest::CopyFrom(const PlayAnimationRequest& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:server.PlayAnimationRequest)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool PlayAnimationRequest::IsInitialized() const {
+  return true;
+}
+
+void PlayAnimationRequest::InternalSwap(PlayAnimationRequest* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.creatureid_, lhs_arena,
+      &other->_impl_.creatureid_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.animationid_, lhs_arena,
+      &other->_impl_.animationid_, rhs_arena
+  );
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata PlayAnimationRequest::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
+      file_level_metadata_server_2eproto[21]);
+}
+
+// ===================================================================
+
+class PlayAnimationResponse::_Internal {
+ public:
+};
+
+PlayAnimationResponse::PlayAnimationResponse(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:server.PlayAnimationResponse)
+}
+PlayAnimationResponse::PlayAnimationResponse(const PlayAnimationResponse& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  PlayAnimationResponse* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.status_){}
+    , decltype(_impl_.number_of_frames_queued_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.status_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.status_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_status().empty()) {
+    _this->_impl_.status_.Set(from._internal_status(), 
+      _this->GetArenaForAllocation());
+  }
+  _this->_impl_.number_of_frames_queued_ = from._impl_.number_of_frames_queued_;
+  // @@protoc_insertion_point(copy_constructor:server.PlayAnimationResponse)
+}
+
+inline void PlayAnimationResponse::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.status_){}
+    , decltype(_impl_.number_of_frames_queued_){0}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.status_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.status_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+PlayAnimationResponse::~PlayAnimationResponse() {
+  // @@protoc_insertion_point(destructor:server.PlayAnimationResponse)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void PlayAnimationResponse::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.status_.Destroy();
+}
+
+void PlayAnimationResponse::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void PlayAnimationResponse::Clear() {
+// @@protoc_insertion_point(message_clear_start:server.PlayAnimationResponse)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.status_.ClearToEmpty();
+  _impl_.number_of_frames_queued_ = 0;
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* PlayAnimationResponse::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // string status = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
+          auto str = _internal_mutable_status();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "server.PlayAnimationResponse.status"));
+        } else
+          goto handle_unusual;
+        continue;
+      // int32 number_of_frames_queued = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 16)) {
+          _impl_.number_of_frames_queued_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* PlayAnimationResponse::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:server.PlayAnimationResponse)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // string status = 1;
+  if (!this->_internal_status().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_status().data(), static_cast<int>(this->_internal_status().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "server.PlayAnimationResponse.status");
+    target = stream->WriteStringMaybeAliased(
+        1, this->_internal_status(), target);
+  }
+
+  // int32 number_of_frames_queued = 2;
+  if (this->_internal_number_of_frames_queued() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteInt32ToArray(2, this->_internal_number_of_frames_queued(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:server.PlayAnimationResponse)
+  return target;
+}
+
+size_t PlayAnimationResponse::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:server.PlayAnimationResponse)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // string status = 1;
+  if (!this->_internal_status().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_status());
+  }
+
+  // int32 number_of_frames_queued = 2;
+  if (this->_internal_number_of_frames_queued() != 0) {
+    total_size += ::_pbi::WireFormatLite::Int32SizePlusOne(this->_internal_number_of_frames_queued());
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData PlayAnimationResponse::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    PlayAnimationResponse::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*PlayAnimationResponse::GetClassData() const { return &_class_data_; }
+
+
+void PlayAnimationResponse::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<PlayAnimationResponse*>(&to_msg);
+  auto& from = static_cast<const PlayAnimationResponse&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:server.PlayAnimationResponse)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal_status().empty()) {
+    _this->_internal_set_status(from._internal_status());
+  }
+  if (from._internal_number_of_frames_queued() != 0) {
+    _this->_internal_set_number_of_frames_queued(from._internal_number_of_frames_queued());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void PlayAnimationResponse::CopyFrom(const PlayAnimationResponse& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:server.PlayAnimationResponse)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool PlayAnimationResponse::IsInitialized() const {
+  return true;
+}
+
+void PlayAnimationResponse::InternalSwap(PlayAnimationResponse* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.status_, lhs_arena,
+      &other->_impl_.status_, rhs_arena
+  );
+  swap(_impl_.number_of_frames_queued_, other->_impl_.number_of_frames_queued_);
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata PlayAnimationResponse::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_server_2eproto_getter, &descriptor_table_server_2eproto_once,
+      file_level_metadata_server_2eproto[22]);
+}
+
 // @@protoc_insertion_point(namespace_scope)
 }  // namespace server
 PROTOBUF_NAMESPACE_OPEN
@@ -6195,6 +6721,14 @@ Arena::CreateMaybeMessage< ::server::ListAnimationsResponse >(Arena* arena) {
 template<> PROTOBUF_NOINLINE ::server::AnimationIdentifier*
 Arena::CreateMaybeMessage< ::server::AnimationIdentifier >(Arena* arena) {
   return Arena::CreateMessageInternal< ::server::AnimationIdentifier >(arena);
+}
+template<> PROTOBUF_NOINLINE ::server::PlayAnimationRequest*
+Arena::CreateMaybeMessage< ::server::PlayAnimationRequest >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::server::PlayAnimationRequest >(arena);
+}
+template<> PROTOBUF_NOINLINE ::server::PlayAnimationResponse*
+Arena::CreateMaybeMessage< ::server::PlayAnimationResponse >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::server::PlayAnimationResponse >(arena);
 }
 PROTOBUF_NAMESPACE_CLOSE
 

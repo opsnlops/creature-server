@@ -7,9 +7,9 @@
 #include <bsoncxx/json.hpp>
 #include <bsoncxx/types.hpp>
 
-#include "server/database.h"
 #include "exception/exception.h"
 #include "server/creature-server.h"
+#include "server/database.h"
 
 using spdlog::trace;
 using spdlog::debug;

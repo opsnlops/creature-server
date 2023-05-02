@@ -29,18 +29,15 @@ namespace creatures {
 
         extern std::shared_ptr<EventLoop> eventLoop;
 
-        // Grab the first one now, so we can set up the DMX client
+        // Grab the first one now, so we can log it
         reader->Read(&frame);
-        //auto sender = std::make_unique<DMX>();
-        trace("sender made");
-
-        //sender->init(frame.sacn_ip(), frame.universe(), frame.number_of_motors());
         info("sending frames to {}", frame.creature_name());
 
         // Process the incoming stream of frames
         do {
-
+#if DEBUG_STREAM_FRAMES
             trace("received frame {} for {}", frame_count, frame.creature_name());
+#endif
             const std::string &frame_data = frame.frame();
 
             // Create a new event and schedule it for the next frame
@@ -57,8 +54,9 @@ namespace creatures {
 #endif
                 event->data.push_back(byte);
             }
+#if DEBUG_STREAM_FRAMES
             trace("DMX event created");
-
+#endif
             eventLoop->scheduleEvent(event);
 
             // Log a message every 100 frames

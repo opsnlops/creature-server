@@ -58,6 +58,9 @@ service CreatureServer {
 
   rpc GetAnimation(AnimationId) returns (Animation) {}
 
+  // Request that an animation get played on a creature
+  rpc PlayAnimation(PlayAnimationRequest) returns (PlayAnimationResponse) {}
+
 }
 
 /*
@@ -225,4 +228,15 @@ message ListAnimationsResponse {
 message AnimationIdentifier {
   bytes _id  = 1;
   Animation.Metadata metadata = 2;
+}
+
+
+message PlayAnimationRequest {
+  bytes creatureId = 1;
+  bytes animationId = 2;
+}
+
+message PlayAnimationResponse {
+  string status = 1;
+  int32 number_of_frames_queued = 2;
 }

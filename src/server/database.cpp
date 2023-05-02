@@ -1,31 +1,17 @@
 
 #include <string>
-#include <cstdlib>
-#include <iomanip>
 #include <sstream>
-#include <chrono>
 
 #include "spdlog/spdlog.h"
 
 #include "messaging/server.pb.h"
 #include "server/database.h"
-#include "exception/exception.h"
-
-#include <fmt/format.h>
 
 #include <grpcpp/grpcpp.h>
-#include <google/protobuf/timestamp.pb.h>
-
-#include <bsoncxx/json.hpp>
-#include <mongocxx/client.hpp>
-#include <mongocxx/pool.hpp>
-#include <bsoncxx/types.hpp>
-#include <mongocxx/exception/bulk_write_exception.hpp>
-#include <bsoncxx/document/element.hpp>
-#include <bsoncxx/array/element.hpp>
-#include <mongocxx/cursor.hpp>
 
 #include <bsoncxx/builder/stream/document.hpp>
+#include <mongocxx/client.hpp>
+#include <mongocxx/pool.hpp>
 
 
 using server::Creature;
