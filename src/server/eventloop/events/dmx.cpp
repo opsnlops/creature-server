@@ -1,4 +1,8 @@
 
+#include <vector>
+#include <sstream>
+#include <iostream>
+
 #include "spdlog/spdlog.h"
 
 #include "server/config.h"
@@ -45,10 +49,19 @@ namespace creatures {
             dmxCache->put(key, sender);
         }
 
+
+
         // Now send the packet
         sender->send(data);
 
 #if DEBUG_EVENT_DMX
+
+        std::ostringstream oss;
+        for (const auto& value : data) {
+            oss << static_cast<int>(value) << " ";
+        }
+        trace("Frame data: {}", oss.str());
+
         debug(" -------> DMX data sent");
 #endif
 

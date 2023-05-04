@@ -255,33 +255,33 @@ int main(int argc, char** argv) {
     displayFrames(testAnimation);
 
 
-
-
     // Now let's play animation
     info("attempting to play an animation??");
-    std::string animationPlayTestCreature = "643b86562a93fc6ba608ba21";
-    std::string animationPlayTestAnimation = "6453476d1b7a8fd501062502";
+    std::vector<std::string> creaturesIdsToPlay = {"643ba6ffc606a8b0aa078361", "643b86562a93fc6ba608ba21" };
+    std::string animationPlayTestAnimation = "645346931b7a8fd501062501";
 
+    for(const auto& creatureIdToPlay : creaturesIdsToPlay) {
 
-    bsoncxx::oid aOid(animationPlayTestAnimation);
-    AnimationId playbackAnimationId;
-    const char* aOiddata = aOid.bytes();
-    playbackAnimationId.set__id(aOiddata, bsoncxx::oid::k_oid_length);
+        bsoncxx::oid aOid(animationPlayTestAnimation);
+        AnimationId playbackAnimationId;
+        const char *aOiddata = aOid.bytes();
+        playbackAnimationId.set__id(aOiddata, bsoncxx::oid::k_oid_length);
 
-    bsoncxx::oid cOid(animationPlayTestCreature);
-    CreatureId playbackCreatureId;
-    const char* cOiddata = cOid.bytes();
-    playbackCreatureId.set__id(cOiddata, bsoncxx::oid::k_oid_length);
+        bsoncxx::oid cOid(creatureIdToPlay);
+        CreatureId playbackCreatureId;
+        const char *cOiddata = cOid.bytes();
+        playbackCreatureId.set__id(cOiddata, bsoncxx::oid::k_oid_length);
 
-    PlayAnimationRequest playAnimationRequest;
-    *playAnimationRequest.mutable_animationid() = playbackAnimationId;
-    *playAnimationRequest.mutable_creatureid() = playbackCreatureId;
+        PlayAnimationRequest playAnimationRequest;
+        *playAnimationRequest.mutable_animationid() = playbackAnimationId;
+        *playAnimationRequest.mutable_creatureid() = playbackCreatureId;
 
-    debug("request: {}", playAnimationRequest.DebugString());
+        debug("request: {}", playAnimationRequest.DebugString());
 
-    PlayAnimationResponse animationResponse = client.PlayAnimation(playAnimationRequest);
+        PlayAnimationResponse animationResponse = client.PlayAnimation(playAnimationRequest);
 
-    info(animationResponse.status());
+        info(animationResponse.status());
+    }
 
 
     return 0;

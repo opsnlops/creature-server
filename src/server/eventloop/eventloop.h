@@ -4,6 +4,7 @@
 #include <queue>
 #include <memory>
 #include <mutex>
+#include <thread>
 
 #include "spdlog/spdlog.h"
 
@@ -20,7 +21,7 @@ namespace creatures {
 
         void run();
 
-        void scheduleEvent(std::shared_ptr<Event> e);
+        void scheduleEvent(const std::shared_ptr<Event>& e);
 
         [[nodiscard]] uint64_t getCurrentFrameNumber() const;
         [[nodiscard]] uint64_t getNextFrameNumber() const;

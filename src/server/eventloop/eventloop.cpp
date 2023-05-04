@@ -1,14 +1,10 @@
 
-#include <chrono>
-#include <thread>
 #include <atomic>
-#include <csignal>
+#include <chrono>
 #include <memory>
-#include <queue>
-#include <mutex>
+#include <thread>
 
 #include "spdlog/spdlog.h"
-
 
 #include "server/config.h"
 #include "server/eventloop/eventloop.h"
@@ -126,7 +122,7 @@ namespace creatures {
         return eventsExecuted;
     }
 
-    void EventLoop::scheduleEvent(std::shared_ptr<Event> e) {
+    void EventLoop::scheduleEvent(const std::shared_ptr<Event>& e) {
         std::lock_guard<std::mutex> lock(eventQueueMutex);
         eventScheduler->event_queue.push(e);
     }

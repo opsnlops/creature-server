@@ -132,8 +132,9 @@ namespace creatures {
             thisFrame->dmxUniverse = creature->universe();
             thisFrame->numMotors = creature->number_of_motors();
 
-            std::vector<uint8_t> data(frame.ByteSizeLong());
-            frame.SerializeToArray(data.data(), static_cast<int>(data.size()));
+            // Get the frame field from the protobuf message
+            const auto& frame_bytes = frame.bytes(0);
+            std::vector<uint8_t> data(frame_bytes.begin(), frame_bytes.end());
             thisFrame->data = data;
 
             eventLoop->scheduleEvent(thisFrame);
@@ -143,9 +144,16 @@ namespace creatures {
 #if DEBUG_ANIMATION_PLAY
             trace("scheduled animation frame {} for event loop frame {}",
                   numberOfFrames, currentFrame);
+
+            trace("Frame length: {}", frame.ByteSizeLong());
+            std::ostringstream oss;
+            for (const auto& value : data) {
+                oss << static_cast<int>(value) << " ";
+            }
+            trace("Frame data on send: {}", oss.str());
 #endif
 
-            currentFrame += msPerFrame;
+            currentFrame += (msPerFrame / EVENT_LOOP_PERIOD_MS);
         }
 
         std::string okayMessage = fmt::format("✅ Scheduled {} frames on creature {} at a pacing of {}ms per frame for frames {} to {}",
