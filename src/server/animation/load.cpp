@@ -1,4 +1,5 @@
 
+#include "server/config.h"
 
 #include "spdlog/spdlog.h"
 
@@ -11,8 +12,6 @@
 #include "server/database.h"
 #include "exception/exception.h"
 #include "server/creature-server.h"
-
-#include "server/animation/animation.h"
 
 using bsoncxx::builder::stream::document;
 
@@ -38,20 +37,54 @@ namespace creatures {
 
     Status CreatureServerImpl::GetAnimation(ServerContext *context, const AnimationId *id, Animation *animation) {
 
+        grpc::Status status;
+
         info("Loading one animation from the database");
-        return db->getAnimation(id, animation);
+
+        try {
+            db->getAnimation(id, animation);
+            status = grpc::Status(grpc::StatusCode::OK,
+                                  "Loaded an animation from the database",
+                                  fmt::format("Title: {}, Number of Frames: {}",
+                                              animation->metadata().title(),
+                                              animation->frames_size()));
+        }
+        catch(const InvalidArgumentException &e) {
+            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                  "AnimationId was empty on getAnimation()",
+                                  fmt::format("⛔️️ An animation ID must be supplied"));
+        }
+        catch(const NotFoundException &e) {
+            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
+                                  fmt::format("⚠️ No animation with ID '{}' found", id->_id()),
+                                  "Try another ID! 😅");
+        }
+        catch(const DataFormatException &e) {
+            status = grpc::Status(grpc::StatusCode::INTERNAL,
+                                  "Unable to encode request into BSON",
+                                  e.what());
+        }
+        catch(const InternalError &e) {
+            status = grpc::Status(grpc::StatusCode::INTERNAL,
+                                  fmt::format("MongoDB error while loading an animation: {}", e.what()),
+                                  e.what());
+        }
+        catch( ... ) {
+            status = grpc::Status(grpc::StatusCode::INTERNAL,
+                                  "An unknown error happened while getting animation",
+                                  "Default catch hit?");
+        }
+
+        return status;
     }
 
 
-    Status Database::getAnimation(const AnimationId *animationId, Animation *animation) {
+    void Database::getAnimation(const AnimationId *animationId, Animation *animation) {
 
         grpc::Status status;
         if (animationId->_id().empty()) {
             error("an empty animationId was passed into getAnimation()");
-            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                  "AnimationId was empty on getAnimation()",
-                                  fmt::format("⛔️️ An animation ID must be supplied"));
-            return status;
+            throw InvalidArgumentException("an empty animationId was passed into getAnimation()");
         }
 
         auto collection = getCollection(ANIMATIONS_COLLECTION);
@@ -74,10 +107,7 @@ namespace creatures {
 
             if (!result) {
                 info("🚫 No animation with ID '{}' found", id.to_string());
-                status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                      fmt::format("⚠️ No animation with ID '{}' found", id.to_string()),
-                                      "Try another ID! 😅");
-                return status;
+                throw NotFoundException(fmt::format("🚫 No animation with ID '{}' found", id.to_string()));
             }
 
             // Get an owning reference to this doc since it's ours now
@@ -99,28 +129,16 @@ namespace creatures {
         }
         catch (const bsoncxx::exception &e) {
             error("BSON exception while loading an animation: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  "Unable to encode request into BSON",
-                                  e.what());
-            return status;
+            throw DataFormatException(fmt::format("BSON exception while loading an animation: {}", e.what()));
         }
         catch (const mongocxx::exception &e) {
             error("MongoDB exception while loading an animation: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  fmt::format("MongoDB error while loading an animation: {}", e.what()),
-                                  e.what());
-            return status;
-        }
 
+        }
 
         // Hooray, we loaded it all!
         info("done loading an animation");
-        status = grpc::Status(grpc::StatusCode::OK,
-                              "Loaded an animation from the database",
-                              fmt::format("Title: {}, Number of Frames: {}",
-                                          animation->metadata().title(),
-                                          animation->frames_size()));
-        return status;
+
     }
 
 }

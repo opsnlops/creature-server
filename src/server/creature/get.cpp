@@ -1,3 +1,6 @@
+
+#include "server/config.h"
+
 #include <string>
 
 #include "spdlog/spdlog.h"
@@ -49,7 +52,7 @@ namespace creatures {
             return status;
 
         }
-        catch (const creatures::CreatureNotFoundException &e) {
+        catch (const creatures::NotFoundException &e) {
             info("creature id not found");
             status = grpc::Status(grpc::StatusCode::NOT_FOUND,
                                   e.what(),
@@ -74,9 +77,19 @@ namespace creatures {
 
 
 
-    grpc::Status Database::getCreature(const CreatureId *creatureId, Creature *creature) {
+    /**
+     * Get a creature from the database
+     *
+     * @param creatureId The creature ID to look up
+     * @param creature A pointer to a Creature to fill out
+     *
+     * @throws InvalidArgumentException if creatureID is empty
+     * @throws CreatureNotFoundException if the creature ID is not found
+     * @throws InternalError if a database error occurs
+     *
+     */
+    void Database::getCreature(const CreatureId *creatureId, Creature *creature) {
 
-        grpc::Status status;
         if (creatureId->_id().empty()) {
             info("an empty creatureID was passed into getCreature()");
             throw InvalidArgumentException("unable to get a creature because the id was empty");
@@ -100,7 +113,7 @@ namespace creatures {
 
             if (!result) {
                 info("no creature with ID '{}' found", id.to_string());
-                throw creatures::CreatureNotFoundException(fmt::format("no creature id '{}' found", id.to_string()));
+                throw creatures::NotFoundException(fmt::format("no creature id '{}' found", id.to_string()));
             }
 
             // Unwrap the optional to obtain the bsoncxx::document::value
@@ -109,7 +122,6 @@ namespace creatures {
 
             debug("get completed!");
 
-            return grpc::Status::OK;
         }
         catch (const mongocxx::exception &e) {
             critical("an unhandled error happened while loading a creature by ID: {}", e.what());

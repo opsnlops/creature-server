@@ -1,4 +1,5 @@
 
+#include "server/config.h"
 
 #include <string>
 #include <cstdlib>

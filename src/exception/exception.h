@@ -28,18 +28,18 @@ namespace creatures {
         std::string message_;
     };
 
-    class CreatureNotFoundException : public std::exception {
+    class NotFoundException : public std::exception {
     public:
         // Constructor that takes an error message string
-        explicit CreatureNotFoundException(const std::string& message)
+        explicit NotFoundException(const std::string& message)
                 : message_(message) {}
 
         // Constructor that takes a C-style string error message
-        explicit CreatureNotFoundException(const char* message)
+        explicit NotFoundException(const char* message)
                 : message_(message) {}
 
         // Destructor
-        virtual ~CreatureNotFoundException() noexcept {}
+        virtual ~NotFoundException() noexcept {}
 
         // Override the what() function to return the error message
         virtual const char* what() const noexcept {

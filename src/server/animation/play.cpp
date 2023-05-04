@@ -1,4 +1,6 @@
 
+#include "server/config.h"
+
 #include "spdlog/spdlog.h"
 
 #include <bsoncxx/builder/stream/document.hpp>
@@ -9,8 +11,6 @@
 #include <mongocxx/client.hpp>
 #include <mongocxx/exception/bulk_write_exception.hpp>
 
-
-#include "server/animation/animation.h"
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"

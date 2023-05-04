@@ -115,10 +115,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
 
     // Leave some version info to be found
-    debug("Hello from spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
-    debug("Using fmt version {}", FMT_VERSION);
-    debug("Using MongoDB C++ driver version {}", MONGOCXX_VERSION_STRING);
-    debug("Using MongoDB URI {}", DB_URI);
+    debug("spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
+    debug("fmt version {}", FMT_VERSION);
+    debug("MongoDB C++ driver version {}", MONGOCXX_VERSION_STRING);
+    debug("MongoDB URI {}", DB_URI);
+    debug("gRPC version {}.{}.{}", GRPC_CPP_VERSION_MAJOR, GRPC_CPP_VERSION_MINOR, GRPC_CPP_VERSION_PATCH);
+    debug("Protobuf version {}", GOOGLE_PROTOBUF_VERSION);
 
     // Fire up the Mono client
     mongocxx::instance instance{};

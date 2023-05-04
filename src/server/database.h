@@ -26,11 +26,6 @@
 #include <google/protobuf/timestamp.pb.h>
 
 
-// TODO: Clean this up
-#define DB_URI  "mongodb://10.3.2.11"
-#define DB_NAME  "creature_server"
-#define COLLECTION_NAME "creatures"
-
 using server::Animation;
 using server::Animation_Metadata;
 using server::AnimationFilter;
@@ -59,7 +54,7 @@ namespace creatures {
 
         grpc::Status searchCreatures(const CreatureName *creatureName, Creature *creature);
 
-        grpc::Status getCreature(const CreatureId *creatureId, Creature *creature);
+        void getCreature(const CreatureId *creatureId, Creature *creature);
 
         grpc::Status getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList);
 
@@ -69,7 +64,7 @@ namespace creatures {
 
         grpc::Status listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList);
 
-        grpc::Status getAnimation(const AnimationId *animationId, Animation *animation);
+        void getAnimation(const AnimationId *animationId, Animation *animation);
 
         /**
          * Ping the database to make sure it's alive

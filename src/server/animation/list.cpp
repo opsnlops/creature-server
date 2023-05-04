@@ -1,4 +1,6 @@
 
+#include "server/config.h"
+
 #include "spdlog/spdlog.h"
 
 #include <bsoncxx/builder/stream/document.hpp>
@@ -11,7 +13,6 @@
 #include "exception/exception.h"
 #include "server/creature-server.h"
 
-#include "server/animation/animation.h"
 
 using bsoncxx::builder::stream::document;
 

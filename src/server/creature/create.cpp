@@ -1,6 +1,7 @@
+
+#include "server/config.h"
+
 #include <string>
-
-
 #include "spdlog/spdlog.h"
 
 #include "messaging/server.pb.h"

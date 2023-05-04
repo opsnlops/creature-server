@@ -1,4 +1,6 @@
 
+#include "server/config.h"
+
 #include <string>
 
 #include "spdlog/spdlog.h"
@@ -51,7 +53,7 @@ namespace creatures {
             return status;
 
         }
-        catch (const creatures::CreatureNotFoundException &e) {
+        catch (const creatures::NotFoundException &e) {
             info("creature {} not found", request->name());
             status = grpc::Status(grpc::StatusCode::NOT_FOUND,
                                   e.what(),
@@ -99,7 +101,7 @@ namespace creatures {
 
             if (!result) {
                 info("no creatures named '{}' found", name);
-                throw creatures::CreatureNotFoundException(fmt::format("no creatures named '{}' found", name));
+                throw creatures::NotFoundException(fmt::format("no creatures named '{}' found", name));
             }
 
             // Unwrap the optional to obtain the bsoncxx::document::value
