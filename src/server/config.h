@@ -6,6 +6,11 @@
 
 #define DEBUG_EVENT_DMX         0
 
+#define DEBUG_ANIMATION_PLAY    1
+
+
+#define DISABLE_PLAY_SAFETY_CHECKS  1
+
 
 // How often the timer event fires
 #define TICK_TIME_FRAMES        10000

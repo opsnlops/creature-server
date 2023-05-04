@@ -298,6 +298,8 @@ public struct Server_Creature {
 
   public var numberOfMotors: UInt32 = 0
 
+  public var type: Server_CreatureType = .parrot
+
   public var motors: [Server_Creature.Motor] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -590,13 +592,30 @@ public struct Server_PlayAnimationRequest {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var creatureID: Data = Data()
+  public var creatureID: Server_CreatureId {
+    get {return _creatureID ?? Server_CreatureId()}
+    set {_creatureID = newValue}
+  }
+  /// Returns true if `creatureID` has been explicitly set.
+  public var hasCreatureID: Bool {return self._creatureID != nil}
+  /// Clears the value of `creatureID`. Subsequent reads from it will return its default value.
+  public mutating func clearCreatureID() {self._creatureID = nil}
 
-  public var animationID: Data = Data()
+  public var animationID: Server_AnimationId {
+    get {return _animationID ?? Server_AnimationId()}
+    set {_animationID = newValue}
+  }
+  /// Returns true if `animationID` has been explicitly set.
+  public var hasAnimationID: Bool {return self._animationID != nil}
+  /// Clears the value of `animationID`. Subsequent reads from it will return its default value.
+  public mutating func clearAnimationID() {self._animationID = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _creatureID: Server_CreatureId? = nil
+  fileprivate var _animationID: Server_AnimationId? = nil
 }
 
 public struct Server_PlayAnimationResponse {
@@ -959,7 +978,8 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
     5: .same(proto: "universe"),
     6: .standard(proto: "dmx_base"),
     7: .standard(proto: "number_of_motors"),
-    8: .same(proto: "motors"),
+    8: .same(proto: "type"),
+    90: .same(proto: "motors"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -975,7 +995,8 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
       case 5: try { try decoder.decodeSingularUInt32Field(value: &self.universe) }()
       case 6: try { try decoder.decodeSingularUInt32Field(value: &self.dmxBase) }()
       case 7: try { try decoder.decodeSingularUInt32Field(value: &self.numberOfMotors) }()
-      case 8: try { try decoder.decodeRepeatedMessageField(value: &self.motors) }()
+      case 8: try { try decoder.decodeSingularEnumField(value: &self.type) }()
+      case 90: try { try decoder.decodeRepeatedMessageField(value: &self.motors) }()
       default: break
       }
     }
@@ -1007,8 +1028,11 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
     if self.numberOfMotors != 0 {
       try visitor.visitSingularUInt32Field(value: self.numberOfMotors, fieldNumber: 7)
     }
+    if self.type != .parrot {
+      try visitor.visitSingularEnumField(value: self.type, fieldNumber: 8)
+    }
     if !self.motors.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.motors, fieldNumber: 8)
+      try visitor.visitRepeatedMessageField(value: self.motors, fieldNumber: 90)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1021,6 +1045,7 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
     if lhs.universe != rhs.universe {return false}
     if lhs.dmxBase != rhs.dmxBase {return false}
     if lhs.numberOfMotors != rhs.numberOfMotors {return false}
+    if lhs.type != rhs.type {return false}
     if lhs.motors != rhs.motors {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -1597,26 +1622,30 @@ extension Server_PlayAnimationRequest: SwiftProtobuf.Message, SwiftProtobuf._Mes
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBytesField(value: &self.creatureID) }()
-      case 2: try { try decoder.decodeSingularBytesField(value: &self.animationID) }()
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._creatureID) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._animationID) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.creatureID.isEmpty {
-      try visitor.visitSingularBytesField(value: self.creatureID, fieldNumber: 1)
-    }
-    if !self.animationID.isEmpty {
-      try visitor.visitSingularBytesField(value: self.animationID, fieldNumber: 2)
-    }
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._creatureID {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    try { if let v = self._animationID {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Server_PlayAnimationRequest, rhs: Server_PlayAnimationRequest) -> Bool {
-    if lhs.creatureID != rhs.creatureID {return false}
-    if lhs.animationID != rhs.animationID {return false}
+    if lhs._creatureID != rhs._creatureID {return false}
+    if lhs._animationID != rhs._animationID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

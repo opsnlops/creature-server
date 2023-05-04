@@ -110,7 +110,8 @@ message Creature {
   uint32 universe = 5;
   uint32 dmx_base = 6;
   uint32 number_of_motors = 7;
-  repeated Motor motors = 8;
+  CreatureType type = 8;
+  repeated Motor motors = 90;
 
   enum MotorType {
     servo = 0;
@@ -232,8 +233,8 @@ message AnimationIdentifier {
 
 
 message PlayAnimationRequest {
-  bytes creatureId = 1;
-  bytes animationId = 2;
+  CreatureId creatureId = 1;
+  AnimationId animationId = 2;
 }
 
 message PlayAnimationResponse {

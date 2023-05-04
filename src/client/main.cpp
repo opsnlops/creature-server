@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
     // Convert the time_point to a google::protobuf::Timestamp
     google::protobuf::Timestamp current_timestamp = time_point_to_protobuf_timestamp(now);
 
-
+#if 0
     // Let's try to save one
     server::Creature creature = server::Creature();
     creature.set_name("Beaky8");
@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
 
     client.CreateCreature(creature);
     info("create done");
-
+#endif
 
     // Try to get a creature by ID
     std::string oid_string = "6431c48d6e9cc35e2d089263";
@@ -200,6 +200,7 @@ int main(int argc, char** argv) {
     client.StreamFrames();
 
 
+#if 0
     // Create a simple animation and save it in the database
     Animation animation = Animation();
     Animation_Metadata metadata = Animation_Metadata();
@@ -223,7 +224,7 @@ int main(int argc, char** argv) {
     }
 
     client.CreateAnimation(animation);
-
+#endif
 
 
     // List all the animations for WLED lights
@@ -239,7 +240,7 @@ int main(int argc, char** argv) {
     // Attempt to load an animation
     debug("attempting to load an animation");
 
-    std::string animation_oid_string = "644601e0ef20b72e000523fb";
+    std::string animation_oid_string = "645346931b7a8fd501062501";
     info("attempting to search for animation ID {} in the database...", animation_oid_string);
 
     bsoncxx::oid animation_oid(animation_oid_string);
@@ -252,6 +253,36 @@ int main(int argc, char** argv) {
     info("found! Title: {}, number of frames: {}", testAnimation.metadata().title(), testAnimation.frames_size());
 
     displayFrames(testAnimation);
+
+
+
+
+    // Now let's play animation
+    info("attempting to play an animation??");
+    std::string animationPlayTestCreature = "643b86562a93fc6ba608ba21";
+    std::string animationPlayTestAnimation = "6453476d1b7a8fd501062502";
+
+
+    bsoncxx::oid aOid(animationPlayTestAnimation);
+    AnimationId playbackAnimationId;
+    const char* aOiddata = aOid.bytes();
+    playbackAnimationId.set__id(aOiddata, bsoncxx::oid::k_oid_length);
+
+    bsoncxx::oid cOid(animationPlayTestCreature);
+    CreatureId playbackCreatureId;
+    const char* cOiddata = cOid.bytes();
+    playbackCreatureId.set__id(cOiddata, bsoncxx::oid::k_oid_length);
+
+    PlayAnimationRequest playAnimationRequest;
+    *playAnimationRequest.mutable_animationid() = playbackAnimationId;
+    *playAnimationRequest.mutable_creatureid() = playbackCreatureId;
+
+    debug("request: {}", playAnimationRequest.DebugString());
+
+    PlayAnimationResponse animationResponse = client.PlayAnimation(playAnimationRequest);
+
+    info(animationResponse.status());
+
 
     return 0;
 }

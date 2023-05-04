@@ -40,6 +40,8 @@ using server::ListCreaturesResponse;
 using server::LogItem;
 using server::LogLevel;
 using server::LogFilter;
+using server::PlayAnimationRequest;
+using server::PlayAnimationResponse;
 
 
 
@@ -317,6 +319,25 @@ public:
         }
 
         return reply;
+    }
+
+    server::PlayAnimationResponse PlayAnimation(const PlayAnimationRequest& request) {
+
+        ClientContext context;
+        PlayAnimationResponse response;
+
+        Status status = stub_->PlayAnimation(&context, request, &response);
+
+        if(status.ok()) {
+            info("Played an animation!");
+        }
+        else {
+            error("An error happened playing an animation! {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return response;
+
     }
 
 private:

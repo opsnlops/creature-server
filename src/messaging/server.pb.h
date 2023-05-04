@@ -1901,7 +1901,7 @@ class Creature final :
   // accessors -------------------------------------------------------
 
   enum : int {
-    kMotorsFieldNumber = 8,
+    kMotorsFieldNumber = 90,
     kIdFieldNumber = 1,
     kNameFieldNumber = 2,
     kSacnIpFieldNumber = 4,
@@ -1909,8 +1909,9 @@ class Creature final :
     kUniverseFieldNumber = 5,
     kDmxBaseFieldNumber = 6,
     kNumberOfMotorsFieldNumber = 7,
+    kTypeFieldNumber = 8,
   };
-  // repeated .server.Creature.Motor motors = 8;
+  // repeated .server.Creature.Motor motors = 90;
   int motors_size() const;
   private:
   int _internal_motors_size() const;
@@ -2015,6 +2016,15 @@ class Creature final :
   void _internal_set_number_of_motors(uint32_t value);
   public:
 
+  // .server.CreatureType type = 8;
+  void clear_type();
+  ::server::CreatureType type() const;
+  void set_type(::server::CreatureType value);
+  private:
+  ::server::CreatureType _internal_type() const;
+  void _internal_set_type(::server::CreatureType value);
+  public:
+
   // @@protoc_insertion_point(class_scope:server.Creature)
  private:
   class _Internal;
@@ -2031,6 +2041,7 @@ class Creature final :
     uint32_t universe_;
     uint32_t dmx_base_;
     uint32_t number_of_motors_;
+    int type_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -4126,33 +4137,41 @@ class PlayAnimationRequest final :
     kCreatureIdFieldNumber = 1,
     kAnimationIdFieldNumber = 2,
   };
-  // bytes creatureId = 1;
+  // .server.CreatureId creatureId = 1;
+  bool has_creatureid() const;
+  private:
+  bool _internal_has_creatureid() const;
+  public:
   void clear_creatureid();
-  const std::string& creatureid() const;
-  template <typename ArgT0 = const std::string&, typename... ArgT>
-  void set_creatureid(ArgT0&& arg0, ArgT... args);
-  std::string* mutable_creatureid();
-  PROTOBUF_NODISCARD std::string* release_creatureid();
-  void set_allocated_creatureid(std::string* creatureid);
+  const ::server::CreatureId& creatureid() const;
+  PROTOBUF_NODISCARD ::server::CreatureId* release_creatureid();
+  ::server::CreatureId* mutable_creatureid();
+  void set_allocated_creatureid(::server::CreatureId* creatureid);
   private:
-  const std::string& _internal_creatureid() const;
-  inline PROTOBUF_ALWAYS_INLINE void _internal_set_creatureid(const std::string& value);
-  std::string* _internal_mutable_creatureid();
+  const ::server::CreatureId& _internal_creatureid() const;
+  ::server::CreatureId* _internal_mutable_creatureid();
   public:
+  void unsafe_arena_set_allocated_creatureid(
+      ::server::CreatureId* creatureid);
+  ::server::CreatureId* unsafe_arena_release_creatureid();
 
-  // bytes animationId = 2;
-  void clear_animationid();
-  const std::string& animationid() const;
-  template <typename ArgT0 = const std::string&, typename... ArgT>
-  void set_animationid(ArgT0&& arg0, ArgT... args);
-  std::string* mutable_animationid();
-  PROTOBUF_NODISCARD std::string* release_animationid();
-  void set_allocated_animationid(std::string* animationid);
+  // .server.AnimationId animationId = 2;
+  bool has_animationid() const;
   private:
-  const std::string& _internal_animationid() const;
-  inline PROTOBUF_ALWAYS_INLINE void _internal_set_animationid(const std::string& value);
-  std::string* _internal_mutable_animationid();
+  bool _internal_has_animationid() const;
   public:
+  void clear_animationid();
+  const ::server::AnimationId& animationid() const;
+  PROTOBUF_NODISCARD ::server::AnimationId* release_animationid();
+  ::server::AnimationId* mutable_animationid();
+  void set_allocated_animationid(::server::AnimationId* animationid);
+  private:
+  const ::server::AnimationId& _internal_animationid() const;
+  ::server::AnimationId* _internal_mutable_animationid();
+  public:
+  void unsafe_arena_set_allocated_animationid(
+      ::server::AnimationId* animationid);
+  ::server::AnimationId* unsafe_arena_release_animationid();
 
   // @@protoc_insertion_point(class_scope:server.PlayAnimationRequest)
  private:
@@ -4162,8 +4181,8 @@ class PlayAnimationRequest final :
   typedef void InternalArenaConstructable_;
   typedef void DestructorSkippable_;
   struct Impl_ {
-    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr creatureid_;
-    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr animationid_;
+    ::server::CreatureId* creatureid_;
+    ::server::AnimationId* animationid_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -5345,7 +5364,27 @@ inline void Creature::set_number_of_motors(uint32_t value) {
   // @@protoc_insertion_point(field_set:server.Creature.number_of_motors)
 }
 
-// repeated .server.Creature.Motor motors = 8;
+// .server.CreatureType type = 8;
+inline void Creature::clear_type() {
+  _impl_.type_ = 0;
+}
+inline ::server::CreatureType Creature::_internal_type() const {
+  return static_cast< ::server::CreatureType >(_impl_.type_);
+}
+inline ::server::CreatureType Creature::type() const {
+  // @@protoc_insertion_point(field_get:server.Creature.type)
+  return _internal_type();
+}
+inline void Creature::_internal_set_type(::server::CreatureType value) {
+  
+  _impl_.type_ = value;
+}
+inline void Creature::set_type(::server::CreatureType value) {
+  _internal_set_type(value);
+  // @@protoc_insertion_point(field_set:server.Creature.type)
+}
+
+// repeated .server.Creature.Motor motors = 90;
 inline int Creature::_internal_motors_size() const {
   return _impl_.motors_.size();
 }
@@ -6728,103 +6767,183 @@ inline void AnimationIdentifier::set_allocated_metadata(::server::Animation_Meta
 
 // PlayAnimationRequest
 
-// bytes creatureId = 1;
-inline void PlayAnimationRequest::clear_creatureid() {
-  _impl_.creatureid_.ClearToEmpty();
+// .server.CreatureId creatureId = 1;
+inline bool PlayAnimationRequest::_internal_has_creatureid() const {
+  return this != internal_default_instance() && _impl_.creatureid_ != nullptr;
 }
-inline const std::string& PlayAnimationRequest::creatureid() const {
+inline bool PlayAnimationRequest::has_creatureid() const {
+  return _internal_has_creatureid();
+}
+inline void PlayAnimationRequest::clear_creatureid() {
+  if (GetArenaForAllocation() == nullptr && _impl_.creatureid_ != nullptr) {
+    delete _impl_.creatureid_;
+  }
+  _impl_.creatureid_ = nullptr;
+}
+inline const ::server::CreatureId& PlayAnimationRequest::_internal_creatureid() const {
+  const ::server::CreatureId* p = _impl_.creatureid_;
+  return p != nullptr ? *p : reinterpret_cast<const ::server::CreatureId&>(
+      ::server::_CreatureId_default_instance_);
+}
+inline const ::server::CreatureId& PlayAnimationRequest::creatureid() const {
   // @@protoc_insertion_point(field_get:server.PlayAnimationRequest.creatureId)
   return _internal_creatureid();
 }
-template <typename ArgT0, typename... ArgT>
-inline PROTOBUF_ALWAYS_INLINE
-void PlayAnimationRequest::set_creatureid(ArgT0&& arg0, ArgT... args) {
- 
- _impl_.creatureid_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
-  // @@protoc_insertion_point(field_set:server.PlayAnimationRequest.creatureId)
-}
-inline std::string* PlayAnimationRequest::mutable_creatureid() {
-  std::string* _s = _internal_mutable_creatureid();
-  // @@protoc_insertion_point(field_mutable:server.PlayAnimationRequest.creatureId)
-  return _s;
-}
-inline const std::string& PlayAnimationRequest::_internal_creatureid() const {
-  return _impl_.creatureid_.Get();
-}
-inline void PlayAnimationRequest::_internal_set_creatureid(const std::string& value) {
-  
-  _impl_.creatureid_.Set(value, GetArenaForAllocation());
-}
-inline std::string* PlayAnimationRequest::_internal_mutable_creatureid() {
-  
-  return _impl_.creatureid_.Mutable(GetArenaForAllocation());
-}
-inline std::string* PlayAnimationRequest::release_creatureid() {
-  // @@protoc_insertion_point(field_release:server.PlayAnimationRequest.creatureId)
-  return _impl_.creatureid_.Release();
-}
-inline void PlayAnimationRequest::set_allocated_creatureid(std::string* creatureid) {
-  if (creatureid != nullptr) {
+inline void PlayAnimationRequest::unsafe_arena_set_allocated_creatureid(
+    ::server::CreatureId* creatureid) {
+  if (GetArenaForAllocation() == nullptr) {
+    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.creatureid_);
+  }
+  _impl_.creatureid_ = creatureid;
+  if (creatureid) {
     
   } else {
     
   }
-  _impl_.creatureid_.SetAllocated(creatureid, GetArenaForAllocation());
-#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  if (_impl_.creatureid_.IsDefault()) {
-    _impl_.creatureid_.Set("", GetArenaForAllocation());
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:server.PlayAnimationRequest.creatureId)
+}
+inline ::server::CreatureId* PlayAnimationRequest::release_creatureid() {
+  
+  ::server::CreatureId* temp = _impl_.creatureid_;
+  _impl_.creatureid_ = nullptr;
+#ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
+  auto* old =  reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(temp);
+  temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  if (GetArenaForAllocation() == nullptr) { delete old; }
+#else  // PROTOBUF_FORCE_COPY_IN_RELEASE
+  if (GetArenaForAllocation() != nullptr) {
+    temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
   }
-#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+#endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
+  return temp;
+}
+inline ::server::CreatureId* PlayAnimationRequest::unsafe_arena_release_creatureid() {
+  // @@protoc_insertion_point(field_release:server.PlayAnimationRequest.creatureId)
+  
+  ::server::CreatureId* temp = _impl_.creatureid_;
+  _impl_.creatureid_ = nullptr;
+  return temp;
+}
+inline ::server::CreatureId* PlayAnimationRequest::_internal_mutable_creatureid() {
+  
+  if (_impl_.creatureid_ == nullptr) {
+    auto* p = CreateMaybeMessage<::server::CreatureId>(GetArenaForAllocation());
+    _impl_.creatureid_ = p;
+  }
+  return _impl_.creatureid_;
+}
+inline ::server::CreatureId* PlayAnimationRequest::mutable_creatureid() {
+  ::server::CreatureId* _msg = _internal_mutable_creatureid();
+  // @@protoc_insertion_point(field_mutable:server.PlayAnimationRequest.creatureId)
+  return _msg;
+}
+inline void PlayAnimationRequest::set_allocated_creatureid(::server::CreatureId* creatureid) {
+  ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
+  if (message_arena == nullptr) {
+    delete _impl_.creatureid_;
+  }
+  if (creatureid) {
+    ::PROTOBUF_NAMESPACE_ID::Arena* submessage_arena =
+        ::PROTOBUF_NAMESPACE_ID::Arena::InternalGetOwningArena(creatureid);
+    if (message_arena != submessage_arena) {
+      creatureid = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
+          message_arena, creatureid, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  _impl_.creatureid_ = creatureid;
   // @@protoc_insertion_point(field_set_allocated:server.PlayAnimationRequest.creatureId)
 }
 
-// bytes animationId = 2;
-inline void PlayAnimationRequest::clear_animationid() {
-  _impl_.animationid_.ClearToEmpty();
+// .server.AnimationId animationId = 2;
+inline bool PlayAnimationRequest::_internal_has_animationid() const {
+  return this != internal_default_instance() && _impl_.animationid_ != nullptr;
 }
-inline const std::string& PlayAnimationRequest::animationid() const {
+inline bool PlayAnimationRequest::has_animationid() const {
+  return _internal_has_animationid();
+}
+inline void PlayAnimationRequest::clear_animationid() {
+  if (GetArenaForAllocation() == nullptr && _impl_.animationid_ != nullptr) {
+    delete _impl_.animationid_;
+  }
+  _impl_.animationid_ = nullptr;
+}
+inline const ::server::AnimationId& PlayAnimationRequest::_internal_animationid() const {
+  const ::server::AnimationId* p = _impl_.animationid_;
+  return p != nullptr ? *p : reinterpret_cast<const ::server::AnimationId&>(
+      ::server::_AnimationId_default_instance_);
+}
+inline const ::server::AnimationId& PlayAnimationRequest::animationid() const {
   // @@protoc_insertion_point(field_get:server.PlayAnimationRequest.animationId)
   return _internal_animationid();
 }
-template <typename ArgT0, typename... ArgT>
-inline PROTOBUF_ALWAYS_INLINE
-void PlayAnimationRequest::set_animationid(ArgT0&& arg0, ArgT... args) {
- 
- _impl_.animationid_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
-  // @@protoc_insertion_point(field_set:server.PlayAnimationRequest.animationId)
-}
-inline std::string* PlayAnimationRequest::mutable_animationid() {
-  std::string* _s = _internal_mutable_animationid();
-  // @@protoc_insertion_point(field_mutable:server.PlayAnimationRequest.animationId)
-  return _s;
-}
-inline const std::string& PlayAnimationRequest::_internal_animationid() const {
-  return _impl_.animationid_.Get();
-}
-inline void PlayAnimationRequest::_internal_set_animationid(const std::string& value) {
-  
-  _impl_.animationid_.Set(value, GetArenaForAllocation());
-}
-inline std::string* PlayAnimationRequest::_internal_mutable_animationid() {
-  
-  return _impl_.animationid_.Mutable(GetArenaForAllocation());
-}
-inline std::string* PlayAnimationRequest::release_animationid() {
-  // @@protoc_insertion_point(field_release:server.PlayAnimationRequest.animationId)
-  return _impl_.animationid_.Release();
-}
-inline void PlayAnimationRequest::set_allocated_animationid(std::string* animationid) {
-  if (animationid != nullptr) {
+inline void PlayAnimationRequest::unsafe_arena_set_allocated_animationid(
+    ::server::AnimationId* animationid) {
+  if (GetArenaForAllocation() == nullptr) {
+    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.animationid_);
+  }
+  _impl_.animationid_ = animationid;
+  if (animationid) {
     
   } else {
     
   }
-  _impl_.animationid_.SetAllocated(animationid, GetArenaForAllocation());
-#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  if (_impl_.animationid_.IsDefault()) {
-    _impl_.animationid_.Set("", GetArenaForAllocation());
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:server.PlayAnimationRequest.animationId)
+}
+inline ::server::AnimationId* PlayAnimationRequest::release_animationid() {
+  
+  ::server::AnimationId* temp = _impl_.animationid_;
+  _impl_.animationid_ = nullptr;
+#ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
+  auto* old =  reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(temp);
+  temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  if (GetArenaForAllocation() == nullptr) { delete old; }
+#else  // PROTOBUF_FORCE_COPY_IN_RELEASE
+  if (GetArenaForAllocation() != nullptr) {
+    temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
   }
-#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+#endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
+  return temp;
+}
+inline ::server::AnimationId* PlayAnimationRequest::unsafe_arena_release_animationid() {
+  // @@protoc_insertion_point(field_release:server.PlayAnimationRequest.animationId)
+  
+  ::server::AnimationId* temp = _impl_.animationid_;
+  _impl_.animationid_ = nullptr;
+  return temp;
+}
+inline ::server::AnimationId* PlayAnimationRequest::_internal_mutable_animationid() {
+  
+  if (_impl_.animationid_ == nullptr) {
+    auto* p = CreateMaybeMessage<::server::AnimationId>(GetArenaForAllocation());
+    _impl_.animationid_ = p;
+  }
+  return _impl_.animationid_;
+}
+inline ::server::AnimationId* PlayAnimationRequest::mutable_animationid() {
+  ::server::AnimationId* _msg = _internal_mutable_animationid();
+  // @@protoc_insertion_point(field_mutable:server.PlayAnimationRequest.animationId)
+  return _msg;
+}
+inline void PlayAnimationRequest::set_allocated_animationid(::server::AnimationId* animationid) {
+  ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
+  if (message_arena == nullptr) {
+    delete _impl_.animationid_;
+  }
+  if (animationid) {
+    ::PROTOBUF_NAMESPACE_ID::Arena* submessage_arena =
+        ::PROTOBUF_NAMESPACE_ID::Arena::InternalGetOwningArena(animationid);
+    if (message_arena != submessage_arena) {
+      animationid = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
+          message_arena, animationid, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  _impl_.animationid_ = animationid;
   // @@protoc_insertion_point(field_set_allocated:server.PlayAnimationRequest.animationId)
 }
 

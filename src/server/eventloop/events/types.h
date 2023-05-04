@@ -28,7 +28,6 @@ namespace creatures {
 
         // Used every time to send data
         std::vector<uint8_t> data;
-        uint8_t count;
     };
 
 
