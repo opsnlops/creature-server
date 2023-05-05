@@ -46,7 +46,7 @@ FROM debian:bookworm-slim as runtime
 
 # Some of our libs need runtime bits
 RUN apt update && apt upgrade -y && \
-    apt install -y libsasl2-2 libicu72 libspdlog1.10 libprotobuf32 libsdl2-mixer-2.0-0 && \
+    apt install -y libsasl2-2 libicu72 libspdlog1.10 libprotobuf32 libsdl2-mixer-2.0-0 locales-all && \
     rm -rf /var/lib/apt/lists
 
 RUN mkdir /app
