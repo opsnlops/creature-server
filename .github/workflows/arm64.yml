@@ -23,6 +23,6 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./Dockerfile-chainguard
+          file: ./Dockerfile
           push: true
           tags: ${{ secrets.DOCKER_LOGIN_USERNAME }}/creature-server:arm64
