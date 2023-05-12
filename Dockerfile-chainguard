@@ -8,11 +8,11 @@ RUN apk update && \
 
 # Install the latest Mongo driver
 WORKDIR /build/mongo
-ADD https://github.com/mongodb/mongo-c-driver/releases/download/1.23.3/mongo-c-driver-1.23.3.tar.gz c-driver.tar.gz
+ADD https://github.com/mongodb/mongo-c-driver/releases/download/1.23.4/mongo-c-driver-1.23.4.tar.gz c-driver.tar.gz
 ADD https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.7.1/mongo-cxx-driver-r3.7.1.tar.gz cxx-driver.tar.gz
 RUN tar -xzvf c-driver.tar.gz && tar -xzvf cxx-driver.tar.gz
 
-RUN cd mongo-c-driver-1.23.3/build && \
+RUN cd mongo-c-driver-1.23.4/build && \
     cmake -DENABLE_STATIC=ON -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
     ninja && \
     ninja install

@@ -345,10 +345,8 @@ extension Server_CreatureServerClientProtocol {
   }
 }
 
-#if compiler(>=5.6)
 @available(*, deprecated)
 extension Server_CreatureServerClient: @unchecked Sendable {}
-#endif // compiler(>=5.6)
 
 @available(*, deprecated, renamed: "Server_CreatureServerNIOClient")
 public final class Server_CreatureServerClient: Server_CreatureServerClientProtocol {
@@ -404,7 +402,6 @@ public struct Server_CreatureServerNIOClient: Server_CreatureServerClientProtoco
   }
 }
 
-#if compiler(>=5.6)
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
@@ -828,9 +825,7 @@ public struct Server_CreatureServerAsyncClient: Server_CreatureServerAsyncClient
   }
 }
 
-#endif // compiler(>=5.6)
-
-public protocol Server_CreatureServerClientInterceptorFactoryProtocol: GRPCSendable {
+public protocol Server_CreatureServerClientInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when invoking 'getCreature'.
   func makeGetCreatureInterceptors() -> [ClientInterceptor<Server_CreatureId, Server_Creature>]
