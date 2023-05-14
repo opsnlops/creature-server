@@ -213,6 +213,7 @@ int main(int argc, char** argv) {
     metadata.set_milliseconds_per_frame(40);
     metadata.set_creature_type( server::CreatureType::wled_light);
     metadata.set_notes("First note! 🐰");
+    metadata.set_sound_file("fartingNoises.flac");
     metadata.set_number_of_frames(10);
     *animation.mutable_metadata() = metadata;
 

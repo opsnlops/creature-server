@@ -84,6 +84,7 @@ namespace creatures {
                     << "number_of_motors"
                     << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().number_of_motors())}
                     << "notes" << animation->metadata().notes()
+                    << "sound_file" << animation->metadata().sound_file()
                     << bsoncxx::builder::stream::finalize;
 
             return metadata;
@@ -219,6 +220,20 @@ namespace creatures {
         }
         metadata->set_creature_type(static_cast<server::CreatureType>(creature_type));
         trace("set the creature type to {}", metadata->creature_type());
+
+
+        element = doc["sound_file"];
+        if (!element) {
+            error("Animation.Metadata value 'sound_file' is not found");
+            throw DataFormatException("Animation.Metadata value 'sound_file' is not found");
+        }
+        if (element.type() != bsoncxx::type::k_utf8) {
+            error("Animation.Metadata value 'sound_file' is not an int");
+            throw DataFormatException("Animation.Metadata value 'sound_file' is not a string");
+        }
+        string_value = element.get_string().value;
+        metadata->set_sound_file(std::string{string_value});
+        trace("set the sound_file to {}", metadata->notes());
 
 
         // And finally, the notes!

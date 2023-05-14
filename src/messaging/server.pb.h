@@ -2934,6 +2934,7 @@ class Animation_Metadata final :
     kTitleFieldNumber = 1,
     kNotesFieldNumber = 6,
     kAnimationIdFieldNumber = 7,
+    kSoundFileFieldNumber = 8,
     kMillisecondsPerFrameFieldNumber = 2,
     kNumberOfFramesFieldNumber = 3,
     kCreatureTypeFieldNumber = 4,
@@ -2979,6 +2980,20 @@ class Animation_Metadata final :
   const std::string& _internal_animationid() const;
   inline PROTOBUF_ALWAYS_INLINE void _internal_set_animationid(const std::string& value);
   std::string* _internal_mutable_animationid();
+  public:
+
+  // string sound_file = 8;
+  void clear_sound_file();
+  const std::string& sound_file() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_sound_file(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_sound_file();
+  PROTOBUF_NODISCARD std::string* release_sound_file();
+  void set_allocated_sound_file(std::string* sound_file);
+  private:
+  const std::string& _internal_sound_file() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_sound_file(const std::string& value);
+  std::string* _internal_mutable_sound_file();
   public:
 
   // int32 milliseconds_per_frame = 2;
@@ -3028,6 +3043,7 @@ class Animation_Metadata final :
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr title_;
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr notes_;
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr animationid_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr sound_file_;
     int32_t milliseconds_per_frame_;
     int32_t number_of_frames_;
     int creature_type_;
@@ -6298,6 +6314,56 @@ inline void Animation_Metadata::set_allocated_animationid(std::string* animation
   }
 #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   // @@protoc_insertion_point(field_set_allocated:server.Animation.Metadata.animationId)
+}
+
+// string sound_file = 8;
+inline void Animation_Metadata::clear_sound_file() {
+  _impl_.sound_file_.ClearToEmpty();
+}
+inline const std::string& Animation_Metadata::sound_file() const {
+  // @@protoc_insertion_point(field_get:server.Animation.Metadata.sound_file)
+  return _internal_sound_file();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void Animation_Metadata::set_sound_file(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.sound_file_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.Animation.Metadata.sound_file)
+}
+inline std::string* Animation_Metadata::mutable_sound_file() {
+  std::string* _s = _internal_mutable_sound_file();
+  // @@protoc_insertion_point(field_mutable:server.Animation.Metadata.sound_file)
+  return _s;
+}
+inline const std::string& Animation_Metadata::_internal_sound_file() const {
+  return _impl_.sound_file_.Get();
+}
+inline void Animation_Metadata::_internal_set_sound_file(const std::string& value) {
+  
+  _impl_.sound_file_.Set(value, GetArenaForAllocation());
+}
+inline std::string* Animation_Metadata::_internal_mutable_sound_file() {
+  
+  return _impl_.sound_file_.Mutable(GetArenaForAllocation());
+}
+inline std::string* Animation_Metadata::release_sound_file() {
+  // @@protoc_insertion_point(field_release:server.Animation.Metadata.sound_file)
+  return _impl_.sound_file_.Release();
+}
+inline void Animation_Metadata::set_allocated_sound_file(std::string* sound_file) {
+  if (sound_file != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.sound_file_.SetAllocated(sound_file, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.sound_file_.IsDefault()) {
+    _impl_.sound_file_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.Animation.Metadata.sound_file)
 }
 
 // -------------------------------------------------------------------

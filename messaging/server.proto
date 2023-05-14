@@ -208,7 +208,10 @@ message Animation {
     // So that we can work backwards from a metadata to a given animation. This
     // is used in the UI to go from the list of animations into the editor.
     bytes animationId = 7;
-  }
+
+    // The sound file to play while this animation is running.
+    string sound_file = 8;
+    }
 
   message Frame {
     repeated bytes bytes = 1;

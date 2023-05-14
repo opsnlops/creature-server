@@ -236,6 +236,7 @@ PROTOBUF_CONSTEXPR Animation_Metadata::Animation_Metadata(
     /*decltype(_impl_.title_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.notes_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.animationid_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.sound_file_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.milliseconds_per_frame_)*/0
   , /*decltype(_impl_.number_of_frames_)*/0
   , /*decltype(_impl_.creature_type_)*/0
@@ -504,6 +505,7 @@ const uint32_t TableStruct_server_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(p
   PROTOBUF_FIELD_OFFSET(::server::Animation_Metadata, _impl_.number_of_motors_),
   PROTOBUF_FIELD_OFFSET(::server::Animation_Metadata, _impl_.notes_),
   PROTOBUF_FIELD_OFFSET(::server::Animation_Metadata, _impl_.animationid_),
+  PROTOBUF_FIELD_OFFSET(::server::Animation_Metadata, _impl_.sound_file_),
   ~0u,  // no _has_bits_
   PROTOBUF_FIELD_OFFSET(::server::Animation_Frame, _internal_metadata_),
   ~0u,  // no _extensions_
@@ -582,14 +584,14 @@ static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protode
   { 110, -1, -1, sizeof(::server::FrameResponse)},
   { 118, -1, -1, sizeof(::server::ServerStatus)},
   { 126, -1, -1, sizeof(::server::Animation_Metadata)},
-  { 139, -1, -1, sizeof(::server::Animation_Frame)},
-  { 146, -1, -1, sizeof(::server::Animation)},
-  { 155, -1, -1, sizeof(::server::AnimationId)},
-  { 162, -1, -1, sizeof(::server::AnimationFilter)},
-  { 169, -1, -1, sizeof(::server::ListAnimationsResponse)},
-  { 176, -1, -1, sizeof(::server::AnimationIdentifier)},
-  { 184, -1, -1, sizeof(::server::PlayAnimationRequest)},
-  { 192, -1, -1, sizeof(::server::PlayAnimationResponse)},
+  { 140, -1, -1, sizeof(::server::Animation_Frame)},
+  { 147, -1, -1, sizeof(::server::Animation)},
+  { 156, -1, -1, sizeof(::server::AnimationId)},
+  { 163, -1, -1, sizeof(::server::AnimationFilter)},
+  { 170, -1, -1, sizeof(::server::ListAnimationsResponse)},
+  { 177, -1, -1, sizeof(::server::AnimationIdentifier)},
+  { 185, -1, -1, sizeof(::server::PlayAnimationRequest)},
+  { 193, -1, -1, sizeof(::server::PlayAnimationResponse)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
@@ -652,55 +654,55 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "\n \001(\014\":\n\rFrameResponse\022\030\n\020frames_process"
   "ed\030\001 \001(\r\022\017\n\007message\030\002 \001(\t\"X\n\014ServerStatu"
   "s\022\030\n\020frames_processed\030\001 \001(\004\022.\n\nstarted_a"
-  "t\030\002 \001(\0132\032.google.protobuf.Timestamp\"\310\002\n\t"
+  "t\030\002 \001(\0132\032.google.protobuf.Timestamp\"\334\002\n\t"
   "Animation\022\013\n\003_id\030\001 \001(\014\022,\n\010metadata\030\002 \001(\013"
   "2\032.server.Animation.Metadata\022\'\n\006frames\030\003"
-  " \003(\0132\027.server.Animation.Frame\032\276\001\n\010Metada"
+  " \003(\0132\027.server.Animation.Frame\032\322\001\n\010Metada"
   "ta\022\r\n\005title\030\001 \001(\t\022\036\n\026milliseconds_per_fr"
   "ame\030\002 \001(\005\022\030\n\020number_of_frames\030\003 \001(\005\022+\n\rc"
   "reature_type\030\004 \001(\0162\024.server.CreatureType"
   "\022\030\n\020number_of_motors\030\005 \001(\005\022\r\n\005notes\030\006 \001("
-  "\t\022\023\n\013animationId\030\007 \001(\014\032\026\n\005Frame\022\r\n\005bytes"
-  "\030\001 \003(\014\"\032\n\013AnimationId\022\013\n\003_id\030\001 \001(\014\"5\n\017An"
-  "imationFilter\022\"\n\004type\030\001 \001(\0162\024.server.Cre"
-  "atureType\"I\n\026ListAnimationsResponse\022/\n\na"
-  "nimations\030\001 \003(\0132\033.server.AnimationIdenti"
-  "fier\"P\n\023AnimationIdentifier\022\013\n\003_id\030\001 \001(\014"
-  "\022,\n\010metadata\030\002 \001(\0132\032.server.Animation.Me"
-  "tadata\"h\n\024PlayAnimationRequest\022&\n\ncreatu"
-  "reId\030\001 \001(\0132\022.server.CreatureId\022(\n\013animat"
-  "ionId\030\002 \001(\0132\023.server.AnimationId\"H\n\025Play"
-  "AnimationResponse\022\016\n\006status\030\001 \001(\t\022\037\n\027num"
-  "ber_of_frames_queued\030\002 \001(\005*c\n\010LogLevel\022\t"
-  "\n\005trace\020\000\022\t\n\005debug\020\001\022\010\n\004info\020\002\022\010\n\004warn\020\003"
-  "\022\t\n\005error\020\004\022\014\n\010critical\020\005\022\007\n\003off\020\006\022\013\n\007un"
-  "known\020\007*\036\n\006SortBy\022\010\n\004name\020\000\022\n\n\006number\020\001*"
-  "6\n\014CreatureType\022\n\n\006parrot\020\000\022\016\n\nwled_ligh"
-  "t\020\001\022\n\n\005other\020\347\0072\334\006\n\016CreatureServer\0225\n\013Ge"
-  "tCreature\022\022.server.CreatureId\032\020.server.C"
-  "reature\"\000\022L\n\017GetAllCreatures\022\026.server.Cr"
-  "eatureFilter\032\037.server.GetAllCreaturesRes"
-  "ponse\"\000\022:\n\016CreateCreature\022\020.server.Creat"
-  "ure\032\024.server.DatabaseInfo\"\000\022:\n\016UpdateCre"
+  "\t\022\023\n\013animationId\030\007 \001(\014\022\022\n\nsound_file\030\010 \001"
+  "(\t\032\026\n\005Frame\022\r\n\005bytes\030\001 \003(\014\"\032\n\013AnimationI"
+  "d\022\013\n\003_id\030\001 \001(\014\"5\n\017AnimationFilter\022\"\n\004typ"
+  "e\030\001 \001(\0162\024.server.CreatureType\"I\n\026ListAni"
+  "mationsResponse\022/\n\nanimations\030\001 \003(\0132\033.se"
+  "rver.AnimationIdentifier\"P\n\023AnimationIde"
+  "ntifier\022\013\n\003_id\030\001 \001(\014\022,\n\010metadata\030\002 \001(\0132\032"
+  ".server.Animation.Metadata\"h\n\024PlayAnimat"
+  "ionRequest\022&\n\ncreatureId\030\001 \001(\0132\022.server."
+  "CreatureId\022(\n\013animationId\030\002 \001(\0132\023.server"
+  ".AnimationId\"H\n\025PlayAnimationResponse\022\016\n"
+  "\006status\030\001 \001(\t\022\037\n\027number_of_frames_queued"
+  "\030\002 \001(\005*c\n\010LogLevel\022\t\n\005trace\020\000\022\t\n\005debug\020\001"
+  "\022\010\n\004info\020\002\022\010\n\004warn\020\003\022\t\n\005error\020\004\022\014\n\010criti"
+  "cal\020\005\022\007\n\003off\020\006\022\013\n\007unknown\020\007*\036\n\006SortBy\022\010\n"
+  "\004name\020\000\022\n\n\006number\020\001*6\n\014CreatureType\022\n\n\006p"
+  "arrot\020\000\022\016\n\nwled_light\020\001\022\n\n\005other\020\347\0072\334\006\n\016"
+  "CreatureServer\0225\n\013GetCreature\022\022.server.C"
+  "reatureId\032\020.server.Creature\"\000\022L\n\017GetAllC"
+  "reatures\022\026.server.CreatureFilter\032\037.serve"
+  "r.GetAllCreaturesResponse\"\000\022:\n\016CreateCre"
   "ature\022\020.server.Creature\032\024.server.Databas"
-  "eInfo\"\000\0224\n\nStreamLogs\022\021.server.LogFilter"
-  "\032\017.server.LogItem\"\0000\001\022;\n\017SearchCreatures"
-  "\022\024.server.CreatureName\032\020.server.Creature"
-  "\"\000\022H\n\rListCreatures\022\026.server.CreatureFil"
-  "ter\032\035.server.ListCreaturesResponse\"\000\0228\n\014"
-  "StreamFrames\022\r.server.Frame\032\025.server.Fra"
-  "meResponse\"\000(\001\022A\n\017GetServerStatus\022\026.goog"
-  "le.protobuf.Empty\032\024.server.ServerStatus\""
-  "\000\022<\n\017CreateAnimation\022\021.server.Animation\032"
-  "\024.server.DatabaseInfo\"\000\022K\n\016ListAnimation"
-  "s\022\027.server.AnimationFilter\032\036.server.List"
-  "AnimationsResponse\"\000\0228\n\014GetAnimation\022\023.s"
-  "erver.AnimationId\032\021.server.Animation\"\000\022N"
-  "\n\rPlayAnimation\022\034.server.PlayAnimationRe"
-  "quest\032\035.server.PlayAnimationResponse\"\000BT"
-  "\n\034io.opsnlops.creatures.serverB\022NetworkS"
-  "erverProtoH\001P\001Z\034opsnlops.io/creatures/se"
-  "rverb\006proto3"
+  "eInfo\"\000\022:\n\016UpdateCreature\022\020.server.Creat"
+  "ure\032\024.server.DatabaseInfo\"\000\0224\n\nStreamLog"
+  "s\022\021.server.LogFilter\032\017.server.LogItem\"\0000"
+  "\001\022;\n\017SearchCreatures\022\024.server.CreatureNa"
+  "me\032\020.server.Creature\"\000\022H\n\rListCreatures\022"
+  "\026.server.CreatureFilter\032\035.server.ListCre"
+  "aturesResponse\"\000\0228\n\014StreamFrames\022\r.serve"
+  "r.Frame\032\025.server.FrameResponse\"\000(\001\022A\n\017Ge"
+  "tServerStatus\022\026.google.protobuf.Empty\032\024."
+  "server.ServerStatus\"\000\022<\n\017CreateAnimation"
+  "\022\021.server.Animation\032\024.server.DatabaseInf"
+  "o\"\000\022K\n\016ListAnimations\022\027.server.Animation"
+  "Filter\032\036.server.ListAnimationsResponse\"\000"
+  "\0228\n\014GetAnimation\022\023.server.AnimationId\032\021."
+  "server.Animation\"\000\022N\n\rPlayAnimation\022\034.se"
+  "rver.PlayAnimationRequest\032\035.server.PlayA"
+  "nimationResponse\"\000BT\n\034io.opsnlops.creatu"
+  "res.serverB\022NetworkServerProtoH\001P\001Z\034opsn"
+  "lops.io/creatures/serverb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -708,7 +710,7 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 3252, descriptor_table_protodef_server_2eproto,
+    false, false, 3272, descriptor_table_protodef_server_2eproto,
     "server.proto",
     &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 23,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,
@@ -4588,6 +4590,7 @@ Animation_Metadata::Animation_Metadata(const Animation_Metadata& from)
       decltype(_impl_.title_){}
     , decltype(_impl_.notes_){}
     , decltype(_impl_.animationid_){}
+    , decltype(_impl_.sound_file_){}
     , decltype(_impl_.milliseconds_per_frame_){}
     , decltype(_impl_.number_of_frames_){}
     , decltype(_impl_.creature_type_){}
@@ -4619,6 +4622,14 @@ Animation_Metadata::Animation_Metadata(const Animation_Metadata& from)
     _this->_impl_.animationid_.Set(from._internal_animationid(), 
       _this->GetArenaForAllocation());
   }
+  _impl_.sound_file_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.sound_file_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_sound_file().empty()) {
+    _this->_impl_.sound_file_.Set(from._internal_sound_file(), 
+      _this->GetArenaForAllocation());
+  }
   ::memcpy(&_impl_.milliseconds_per_frame_, &from._impl_.milliseconds_per_frame_,
     static_cast<size_t>(reinterpret_cast<char*>(&_impl_.number_of_motors_) -
     reinterpret_cast<char*>(&_impl_.milliseconds_per_frame_)) + sizeof(_impl_.number_of_motors_));
@@ -4633,6 +4644,7 @@ inline void Animation_Metadata::SharedCtor(
       decltype(_impl_.title_){}
     , decltype(_impl_.notes_){}
     , decltype(_impl_.animationid_){}
+    , decltype(_impl_.sound_file_){}
     , decltype(_impl_.milliseconds_per_frame_){0}
     , decltype(_impl_.number_of_frames_){0}
     , decltype(_impl_.creature_type_){0}
@@ -4651,6 +4663,10 @@ inline void Animation_Metadata::SharedCtor(
   #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
     _impl_.animationid_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.sound_file_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.sound_file_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
 }
 
 Animation_Metadata::~Animation_Metadata() {
@@ -4667,6 +4683,7 @@ inline void Animation_Metadata::SharedDtor() {
   _impl_.title_.Destroy();
   _impl_.notes_.Destroy();
   _impl_.animationid_.Destroy();
+  _impl_.sound_file_.Destroy();
 }
 
 void Animation_Metadata::SetCachedSize(int size) const {
@@ -4682,6 +4699,7 @@ void Animation_Metadata::Clear() {
   _impl_.title_.ClearToEmpty();
   _impl_.notes_.ClearToEmpty();
   _impl_.animationid_.ClearToEmpty();
+  _impl_.sound_file_.ClearToEmpty();
   ::memset(&_impl_.milliseconds_per_frame_, 0, static_cast<size_t>(
       reinterpret_cast<char*>(&_impl_.number_of_motors_) -
       reinterpret_cast<char*>(&_impl_.milliseconds_per_frame_)) + sizeof(_impl_.number_of_motors_));
@@ -4753,6 +4771,16 @@ const char* Animation_Metadata::_InternalParse(const char* ptr, ::_pbi::ParseCon
           auto str = _internal_mutable_animationid();
           ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
           CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // string sound_file = 8;
+      case 8:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 66)) {
+          auto str = _internal_mutable_sound_file();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "server.Animation.Metadata.sound_file"));
         } else
           goto handle_unusual;
         continue;
@@ -4836,6 +4864,16 @@ uint8_t* Animation_Metadata::_InternalSerialize(
         7, this->_internal_animationid(), target);
   }
 
+  // string sound_file = 8;
+  if (!this->_internal_sound_file().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_sound_file().data(), static_cast<int>(this->_internal_sound_file().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "server.Animation.Metadata.sound_file");
+    target = stream->WriteStringMaybeAliased(
+        8, this->_internal_sound_file(), target);
+  }
+
   if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
     target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
         _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
@@ -4871,6 +4909,13 @@ size_t Animation_Metadata::ByteSizeLong() const {
     total_size += 1 +
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::BytesSize(
         this->_internal_animationid());
+  }
+
+  // string sound_file = 8;
+  if (!this->_internal_sound_file().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_sound_file());
   }
 
   // int32 milliseconds_per_frame = 2;
@@ -4921,6 +4966,9 @@ void Animation_Metadata::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, con
   if (!from._internal_animationid().empty()) {
     _this->_internal_set_animationid(from._internal_animationid());
   }
+  if (!from._internal_sound_file().empty()) {
+    _this->_internal_set_sound_file(from._internal_sound_file());
+  }
   if (from._internal_milliseconds_per_frame() != 0) {
     _this->_internal_set_milliseconds_per_frame(from._internal_milliseconds_per_frame());
   }
@@ -4963,6 +5011,10 @@ void Animation_Metadata::InternalSwap(Animation_Metadata* other) {
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
       &_impl_.animationid_, lhs_arena,
       &other->_impl_.animationid_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.sound_file_, lhs_arena,
+      &other->_impl_.sound_file_, rhs_arena
   );
   ::PROTOBUF_NAMESPACE_ID::internal::memswap<
       PROTOBUF_FIELD_OFFSET(Animation_Metadata, _impl_.number_of_motors_)

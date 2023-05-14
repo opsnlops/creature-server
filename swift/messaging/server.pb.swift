@@ -511,6 +511,9 @@ public struct Server_Animation {
     /// is used in the UI to go from the list of animations into the editor.
     public var animationID: Data = Data()
 
+    /// The sound file to play while this animation is running.
+    public var soundFile: String = String()
+
     public var unknownFields = SwiftProtobuf.UnknownStorage()
 
     public init() {}
@@ -1392,6 +1395,7 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
     5: .standard(proto: "number_of_motors"),
     6: .same(proto: "notes"),
     7: .same(proto: "animationId"),
+    8: .standard(proto: "sound_file"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -1407,6 +1411,7 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
       case 5: try { try decoder.decodeSingularInt32Field(value: &self.numberOfMotors) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.notes) }()
       case 7: try { try decoder.decodeSingularBytesField(value: &self.animationID) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.soundFile) }()
       default: break
       }
     }
@@ -1434,6 +1439,9 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if !self.animationID.isEmpty {
       try visitor.visitSingularBytesField(value: self.animationID, fieldNumber: 7)
     }
+    if !self.soundFile.isEmpty {
+      try visitor.visitSingularStringField(value: self.soundFile, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1445,6 +1453,7 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if lhs.numberOfMotors != rhs.numberOfMotors {return false}
     if lhs.notes != rhs.notes {return false}
     if lhs.animationID != rhs.animationID {return false}
+    if lhs.soundFile != rhs.soundFile {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
