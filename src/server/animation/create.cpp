@@ -64,7 +64,11 @@ namespace creatures {
 
         // Create a BSON doc with this animation
         try {
-            auto doc_view = animationToBson(animation, true);
+
+            // Create the new animationId
+            bsoncxx::oid animationId;
+
+            auto doc_view = animationToBson(animation, animationId);
             trace("doc_value made: {}", bsoncxx::to_json(doc_view));
 
             collection.insert_one(doc_view.view());

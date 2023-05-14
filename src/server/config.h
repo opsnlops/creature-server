@@ -13,7 +13,7 @@
 
 
 // How often the timer event fires
-#define TICK_TIME_FRAMES        10000
+#define TICK_TIME_FRAMES        30000
 
 
 #define EVENT_LOOP_PERIOD_MS    1

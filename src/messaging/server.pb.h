@@ -2933,6 +2933,7 @@ class Animation_Metadata final :
   enum : int {
     kTitleFieldNumber = 1,
     kNotesFieldNumber = 6,
+    kAnimationIdFieldNumber = 7,
     kMillisecondsPerFrameFieldNumber = 2,
     kNumberOfFramesFieldNumber = 3,
     kCreatureTypeFieldNumber = 4,
@@ -2964,6 +2965,20 @@ class Animation_Metadata final :
   const std::string& _internal_notes() const;
   inline PROTOBUF_ALWAYS_INLINE void _internal_set_notes(const std::string& value);
   std::string* _internal_mutable_notes();
+  public:
+
+  // bytes animationId = 7;
+  void clear_animationid();
+  const std::string& animationid() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_animationid(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_animationid();
+  PROTOBUF_NODISCARD std::string* release_animationid();
+  void set_allocated_animationid(std::string* animationid);
+  private:
+  const std::string& _internal_animationid() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_animationid(const std::string& value);
+  std::string* _internal_mutable_animationid();
   public:
 
   // int32 milliseconds_per_frame = 2;
@@ -3012,6 +3027,7 @@ class Animation_Metadata final :
   struct Impl_ {
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr title_;
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr notes_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr animationid_;
     int32_t milliseconds_per_frame_;
     int32_t number_of_frames_;
     int creature_type_;
@@ -6232,6 +6248,56 @@ inline void Animation_Metadata::set_allocated_notes(std::string* notes) {
   }
 #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   // @@protoc_insertion_point(field_set_allocated:server.Animation.Metadata.notes)
+}
+
+// bytes animationId = 7;
+inline void Animation_Metadata::clear_animationid() {
+  _impl_.animationid_.ClearToEmpty();
+}
+inline const std::string& Animation_Metadata::animationid() const {
+  // @@protoc_insertion_point(field_get:server.Animation.Metadata.animationId)
+  return _internal_animationid();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void Animation_Metadata::set_animationid(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.animationid_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.Animation.Metadata.animationId)
+}
+inline std::string* Animation_Metadata::mutable_animationid() {
+  std::string* _s = _internal_mutable_animationid();
+  // @@protoc_insertion_point(field_mutable:server.Animation.Metadata.animationId)
+  return _s;
+}
+inline const std::string& Animation_Metadata::_internal_animationid() const {
+  return _impl_.animationid_.Get();
+}
+inline void Animation_Metadata::_internal_set_animationid(const std::string& value) {
+  
+  _impl_.animationid_.Set(value, GetArenaForAllocation());
+}
+inline std::string* Animation_Metadata::_internal_mutable_animationid() {
+  
+  return _impl_.animationid_.Mutable(GetArenaForAllocation());
+}
+inline std::string* Animation_Metadata::release_animationid() {
+  // @@protoc_insertion_point(field_release:server.Animation.Metadata.animationId)
+  return _impl_.animationid_.Release();
+}
+inline void Animation_Metadata::set_allocated_animationid(std::string* animationid) {
+  if (animationid != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.animationid_.SetAllocated(animationid, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.animationid_.IsDefault()) {
+    _impl_.animationid_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.Animation.Metadata.animationId)
 }
 
 // -------------------------------------------------------------------

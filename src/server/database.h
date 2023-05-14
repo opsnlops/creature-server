@@ -91,8 +91,16 @@ namespace creatures {
         static google::protobuf::Timestamp
         convertMongoDateToProtobufTimestamp(const bsoncxx::document::element &mongo_timestamp_element);
 
-        static bsoncxx::document::value animationToBson(const Animation *animation, bool assignNewId);
-        static bsoncxx::document::value metadataToBson(const Animation *animation);
+        /**
+         * Serialize an animation to BSON
+         *
+         * @param animation the Animation itself
+         * @param animationId the ID of this animation. Passed separately in case we need to assign a new one.
+         *                    Done this way since animation is const.
+         * @return the BSON document
+         */
+        static bsoncxx::document::value animationToBson(const Animation *animation, bsoncxx::oid animationId);
+        static bsoncxx::document::value metadataToBson(const Animation *animation, bsoncxx::oid animationId);
         static uint32_t framesToBson(bsoncxx::builder::stream::document &doc, const Animation *animation);
         static void bsonToAnimationMetadata(const bsoncxx::document::view &doc, Animation_Metadata *metadata);
         static void populateFramesFromBson(const bsoncxx::document::view &doc, Animation *animation);

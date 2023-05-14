@@ -203,6 +203,11 @@ message Animation {
     CreatureType creature_type = 4;
     int32 number_of_motors = 5;
     string notes = 6;
+
+    // This is a duplicate of the ID of the main animation. It's repeated here
+    // So that we can work backwards from a metadata to a given animation. This
+    // is used in the UI to go from the list of animations into the editor.
+    bytes animationId = 7;
   }
 
   message Frame {

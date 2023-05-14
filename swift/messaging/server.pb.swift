@@ -506,6 +506,11 @@ public struct Server_Animation {
 
     public var notes: String = String()
 
+    /// This is a duplicate of the ID of the main animation. It's repeated here
+    /// So that we can work backwards from a metadata to a given animation. This
+    /// is used in the UI to go from the list of animations into the editor.
+    public var animationID: Data = Data()
+
     public var unknownFields = SwiftProtobuf.UnknownStorage()
 
     public init() {}
@@ -1386,6 +1391,7 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
     4: .standard(proto: "creature_type"),
     5: .standard(proto: "number_of_motors"),
     6: .same(proto: "notes"),
+    7: .same(proto: "animationId"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -1400,6 +1406,7 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
       case 4: try { try decoder.decodeSingularEnumField(value: &self.creatureType) }()
       case 5: try { try decoder.decodeSingularInt32Field(value: &self.numberOfMotors) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.notes) }()
+      case 7: try { try decoder.decodeSingularBytesField(value: &self.animationID) }()
       default: break
       }
     }
@@ -1424,6 +1431,9 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if !self.notes.isEmpty {
       try visitor.visitSingularStringField(value: self.notes, fieldNumber: 6)
     }
+    if !self.animationID.isEmpty {
+      try visitor.visitSingularBytesField(value: self.animationID, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1434,6 +1444,7 @@ extension Server_Animation.Metadata: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if lhs.creatureType != rhs.creatureType {return false}
     if lhs.numberOfMotors != rhs.numberOfMotors {return false}
     if lhs.notes != rhs.notes {return false}
+    if lhs.animationID != rhs.animationID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

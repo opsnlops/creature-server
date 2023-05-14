@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
     // We indicate that the channel isn't authenticated (use of
     // InsecureChannelCredentials()).
     CreatureServerClient client(
-            grpc::CreateChannel("10.3.2.11:6666", grpc::InsecureChannelCredentials()));
+            grpc::CreateChannel("127.0.0.1:6666", grpc::InsecureChannelCredentials()));
 
     info("Searching for a creature name that should exist...");
     Creature reply = client.SearchCreatures("Beaky1");
@@ -135,6 +135,7 @@ int main(int argc, char** argv) {
     creature.set_number_of_motors(7);
     creature.set_universe(1);
     creature.set_sacn_ip("10.3.2.11");
+    creature.set_type(server::CreatureType::parrot);
     *creature.mutable_last_updated() = current_timestamp;
 
     for(int i = 0; i < 7; i++) {
@@ -158,7 +159,7 @@ int main(int argc, char** argv) {
 
     // Try to get a creature by ID
     std::string oid_string = "6431c48d6e9cc35e2d089263";
-    info("attempting to search for ID {} in the database...", oid_string);
+    info("attempting to search for creature ID {} in the database...", oid_string);
 
     bsoncxx::oid oid(oid_string);
     CreatureId creatureId;
@@ -195,9 +196,10 @@ int main(int argc, char** argv) {
         debug("Creature found {} with {} motors", c.name(), c.number_of_motors());
     }
 
-
+#if 0
     info("Attempting to stream frames");
     client.StreamFrames();
+#endif
 
 
 #if 0
@@ -240,7 +242,7 @@ int main(int argc, char** argv) {
     // Attempt to load an animation
     debug("attempting to load an animation");
 
-    std::string animation_oid_string = "645346931b7a8fd501062501";
+    std::string animation_oid_string = "64606f237aff7beab00bacb2";
     info("attempting to search for animation ID {} in the database...", animation_oid_string);
 
     bsoncxx::oid animation_oid(animation_oid_string);
@@ -254,11 +256,11 @@ int main(int argc, char** argv) {
 
     displayFrames(testAnimation);
 
-
+#if 1
     // Now let's play animation
     info("attempting to play an animation??");
     std::vector<std::string> creaturesIdsToPlay = {"643ba6ffc606a8b0aa078361", "643b86562a93fc6ba608ba21" };
-    std::string animationPlayTestAnimation = "645346931b7a8fd501062501";
+    std::string animationPlayTestAnimation = "64606f237aff7beab00bacb2";
 
     for(const auto& creatureIdToPlay : creaturesIdsToPlay) {
 
@@ -282,7 +284,7 @@ int main(int argc, char** argv) {
 
         info(animationResponse.status());
     }
-
+#endif
 
     return 0;
 }
