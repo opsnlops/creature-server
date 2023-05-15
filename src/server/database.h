@@ -66,6 +66,9 @@ namespace creatures {
 
         void getAnimation(const AnimationId *animationId, Animation *animation);
 
+        // This throws a lot of errors :)
+        void updateAnimation(const Animation *animation);
+
         /**
          * Ping the database to make sure it's alive
          *

@@ -678,7 +678,7 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "\022\010\n\004info\020\002\022\010\n\004warn\020\003\022\t\n\005error\020\004\022\014\n\010criti"
   "cal\020\005\022\007\n\003off\020\006\022\013\n\007unknown\020\007*\036\n\006SortBy\022\010\n"
   "\004name\020\000\022\n\n\006number\020\001*6\n\014CreatureType\022\n\n\006p"
-  "arrot\020\000\022\016\n\nwled_light\020\001\022\n\n\005other\020\347\0072\334\006\n\016"
+  "arrot\020\000\022\016\n\nwled_light\020\001\022\n\n\005other\020\347\0072\232\007\n\016"
   "CreatureServer\0225\n\013GetCreature\022\022.server.C"
   "reatureId\032\020.server.Creature\"\000\022L\n\017GetAllC"
   "reatures\022\026.server.CreatureFilter\032\037.serve"
@@ -695,14 +695,16 @@ const char descriptor_table_protodef_server_2eproto[] PROTOBUF_SECTION_VARIABLE(
   "tServerStatus\022\026.google.protobuf.Empty\032\024."
   "server.ServerStatus\"\000\022<\n\017CreateAnimation"
   "\022\021.server.Animation\032\024.server.DatabaseInf"
+  "o\"\000\0228\n\014GetAnimation\022\023.server.AnimationId"
+  "\032\021.server.Animation\"\000\022<\n\017UpdateAnimation"
+  "\022\021.server.Animation\032\024.server.DatabaseInf"
   "o\"\000\022K\n\016ListAnimations\022\027.server.Animation"
   "Filter\032\036.server.ListAnimationsResponse\"\000"
-  "\0228\n\014GetAnimation\022\023.server.AnimationId\032\021."
-  "server.Animation\"\000\022N\n\rPlayAnimation\022\034.se"
-  "rver.PlayAnimationRequest\032\035.server.PlayA"
-  "nimationResponse\"\000BT\n\034io.opsnlops.creatu"
-  "res.serverB\022NetworkServerProtoH\001P\001Z\034opsn"
-  "lops.io/creatures/serverb\006proto3"
+  "\022N\n\rPlayAnimation\022\034.server.PlayAnimation"
+  "Request\032\035.server.PlayAnimationResponse\"\000"
+  "BT\n\034io.opsnlops.creatures.serverB\022Networ"
+  "kServerProtoH\001P\001Z\034opsnlops.io/creatures/"
+  "serverb\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps[2] = {
   &::descriptor_table_google_2fprotobuf_2fempty_2eproto,
@@ -710,7 +712,7 @@ static const ::_pbi::DescriptorTable* const descriptor_table_server_2eproto_deps
 };
 static ::_pbi::once_flag descriptor_table_server_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_server_2eproto = {
-    false, false, 3272, descriptor_table_protodef_server_2eproto,
+    false, false, 3334, descriptor_table_protodef_server_2eproto,
     "server.proto",
     &descriptor_table_server_2eproto_once, descriptor_table_server_2eproto_deps, 2, 23,
     schemas, file_default_instances, TableStruct_server_2eproto::offsets,

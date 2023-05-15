@@ -257,6 +257,23 @@ int main(int argc, char** argv) {
 
     displayFrames(testAnimation);
 
+
+    // Update the notes on the animation we just loaded
+    auto currentTime = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(currentTime);
+
+    std::ostringstream oss;
+    oss << std::put_time(std::localtime(&now_time), "%F %T");
+    std::string str_time = oss.str();
+
+    testAnimation.mutable_metadata()->set_notes(str_time);
+    testAnimation.mutable_metadata()->set_title(fmt::format("Test Animation! Updated at {} 😍", str_time));
+
+    info("attempting to the notes on animation {} to {}", animation_oid_string, str_time);
+    client.UpdateAnimation(testAnimation);
+
+
+
 #if 1
     // Now let's play animation
     info("attempting to play an animation??");

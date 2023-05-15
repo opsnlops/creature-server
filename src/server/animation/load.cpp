@@ -56,7 +56,7 @@ namespace creatures {
         }
         catch(const NotFoundException &e) {
             status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                  fmt::format("⚠️ No animation with ID '{}' found", id->_id()),
+                                  fmt::format("⚠️ No animation with ID '{}' found", bsoncxx::oid(id->_id()).to_string()),
                                   "Try another ID! 😅");
         }
         catch(const DataFormatException &e) {
@@ -81,7 +81,6 @@ namespace creatures {
 
     void Database::getAnimation(const AnimationId *animationId, Animation *animation) {
 
-        grpc::Status status;
         if (animationId->_id().empty()) {
             error("an empty animationId was passed into getAnimation()");
             throw InvalidArgumentException("an empty animationId was passed into getAnimation()");

@@ -66,6 +66,8 @@ namespace creatures {
 
         Status CreateAnimation(ServerContext *context, const Animation *animation, DatabaseInfo *reply) override;
 
+        Status UpdateAnimation(ServerContext *context, const Animation *animation, DatabaseInfo *reply) override;
+
         Status ListAnimations(ServerContext *context, const AnimationFilter *request, ListAnimationsResponse *response) override;
 
         Status GetAnimation(ServerContext *context, const AnimationId *id, Animation *animation) override;

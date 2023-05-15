@@ -49,14 +49,14 @@ service CreatureServer {
     Defined in server/animation/database.cpp
    */
   rpc CreateAnimation(Animation) returns (DatabaseInfo) {}
+  rpc UpdateAnimation(Animation) returns (DatabaseInfo) {}
+  rpc GetAnimation(AnimationId) returns (Animation) {}
 
 
   /**
     Returns a list of the animations that match a filter
    */
   rpc ListAnimations(AnimationFilter) returns (ListAnimationsResponse) {}
-
-  rpc GetAnimation(AnimationId) returns (Animation) {}
 
   // Request that an animation get played on a creature
   rpc PlayAnimation(PlayAnimationRequest) returns (PlayAnimationResponse) {}

@@ -278,6 +278,26 @@ public:
 
     }
 
+    server::DatabaseInfo UpdateAnimation(const Animation& animation) {
+
+        ClientContext context;
+        server::DatabaseInfo reply;
+
+        Status status = stub_->UpdateAnimation(&context, animation, &reply);
+
+        if(status.ok()) {
+            debug("Got an okay from the server on an animation update! ({})", reply.message());
+        }
+        else {
+            error("Unable to update an animation in the database: {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return reply;
+
+    }
+
+
 
     server::ListAnimationsResponse ListAnimations(const AnimationFilter& filter) {
 
