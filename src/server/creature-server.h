@@ -38,6 +38,8 @@ using server::LogFilter;
 using server::LogItem;
 using server::PlayAnimationRequest;
 using server::PlayAnimationResponse;
+using server::PlaySoundRequest;
+using server::PlaySoundResponse;
 using server::ServerStatus;
 
 
@@ -73,6 +75,8 @@ namespace creatures {
         Status GetAnimation(ServerContext *context, const AnimationId *id, Animation *animation) override;
 
         Status PlayAnimation(ServerContext *context, const PlayAnimationRequest *request, PlayAnimationResponse *response) override;
+
+        Status PlaySound(ServerContext *context, const PlaySoundRequest *request, PlaySoundResponse *response) override;
 
     private:
         ConcurrentQueue<LogItem>& log_queue;

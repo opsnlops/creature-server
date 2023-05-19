@@ -360,6 +360,25 @@ public:
 
     }
 
+    server::PlaySoundResponse PlaySound(const server::PlaySoundRequest& request) {
+
+        ClientContext context;
+        server::PlaySoundResponse response;
+
+        Status status = stub_->PlaySound(&context, request, &response);
+
+        if(status.ok()) {
+            info("Requested a sound to be played!");
+        }
+        else {
+            error("An error happened playing a sound! {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return response;
+
+    }
+
 private:
     std::unique_ptr<CreatureServer::Stub> stub_;
 };

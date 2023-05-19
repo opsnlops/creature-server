@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <cstdlib>
 #include <vector>
 
 #include "server/eventloop/eventloop.h"
@@ -30,5 +31,18 @@ namespace creatures {
         std::vector<uint8_t> data;
     };
 
+    class MusicEvent : public EventBase<MusicEvent> {
+    public:
+        using EventBase::EventBase;
+        MusicEvent(int frameNumber, std::string filePath);
+        void executeImpl();
+
+        static int initSDL();
+        static std::string getSoundFileLocation();
+
+    private:
+        std::string filePath;
+        std::mutex sdl_mutex;
+    };
 
 }

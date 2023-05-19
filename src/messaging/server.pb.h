@@ -114,6 +114,12 @@ extern PlayAnimationRequestDefaultTypeInternal _PlayAnimationRequest_default_ins
 class PlayAnimationResponse;
 struct PlayAnimationResponseDefaultTypeInternal;
 extern PlayAnimationResponseDefaultTypeInternal _PlayAnimationResponse_default_instance_;
+class PlaySoundRequest;
+struct PlaySoundRequestDefaultTypeInternal;
+extern PlaySoundRequestDefaultTypeInternal _PlaySoundRequest_default_instance_;
+class PlaySoundResponse;
+struct PlaySoundResponseDefaultTypeInternal;
+extern PlaySoundResponseDefaultTypeInternal _PlaySoundResponse_default_instance_;
 class ServerStatus;
 struct ServerStatusDefaultTypeInternal;
 extern ServerStatusDefaultTypeInternal _ServerStatus_default_instance_;
@@ -141,6 +147,8 @@ template<> ::server::LogFilter* Arena::CreateMaybeMessage<::server::LogFilter>(A
 template<> ::server::LogItem* Arena::CreateMaybeMessage<::server::LogItem>(Arena*);
 template<> ::server::PlayAnimationRequest* Arena::CreateMaybeMessage<::server::PlayAnimationRequest>(Arena*);
 template<> ::server::PlayAnimationResponse* Arena::CreateMaybeMessage<::server::PlayAnimationResponse>(Arena*);
+template<> ::server::PlaySoundRequest* Arena::CreateMaybeMessage<::server::PlaySoundRequest>(Arena*);
+template<> ::server::PlaySoundResponse* Arena::CreateMaybeMessage<::server::PlaySoundResponse>(Arena*);
 template<> ::server::ServerStatus* Arena::CreateMaybeMessage<::server::ServerStatus>(Arena*);
 PROTOBUF_NAMESPACE_CLOSE
 namespace server {
@@ -4384,6 +4392,312 @@ class PlayAnimationResponse final :
   union { Impl_ _impl_; };
   friend struct ::TableStruct_server_2eproto;
 };
+// -------------------------------------------------------------------
+
+class PlaySoundRequest final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.PlaySoundRequest) */ {
+ public:
+  inline PlaySoundRequest() : PlaySoundRequest(nullptr) {}
+  ~PlaySoundRequest() override;
+  explicit PROTOBUF_CONSTEXPR PlaySoundRequest(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  PlaySoundRequest(const PlaySoundRequest& from);
+  PlaySoundRequest(PlaySoundRequest&& from) noexcept
+    : PlaySoundRequest() {
+    *this = ::std::move(from);
+  }
+
+  inline PlaySoundRequest& operator=(const PlaySoundRequest& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline PlaySoundRequest& operator=(PlaySoundRequest&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const PlaySoundRequest& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const PlaySoundRequest* internal_default_instance() {
+    return reinterpret_cast<const PlaySoundRequest*>(
+               &_PlaySoundRequest_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    23;
+
+  friend void swap(PlaySoundRequest& a, PlaySoundRequest& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(PlaySoundRequest* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(PlaySoundRequest* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  PlaySoundRequest* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<PlaySoundRequest>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const PlaySoundRequest& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const PlaySoundRequest& from) {
+    PlaySoundRequest::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(PlaySoundRequest* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.PlaySoundRequest";
+  }
+  protected:
+  explicit PlaySoundRequest(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kFileNameFieldNumber = 1,
+  };
+  // string fileName = 1;
+  void clear_filename();
+  const std::string& filename() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_filename(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_filename();
+  PROTOBUF_NODISCARD std::string* release_filename();
+  void set_allocated_filename(std::string* filename);
+  private:
+  const std::string& _internal_filename() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_filename(const std::string& value);
+  std::string* _internal_mutable_filename();
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.PlaySoundRequest)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr filename_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
+// -------------------------------------------------------------------
+
+class PlaySoundResponse final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:server.PlaySoundResponse) */ {
+ public:
+  inline PlaySoundResponse() : PlaySoundResponse(nullptr) {}
+  ~PlaySoundResponse() override;
+  explicit PROTOBUF_CONSTEXPR PlaySoundResponse(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  PlaySoundResponse(const PlaySoundResponse& from);
+  PlaySoundResponse(PlaySoundResponse&& from) noexcept
+    : PlaySoundResponse() {
+    *this = ::std::move(from);
+  }
+
+  inline PlaySoundResponse& operator=(const PlaySoundResponse& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline PlaySoundResponse& operator=(PlaySoundResponse&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const PlaySoundResponse& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const PlaySoundResponse* internal_default_instance() {
+    return reinterpret_cast<const PlaySoundResponse*>(
+               &_PlaySoundResponse_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    24;
+
+  friend void swap(PlaySoundResponse& a, PlaySoundResponse& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(PlaySoundResponse* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(PlaySoundResponse* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  PlaySoundResponse* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<PlaySoundResponse>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const PlaySoundResponse& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const PlaySoundResponse& from) {
+    PlaySoundResponse::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(PlaySoundResponse* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "server.PlaySoundResponse";
+  }
+  protected:
+  explicit PlaySoundResponse(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kMessageFieldNumber = 1,
+  };
+  // string message = 1;
+  void clear_message();
+  const std::string& message() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_message(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_message();
+  PROTOBUF_NODISCARD std::string* release_message();
+  void set_allocated_message(std::string* message);
+  private:
+  const std::string& _internal_message() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_message(const std::string& value);
+  std::string* _internal_mutable_message();
+  public:
+
+  // @@protoc_insertion_point(class_scope:server.PlaySoundResponse)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr message_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_server_2eproto;
+};
 // ===================================================================
 
 
@@ -7153,9 +7467,121 @@ inline void PlayAnimationResponse::set_number_of_frames_queued(int32_t value) {
   // @@protoc_insertion_point(field_set:server.PlayAnimationResponse.number_of_frames_queued)
 }
 
+// -------------------------------------------------------------------
+
+// PlaySoundRequest
+
+// string fileName = 1;
+inline void PlaySoundRequest::clear_filename() {
+  _impl_.filename_.ClearToEmpty();
+}
+inline const std::string& PlaySoundRequest::filename() const {
+  // @@protoc_insertion_point(field_get:server.PlaySoundRequest.fileName)
+  return _internal_filename();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void PlaySoundRequest::set_filename(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.filename_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.PlaySoundRequest.fileName)
+}
+inline std::string* PlaySoundRequest::mutable_filename() {
+  std::string* _s = _internal_mutable_filename();
+  // @@protoc_insertion_point(field_mutable:server.PlaySoundRequest.fileName)
+  return _s;
+}
+inline const std::string& PlaySoundRequest::_internal_filename() const {
+  return _impl_.filename_.Get();
+}
+inline void PlaySoundRequest::_internal_set_filename(const std::string& value) {
+  
+  _impl_.filename_.Set(value, GetArenaForAllocation());
+}
+inline std::string* PlaySoundRequest::_internal_mutable_filename() {
+  
+  return _impl_.filename_.Mutable(GetArenaForAllocation());
+}
+inline std::string* PlaySoundRequest::release_filename() {
+  // @@protoc_insertion_point(field_release:server.PlaySoundRequest.fileName)
+  return _impl_.filename_.Release();
+}
+inline void PlaySoundRequest::set_allocated_filename(std::string* filename) {
+  if (filename != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.filename_.SetAllocated(filename, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.filename_.IsDefault()) {
+    _impl_.filename_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.PlaySoundRequest.fileName)
+}
+
+// -------------------------------------------------------------------
+
+// PlaySoundResponse
+
+// string message = 1;
+inline void PlaySoundResponse::clear_message() {
+  _impl_.message_.ClearToEmpty();
+}
+inline const std::string& PlaySoundResponse::message() const {
+  // @@protoc_insertion_point(field_get:server.PlaySoundResponse.message)
+  return _internal_message();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void PlaySoundResponse::set_message(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.message_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:server.PlaySoundResponse.message)
+}
+inline std::string* PlaySoundResponse::mutable_message() {
+  std::string* _s = _internal_mutable_message();
+  // @@protoc_insertion_point(field_mutable:server.PlaySoundResponse.message)
+  return _s;
+}
+inline const std::string& PlaySoundResponse::_internal_message() const {
+  return _impl_.message_.Get();
+}
+inline void PlaySoundResponse::_internal_set_message(const std::string& value) {
+  
+  _impl_.message_.Set(value, GetArenaForAllocation());
+}
+inline std::string* PlaySoundResponse::_internal_mutable_message() {
+  
+  return _impl_.message_.Mutable(GetArenaForAllocation());
+}
+inline std::string* PlaySoundResponse::release_message() {
+  // @@protoc_insertion_point(field_release:server.PlaySoundResponse.message)
+  return _impl_.message_.Release();
+}
+inline void PlaySoundResponse::set_allocated_message(std::string* message) {
+  if (message != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.message_.SetAllocated(message, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.message_.IsDefault()) {
+    _impl_.message_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:server.PlaySoundResponse.message)
+}
+
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------

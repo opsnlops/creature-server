@@ -47,6 +47,8 @@ find_package(bsoncxx REQUIRED)
 
 # SDL
 find_package(SDL2 REQUIRED)
+find_package(SDL2_mixer REQUIRED)
+
 
 
 # Our source files
@@ -60,6 +62,7 @@ file(GLOB SERVER_SRCS
         src/server/eventloop/*
         src/server/eventloop/events/*
         src/server/logging/*
+        src/server/sound/*
         src/util/*
         )
 
@@ -87,6 +90,7 @@ include_directories(
         ${LIBMONGOCXX_INCLUDE_DIR}
         ${LIBBSONCXX_INCLUDE_DIR}
         ${SDL2_INCLUDE_DIRS}
+        ${SDL2_MIXER_INCLUDE_DIRS}
 )
 
 add_executable(creature-server
@@ -103,7 +107,8 @@ target_link_libraries(creature-server
         mongo::bsoncxx_shared
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
-        ${SDL2_LIBRARIES}
+        SDL2::SDL2
+        SDL2_mixer::SDL2_mixer
         )
 
 

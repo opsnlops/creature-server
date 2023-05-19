@@ -304,5 +304,22 @@ int main(int argc, char** argv) {
     }
 #endif
 
+
+#if 1
+    // Try to play a sound
+
+    std::string soundFile = "eww.flac";
+
+    info("attempting to play a sound ({})", soundFile);
+
+    server::PlaySoundRequest soundRequest;
+    soundRequest.set_filename(soundFile);
+
+    server::PlaySoundResponse soundResponse = client.PlaySound(soundRequest);
+
+    info("Play response: {}", soundResponse.message());
+
+#endif
+
     return 0;
 }

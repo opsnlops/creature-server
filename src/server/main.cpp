@@ -15,6 +15,9 @@
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 
+// SDL
+#include <SDL2/SDL.h>
+
 // Our stuff
 #include "server/config.h"
 #include "server/creature-server.h"
@@ -46,6 +49,7 @@ using spdlog::critical;
 
 using creatures::Database;
 using creatures::EventLoop;
+using creatures::MusicEvent;
 
 using moodycamel::ConcurrentQueue;
 
@@ -63,6 +67,10 @@ void signal_handler(int signal) {
     if (signal == SIGINT) {
         info("stopping the event loop");
         creatures::eventLoopRunning = false;
+
+        // Clean up SDL
+        info("shutting down SDL");
+        SDL_Quit();
 
         // If the server is running, stop it
         if(creatures::grpcServer) {
@@ -121,6 +129,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     debug("MongoDB URI {}", DB_URI);
     debug("gRPC version {}.{}.{}", GRPC_CPP_VERSION_MAJOR, GRPC_CPP_VERSION_MINOR, GRPC_CPP_VERSION_PATCH);
     debug("Protobuf version {}", GOOGLE_PROTOBUF_VERSION);
+    debug("SDL version {}.{}.{}", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
+    debug("Sound file location: {}", MusicEvent::getSoundFileLocation());
 
     // Fire up the Mono client
     mongocxx::instance instance{};
@@ -130,6 +140,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     // Start up the database
     creatures::db = std::make_shared<Database>(mongo_pool);
     debug("Mongo pool up and running");
+
+    // Fire up SDL
+    if(!MusicEvent::initSDL()) {
+        error("Unable to start up SDL");
+    }
+    debug("SDL started");
 
     // Create the DMX cache
     creatures::dmxCache = std::make_shared<creatures::ObjectCache<std::string, creatures::DMX>>();

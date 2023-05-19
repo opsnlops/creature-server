@@ -32,10 +32,11 @@ static const char* CreatureServer_method_names[] = {
   "/server.CreatureServer/StreamFrames",
   "/server.CreatureServer/GetServerStatus",
   "/server.CreatureServer/CreateAnimation",
-  "/server.CreatureServer/GetAnimation",
   "/server.CreatureServer/UpdateAnimation",
+  "/server.CreatureServer/GetAnimation",
   "/server.CreatureServer/ListAnimations",
   "/server.CreatureServer/PlayAnimation",
+  "/server.CreatureServer/PlaySound",
 };
 
 std::unique_ptr< CreatureServer::Stub> CreatureServer::NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options) {
@@ -55,10 +56,11 @@ CreatureServer::Stub::Stub(const std::shared_ptr< ::grpc::ChannelInterface>& cha
   , rpcmethod_StreamFrames_(CreatureServer_method_names[7], options.suffix_for_stats(),::grpc::internal::RpcMethod::CLIENT_STREAMING, channel)
   , rpcmethod_GetServerStatus_(CreatureServer_method_names[8], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   , rpcmethod_CreateAnimation_(CreatureServer_method_names[9], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
-  , rpcmethod_GetAnimation_(CreatureServer_method_names[10], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
-  , rpcmethod_UpdateAnimation_(CreatureServer_method_names[11], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
+  , rpcmethod_UpdateAnimation_(CreatureServer_method_names[10], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
+  , rpcmethod_GetAnimation_(CreatureServer_method_names[11], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   , rpcmethod_ListAnimations_(CreatureServer_method_names[12], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   , rpcmethod_PlayAnimation_(CreatureServer_method_names[13], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
+  , rpcmethod_PlaySound_(CreatureServer_method_names[14], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   {}
 
 ::grpc::Status CreatureServer::Stub::GetCreature(::grpc::ClientContext* context, const ::server::CreatureId& request, ::server::Creature* response) {
@@ -277,29 +279,6 @@ void CreatureServer::Stub::async::CreateAnimation(::grpc::ClientContext* context
   return result;
 }
 
-::grpc::Status CreatureServer::Stub::GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId& request, ::server::Animation* response) {
-  return ::grpc::internal::BlockingUnaryCall< ::server::AnimationId, ::server::Animation, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), rpcmethod_GetAnimation_, context, request, response);
-}
-
-void CreatureServer::Stub::async::GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId* request, ::server::Animation* response, std::function<void(::grpc::Status)> f) {
-  ::grpc::internal::CallbackUnaryCall< ::server::AnimationId, ::server::Animation, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_GetAnimation_, context, request, response, std::move(f));
-}
-
-void CreatureServer::Stub::async::GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId* request, ::server::Animation* response, ::grpc::ClientUnaryReactor* reactor) {
-  ::grpc::internal::ClientCallbackUnaryFactory::Create< ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_GetAnimation_, context, request, response, reactor);
-}
-
-::grpc::ClientAsyncResponseReader< ::server::Animation>* CreatureServer::Stub::PrepareAsyncGetAnimationRaw(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) {
-  return ::grpc::internal::ClientAsyncResponseReaderHelper::Create< ::server::Animation, ::server::AnimationId, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), cq, rpcmethod_GetAnimation_, context, request);
-}
-
-::grpc::ClientAsyncResponseReader< ::server::Animation>* CreatureServer::Stub::AsyncGetAnimationRaw(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) {
-  auto* result =
-    this->PrepareAsyncGetAnimationRaw(context, request, cq);
-  result->StartCall();
-  return result;
-}
-
 ::grpc::Status CreatureServer::Stub::UpdateAnimation(::grpc::ClientContext* context, const ::server::Animation& request, ::server::DatabaseInfo* response) {
   return ::grpc::internal::BlockingUnaryCall< ::server::Animation, ::server::DatabaseInfo, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), rpcmethod_UpdateAnimation_, context, request, response);
 }
@@ -319,6 +298,29 @@ void CreatureServer::Stub::async::UpdateAnimation(::grpc::ClientContext* context
 ::grpc::ClientAsyncResponseReader< ::server::DatabaseInfo>* CreatureServer::Stub::AsyncUpdateAnimationRaw(::grpc::ClientContext* context, const ::server::Animation& request, ::grpc::CompletionQueue* cq) {
   auto* result =
     this->PrepareAsyncUpdateAnimationRaw(context, request, cq);
+  result->StartCall();
+  return result;
+}
+
+::grpc::Status CreatureServer::Stub::GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId& request, ::server::Animation* response) {
+  return ::grpc::internal::BlockingUnaryCall< ::server::AnimationId, ::server::Animation, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), rpcmethod_GetAnimation_, context, request, response);
+}
+
+void CreatureServer::Stub::async::GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId* request, ::server::Animation* response, std::function<void(::grpc::Status)> f) {
+  ::grpc::internal::CallbackUnaryCall< ::server::AnimationId, ::server::Animation, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_GetAnimation_, context, request, response, std::move(f));
+}
+
+void CreatureServer::Stub::async::GetAnimation(::grpc::ClientContext* context, const ::server::AnimationId* request, ::server::Animation* response, ::grpc::ClientUnaryReactor* reactor) {
+  ::grpc::internal::ClientCallbackUnaryFactory::Create< ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_GetAnimation_, context, request, response, reactor);
+}
+
+::grpc::ClientAsyncResponseReader< ::server::Animation>* CreatureServer::Stub::PrepareAsyncGetAnimationRaw(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) {
+  return ::grpc::internal::ClientAsyncResponseReaderHelper::Create< ::server::Animation, ::server::AnimationId, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), cq, rpcmethod_GetAnimation_, context, request);
+}
+
+::grpc::ClientAsyncResponseReader< ::server::Animation>* CreatureServer::Stub::AsyncGetAnimationRaw(::grpc::ClientContext* context, const ::server::AnimationId& request, ::grpc::CompletionQueue* cq) {
+  auto* result =
+    this->PrepareAsyncGetAnimationRaw(context, request, cq);
   result->StartCall();
   return result;
 }
@@ -365,6 +367,29 @@ void CreatureServer::Stub::async::PlayAnimation(::grpc::ClientContext* context, 
 ::grpc::ClientAsyncResponseReader< ::server::PlayAnimationResponse>* CreatureServer::Stub::AsyncPlayAnimationRaw(::grpc::ClientContext* context, const ::server::PlayAnimationRequest& request, ::grpc::CompletionQueue* cq) {
   auto* result =
     this->PrepareAsyncPlayAnimationRaw(context, request, cq);
+  result->StartCall();
+  return result;
+}
+
+::grpc::Status CreatureServer::Stub::PlaySound(::grpc::ClientContext* context, const ::server::PlaySoundRequest& request, ::server::PlaySoundResponse* response) {
+  return ::grpc::internal::BlockingUnaryCall< ::server::PlaySoundRequest, ::server::PlaySoundResponse, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), rpcmethod_PlaySound_, context, request, response);
+}
+
+void CreatureServer::Stub::async::PlaySound(::grpc::ClientContext* context, const ::server::PlaySoundRequest* request, ::server::PlaySoundResponse* response, std::function<void(::grpc::Status)> f) {
+  ::grpc::internal::CallbackUnaryCall< ::server::PlaySoundRequest, ::server::PlaySoundResponse, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_PlaySound_, context, request, response, std::move(f));
+}
+
+void CreatureServer::Stub::async::PlaySound(::grpc::ClientContext* context, const ::server::PlaySoundRequest* request, ::server::PlaySoundResponse* response, ::grpc::ClientUnaryReactor* reactor) {
+  ::grpc::internal::ClientCallbackUnaryFactory::Create< ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_PlaySound_, context, request, response, reactor);
+}
+
+::grpc::ClientAsyncResponseReader< ::server::PlaySoundResponse>* CreatureServer::Stub::PrepareAsyncPlaySoundRaw(::grpc::ClientContext* context, const ::server::PlaySoundRequest& request, ::grpc::CompletionQueue* cq) {
+  return ::grpc::internal::ClientAsyncResponseReaderHelper::Create< ::server::PlaySoundResponse, ::server::PlaySoundRequest, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), cq, rpcmethod_PlaySound_, context, request);
+}
+
+::grpc::ClientAsyncResponseReader< ::server::PlaySoundResponse>* CreatureServer::Stub::AsyncPlaySoundRaw(::grpc::ClientContext* context, const ::server::PlaySoundRequest& request, ::grpc::CompletionQueue* cq) {
+  auto* result =
+    this->PrepareAsyncPlaySoundRaw(context, request, cq);
   result->StartCall();
   return result;
 }
@@ -473,22 +498,22 @@ CreatureServer::Service::Service() {
   AddMethod(new ::grpc::internal::RpcServiceMethod(
       CreatureServer_method_names[10],
       ::grpc::internal::RpcMethod::NORMAL_RPC,
-      new ::grpc::internal::RpcMethodHandler< CreatureServer::Service, ::server::AnimationId, ::server::Animation, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(
-          [](CreatureServer::Service* service,
-             ::grpc::ServerContext* ctx,
-             const ::server::AnimationId* req,
-             ::server::Animation* resp) {
-               return service->GetAnimation(ctx, req, resp);
-             }, this)));
-  AddMethod(new ::grpc::internal::RpcServiceMethod(
-      CreatureServer_method_names[11],
-      ::grpc::internal::RpcMethod::NORMAL_RPC,
       new ::grpc::internal::RpcMethodHandler< CreatureServer::Service, ::server::Animation, ::server::DatabaseInfo, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(
           [](CreatureServer::Service* service,
              ::grpc::ServerContext* ctx,
              const ::server::Animation* req,
              ::server::DatabaseInfo* resp) {
                return service->UpdateAnimation(ctx, req, resp);
+             }, this)));
+  AddMethod(new ::grpc::internal::RpcServiceMethod(
+      CreatureServer_method_names[11],
+      ::grpc::internal::RpcMethod::NORMAL_RPC,
+      new ::grpc::internal::RpcMethodHandler< CreatureServer::Service, ::server::AnimationId, ::server::Animation, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(
+          [](CreatureServer::Service* service,
+             ::grpc::ServerContext* ctx,
+             const ::server::AnimationId* req,
+             ::server::Animation* resp) {
+               return service->GetAnimation(ctx, req, resp);
              }, this)));
   AddMethod(new ::grpc::internal::RpcServiceMethod(
       CreatureServer_method_names[12],
@@ -509,6 +534,16 @@ CreatureServer::Service::Service() {
              const ::server::PlayAnimationRequest* req,
              ::server::PlayAnimationResponse* resp) {
                return service->PlayAnimation(ctx, req, resp);
+             }, this)));
+  AddMethod(new ::grpc::internal::RpcServiceMethod(
+      CreatureServer_method_names[14],
+      ::grpc::internal::RpcMethod::NORMAL_RPC,
+      new ::grpc::internal::RpcMethodHandler< CreatureServer::Service, ::server::PlaySoundRequest, ::server::PlaySoundResponse, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(
+          [](CreatureServer::Service* service,
+             ::grpc::ServerContext* ctx,
+             const ::server::PlaySoundRequest* req,
+             ::server::PlaySoundResponse* resp) {
+               return service->PlaySound(ctx, req, resp);
              }, this)));
 }
 
@@ -585,14 +620,14 @@ CreatureServer::Service::~Service() {
   return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
 }
 
-::grpc::Status CreatureServer::Service::GetAnimation(::grpc::ServerContext* context, const ::server::AnimationId* request, ::server::Animation* response) {
+::grpc::Status CreatureServer::Service::UpdateAnimation(::grpc::ServerContext* context, const ::server::Animation* request, ::server::DatabaseInfo* response) {
   (void) context;
   (void) request;
   (void) response;
   return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
 }
 
-::grpc::Status CreatureServer::Service::UpdateAnimation(::grpc::ServerContext* context, const ::server::Animation* request, ::server::DatabaseInfo* response) {
+::grpc::Status CreatureServer::Service::GetAnimation(::grpc::ServerContext* context, const ::server::AnimationId* request, ::server::Animation* response) {
   (void) context;
   (void) request;
   (void) response;
@@ -607,6 +642,13 @@ CreatureServer::Service::~Service() {
 }
 
 ::grpc::Status CreatureServer::Service::PlayAnimation(::grpc::ServerContext* context, const ::server::PlayAnimationRequest* request, ::server::PlayAnimationResponse* response) {
+  (void) context;
+  (void) request;
+  (void) response;
+  return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+}
+
+::grpc::Status CreatureServer::Service::PlaySound(::grpc::ServerContext* context, const ::server::PlaySoundRequest* request, ::server::PlaySoundResponse* response) {
   (void) context;
   (void) request;
   (void) response;

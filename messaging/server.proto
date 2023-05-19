@@ -61,6 +61,11 @@ service CreatureServer {
   // Request that an animation get played on a creature
   rpc PlayAnimation(PlayAnimationRequest) returns (PlayAnimationResponse) {}
 
+
+  // Play a sound file! Used mostly for testing, since PlayAnimation will
+  // automatically play a sound if there is one in the animation.
+  rpc PlaySound(PlaySoundRequest) returns (PlaySoundResponse) {}
+
 }
 
 /*
@@ -248,4 +253,12 @@ message PlayAnimationRequest {
 message PlayAnimationResponse {
   string status = 1;
   int32 number_of_frames_queued = 2;
+}
+
+message PlaySoundRequest {
+  string fileName = 1;
+}
+
+message PlaySoundResponse {
+  string message = 1;
 }
