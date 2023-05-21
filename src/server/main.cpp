@@ -98,6 +98,20 @@ void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue) {
     info("Bye!");
 }
 
+void listAudioDevices() {
+    int numDevices = SDL_GetNumAudioDevices(0);
+
+    debug("Number of audio devices: {}", numDevices);
+
+    for (int i = 0; i < numDevices; ++i) {
+        const char* deviceName = SDL_GetAudioDeviceName(i, 0);
+        if (deviceName) {
+            debug("Device: {}, Name: {}", i, deviceName);
+        }
+    }
+}
+
+
 int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
 
     // Fire up the signal handlers
@@ -146,6 +160,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
         error("Unable to start up SDL");
     }
     debug("SDL started");
+    listAudioDevices();
 
     // Create the DMX cache
     creatures::dmxCache = std::make_shared<creatures::ObjectCache<std::string, creatures::DMX>>();
