@@ -66,8 +66,8 @@ namespace creatures {
             // Only one file can be playing at once...
             //std::lock_guard<std::mutex> lock(sdl_mutex);
 
-            // Initialize SDL_mixer for 5.1 surround sound.
-            if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 6, 2048) < 0) {
+            // Initialize SDL_mixer for stereo sound (set channels to 6 for 5.1)
+            if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
                 error("Failed to initialize SDL_mixer: {}", Mix_GetError());
                 return;
             }

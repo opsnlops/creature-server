@@ -55,7 +55,7 @@ COPY --from=build /build/creature-server/build/mongo-test /app/mongo-test
 COPY --from=build /usr/local/lib /usr/local/lib
 
 # Set up where to find sounds
-ENV SOUND_FILE_LOCATION "/sounds"
+ENV SOUND_FILE_LOCATION "/app/sounds"
 
 EXPOSE 6666
 

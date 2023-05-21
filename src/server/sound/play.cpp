@@ -33,6 +33,14 @@ namespace creatures {
 
     extern std::shared_ptr<EventLoop> eventLoop;
 
+    /**
+     * Schedule playing a sound
+     *
+     * This is mostly used for debugging. We play sounds attached to animations automatically when the
+     * animation is played so that everything is all in sync.
+     *
+     * However! If there's a need to play a sound for testing, here's how it's done.
+     */
     grpc::Status CreatureServerImpl::PlaySound(grpc::ServerContext *context, const PlaySoundRequest *request,
                                                PlaySoundResponse *response) {
 
@@ -40,7 +48,6 @@ namespace creatures {
 
         std::string soundFileName = MusicEvent::getSoundFileLocation() + "/" + request->filename();
         debug("using sound file name: {}", soundFileName);
-
         uint64_t frameNumber = eventLoop->getNextFrameNumber();
 
 
