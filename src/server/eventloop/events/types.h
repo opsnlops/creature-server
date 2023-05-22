@@ -38,11 +38,16 @@ namespace creatures {
         void executeImpl();
 
         static int initSDL();
+        static int openAudioDevice();
         static std::string getSoundFileLocation();
+        static void listAudioDevices();
 
     private:
         std::string filePath;
         std::mutex sdl_mutex;
+
+        static int environmentToInt(const char* variable, const char* defaultValue);
+        static int environmentToInt(const char* variable, int defaultValue);
     };
 
 }

@@ -1,4 +1,4 @@
-
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -23,6 +23,10 @@ using spdlog::critical;
 
 
 namespace creatures {
+
+    extern SDL_AudioDeviceID audioDevice;
+    extern SDL_AudioSpec audioSpec;
+
 
     /**
      * This event type plays a sound file on a thread in the background
@@ -130,6 +134,87 @@ namespace creatures {
         }
 
         debug("SDL init successful!");
+
         return 1;
+    }
+
+    // Open up the audio device
+    int MusicEvent::openAudioDevice() {
+
+        debug("opening the audio device");
+
+        int deviceNumber = environmentToInt(SOUND_DEVICE_NUMBER_ENV, DEFAULT_SOUND_DEVICE_NUMBER);
+        int frequency = environmentToInt(SOUND_FREQUENCY_ENV, DEFAULT_SOUND_FREQUENCY);
+        int channels = environmentToInt(SOUND_CHANNELS_ENV, DEFAULT_SOUND_CHANNELS);
+
+        SDL_AudioSpec desiredSpec;
+        desiredSpec.freq = frequency;
+        desiredSpec.format = AUDIO_S16SYS;  // Use 16-bit samples
+        desiredSpec.channels = channels;
+        desiredSpec.samples = SOUND_BUFFER_SIZE;
+        desiredSpec.callback = nullptr;
+        desiredSpec.userdata = nullptr;
+
+        // Get the name of the default
+        const char* deviceName = SDL_GetAudioDeviceName(deviceNumber, 0);
+        if (!deviceName) {
+            error("Failed to get audio device name: {}", SDL_GetError());
+            return 0;
+        }
+        debug("Using audio device name: {}", deviceName);
+
+        audioDevice = SDL_OpenAudioDevice(deviceName, 0, &desiredSpec, &audioSpec, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
+
+        trace("got back spec! Freq {}, channels {}", audioSpec.freq, audioSpec.channels);
+
+        debug("audio device open");
+        return 1;
+    }
+
+    int MusicEvent::environmentToInt(const char *variable, const char *defaultValue) {
+        return environmentToInt(variable,std::stoi(std::string(defaultValue)));
+    }
+
+    int MusicEvent::environmentToInt(const char* variable, int defaultValue) {
+        trace("converting {} to an int from the environment (default is {})", variable, defaultValue);
+
+        int value;
+        const char* valueString = std::getenv(variable);
+        if(valueString != nullptr) {
+
+            try {
+
+                value = std::stoi(std::string(valueString));
+                trace("environment var {} is {}", variable, value);
+                return value;
+
+            } catch (std::invalid_argument& e) {
+                error("{} is not an int?", variable);
+                return defaultValue;
+            } catch (std::out_of_range& e) {
+                error("{} is out of range", variable);
+                return defaultValue;
+            }
+        }
+        else
+        {
+            trace("using the default of {}", defaultValue);
+            return defaultValue;
+        }
+    }
+
+    void MusicEvent::listAudioDevices() {
+
+        int numDevices = SDL_GetNumAudioDevices(0);
+
+        debug("Number of audio devices: {}", numDevices);
+
+        for (int i = 0; i < numDevices; ++i) {
+            const char* deviceName = SDL_GetAudioDeviceName(i, 0);
+            if (deviceName) {
+                debug(" Device: {}, Name: {}", i, deviceName);
+            }
+        }
+
     }
 }

@@ -13,7 +13,7 @@
 
 
 // How often the timer event fires
-#define TICK_TIME_FRAMES        30000
+#define TICK_TIME_FRAMES        60000
 
 
 #define EVENT_LOOP_PERIOD_MS    1
@@ -27,3 +27,16 @@
 
 #define SOUND_FILE_LOCATION_ENV     "SOUND_FILE_LOCATION"
 #define DEFAULT_SOUND_FILE_LOCATION "sounds/"
+
+// The number of the sound device to use. The devices are enumerated when the
+// server starts, so use that number.
+#define SOUND_DEVICE_NUMBER_ENV     "SOUND_DEVICE_NUMBER"
+#define DEFAULT_SOUND_DEVICE_NUMBER 0
+
+#define SOUND_FREQUENCY_ENV         "SOUND_FREQUENCY"
+#define DEFAULT_SOUND_FREQUENCY     41000
+
+#define SOUND_CHANNELS_ENV          "SOUND_CHANNELS"
+#define DEFAULT_SOUND_CHANNELS      6
+
+#define SOUND_BUFFER_SIZE           4096    // Higher = less CPU, lower = less latency

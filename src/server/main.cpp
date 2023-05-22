@@ -59,6 +59,8 @@ namespace creatures {
     std::unique_ptr<Server> grpcServer;
     std::shared_ptr<EventLoop> eventLoop;
     std::shared_ptr<ObjectCache<std::string, DMX>> dmxCache;
+    SDL_AudioDeviceID audioDevice;
+    SDL_AudioSpec audioSpec;
 }
 
 
@@ -96,19 +98,6 @@ void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue) {
 
     creatures::grpcServer->Wait();
     info("Bye!");
-}
-
-void listAudioDevices() {
-    int numDevices = SDL_GetNumAudioDevices(0);
-
-    debug("Number of audio devices: {}", numDevices);
-
-    for (int i = 0; i < numDevices; ++i) {
-        const char* deviceName = SDL_GetAudioDeviceName(i, 0);
-        if (deviceName) {
-            debug("Device: {}, Name: {}", i, deviceName);
-        }
-    }
 }
 
 
@@ -160,7 +149,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
         error("Unable to start up SDL");
     }
     debug("SDL started");
-    listAudioDevices();
+    MusicEvent::listAudioDevices();
+    if(!MusicEvent::openAudioDevice()) {
+        error("unable to open audio device; halting");
+        return 0;
+    }
 
     // Create the DMX cache
     creatures::dmxCache = std::make_shared<creatures::ObjectCache<std::string, creatures::DMX>>();
