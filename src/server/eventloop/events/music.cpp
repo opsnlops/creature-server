@@ -149,8 +149,8 @@ namespace creatures {
 
         audioSpec = SDL_AudioSpec();
         audioSpec.freq = frequency;
-        audioSpec.format = MIX_DEFAULT_FORMAT;
         audioSpec.channels = channels;
+        audioSpec.format = AUDIO_F32SYS;
         audioSpec.samples = SOUND_BUFFER_SIZE;
         audioSpec.callback = nullptr;
         audioSpec.userdata = nullptr;
