@@ -24,7 +24,7 @@ using spdlog::critical;
 
 namespace creatures {
 
-    extern SDL_AudioDeviceID audioDevice;
+    extern const char* audioDevice;
     extern SDL_AudioSpec audioSpec;
 
 
@@ -71,7 +71,7 @@ namespace creatures {
             //std::lock_guard<std::mutex> lock(sdl_mutex);
 
             // Initialize SDL_mixer for stereo sound (set channels to 6 for 5.1)
-            if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+            if (Mix_OpenAudioDevice(audioSpec.freq, audioSpec.format, audioSpec.channels, SOUND_BUFFER_SIZE, audioDevice, 1) < 0) {
                 error("Failed to initialize SDL_mixer: {}", Mix_GetError());
                 return;
             }
@@ -138,8 +138,8 @@ namespace creatures {
         return 1;
     }
 
-    // Open up the audio device
-    int MusicEvent::openAudioDevice() {
+    // Locate the audio device
+    int MusicEvent::locateAudioDevice() {
 
         debug("opening the audio device");
 
@@ -147,27 +147,22 @@ namespace creatures {
         int frequency = environmentToInt(SOUND_FREQUENCY_ENV, DEFAULT_SOUND_FREQUENCY);
         int channels = environmentToInt(SOUND_CHANNELS_ENV, DEFAULT_SOUND_CHANNELS);
 
-        SDL_AudioSpec desiredSpec;
-        desiredSpec.freq = frequency;
-        desiredSpec.format = AUDIO_S16SYS;  // Use 16-bit samples
-        desiredSpec.channels = channels;
-        desiredSpec.samples = SOUND_BUFFER_SIZE;
-        desiredSpec.callback = nullptr;
-        desiredSpec.userdata = nullptr;
+        audioSpec = SDL_AudioSpec();
+        audioSpec.freq = frequency;
+        audioSpec.format = AUDIO_S16SYS;  // Use 16-bit samples
+        audioSpec.channels = channels;
+        audioSpec.samples = SOUND_BUFFER_SIZE;
+        audioSpec.callback = nullptr;
+        audioSpec.userdata = nullptr;
 
         // Get the name of the default
-        const char* deviceName = SDL_GetAudioDeviceName(deviceNumber, 0);
-        if (!deviceName) {
+        audioDevice = SDL_GetAudioDeviceName(deviceNumber, 0);
+        if (!audioDevice) {
             error("Failed to get audio device name: {}", SDL_GetError());
             return 0;
         }
-        debug("Using audio device name: {}", deviceName);
+        debug("Using audio device name: {}", audioDevice);
 
-        audioDevice = SDL_OpenAudioDevice(deviceName, 0, &desiredSpec, &audioSpec, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
-
-        trace("got back spec! Freq {}, channels {}", audioSpec.freq, audioSpec.channels);
-
-        debug("audio device open");
         return 1;
     }
 

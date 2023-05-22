@@ -34,9 +34,9 @@
 #define DEFAULT_SOUND_DEVICE_NUMBER 0
 
 #define SOUND_FREQUENCY_ENV         "SOUND_FREQUENCY"
-#define DEFAULT_SOUND_FREQUENCY     41000
+#define DEFAULT_SOUND_FREQUENCY     48000
 
 #define SOUND_CHANNELS_ENV          "SOUND_CHANNELS"
 #define DEFAULT_SOUND_CHANNELS      6
 
-#define SOUND_BUFFER_SIZE           4096    // Higher = less CPU, lower = less latency
+#define SOUND_BUFFER_SIZE           2048    // Higher = less CPU, lower = less latency

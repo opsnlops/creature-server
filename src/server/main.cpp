@@ -59,7 +59,7 @@ namespace creatures {
     std::unique_ptr<Server> grpcServer;
     std::shared_ptr<EventLoop> eventLoop;
     std::shared_ptr<ObjectCache<std::string, DMX>> dmxCache;
-    SDL_AudioDeviceID audioDevice;
+    const char* audioDevice;
     SDL_AudioSpec audioSpec;
 }
 
@@ -150,7 +150,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     }
     debug("SDL started");
     MusicEvent::listAudioDevices();
-    if(!MusicEvent::openAudioDevice()) {
+    if(!MusicEvent::locateAudioDevice()) {
         error("unable to open audio device; halting");
         return 0;
     }
