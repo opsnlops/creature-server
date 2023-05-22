@@ -46,16 +46,12 @@ FROM debian:bookworm-slim as runtime
 
 # Some of our libs need runtime bits
 RUN apt update && apt upgrade -y && \
-    apt install -y libsasl2-2 libicu72 libspdlog1.10 libprotobuf32 libsdl2-mixer-2.0-0 locales-all && \
+    apt install -y libsasl2-2 libicu72 libspdlog1.10 libprotobuf32 libsdl2-mixer-2.0-0 flac locales-all && \
     rm -rf /var/lib/apt/lists
 
 RUN mkdir /app
 COPY --from=build /build/creature-server/build/creature-server /app/creature-server
-COPY --from=build /build/creature-server/build/mongo-test /app/mongo-test
 COPY --from=build /usr/local/lib /usr/local/lib
-
-# Set up where to find sounds
-ENV SOUND_FILE_LOCATION "/app/sounds"
 
 EXPOSE 6666
 

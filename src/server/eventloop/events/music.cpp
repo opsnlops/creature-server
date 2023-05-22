@@ -149,7 +149,7 @@ namespace creatures {
 
         audioSpec = SDL_AudioSpec();
         audioSpec.freq = frequency;
-        audioSpec.format = AUDIO_S16SYS;  // Use 16-bit samples
+        audioSpec.format = MIX_DEFAULT_FORMAT;
         audioSpec.channels = channels;
         audioSpec.samples = SOUND_BUFFER_SIZE;
         audioSpec.callback = nullptr;
