@@ -39,7 +39,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(fmt)
 
 # fmt
-set(FMT_HEADER_ONLY OFF)
+set(FMT_HEADER_ONLY ON)
 set(FMT_LOCALE ON)
 
 # spdlog

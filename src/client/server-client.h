@@ -94,7 +94,7 @@ public:
             info("search not found! 🚫");
             return reply;
         } else {
-            critical("search not okay: {}: {}", status.error_code(), status.error_message());
+            critical("search not okay: {}: {}", to_string(status.error_code()), status.error_message());
             return reply;
         }
     }
@@ -121,7 +121,7 @@ public:
             info("get not found! 🚫");
             return reply;
         } else {
-            critical("get not okay: {}: {}", status.error_code(), status.error_message());
+            critical("get not okay: {}: {}", static_cast<int32_t>(status.error_code()), status.error_message());
             return reply;
         }
     }
@@ -337,14 +337,14 @@ public:
         Status status = stub_->ListAnimations(&context, filter, &reply);
 
         if(status.ok()) {
-            debug("Got an OK from the server while trying to list all of the animations for creature type {}", filter.type());
+            debug("Got an OK from the server while trying to list all of the animations for creature type {}", static_cast<int32_t>(filter.type()));
         }
         else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            info("No animations for creature type {} found. (This might be expected!)", filter.type());
+            info("No animations for creature type {} found. (This might be expected!)", static_cast<int32_t>(filter.type()));
         }
         else {
             error("An error occurred while trying to get all of the animations for creature type {}: {} ({})",
-                  filter.type(), status.error_message(), status.error_details());
+                  static_cast<int32_t>(filter.type()), status.error_message(), status.error_details());
         }
 
         return reply;

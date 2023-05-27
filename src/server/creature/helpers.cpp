@@ -62,7 +62,7 @@ namespace creatures {
             builder << "_id" << id
                     << "name" << creature->name()
                     << "sacn_ip" << creature->sacn_ip()
-                    << "type" << creature->type()
+                    << "type" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->type())}
                     << "last_updated" << bsoncxx::types::b_date{last_updated}
                     << "universe" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->universe())}
                     << "dmx_base" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->dmx_base())}
@@ -180,6 +180,24 @@ namespace creatures {
             throw creatures::DataFormatException("Field number_of_motors was not an int32 in the database");
         }
 
+        // Motor type
+        element = doc["type"];
+        if (element && element.type() != bsoncxx::type::k_int32) {
+            error("creature field 'type' is not an int");
+            throw creatures::DataFormatException("creature field 'type' is not an int in the database");
+        }
+
+        // Check and see if it's accurate
+        int32_t creatureType = element.get_int32().value;
+        if (!server::CreatureType_IsValid((creatureType))) {
+            error("creature field 'type' does not map to our enum: {}", creatureType);
+            throw creatures::DataFormatException(
+                    fmt::format("creature field 'type' does not map to our enum: {}", creatureType));
+        }
+        creature->set_type(static_cast<CreatureType>(creatureType));
+
+
+
         // Last updated
         element = doc["last_updated"];
         *creature->mutable_last_updated() = convertMongoDateToProtobufTimestamp(element);
@@ -225,7 +243,7 @@ namespace creatures {
 
                     // Cast the int to the right value for our enum
                     motor->set_type(static_cast<Creature::MotorType>(motor_type));
-                    trace("set the motor type to {}", motor->type());
+                    trace("set the motor type to {}", static_cast<int32_t>(motor->type()));
 
                     // Motor number
                     element = obj["number"];

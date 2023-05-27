@@ -20,6 +20,7 @@ using server::CreatureFilter;
 using server::CreatureId;
 using server::CreatureIdentifier;
 using server::CreatureName;
+using server::CreatureType;
 using server::GetAllCreaturesResponse;
 using server::ListCreaturesResponse;
 
