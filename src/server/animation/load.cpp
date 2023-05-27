@@ -13,22 +13,14 @@
 #include "exception/exception.h"
 #include "server/creature-server.h"
 
-using bsoncxx::builder::stream::document;
+#include "server/namespace-stuffs.h"
 
-using spdlog::trace;
-using spdlog::debug;
-using spdlog::info;
-using spdlog::warn;
-using spdlog::error;
-using spdlog::critical;
+using bsoncxx::builder::stream::document;
 
 using grpc::ServerContext;
 using grpc::Status;
 
-using server::Animation;
-using server::Animation_Metadata;
-using server::AnimationFilter;
-using server::ListAnimationsResponse;
+;
 
 
 namespace creatures {

@@ -6,11 +6,7 @@
 #include "server/creature-server.h"
 
 
-using spdlog::info;
-using spdlog::debug;
-using spdlog::error;
-using spdlog::critical;
-using spdlog::trace;
+#include "server/namespace-stuffs.h"
 
 /**
  * Streams our logs to a client for viewing

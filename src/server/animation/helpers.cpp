@@ -12,12 +12,7 @@
 #include "server/creature-server.h"
 #include "server/database.h"
 
-using spdlog::trace;
-using spdlog::debug;
-using spdlog::info;
-using spdlog::warn;
-using spdlog::error;
-using spdlog::critical;
+#include "server/namespace-stuffs.h"
 
 namespace creatures {
 

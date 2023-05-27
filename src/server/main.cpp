@@ -30,22 +30,12 @@
 #include "util/cache.h"
 
 
+#include "server/namespace-stuffs.h"
+
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
-using server::CreatureServer;
-using server::Creature;
-using server::CreatureName;
-using server::DatabaseInfo;
-using server::LogItem;
-
-using spdlog::trace;
-using spdlog::debug;
-using spdlog::info;
-using spdlog::warn;
-using spdlog::error;
-using spdlog::critical;
 
 using creatures::Database;
 using creatures::EventLoop;

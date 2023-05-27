@@ -15,15 +15,7 @@
 
 #include <bsoncxx/builder/stream/document.hpp>
 
-using server::Creature;
-using server::CreatureName;
-
-using spdlog::trace;
-using spdlog::debug;
-using spdlog::info;
-using spdlog::warn;
-using spdlog::error;
-using spdlog::critical;
+#include "server/namespace-stuffs.h"
 
 using bsoncxx::builder::stream::document;
 using bsoncxx::builder::basic::make_document;

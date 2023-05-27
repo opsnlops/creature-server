@@ -26,8 +26,7 @@ using spdlog::critical;
 
 using creatures::MusicEvent;
 
-using server::PlaySoundRequest;
-using server::PlaySoundResponse;
+#include "server/namespace-stuffs.h"
 
 namespace creatures {
 

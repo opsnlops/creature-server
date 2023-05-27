@@ -10,19 +10,7 @@
 #include "exception/exception.h"
 
 
-using spdlog::trace;
-using spdlog::debug;
-using spdlog::info;
-using spdlog::warn;
-using spdlog::error;
-using spdlog::critical;
-
-using server::Animation;
-using server::AnimationId;
-using server::Creature;
-using server::CreatureName;
-using server::PlayAnimationRequest;
-using server::PlayAnimationResponse;
+#include "server/namespace-stuffs.h"
 
 
 namespace creatures {

@@ -21,27 +21,9 @@ using grpc::ServerReader;
 using grpc::ServerWriter;
 using grpc::Status;
 
-using server::Animation;
-using server::AnimationFilter;
 using server::CreatureServer;
-using server::Creature;
-using server::CreatureName;
-using server::CreatureId;
-using server::CreatureFilter;
-using server::DatabaseInfo;
-using server::Frame;
-using server::FrameResponse;
-using server::GetAllCreaturesResponse;
-using server::ListAnimationsResponse;
-using server::ListCreaturesResponse;
-using server::LogFilter;
-using server::LogItem;
-using server::PlayAnimationRequest;
-using server::PlayAnimationResponse;
-using server::PlaySoundRequest;
-using server::PlaySoundResponse;
-using server::ServerStatus;
 
+#include "server/namespace-stuffs.h"
 
 using moodycamel::ConcurrentQueue;
 

@@ -16,14 +16,7 @@
 #include <mongocxx/pool.hpp>
 
 
-using server::Creature;
-using server::CreatureName;
-
-using spdlog::info;
-using spdlog::debug;
-using spdlog::error;
-using spdlog::critical;
-using spdlog::trace;
+#include "server/namespace-stuffs.h"
 
 using bsoncxx::builder::stream::document;
 using bsoncxx::builder::basic::make_document;

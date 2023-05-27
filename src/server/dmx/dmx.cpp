@@ -8,12 +8,7 @@
 #include "server/config.h"
 
 
-using spdlog::info;
-using spdlog::debug;
-using spdlog::error;
-using spdlog::critical;
-using spdlog::trace;
-
+#include "server/namespace-stuffs.h"
 
 namespace creatures {
 

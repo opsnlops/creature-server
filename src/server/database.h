@@ -25,21 +25,7 @@
 
 #include <google/protobuf/timestamp.pb.h>
 
-
-using server::Animation;
-using server::Animation_Metadata;
-using server::AnimationFilter;
-using server::AnimationId;
-using server::Creature;
-using server::CreatureFilter;
-using server::CreatureName;
-using server::CreatureId;
-using server::CreatureIdentifier;
-using server::DatabaseInfo;
-using server::GetAllCreaturesResponse;
-using server::ListAnimationsResponse;
-using server::ListCreaturesResponse;
-
+#include "server/namespace-stuffs.h"
 
 namespace creatures {
 
