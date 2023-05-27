@@ -104,7 +104,7 @@ namespace creatures {
         try {
 
             // Convert the animationId to a proper oid
-            bsoncxx::oid animationId = bsoncxx::oid(animation->_id().data(), 12);
+            bsoncxx::oid animationId = bsoncxx::oid(animation->_id().data(), bsoncxx::oid::k_oid_length);
 
             // Create a filter for just this one animation
             bsoncxx::builder::stream::document filter_builder{};

@@ -59,7 +59,7 @@ namespace creatures {
         bsoncxx::oid id;
         if (!assignNewId) {
             trace("reusing old ID");
-            id = bsoncxx::oid(creature->_id().data(), 12);
+            id = bsoncxx::oid(creature->_id().data(), bsoncxx::oid::k_oid_length);
             debug("parsed ID to: {}", id.to_string());
         }
 

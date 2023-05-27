@@ -96,7 +96,7 @@ namespace creatures {
         }
 
         // Convert the ID into MongoID's ID
-        bsoncxx::oid id = bsoncxx::oid(creatureId->_id().data(), 12);
+        bsoncxx::oid id = bsoncxx::oid(creatureId->_id().data(), bsoncxx::oid::k_oid_length);
         debug("attempting to search for a creature by ID: {}", id.to_string());
 
         auto collection = getCollection(CREATURES_COLLECTION);

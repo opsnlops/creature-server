@@ -94,7 +94,7 @@ namespace creatures {
 
             // Convert the ID into an OID
             trace("attempting to convert the ID");
-            bsoncxx::oid id = bsoncxx::oid(animationId->_id().data(), 12);
+            bsoncxx::oid id = bsoncxx::oid(animationId->_id().data(), bsoncxx::oid::k_oid_length);
             debug("found animation ID: {}", id.to_string());
 
             // Create a filter BSON document to match the target document

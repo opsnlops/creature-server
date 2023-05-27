@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
     // We indicate that the channel isn't authenticated (use of
     // InsecureChannelCredentials()).
     CreatureServerClient client(
-            grpc::CreateChannel("127.0.0.1:6666", grpc::InsecureChannelCredentials()));
+            grpc::CreateChannel("10.3.2.215:6666", grpc::InsecureChannelCredentials()));
 
     info("Searching for a creature name that should exist...");
     Creature reply = client.SearchCreatures("Beaky1");
@@ -275,8 +275,8 @@ int main(int argc, char** argv) {
     for (const auto& a: response.animations())
         info("Found: {}", a.metadata().title());
 
-
-
+/* Show animation test */
+#if 0
     // Attempt to load an animation
     debug("attempting to load an animation");
 
@@ -305,7 +305,7 @@ int main(int argc, char** argv) {
 
     info("attempting to the notes on animation {} to {}", animation_oid_string, str_time);
     client.UpdateAnimation(testAnimation);
-
+#endif
 
 
 #if 1

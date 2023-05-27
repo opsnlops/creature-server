@@ -118,7 +118,7 @@ namespace creatures {
         try {
 
             // Convert the creatureId to a proper oid
-            bsoncxx::oid creatureId = bsoncxx::oid(creature->_id().data(), 12);
+            bsoncxx::oid creatureId = bsoncxx::oid(creature->_id().data(), bsoncxx::oid::k_oid_length);
 
             // Create a filter for just this one creature
             bsoncxx::builder::stream::document filter_builder{};
