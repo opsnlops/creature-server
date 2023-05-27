@@ -52,6 +52,18 @@ using spdlog::warn;
 using spdlog::error;
 using spdlog::critical;
 
+
+std::string creatureIdToString(const CreatureId& creature_id) {
+    const std::string& id_bytes = creature_id._id();
+
+    std::ostringstream oss;
+    for (unsigned char c : id_bytes) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(c);
+    }
+
+    return oss.str();
+}
+
 class CreatureServerClient {
 public:
     explicit CreatureServerClient(const std::shared_ptr<Channel>& channel)
@@ -89,8 +101,7 @@ public:
 
     Creature GetCreature(const CreatureId& id) {
 
-        debug("in GetCreature() with {}");
-
+        debug("in GetCreature() with {}", creatureIdToString(id));
 
         // Container for the data we expect from the server.
         Creature reply;
@@ -130,6 +141,25 @@ public:
         }
         else {
             error("Unable to save a creature in the database: {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return reply;
+
+    }
+
+    server::DatabaseInfo UpdateCreature(const Creature& creature) {
+
+        ClientContext context;
+        server::DatabaseInfo reply;
+
+        Status status = stub_->UpdateCreature(&context, creature, &reply);
+
+        if(status.ok()) {
+            debug("Got an okay from the server on a creature update! ({})", reply.message());
+        }
+        else {
+            error("Unable to update a creature in the database: {} ({})",
                   status.error_message(), status.error_details());
         }
 

@@ -57,6 +57,7 @@ namespace creatures {
         Status ListCreatures(ServerContext *context, const CreatureFilter *filter, ListCreaturesResponse *response) override;
         Status GetAllCreatures(ServerContext *context, const CreatureFilter *filter,
                                GetAllCreaturesResponse *response) override;
+        Status UpdateCreature(ServerContext *context, const Creature *creature, DatabaseInfo *reply) override;
         //Status GetServerStatus(ServerContext* context, const Empty* request, ServerStatus* response) override;
 
         /**

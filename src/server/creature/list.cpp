@@ -50,7 +50,7 @@ namespace creatures {
         grpc::Status status;
         info("getting the list of creatures");
 
-        auto collection = getCollection(COLLECTION_NAME);
+        auto collection = getCollection(CREATURES_COLLECTION);
         trace("collection obtained");
 
         document query_doc{};

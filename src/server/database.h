@@ -50,7 +50,7 @@ namespace creatures {
 
         grpc::Status createCreature(const Creature *creature, DatabaseInfo *reply);
 
-        grpc::Status updateCreature(const Creature *creature, DatabaseInfo *reply);
+        void updateCreature(const Creature *creature);
 
         grpc::Status searchCreatures(const CreatureName *creatureName, Creature *creature);
 

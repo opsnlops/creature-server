@@ -89,7 +89,7 @@ namespace creatures {
         std::string name = creatureName->name();
         debug("attempting to search for a creature named {}", name);
 
-        auto collection = getCollection(COLLECTION_NAME);
+        auto collection = getCollection(CREATURES_COLLECTION);
         trace("collection located");
 
         try {

@@ -11,6 +11,7 @@
 
 #include "messaging/server.pb.h"
 #include "server/database.h"
+#include "server/helpers.h"
 #include "exception/exception.h"
 
 #include <fmt/format.h>
@@ -58,7 +59,8 @@ namespace creatures {
         bsoncxx::oid id;
         if (!assignNewId) {
             trace("reusing old ID");
-            id = bsoncxx::oid(creature->_id());
+            id = bsoncxx::oid(creature->_id().data(), 12);
+            debug("parsed ID to: {}", id.to_string());
         }
 
         // Convert the protobuf Timestamp to a std::chrono::system_clock::time_point
@@ -68,6 +70,7 @@ namespace creatures {
             builder << "_id" << id
                     << "name" << creature->name()
                     << "sacn_ip" << creature->sacn_ip()
+                    << "type" << creature->type()
                     << "last_updated" << bsoncxx::types::b_date{last_updated}
                     << "universe" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->universe())}
                     << "dmx_base" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->dmx_base())}

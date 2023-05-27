@@ -99,12 +99,14 @@ google::protobuf::Timestamp time_point_to_protobuf_timestamp(const std::chrono::
 }
 
 
-
-
 int main(int argc, char** argv) {
 
     auto console = spdlog::stdout_color_mt("console");
     spdlog::set_level(spdlog::level::trace);
+
+    // Several tests need the time, let's set it now
+    auto currentTime = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(currentTime);
 
     // We indicate that the channel isn't authenticated (use of
     // InsecureChannelCredentials()).
@@ -130,7 +132,7 @@ int main(int argc, char** argv) {
 #if 0
     // Let's try to save one
     server::Creature creature = server::Creature();
-    creature.set_name("Beaky8");
+    creature.set_name("Unit Test Creature");
     creature.set_dmx_base(1);
     creature.set_number_of_motors(7);
     creature.set_universe(1);
@@ -201,7 +203,7 @@ int main(int argc, char** argv) {
     client.StreamFrames();
 #endif
 
-
+/* Create Animation Tests */
 #if 0
     // Create a simple animation and save it in the database
     Animation animation = Animation();
@@ -227,6 +229,41 @@ int main(int argc, char** argv) {
     }
 
     client.CreateAnimation(animation);
+#endif
+
+
+/* Creature Update Tests */
+#if 1
+
+    std::string unitTestCreatureId = "64717ff45809fc63850d4671";
+
+    // Load the creature
+    info("attempting to search for creature ID {} in the database...", oid_string);
+
+    bsoncxx::oid creatureUpdateOid(unitTestCreatureId);
+    CreatureId creatureUpdateId;
+
+    const char* update_oid_data = creatureUpdateOid.bytes();
+    creatureUpdateId.set__id(update_oid_data, bsoncxx::oid::k_oid_length);
+
+    Creature creatureToUpdate = client.GetCreature(creatureUpdateId);
+    debug("Got creature {}", creatureToUpdate.name());
+
+    // Adjust the name to have a timestamp
+    std::ostringstream creatureUpdateTestString;
+    creatureUpdateTestString << "Updated at " << std::put_time(std::localtime(&now_time), "%F %T");
+    std::string oldName = creatureToUpdate.name();
+    std::string newName = creatureUpdateTestString.str();
+
+    creatureToUpdate.set_name(newName);
+
+    // Update in the database
+    client.UpdateCreature(creatureToUpdate);
+
+    // Now go fetch it again
+    Creature updatedCreature = client.GetCreature(creatureUpdateId);
+    info("Update before: {}, now: {}", oldName, updatedCreature.name());
+
 #endif
 
 
@@ -259,9 +296,6 @@ int main(int argc, char** argv) {
 
 
     // Update the notes on the animation we just loaded
-    auto currentTime = std::chrono::system_clock::now();
-    std::time_t now_time = std::chrono::system_clock::to_time_t(currentTime);
-
     std::ostringstream oss;
     oss << std::put_time(std::localtime(&now_time), "%F %T");
     std::string str_time = oss.str();
@@ -308,7 +342,7 @@ int main(int argc, char** argv) {
 #if 1
     // Try to play a sound
 
-    std::string soundFile = "eww.flac";
+    std::string soundFile = "multi.flac";
 
     info("attempting to play a sound ({})", soundFile);
 

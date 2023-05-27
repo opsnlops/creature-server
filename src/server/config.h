@@ -19,10 +19,10 @@
 #define EVENT_LOOP_PERIOD_MS    1
 
 
-#define DB_URI  "mongodb://10.3.2.11"
-#define DB_NAME  "creature_server"
-#define COLLECTION_NAME "creatures"
-#define ANIMATIONS_COLLECTION "animation"
+#define DB_URI                      "mongodb://10.3.2.11"
+#define DB_NAME                     "creature_server"
+#define CREATURES_COLLECTION        "creatures"
+#define ANIMATIONS_COLLECTION       "animation"
 
 
 #define SOUND_FILE_LOCATION_ENV     "SOUND_FILE_LOCATION"

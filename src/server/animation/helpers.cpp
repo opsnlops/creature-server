@@ -219,7 +219,7 @@ namespace creatures {
                     fmt::format("Animation.Metadata field 'creature_type' does not map to our enum: {}", creature_type));
         }
         metadata->set_creature_type(static_cast<server::CreatureType>(creature_type));
-        trace("set the creature type to {}", metadata->creature_type());
+        trace("set the creature type to {}", toascii(metadata->creature_type()));
 
 
         element = doc["sound_file"];

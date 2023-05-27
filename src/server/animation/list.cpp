@@ -51,7 +51,7 @@ namespace creatures {
      */
     grpc::Status Database::listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList) {
 
-        trace("attempting to list all of the animation for a filter ({})", filter->type());
+        trace("attempting to list all of the animation for a filter ({})", toascii(filter->type()));
 
         grpc::Status status;
 

@@ -49,7 +49,7 @@ namespace creatures {
 
         info("attempting to save a creature in the database");
 
-        auto collection = getCollection(COLLECTION_NAME);
+        auto collection = getCollection(CREATURES_COLLECTION);
         trace("collection made");
 
         grpc::Status status;

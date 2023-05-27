@@ -99,7 +99,7 @@ namespace creatures {
         bsoncxx::oid id = bsoncxx::oid(creatureId->_id().data(), 12);
         debug("attempting to search for a creature by ID: {}", id.to_string());
 
-        auto collection = getCollection(COLLECTION_NAME);
+        auto collection = getCollection(CREATURES_COLLECTION);
         trace("collection located");
 
         try {
