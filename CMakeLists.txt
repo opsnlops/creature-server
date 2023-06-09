@@ -10,6 +10,16 @@ project(creature-server
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
+# I hate that this has to be done, but I'm in a bad spot with gRPC right now
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    set(_CREATURES_GRPC_VERSION 1.55.1)
+else()
+    set(_CREATURES_GRPC_VERSION 1.54.2)
+endif()
+message(STATUS "Using gRPC version ${_CREATURES_GRPC_VERSION}")
+
+
+
 set(ABSL_PROPAGATE_CXX_STD on)
 
 include(FetchContent)
@@ -23,7 +33,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
 FetchContent_Declare(
         gRPC
         GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG        v1.55.1
+        GIT_TAG        v${_CREATURES_GRPC_VERSION}
 )
 set(FETCHCONTENT_QUIET OFF)
 FetchContent_MakeAvailable(gRPC)
