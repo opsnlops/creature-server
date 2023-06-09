@@ -6,12 +6,12 @@ FROM debian:bookworm as build
 
 RUN apt update && apt upgrade -y
 
-RUN apt install -y cmake libssl-dev libsasl2-dev gcc git \
+RUN apt install -y cmake libssl-dev libsasl2-dev clang git \
     pkgconf libbson-dev libpthreadpool-dev  \
     libsystemd-dev ninja-build libsdl2-mixer-dev
 
-#RUN update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100 && \
-#    update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang 100
+RUN update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100 && \
+    update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang 100
 
 # Install the latest Mongo driver
 RUN mkdir -p /build/mongo
