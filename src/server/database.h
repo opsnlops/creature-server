@@ -21,7 +21,7 @@
 #include <bsoncxx/builder/stream/document.hpp>
 
 #include <grpcpp/grpcpp.h>
-#include "messaging/server.pb.h"
+#include "server.pb.h"
 
 #include <google/protobuf/timestamp.pb.h>
 

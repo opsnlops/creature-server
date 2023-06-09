@@ -9,7 +9,7 @@
 
 #include "spdlog/spdlog.h"
 
-#include "messaging/server.pb.h"
+#include "server.pb.h"
 #include "server/database.h"
 #include "exception/exception.h"
 

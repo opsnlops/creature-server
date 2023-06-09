@@ -35,35 +35,3 @@ RUN mkdir -p /build/creature-server/src /build/creature-server/messaging
 COPY src/ /build/creature-server/src
 COPY messaging/ /build/creature-server/messaging
 COPY CMakeLists.txt /build/creature-server/
-RUN ls -lart /build/creature-server/
-RUN cd /build/creature-server && \
-    mkdir build && \
-    cd build && \
-    cmake -DCMAKE_MAKE_PROGRAM=ninja -G Ninja \
-          -DgRPC_ABSL_PROVIDER=module \
-          -DgRPC_CARES_PROVIDER=module \
-          -DgRPC_PROTOBUF_PROVIDER=module \
-          -DgRPC_RE2_PROVIDER=module \
-          -DgRPC_SSL_PROVIDER=module \
-          -DgRPC_ZLIB_PROVIDER=module \
-          -DgRPC_INSTALL=ON \
-          -DCMAKE_BUILD_TYPE=Release \
-          .. && \
-    ninja
-
-
-# Now build a small runtime
-FROM debian:bookworm-slim as runtime
-
-# Some of our libs need runtime bits
-RUN apt update && apt upgrade -y && \
-    apt install -y libsasl2-2 libicu72 libsdl2-mixer-2.0-0 flac locales-all && \
-    rm -rf /var/lib/apt/lists
-
-RUN mkdir /app
-COPY --from=build /build/creature-server/build/creature-server /app/creature-server
-COPY --from=build /usr/local/lib /usr/local/lib
-
-EXPOSE 6666
-
-CMD ["/app/creature-server"]

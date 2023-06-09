@@ -9,7 +9,6 @@
 // gRPC
 #include "absl/strings/str_format.h"
 #include <grpcpp/grpcpp.h>
-#include "messaging/server.grpc.pb.h"
 
 // spdlog
 #include "spdlog/spdlog.h"

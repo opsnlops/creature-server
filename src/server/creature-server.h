@@ -5,8 +5,10 @@
 
 #include "absl/strings/str_format.h"
 
-#include "messaging/server.pb.h"
-#include "messaging/server.grpc.pb.h"
+// These are generated during the build. If CLion can't find them,
+// make sure the build has been run first 😅
+#include "server.pb.h"
+#include "server.grpc.pb.h"
 
 #include "server/database.h"
 #include "server/logging/concurrentqueue.h"

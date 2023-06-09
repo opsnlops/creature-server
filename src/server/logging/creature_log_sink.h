@@ -3,7 +3,7 @@
 
 #include <chrono>
 
-#include "messaging/server.pb.h"
+#include "server.pb.h"
 #include "google/protobuf/timestamp.pb.h"
 
 #include "spdlog/spdlog.h"

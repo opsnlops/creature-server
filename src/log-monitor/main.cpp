@@ -9,7 +9,7 @@
 #include <google/protobuf/timestamp.pb.h>
 #include <grpcpp/grpcpp.h>
 
-#include "messaging/server.grpc.pb.h"
+#include "server.grpc.pb.h"
 
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"

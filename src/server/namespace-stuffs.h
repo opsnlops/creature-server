@@ -1,7 +1,7 @@
 
 // This file is included everywhere, don't declare things in it!
 
-#include "messaging/server.pb.h"
+#include "server.pb.h"
 #include "spdlog/spdlog.h"
 
 

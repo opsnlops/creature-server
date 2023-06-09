@@ -6,7 +6,7 @@
 #include "spdlog/spdlog.h"
 
 #include "exception/exception.h"
-#include "messaging/server.pb.h"
+#include "server.pb.h"
 #include "server/database.h"
 #include "server/creature-server.h"
 

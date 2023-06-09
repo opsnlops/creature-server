@@ -13,8 +13,8 @@
 #include <google/protobuf/timestamp.pb.h>
 #include <grpcpp/grpcpp.h>
 
-#include "messaging/server.pb.h"
-#include "messaging/server.grpc.pb.h"
+#include "server.pb.h"
+#include "server.grpc.pb.h"
 
 #include "spdlog/spdlog.h"
 

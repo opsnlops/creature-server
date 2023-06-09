@@ -13,22 +13,32 @@ set(CMAKE_CXX_STANDARD 20)
 set(ABSL_PROPAGATE_CXX_STD on)
 
 include(FetchContent)
+set(FETCHCONTENT_QUIET OFF)
 
 find_package(PkgConfig REQUIRED)
 
 set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
 
+# grpc
+FetchContent_Declare(
+        gRPC
+        GIT_REPOSITORY https://github.com/grpc/grpc
+        GIT_TAG        v1.55.1
+)
+set(FETCHCONTENT_QUIET OFF)
+FetchContent_MakeAvailable(gRPC)
+# Since FetchContent uses add_subdirectory under the hood, we can use
+# the grpc targets directly from this build.
+set(_PROTOBUF_LIBPROTOBUF libprotobuf)
+set(_REFLECTION grpc++_reflection)
+set(_PROTOBUF_PROTOC $<TARGET_FILE:protoc>)
+set(_GRPC_GRPCPP grpc++)
+set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+
+
 # This project uses threads
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
-
-# Abseil
-FetchContent_Declare(
-  absl
-  GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
-  GIT_TAG master
-)
-FetchContent_MakeAvailable(absl)
 
 # fmt
 FetchContent_Declare(
@@ -37,32 +47,16 @@ FetchContent_Declare(
     GIT_TAG 9.1.0
 )
 FetchContent_MakeAvailable(fmt)
-
-# fmt
 set(FMT_HEADER_ONLY ON)
 set(FMT_LOCALE ON)
 
 # spdlog
-#find_package(spdlog REQUIRED)
 FetchContent_Declare(
     spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog
     GIT_TAG v1.11.0
 )
 FetchContent_MakeAvailable(spdlog)
-
-# Protobuf
-find_package(Protobuf REQUIRED)
-message(STATUS "Using Protocol Buffers ${protobuf_VERSION}")
-
-# gRPC
-FetchContent_Declare(
-        gRPC
-        GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG        v1.54.2
-)
-set(FETCHCONTENT_QUIET OFF)
-FetchContent_MakeAvailable(gRPC)
 
 # MongoDB
 find_package(mongocxx REQUIRED)
@@ -73,11 +67,46 @@ find_package(SDL2 REQUIRED)
 find_package(SDL2_mixer REQUIRED)
 
 
+# Proto file
+get_filename_component(server_proto "messaging/server.proto" ABSOLUTE)
+get_filename_component(server_proto_path "${server_proto}" PATH)
+
+# Generated sources
+set(server_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/server.pb.cc")
+set(server_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/server.pb.h")
+set(server_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/server.grpc.pb.cc")
+set(server_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/server.grpc.pb.h")
+add_custom_command(
+        OUTPUT "${server_proto_srcs}" "${server_proto_hdrs}" "${server_grpc_srcs}" "${server_grpc_hdrs}"
+        COMMAND ${_PROTOBUF_PROTOC}
+        ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
+        --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
+        -I "${server_proto_path}"
+        -I "${grpc_SOURCE_DIR}/third_party/protobuf/src"
+        --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
+        "${server_proto}"
+        DEPENDS "${server_proto}")
+
+add_library(server_grpc_proto
+        ${server_grpc_srcs}
+        ${server_grpc_hdrs}
+        ${server_proto_srcs}
+        ${server_proto_hdrs}
+        )
+target_link_libraries(server_grpc_proto
+        ${_REFLECTION}
+        ${_GRPC_GRPCPP}
+        ${_PROTOBUF_LIBPROTOBUF}
+        )
+target_include_directories(server_grpc_proto
+        PUBLIC
+        ${CMAKE_CURRENT_BINARY_DIR}
+        )
+
 
 # Our source files
-file(GLOB SERVER_SRCS
+file(GLOB serverFiles
         src/exception/*
-        src/messaging/*
         src/server/*
         src/server/animation/*
         src/server/creature/*
@@ -92,40 +121,33 @@ file(GLOB SERVER_SRCS
 file(GLOB clientFiles
         src/client/*
         src/exception/*
-        src/messaging/*
         )
 
-file(GLOB mongoTestFiles
-        src/mongo-test/*
-        )
 
 file(GLOB logReaderFiles
         src/client/*.h
         src/exception/*
-        src/messaging/*
         src/log-monitor/*
         )
 
 # Set up our includes
 include_directories(
         src/
-        ${Protobuf_INCLUDE_DIRS}
         ${LIBMONGOCXX_INCLUDE_DIR}
         ${LIBBSONCXX_INCLUDE_DIR}
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
 )
 
+message(STATUS "Using Protocol Buffers ${protobuf_VERSION}")
+
 add_executable(creature-server
-        ${SERVER_SRCS}
-        ${Protobuf_LIBRARIES}
-        ${libmongocxx_LIBRARIES}
+        ${serverFiles}
         )
 
 target_link_libraries(creature-server
         PUBLIC
-        protobuf::libprotobuf
-        grpc++
+        server_grpc_proto
         mongo::mongocxx_shared
         mongo::bsoncxx_shared
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
@@ -133,6 +155,10 @@ target_link_libraries(creature-server
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
         absl::flags
+        absl::flags_parse
+        ${_REFLECTION}
+        ${_GRPC_GRPCPP}
+        ${_PROTOBUF_LIBPROTOBUF}
         )
 
 
@@ -142,12 +168,15 @@ add_executable(client
 
 target_link_libraries(client
         PUBLIC
-        protobuf::libprotobuf
-        grpc++
+        server_grpc_proto
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
-        ${PROTOBUF_LIBRARIES}
         fmt::fmt
         mongo::bsoncxx_shared
+        absl::flags
+        absl::flags_parse
+        ${_REFLECTION}
+        ${_GRPC_GRPCPP}
+        ${_PROTOBUF_LIBPROTOBUF}
         )
 
 add_executable(logreader
@@ -156,27 +185,14 @@ add_executable(logreader
 
 target_link_libraries(logreader
         PUBLIC
-        protobuf::libprotobuf
-        grpc++
+        server_grpc_proto
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
-        ${PROTOBUF_LIBRARIES}
         fmt::fmt
         mongo::bsoncxx_shared
+        absl::flags
+        absl::flags_parse
+        ${_REFLECTION}
+        ${_GRPC_GRPCPP}
+        ${_PROTOBUF_LIBPROTOBUF}
         )
 
-add_executable(mongo-test
-        ${mongoTestFiles}
-        ${Protobuf_LIBRARIES}
-        ${libmongocxx_LIBRARIES}
-        ${libbsoncxx_LIBRARIES}
-        )
-
-target_link_libraries(mongo-test
-        PUBLIC
-        protobuf::libprotobuf
-        grpc++
-        mongo::mongocxx_shared
-        mongo::bsoncxx_shared
-        Threads::Threads
-        ${PROTOBUF_LIBRARIES}
-        )
