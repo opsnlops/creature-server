@@ -2,7 +2,7 @@
 FROM cgr.dev/chainguard/wolfi-base as build
 
 RUN apk update && \
-    apk add gcc glibc-dev ninja cmake pkgconf protobuf-dev libsystemd libzstd1 \
+    apk add gcc glibc-dev ninja cmake pkgconf libsystemd libzstd1 \
     zlib openssl-dev cyrus-sasl-dev git perl-dev
 
 
@@ -22,21 +22,6 @@ RUN cd mongo-cxx-driver-r3.7.2/build && \
     ninja && \
     ninja install
 
-# spdlog
-#WORKDIR /build/spdlog
-#ADD https://github.com/gabime/spdlog/archive/refs/tags/v1.11.0.tar.gz .
-#RUN tar -xzvf v1.11.0.tar.gz && \
-#    cd spdlog-1.11.0 && mkdir build && cd build && \
-#    cmake -DENABLE_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
-#    ninja && ninja install
-
-# fmt
-#WORKDIR /build/fmt
-#ADD https://github.com/fmtlib/fmt/archive/refs/tags/9.1.0.tar.gz .
-#RUN tar -xzvf 9.1.0.tar.gz && cd fmt-9.1.0 && \
-#    mkdir build && cd build && \
-#    cmake -DENABLE_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
-#    ninja && ninja install
 
 # SDL
 WORKDIR /build/sdl
@@ -45,6 +30,14 @@ RUN tar -xzvf release-2.26.5.tar.gz && cd SDL-release-2.26.5 && \
     mkdir build && cd build && \
     cmake -DENABLE_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
     ninja && ninja install
+
+WORKDIR /build/sdl_mixer
+ADD https://github.com/libsdl-org/SDL_mixer/archive/refs/tags/release-2.6.3.tar.gz .
+RUN tar -xzvf release-2.6.3.tar.gz && cd SDL_mixer-release-2.6.3 && \
+    mkdir build && cd build && \
+    cmake -DENABLE_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
+    ninja && ninja install
+
 
 
 
@@ -57,7 +50,18 @@ COPY CMakeLists.txt .
 RUN ls -lart /build/creature-server/
 RUN mkdir build && \
     cd build && \
-    cmake -DENABLE_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
+    cmake   -DCMAKE_MAKE_PROGRAM=ninja -G Ninja \
+            -DgRPC_ABSL_PROVIDER=module \
+            -DgRPC_CARES_PROVIDER=module \
+            -DgRPC_PROTOBUF_PROVIDER=module \
+            -DgRPC_RE2_PROVIDER=module \
+            -DgRPC_SSL_PROVIDER=module \
+            -DgRPC_ZLIB_PROVIDER=module \
+            -DgRPC_INSTALL=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+        -DENABLE_STATIC=ON \
+    -DCMAKE_INSTALL_PREFIX=/app \
+     .. && \
     ninja
 
 
@@ -66,7 +70,7 @@ FROM cgr.dev/chainguard/wolfi-base:latest as runtime
 
 # Some of our libs need runtime bits
 RUN apk update && \
-    apk add libprotobuf libsystemd libzstd1 zlib openssl cyrus-sasl glibc-locale-en
+    apk add libsystemd libzstd1 zlib openssl cyrus-sasl glibc-locale-en
 
 #RUN mkdir /app
 COPY --from=build /app /app
