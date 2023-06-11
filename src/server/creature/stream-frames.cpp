@@ -45,9 +45,15 @@ namespace creatures {
             event->dmxOffset = frame.dmx_offset();
             event->data.reserve(frame.number_of_motors());
 
+#if DEBUG_STREAM_FRAMES
+            trace("creature {} has {} motors and a DMX offset of {}",
+                  frame.creature_name(), frame.number_of_motors(), frame.dmx_offset());
+#endif
+
+            uint8_t i = 0;
             for (uint8_t byte: frame_data) {
 #if DEBUG_STREAM_FRAMES
-                trace("byte {}: 0x{:02x}", i, byte);
+                trace("byte {}: 0x{:02x}", i++, byte);
 #endif
                 event->data.push_back(byte);
             }

@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
     // We indicate that the channel isn't authenticated (use of
     // InsecureChannelCredentials()).
     CreatureServerClient client(
-            grpc::CreateChannel("127.0.0.1:6666", grpc::InsecureChannelCredentials()));
+            grpc::CreateChannel("10.3.2.215:6666", grpc::InsecureChannelCredentials()));
 
     info("Searching for a creature name that should exist...");
     Creature reply = client.SearchCreatures("Beaky1");

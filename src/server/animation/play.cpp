@@ -159,6 +159,7 @@ namespace creatures {
         numberOfFrames, creature->name(), msPerFrame, startingFrame, (currentFrame-msPerFrame));
 
         info(okayMessage);
+        *response->mutable_status() = okayMessage;
 
         status = grpc::Status(grpc::StatusCode::OK,
                               okayMessage);
