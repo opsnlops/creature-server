@@ -311,8 +311,8 @@ int main(int argc, char** argv) {
 #if 1
     // Now let's play animation
     info("attempting to play an animation??");
-    std::vector<std::string> creaturesIdsToPlay = {"643ba6ffc606a8b0aa078361", "643b86562a93fc6ba608ba21" };
-    std::string animationPlayTestAnimation = "64606f237aff7beab00bacb2";
+    std::vector<std::string> creaturesIdsToPlay = {"643ba6ffc606a8b0aa078361"};
+    std::string animationPlayTestAnimation = "648534a7a850aa1472070501";
 
     for(const auto& creatureIdToPlay : creaturesIdsToPlay) {
 
@@ -339,7 +339,7 @@ int main(int argc, char** argv) {
 #endif
 
 
-#if 1
+#if 0
     // Try to play a sound
 
     std::string soundFile = "multi.flac";

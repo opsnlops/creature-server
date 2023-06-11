@@ -102,12 +102,23 @@ namespace creatures {
 #endif
 
         // Schedule this animation in the event loop
-        uint64_t startingFrame = eventLoop->getNextFrameNumber();
+        uint64_t startingFrame = eventLoop->getNextFrameNumber() + 500; // Wait 500ms before starting
         trace("starting with frame {}", startingFrame);
 
         uint32_t msPerFrame = animation->metadata().milliseconds_per_frame();
         trace("playing at a speed of {}ms oer frame", msPerFrame);
 
+        // Look and see if there's an audio file to play with this animation
+        if(!animation->metadata().sound_file().empty()) {
+
+            // Set up the path to the sound file based on the startup config
+            std::string soundFileName = MusicEvent::getSoundFileLocation() + "/" + animation->metadata().sound_file();
+            debug("using sound file name: {}", soundFileName);
+
+            auto playSoundEvent = std::make_shared<MusicEvent>(startingFrame, soundFileName);
+            eventLoop->scheduleEvent(playSoundEvent);
+            trace("scheduled sound event for frame {}", startingFrame);
+        }
 
         uint32_t numberOfFrames = 0;
         uint64_t currentFrame = startingFrame;
