@@ -7,6 +7,7 @@
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
+#include "server/metrics/counters.h"
 #include "exception/exception.h"
 
 
@@ -17,6 +18,7 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
     extern std::shared_ptr<EventLoop> eventLoop;
+    extern std::shared_ptr<SystemCounters> metrics;
 
     grpc::Status CreatureServerImpl::PlayAnimation(grpc::ServerContext *context, const PlayAnimationRequest *request,
                                                    PlayAnimationResponse *response) {
@@ -160,6 +162,7 @@ namespace creatures {
 
         info(okayMessage);
         *response->mutable_status() = okayMessage;
+        metrics->incrementAnimationsPlayed();
 
         status = grpc::Status(grpc::StatusCode::OK,
                               okayMessage);

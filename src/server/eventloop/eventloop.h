@@ -26,7 +26,6 @@ namespace creatures {
         [[nodiscard]] uint64_t getCurrentFrameNumber() const;
         [[nodiscard]] uint64_t getNextFrameNumber() const;
         [[nodiscard]] uint32_t getQueueSize() const;
-        [[nodiscard]] uint64_t getEventsExecuted() const;
 
     private:
 
@@ -35,7 +34,6 @@ namespace creatures {
         std::thread eventLoopThread;
 
         uint64_t frameCount = 0;
-        uint64_t eventsExecuted = 0;
 
         std::unique_ptr<EventScheduler> eventScheduler;
         std::mutex eventQueueMutex;

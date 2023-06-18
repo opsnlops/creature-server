@@ -5,20 +5,25 @@
 #include "server/eventloop/events/types.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/event.h"
+#include "server/metrics/counters.h"
 
 #include "server/namespace-stuffs.h"
 
 namespace creatures {
 
     extern std::shared_ptr<EventLoop> eventLoop;
+    extern std::shared_ptr<SystemCounters> metrics;
 
     void TickEvent::executeImpl() {
 
         // Just go tick!
-        debug("⌚️ Hello from frame {:L}! Event queue length: {}, events executed: {:L}",
+        debug("⌚️ Hello from frame {:L}! Event queue length: {}, events: {:L}, frames streamed: {:L}, animations played: {:L}, DMX events sent: {:L}",
               eventLoop->getCurrentFrameNumber(),
               eventLoop->getQueueSize(),
-              eventLoop->getEventsExecuted());
+              metrics->getEventsProcessed(),
+              metrics->getFramesStreamed(),
+              metrics->getAnimationsPlayed(),
+              metrics->getDMXEventsProcessed());
 
         // Make another event
         auto nextTick = std::make_shared<TickEvent>(this->frameNumber + TICK_TIME_FRAMES);

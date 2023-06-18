@@ -8,12 +8,14 @@
 
 #include "server/config.h"
 #include "server/eventloop/eventloop.h"
+#include "server/metrics/counters.h"
 
 #include "server/namespace-stuffs.h"
 
 namespace creatures {
 
     extern std::atomic<bool> eventLoopRunning;
+    extern std::shared_ptr<SystemCounters> metrics;
 
     EventLoop::EventLoop() : eventScheduler(std::make_unique<EventScheduler>()) {
         debug("event loop created");
@@ -48,6 +50,7 @@ namespace creatures {
 
             // Increment the frame counter for this pass
             frameCount++;
+            metrics->incrementTotalFrames();
 
             // Process the events for this frame, if any, keeping the queue locked as short as possible.
             while (true) {
@@ -70,15 +73,15 @@ namespace creatures {
 
                     if (event) {
                         event->execute();
-                        eventsExecuted++;
+                        metrics->incrementEventsProcessed();
                     }
 
                 } catch (const std::runtime_error &e) {
-                    critical("An unhandled runtime error occurred on event {}: {}", eventsExecuted, e.what());
+                    critical("An unhandled runtime error occurred on event {}: {}", metrics->getEventsProcessed(), e.what());
                 } catch (const std::exception &e) {
-                    critical("An unhandled exception was thrown on event {}: {}", eventsExecuted, e.what());
+                    critical("An unhandled exception was thrown on event {}: {}", metrics->getEventsProcessed(), e.what());
                 } catch (...) {
-                    critical("An unknown error occurred on event {}!", eventsExecuted);
+                    critical("An unknown error occurred on event {}!", metrics->getEventsProcessed());
                 }
             }
 
@@ -112,9 +115,6 @@ namespace creatures {
         return eventScheduler->event_queue.size();
     }
 
-    uint64_t EventLoop::getEventsExecuted() const {
-        return eventsExecuted;
-    }
 
     void EventLoop::scheduleEvent(const std::shared_ptr<Event>& e) {
         std::lock_guard<std::mutex> lock(eventQueueMutex);

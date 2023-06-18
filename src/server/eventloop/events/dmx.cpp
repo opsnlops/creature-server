@@ -8,6 +8,7 @@
 #include "server/config.h"
 #include "server/dmx/dmx.h"
 #include "server/eventloop/events/types.h"
+#include "server/metrics/counters.h"
 #include "util/cache.h"
 
 #include "server/namespace-stuffs.h"
@@ -15,6 +16,7 @@
 namespace creatures {
 
     extern std::shared_ptr<ObjectCache<std::string, DMX>> dmxCache;
+    extern std::shared_ptr<SystemCounters> metrics;
 
     void DMXEvent::executeImpl() {
 
@@ -43,10 +45,11 @@ namespace creatures {
             dmxCache->put(key, sender);
         }
 
-
-
         // Now send the packet
         sender->send(data);
+
+        // Update our metrics
+        metrics->incrementDMXEventsProcessed();
 
 #if DEBUG_EVENT_DMX
 

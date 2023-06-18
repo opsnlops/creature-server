@@ -125,6 +125,7 @@ file(GLOB serverFiles
         src/server/eventloop/events/*
         src/server/gpio/*
         src/server/logging/*
+        src/server/metrics/*
         src/server/sound/*
         src/util/*
         )

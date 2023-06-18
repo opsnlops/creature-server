@@ -28,6 +28,7 @@
 #include "server/gpio/gpio.h"
 #include "server/logging/concurrentqueue.h"
 #include "server/logging/creature_log_sink.h"
+#include "server/metrics/counters.h"
 #include "util/cache.h"
 
 
@@ -51,6 +52,7 @@ namespace creatures {
     std::shared_ptr<EventLoop> eventLoop;
     std::shared_ptr<ObjectCache<std::string, DMX>> dmxCache;
     std::shared_ptr<GPIO> gpioPins;
+    std::shared_ptr<SystemCounters> metrics;
     const char* audioDevice;
     SDL_AudioSpec audioSpec;
     std::thread serverThread;
@@ -113,6 +115,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
 
     // Set up our locale
     std::locale::global(std::locale("en_US.UTF-8"));
+
+    // Create our metric counters
+    creatures::metrics = std::make_shared<creatures::SystemCounters>();
 
     // Console logger
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();

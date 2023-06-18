@@ -13,6 +13,7 @@
 #include "server/config.h"
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
+#include "server/metrics/counters.h"
 #include "util/environment.h"
 
 #include "server/namespace-stuffs.h"
@@ -23,6 +24,7 @@ namespace creatures {
     extern const char* audioDevice;
     extern SDL_AudioSpec audioSpec;
     extern std::shared_ptr<GPIO> gpioPins;
+    extern std::shared_ptr<SystemCounters> metrics;
 
     /**
      * This event type plays a sound file on a thread in the background
@@ -102,6 +104,8 @@ namespace creatures {
 
             // Clean up!
             Mix_FreeMusic(music);
+
+            metrics->incrementSoundsPlayed();
 
             end:
             info("goodbye from the music thread! 👋🏻");
