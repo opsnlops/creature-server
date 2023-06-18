@@ -87,9 +87,9 @@ void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue) {
     // 🚜 Build and start!
     creatures::grpcServer = builder.BuildAndStart();
     info("Server listening on {}", server_address);
-    creatures::serverThread = std::thread([]() {
+    //creatures::serverThread = std::thread([]() {
         creatures::grpcServer->Wait();
-    });
+    //});
 
 }
 
@@ -100,9 +100,9 @@ void StopServer() {
         creatures::grpcServer->Shutdown();
         creatures::grpcServer = nullptr;
     }
-    if (creatures::serverThread.joinable()) {
-        creatures::serverThread.join();
-    }
+    //if (creatures::serverThread.joinable()) {
+    //    creatures::serverThread.join();
+    //}
 }
 
 
