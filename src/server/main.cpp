@@ -29,6 +29,7 @@
 #include "server/logging/concurrentqueue.h"
 #include "server/logging/creature_log_sink.h"
 #include "server/metrics/counters.h"
+#include "server/metrics/status-lights.h"
 #include "util/cache.h"
 
 
@@ -53,9 +54,11 @@ namespace creatures {
     std::shared_ptr<ObjectCache<std::string, DMX>> dmxCache;
     std::shared_ptr<GPIO> gpioPins;
     std::shared_ptr<SystemCounters> metrics;
+    std::shared_ptr<StatusLights> statusLights;
     const char* audioDevice;
     SDL_AudioSpec audioSpec;
     std::thread serverThread;
+    std::thread watchdogThread;
     bool serverShouldRun = true;
 }
 
@@ -74,6 +77,12 @@ void signal_handler(int signal) {
 
         info("shutting down the gRPC service");
         creatures::serverShouldRun = false;
+
+        info("stopping the watchdog");
+        creatures::statusLights->stop();
+        if(creatures::watchdogThread.joinable()) {
+            creatures::watchdogThread.join();
+        }
     }
 }
 
@@ -105,6 +114,7 @@ void StopServer() {
     //if (creatures::serverThread.joinable()) {
     //    creatures::serverThread.join();
     //}
+
 }
 
 
@@ -168,6 +178,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     // Fire up the GPIO
     debug("Bringing up the GPIO pins");
     creatures::gpioPins = std::make_shared<creatures::GPIO>();
+
+    // Fire up the watchdog
+    debug("Starting up the watchdog");
+    creatures::statusLights = std::make_shared<creatures::StatusLights>();
+    creatures::watchdogThread = std::thread(&creatures::StatusLights::run, creatures::statusLights.get());
 
     // Create the DMX cache
     creatures::dmxCache = std::make_shared<creatures::ObjectCache<std::string, creatures::DMX>>();

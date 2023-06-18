@@ -1,22 +1,22 @@
 
 #pragma once
 
-#define DEBUG_DMX_SENDER        0
-#define DEBUG_STREAM_FRAMES     0
+#define DEBUG_DMX_SENDER            0
+#define DEBUG_STREAM_FRAMES         0
 
-#define DEBUG_EVENT_DMX         0
+#define DEBUG_EVENT_DMX             0
 
-#define DEBUG_ANIMATION_PLAY    0
+#define DEBUG_ANIMATION_PLAY        0
 
 
 #define DISABLE_PLAY_SAFETY_CHECKS  1
 
 
 // How often the timer event fires
-#define TICK_TIME_FRAMES        60000
+#define TICK_TIME_FRAMES            60000
 
 
-#define EVENT_LOOP_PERIOD_MS    1
+#define EVENT_LOOP_PERIOD_MS        1
 
 
 #define DB_URI                      "mongodb://10.3.2.11"
@@ -54,3 +54,7 @@
 #define RECEIVING_STREAM_FRAMES_GPIO_PIN 23
 #define SENDING_DMX_GPIO_PIN             24
 #define HEARTBEAT_GPIO_PIN               25
+
+
+// How often should the watchdog / status lights thread run?
+#define WATCHDOG_THREAD_PERIOD_MS    250

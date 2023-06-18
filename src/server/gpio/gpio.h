@@ -25,6 +25,11 @@ namespace creatures {
         void sendingDMX(bool sendingDMX);
         void heartbeat(bool heartbeat);
 
+        /**
+         * Turn off everything
+         */
+        void allOff();
+
     private:
         bool enabled;
         void *gpio_map;

@@ -161,6 +161,15 @@ namespace creatures {
         GPIO_CLR = 1 << pin;
     }
 
+    void GPIO::allOff() {
+        turn_off(SERVER_RUNNING_GPIO_PIN);
+        turn_off(SENDING_DMX_GPIO_PIN);
+        turn_off(RECEIVING_STREAM_FRAMES_GPIO_PIN);
+        turn_off(PLAYING_SOUND_GPIO_PIN);
+        turn_off(PLAYING_ANIMATION_GPIO_PIN);
+        turn_off(HEARTBEAT_GPIO_PIN);
+    }
+
     GPIO::~GPIO() {
         enabled = false;
     }
