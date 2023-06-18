@@ -8,11 +8,12 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_mixer.h>
 
-
 #include "spdlog/spdlog.h"
 
 #include "server/config.h"
 #include "server/eventloop/events/types.h"
+#include "server/gpio/gpio.h"
+#include "util/environment.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -21,7 +22,7 @@ namespace creatures {
 
     extern const char* audioDevice;
     extern SDL_AudioSpec audioSpec;
-
+    extern std::shared_ptr<GPIO> gpioPins;
 
     /**
      * This event type plays a sound file on a thread in the background
@@ -61,6 +62,10 @@ namespace creatures {
         std::thread([filePath = this->filePath] {
 
             info("music playing thread running for file {}", filePath);
+            Mix_Music *music;
+
+            // Signal that we're playing music
+            gpioPins->playingSound(true);
 
             // Only one file can be playing at once...
             //std::lock_guard<std::mutex> lock(sdl_mutex);
@@ -68,17 +73,17 @@ namespace creatures {
             // Initialize SDL_mixer for stereo sound (set channels to 6 for 5.1)
             if (Mix_OpenAudioDevice(audioSpec.freq, audioSpec.format, audioSpec.channels, SOUND_BUFFER_SIZE, audioDevice, 1) < 0) {
                 error("Failed to initialize SDL_mixer: {}", Mix_GetError());
-                return;
+                goto end;
             }
 
             // Play at full volume
             Mix_VolumeMusic(255);
 
             // Load the file
-            Mix_Music *music = Mix_LoadMUS(filePath.c_str());
+            music = Mix_LoadMUS(filePath.c_str());
             if (!music) {
                 error("Failed to load music: {}", Mix_GetError());
-                return;
+                goto end;
             }
 
             // Log the expected length
@@ -87,7 +92,7 @@ namespace creatures {
             // Play the music.
             if (Mix_PlayMusic(music, 1) == -1) {
                 error("Failed to play music: {}", Mix_GetError());
-                return;
+                goto end;
             }
 
             // Wait for the music to finish
@@ -98,7 +103,9 @@ namespace creatures {
             // Clean up!
             Mix_FreeMusic(music);
 
+            end:
             info("goodbye from the music thread! 👋🏻");
+            gpioPins->playingSound(false);
 
         }).detach();
     }
@@ -159,38 +166,6 @@ namespace creatures {
         debug("Using audio device name: {}", audioDevice);
 
         return 1;
-    }
-
-    int MusicEvent::environmentToInt(const char *variable, const char *defaultValue) {
-        return environmentToInt(variable,std::stoi(std::string(defaultValue)));
-    }
-
-    int MusicEvent::environmentToInt(const char* variable, int defaultValue) {
-        trace("converting {} to an int from the environment (default is {})", variable, defaultValue);
-
-        int value;
-        const char* valueString = std::getenv(variable);
-        if(valueString != nullptr) {
-
-            try {
-
-                value = std::stoi(std::string(valueString));
-                trace("environment var {} is {}", variable, value);
-                return value;
-
-            } catch (std::invalid_argument& e) {
-                error("{} is not an int?", variable);
-                return defaultValue;
-            } catch (std::out_of_range& e) {
-                error("{} is out of range", variable);
-                return defaultValue;
-            }
-        }
-        else
-        {
-            trace("using the default of {}", defaultValue);
-            return defaultValue;
-        }
     }
 
     void MusicEvent::listAudioDevices() {

@@ -40,3 +40,17 @@
 #define DEFAULT_SOUND_CHANNELS      6
 
 #define SOUND_BUFFER_SIZE           2048    // Higher = less CPU, lower = less latency
+
+// Should we use the GPIO devices for LEDs? This only works on the Raspberry Pi,
+// since Macs don't have these 😅
+#define USE_GPIO_ENV               "USE_GPIO"
+#define DEFAULT_USE_GPIO            0
+#define GPIO_DEVICE                "/dev/gpiomem"
+
+// Which pins to use
+#define SERVER_RUNNING_GPIO_PIN          17
+#define PLAYING_ANIMATION_GPIO_PIN       27
+#define PLAYING_SOUND_GPIO_PIN           22
+#define RECEIVING_STREAM_FRAMES_GPIO_PIN 23
+#define SENDING_DMX_GPIO_PIN             24
+#define HEARTBEAT_GPIO_PIN               25

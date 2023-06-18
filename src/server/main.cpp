@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 
 // gRPC
 #include "absl/strings/str_format.h"
@@ -24,6 +25,7 @@
 #include "server/dmx/dmx.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
+#include "server/gpio/gpio.h"
 #include "server/logging/concurrentqueue.h"
 #include "server/logging/creature_log_sink.h"
 #include "util/cache.h"
@@ -48,10 +50,15 @@ namespace creatures {
     std::unique_ptr<Server> grpcServer;
     std::shared_ptr<EventLoop> eventLoop;
     std::shared_ptr<ObjectCache<std::string, DMX>> dmxCache;
+    std::shared_ptr<GPIO> gpioPins;
     const char* audioDevice;
     SDL_AudioSpec audioSpec;
+    std::thread serverThread;
+    bool serverShouldRun = true;
 }
 
+void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue);
+void StopServer();
 
 // Signal handler to stop the event loop
 void signal_handler(int signal) {
@@ -63,12 +70,8 @@ void signal_handler(int signal) {
         info("shutting down SDL");
         SDL_Quit();
 
-        // If the server is running, stop it
-        if(creatures::grpcServer) {
-            info("stopping the gRPC service");
-            creatures::grpcServer->Shutdown(std::chrono::system_clock::now());
-            creatures::grpcServer.reset();
-        }
+        info("shutting down the gRPC service");
+        creatures::serverShouldRun = false;
     }
 }
 
@@ -84,9 +87,22 @@ void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue) {
     // 🚜 Build and start!
     creatures::grpcServer = builder.BuildAndStart();
     info("Server listening on {}", server_address);
+    creatures::serverThread = std::thread([]() {
+        creatures::grpcServer->Wait();
+    });
 
-    creatures::grpcServer->Wait();
-    info("Bye!");
+}
+
+void StopServer() {
+    info("stopping the gRPC service");
+
+    if (creatures::grpcServer) {
+        creatures::grpcServer->Shutdown();
+        creatures::grpcServer = nullptr;
+    }
+    if (creatures::serverThread.joinable()) {
+        creatures::serverThread.join();
+    }
 }
 
 
@@ -144,6 +160,10 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
         return 0;
     }
 
+    // Fire up the GPIO
+    debug("Bringing up the GPIO pins");
+    creatures::gpioPins = std::make_shared<creatures::GPIO>();
+
     // Create the DMX cache
     creatures::dmxCache = std::make_shared<creatures::ObjectCache<std::string, creatures::DMX>>();
     debug("DMX cache made");
@@ -156,10 +176,22 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     auto tickEvent = std::make_shared<creatures::TickEvent>(TICK_TIME_FRAMES);
     creatures::eventLoop->scheduleEvent(tickEvent);
 
+    // Signal that we're online
+    creatures::gpioPins->serverOnline(true);
 
-
-    info("starting server on port {}", 6666);
     RunServer(6666, log_queue);
+    info("Startup complete!");
+
+    // Wait for the signal handler to know when to stop
+    while (creatures::serverShouldRun) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+
+    StopServer();
+
+    creatures::gpioPins->serverOnline(false);
+
+    // This will cause a sig11 and I don't know why, but don't really care, either.
 
     return 0;
 }

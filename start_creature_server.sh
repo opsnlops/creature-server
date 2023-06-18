@@ -6,6 +6,7 @@ CONTAINER_ID=$(docker run -d --rm -p6666:6666 \
 	--name creature-server \
 	-v /local/sounds:/app/sounds \
 	--device /dev/snd \
+	--device /dev/gpiomem \
 	--env SOUND_FILE_LOCATION="/app/sounds" \
 	--env SOUND_DEVICE_NUMBER=0 \
 	--env SOUND_CHANNELS=6 \

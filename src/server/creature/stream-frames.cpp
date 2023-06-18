@@ -8,10 +8,13 @@
 #include "server/creature-server.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
+#include "server/gpio/gpio.h"
 
 #include "server/namespace-stuffs.h"
 
 namespace creatures {
+
+    extern std::shared_ptr<GPIO> gpioPins;
 
     /**
      * Send frames from a client to a Creature
@@ -29,6 +32,9 @@ namespace creatures {
         // Grab the first one now, so we can log it
         reader->Read(&frame);
         info("sending frames to {}", frame.creature_name());
+
+        // Turn on the light
+        gpioPins->receivingStreamFrames(true);
 
         // Process the incoming stream of frames
         do {
@@ -73,6 +79,7 @@ namespace creatures {
         // Set the response
         response->set_frames_processed(frame_count);
         response->set_message(fmt::format("{} frames processed successfully", frame_count));
+        gpioPins->receivingStreamFrames(false);
 
         return Status::OK;
     }

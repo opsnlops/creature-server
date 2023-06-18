@@ -45,9 +45,6 @@ namespace creatures {
     private:
         std::string filePath;
         std::mutex sdl_mutex;
-
-        static int environmentToInt(const char* variable, const char* defaultValue);
-        static int environmentToInt(const char* variable, int defaultValue);
     };
 
 }

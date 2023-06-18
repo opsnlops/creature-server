@@ -123,6 +123,7 @@ file(GLOB serverFiles
         src/server/dmx/*
         src/server/eventloop/*
         src/server/eventloop/events/*
+        src/server/gpio/*
         src/server/logging/*
         src/server/sound/*
         src/util/*
