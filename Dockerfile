@@ -15,16 +15,16 @@ RUN update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100 && \
 
 # Install the latest Mongo driver
 RUN mkdir -p /build/mongo
-ADD https://github.com/mongodb/mongo-c-driver/releases/download/1.23.5/mongo-c-driver-1.23.5.tar.gz /build/mongo/c-driver.tar.gz
-ADD https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.7.2/mongo-cxx-driver-r3.7.2.tar.gz /build/mongo/cxx-driver.tar.gz
+ADD https://github.com/mongodb/mongo-c-driver/releases/download/1.24.1/mongo-c-driver-1.24.1.tar.gz /build/mongo/c-driver.tar.gz
+ADD https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.8.0/mongo-cxx-driver-r3.8.0.tar.gz /build/mongo/cxx-driver.tar.gz
 RUN cd /build/mongo && tar -xzvf c-driver.tar.gz && tar -xzvf cxx-driver.tar.gz
 
-RUN cd /build/mongo/mongo-c-driver-1.23.5/build && \
+RUN cd /build/mongo/mongo-c-driver-1.24.1/build && \
     cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
     ninja && \
     ninja install
 
-RUN cd /build/mongo/mongo-cxx-driver-r3.7.2/build && \
+RUN cd /build/mongo/mongo-cxx-driver-r3.8.0/build && \
     cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
     ninja && \
     ninja install
