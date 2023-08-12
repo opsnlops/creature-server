@@ -5,8 +5,8 @@
 #include <thread>
 #include <vector>
 
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_mixer.h>
+#include <SDL.h>
+#include <SDL_mixer.h>
 
 #include "spdlog/spdlog.h"
 

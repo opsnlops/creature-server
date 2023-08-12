@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 # I hate that this has to be done, but I'm in a bad spot with gRPC right now
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    set(_CREATURES_GRPC_VERSION 1.55.1)
+    set(_CREATURES_GRPC_VERSION 1.56.2)
 else()
     set(_CREATURES_GRPC_VERSION 1.54.2)
 endif()
@@ -76,6 +76,8 @@ find_package(bsoncxx REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(SDL2_mixer REQUIRED)
 
+# Leave a message
+message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
 
 # Proto file
 get_filename_component(server_proto "messaging/server.proto" ABSOLUTE)
