@@ -122,6 +122,10 @@ namespace creatures {
             trace("scheduled sound event for frame {}", startingFrame);
         }
 
+        // Turn on the status light
+        auto statusLightOn = std::make_shared<StatusLightEvent>(startingFrame, StatusLight::Animation, true);
+        eventLoop->scheduleEvent(statusLightOn);
+
         uint32_t numberOfFrames = 0;
         uint64_t currentFrame = startingFrame;
         for(const auto& frame : animation->frames()) {
@@ -156,6 +160,10 @@ namespace creatures {
 
             currentFrame += (msPerFrame / EVENT_LOOP_PERIOD_MS);
         }
+
+        // Schedule turning off the light
+        auto statusLightOff = std::make_shared<StatusLightEvent>((currentFrame-msPerFrame), StatusLight::Animation, false);
+        eventLoop->scheduleEvent(statusLightOff);
 
         std::string okayMessage = fmt::format("✅ Scheduled {} frames on creature {} at a pacing of {}ms per frame for frames {} to {}",
         numberOfFrames, creature->name(), msPerFrame, startingFrame, (currentFrame-msPerFrame));

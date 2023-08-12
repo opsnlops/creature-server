@@ -3,6 +3,7 @@
 
 #include "server/metrics/counters.h"
 #include "server/gpio/gpio.h"
+#include "server/config.h"
 
 
 namespace creatures {
