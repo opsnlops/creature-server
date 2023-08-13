@@ -58,6 +58,7 @@ namespace creatures {
 
         // Playlist stuff
         grpc::Status createPlaylist(const Playlist *playlist, DatabaseInfo *reply);
+        grpc::Status listPlaylists(const PlaylistFilter *filter, ListPlaylistsResponse *animationList);
 
         /**
          * Ping the database to make sure it's alive
@@ -103,6 +104,8 @@ namespace creatures {
          */
         static bsoncxx::document::value playlistToBson(const Playlist *playlist, bsoncxx::oid playlistId);
         static int32_t playlistItemsToBson(bsoncxx::builder::stream::document &doc, const server::Playlist *playlist);
+        static void bsonToPlaylist(const bsoncxx::document::view &doc, Playlist *playlist);
+        static void bsonToPlaylistItems(const bsoncxx::document::view &doc, server::Playlist *playlist);
 
     };
 

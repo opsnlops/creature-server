@@ -32,6 +32,7 @@ using server::FrameResponse;
 using server::Playlist;
 using server::PlaylistFilter;
 using server::PlaylistIdentifier;
+using server::ListPlaylistsResponse;
 
 using server::PlaySoundRequest;
 using server::PlaySoundResponse;

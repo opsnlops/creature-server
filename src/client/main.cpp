@@ -394,6 +394,18 @@ info("playlists tests!");
     info("server said: {}", dbInfo.message());
 
 
+
+    // Attempt to load the playlists for parrots
+    PlaylistFilter playlistFilter = PlaylistFilter();
+    playlistFilter.set_creature_type(server::CreatureType::parrot);
+
+    auto allPlaylists = client.ListPlaylists(playlistFilter);
+    for(const auto& p : allPlaylists.playlists() )
+    {
+        debug("Playlist found {} with {} items", p.name(), p.items_size());
+    }
+
+
 #endif
 
     return 0;

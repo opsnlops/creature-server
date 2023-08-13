@@ -302,10 +302,10 @@ message Playlist {
 }
 
 message PlaylistFilter {
-  string filter = 1;
+  CreatureType creature_type = 1;
   SortBy sortBy = 2;
 }
 
 message ListPlaylistsResponse {
-  repeated PlaylistIdentifier playlists = 1;
+  repeated Playlist playlists = 1;
 }

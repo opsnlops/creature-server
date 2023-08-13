@@ -44,6 +44,7 @@ using server::PlayAnimationRequest;
 using server::PlayAnimationResponse;
 using server::Playlist;
 using server::PlaylistIdentifier;
+using server::PlaylistFilter;
 using server::PlaySoundRequest;
 using server::PlaySoundResponse;
 
@@ -434,6 +435,27 @@ public:
 
         return reply;
 
+    }
+
+    server::ListPlaylistsResponse ListPlaylists(const PlaylistFilter& filter) {
+
+        ClientContext context;
+        server::ListPlaylistsResponse reply;
+
+        Status status = stub_->ListPlaylists(&context, filter, &reply);
+
+        if(status.ok()) {
+            debug("Got an OK from the server while trying to list all of the playlists for creature type {}", static_cast<int32_t>(filter.creature_type()));
+        }
+        else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
+            info("No playlists for creature type {} found. (This might be expected!)", static_cast<int32_t>(filter.creature_type()));
+        }
+        else {
+            error("An error occurred while trying to get all of the playlists for creature type {}: {} ({})",
+                  static_cast<int32_t>(filter.creature_type()), status.error_message(), status.error_details());
+        }
+
+        return reply;
     }
 
 
