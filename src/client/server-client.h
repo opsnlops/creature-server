@@ -69,6 +69,17 @@ std::string creatureIdToString(const CreatureId& creature_id) {
     return oss.str();
 }
 
+std::string animationIdToString(const AnimationId& animationId) {
+    const std::string& id_bytes = animationId._id();
+
+    std::ostringstream oss;
+    for (unsigned char c : id_bytes) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(c);
+    }
+
+    return oss.str();
+}
+
 class CreatureServerClient {
 public:
     explicit CreatureServerClient(const std::shared_ptr<Channel>& channel)
@@ -456,6 +467,47 @@ public:
         }
 
         return reply;
+    }
+
+    server::Playlist GetPlaylist(const PlaylistIdentifier& id) {
+
+        ClientContext context;
+        Playlist reply;
+
+        Status status = stub_->GetPlaylist(&context, id, &reply);
+
+        if(status.ok()) {
+            debug("Got an OK while loading one playlist");
+        }
+        else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
+            info("Playlist not found. (This might be expected!)");
+        }
+        else {
+            error("An error happened while loading a playlist. ID {}: {} ({})",
+                  id._id(), status.error_message(), status.error_details());
+        }
+
+        return reply;
+    }
+
+
+    server::DatabaseInfo UpdatePlaylist(const Playlist& playlist) {
+
+        ClientContext context;
+        server::DatabaseInfo reply;
+
+        Status status = stub_->UpdatePlaylist(&context, playlist, &reply);
+
+        if(status.ok()) {
+            debug("Got an okay from the server on a playlist update! ({})", reply.message());
+        }
+        else {
+            error("Unable to update a playlist in the database: {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return reply;
+
     }
 
 

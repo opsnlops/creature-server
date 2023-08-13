@@ -68,6 +68,9 @@ namespace creatures {
          */
         Status CreatePlaylist(ServerContext *context, const Playlist *playlist, DatabaseInfo *reply) override;
         Status ListPlaylists(ServerContext *context, const PlaylistFilter *request, ListPlaylistsResponse *response) override;
+        Status GetPlaylist(ServerContext *context, const PlaylistIdentifier *id, Playlist *playlist) override;
+        Status UpdatePlaylist(ServerContext *context, const Playlist *playlist, DatabaseInfo *reply) override;
+
 
     private:
         ConcurrentQueue<LogItem>& log_queue;

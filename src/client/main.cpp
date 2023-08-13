@@ -406,6 +406,36 @@ info("playlists tests!");
     }
 
 
+    // Try to load one playlist
+    std::string unitTestPlaylistId = "64d866555ce706669e090278";
+    bsoncxx::oid playlistOid(unitTestPlaylistId);
+    PlaylistIdentifier playlistId;
+
+    const char* playlist_get_oid_data = playlistOid.bytes();
+    playlistId.set__id(playlist_get_oid_data, bsoncxx::oid::k_oid_length);
+
+
+    Playlist playlistToLoad = client.GetPlaylist(playlistId);
+    debug("Playlist found {} with {} items", playlistToLoad.name(), playlistToLoad.items_size());
+
+    for(const auto& item : playlistToLoad.items() )
+    {
+        debug(" - item {} with weight {}", animationIdToString(item.animationid()), item.weight());
+    }
+
+    // Update a playlist
+    Playlist playlistToUpdate = client.GetPlaylist(playlistId);
+    std::ostringstream playlistUpdateTestString;
+    playlistUpdateTestString << "Unit Test Playlist Updated at " << std::put_time(std::localtime(&now_time), "%F %T");
+    std::string playlistOldName = playlistToUpdate.name();
+    std::string playlisTNewName = playlistUpdateTestString.str();
+
+    playlistToUpdate.set_name(playlisTNewName);
+    playlistToUpdate.set_allocated_last_updated(timestamp);
+
+    client.UpdatePlaylist(playlistToUpdate);
+    debug("playlist {} updated from {} to {}", unitTestPlaylistId, playlistOldName, playlisTNewName);
+
 #endif
 
     return 0;

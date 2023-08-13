@@ -20,8 +20,6 @@ using bsoncxx::builder::stream::document;
 using grpc::ServerContext;
 using grpc::Status;
 
-;
-
 
 namespace creatures {
 

@@ -59,6 +59,8 @@ namespace creatures {
         // Playlist stuff
         grpc::Status createPlaylist(const Playlist *playlist, DatabaseInfo *reply);
         grpc::Status listPlaylists(const PlaylistFilter *filter, ListPlaylistsResponse *animationList);
+        void getPlaylist(const PlaylistIdentifier *playlistIdentifier, Playlist *playlist);
+        void updatePlaylist(const Playlist *playlist);
 
         /**
          * Ping the database to make sure it's alive

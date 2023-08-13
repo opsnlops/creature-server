@@ -729,7 +729,7 @@ public struct Server_Playlist {
     /// Clears the value of `animationID`. Subsequent reads from it will return its default value.
     public mutating func clearAnimationID() {self._animationID = nil}
 
-    public var weight: UInt32 = 0
+    public var weight: Int32 = 0
 
     public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -749,7 +749,7 @@ public struct Server_PlaylistFilter {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var filter: String = String()
+  public var creatureType: Server_CreatureType = .parrot
 
   public var sortBy: Server_SortBy = .name
 
@@ -763,7 +763,7 @@ public struct Server_ListPlaylistsResponse {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var playlists: [Server_PlaylistIdentifier] = []
+  public var playlists: [Server_Playlist] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2016,7 +2016,7 @@ extension Server_Playlist.PlaylistItem: SwiftProtobuf.Message, SwiftProtobuf._Me
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularMessageField(value: &self._animationID) }()
-      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.weight) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.weight) }()
       default: break
       }
     }
@@ -2031,7 +2031,7 @@ extension Server_Playlist.PlaylistItem: SwiftProtobuf.Message, SwiftProtobuf._Me
       try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
     } }()
     if self.weight != 0 {
-      try visitor.visitSingularUInt32Field(value: self.weight, fieldNumber: 2)
+      try visitor.visitSingularInt32Field(value: self.weight, fieldNumber: 2)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -2047,7 +2047,7 @@ extension Server_Playlist.PlaylistItem: SwiftProtobuf.Message, SwiftProtobuf._Me
 extension Server_PlaylistFilter: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".PlaylistFilter"
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
-    1: .same(proto: "filter"),
+    1: .standard(proto: "creature_type"),
     2: .same(proto: "sortBy"),
   ]
 
@@ -2057,7 +2057,7 @@ extension Server_PlaylistFilter: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.filter) }()
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.creatureType) }()
       case 2: try { try decoder.decodeSingularEnumField(value: &self.sortBy) }()
       default: break
       }
@@ -2065,8 +2065,8 @@ extension Server_PlaylistFilter: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.filter.isEmpty {
-      try visitor.visitSingularStringField(value: self.filter, fieldNumber: 1)
+    if self.creatureType != .parrot {
+      try visitor.visitSingularEnumField(value: self.creatureType, fieldNumber: 1)
     }
     if self.sortBy != .name {
       try visitor.visitSingularEnumField(value: self.sortBy, fieldNumber: 2)
@@ -2075,7 +2075,7 @@ extension Server_PlaylistFilter: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
   }
 
   public static func ==(lhs: Server_PlaylistFilter, rhs: Server_PlaylistFilter) -> Bool {
-    if lhs.filter != rhs.filter {return false}
+    if lhs.creatureType != rhs.creatureType {return false}
     if lhs.sortBy != rhs.sortBy {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
