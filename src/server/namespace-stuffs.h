@@ -29,6 +29,10 @@ using server::DatabaseInfo;
 using server::Frame;
 using server::FrameResponse;
 
+using server::Playlist;
+using server::PlaylistFilter;
+using server::PlaylistIdentifier;
+
 using server::PlaySoundRequest;
 using server::PlaySoundResponse;
 

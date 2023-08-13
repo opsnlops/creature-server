@@ -128,6 +128,7 @@ file(GLOB serverFiles
         src/server/gpio/*
         src/server/logging/*
         src/server/metrics/*
+        src/server/playlist/*
         src/server/sound/*
         src/util/*
         )

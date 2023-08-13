@@ -664,6 +664,112 @@ public struct Server_PlaySoundResponse {
   public init() {}
 }
 
+///*
+///Playlists are a list of animations to play
+///
+///These are used to have a creature do a loop of animations. The weight is the likelihood
+///that one animation will be played, if it's being played randomly. The formula is:
+///
+///probability = weight / (sum of the weights)
+public struct Server_PlaylistIdentifier {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public struct Server_Playlist {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: Server_PlaylistIdentifier {
+    get {return _id ?? Server_PlaylistIdentifier()}
+    set {_id = newValue}
+  }
+  /// Returns true if `id` has been explicitly set.
+  public var hasID: Bool {return self._id != nil}
+  /// Clears the value of `id`. Subsequent reads from it will return its default value.
+  public mutating func clearID() {self._id = nil}
+
+  public var name: String = String()
+
+  public var creatureType: Server_CreatureType = .parrot
+
+  public var lastUpdated: SwiftProtobuf.Google_Protobuf_Timestamp {
+    get {return _lastUpdated ?? SwiftProtobuf.Google_Protobuf_Timestamp()}
+    set {_lastUpdated = newValue}
+  }
+  /// Returns true if `lastUpdated` has been explicitly set.
+  public var hasLastUpdated: Bool {return self._lastUpdated != nil}
+  /// Clears the value of `lastUpdated`. Subsequent reads from it will return its default value.
+  public mutating func clearLastUpdated() {self._lastUpdated = nil}
+
+  /// The actual items themselves
+  public var items: [Server_Playlist.PlaylistItem] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public struct PlaylistItem {
+    // SwiftProtobuf.Message conformance is added in an extension below. See the
+    // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+    // methods supported on all messages.
+
+    public var animationID: Server_AnimationId {
+      get {return _animationID ?? Server_AnimationId()}
+      set {_animationID = newValue}
+    }
+    /// Returns true if `animationID` has been explicitly set.
+    public var hasAnimationID: Bool {return self._animationID != nil}
+    /// Clears the value of `animationID`. Subsequent reads from it will return its default value.
+    public mutating func clearAnimationID() {self._animationID = nil}
+
+    public var weight: UInt32 = 0
+
+    public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+    public init() {}
+
+    fileprivate var _animationID: Server_AnimationId? = nil
+  }
+
+  public init() {}
+
+  fileprivate var _id: Server_PlaylistIdentifier? = nil
+  fileprivate var _lastUpdated: SwiftProtobuf.Google_Protobuf_Timestamp? = nil
+}
+
+public struct Server_PlaylistFilter {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var filter: String = String()
+
+  public var sortBy: Server_SortBy = .name
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public struct Server_ListPlaylistsResponse {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var playlists: [Server_PlaylistIdentifier] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 #if swift(>=5.5) && canImport(_Concurrency)
 extension Server_LogLevel: @unchecked Sendable {}
 extension Server_SortBy: @unchecked Sendable {}
@@ -694,6 +800,11 @@ extension Server_PlayAnimationRequest: @unchecked Sendable {}
 extension Server_PlayAnimationResponse: @unchecked Sendable {}
 extension Server_PlaySoundRequest: @unchecked Sendable {}
 extension Server_PlaySoundResponse: @unchecked Sendable {}
+extension Server_PlaylistIdentifier: @unchecked Sendable {}
+extension Server_Playlist: @unchecked Sendable {}
+extension Server_Playlist.PlaylistItem: @unchecked Sendable {}
+extension Server_PlaylistFilter: @unchecked Sendable {}
+extension Server_ListPlaylistsResponse: @unchecked Sendable {}
 #endif  // swift(>=5.5) && canImport(_Concurrency)
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
@@ -1794,6 +1905,210 @@ extension Server_PlaySoundResponse: SwiftProtobuf.Message, SwiftProtobuf._Messag
 
   public static func ==(lhs: Server_PlaySoundResponse, rhs: Server_PlaySoundResponse) -> Bool {
     if lhs.message != rhs.message {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_PlaylistIdentifier: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PlaylistIdentifier"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .standard(proto: "_id"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.id) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularBytesField(value: self.id, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_PlaylistIdentifier, rhs: Server_PlaylistIdentifier) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_Playlist: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Playlist"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .standard(proto: "_id"),
+    2: .same(proto: "name"),
+    3: .standard(proto: "creature_type"),
+    4: .standard(proto: "last_updated"),
+    5: .same(proto: "items"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.creatureType) }()
+      case 4: try { try decoder.decodeSingularMessageField(value: &self._lastUpdated) }()
+      case 5: try { try decoder.decodeRepeatedMessageField(value: &self.items) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._id {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
+    }
+    if self.creatureType != .parrot {
+      try visitor.visitSingularEnumField(value: self.creatureType, fieldNumber: 3)
+    }
+    try { if let v = self._lastUpdated {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
+    if !self.items.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.items, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_Playlist, rhs: Server_Playlist) -> Bool {
+    if lhs._id != rhs._id {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.creatureType != rhs.creatureType {return false}
+    if lhs._lastUpdated != rhs._lastUpdated {return false}
+    if lhs.items != rhs.items {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_Playlist.PlaylistItem: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = Server_Playlist.protoMessageName + ".PlaylistItem"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "animationId"),
+    2: .same(proto: "weight"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._animationID) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.weight) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._animationID {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if self.weight != 0 {
+      try visitor.visitSingularUInt32Field(value: self.weight, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_Playlist.PlaylistItem, rhs: Server_Playlist.PlaylistItem) -> Bool {
+    if lhs._animationID != rhs._animationID {return false}
+    if lhs.weight != rhs.weight {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_PlaylistFilter: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PlaylistFilter"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "filter"),
+    2: .same(proto: "sortBy"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.filter) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.sortBy) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.filter.isEmpty {
+      try visitor.visitSingularStringField(value: self.filter, fieldNumber: 1)
+    }
+    if self.sortBy != .name {
+      try visitor.visitSingularEnumField(value: self.sortBy, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_PlaylistFilter, rhs: Server_PlaylistFilter) -> Bool {
+    if lhs.filter != rhs.filter {return false}
+    if lhs.sortBy != rhs.sortBy {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_ListPlaylistsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ListPlaylistsResponse"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "playlists"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.playlists) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.playlists.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.playlists, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_ListPlaylistsResponse, rhs: Server_ListPlaylistsResponse) -> Bool {
+    if lhs.playlists != rhs.playlists {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

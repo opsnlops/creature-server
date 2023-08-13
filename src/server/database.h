@@ -55,6 +55,10 @@ namespace creatures {
         // This throws a lot of errors :)
         void updateAnimation(const Animation *animation);
 
+
+        // Playlist stuff
+        grpc::Status createPlaylist(const Playlist *playlist, DatabaseInfo *reply);
+
         /**
          * Ping the database to make sure it's alive
          *
@@ -93,6 +97,13 @@ namespace creatures {
         static uint32_t framesToBson(bsoncxx::builder::stream::document &doc, const Animation *animation);
         static void bsonToAnimationMetadata(const bsoncxx::document::view &doc, Animation_Metadata *metadata);
         static void populateFramesFromBson(const bsoncxx::document::view &doc, Animation *animation);
+
+        /*
+         * Playlists
+         */
+        static bsoncxx::document::value playlistToBson(const Playlist *playlist, bsoncxx::oid playlistId);
+        static int32_t playlistItemsToBson(bsoncxx::builder::stream::document &doc, const server::Playlist *playlist);
+
     };
 
 

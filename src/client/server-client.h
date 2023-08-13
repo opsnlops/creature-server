@@ -42,6 +42,10 @@ using server::LogLevel;
 using server::LogFilter;
 using server::PlayAnimationRequest;
 using server::PlayAnimationResponse;
+using server::Playlist;
+using server::PlaylistIdentifier;
+using server::PlaySoundRequest;
+using server::PlaySoundResponse;
 
 
 
@@ -408,6 +412,30 @@ public:
         return response;
 
     }
+
+
+    server::DatabaseInfo CreatePlaylist(const Playlist& playlist) {
+
+        ClientContext context;
+        server::DatabaseInfo reply;
+
+        Status status = stub_->CreatePlaylist(&context, playlist, &reply);
+
+        if(status.ok()) {
+            debug("got an OK from the server on playlist create! ({})", reply.message());
+        }
+        else if(status.error_code() == grpc::StatusCode::ALREADY_EXISTS) {
+            error("Playlist {} already exists in the database", playlist.name());
+        }
+        else {
+            error("Unable to save playlist in the database: {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return reply;
+
+    }
+
 
 private:
     std::unique_ptr<CreatureServer::Stub> stub_;

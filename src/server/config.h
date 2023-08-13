@@ -23,6 +23,7 @@
 #define DB_NAME                     "creature_server"
 #define CREATURES_COLLECTION        "creatures"
 #define ANIMATIONS_COLLECTION       "animation"
+#define PLAYLISTS_COLLECTION        "playlists"
 
 
 #define SOUND_FILE_LOCATION_ENV     "SOUND_FILE_LOCATION"

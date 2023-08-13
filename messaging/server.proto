@@ -66,6 +66,14 @@ service CreatureServer {
   // automatically play a sound if there is one in the animation.
   rpc PlaySound(PlaySoundRequest) returns (PlaySoundResponse) {}
 
+  /**
+    Playlists!
+   */
+  rpc CreatePlaylist(Playlist) returns (DatabaseInfo) {}
+  rpc UpdatePlaylist(Playlist) returns (DatabaseInfo) {}
+  rpc GetPlaylist(PlaylistIdentifier) returns (Playlist) {}
+  rpc ListPlaylists(PlaylistFilter) returns (ListPlaylistsResponse) {}
+
 }
 
 /*
@@ -261,4 +269,43 @@ message PlaySoundRequest {
 
 message PlaySoundResponse {
   string message = 1;
+}
+
+/**
+  Playlists are a list of animations to play
+
+  These are used to have a creature do a loop of animations. The weight is the likelihood
+  that one animation will be played, if it's being played randomly. The formula is:
+
+   probability = weight / (sum of the weights)
+
+ */
+message PlaylistIdentifier {
+  bytes _id = 1;
+}
+
+message Playlist {
+
+  message PlaylistItem {
+    AnimationId animationId = 1;
+    int32 weight = 2;
+  }
+
+  PlaylistIdentifier _id = 1;
+  string name = 2;
+  CreatureType creature_type = 3;
+  google.protobuf.Timestamp last_updated = 4;
+
+  // The actual items themselves
+  repeated PlaylistItem items = 5;
+
+}
+
+message PlaylistFilter {
+  string filter = 1;
+  SortBy sortBy = 2;
+}
+
+message ListPlaylistsResponse {
+  repeated PlaylistIdentifier playlists = 1;
 }

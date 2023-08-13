@@ -63,6 +63,11 @@ namespace creatures {
 
         Status PlaySound(ServerContext *context, const PlaySoundRequest *request, PlaySoundResponse *response) override;
 
+        /*
+         * Playlists
+         */
+        Status CreatePlaylist(ServerContext *context, const Playlist *playlist, DatabaseInfo *reply) override;
+
     private:
         ConcurrentQueue<LogItem>& log_queue;
     };

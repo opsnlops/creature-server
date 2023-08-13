@@ -9,6 +9,7 @@
 #include <bsoncxx/oid.hpp>
 #include <fmt/format.h>
 #include <google/protobuf/timestamp.pb.h>
+#include <google/protobuf/util/time_util.h>
 #include <grpcpp/grpcpp.h>
 
 #include "server.grpc.pb.h"
@@ -39,6 +40,10 @@ using server::ListCreaturesResponse;
 using server::LogItem;
 using server::LogLevel;
 using server::LogFilter;
+using server::Playlist;
+using server::PlaylistIdentifier;
+using server::PlaySoundRequest;
+using server::PlaySoundResponse;
 
 using spdlog::trace;
 using spdlog::debug;
@@ -308,7 +313,7 @@ int main(int argc, char** argv) {
 #endif
 
 
-#if 1
+#if 0
     // Now let's play animation
     info("attempting to play an animation??");
     std::vector<std::string> creaturesIdsToPlay = {"643ba6ffc606a8b0aa078361"};
@@ -338,7 +343,7 @@ int main(int argc, char** argv) {
     }
 #endif
 
-
+// Sound Tests
 #if 0
     // Try to play a sound
 
@@ -352,6 +357,42 @@ int main(int argc, char** argv) {
     server::PlaySoundResponse soundResponse = client.PlaySound(soundRequest);
 
     info("Play response: {}", soundResponse.message());
+
+#endif
+
+
+    // Playlist tests
+#if 1
+
+info("playlists tests!");
+
+    std::ostringstream playlistTestTimestamp;
+    playlistTestTimestamp << "Test Playlist: " << std::put_time(std::localtime(&now_time), "%F %T");
+
+    server::Playlist playlist = server::Playlist();
+    playlist.set_creature_type(server::CreatureType::parrot);
+    playlist.set_name(playlistTestTimestamp.str());
+
+    auto* timestamp = new google::protobuf::Timestamp();
+    *timestamp = google::protobuf::util::TimeUtil::GetCurrentTime();
+    playlist.set_allocated_last_updated(timestamp);
+
+    // Add ten PlaylistItems
+    for (int i = 0; i < 10; i++) {
+        Playlist::PlaylistItem* item = playlist.add_items();
+
+        // Create a BSON ObjectID
+        bsoncxx::oid itemOid = bsoncxx::oid();
+
+        // Convert the OID to bytes for protobuf
+        item->mutable_animationid()->set__id(oid.bytes(), bsoncxx::oid::k_oid_length);
+        item->set_weight(i * 10);
+    }
+
+    server::DatabaseInfo dbInfo = client.CreatePlaylist(playlist);
+
+    info("server said: {}", dbInfo.message());
+
 
 #endif
 
