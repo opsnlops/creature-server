@@ -8,6 +8,8 @@
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/event.h"
 
+#include "server/namespace-stuffs.h"
+
 
 namespace creatures {
 
@@ -47,6 +49,17 @@ namespace creatures {
         std::string filePath;
         std::mutex sdl_mutex;
     };
+
+    class PlaylistEvent : public EventBase<PlaylistEvent> {
+    public:
+        using EventBase::EventBase;
+        PlaylistEvent(uint64_t frameNumber, CreatureId creatureId);
+        void executeImpl();
+
+    private:
+        CreatureId creatureId;
+    };
+
 
     enum class StatusLight : uint8_t {
         Running = SERVER_RUNNING_GPIO_PIN,

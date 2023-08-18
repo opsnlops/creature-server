@@ -33,6 +33,8 @@ using server::Playlist;
 using server::PlaylistFilter;
 using server::PlaylistIdentifier;
 using server::ListPlaylistsResponse;
+using server::CreaturePlaylistResponse;
+using server::CreaturePlaylistRequest;
 
 using server::PlaySoundRequest;
 using server::PlaySoundResponse;

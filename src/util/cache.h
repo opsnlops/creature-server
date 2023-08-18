@@ -20,6 +20,12 @@ namespace creatures {
             map_[key] = value;
         }
 
+        // Overloaded put method that takes a normal object and wraps it into a shared_ptr
+        void put(const Key& key, const Value& value) {
+            std::unique_lock lock(mutex_);
+            map_[key] = std::make_shared<Value>(value);
+        }
+
         std::shared_ptr<Value> get(const Key& key) {
             std::shared_lock lock(mutex_);
             auto it = map_.find(key);

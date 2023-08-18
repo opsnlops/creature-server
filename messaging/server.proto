@@ -73,6 +73,8 @@ service CreatureServer {
   rpc UpdatePlaylist(Playlist) returns (DatabaseInfo) {}
   rpc GetPlaylist(PlaylistIdentifier) returns (Playlist) {}
   rpc ListPlaylists(PlaylistFilter) returns (ListPlaylistsResponse) {}
+  rpc StartPlaylist(CreaturePlaylistRequest) returns (CreaturePlaylistResponse) {}
+  rpc StopPlaylist(CreaturePlaylistRequest) returns (CreaturePlaylistResponse) {}
 
 }
 
@@ -308,4 +310,14 @@ message PlaylistFilter {
 
 message ListPlaylistsResponse {
   repeated Playlist playlists = 1;
+}
+
+message CreaturePlaylistRequest {
+  CreatureId         creatureId = 1;
+  PlaylistIdentifier playlistId = 2;
+}
+
+message CreaturePlaylistResponse {
+  bool   success = 1;
+  string message = 2;
 }

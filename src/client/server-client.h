@@ -510,6 +510,25 @@ public:
 
     }
 
+    server::CreaturePlaylistResponse StartPlaylist(const server::CreaturePlaylistRequest& request) {
+
+        ClientContext context;
+        server::CreaturePlaylistResponse reply;
+
+        Status status = stub_->StartPlaylist(&context, request, &reply);
+
+        if(status.ok()) {
+            debug("Got an okay from the server on a request to play a playlist ({})", reply.message());
+        }
+        else {
+            error("Unable to request to play a playlist: {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return reply;
+
+    }
+
 
 private:
     std::unique_ptr<CreatureServer::Stub> stub_;

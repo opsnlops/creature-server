@@ -17,13 +17,18 @@ namespace creatures {
     void TickEvent::executeImpl() {
 
         // Just go tick!
-        debug("⌚️ Hello from frame {:L}! Event queue length: {}, events: {:L}, frames streamed: {:L}, animations played: {:L}, DMX events sent: {:L}",
+        debug("⌚️ Hello from frame {:L}! Event queue length: {}, events: {:L}, frames streamed: {:L}, animations played: {:L}, DMX events sent: {:L}, sounds played: {:L}, playlists started: {:L}, playlists stopped: {:L}, playlists events processed: {:L}",
               eventLoop->getCurrentFrameNumber(),
               eventLoop->getQueueSize(),
               metrics->getEventsProcessed(),
               metrics->getFramesStreamed(),
               metrics->getAnimationsPlayed(),
-              metrics->getDMXEventsProcessed());
+              metrics->getDMXEventsProcessed(),
+              metrics->getSoundsPlayed(),
+              metrics->getPlaylistsStarted(),
+              metrics->getPlaylistsStopped(),
+              metrics->getPlaylistsEventsProcessed());
+
 
         // Make another event
         auto nextTick = std::make_shared<TickEvent>(this->frameNumber + TICK_TIME_FRAMES);

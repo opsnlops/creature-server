@@ -52,6 +52,7 @@ namespace creatures {
     std::unique_ptr<Server> grpcServer;
     std::shared_ptr<EventLoop> eventLoop;
     std::shared_ptr<ObjectCache<std::string, DMX>> dmxCache;
+    std::shared_ptr<ObjectCache<std::string, PlaylistIdentifier>> runningPlaylists;
     std::shared_ptr<GPIO> gpioPins;
     std::shared_ptr<SystemCounters> metrics;
     std::shared_ptr<StatusLights> statusLights;
@@ -187,6 +188,10 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     // Create the DMX cache
     creatures::dmxCache = std::make_shared<creatures::ObjectCache<std::string, creatures::DMX>>();
     debug("DMX cache made");
+
+    // Create the playlist cache
+    creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<std::string, PlaylistIdentifier>>();
+    debug("Playlist cache made");
 
     // Start up the event loop
     creatures::eventLoop = std::make_unique<EventLoop>();

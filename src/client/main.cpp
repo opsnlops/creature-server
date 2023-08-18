@@ -42,6 +42,9 @@ using server::LogLevel;
 using server::LogFilter;
 using server::Playlist;
 using server::PlaylistIdentifier;
+using server::CreaturePlaylistRequest;
+using server::CreaturePlaylistResponse;
+using server::ListPlaylistsResponse;
 using server::PlaySoundRequest;
 using server::PlaySoundResponse;
 
@@ -435,6 +438,20 @@ info("playlists tests!");
 
     client.UpdatePlaylist(playlistToUpdate);
     debug("playlist {} updated from {} to {}", unitTestPlaylistId, playlistOldName, playlisTNewName);
+
+
+    // Queue up this playlist
+
+    bsoncxx::oid creaturePlayTestOid("643b86562a93fc6ba608ba21");
+    CreatureId creaturePlayTestId;
+
+    const char* playlist_oid_data = creaturePlayTestOid.bytes();
+    creaturePlayTestId.set__id(playlist_oid_data, bsoncxx::oid::k_oid_length);
+
+    CreaturePlaylistRequest creaturePlaylistRequest;
+    *creaturePlaylistRequest.mutable_creatureid() = creaturePlayTestId;
+    *creaturePlaylistRequest.mutable_playlistid() = playlistId;
+    client.StartPlaylist(creaturePlaylistRequest);
 
 #endif
 

@@ -11,12 +11,9 @@
 
 #include "server.pb.h"
 #include "server/database.h"
-#include "server/helpers.h"
 #include "exception/exception.h"
 
-#include <fmt/format.h>
 
-#include <grpcpp/grpcpp.h>
 #include <google/protobuf/timestamp.pb.h>
 
 #include <bsoncxx/json.hpp>
