@@ -15,11 +15,14 @@
 // How often the timer event fires
 #define TICK_TIME_FRAMES            60000
 
+// How many frames should we wait before starting an animation
+#define ANIMATION_DELAY_FRAMES     500
 
+// How many milliseconds per frame? (This should almost always be 1.)
 #define EVENT_LOOP_PERIOD_MS        1
 
-
-#define DB_URI                      "mongodb://10.3.2.11"
+#define DB_URI_ENV                  "MONGO_URI"
+#define DEFAULT_DB_URI              "mongodb://10.3.2.11"
 #define DB_NAME                     "creature_server"
 #define CREATURES_COLLECTION        "creatures"
 #define ANIMATIONS_COLLECTION       "animation"

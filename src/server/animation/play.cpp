@@ -27,7 +27,7 @@ namespace creatures {
 
         grpc::Status status;
 
-        uint64_t startingFrame = eventLoop->getNextFrameNumber() + 500;
+        uint64_t startingFrame = eventLoop->getNextFrameNumber() + ANIMATION_DELAY_FRAMES;
         uint64_t lastFrame;
 
         try {
@@ -55,10 +55,26 @@ namespace creatures {
             return status;
         }
         catch( ... ) {
-            warn("an unknown exception was thrown while attempting to load a creature to schedule an animation");
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  "An unexpected error occurred while scheduling an animation",
-                                  fmt::format("🤯️ An unhandled exception happened while trying to schedule an animation"));
+
+            // Try to cast it as an exception and re-throw (which we then catch ourselves)
+            std::exception_ptr p = std::current_exception();
+            try {
+                std::rethrow_exception(p);
+            }
+            catch(const std::exception& e) {
+                warn("an unknown exception was thrown while attempting to load a creature to schedule an animation: {}", e.what());
+                status = grpc::Status(grpc::StatusCode::INTERNAL,
+                                      e.what(),
+                                      fmt::format("🤯️ An unhandled exception happened while trying to schedule an animation"));
+            }
+            catch(...) {
+
+                // Still don't know what it is, so give a generic message
+                warn("A non-standard exception was thrown");
+                status = grpc::Status(grpc::StatusCode::INTERNAL,
+                                      "Non-standard exception",
+                                      fmt::format("🤯️ A non-standard exception happened while trying to schedule an animation"));
+            }
             return status;
         }
         std::string okayMessage = fmt::format("✅ Animation scheduled from frame {} to {}", startingFrame, lastFrame);
@@ -67,7 +83,7 @@ namespace creatures {
         *response->mutable_status() = okayMessage;
         status = grpc::Status(grpc::StatusCode::OK,
                               okayMessage);
-        
+
         return status;
     }
 

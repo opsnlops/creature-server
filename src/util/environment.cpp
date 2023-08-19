@@ -37,4 +37,18 @@ namespace creatures {
         return environmentToInt(variable,std::stoi(std::string(defaultValue)));
     }
 
+    std::string environmentToString(const char* variable, const std::string& defaultValue) {
+        trace("getting {} from the environment (default is {})", variable, defaultValue);
+
+        const char* valueString = std::getenv(variable);
+        if (valueString != nullptr && valueString[0] != '\0') {
+            trace("environment var {} is {}", variable, valueString);
+            return {valueString};
+        }
+        else {
+            trace("using the default of {}", defaultValue);
+            return defaultValue;
+        }
+    }
+
 }

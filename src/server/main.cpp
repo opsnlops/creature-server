@@ -31,6 +31,7 @@
 #include "server/metrics/counters.h"
 #include "server/metrics/status-lights.h"
 #include "util/cache.h"
+#include "util/environment.h"
 
 
 #include "server/namespace-stuffs.h"
@@ -150,15 +151,17 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     debug("spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
     debug("fmt version {}", FMT_VERSION);
     debug("MongoDB C++ driver version {}", MONGOCXX_VERSION_STRING);
-    debug("MongoDB URI {}", DB_URI);
     debug("gRPC version {}.{}.{}", GRPC_CPP_VERSION_MAJOR, GRPC_CPP_VERSION_MINOR, GRPC_CPP_VERSION_PATCH);
     debug("Protobuf version {}", GOOGLE_PROTOBUF_VERSION);
     debug("SDL version {}.{}.{}", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
     debug("Sound file location: {}", MusicEvent::getSoundFileLocation());
 
     // Fire up the Mono client
+    std::string mongoURI = creatures::environmentToString(DB_URI_ENV, DEFAULT_DB_URI);
+    debug("MongoDB URI: {}", mongoURI);
+
     mongocxx::instance instance{};
-    mongocxx::uri uri(DB_URI);
+    mongocxx::uri uri(mongoURI);
     mongocxx::pool mongo_pool(uri);
 
     // Start up the database
