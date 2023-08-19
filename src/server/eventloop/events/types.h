@@ -53,11 +53,11 @@ namespace creatures {
     class PlaylistEvent : public EventBase<PlaylistEvent> {
     public:
         using EventBase::EventBase;
-        PlaylistEvent(uint64_t frameNumber, CreatureId creatureId);
+        PlaylistEvent(uint64_t frameNumber, std::string creatureIdString);
         void executeImpl();
 
     private:
-        CreatureId creatureId;
+        std::string creatureIdString;
     };
 
 

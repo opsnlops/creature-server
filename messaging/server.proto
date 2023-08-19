@@ -74,7 +74,8 @@ service CreatureServer {
   rpc GetPlaylist(PlaylistIdentifier) returns (Playlist) {}
   rpc ListPlaylists(PlaylistFilter) returns (ListPlaylistsResponse) {}
   rpc StartPlaylist(CreaturePlaylistRequest) returns (CreaturePlaylistResponse) {}
-  rpc StopPlaylist(CreaturePlaylistRequest) returns (CreaturePlaylistResponse) {}
+  rpc StopPlaylist(CreatureId) returns (CreaturePlaylistResponse) {}
+  rpc GetPlaylistStatus(CreatureId) returns (CreaturePlaylistStatus) {}
 
 }
 
@@ -320,4 +321,9 @@ message CreaturePlaylistRequest {
 message CreaturePlaylistResponse {
   bool   success = 1;
   string message = 2;
+}
+
+message CreaturePlaylistStatus {
+  bool               playing = 1;
+  PlaylistIdentifier playlistId = 2;
 }

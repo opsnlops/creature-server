@@ -23,6 +23,7 @@ namespace creatures {
         void incrementPlaylistsStarted();
         void incrementPlaylistsStopped();
         void incrementPlaylistsEventsProcessed();
+        void incrementPlaylistStatusRequests();
 
         uint64_t getTotalFrames();
         uint64_t getEventsProcessed();
@@ -33,6 +34,7 @@ namespace creatures {
         uint64_t getPlaylistsStarted();
         uint64_t getPlaylistsStopped();
         uint64_t getPlaylistsEventsProcessed();
+        uint64_t getPlaylistStatusRequests();
 
     private:
         std::atomic<uint64_t> totalFrames;
@@ -44,6 +46,7 @@ namespace creatures {
         std::atomic<uint64_t> playlistsStarted;
         std::atomic<uint64_t> playlistsStopped;
         std::atomic<uint64_t> playlistsEventsProcessed;
+        std::atomic<uint64_t> playlistStatusRequests;
     };
 
 

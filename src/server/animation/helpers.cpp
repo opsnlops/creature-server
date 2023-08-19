@@ -1,6 +1,4 @@
 
-#include "server/config.h"
-
 #include "spdlog/spdlog.h"
 
 #include <bsoncxx/builder/stream/document.hpp>

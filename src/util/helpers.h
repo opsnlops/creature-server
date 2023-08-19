@@ -13,6 +13,8 @@ namespace creatures {
     std::string animationIdToString(const AnimationId &animationId);
     std::string creatureIdToString(const CreatureId &creature_id);
     std::string playlistIdentifierToString(const PlaylistIdentifier &playlistIdentifier);
+    CreatureId stringToCreatureId(const std::string &creatureIdString);
+    PlaylistIdentifier stringToPlaylistIdentifier(const std::string &playlistIdString);
 
     void displayFrames(const Animation& animation);
     std::string ProtobufTimestampToHumanReadable(const google::protobuf::Timestamp& timestamp);

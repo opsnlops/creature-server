@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 # I hate that this has to be done, but I'm in a bad spot with gRPC right now
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    set(_CREATURES_GRPC_VERSION 1.56.2)
+    set(_CREATURES_GRPC_VERSION 1.57.0)
 else()
     set(_CREATURES_GRPC_VERSION 1.54.2)
 endif()

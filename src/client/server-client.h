@@ -510,6 +510,44 @@ public:
     }
 
 
+    server::CreaturePlaylistResponse StopPlaylist(const server::CreatureId& creatureId) {
+
+        ClientContext context;
+        server::CreaturePlaylistResponse reply;
+
+        Status status = stub_->StopPlaylist(&context, creatureId, &reply);
+
+        if(status.ok()) {
+            debug("Got an okay from the server on a request to stop playback on a creature ({})", reply.message());
+        }
+        else {
+            error("Unable to request to stop playback on a creature: {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return reply;
+
+    }
+
+    server::CreaturePlaylistStatus GetPlaylistStatus(const server::CreatureId& creatureId) {
+
+        ClientContext context;
+        server::CreaturePlaylistStatus reply;
+
+        Status status = stub_->GetPlaylistStatus(&context, creatureId, &reply);
+
+        if(status.ok()) {
+            debug("Got an okay from the server while getting a creature's playlist status");
+        }
+        else {
+            error("Unable to get the playlist status of a creature: {} ({})",
+                  status.error_message(), status.error_details());
+        }
+
+        return reply;
+
+    }
+
 private:
     std::unique_ptr<CreatureServer::Stub> stub_;
 };

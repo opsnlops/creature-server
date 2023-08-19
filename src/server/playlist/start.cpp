@@ -94,7 +94,7 @@ namespace creatures {
         // Set the playlist in the cache
         runningPlaylists->put(creatureIdToString(creatureId), playlistId);
 
-        auto playEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), creatureId);
+        auto playEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), creatureIdToString(creatureId));
         eventLoop->scheduleEvent(playEvent);
 
         std::string okayMessage = fmt::format("🎵 Started playing playlist {} on creature {}", playlist->name(), creature->name());

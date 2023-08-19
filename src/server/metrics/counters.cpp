@@ -14,6 +14,7 @@ namespace creatures {
         playlistsStarted = 0;
         playlistsStopped = 0;
         playlistsEventsProcessed = 0;
+        playlistStatusRequests = 0;
     }
 
     void SystemCounters::incrementTotalFrames() {
@@ -52,6 +53,10 @@ namespace creatures {
         playlistsEventsProcessed++;
     }
 
+    void SystemCounters::incrementPlaylistStatusRequests() {
+        playlistStatusRequests++;
+    }
+
     uint64_t SystemCounters::getTotalFrames() {
         return totalFrames.load();
     }
@@ -86,5 +91,9 @@ namespace creatures {
 
     uint64_t SystemCounters::getPlaylistsEventsProcessed() {
         return playlistsEventsProcessed.load();
+    }
+
+    uint64_t SystemCounters::getPlaylistStatusRequests() {
+        return playlistStatusRequests.load();
     }
 }

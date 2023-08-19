@@ -815,6 +815,29 @@ public struct Server_CreaturePlaylistResponse {
   public init() {}
 }
 
+public struct Server_CreaturePlaylistStatus {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var playing: Bool = false
+
+  public var playlistID: Server_PlaylistIdentifier {
+    get {return _playlistID ?? Server_PlaylistIdentifier()}
+    set {_playlistID = newValue}
+  }
+  /// Returns true if `playlistID` has been explicitly set.
+  public var hasPlaylistID: Bool {return self._playlistID != nil}
+  /// Clears the value of `playlistID`. Subsequent reads from it will return its default value.
+  public mutating func clearPlaylistID() {self._playlistID = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _playlistID: Server_PlaylistIdentifier? = nil
+}
+
 #if swift(>=5.5) && canImport(_Concurrency)
 extension Server_LogLevel: @unchecked Sendable {}
 extension Server_SortBy: @unchecked Sendable {}
@@ -852,6 +875,7 @@ extension Server_PlaylistFilter: @unchecked Sendable {}
 extension Server_ListPlaylistsResponse: @unchecked Sendable {}
 extension Server_CreaturePlaylistRequest: @unchecked Sendable {}
 extension Server_CreaturePlaylistResponse: @unchecked Sendable {}
+extension Server_CreaturePlaylistStatus: @unchecked Sendable {}
 #endif  // swift(>=5.5) && canImport(_Concurrency)
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
@@ -2236,6 +2260,48 @@ extension Server_CreaturePlaylistResponse: SwiftProtobuf.Message, SwiftProtobuf.
   public static func ==(lhs: Server_CreaturePlaylistResponse, rhs: Server_CreaturePlaylistResponse) -> Bool {
     if lhs.success != rhs.success {return false}
     if lhs.message != rhs.message {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Server_CreaturePlaylistStatus: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CreaturePlaylistStatus"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "playing"),
+    2: .same(proto: "playlistId"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.playing) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._playlistID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.playing != false {
+      try visitor.visitSingularBoolField(value: self.playing, fieldNumber: 1)
+    }
+    try { if let v = self._playlistID {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Server_CreaturePlaylistStatus, rhs: Server_CreaturePlaylistStatus) -> Bool {
+    if lhs.playing != rhs.playing {return false}
+    if lhs._playlistID != rhs._playlistID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

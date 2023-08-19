@@ -46,6 +46,7 @@ using server::PlaylistIdentifier;
 using server::CreaturePlaylistRequest;
 using server::CreaturePlaylistResponse;
 using server::ListPlaylistsResponse;
+using server::CreaturePlaylistStatus;
 using server::PlaySoundRequest;
 using server::PlaySoundResponse;
 
@@ -198,14 +199,9 @@ int main(int argc, char** argv) {
     std::string unitTestCreatureId = "64717ff45809fc63850d4671";
 
     // Load the creature
-    info("attempting to search for creature ID {} in the database...", oid_string);
+    info("attempting to search for creature ID {} in the database...", unitTestCreatureId);
 
-    bsoncxx::oid creatureUpdateOid(unitTestCreatureId);
-    CreatureId creatureUpdateId;
-
-    const char* update_oid_data = creatureUpdateOid.bytes();
-    creatureUpdateId.set__id(update_oid_data, bsoncxx::oid::k_oid_length);
-
+    CreatureId creatureUpdateId = creatures::stringToCreatureId(unitTestCreatureId);
     Creature creatureToUpdate = client.GetCreature(creatureUpdateId);
     debug("Got creature {}", creatureToUpdate.name());
 
@@ -392,18 +388,29 @@ info("playlists tests!");
     debug("playlist {} updated from {} to {}", unitTestPlaylistId, playlistOldName, playlisTNewName);
 
 
-    // Queue up this playlist
-
-    bsoncxx::oid creaturePlayTestOid("643b86562a93fc6ba608ba21");
-    CreatureId creaturePlayTestId;
-
-    const char* playlist_oid_data = creaturePlayTestOid.bytes();
-    creaturePlayTestId.set__id(playlist_oid_data, bsoncxx::oid::k_oid_length);
-
+    // Queue up a playlist
+    CreatureId creaturePlayTestId = creatures::stringToCreatureId("643b86912a93fc6ba608ba29");
+//643b86912a93fc6ba608ba29
     CreaturePlaylistRequest creaturePlaylistRequest;
     *creaturePlaylistRequest.mutable_creatureid() = creaturePlayTestId;
     *creaturePlaylistRequest.mutable_playlistid() = playlistId;
     client.StartPlaylist(creaturePlaylistRequest);
+
+
+    // Wait 30s, ask for status, sleep 30 more seconds and then stop
+    std::this_thread::sleep_for(std::chrono::seconds(30));
+    CreaturePlaylistStatus playlistStatus = client.GetPlaylistStatus(creaturePlayTestId);
+    info("status: is playing: {}, what: {}", playlistStatus.playing(), creatures::playlistIdentifierToString(playlistStatus.playlistid()));
+
+
+    std::this_thread::sleep_for(std::chrono::seconds(30));
+    info("stopping...");
+    client.StopPlaylist(creaturePlayTestId);
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    playlistStatus = client.GetPlaylistStatus(creaturePlayTestId);
+    info("status: is playing: {}, what: {}", playlistStatus.playing(), creatures::playlistIdentifierToString(playlistStatus.playlistid()));
+
 
 #endif
 

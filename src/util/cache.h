@@ -35,6 +35,11 @@ namespace creatures {
             return it->second;
         }
 
+        void remove(const Key& key) {
+            std::unique_lock lock(mutex_);
+            map_.erase(key);
+        }
+
     private:
         std::unordered_map<Key, std::shared_ptr<Value>> map_;
         mutable std::shared_mutex mutex_;

@@ -35,6 +35,7 @@ using server::PlaylistIdentifier;
 using server::ListPlaylistsResponse;
 using server::CreaturePlaylistResponse;
 using server::CreaturePlaylistRequest;
+using server::CreaturePlaylistStatus;
 
 using server::PlaySoundRequest;
 using server::PlaySoundResponse;

@@ -102,7 +102,7 @@ namespace creatures {
         trace("starting with frame {}", startingFrame);
 
         uint32_t msPerFrame = animation->metadata().milliseconds_per_frame();
-        trace("playing at a speed of {}ms oer frame", msPerFrame);
+        trace("playing at a speed of {}ms per frame", msPerFrame);
 
         // Look and see if there's an audio file to play with this animation
         if(!animation->metadata().sound_file().empty()) {

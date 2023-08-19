@@ -1,9 +1,10 @@
 
 
 #include <string>
-
 #include <iomanip>
 #include <sstream>
+
+#include <bsoncxx/oid.hpp>
 
 #include "server/namespace-stuffs.h"
 
@@ -33,6 +34,26 @@ namespace creatures {
     std::string playlistIdentifierToString(const PlaylistIdentifier &playlistIdentifier) {
         const std::string &id_bytes = playlistIdentifier._id();
         return bytesToString(id_bytes);
+    }
+
+    CreatureId stringToCreatureId(const std::string &creatureIdString) {
+        bsoncxx::oid creatureIdOid(creatureIdString);
+        CreatureId creatureId;
+
+        const char* creatureIdOidData = creatureIdOid.bytes();
+        creatureId.set__id(creatureIdOidData, bsoncxx::oid::k_oid_length);
+
+        return creatureId;
+    }
+
+    PlaylistIdentifier stringToPlaylistIdentifier(const std::string &playlistIdString) {
+        bsoncxx::oid playlistIdOid(playlistIdString);
+        PlaylistIdentifier playlistIdentifier;
+
+        const char* playlistIdOidData = playlistIdOid.bytes();
+        playlistIdentifier.set__id(playlistIdOidData, bsoncxx::oid::k_oid_length);
+
+        return playlistIdentifier;
     }
 
 
