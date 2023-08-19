@@ -20,6 +20,11 @@ namespace creatures {
 
     }
 
+    std::string animationIdToString(const AnimationId &animationId) {
+        const std::string &id_bytes = animationId._id();
+        return bytesToString(id_bytes);
+    }
+
     std::string creatureIdToString(const CreatureId &creature_id) {
         const std::string &id_bytes = creature_id._id();
         return bytesToString(id_bytes);

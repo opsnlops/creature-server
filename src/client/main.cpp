@@ -316,7 +316,7 @@ int main(int argc, char** argv) {
 #endif
 
 
-#if 0
+#if 1
     // Now let's play animation
     info("attempting to play an animation??");
     std::vector<std::string> creaturesIdsToPlay = {"643ba6ffc606a8b0aa078361"};
