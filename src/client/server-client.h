@@ -18,6 +18,8 @@
 
 #include "spdlog/spdlog.h"
 
+#include "util/helpers.h"
+
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
@@ -58,28 +60,6 @@ using spdlog::error;
 using spdlog::critical;
 
 
-std::string creatureIdToString(const CreatureId& creature_id) {
-    const std::string& id_bytes = creature_id._id();
-
-    std::ostringstream oss;
-    for (unsigned char c : id_bytes) {
-        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(c);
-    }
-
-    return oss.str();
-}
-
-std::string animationIdToString(const AnimationId& animationId) {
-    const std::string& id_bytes = animationId._id();
-
-    std::ostringstream oss;
-    for (unsigned char c : id_bytes) {
-        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(c);
-    }
-
-    return oss.str();
-}
-
 class CreatureServerClient {
 public:
     explicit CreatureServerClient(const std::shared_ptr<Channel>& channel)
@@ -117,7 +97,7 @@ public:
 
     Creature GetCreature(const CreatureId& id) {
 
-        debug("in GetCreature() with {}", creatureIdToString(id));
+        debug("in GetCreature() with {}", creatures::creatureIdToString(id));
 
         // Container for the data we expect from the server.
         Creature reply;

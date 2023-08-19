@@ -136,6 +136,7 @@ file(GLOB serverFiles
 file(GLOB clientFiles
         src/client/*
         src/exception/*
+        src/util/*
         )
 
 
