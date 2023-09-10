@@ -70,7 +70,7 @@ public enum Server_LogLevel: SwiftProtobuf.Enum {
 
 extension Server_LogLevel: CaseIterable {
   // The compiler won't synthesize support with the UNRECOGNIZED case.
-  public static var allCases: [Server_LogLevel] = [
+  public static let allCases: [Server_LogLevel] = [
     .trace,
     .debug,
     .info,
@@ -116,7 +116,7 @@ public enum Server_SortBy: SwiftProtobuf.Enum {
 
 extension Server_SortBy: CaseIterable {
   // The compiler won't synthesize support with the UNRECOGNIZED case.
-  public static var allCases: [Server_SortBy] = [
+  public static let allCases: [Server_SortBy] = [
     .name,
     .number,
   ]
@@ -159,7 +159,7 @@ public enum Server_CreatureType: SwiftProtobuf.Enum {
 
 extension Server_CreatureType: CaseIterable {
   // The compiler won't synthesize support with the UNRECOGNIZED case.
-  public static var allCases: [Server_CreatureType] = [
+  public static let allCases: [Server_CreatureType] = [
     .parrot,
     .wledLight,
     .other,
@@ -365,7 +365,7 @@ public struct Server_Creature {
 
 extension Server_Creature.MotorType: CaseIterable {
   // The compiler won't synthesize support with the UNRECOGNIZED case.
-  public static var allCases: [Server_Creature.MotorType] = [
+  public static let allCases: [Server_Creature.MotorType] = [
     .servo,
     .stepper,
   ]
