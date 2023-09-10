@@ -51,6 +51,7 @@ service CreatureServer {
   rpc CreateAnimation(Animation) returns (DatabaseInfo) {}
   rpc UpdateAnimation(Animation) returns (DatabaseInfo) {}
   rpc GetAnimation(AnimationId) returns (Animation) {}
+  rpc GetAnimationIdentifier(AnimationId) returns (AnimationIdentifier) {}
 
 
   /**

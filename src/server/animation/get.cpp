@@ -69,6 +69,51 @@ namespace creatures {
     }
 
 
+    Status CreatureServerImpl::GetAnimationIdentifier(ServerContext *context,
+                                                      const AnimationId *animationId,
+                                                      AnimationIdentifier *animationIdentifier) {
+
+        grpc::Status status;
+
+        debug("Loading an animationIdentifier from the database");
+
+        try {
+            db->getAnimationIdentifier(animationId, animationIdentifier);
+            status = grpc::Status(grpc::StatusCode::OK,
+                                  "Loaded an animationIdentifier from the database",
+                                  fmt::format("Title: {}",
+                                              animationIdentifier->metadata().title()));
+        }
+        catch(const InvalidArgumentException &e) {
+            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                  "AnimationId was empty on getAnimation()",
+                                  fmt::format("⛔️️ An animation ID must be supplied"));
+        }
+        catch(const NotFoundException &e) {
+            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
+                                  fmt::format("⚠️ No animation with ID '{}' found", bsoncxx::oid(animationId->_id()).to_string()),
+                                  "Try another ID! 😅");
+        }
+        catch(const DataFormatException &e) {
+            status = grpc::Status(grpc::StatusCode::INTERNAL,
+                                  "Unable to encode request into BSON",
+                                  e.what());
+        }
+        catch(const InternalError &e) {
+            status = grpc::Status(grpc::StatusCode::INTERNAL,
+                                  fmt::format("MongoDB error while loading an animationIdentifier: {}", e.what()),
+                                  e.what());
+        }
+        catch( ... ) {
+            status = grpc::Status(grpc::StatusCode::INTERNAL,
+                                  "An unknown error happened while getting animationIdentifier",
+                                  "Default catch hit?");
+        }
+
+        return status;
+    }
+
+
     void Database::getAnimation(const AnimationId *animationId, Animation *animation) {
 
         if (animationId->_id().empty()) {
@@ -130,4 +175,61 @@ namespace creatures {
 
     }
 
+    /**
+     * Load one AnimationIdentifier from the database
+     *
+     * @param animationId the ID to load
+     * @param animationIdentifier the AnimationIdentifier to fill out
+     */
+    void Database::getAnimationIdentifier(const AnimationId *animationId, AnimationIdentifier *animationIdentifier) {
+
+        if (animationId->_id().empty()) {
+            error("an empty animationId was passed into getAnimationIdentifier()");
+            throw InvalidArgumentException("an empty animationId was passed into getAnimationIdentifier()");
+        }
+
+        auto collection = getCollection(ANIMATIONS_COLLECTION);
+        trace("collection gotten");
+
+        try {
+
+            // Convert the ID into an OID
+            trace("attempting to convert the ID");
+            bsoncxx::oid id = bsoncxx::oid(animationId->_id().data(), bsoncxx::oid::k_oid_length);
+            debug("found animation ID: {}", id.to_string());
+
+            // Create a filter BSON document to match the target document
+            auto filter = bsoncxx::builder::stream::document{} << "_id" << id << bsoncxx::builder::stream::finalize;
+            trace("filter doc: {}", bsoncxx::to_json(filter));
+
+            // Go try to load it
+            bsoncxx::stdx::optional<bsoncxx::document::value> result = collection.find_one(filter.view());
+
+            if (!result) {
+                info("🚫 No animation with ID '{}' found", id.to_string());
+                throw NotFoundException(fmt::format("🚫 No animation with ID '{}' found", id.to_string()));
+            }
+
+            // Get an owning reference to this doc since it's ours now
+            bsoncxx::document::value doc = *result;
+            animationIdentifier->set__id(animationId->_id());
+            trace("id loaded");
+
+            // Grab the metadata
+            bsoncxx::document::element element = doc["metadata"];
+            Animation_Metadata metadata = Animation_Metadata();
+            bsonToAnimationMetadata(element.get_document().view(), &metadata);
+            *animationIdentifier->mutable_metadata() = metadata;
+            trace("metadata loaded");
+
+        }
+        catch (const bsoncxx::exception &e) {
+            error("BSON exception while loading an animationIdentifier: {}", e.what());
+            throw DataFormatException(fmt::format("BSON exception while loading an animationIdentifier: {}", e.what()));
+        }
+        catch (const mongocxx::exception &e) {
+            error("MongoDB exception while loading an animationIdentifier: {}", e.what());
+
+        }
+    }
 }

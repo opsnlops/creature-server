@@ -10,6 +10,7 @@ using server::Animation;
 using server::Animation_Metadata;
 using server::AnimationFilter;
 using server::AnimationId;
+using server::AnimationIdentifier;
 using server::ListAnimationsResponse;
 using server::PlayAnimationRequest;
 using server::PlayAnimationResponse;

@@ -31,7 +31,7 @@ namespace creatures {
 
         // Used as a buffer
         PlaylistIdentifier playlistId = PlaylistIdentifier();
-        
+
         // Load the creature
         auto creature = std::make_shared<Creature>();
         try {
@@ -59,7 +59,7 @@ namespace creatures {
                                   fmt::format("⚠️ A creature id must be supplied"));
             return status;
         }
-        catch ( ... ) {
+        catch (...) {
             critical("unknown except"
                      "ion while trying to load a creature to get its playlist status");
             status = grpc::Status(grpc::StatusCode::INTERNAL,
@@ -87,14 +87,15 @@ namespace creatures {
             debug("successfully got a creature's status");
             return status;
         }
-        catch(std::out_of_range &e) {
+        catch (std::out_of_range &e) {
             debug("nothing currently running on creature {}", creature->name());
             response->set_playing(false);
             status = grpc::Status(grpc::StatusCode::OK, "Nothing currently playing");
             return status;
         }
-        catch ( ... ) {
-            critical("unknown exception while trying to look at the running playlists while getting a creature's status");
+        catch (...) {
+            critical(
+                    "unknown exception while trying to look at the running playlists while getting a creature's status");
             status = grpc::Status(grpc::StatusCode::INTERNAL,
                                   "Unknown exception while trying to look at the running playlists while getting a creature's status");
             return status;

@@ -367,6 +367,27 @@ public:
         return reply;
     }
 
+    server::AnimationIdentifier GetAnimationIdentifier(const AnimationId& id) {
+
+        ClientContext context;
+        AnimationIdentifier reply;
+
+        Status status = stub_->GetAnimationIdentifier(&context, id, &reply);
+
+        if(status.ok()) {
+            debug("Got an OK while loading one animation");
+        }
+        else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
+            info("Animation not found. (This might be expected!)");
+        }
+        else {
+            error("An error happened while loading an animationIdentifier. ID {}: {} ({})",
+                  id._id(), status.error_message(), status.error_details());
+        }
+
+        return reply;
+    }
+
     server::PlayAnimationResponse PlayAnimation(const PlayAnimationRequest& request) {
 
         ClientContext context;

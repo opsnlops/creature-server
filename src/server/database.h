@@ -48,11 +48,10 @@ namespace creatures {
 
         grpc::Status createAnimation(const Animation *animation, DatabaseInfo *reply);
 
+        // Animation Stuff
         grpc::Status listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList);
-
         void getAnimation(const AnimationId *animationId, Animation *animation);
-
-        // This throws a lot of errors :)
+        void getAnimationIdentifier(const AnimationId *animationId, AnimationIdentifier *animationIdentifier);
         void updateAnimation(const Animation *animation);
 
 

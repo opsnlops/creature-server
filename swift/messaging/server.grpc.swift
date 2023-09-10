@@ -76,6 +76,11 @@ public protocol Server_CreatureServerClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Server_AnimationId, Server_Animation>
 
+  func getAnimationIdentifier(
+    _ request: Server_AnimationId,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Server_AnimationId, Server_AnimationIdentifier>
+
   func listAnimations(
     _ request: Server_AnimationFilter,
     callOptions: CallOptions?
@@ -352,6 +357,24 @@ extension Server_CreatureServerClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetAnimationInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetAnimationIdentifier
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetAnimationIdentifier.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  public func getAnimationIdentifier(
+    _ request: Server_AnimationId,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Server_AnimationId, Server_AnimationIdentifier> {
+    return self.makeUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.getAnimationIdentifier.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAnimationIdentifierInterceptors() ?? []
     )
   }
 
@@ -660,6 +683,11 @@ public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Server_AnimationId, Server_Animation>
 
+  func makeGetAnimationIdentifierCall(
+    _ request: Server_AnimationId,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Server_AnimationId, Server_AnimationIdentifier>
+
   func makeListAnimationsCall(
     _ request: Server_AnimationFilter,
     callOptions: CallOptions?
@@ -860,6 +888,18 @@ extension Server_CreatureServerAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetAnimationInterceptors() ?? []
+    )
+  }
+
+  public func makeGetAnimationIdentifierCall(
+    _ request: Server_AnimationId,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Server_AnimationId, Server_AnimationIdentifier> {
+    return self.makeAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.getAnimationIdentifier.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAnimationIdentifierInterceptors() ?? []
     )
   }
 
@@ -1142,6 +1182,18 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
+  public func getAnimationIdentifier(
+    _ request: Server_AnimationId,
+    callOptions: CallOptions? = nil
+  ) async throws -> Server_AnimationIdentifier {
+    return try await self.performAsyncUnaryCall(
+      path: Server_CreatureServerClientMetadata.Methods.getAnimationIdentifier.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAnimationIdentifierInterceptors() ?? []
+    )
+  }
+
   public func listAnimations(
     _ request: Server_AnimationFilter,
     callOptions: CallOptions? = nil
@@ -1318,6 +1370,9 @@ public protocol Server_CreatureServerClientInterceptorFactoryProtocol: Sendable 
   /// - Returns: Interceptors to use when invoking 'getAnimation'.
   func makeGetAnimationInterceptors() -> [ClientInterceptor<Server_AnimationId, Server_Animation>]
 
+  /// - Returns: Interceptors to use when invoking 'getAnimationIdentifier'.
+  func makeGetAnimationIdentifierInterceptors() -> [ClientInterceptor<Server_AnimationId, Server_AnimationIdentifier>]
+
   /// - Returns: Interceptors to use when invoking 'listAnimations'.
   func makeListAnimationsInterceptors() -> [ClientInterceptor<Server_AnimationFilter, Server_ListAnimationsResponse>]
 
@@ -1366,6 +1421,7 @@ public enum Server_CreatureServerClientMetadata {
       Server_CreatureServerClientMetadata.Methods.createAnimation,
       Server_CreatureServerClientMetadata.Methods.updateAnimation,
       Server_CreatureServerClientMetadata.Methods.getAnimation,
+      Server_CreatureServerClientMetadata.Methods.getAnimationIdentifier,
       Server_CreatureServerClientMetadata.Methods.listAnimations,
       Server_CreatureServerClientMetadata.Methods.playAnimation,
       Server_CreatureServerClientMetadata.Methods.playSound,
@@ -1449,6 +1505,12 @@ public enum Server_CreatureServerClientMetadata {
     public static let getAnimation = GRPCMethodDescriptor(
       name: "GetAnimation",
       path: "/server.CreatureServer/GetAnimation",
+      type: GRPCCallType.unary
+    )
+
+    public static let getAnimationIdentifier = GRPCMethodDescriptor(
+      name: "GetAnimationIdentifier",
+      path: "/server.CreatureServer/GetAnimationIdentifier",
       type: GRPCCallType.unary
     )
 

@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
 
 
 /* Creature Update Tests */
-#if 1
+#if 0
 
     std::string unitTestCreatureId = "64717ff45809fc63850d4671";
 
@@ -263,6 +263,24 @@ int main(int argc, char** argv) {
     client.UpdateAnimation(testAnimation);
 #endif
 
+    /* Animation Identifier Tests */
+#if 1
+    // Attempt to load an animationIdentifier
+    debug("attempting to load an animationIdentifier");
+
+    std::string animation_oid_string = "64606f237aff7beab00bacb2";
+    info("attempting to search for animation ID {} in the database...", animation_oid_string);
+
+    bsoncxx::oid animation_oid(animation_oid_string);
+    AnimationId animationId;
+
+    const char* animation_oid_data = animation_oid.bytes();
+    animationId.set__id(animation_oid_data, bsoncxx::oid::k_oid_length);
+
+    AnimationIdentifier animationIdentifier = client.GetAnimationIdentifier(animationId);
+    info("found! Title: {}", animationIdentifier.metadata().title());
+
+#endif
 
 #if 0
     // Now let's play animation
@@ -313,7 +331,7 @@ int main(int argc, char** argv) {
 
 
     // Playlist tests
-#if 1
+#if 0
 
 info("playlists tests!");
 

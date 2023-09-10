@@ -3,7 +3,6 @@
 #include <csignal>
 #include <locale>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
 
