@@ -26,7 +26,7 @@ namespace creatures {
         int useGpio = environmentToInt(USE_GPIO_ENV, DEFAULT_USE_GPIO);
 
         if(!useGpio) {
-            debug("Not using GPIO since {} is not {}", USE_GPIO_ENV, DEFAULT_USE_GPIO);
+            debug("Not using GPIO since {} is {}", USE_GPIO_ENV, DEFAULT_USE_GPIO);
             return;
         }
 
