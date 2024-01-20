@@ -8,7 +8,7 @@ RUN apt update && apt upgrade -y
 
 RUN apt install -y cmake libssl-dev libsasl2-dev clang git file \
     pkgconf libbson-dev libpthreadpool-dev  \
-    libsystemd-dev ninja-build libsdl2-mixer-dev
+    libsystemd-dev ninja-build libsdl2-mixer-dev dpkg-dev
 
 RUN update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100 && \
     update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang 100
