@@ -3,4 +3,5 @@
 bin/
 cmake-*/
 build/
+package/
 *.DS_Store
