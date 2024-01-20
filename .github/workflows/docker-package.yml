@@ -1,0 +1,37 @@
+name: Create Debian Package
+
+on: [push, pull_request]
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: RelWithDebInfo
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - buildjet-4vcpu-ubuntu-2204
+          - buildjet-8vcpu-ubuntu-2204-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: 'true'
+
+      - name: Build in container
+        run: docker build -f ${{github.workspace}}/Dockerfile.package  . -t temp-image
+
+      - name: Build temp container
+        run: docker create --name temp-container temp-image
+
+      - name: Copy Package
+        run: mkdir ${{github.workspace}}/package/ && docker cp temp-container:/package/ ${{github.workspace}}/
+
+      - name: Save artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: creature-controller-package-${{ matrix.os }}
+          path: ${{github.workspace}}/package/

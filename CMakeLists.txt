@@ -19,15 +19,17 @@ endif()
 message(STATUS "Using gRPC version ${_CREATURES_GRPC_VERSION}")
 
 
-
-set(ABSL_PROPAGATE_CXX_STD on)
-
 include(FetchContent)
-set(FETCHCONTENT_QUIET OFF)
+set(FETCHCONTENT_QUIET OFF CACHE BOOL "FetchContent_QUIET")
 
 find_package(PkgConfig REQUIRED)
 
 set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
+
+
+# This project uses threads
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 # Configure gRPC to use bundled libraries
 set(gRPC_ABSL_PROVIDER "module" CACHE STRING "Use bundled ABSL library")
@@ -38,6 +40,7 @@ set(gRPC_SSL_PROVIDER "module" CACHE STRING "Use bundled SSL library")
 set(gRPC_ZLIB_PROVIDER "module" CACHE STRING "Use bundled ZLIB library")
 set(gRPC_INSTALL ON CACHE BOOL "Install gRPC")
 set(gRPC_BUILD_TESTS OFF CACHE BOOL "Build tests")
+set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "Propagate ABSL CXX_STD to subprojects")
 
 # grpc
 FetchContent_Declare(
@@ -45,7 +48,6 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/grpc/grpc
         GIT_TAG        v${_CREATURES_GRPC_VERSION}
 )
-set(FETCHCONTENT_QUIET OFF)
 FetchContent_MakeAvailable(gRPC)
 # Since FetchContent uses add_subdirectory under the hood, we can use
 # the grpc targets directly from this build.
@@ -55,10 +57,6 @@ set(_PROTOBUF_PROTOC $<TARGET_FILE:protoc>)
 set(_GRPC_GRPCPP grpc++)
 set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 
-
-# This project uses threads
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
 
 # fmt
 FetchContent_Declare(
@@ -216,3 +214,15 @@ target_link_libraries(logreader
         ${_PROTOBUF_LIBPROTOBUF}
         )
 
+install(TARGETS creature-server
+        COMPONENT creature-server
+        RUNTIME DESTINATION "/bin"
+        LIBRARY DESTINATION "/lib"
+        DESTINATION "/bin"
+)
+
+
+
+# where to find our CMake modules
+set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(Package)

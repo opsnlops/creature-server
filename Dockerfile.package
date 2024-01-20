@@ -47,19 +47,6 @@ RUN cd /build/creature-server && \
           .. && \
     ninja
 
-
-# Now build a small runtime
-FROM debian:bookworm-slim as runtime
-
-# Some of our libs need runtime bits
-RUN apt update && apt upgrade -y && \
-    apt install -y libsasl2-2 libicu72 libsdl2-mixer-2.0-0 flac locales-all && \
-    rm -rf /var/lib/apt/lists
-
-RUN mkdir /app
-COPY --from=build /build/creature-server/build/creature-server /app/creature-server
-COPY --from=build /usr/local/lib /usr/local/lib
-
-EXPOSE 6666
-
-CMD ["/app/creature-server"]
+# Make a package
+RUN mkdir -p /package
+RUN cd /build/creature-server/build && cpack -G DEB && cp *.deb /package
