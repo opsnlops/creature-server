@@ -40,13 +40,6 @@ RUN cd /build/creature-server && \
     mkdir build && \
     cd build && \
     cmake -DCMAKE_MAKE_PROGRAM=ninja -G Ninja \
-          -DgRPC_ABSL_PROVIDER=module \
-          -DgRPC_CARES_PROVIDER=module \
-          -DgRPC_PROTOBUF_PROVIDER=module \
-          -DgRPC_RE2_PROVIDER=module \
-          -DgRPC_SSL_PROVIDER=module \
-          -DgRPC_ZLIB_PROVIDER=module \
-          -DgRPC_INSTALL=ON \
           -DCMAKE_BUILD_TYPE=Release \
           .. && \
     ninja

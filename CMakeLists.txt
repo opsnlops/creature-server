@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.25)
 
 
 project(creature-server
-        VERSION "1.0.0"
+        VERSION "1.1.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -12,9 +12,9 @@ set(CMAKE_CXX_STANDARD 20)
 
 # I hate that this has to be done, but I'm in a bad spot with gRPC right now
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    set(_CREATURES_GRPC_VERSION 1.57.0)
+    set(_CREATURES_GRPC_VERSION 1.60.0)
 else()
-    set(_CREATURES_GRPC_VERSION 1.54.2)
+    set(_CREATURES_GRPC_VERSION 1.60.0)
 endif()
 message(STATUS "Using gRPC version ${_CREATURES_GRPC_VERSION}")
 
@@ -28,6 +28,16 @@ set(FETCHCONTENT_QUIET OFF)
 find_package(PkgConfig REQUIRED)
 
 set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
+
+# Configure gRPC to use bundled libraries
+set(gRPC_ABSL_PROVIDER "module" CACHE STRING "Use bundled ABSL library")
+set(gRPC_CARES_PROVIDER "module" CACHE STRING "Use bundled CARES library")
+set(gRPC_PROTOBUF_PROVIDER "module" CACHE STRING "Use bundled protobuf library")
+set(gRPC_RE2_PROVIDER "module" CACHE STRING "Use bundled RE2 library")
+set(gRPC_SSL_PROVIDER "module" CACHE STRING "Use bundled SSL library")
+set(gRPC_ZLIB_PROVIDER "module" CACHE STRING "Use bundled ZLIB library")
+set(gRPC_INSTALL ON CACHE BOOL "Install gRPC")
+set(gRPC_BUILD_TESTS OFF CACHE BOOL "Build tests")
 
 # grpc
 FetchContent_Declare(
@@ -170,8 +180,6 @@ target_link_libraries(creature-server
         fmt::fmt
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
-        absl::flags
-        absl::flags_parse
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
@@ -188,8 +196,6 @@ target_link_libraries(client
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
         mongo::bsoncxx_shared
-        absl::flags
-        absl::flags_parse
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
@@ -205,8 +211,6 @@ target_link_libraries(logreader
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
         mongo::bsoncxx_shared
-        absl::flags
-        absl::flags_parse
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
