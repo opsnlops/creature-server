@@ -17,6 +17,7 @@ namespace creatures {
         trace("starting up a DMX sender");
 
         dmx_offset = 0;
+        use_multicast = false;
         hostBanner = fmt::format("e1.31 client in the creature server");
         hostBannerLength = hostBanner.size();
 
@@ -28,10 +29,11 @@ namespace creatures {
         return packet.frame.seq_number;
     }
 
-    void DMX::init(std::string client_ip, uint32_t dmx_universe, uint32_t numMotors) {
+    void DMX::init(std::string client_ip, bool _use_multicast, uint32_t dmx_universe, uint32_t numMotors) {
 
         this->number_of_motors = numMotors;
         this->universe = dmx_universe;
+        this->use_multicast = _use_multicast;
         this->ip_address = std::move(client_ip);
 
         debug("starting up a DMX client: motors: {}, universe: {}, ip: {}", number_of_motors, universe,ip_address);
@@ -48,8 +50,16 @@ namespace creatures {
             error("unable to set e131 packet option");
 
         // Set the target
-        if (e131_unicast_dest(&dest, ip_address.c_str(), E131_DEFAULT_PORT) < 0)
-            error("unable to set e131 destination");
+        if(!use_multicast) {
+
+            debug("using unicast");
+            if (e131_unicast_dest(&dest, ip_address.c_str(), E131_DEFAULT_PORT) < 0)
+                error("unable to set e131 destination");
+        } else {
+            debug("using multicast");
+            if (e131_multicast_dest(&dest, dmx_universe, E131_DEFAULT_PORT) < 0)
+                error("unable to set e131 destination");
+        }
 
 #if DEBUG_DMX_SENDER
         // This is helpful for debugging

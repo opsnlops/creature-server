@@ -26,6 +26,7 @@ namespace creatures {
 
         // Used to create a DMX object if it doesn't exist
         std::string clientIP;
+        bool use_multicast;
         uint32_t dmxUniverse;
         uint32_t dmxOffset;
         uint32_t numMotors;

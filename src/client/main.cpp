@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
     auto everyone = client.GetAllCreatures(filter);
     for(const auto& c : everyone.creatures() )
     {
-        debug("Creature found {} with {} motors", c.name(), c.number_of_motors());
+        debug("Creature found {} with {} motors, and {} for multicast", c.name(), c.number_of_motors(), c.use_multicast());
     }
 
 #if 0

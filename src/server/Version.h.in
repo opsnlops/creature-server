@@ -1,0 +1,6 @@
+
+#pragma once
+
+#define CREATURE_SERVER_VERSION_MAJOR @creature-server_VERSION_MAJOR@
+#define CREATURE_SERVER_VERSION_MINOR @creature-server_VERSION_MINOR@
+#define CREATURE_SERVER_VERSION_PATCH @creature-server_VERSION_PATCH@

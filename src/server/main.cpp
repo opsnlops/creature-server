@@ -29,6 +29,7 @@
 #include "server/logging/creature_log_sink.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/status-lights.h"
+#include "Version.h"
 #include "util/cache.h"
 #include "util/environment.h"
 
@@ -147,6 +148,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
 
     // Leave some version info to be found
+    info("Creature Server version {}.{}.{}", CREATURE_SERVER_VERSION_MAJOR, CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH);
     debug("spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
     debug("fmt version {}", FMT_VERSION);
     debug("MongoDB C++ driver version {}", MONGOCXX_VERSION_STRING);

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 
 project(creature-server
-        VERSION "1.1.2"
+        VERSION "1.1.3"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -22,6 +22,8 @@ find_package(PkgConfig REQUIRED)
 
 set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
 
+# Make our version available to the project
+configure_file(src/server/Version.h.in Version.h)
 
 # Log loudly
 include(FetchContent)
@@ -163,6 +165,7 @@ include_directories(
         src/
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
+        PRIVATE ${CMAKE_BINARY_DIR}
 )
 
 message(STATUS "Using Protocol Buffers ${protobuf_VERSION}")

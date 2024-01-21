@@ -59,6 +59,7 @@ namespace creatures {
             builder << "_id" << id
                     << "name" << creature->name()
                     << "sacn_ip" << creature->sacn_ip()
+                    << "use_multicast" << bsoncxx::types::b_bool{creature->use_multicast()}
                     << "type" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->type())}
                     << "last_updated" << bsoncxx::types::b_date{last_updated}
                     << "universe" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->universe())}
@@ -145,6 +146,19 @@ namespace creatures {
             trace("set the sacn_ip to {}", creature->sacn_ip());
         } else {
             throw creatures::DataFormatException("Field sacn_ip was not a string in the database");
+        }
+
+        element = doc["use_multicast"];
+        if (!element) {
+            info("defaulting `use_multicast` to false");
+            creature->set_use_multicast(false);
+        }
+        else if (element.type() == bsoncxx::type::k_bool) {
+            bool bool_value = element.get_bool().value;
+            creature->set_use_multicast(bool_value);
+            trace("set the use_multicast to {}", creature->use_multicast());
+        } else {
+            throw creatures::DataFormatException("Field use_multicast was not a bool in the database");
         }
 
         // DMX Universe

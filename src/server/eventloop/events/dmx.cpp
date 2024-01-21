@@ -26,7 +26,7 @@ namespace creatures {
         trace("doing a DMX send event");
 #endif
         // Create the key
-        std::string key = clientIP + "-" + std::to_string(dmxUniverse) + "-" + std::to_string(dmxOffset) + "-" + std::to_string(numMotors);
+        std::string key = clientIP + "-" + std::to_string(use_multicast) + "-" +  std::to_string(dmxUniverse) + "-" + std::to_string(dmxOffset) + "-" + std::to_string(numMotors);
 
 #if DEBUG_EVENT_DMX
         trace("key: {}", key);
@@ -39,7 +39,7 @@ namespace creatures {
 
             debug("DMX sender not found in cache, making one now");
             sender = std::make_shared<DMX>();
-            sender->init(clientIP, dmxUniverse, numMotors);
+            sender->init(clientIP, use_multicast, dmxUniverse, numMotors);
 
             info("put new sender for {} in the cache", key);
             dmxCache->put(key, sender);
