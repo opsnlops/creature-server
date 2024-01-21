@@ -228,8 +228,9 @@ install(TARGETS creature-server
 # Include the MongoDB C++ driver
 install(DIRECTORY /usr/local/lib
         DESTINATION /usr/local
+        COMPONENT creature-server
         PATTERN "python" EXCLUDE
-        COMPONENT creature-server)
+        )
 
 
 # where to find our CMake modules
