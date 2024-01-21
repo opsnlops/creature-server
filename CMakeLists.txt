@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 
 project(creature-server
-        VERSION "1.1.0"
+        VERSION "1.1.2"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -18,14 +18,14 @@ else()
 endif()
 message(STATUS "Using gRPC version ${_CREATURES_GRPC_VERSION}")
 
-
-include(FetchContent)
-set(FETCHCONTENT_QUIET OFF CACHE BOOL "FetchContent_QUIET")
-
 find_package(PkgConfig REQUIRED)
 
 set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
 
+
+# Log loudly
+include(FetchContent)
+set(FETCHCONTENT_QUIET OFF)
 
 # This project uses threads
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -43,6 +43,7 @@ set(gRPC_BUILD_TESTS OFF CACHE BOOL "Build tests")
 set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "Propagate ABSL CXX_STD to subprojects")
 
 # grpc
+message(STATUS "Building gRPC ${_CREATURES_GRPC_VERSION}")
 FetchContent_Declare(
         gRPC
         GIT_REPOSITORY https://github.com/grpc/grpc
@@ -59,6 +60,7 @@ set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 
 
 # fmt
+message(STATUS "fmt")
 FetchContent_Declare(
     fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt
@@ -76,13 +78,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
-# MongoDB
+# MongoDB (built by us on Linux, but the macOS/brew version is fine)
 find_package(mongocxx REQUIRED)
 find_package(bsoncxx REQUIRED)
+
 
 # SDL
 find_package(SDL2 REQUIRED)
 find_package(SDL2_mixer REQUIRED)
+
 
 # Leave a message
 message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
@@ -157,8 +161,6 @@ file(GLOB logReaderFiles
 # Set up our includes
 include_directories(
         src/
-        ${LIBMONGOCXX_INCLUDE_DIR}
-        ${LIBBSONCXX_INCLUDE_DIR}
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
 )
@@ -172,12 +174,12 @@ add_executable(creature-server
 target_link_libraries(creature-server
         PUBLIC
         server_grpc_proto
-        mongo::mongocxx_shared
-        mongo::bsoncxx_shared
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
+        PRIVATE mongo::mongocxx_shared
+        PRIVATE mongo::bsoncxx_shared
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
@@ -193,7 +195,8 @@ target_link_libraries(client
         server_grpc_proto
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
-        mongo::bsoncxx_shared
+        PRIVATE mongo::mongocxx_shared
+        PRIVATE mongo::bsoncxx_shared
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
@@ -208,7 +211,8 @@ target_link_libraries(logreader
         server_grpc_proto
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
-        mongo::bsoncxx_shared
+        PRIVATE mongo::mongocxx_shared
+        PRIVATE mongo::bsoncxx_shared
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
@@ -221,6 +225,11 @@ install(TARGETS creature-server
         DESTINATION "/bin"
 )
 
+# Include the MongoDB C++ driver
+install(DIRECTORY /usr/local/lib
+        DESTINATION /usr/local
+        PATTERN "python" EXCLUDE
+        COMPONENT creature-server)
 
 
 # where to find our CMake modules

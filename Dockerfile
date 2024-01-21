@@ -7,8 +7,8 @@ FROM debian:bookworm as build
 RUN apt update && apt upgrade -y
 
 RUN apt install -y cmake libssl-dev libsasl2-dev clang git file \
-    pkgconf libbson-dev libpthreadpool-dev  \
-    libsystemd-dev ninja-build libsdl2-mixer-dev
+    pkgconf libbson-dev libpthreadpool-dev \
+    libsystemd-dev ninja-build libsdl2-mixer-dev dpkg-dev
 
 RUN update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100 && \
     update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang 100
@@ -20,12 +20,19 @@ ADD https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.8.0/mongo-c
 RUN cd /build/mongo && tar -xzvf c-driver.tar.gz && tar -xzvf cxx-driver.tar.gz
 
 RUN cd /build/mongo/mongo-c-driver-1.24.3/build && \
-    cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
+    cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DBUILD_SHARED_AND_STATIC_LIBS=ON \
+          -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
     ninja && \
     ninja install
 
 RUN cd /build/mongo/mongo-cxx-driver-r3.8.0/build && \
-    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DBUILD_SHARED_AND_STATIC_LIBS=ON \
+          -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
     ninja && \
     ninja install
 
@@ -35,9 +42,7 @@ RUN mkdir -p /build/creature-server/src /build/creature-server/messaging
 COPY src/ /build/creature-server/src
 COPY messaging/ /build/creature-server/messaging
 COPY cmake/ /build/creature-server/cmake
-COPY LICENSE /build/creature-server/
-COPY README.md /build/creature-server/
-COPY CMakeLists.txt /build/creature-server/
+COPY LICENSE README.md CMakeLists.txt /build/creature-server/
 RUN ls -lart /build/creature-server/
 RUN cd /build/creature-server && \
     mkdir build && \
@@ -63,3 +68,12 @@ COPY --from=build /usr/local/lib /usr/local/lib
 EXPOSE 6666
 
 CMD ["/app/creature-server"]
+
+
+
+# Small build for creating a deb package
+FROM build as package
+
+# Make a package
+RUN mkdir -p /package
+RUN cd /build/creature-server/build && cpack -G DEB && cp *.deb /package

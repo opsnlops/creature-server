@@ -7,7 +7,7 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_GENERATE_SHLIBS ON)
 
 set(CPACK_DEBIAN_PACKAGE_NAME "creature-server")
-set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+set(CPACK_DEBIAN_PACKAGE_SECTION "electronics")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "April's Creature Workshop Server")
 
 set(CPACK_PACKAGE_DESCRIPTION
@@ -31,6 +31,8 @@ set(CPACK_DEBIAN_PACKAGE_MAINTAINER "April White <april@opsnlops.io>")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 
+# We can't have the (very out of date) Mongo drivers from Debian on the host
+set(CPACK_DEBIAN_PACKAGE_CONFLICTS "libmongoclient0, libmongoc-dev, libmongoc-1.0-0, libmongoclient-dev, libbson-1.0-0, libbson-dev")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsasl2-2, libicu72, libsdl2-mixer-2.0-0, flac, locales-all")
 
 include(CPack)

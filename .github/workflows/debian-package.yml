@@ -22,7 +22,7 @@ jobs:
           submodules: 'true'
 
       - name: Build in container
-        run: docker build -f ${{github.workspace}}/Dockerfile.package  . -t temp-image
+        run: docker build -f ${{github.workspace}}/Dockerfile . --target package -t temp-image
 
       - name: Build temp container
         run: docker create --name temp-container temp-image

@@ -25,4 +25,5 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          target: runtime
           tags: ${{ secrets.DOCKER_LOGIN_USERNAME }}/creature-server:arm64
