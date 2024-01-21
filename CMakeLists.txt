@@ -227,7 +227,7 @@ install(TARGETS creature-server
 
 # Include the MongoDB C++ driver
 install(DIRECTORY /usr/local/lib
-        DESTINATION /usr/local
+        DESTINATION /usr
         COMPONENT creature-server
         PATTERN "python" EXCLUDE
         )

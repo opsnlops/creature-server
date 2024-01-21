@@ -128,6 +128,7 @@ message Creature {
   uint32 dmx_base = 6;
   uint32 number_of_motors = 7;
   CreatureType type = 8;
+  bool use_multicast = 9;
   repeated Motor motors = 90;
 
   enum MotorType {
