@@ -26,7 +26,7 @@ namespace creatures {
         trace("doing a DMX send event");
 #endif
         // Create the key
-        std::string key = clientIP + "-" + std::to_string(use_multicast) + "-" +  std::to_string(dmxUniverse) + "-" + std::to_string(dmxOffset) + "-" + std::to_string(numMotors);
+        std::string key = clientIP + "-" + (use_multicast ? "multicast" : "unicast") + "-" +  std::to_string(dmxUniverse) + "-" + std::to_string(dmxOffset) + "-" + std::to_string(numMotors);
 
 #if DEBUG_EVENT_DMX
         trace("key: {}", key);
