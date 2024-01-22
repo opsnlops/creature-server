@@ -58,7 +58,7 @@ FROM debian:bookworm-slim as runtime
 
 # Some of our libs need runtime bits
 RUN apt update && apt upgrade -y && \
-    apt install -y libsasl2-2 libicu72 libsdl2-mixer-2.0-0 flac locales-all libutf8proc && \
+    apt install -y libsasl2-2 libicu72 libsdl2-mixer-2.0-0 flac locales-all libutf8proc2 && \
     rm -rf /var/lib/apt/lists
 
 RUN mkdir /app
