@@ -43,7 +43,6 @@ namespace creatures {
 
         static int initSDL();
         static int locateAudioDevice();
-        static std::string getSoundFileLocation();
         static void listAudioDevices();
 
     private:

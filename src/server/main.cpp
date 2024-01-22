@@ -19,6 +19,8 @@
 
 // Our stuff
 #include "server/config.h"
+#include "server/config/CommandLine.h"
+#include "server/config/Configuration.h"
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "server/dmx/dmx.h"
@@ -49,6 +51,7 @@ using moodycamel::ConcurrentQueue;
 
 namespace creatures {
     std::atomic<bool> eventLoopRunning{true};
+    std::shared_ptr<Configuration> config{};
     std::shared_ptr<Database> db{};
     std::unique_ptr<Server> grpcServer;
     std::shared_ptr<EventLoop> eventLoop;
@@ -120,13 +123,15 @@ void StopServer() {
 }
 
 
-int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
+int main(int argc, char **argv) {
 
     // Fire up the signal handlers
     std::signal(SIGINT, signal_handler);
 
     // Set up our locale
     std::locale::global(std::locale("en_US.UTF-8"));
+
+
 
     // Create our metric counters
     creatures::metrics = std::make_shared<creatures::SystemCounters>();
@@ -147,6 +152,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     // Take over the default logger with our new one
     spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
 
+
+    // Parse out the command line options
+    auto commandLine = std::make_unique<creatures::CommandLine>();
+    creatures::config = commandLine->parseCommandLine(argc, argv);
+
     // Leave some version info to be found
     info("Creature Server version {}.{}.{}", CREATURE_SERVER_VERSION_MAJOR, CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH);
     debug("spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
@@ -155,10 +165,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char **argv) {
     debug("gRPC version {}.{}.{}", GRPC_CPP_VERSION_MAJOR, GRPC_CPP_VERSION_MINOR, GRPC_CPP_VERSION_PATCH);
     debug("Protobuf version {}", GOOGLE_PROTOBUF_VERSION);
     debug("SDL version {}.{}.{}", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
-    debug("Sound file location: {}", MusicEvent::getSoundFileLocation());
+    debug("Sound file location: {}", creatures::config->getSoundFileLocation());
 
-    // Fire up the Mono client
-    std::string mongoURI = creatures::environmentToString(DB_URI_ENV, DEFAULT_DB_URI);
+
+    // Fire up the Mongo client
+    std::string mongoURI = creatures::config->getMongoURI();
     debug("MongoDB URI: {}", mongoURI);
 
     mongocxx::instance instance{};

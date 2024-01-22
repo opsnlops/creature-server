@@ -29,11 +29,11 @@ namespace creatures {
         return packet.frame.seq_number;
     }
 
-    void DMX::init(std::string client_ip, bool _use_multicast, uint32_t dmx_universe, uint32_t numMotors) {
+    void DMX::init(std::string client_ip, bool useMulticast, uint32_t dmx_universe, uint32_t numMotors) {
 
         this->number_of_motors = numMotors;
         this->universe = dmx_universe;
-        this->use_multicast = _use_multicast;
+        this->use_multicast = useMulticast;
         this->ip_address = std::move(client_ip);
 
         debug("starting up a DMX client: motors: {}, universe: {}, ip: {}", number_of_motors, universe,ip_address);
@@ -51,14 +51,13 @@ namespace creatures {
 
         // Set the target
         if(!use_multicast) {
-
             debug("using unicast");
             if (e131_unicast_dest(&dest, ip_address.c_str(), E131_DEFAULT_PORT) < 0)
-                error("unable to set e131 destination");
+                error("unable to set e131 unicast destination");
         } else {
             debug("using multicast");
             if (e131_multicast_dest(&dest, dmx_universe, E131_DEFAULT_PORT) < 0)
-                error("unable to set e131 destination");
+                error("unable to set e131 multicast destination");
         }
 
 #if DEBUG_DMX_SENDER

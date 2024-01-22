@@ -3,6 +3,7 @@
 
 #include "spdlog/spdlog.h"
 
+#include "server/config/Configuration.h"
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
@@ -17,6 +18,7 @@
 
 namespace creatures {
 
+    extern std::shared_ptr<Configuration> config;
     extern std::shared_ptr<Database> db;
     extern std::shared_ptr<EventLoop> eventLoop;
     extern std::shared_ptr<SystemCounters> metrics;
@@ -108,7 +110,7 @@ namespace creatures {
         if(!animation->metadata().sound_file().empty()) {
 
             // Set up the path to the sound file based on the startup config
-            std::string soundFileName = MusicEvent::getSoundFileLocation() + "/" + animation->metadata().sound_file();
+            std::string soundFileName = config->getSoundFileLocation() + "/" + animation->metadata().sound_file();
             debug("using sound file name: {}", soundFileName);
 
             auto playSoundEvent = std::make_shared<MusicEvent>(startingFrame, soundFileName);

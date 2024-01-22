@@ -6,6 +6,7 @@
 
 #include "spdlog/spdlog.h"
 
+#include "server/config/Configuration.h"
 #include "server/config.h"
 #include "server/creature-server.h"
 
@@ -18,15 +19,15 @@
 
 namespace creatures {
 
+    extern std::shared_ptr<creatures::Configuration> config;
+
     GPIO::GPIO() {
 
         // Start out disabled
         enabled = false;
 
-        int useGpio = environmentToInt(USE_GPIO_ENV, DEFAULT_USE_GPIO);
-
-        if(!useGpio) {
-            debug("Not using GPIO since {} is {}", USE_GPIO_ENV, DEFAULT_USE_GPIO);
+        if(!config->getUseGPIO()) {
+            debug("Not using GPIO since it's off in the config");
             return;
         }
 
@@ -38,7 +39,7 @@ namespace creatures {
 
         // Memory map GPIO
         gpio_map = mmap(
-                NULL,             // Any address will do
+                nullptr,             // Any address will do
                 GPIO_SIZE,       // Map length
                 PROT_READ|PROT_WRITE, // Enable reading & writing to mapped memory
                 MAP_SHARED,       // Shared with other processes

@@ -7,6 +7,7 @@
 #include "spdlog/spdlog.h"
 
 #include "server.pb.h"
+#include "server/config/Configuration.h"
 #include "server/creature-server.h"
 #include "exception/exception.h"
 
@@ -30,6 +31,7 @@ using creatures::MusicEvent;
 
 namespace creatures {
 
+    extern std::shared_ptr<creatures::Configuration> config;
     extern std::shared_ptr<EventLoop> eventLoop;
 
     /**
@@ -45,7 +47,7 @@ namespace creatures {
 
         info("Playing a sound via gPRC request");
 
-        std::string soundFileName = MusicEvent::getSoundFileLocation() + "/" + request->filename();
+        std::string soundFileName = config->getSoundFileLocation() + "/" + request->filename();
         debug("using sound file name: {}", soundFileName);
         uint64_t frameNumber = eventLoop->getNextFrameNumber();
 

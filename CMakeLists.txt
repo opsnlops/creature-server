@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 
 project(creature-server
-        VERSION "1.1.3"
+        VERSION "1.1.4"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -72,6 +72,7 @@ FetchContent_MakeAvailable(fmt)
 set(FMT_HEADER_ONLY ON)
 set(FMT_LOCALE ON)
 
+
 # spdlog
 FetchContent_Declare(
     spdlog
@@ -79,6 +80,15 @@ FetchContent_Declare(
     GIT_TAG v1.11.0
 )
 FetchContent_MakeAvailable(spdlog)
+
+
+# argparse
+FetchContent_Declare(
+        argparse
+        GIT_REPOSITORY https://github.com/p-ranav/argparse.git
+)
+FetchContent_MakeAvailable(argparse)
+
 
 # MongoDB (built by us on Linux, but the macOS/brew version is fine)
 find_package(mongocxx REQUIRED)
@@ -135,6 +145,7 @@ file(GLOB serverFiles
         src/exception/*
         src/server/*
         src/server/animation/*
+        src/server/config/*
         src/server/creature/*
         src/server/dmx/*
         src/server/eventloop/*
@@ -163,6 +174,7 @@ file(GLOB logReaderFiles
 # Set up our includes
 include_directories(
         src/
+        ${argparse_SOURCE_DIR}/include
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
         PRIVATE ${CMAKE_BINARY_DIR}
@@ -183,6 +195,7 @@ target_link_libraries(creature-server
         SDL2_mixer::SDL2_mixer
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
+        argparse
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}

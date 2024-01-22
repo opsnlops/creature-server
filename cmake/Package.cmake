@@ -33,6 +33,6 @@ set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 
 # We can't have the (very out of date) Mongo drivers from Debian on the host
 set(CPACK_DEBIAN_PACKAGE_CONFLICTS "libmongoclient0, libmongoc-dev, libmongoc-1.0-0, libmongoclient-dev, libbson-1.0-0, libbson-dev")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsasl2-2, libicu72, libsdl2-mixer-2.0-0, flac, locales-all")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsasl2-2, libicu72, libsdl2-mixer-2.0-0, libutf8proc, flac, locales-all")
 
 include(CPack)

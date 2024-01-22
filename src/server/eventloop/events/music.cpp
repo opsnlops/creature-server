@@ -11,6 +11,7 @@
 #include "spdlog/spdlog.h"
 
 #include "server/config.h"
+#include "server/config/Configuration.h"
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
@@ -23,6 +24,7 @@ namespace creatures {
 
     extern const char* audioDevice;
     extern SDL_AudioSpec audioSpec;
+    extern std::shared_ptr<Configuration> config;
     extern std::shared_ptr<GPIO> gpioPins;
     extern std::shared_ptr<SystemCounters> metrics;
 
@@ -115,19 +117,7 @@ namespace creatures {
     }
 
 
-    /**
-     * Returns the directory of where we're expecting to find sound files
-     *
-     * @return The value of SOUND_FILE_LOCATION_ENV from config.h, or the default.
-     */
-    std::string MusicEvent::getSoundFileLocation() {
-        const char *val = std::getenv(SOUND_FILE_LOCATION_ENV);
-        if (val == nullptr) {
-            return DEFAULT_SOUND_FILE_LOCATION;
-        } else {
-            return val;
-        }
-    }
+
 
     // Fire up SDL
     int MusicEvent::initSDL() {
@@ -149,20 +139,16 @@ namespace creatures {
 
         debug("opening the audio device");
 
-        int deviceNumber = environmentToInt(SOUND_DEVICE_NUMBER_ENV, DEFAULT_SOUND_DEVICE_NUMBER);
-        int frequency = environmentToInt(SOUND_FREQUENCY_ENV, DEFAULT_SOUND_FREQUENCY);
-        int channels = environmentToInt(SOUND_CHANNELS_ENV, DEFAULT_SOUND_CHANNELS);
-
         audioSpec = SDL_AudioSpec();
-        audioSpec.freq = frequency;
-        audioSpec.channels = channels;
+        audioSpec.freq = (int)config->getSoundFrequency();
+        audioSpec.channels = config->getSoundChannels();
         audioSpec.format = AUDIO_F32SYS;
         audioSpec.samples = SOUND_BUFFER_SIZE;
         audioSpec.callback = nullptr;
         audioSpec.userdata = nullptr;
 
         // Get the name of the default
-        audioDevice = SDL_GetAudioDeviceName(deviceNumber, 0);
+        audioDevice = SDL_GetAudioDeviceName(config->getSoundDevice(), 0);
         if (!audioDevice) {
             error("Failed to get audio device name: {}", SDL_GetError());
             return 0;
