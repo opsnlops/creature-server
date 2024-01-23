@@ -8,7 +8,8 @@ RUN apt update && apt upgrade -y
 
 RUN apt install -y cmake libssl-dev libsasl2-dev clang git file \
     pkgconf libbson-dev libpthreadpool-dev libutf8proc-dev \
-    libsystemd-dev ninja-build libsdl2-mixer-dev dpkg-dev uuid-dev
+    libsystemd-dev ninja-build libsdl2-mixer-dev dpkg-dev uuid-dev \
+    util-linux
 
 RUN update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100 && \
     update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang 100
@@ -42,7 +43,7 @@ RUN mkdir -p /build/creature-server/src /build/creature-server/messaging
 COPY src/ /build/creature-server/src
 COPY messaging/ /build/creature-server/messaging
 COPY cmake/ /build/creature-server/cmake
-COPY lib/e131_service/ /build/creature-server/lib/e131_service
+COPY lib/ /build/creature-server/lib
 COPY LICENSE README.md CMakeLists.txt /build/creature-server/
 RUN ls -lart /build/creature-server/
 RUN cd /build/creature-server && \
@@ -59,7 +60,7 @@ FROM debian:bookworm-slim as runtime
 
 # Some of our libs need runtime bits
 RUN apt update && apt upgrade -y && \
-    apt install -y libsasl2-2 libicu72 libsdl2-mixer-2.0-0 flac locales-all libutf8proc2 libuuid1 && \
+    apt install -y libsasl2-2 libicu72 libsdl2-mixer-2.0-0 flac locales-all libutf8proc2 libuuid1 util-linux && \
     rm -rf /var/lib/apt/lists
 
 RUN mkdir /app

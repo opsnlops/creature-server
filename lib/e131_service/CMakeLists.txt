@@ -15,7 +15,7 @@ add_library(libe131 STATIC
 
 
 # Define our library
-add_library(e131_service SHARED
+add_library(e131_service STATIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src/E131Server.cpp
 )
 

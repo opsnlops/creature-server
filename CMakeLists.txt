@@ -12,9 +12,9 @@ set(CMAKE_CXX_STANDARD 20)
 
 # I hate that this has to be done, but I'm in a bad spot with gRPC right now
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    set(_CREATURES_GRPC_VERSION 1.60.0)
+        set(_CREATURES_GRPC_VERSION 1.60.0)
 else()
-    set(_CREATURES_GRPC_VERSION 1.60.0)
+        set(_CREATURES_GRPC_VERSION 1.60.0)
 endif()
 message(STATUS "Using gRPC version ${_CREATURES_GRPC_VERSION}")
 
@@ -64,9 +64,9 @@ set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 # fmt
 message(STATUS "fmt")
 FetchContent_Declare(
-    fmt
-    GIT_REPOSITORY https://github.com/fmtlib/fmt
-    GIT_TAG 9.1.0
+        fmt
+        GIT_REPOSITORY https://github.com/fmtlib/fmt
+        GIT_TAG 9.1.0
 )
 FetchContent_MakeAvailable(fmt)
 set(FMT_HEADER_ONLY ON)
@@ -75,9 +75,9 @@ set(FMT_LOCALE ON)
 
 # spdlog
 FetchContent_Declare(
-    spdlog
-    GIT_REPOSITORY https://github.com/gabime/spdlog
-    GIT_TAG v1.11.0
+        spdlog
+        GIT_REPOSITORY https://github.com/gabime/spdlog
+        GIT_TAG v1.11.0
 )
 FetchContent_MakeAvailable(spdlog)
 
@@ -103,8 +103,12 @@ find_package(bsoncxx REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(SDL2_mixer REQUIRED)
 
-# UUID
-find_library(UUID_LIBRARY uuid REQUIRED)
+# Why are UUIDs so hard in 2024
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+        find_library(UUID uuid REQUIRED)
+else()
+        pkg_search_module(UUID REQUIRED uuid)
+endif()
 
 
 # Leave a message
@@ -135,16 +139,16 @@ add_library(server_grpc_proto
         ${server_grpc_hdrs}
         ${server_proto_srcs}
         ${server_proto_hdrs}
-        )
+)
 target_link_libraries(server_grpc_proto
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
-        )
+)
 target_include_directories(server_grpc_proto
         PUBLIC
         ${CMAKE_CURRENT_BINARY_DIR}
-        )
+)
 
 
 # Our source files
@@ -163,24 +167,25 @@ file(GLOB serverFiles
         src/server/playlist/*
         src/server/sound/*
         src/util/*
-        )
+)
 
 file(GLOB clientFiles
         src/client/*
         src/exception/*
         src/util/*
-        )
+)
 
 
 file(GLOB logReaderFiles
         src/client/*.h
         src/exception/*
         src/log-monitor/*
-        )
+)
 
 # Set up our includes
 include_directories(
         src/
+        ${UUID_INCLUDE_DIRS}
         ${argparse_SOURCE_DIR}/include
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
@@ -191,10 +196,11 @@ message(STATUS "Using Protocol Buffers ${protobuf_VERSION}")
 
 add_executable(creature-server
         ${serverFiles}
-        )
+)
 
 target_link_libraries(creature-server
         PRIVATE server_grpc_proto
+        PRIVATE ${UUID_LIBRARIES}
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
         SDL2::SDL2
@@ -206,12 +212,12 @@ target_link_libraries(creature-server
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
-        )
+)
 
 
 add_executable(client
         ${clientFiles}
-        )
+)
 
 target_link_libraries(client
         PRIVATE server_grpc_proto
@@ -222,11 +228,11 @@ target_link_libraries(client
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
-        )
+)
 
 add_executable(logreader
         ${logReaderFiles}
-        )
+)
 
 target_link_libraries(logreader
         PRIVATE server_grpc_proto
@@ -237,7 +243,7 @@ target_link_libraries(logreader
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
-        )
+)
 
 install(TARGETS creature-server
         COMPONENT creature-server
@@ -251,7 +257,7 @@ install(DIRECTORY /usr/local/lib
         DESTINATION /usr
         COMPONENT creature-server
         PATTERN "python" EXCLUDE
-        )
+)
 
 
 # where to find our CMake modules
