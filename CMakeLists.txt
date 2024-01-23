@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 
 project(creature-server
-        VERSION "1.1.4"
+        VERSION "1.2.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -102,6 +102,9 @@ find_package(bsoncxx REQUIRED)
 # SDL
 find_package(SDL2 REQUIRED)
 find_package(SDL2_mixer REQUIRED)
+
+# UUID
+find_library(UUID_LIBRARY uuid REQUIRED)
 
 
 # Leave a message
