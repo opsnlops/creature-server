@@ -42,6 +42,7 @@ RUN mkdir -p /build/creature-server/src /build/creature-server/messaging
 COPY src/ /build/creature-server/src
 COPY messaging/ /build/creature-server/messaging
 COPY cmake/ /build/creature-server/cmake
+COPY lib/e131_service/ /build/creature-server/lib/e131_service
 COPY LICENSE README.md CMakeLists.txt /build/creature-server/
 RUN ls -lart /build/creature-server/
 RUN cd /build/creature-server && \
