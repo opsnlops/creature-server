@@ -4,9 +4,6 @@
 #include <string>
 #include <utility>
 
-extern "C" {
-    #include <e131.h>
-}
 
 #include "dmx.h"
 #include "server/config.h"
@@ -30,11 +27,12 @@ namespace creatures {
 
 
     uint8_t DMX::getSequenceNumber() const {
-        return packet.frame.seq_number;
+       // return packet.frame.seq_number;
+       return 1;
     }
 
     void DMX::init(std::string client_ip, bool useMulticast, uint32_t dmx_universe, uint32_t numMotors) {
-
+#warning "All of the DMX stuff in the main project has not been implemented"
         this->number_of_motors = numMotors;
         this->universe = dmx_universe;
         this->use_multicast = useMulticast;
@@ -42,6 +40,7 @@ namespace creatures {
 
         debug("starting up a DMX client: motors: {}, universe: {}, ip: {}", number_of_motors, universe,ip_address);
 
+        /*
         // create a socket for E1.31
         if ((socketFd = e131_socket()) < 0) {
             critical("Unable to open socket for the E1.31 client");
@@ -63,6 +62,7 @@ namespace creatures {
             if (e131_multicast_dest(&dest, dmx_universe, E131_DEFAULT_PORT) < 0)
                 error("unable to set e131 multicast destination");
         }
+         */
 
 #if DEBUG_DMX_SENDER
         // This is helpful for debugging
@@ -84,13 +84,15 @@ namespace creatures {
         // Pack the vector into the array
         size_t count = data.size();
         for (size_t pos = 0; pos < count; pos++) {
-            packet.dmp.prop_val[pos + 1] = data[pos];
+            //packet.dmp.prop_val[pos + 1] = data[pos];
+            trace("hi");
 
 #if DEBUG_DMX_SENDER
             trace("pos {}, data {}", (pos + dmx_offset + 1), data[pos]);
 #endif
         }
 
+        /*
         if (e131_send(socketFd, &packet, &dest) < 0) {
             error("unable to send e131 packet");
             e131_pkt_dump(stdout, &packet);
@@ -98,6 +100,7 @@ namespace creatures {
         //e131_pkt_dump(stdout, &packet);
         packet.frame.seq_number++;
 
+        */
     }
 
     DMX::~DMX() = default;

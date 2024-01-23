@@ -17,6 +17,10 @@
 // SDL
 #include <SDL2/SDL.h>
 
+// E131Sever
+#include <E131Server.h>
+
+
 // Our stuff
 #include "server/config.h"
 #include "server/config/CommandLine.h"
@@ -218,6 +222,11 @@ int main(int argc, char **argv) {
 
     // Signal that we're online
     creatures::gpioPins->serverOnline(true);
+
+    // Bring the E131Server online
+    auto e131Server = std::make_shared<creatures::e131::E131Server>();
+    e131Server->init();
+
 
     RunServer(6666, log_queue);
     info("Startup complete!");

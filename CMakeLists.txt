@@ -90,10 +90,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(argparse)
 
 
-# Create a static library out of libe131
-add_library(libe131 STATIC
-            lib/libe131/src/e131.c
-)
+# ...and our own library
+add_subdirectory(lib/e131_service)
 
 
 # MongoDB (built by us on Linux, but the macOS/brew version is fine)
@@ -184,7 +182,6 @@ include_directories(
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
         PRIVATE ${CMAKE_BINARY_DIR}
-        PRIVATE lib/libe131/src
 )
 
 message(STATUS "Using Protocol Buffers ${protobuf_VERSION}")
@@ -194,16 +191,15 @@ add_executable(creature-server
         )
 
 target_link_libraries(creature-server
-        PUBLIC
-        server_grpc_proto
+        PRIVATE server_grpc_proto
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
-        PRIVATE libe131
         argparse
+        e131_service
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
@@ -215,8 +211,7 @@ add_executable(client
         )
 
 target_link_libraries(client
-        PUBLIC
-        server_grpc_proto
+        PRIVATE server_grpc_proto
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
         PRIVATE mongo::mongocxx_shared
@@ -231,8 +226,7 @@ add_executable(logreader
         )
 
 target_link_libraries(logreader
-        PUBLIC
-        server_grpc_proto
+        PRIVATE server_grpc_proto
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
         PRIVATE mongo::mongocxx_shared

@@ -6,9 +6,7 @@
 #include <string>
 #include <vector>
 
-extern "C" {
-    #include <e131.h>
-}
+
 
 namespace creatures {
 
@@ -35,7 +33,5 @@ namespace creatures {
         uint32_t universe{};
 
         uint32_t dmx_offset{};
-        e131_packet_t packet{};
-        e131_addr_t dest{};
     };
 }
