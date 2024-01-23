@@ -6,7 +6,9 @@
 #include <string>
 #include <vector>
 
-#include "e131.h"
+extern "C" {
+    #include <e131.h>
+}
 
 namespace creatures {
 

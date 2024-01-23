@@ -4,6 +4,10 @@
 #include <string>
 #include <utility>
 
+extern "C" {
+    #include <e131.h>
+}
+
 #include "dmx.h"
 #include "server/config.h"
 

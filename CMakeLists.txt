@@ -90,6 +90,12 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(argparse)
 
 
+# Create a static library out of libe131
+add_library(libe131 STATIC
+            lib/libe131/src/e131.c
+)
+
+
 # MongoDB (built by us on Linux, but the macOS/brew version is fine)
 find_package(mongocxx REQUIRED)
 find_package(bsoncxx REQUIRED)
@@ -178,6 +184,7 @@ include_directories(
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
         PRIVATE ${CMAKE_BINARY_DIR}
+        PRIVATE lib/libe131/src
 )
 
 message(STATUS "Using Protocol Buffers ${protobuf_VERSION}")
@@ -195,6 +202,7 @@ target_link_libraries(creature-server
         SDL2_mixer::SDL2_mixer
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
+        PRIVATE libe131
         argparse
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
