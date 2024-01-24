@@ -15,6 +15,7 @@ namespace creatures {
 
     private:
         static void listSoundDevices();
+        static void listNetworkDevices();
         std::string getVersion();
     };
 

@@ -5,6 +5,7 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <uuid/uuid.h>
 
 // Junk to make random values
 #include <array>
@@ -94,7 +95,7 @@ namespace creatures::e131 {
             std::copy(std::begin(cid), std::end(cid), std::begin(packet.root.cid));
             std::copy(universeState.begin(), universeState.end(), packet.dmp.prop_val);
 
-            // That's not starting at 1. The first byte has to be 0.
+            // Make sure we don't set the START code to anything other than zero
             packet.dmp.prop_val[0] = 0;
 
             if (e131_send(socket, &packet, &dest) < 0) {
@@ -103,7 +104,7 @@ namespace creatures::e131 {
 
 
             logger->trace("tick");
-            std::this_thread::sleep_for(std::chrono::milliseconds (50));
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
 
     }

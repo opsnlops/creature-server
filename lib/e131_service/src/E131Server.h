@@ -29,7 +29,8 @@ namespace creatures::e131 {
 
         const uint16_t universeNumber = 1;
 
-        std::array<uint8_t, 512> universeState = {};
+        // 512 channels plus the START code (slot 0)
+        std::array<uint8_t, 513> universeState = {};
 
         std::thread worker;
         void workerTask();

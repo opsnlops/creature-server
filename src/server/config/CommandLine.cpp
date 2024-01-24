@@ -1,12 +1,17 @@
 
+
+#include <cstdio>
+#include <ifaddrs.h>
 #include <iostream>
+#include <net/if.h>
 #include <string>
+#include <utility>
 
 #include <SDL.h>
 
 #include <argparse/argparse.hpp>
 #include <fmt/format.h>
-#include <utility>
+
 
 #include "Configuration.h"
 #include "CommandLine.h"
@@ -65,8 +70,14 @@ namespace creatures {
                 .default_value(environmentToString(SOUND_FILE_LOCATION_ENV, DEFAULT_SOUND_FILE_LOCATION))
                 .nargs(1);
 
-        program.add_argument("--list-sound-devices")
+        auto &oneShots = program.add_mutually_exclusive_group();
+        oneShots.add_argument("--list-sound-devices")
                 .help("list available sound devices and exit")
+                .default_value(false)
+                .implicit_value(true);
+
+        oneShots.add_argument("--list-network-devices")
+                .help("list available network devices and exit")
                 .default_value(false)
                 .implicit_value(true);
 
@@ -92,9 +103,14 @@ namespace creatures {
 
         debug("Parsing the command line options");
 
-        // Do the sound listing first to avoid weird debug messages
+        // Do the sound and network listing(s) first to avoid weird debug messages
         if(program.get<bool>("--list-sound-devices")) {
             listSoundDevices();
+            std::exit(0);
+        }
+
+        if(program.get<bool>("--list-network-devices")) {
+            listNetworkDevices();
             std::exit(0);
         }
 
@@ -162,6 +178,34 @@ namespace creatures {
                 printf(" Device: %d, Name: %s\n", i, deviceName);
             }
         }
+    }
+
+    void CommandLine::listNetworkDevices() {
+
+        struct ifaddrs *ifaddr, *ifa;
+
+        if (getifaddrs(&ifaddr) == -1) {
+            critical("Unable to get network devices: {}", strerror(errno));
+        }
+
+        printf("List of network devices:\n");
+
+        int n;
+
+        // Walk the list
+        for (ifa = ifaddr, n = 0; ifa != nullptr; ifa = ifa->ifa_next, n++) {
+            if (ifa->ifa_addr == nullptr)
+                continue;
+
+            // Could be used to limit it to IPv4 or IPv6
+            //int family = ifa->ifa_addr->sa_family;
+
+            // Print out the name and index
+            printf(" Device: %d, Name: %s\n", if_nametoindex(ifa->ifa_name),ifa->ifa_name);
+        }
+
+        freeifaddrs(ifaddr);
+
     }
 
     std::string CommandLine::getVersion() {
