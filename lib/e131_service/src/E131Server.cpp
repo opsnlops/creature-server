@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <cstddef>
 
-
 extern "C" {
     #include <e131.h>
 }
@@ -23,7 +22,8 @@ extern "C" {
 
 namespace creatures::e131 {
 
-    void E131Server::init() {
+
+    void E131Server::init(uint16_t _networkDevice) {
 
         // Get our logger going
         logger = spdlog::stdout_color_mt("E131Server");
@@ -31,6 +31,8 @@ namespace creatures::e131 {
 
         logger->debug("The state of the universe has {} slots", this->universeState.size());
 
+        this->networkDevice = _networkDevice;
+        logger->debug("using network device {}", this->networkDevice);
 
         // TODO: This is all temp
         if ((socket = e131_socket()) < 0) {
@@ -41,7 +43,7 @@ namespace creatures::e131 {
             logger->critical( "e131_multicast_iface: {}", strerror(errno));
         }
 
-        if (e131_multicast_join_iface(socket, universeNumber, 11) < 0) {
+        if (e131_multicast_join_iface(socket, universeNumber, this->networkDevice) < 0) {
             logger->critical( "e131_multicast_join: {}", strerror(errno));
         }
 

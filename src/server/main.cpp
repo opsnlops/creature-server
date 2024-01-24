@@ -225,7 +225,7 @@ int main(int argc, char **argv) {
 
     // Bring the E131Server online
     auto e131Server = std::make_shared<creatures::e131::E131Server>();
-    e131Server->init();
+    e131Server->init(creatures::config->getNetworkDevice());
     e131Server->start();
 
 

@@ -23,6 +23,7 @@ namespace creatures {
         uint32_t getSoundFrequency() const;
         uint8_t getSoundChannels() const;
         std::string getSoundFileLocation() const;
+        uint16_t getNetworkDevice() const;
 
 
     protected:
@@ -33,6 +34,7 @@ namespace creatures {
         void setSoundFrequency(uint32_t _soundFrequency);
         void setSoundChannels(uint8_t _soundChannels);
         void setSoundFileLocation(std::string _soundFileLocation);
+        void setNetworkDevice(uint16_t _networkDevice);
 
     private:
 
@@ -49,6 +51,8 @@ namespace creatures {
         uint8_t soundChannels = DEFAULT_SOUND_CHANNELS;
         std::string soundFileLocation = DEFAULT_SOUND_FILE_LOCATION;
 
+        // Network stuff
+        uint16_t networkDevice = DEFAULT_NETWORK_DEVICE_NUMBER;
     };
 
 

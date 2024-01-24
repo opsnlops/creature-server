@@ -52,4 +52,11 @@ namespace creatures {
     void Configuration::setSoundFileLocation(std::string _soundFileLocation) {
         this->soundFileLocation = std::move(_soundFileLocation);
     }
+
+    uint16_t Configuration::getNetworkDevice() const {
+        return this->networkDevice;
+    }
+    void Configuration::setNetworkDevice(uint16_t _networkDevice) {
+        this->networkDevice = _networkDevice;
+    }
 }

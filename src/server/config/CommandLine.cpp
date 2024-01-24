@@ -70,6 +70,12 @@ namespace creatures {
                 .default_value(environmentToString(SOUND_FILE_LOCATION_ENV, DEFAULT_SOUND_FILE_LOCATION))
                 .nargs(1);
 
+        program.add_argument("-n", "--network-device")
+                .help("network device to use")
+                .default_value(environmentToInt(NETWORK_DEVICE_NUMBER_ENV, DEFAULT_NETWORK_DEVICE_NUMBER))
+                .nargs(1)
+                .scan<'i', int>();
+
         auto &oneShots = program.add_mutually_exclusive_group();
         oneShots.add_argument("--list-sound-devices")
                 .help("list available sound devices and exit")
@@ -156,6 +162,12 @@ namespace creatures {
             debug("set our sound file location to {}", soundsLocation);
         }
 
+        auto networkDevice = program.get<int>("-n");
+        debug("read network device {} from command line", networkDevice);
+        if(networkDevice > 0) {
+            config->setNetworkDevice(networkDevice);
+            debug("set our network device to {}", networkDevice);
+        }
 
 
         return config;

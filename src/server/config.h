@@ -43,6 +43,9 @@
 #define SOUND_CHANNELS_ENV              "SOUND_CHANNELS"
 #define DEFAULT_SOUND_CHANNELS          6
 
+#define NETWORK_DEVICE_NUMBER_ENV       "NETWORK_DEVICE_NUMBER"
+#define DEFAULT_NETWORK_DEVICE_NUMBER   1
+
 #define SOUND_BUFFER_SIZE               2048    // Higher = less CPU, lower = less latency
 
 // Should we use the GPIO devices for LEDs? This only works on the Raspberry Pi,

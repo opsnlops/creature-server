@@ -21,7 +21,7 @@ namespace creatures::e131 {
         E131Server() = default;
         ~E131Server() = default;
 
-        void init();
+        void init(uint16_t networkDevice);
         void start();
 
     private:
@@ -30,13 +30,15 @@ namespace creatures::e131 {
         const uint16_t universeNumber = 1;
 
         // 512 channels plus the START code (slot 0)
-        std::array<uint8_t, 513> universeState = {};
+        std::array<uint8_t, 512> universeState = {};
 
         std::thread worker;
         void workerTask();
 
         uuid_t cid;
         int socket;
+
+        uint16_t networkDevice;
     };
 
 } // creatures::e131
