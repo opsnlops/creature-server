@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "1.2.1"
+        VERSION "1.2.2"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -9,56 +9,54 @@ project(creature-server
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
-# I hate that this has to be done, but I'm in a bad spot with gRPC right now
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-        set(_CREATURES_GRPC_VERSION 1.60.0)
-else()
-        set(_CREATURES_GRPC_VERSION 1.60.0)
-endif()
-message(STATUS "Using gRPC version ${_CREATURES_GRPC_VERSION}")
-
+include(FetchContent)
 find_package(PkgConfig REQUIRED)
+set(FETCHCONTENT_QUIET OFF)
 
 set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
+
+# Include the stuff we build earlier like how a TV chef will
+# pull an already made turkey out from under the table 🍗
+set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH};${CMAKE_SOURCE_DIR}/external/install")
+find_package(protobuf CONFIG REQUIRED)
+find_package(gRPC CONFIG REQUIRED)
+find_package(absl CONFIG REQUIRED)
+find_package(utf8_range CONFIG REQUIRED)
 
 # Make our version available to the project
 configure_file(src/server/Version.h.in Version.h)
 
-# Log loudly
-include(FetchContent)
-set(FETCHCONTENT_QUIET OFF)
+#
+# Dependencies
+#
+#  These are ones that are pre-compiled and don't need to be
+#  compiled, only found and used.
+#
 
-# This project uses threads
+# Threads
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-# Configure gRPC to use bundled libraries
-set(gRPC_ABSL_PROVIDER "module" CACHE STRING "Use bundled ABSL library")
-set(gRPC_CARES_PROVIDER "module" CACHE STRING "Use bundled CARES library")
-set(gRPC_PROTOBUF_PROVIDER "module" CACHE STRING "Use bundled protobuf library")
-set(gRPC_RE2_PROVIDER "module" CACHE STRING "Use bundled RE2 library")
-set(gRPC_SSL_PROVIDER "module" CACHE STRING "Use bundled SSL library")
-set(gRPC_ZLIB_PROVIDER "module" CACHE STRING "Use bundled ZLIB library")
-set(gRPC_INSTALL ON CACHE BOOL "Install gRPC")
-set(gRPC_BUILD_TESTS OFF CACHE BOOL "Build tests")
-set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "Propagate ABSL CXX_STD to subprojects")
+# MongoDB (built by us on Linux, but the macOS/brew version is fine)
+find_package(mongocxx REQUIRED)
+find_package(bsoncxx REQUIRED)
 
-# grpc
-message(STATUS "Building gRPC ${_CREATURES_GRPC_VERSION}")
-FetchContent_Declare(
-        gRPC
-        GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG        v${_CREATURES_GRPC_VERSION}
-)
-FetchContent_MakeAvailable(gRPC)
-# Since FetchContent uses add_subdirectory under the hood, we can use
-# the grpc targets directly from this build.
-set(_PROTOBUF_LIBPROTOBUF libprotobuf)
-set(_REFLECTION grpc++_reflection)
-set(_PROTOBUF_PROTOC $<TARGET_FILE:protoc>)
-set(_GRPC_GRPCPP grpc++)
-set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+# SDL
+find_package(SDL2 REQUIRED)
+find_package(SDL2_mixer REQUIRED)
+message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
 
+# Why are UUIDs so hard in 2024
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+        find_library(UUID uuid REQUIRED)
+else()
+        pkg_search_module(UUID REQUIRED uuid)
+endif()
+
+
+#
+# Header Only Libraries
+#
 
 # fmt
 message(STATUS "fmt")
@@ -71,7 +69,6 @@ FetchContent_MakeAvailable(fmt)
 set(FMT_HEADER_ONLY ON)
 set(FMT_LOCALE ON)
 
-
 # spdlog
 FetchContent_Declare(
         spdlog
@@ -79,7 +76,6 @@ FetchContent_Declare(
         GIT_TAG v1.11.0
 )
 FetchContent_MakeAvailable(spdlog)
-
 
 # argparse
 FetchContent_Declare(
@@ -89,35 +85,32 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(argparse)
 
 
+
 # ...and our own library
 add_subdirectory(lib/e131_service)
 
-
-# MongoDB (built by us on Linux, but the macOS/brew version is fine)
-find_package(mongocxx REQUIRED)
-find_package(bsoncxx REQUIRED)
-
-
-# SDL
-find_package(SDL2 REQUIRED)
-find_package(SDL2_mixer REQUIRED)
-
-# Why are UUIDs so hard in 2024
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-        find_library(UUID uuid REQUIRED)
-else()
-        pkg_search_module(UUID REQUIRED uuid)
-endif()
-
-
-# Leave a message
-message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
 
 # Proto file
 get_filename_component(server_proto "messaging/server.proto" ABSOLUTE)
 get_filename_component(server_proto_path "${server_proto}" PATH)
 
-# Generated sources
+
+# Find Protoc and gRPC plugin executables
+find_program(_PROTOBUF_PROTOC NAMES protoc PATHS "${CMAKE_SOURCE_DIR}/external/install/bin" NO_DEFAULT_PATH)
+find_program(_GRPC_CPP_PLUGIN_EXECUTABLE NAMES grpc_cpp_plugin PATHS "${CMAKE_SOURCE_DIR}/external/install/bin" NO_DEFAULT_PATH)
+
+# Error checking
+if(NOT _PROTOBUF_PROTOC)
+        message(FATAL_ERROR "protoc not found")
+endif()
+if(NOT _GRPC_CPP_PLUGIN_EXECUTABLE)
+        message(FATAL_ERROR "grpc_cpp_plugin not found")
+endif()
+message(STATUS "Using protoc ${_PROTOBUF_PROTOC}")
+message(STATUS "Using grpc_cpp_plugin ${_GRPC_CPP_PLUGIN_EXECUTABLE}")
+link_directories(${CMAKE_SOURCE_DIR}/external/install/lib)
+
+
 set(server_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/server.pb.cc")
 set(server_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/server.pb.h")
 set(server_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/server.grpc.pb.cc")
@@ -145,9 +138,14 @@ target_link_libraries(server_grpc_proto
         ${_PROTOBUF_LIBPROTOBUF}
 )
 target_include_directories(server_grpc_proto
-        PUBLIC
-        ${CMAKE_CURRENT_BINARY_DIR}
+        PUBLIC ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+
+# Macros to make stuff easier
+set(_PROTOBUF_LIBPROTOBUF protobuf)
+set(_REFLECTION grpc++_reflection)
+set(_GRPC_GRPCPP grpc++)
 
 
 # Our source files
@@ -184,6 +182,7 @@ file(GLOB logReaderFiles
 # Set up our includes
 include_directories(
         src/
+        ${CMAKE_SOURCE_DIR}/external/install/include
         ${UUID_INCLUDE_DIRS}
         ${argparse_SOURCE_DIR}/include
         ${SDL2_INCLUDE_DIRS}
@@ -196,9 +195,30 @@ message(STATUS "Using Protocol Buffers ${protobuf_VERSION}")
 add_executable(creature-server
         ${serverFiles}
 )
-
+target_link_directories(
+        creature-server
+        PRIVATE ${CMAKE_SOURCE_DIR}/external/install/lib
+)
 target_link_libraries(creature-server
-        PRIVATE server_grpc_proto
+        PUBLIC server_grpc_proto
+        grpc++
+        grpc
+        protobuf
+        absl::base
+        absl::algorithm
+        absl::cleanup
+        absl::debugging
+        absl::flags
+        absl::hash
+        absl::log
+        absl::memory
+        absl::meta
+        absl::numeric
+        absl::status
+        absl::strings
+        absl::synchronization
+        absl::time
+        absl::utility
         PRIVATE ${UUID_LIBRARIES}
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
@@ -214,35 +234,37 @@ target_link_libraries(creature-server
 )
 
 
-add_executable(client
-        ${clientFiles}
-)
 
-target_link_libraries(client
-        PRIVATE server_grpc_proto
-        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
-        fmt::fmt
-        PRIVATE mongo::mongocxx_shared
-        PRIVATE mongo::bsoncxx_shared
-        ${_REFLECTION}
-        ${_GRPC_GRPCPP}
-        ${_PROTOBUF_LIBPROTOBUF}
-)
 
-add_executable(logreader
-        ${logReaderFiles}
-)
+#add_executable(client
+#        ${clientFiles}
+#)
+#
+#target_link_libraries(client
+#        PRIVATE server_grpc_proto
+#        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
+#        fmt::fmt
+#        PRIVATE mongo::mongocxx_shared
+#        PRIVATE mongo::bsoncxx_shared
+#        ${_REFLECTION}
+#        ${_GRPC_GRPCPP}
+#        ${_PROTOBUF_LIBPROTOBUF}
+#)
 
-target_link_libraries(logreader
-        PRIVATE server_grpc_proto
-        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
-        fmt::fmt
-        PRIVATE mongo::mongocxx_shared
-        PRIVATE mongo::bsoncxx_shared
-        ${_REFLECTION}
-        ${_GRPC_GRPCPP}
-        ${_PROTOBUF_LIBPROTOBUF}
-)
+#add_executable(logreader
+#        ${logReaderFiles}
+#)
+#
+#target_link_libraries(logreader
+#        PRIVATE server_grpc_proto
+#        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
+#        fmt::fmt
+#        PRIVATE mongo::mongocxx_shared
+#       PRIVATE mongo::bsoncxx_shared
+#        ${_REFLECTION}
+#        ${_GRPC_GRPCPP}
+#        ${_PROTOBUF_LIBPROTOBUF}
+#)
 
 install(TARGETS creature-server
         COMPONENT creature-server
