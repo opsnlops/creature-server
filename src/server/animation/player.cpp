@@ -128,7 +128,6 @@ namespace creatures {
 
             auto thisFrame = std::make_shared<DMXEvent>(currentFrame);
 
-            thisFrame->clientIP = creature->sacn_ip();
             thisFrame->dmxOffset = creature->dmx_base();
             thisFrame->dmxUniverse = creature->universe();
             thisFrame->numMotors = creature->number_of_motors();

@@ -1,22 +1,11 @@
 
 
-
-
-#include <chrono>
-#include <climits>
 #include <thread>
 #include <unistd.h>
 
 #include <fmt/format.h>
-#include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <uuid/uuid.h>
-
-// Junk to make random values
-#include <array>
-#include <random>
-#include <algorithm>
-#include <cstddef>
 
 extern "C" {
     #include <e131.h>
@@ -32,7 +21,7 @@ namespace creatures::e131 {
 
         // Get our logger going
         logger = spdlog::stdout_color_mt("E131Server");
-        logger->set_level(spdlog::level::trace);
+        logger->set_level(spdlog::level::info);
 
         this->networkDevice = _networkDevice;
         logger->debug("using network device {}", this->networkDevice);
@@ -104,8 +93,9 @@ namespace creatures::e131 {
         this->galaxy.erase(universeNumber);
     }
 
-    template <size_t N>
-    void E131Server::setValues(uint16_t universeNumber, uint16_t firstSlot, std::array<uint8_t, N> &values) {
+    void E131Server::setValues(uint16_t universeNumber, uint16_t firstSlot, std::vector<uint8_t> &values) {
+
+        // TODO: Clean this up
 
         auto universe = this->galaxy[universeNumber];
         if (universe) {
@@ -113,7 +103,10 @@ namespace creatures::e131 {
             logger->debug("set values starting at slot {} on universe {}", firstSlot, universeNumber);
         }
         else {
-            logger->error("unable to set values on universe {} because it does not exist!", universeNumber);
+            createUniverse(universeNumber);
+            universe = this->galaxy[universeNumber];
+            universe->setFragment(firstSlot, values);
+            logger->debug("created universe {} and set values starting at slot {}", universeNumber, firstSlot);
         }
     }
 

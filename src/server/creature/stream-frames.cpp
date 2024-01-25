@@ -43,7 +43,6 @@ namespace creatures {
 
             // Create a new event and schedule it for the next frame
             auto event = std::make_shared<DMXEvent>(eventLoop->getNextFrameNumber());
-            event->clientIP = frame.sacn_ip();
             event->numMotors = frame.number_of_motors();
             event->dmxUniverse = frame.universe();
             event->dmxOffset = frame.dmx_offset();

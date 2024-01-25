@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include <unordered_map>
+#include <vector>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -36,8 +36,7 @@ namespace creatures::e131 {
         // Remove an existing universe
         void destroyUniverse(uint16_t universeNumber);
 
-        template <size_t N>
-        void setValues(uint16_t universeNumber, uint16_t firstSlot, std::array<uint8_t, N>& values);
+        void setValues(uint16_t universeNumber, uint16_t firstSlot, std::vector<uint8_t> &values);
 
     private:
         std::shared_ptr<spdlog::logger> logger;

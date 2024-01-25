@@ -27,7 +27,6 @@
 #include "server/config/Configuration.h"
 #include "server/creature-server.h"
 #include "server/database.h"
-#include "server/dmx/dmx.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
@@ -57,9 +56,9 @@ namespace creatures {
     std::atomic<bool> eventLoopRunning{true};
     std::shared_ptr<Configuration> config{};
     std::shared_ptr<Database> db{};
+    std::shared_ptr <creatures::e131::E131Server> e131Server;
     std::unique_ptr<Server> grpcServer;
     std::shared_ptr<EventLoop> eventLoop;
-    std::shared_ptr<ObjectCache<std::string, DMX>> dmxCache;
     std::shared_ptr<ObjectCache<std::string, PlaylistIdentifier>> runningPlaylists;
     std::shared_ptr<GPIO> gpioPins;
     std::shared_ptr<SystemCounters> metrics;
@@ -207,10 +206,6 @@ int main(int argc, char **argv) {
     creatures::statusLights = std::make_shared<creatures::StatusLights>();
     creatures::watchdogThread = std::thread(&creatures::StatusLights::run, creatures::statusLights.get());
 
-    // Create the DMX cache
-    creatures::dmxCache = std::make_shared<creatures::ObjectCache<std::string, creatures::DMX>>();
-    debug("DMX cache made");
-
     // Create the playlist cache
     creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<std::string, PlaylistIdentifier>>();
     debug("Playlist cache made");
@@ -227,12 +222,12 @@ int main(int argc, char **argv) {
     creatures::gpioPins->serverOnline(true);
 
     // Bring the E131Server online
-    auto e131Server = std::make_shared<creatures::e131::E131Server>();
-    e131Server->init(creatures::config->getNetworkDevice(), version);
-    e131Server->start();
+    creatures::e131Server = std::make_shared<creatures::e131::E131Server>();
+    creatures::e131Server->init(creatures::config->getNetworkDevice(), version);
+    creatures::e131Server->start();
 
     // TODO: Remove this, this is just for debugging. Universe 1000 is "production."
-    e131Server->createUniverse(1000);
+    //creatures::e131Server->createUniverse(1000);
 
 
     RunServer(6666, log_queue);

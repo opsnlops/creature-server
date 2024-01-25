@@ -12,11 +12,13 @@ namespace creatures::e131 {
         logger->debug("new Universe ✨");
     }
 
-    template <size_t N>
-    void Universe::setFragment(uint16_t firstSlot, std::array<uint8_t, N>& values) {
+    void Universe::setFragment(uint16_t firstSlot, std::vector<uint8_t>& values) {
 
         // Only one thread can touch this at a time
         std::lock_guard<std::mutex> lock(valuesMutex);
+
+        // Get the number of elements in the vector
+        size_t N = values.size();
 
         // Ensure the firstSlot plus the size of values doesn't exceed UNIVERSE_SLOT_COUNT and firstSlot isn't zero
         if (firstSlot + N <= UNIVERSE_SLOT_COUNT && firstSlot > 0) {

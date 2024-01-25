@@ -157,7 +157,6 @@ file(GLOB serverFiles
         src/server/animation/*
         src/server/config/*
         src/server/creature/*
-        src/server/dmx/*
         src/server/eventloop/*
         src/server/eventloop/events/*
         src/server/gpio/*

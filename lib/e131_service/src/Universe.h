@@ -3,6 +3,7 @@
 
 #include <array>
 #include <mutex>
+#include <vector>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -17,8 +18,7 @@ namespace creatures::e131 {
         Universe(std::shared_ptr<spdlog::logger> logger);
         ~Universe() = default;
 
-        template <size_t N>
-        void setFragment(uint16_t firstSlot, std::array<uint8_t, N>& values);
+        void setFragment(uint16_t firstSlot, std::vector<uint8_t>& values);
 
         std::array<uint8_t, UNIVERSE_SLOT_COUNT> getState();
 
