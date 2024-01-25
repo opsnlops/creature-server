@@ -39,11 +39,7 @@ namespace creatures::e131 {
             logger->critical( "e131_socket: {}", strerror(errno));
         }
 
-        if (e131_multicast_iface(socket, 11) < 0) {
-            logger->critical( "e131_multicast_iface: {}", strerror(errno));
-        }
-
-        if (e131_multicast_join_iface(socket, universeNumber, this->networkDevice) < 0) {
+        if (e131_multicast_iface(socket, this->networkDevice) < 0) {
             logger->critical( "e131_multicast_join: {}", strerror(errno));
         }
 
@@ -79,6 +75,7 @@ namespace creatures::e131 {
         // Distribution for uint8_t
         std::uniform_int_distribution<uint8_t> distrib(0, 255);
 
+        uint8_t seq = 0;
 
         while (true) {
 
@@ -99,14 +96,14 @@ namespace creatures::e131 {
 
             // Make sure we don't set the START code to anything other than zero
             packet.dmp.prop_val[0] = 0;
+            packet.frame.seq_number = seq++;
 
             if (e131_send(socket, &packet, &dest) < 0) {
                 logger->critical( "e131_send: {}", strerror(errno));
             }
 
-
             logger->trace("tick");
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::this_thread::sleep_for(std::chrono::milliseconds (100));
         }
 
     }
