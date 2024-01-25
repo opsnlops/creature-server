@@ -1,7 +1,4 @@
 
-
-# docker buildx build --platform linux/amd64,linux/arm64
-
 FROM debian:bookworm as build
 
 RUN apt update && apt upgrade -y
@@ -51,8 +48,11 @@ RUN cd /build/creature-server && \
     cd build && \
     cmake -DCMAKE_MAKE_PROGRAM=ninja -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
-          .. && \
-    ninja
+          ..
+
+# Run the build in a different layer so we avoid grabbing the code over
+# and over again
+RUN cd /build/creature-server/build && ninja
 
 
 # Now build a small runtime
