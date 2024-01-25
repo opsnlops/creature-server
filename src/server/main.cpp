@@ -161,8 +161,11 @@ int main(int argc, char **argv) {
     auto commandLine = std::make_unique<creatures::CommandLine>();
     creatures::config = commandLine->parseCommandLine(argc, argv);
 
+    // Get the version
+    std::string version = fmt::format("{}.{}.{}", CREATURE_SERVER_VERSION_MAJOR, CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH);
+
     // Leave some version info to be found
-    info("Creature Server version {}.{}.{}", CREATURE_SERVER_VERSION_MAJOR, CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH);
+    info("Creature Server version {}", version);
     debug("spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
     debug("fmt version {}", FMT_VERSION);
     debug("MongoDB C++ driver version {}", MONGOCXX_VERSION_STRING);
@@ -225,8 +228,11 @@ int main(int argc, char **argv) {
 
     // Bring the E131Server online
     auto e131Server = std::make_shared<creatures::e131::E131Server>();
-    e131Server->init(creatures::config->getNetworkDevice());
+    e131Server->init(creatures::config->getNetworkDevice(), version);
     e131Server->start();
+
+    // TODO: Remove this, this is just for debugging. Universe 1000 is "production."
+    e131Server->createUniverse(1000);
 
 
     RunServer(6666, log_queue);
