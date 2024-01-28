@@ -44,13 +44,13 @@ namespace creatures {
             // Create a new event and schedule it for the next frame
             auto event = std::make_shared<DMXEvent>(eventLoop->getNextFrameNumber());
             event->numMotors = frame.number_of_motors();
-            event->dmxUniverse = frame.universe();
-            event->dmxOffset = frame.dmx_offset();
+            event->universe = frame.universe();
+            event->channelOffset = frame.channel_offset();
             event->data.reserve(frame.number_of_motors());
 
 #if DEBUG_STREAM_FRAMES
-            trace("creature {} has {} motors and a DMX offset of {}",
-                  frame.creature_name(), frame.number_of_motors(), frame.dmx_offset());
+            trace("creature {} has {} motors and a channel offset of {}",
+                  frame.creature_name(), frame.number_of_motors(), frame.channel_offset());
 #endif
 
             uint8_t i = 0;

@@ -1,4 +1,6 @@
 
+#include <fmt/format.h>
+
 #include "server/config.h"
 
 #include "spdlog/spdlog.h"
@@ -84,16 +86,9 @@ namespace creatures {
 #else
         // Make sure this animation is for this type of creature
         if(animation->metadata().creature_type() != creature->type()) {
-            warn("attempted to play an animation of type {} on a creature of type {}",
-                 animation->metadata().creature_type(),
-                 creature->type());
-            status = grpc::Status(grpc::StatusCode::ABORTED,
-                                  "Creature and Animation are of different types",
-                                  fmt::format("Creature is of type {}, and Animation is of type {}",
-                                              creature->type(),
-                                              animation->metadata().creature_type()
-                                  ));
-            return status;
+            std::string errorMessage = "Invalid animation type for this creature";
+            warn(errorMessage);
+            throw InvalidArgumentException(errorMessage);
         }
         debug("passed check of animation type and creature type");
 
@@ -128,8 +123,8 @@ namespace creatures {
 
             auto thisFrame = std::make_shared<DMXEvent>(currentFrame);
 
-            thisFrame->dmxOffset = creature->dmx_base();
-            thisFrame->dmxUniverse = creature->universe();
+            thisFrame->channelOffset = creature->channel_offset();
+            thisFrame->universe = creature->universe();
             thisFrame->numMotors = creature->number_of_motors();
 
             // Get the frame field from the protobuf message

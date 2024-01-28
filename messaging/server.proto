@@ -123,28 +123,10 @@ message Creature {
   bytes _id = 1;
   string name = 2;
   google.protobuf.Timestamp last_updated = 3;
-  string sacn_ip = 4;
   uint32 universe = 5;
-  uint32 dmx_base = 6;
+  uint32 channel_offset = 6;
   uint32 number_of_motors = 7;
   CreatureType type = 8;
-  bool use_multicast = 9;
-  repeated Motor motors = 90;
-
-  enum MotorType {
-    servo = 0;
-    stepper = 1;
-  }
-
-  message Motor {
-    bytes _id = 1;
-    string name = 2;
-    MotorType type = 3;
-    uint32 number = 4;
-    uint32 max_value = 5;
-    uint32 min_value = 6;
-    double smoothing_value = 7;
-  }
 }
 
 
@@ -188,10 +170,9 @@ enum CreatureType {
  */
 message Frame {
   uint32 universe = 1;
-  uint32 dmx_offset = 2;
+  uint32 channel_offset = 2;
   string creature_name = 3;
-  string sacn_ip = 4;
-  uint32 number_of_motors = 5;
+  uint32 number_of_motors = 4;
   bytes frame = 10;
 }
 

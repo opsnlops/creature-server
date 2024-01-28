@@ -94,5 +94,4 @@ namespace creatures {
         std::string message_;
     };
 
-
 }

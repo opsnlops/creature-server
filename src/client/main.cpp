@@ -75,9 +75,9 @@ int main(int argc, char** argv) {
             grpc::CreateChannel("127.0.0.1:6666", grpc::InsecureChannelCredentials()));
 
     info("Searching for a creature name that should exist...");
-    Creature reply = client.SearchCreatures("Beaky1");
-    info( "client gotten: {}, {}, {}, {}",
-          reply.name(), reply.sacn_ip(), reply.dmx_base(), creatures::ProtobufTimestampToHumanReadable(reply.last_updated()));
+    Creature reply = client.SearchCreatures("Beaky 🦜");
+    info( "client gotten: {}, {}, {}",
+          reply.name(), reply.channel_offset(), creatures::ProtobufTimestampToHumanReadable(reply.last_updated()));
 
     info("Searching for a creature that should NOT exist...");
     reply = client.SearchCreatures("Poop Face");
@@ -93,28 +93,12 @@ int main(int argc, char** argv) {
 #if 0
     // Let's try to save one
     server::Creature creature = server::Creature();
-    creature.set_name("Unit Test Creature");
-    creature.set_dmx_base(1);
-    creature.set_number_of_motors(7);
+    creature.set_name("Mango");
+    creature.set_channel_offset(10);
+    creature.set_number_of_motors(6);
     creature.set_universe(1);
-    creature.set_sacn_ip("10.3.2.11");
     creature.set_type(server::CreatureType::parrot);
     *creature.mutable_last_updated() = current_timestamp;
-
-    for(int i = 0; i < 7; i++) {
-        ::Creature::Motor *motor = creature.add_motors();
-
-        motor->set_name(fmt::format("Motor {} 🦾", i));      // Toss in some UTF-8 for testing
-        motor->set_min_value(253);
-        motor->set_max_value(2934);
-        motor->set_smoothing_value(0.932f);
-        motor->set_number(i);
-
-        if(i % 2 == 0)
-            motor->set_type(::Creature::servo);
-        else
-            motor->set_type(::Creature::stepper);
-    }
 
     client.CreateCreature(creature);
     info("create done");
@@ -156,7 +140,7 @@ int main(int argc, char** argv) {
     auto everyone = client.GetAllCreatures(filter);
     for(const auto& c : everyone.creatures() )
     {
-        debug("Creature found {} with {} motors, and {} for multicast", c.name(), c.number_of_motors(), c.use_multicast());
+        debug("Creature found {} with {} motors", c.name(), c.number_of_motors());
     }
 
 #if 0
@@ -194,7 +178,7 @@ int main(int argc, char** argv) {
 
 
 /* Creature Update Tests */
-#if 0
+#if 1
 
     std::string unitTestCreatureId = "64717ff45809fc63850d4671";
 

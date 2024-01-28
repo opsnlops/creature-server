@@ -24,8 +24,8 @@ namespace creatures {
         using EventBase::EventBase;
         void executeImpl();
 
-        uint32_t dmxUniverse;
-        uint32_t dmxOffset;
+        uint32_t universe;
+        uint32_t channelOffset;
         uint32_t numMotors;
 
         // Used every time to send data

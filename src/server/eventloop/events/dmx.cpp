@@ -22,7 +22,7 @@ namespace creatures {
     void DMXEvent::executeImpl() {
 
         // Send the DMX data
-        e131Server->setValues(dmxUniverse, dmxOffset, data);
+        e131Server->setValues(universe, channelOffset, data);
 
         // Update our metrics
         metrics->incrementDMXEventsProcessed();

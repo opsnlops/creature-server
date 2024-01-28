@@ -290,90 +290,20 @@ public struct Server_Creature {
   /// Clears the value of `lastUpdated`. Subsequent reads from it will return its default value.
   public mutating func clearLastUpdated() {self._lastUpdated = nil}
 
-  public var sacnIp: String = String()
-
   public var universe: UInt32 = 0
 
-  public var dmxBase: UInt32 = 0
+  public var channelOffset: UInt32 = 0
 
   public var numberOfMotors: UInt32 = 0
 
   public var type: Server_CreatureType = .parrot
 
-  public var useMulticast: Bool = false
-
-  public var motors: [Server_Creature.Motor] = []
-
   public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public enum MotorType: SwiftProtobuf.Enum {
-    public typealias RawValue = Int
-    case servo // = 0
-    case stepper // = 1
-    case UNRECOGNIZED(Int)
-
-    public init() {
-      self = .servo
-    }
-
-    public init?(rawValue: Int) {
-      switch rawValue {
-      case 0: self = .servo
-      case 1: self = .stepper
-      default: self = .UNRECOGNIZED(rawValue)
-      }
-    }
-
-    public var rawValue: Int {
-      switch self {
-      case .servo: return 0
-      case .stepper: return 1
-      case .UNRECOGNIZED(let i): return i
-      }
-    }
-
-  }
-
-  public struct Motor {
-    // SwiftProtobuf.Message conformance is added in an extension below. See the
-    // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-    // methods supported on all messages.
-
-    public var id: Data = Data()
-
-    public var name: String = String()
-
-    public var type: Server_Creature.MotorType = .servo
-
-    public var number: UInt32 = 0
-
-    public var maxValue: UInt32 = 0
-
-    public var minValue: UInt32 = 0
-
-    public var smoothingValue: Double = 0
-
-    public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-    public init() {}
-  }
 
   public init() {}
 
   fileprivate var _lastUpdated: SwiftProtobuf.Google_Protobuf_Timestamp? = nil
 }
-
-#if swift(>=4.2)
-
-extension Server_Creature.MotorType: CaseIterable {
-  // The compiler won't synthesize support with the UNRECOGNIZED case.
-  public static let allCases: [Server_Creature.MotorType] = [
-    .servo,
-    .stepper,
-  ]
-}
-
-#endif  // swift(>=4.2)
 
 ///log_clock::time_point log_time, source_loc loc, string_view_t logger_name, level::level_enum lvl, string_view_t msg);
 ///source_loc(const char *filename_in, int line_in, const char *funcname_in)
@@ -415,11 +345,9 @@ public struct Server_Frame {
 
   public var universe: UInt32 = 0
 
-  public var dmxOffset: UInt32 = 0
+  public var channelOffset: UInt32 = 0
 
   public var creatureName: String = String()
-
-  public var sacnIp: String = String()
 
   public var numberOfMotors: UInt32 = 0
 
@@ -853,8 +781,6 @@ extension Server_LogFilter: @unchecked Sendable {}
 extension Server_CreatureId: @unchecked Sendable {}
 extension Server_CreatureName: @unchecked Sendable {}
 extension Server_Creature: @unchecked Sendable {}
-extension Server_Creature.MotorType: @unchecked Sendable {}
-extension Server_Creature.Motor: @unchecked Sendable {}
 extension Server_LogItem: @unchecked Sendable {}
 extension Server_Frame: @unchecked Sendable {}
 extension Server_FrameResponse: @unchecked Sendable {}
@@ -1192,13 +1118,10 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
     1: .standard(proto: "_id"),
     2: .same(proto: "name"),
     3: .standard(proto: "last_updated"),
-    4: .standard(proto: "sacn_ip"),
     5: .same(proto: "universe"),
-    6: .standard(proto: "dmx_base"),
+    6: .standard(proto: "channel_offset"),
     7: .standard(proto: "number_of_motors"),
     8: .same(proto: "type"),
-    9: .standard(proto: "use_multicast"),
-    90: .same(proto: "motors"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -1210,13 +1133,10 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
       case 1: try { try decoder.decodeSingularBytesField(value: &self.id) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
       case 3: try { try decoder.decodeSingularMessageField(value: &self._lastUpdated) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.sacnIp) }()
       case 5: try { try decoder.decodeSingularUInt32Field(value: &self.universe) }()
-      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.dmxBase) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.channelOffset) }()
       case 7: try { try decoder.decodeSingularUInt32Field(value: &self.numberOfMotors) }()
       case 8: try { try decoder.decodeSingularEnumField(value: &self.type) }()
-      case 9: try { try decoder.decodeSingularBoolField(value: &self.useMulticast) }()
-      case 90: try { try decoder.decodeRepeatedMessageField(value: &self.motors) }()
       default: break
       }
     }
@@ -1236,26 +1156,17 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
     try { if let v = self._lastUpdated {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
     } }()
-    if !self.sacnIp.isEmpty {
-      try visitor.visitSingularStringField(value: self.sacnIp, fieldNumber: 4)
-    }
     if self.universe != 0 {
       try visitor.visitSingularUInt32Field(value: self.universe, fieldNumber: 5)
     }
-    if self.dmxBase != 0 {
-      try visitor.visitSingularUInt32Field(value: self.dmxBase, fieldNumber: 6)
+    if self.channelOffset != 0 {
+      try visitor.visitSingularUInt32Field(value: self.channelOffset, fieldNumber: 6)
     }
     if self.numberOfMotors != 0 {
       try visitor.visitSingularUInt32Field(value: self.numberOfMotors, fieldNumber: 7)
     }
     if self.type != .parrot {
       try visitor.visitSingularEnumField(value: self.type, fieldNumber: 8)
-    }
-    if self.useMulticast != false {
-      try visitor.visitSingularBoolField(value: self.useMulticast, fieldNumber: 9)
-    }
-    if !self.motors.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.motors, fieldNumber: 90)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1264,88 +1175,10 @@ extension Server_Creature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
     if lhs.id != rhs.id {return false}
     if lhs.name != rhs.name {return false}
     if lhs._lastUpdated != rhs._lastUpdated {return false}
-    if lhs.sacnIp != rhs.sacnIp {return false}
     if lhs.universe != rhs.universe {return false}
-    if lhs.dmxBase != rhs.dmxBase {return false}
+    if lhs.channelOffset != rhs.channelOffset {return false}
     if lhs.numberOfMotors != rhs.numberOfMotors {return false}
     if lhs.type != rhs.type {return false}
-    if lhs.useMulticast != rhs.useMulticast {return false}
-    if lhs.motors != rhs.motors {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-extension Server_Creature.MotorType: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
-    0: .same(proto: "servo"),
-    1: .same(proto: "stepper"),
-  ]
-}
-
-extension Server_Creature.Motor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = Server_Creature.protoMessageName + ".Motor"
-  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
-    1: .standard(proto: "_id"),
-    2: .same(proto: "name"),
-    3: .same(proto: "type"),
-    4: .same(proto: "number"),
-    5: .standard(proto: "max_value"),
-    6: .standard(proto: "min_value"),
-    7: .standard(proto: "smoothing_value"),
-  ]
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBytesField(value: &self.id) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
-      case 3: try { try decoder.decodeSingularEnumField(value: &self.type) }()
-      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.number) }()
-      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.maxValue) }()
-      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.minValue) }()
-      case 7: try { try decoder.decodeSingularDoubleField(value: &self.smoothingValue) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.id.isEmpty {
-      try visitor.visitSingularBytesField(value: self.id, fieldNumber: 1)
-    }
-    if !self.name.isEmpty {
-      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
-    }
-    if self.type != .servo {
-      try visitor.visitSingularEnumField(value: self.type, fieldNumber: 3)
-    }
-    if self.number != 0 {
-      try visitor.visitSingularUInt32Field(value: self.number, fieldNumber: 4)
-    }
-    if self.maxValue != 0 {
-      try visitor.visitSingularUInt32Field(value: self.maxValue, fieldNumber: 5)
-    }
-    if self.minValue != 0 {
-      try visitor.visitSingularUInt32Field(value: self.minValue, fieldNumber: 6)
-    }
-    if self.smoothingValue != 0 {
-      try visitor.visitSingularDoubleField(value: self.smoothingValue, fieldNumber: 7)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: Server_Creature.Motor, rhs: Server_Creature.Motor) -> Bool {
-    if lhs.id != rhs.id {return false}
-    if lhs.name != rhs.name {return false}
-    if lhs.type != rhs.type {return false}
-    if lhs.number != rhs.number {return false}
-    if lhs.maxValue != rhs.maxValue {return false}
-    if lhs.minValue != rhs.minValue {return false}
-    if lhs.smoothingValue != rhs.smoothingValue {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1415,10 +1248,9 @@ extension Server_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
   public static let protoMessageName: String = _protobuf_package + ".Frame"
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "universe"),
-    2: .standard(proto: "dmx_offset"),
+    2: .standard(proto: "channel_offset"),
     3: .standard(proto: "creature_name"),
-    4: .standard(proto: "sacn_ip"),
-    5: .standard(proto: "number_of_motors"),
+    4: .standard(proto: "number_of_motors"),
     10: .same(proto: "frame"),
   ]
 
@@ -1429,10 +1261,9 @@ extension Server_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularUInt32Field(value: &self.universe) }()
-      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.dmxOffset) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.channelOffset) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.creatureName) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.sacnIp) }()
-      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.numberOfMotors) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.numberOfMotors) }()
       case 10: try { try decoder.decodeSingularBytesField(value: &self.frame) }()
       default: break
       }
@@ -1443,17 +1274,14 @@ extension Server_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
     if self.universe != 0 {
       try visitor.visitSingularUInt32Field(value: self.universe, fieldNumber: 1)
     }
-    if self.dmxOffset != 0 {
-      try visitor.visitSingularUInt32Field(value: self.dmxOffset, fieldNumber: 2)
+    if self.channelOffset != 0 {
+      try visitor.visitSingularUInt32Field(value: self.channelOffset, fieldNumber: 2)
     }
     if !self.creatureName.isEmpty {
       try visitor.visitSingularStringField(value: self.creatureName, fieldNumber: 3)
     }
-    if !self.sacnIp.isEmpty {
-      try visitor.visitSingularStringField(value: self.sacnIp, fieldNumber: 4)
-    }
     if self.numberOfMotors != 0 {
-      try visitor.visitSingularUInt32Field(value: self.numberOfMotors, fieldNumber: 5)
+      try visitor.visitSingularUInt32Field(value: self.numberOfMotors, fieldNumber: 4)
     }
     if !self.frame.isEmpty {
       try visitor.visitSingularBytesField(value: self.frame, fieldNumber: 10)
@@ -1463,9 +1291,8 @@ extension Server_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
 
   public static func ==(lhs: Server_Frame, rhs: Server_Frame) -> Bool {
     if lhs.universe != rhs.universe {return false}
-    if lhs.dmxOffset != rhs.dmxOffset {return false}
+    if lhs.channelOffset != rhs.channelOffset {return false}
     if lhs.creatureName != rhs.creatureName {return false}
-    if lhs.sacnIp != rhs.sacnIp {return false}
     if lhs.numberOfMotors != rhs.numberOfMotors {return false}
     if lhs.frame != rhs.frame {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}

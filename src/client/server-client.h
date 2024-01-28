@@ -212,9 +212,8 @@ public:
 
             // Send five test frames
             frame.set_creature_name("Beaky");
-            frame.set_dmx_offset(0);
+            frame.set_channel_offset(0);
             frame.set_universe(3);
-            frame.set_sacn_ip("10.9.1.104");
             frame.set_number_of_motors(4);
 
             char notdata[9] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9};

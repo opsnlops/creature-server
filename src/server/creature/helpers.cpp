@@ -58,46 +58,12 @@ namespace creatures {
 
             builder << "_id" << id
                     << "name" << creature->name()
-                    << "sacn_ip" << creature->sacn_ip()
-                    << "use_multicast" << bsoncxx::types::b_bool{creature->use_multicast()}
                     << "type" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->type())}
                     << "last_updated" << bsoncxx::types::b_date{last_updated}
                     << "universe" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->universe())}
-                    << "dmx_base" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->dmx_base())}
-                    << "number_of_motors"
-                    << bsoncxx::types::b_int32{static_cast<int32_t>(creature->number_of_motors())};
-            trace("non-array fields added");
-
-            auto array_builder = builder << "motors" << bsoncxx::builder::stream::open_array;
-            trace("array_builder made");
-            for (int j = 0; j < creature->motors_size(); j++) {
-
-                const server::Creature_Motor &motor = creature->motors(j);
-                trace("adding motor {}", j);
-
-                // Convert the double value to a std::string with fixed precision. Boo floating point!
-                std::ostringstream str_smoothing_value;
-                str_smoothing_value << std::fixed << std::setprecision(4) << motor.smoothing_value();
-                std::string smoothing_value_str = str_smoothing_value.str();
-                bsoncxx::types::b_decimal128 decimal_smoothing_value(smoothing_value_str);
-
-                // Assign a new ID
-                bsoncxx::oid motorId;
-                array_builder = array_builder << bsoncxx::builder::stream::open_document
-                                              << "_id" << motorId
-                                              << "name" << motor.name()
-                                              << "type" << bsoncxx::types::b_int32{static_cast<int32_t>(motor.type())}
-                                              << "number"
-                                              << bsoncxx::types::b_int32{static_cast<int32_t>(motor.number())}
-                                              << "max_value"
-                                              << bsoncxx::types::b_int32{static_cast<int32_t>(motor.max_value())}
-                                              << "min_value"
-                                              << bsoncxx::types::b_int32{static_cast<int32_t>(motor.min_value())}
-                                              << "smoothing_value" << decimal_smoothing_value
-                                              << bsoncxx::builder::stream::close_document;
-            }
-            trace("done adding motors");
-            array_builder << bsoncxx::builder::stream::close_array;
+                    << "channel_offset" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->channel_offset())}
+                    << "number_of_motors" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->number_of_motors())};
+            trace("fields added");
 
         }
         catch (const mongocxx::exception &e) {
@@ -139,29 +105,8 @@ namespace creatures {
             throw creatures::DataFormatException("Field name was not a string in the database");
         }
 
-        element = doc["sacn_ip"];
-        if (element && element.type() == bsoncxx::type::k_utf8) {
-            bsoncxx::stdx::string_view string_value = element.get_string().value;
-            creature->set_sacn_ip(std::string{string_value});
-            trace("set the sacn_ip to {}", creature->sacn_ip());
-        } else {
-            throw creatures::DataFormatException("Field sacn_ip was not a string in the database");
-        }
 
-        element = doc["use_multicast"];
-        if (!element) {
-            info("defaulting `use_multicast` to false");
-            creature->set_use_multicast(false);
-        }
-        else if (element.type() == bsoncxx::type::k_bool) {
-            bool bool_value = element.get_bool().value;
-            creature->set_use_multicast(bool_value);
-            trace("set the use_multicast to {}", creature->use_multicast());
-        } else {
-            throw creatures::DataFormatException("Field use_multicast was not a bool in the database");
-        }
-
-        // DMX Universe
+        // e1.31 Universe
         element = doc["universe"];
         if (element && element.type() == bsoncxx::type::k_int32) {
             int32_t int32_value = element.get_int32().value;
@@ -171,14 +116,14 @@ namespace creatures {
             throw creatures::DataFormatException("Field universe was not an int32 in the database");
         }
 
-        // DMX Base Channel
-        element = doc["dmx_base"];
+        // Channel Offset
+        element = doc["channel_offset"];
         if (element && element.type() == bsoncxx::type::k_int32) {
             int32_t int32_value = element.get_int32().value;
-            creature->set_dmx_base(int32_value);
-            trace("set the DMX base value to {}", creature->dmx_base());
+            creature->set_channel_offset(int32_value);
+            trace("set the channel offset value to {}", creature->channel_offset());
         } else {
-            throw creatures::DataFormatException("Field dmx_base was not an int32 in the database");
+            throw creatures::DataFormatException("Field 'channel_offset' was not an int32 in the database");
         }
 
         // Number of motors
@@ -208,113 +153,9 @@ namespace creatures {
         creature->set_type(static_cast<CreatureType>(creatureType));
 
 
-
         // Last updated
         element = doc["last_updated"];
         *creature->mutable_last_updated() = convertMongoDateToProtobufTimestamp(element);
-
-
-        // Number of motors
-        element = doc["motors"];
-        if (element && element.type() == bsoncxx::type::k_array) {
-            bsoncxx::array::view array_view = element.get_array().value;
-
-            // Iterate through the array of objects
-            for (const bsoncxx::array::element &obj_element: array_view) {
-                // Ensure the element is a document (BSON object)
-                if (obj_element.type() == bsoncxx::type::k_document) {
-                    bsoncxx::document::view obj = obj_element.get_document().value;
-
-                    server::Creature_Motor *motor = creature->add_motors();
-
-                    // Motor name
-                    element = obj["name"];
-                    if (element && element.type() != bsoncxx::type::k_utf8) {
-                        error("motor field 'name' was not a string in the database");
-                        throw creatures::DataFormatException("motor field 'name' was not a string in the database");
-                    }
-                    motor->set_name(std::string{element.get_string().value});
-                    trace("set the motor name to {}", motor->name());
-
-                    // Motor type
-                    element = obj["type"];
-                    if (element && element.type() != bsoncxx::type::k_int32) {
-                        error("motor field 'type' is not an int");
-                        throw creatures::DataFormatException("motor field 'type' is not an int in the database");
-                    }
-
-                    int32_t motor_type = element.get_int32().value;
-
-                    // Check if the integer value is a valid MotorType enum value
-                    if (!server::Creature_MotorType_IsValid((motor_type))) {
-                        error("motor field 'type' does not map to our enum: {}", motor_type);
-                        throw creatures::DataFormatException(
-                                fmt::format("motor field 'type' does not map to our enum: {}", motor_type));
-                    }
-
-                    // Cast the int to the right value for our enum
-                    motor->set_type(static_cast<Creature::MotorType>(motor_type));
-                    trace("set the motor type to {}", static_cast<int32_t>(motor->type()));
-
-                    // Motor number
-                    element = obj["number"];
-                    if (element && element.type() == bsoncxx::type::k_int32) {
-                        int32_t int32_value = element.get_int32().value;
-                        motor->set_number(int32_value);
-                        trace("set the motor number to {}", motor->number());
-                    } else {
-                        error("motor field 'number' was not an int in the database");
-                        throw creatures::DataFormatException("motor field 'number' was not an int in the database");
-                    }
-
-                    // Max Value
-                    element = obj["max_value"];
-                    if (element && element.type() != bsoncxx::type::k_int32) {
-                        error("motor value 'max_value' is not an int");
-                        throw creatures::DataFormatException("motor value 'max_value' is not an int");
-                    }
-                    motor->set_max_value(element.get_int32().value);
-                    trace("set the motor max_value to {}", motor->max_value());
-
-
-                    // Min Value
-                    element = obj["min_value"];
-                    if (element && element.type() != bsoncxx::type::k_int32) {
-                        error("motor value 'min_value' is not an int");
-                        throw creatures::DataFormatException("motor value 'min_value' is not an int");
-                    }
-                    motor->set_min_value(element.get_int32().value);
-                    trace("set the motor min_value to {}", motor->min_value());
-
-                    // Smoothing
-                    element = obj["smoothing_value"];
-                    if (element && element.type() != bsoncxx::type::k_decimal128) {
-                        error("motor value 'smoothing_value' is not a k_decimal128");
-                        throw creatures::DataFormatException("motor value 'smoothing_value' is not a k_decimal128");
-                    }
-
-                    /*
-                     * Note to future me!
-                     *
-                     * I'm using the Decimal128 format here since Mongo wants to turn a double like
-                     * 0.95 into 0.94999999234, which looks goofy in the UI. There's no bridge from
-                     * Decimal128 to double without going into a string first, so that's where this
-                     * goes.
-                     */
-                    bsoncxx::types::b_decimal128 decimal_value = element.get_decimal128();
-                    std::string decimal_str = decimal_value.value.to_string();
-
-                    motor->set_smoothing_value(std::stod(decimal_str));
-                    trace("set the motor smoothing_value to {}", motor->smoothing_value());
-                }
-
-
-            }
-
-        } else {
-            error("The field 'motors' was not an array in the database");
-            throw creatures::DataFormatException("Field 'motors' was not an array in the database");
-        }
 
         debug("done loading creature");
     }
