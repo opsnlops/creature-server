@@ -9,8 +9,10 @@
 #include "server/config.h"
 #include "server/eventloop/eventloop.h"
 #include "server/metrics/counters.h"
+#include "util/threadName.h"
 
 #include "server/namespace-stuffs.h"
+
 
 namespace creatures {
 
@@ -39,6 +41,8 @@ namespace creatures {
 
 
     void EventLoop::main_loop() {
+
+        setThreadName("EventLoop::main_loop");
 
         using namespace std::chrono;
         info("✨ eventloop running!");

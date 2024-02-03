@@ -37,6 +37,7 @@
 #include "Version.h"
 #include "util/cache.h"
 #include "util/environment.h"
+#include "util/threadName.h"
 
 
 #include "server/namespace-stuffs.h"
@@ -134,7 +135,11 @@ int main(int argc, char **argv) {
     // Set up our locale
     std::locale::global(std::locale("en_US.UTF-8"));
 
+    // Get the version
+    std::string version = fmt::format("{}.{}.{}", CREATURE_SERVER_VERSION_MAJOR, CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH);
 
+    // Set up our thread name
+    setThreadName(fmt::format("creature-server::main version {}", version));
 
     // Create our metric counters
     creatures::metrics = std::make_shared<creatures::SystemCounters>();
@@ -160,8 +165,6 @@ int main(int argc, char **argv) {
     auto commandLine = std::make_unique<creatures::CommandLine>();
     creatures::config = commandLine->parseCommandLine(argc, argv);
 
-    // Get the version
-    std::string version = fmt::format("{}.{}.{}", CREATURE_SERVER_VERSION_MAJOR, CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH);
 
     // Leave some version info to be found
     info("Creature Server version {}", version);

@@ -4,6 +4,7 @@
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/status-lights.h"
+#include "util/threadName.h"
 
 
 #include "server/config.h"
@@ -39,6 +40,8 @@ namespace creatures {
     }
 
     void StatusLights::run() {
+
+        setThreadName("StatusLights::run");
 
         debug("starting the status light loop");
 

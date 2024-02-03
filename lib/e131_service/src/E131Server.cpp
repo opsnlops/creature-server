@@ -1,5 +1,5 @@
 
-
+#include <pthread.h>
 #include <thread>
 #include <unistd.h>
 
@@ -112,6 +112,13 @@ namespace creatures::e131 {
 
 
     [[noreturn]] void E131Server::workerTask() {
+
+        // Set the thread name
+#if defined(__linux__)
+        pthread_setname_np(pthread_self(), "E131Server::workerTask");
+#elif defined(__APPLE__)
+        pthread_setname_np("E131Server::workerTask");
+#endif
 
         using namespace std::chrono;
 
