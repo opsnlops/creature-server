@@ -33,12 +33,28 @@ namespace creatures {
                                                GetAllCreaturesResponse *response) {
 
         debug("called handleListCreatures()");
-        return db->getAllCreatures(filter, response);
+
+        try {
+            db->getAllCreatures(filter, response);
+            return grpc::Status(grpc::StatusCode::OK, "Got all of the creatures! ✅🦁🦜");
+        }
+        catch( const DataFormatException& e) {
+            error("Data format exception while getting all creatures: {}", e.what());
+            return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
+        }
+        catch( const InternalError& e) {
+            error("Internal error while getting all creatures: {}", e.what());
+            return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
+        }
+        catch ( ... ) {
+            error("Unknown error while getting all creatures");
+            return grpc::Status(grpc::StatusCode::INTERNAL, "Unknown error");
+        }
 
     }
 
 
-    grpc::Status Database::getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList) {
+    void Database::getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList) {
         grpc::Status status;
         info("attempting to get all of the creatures");
 
@@ -57,7 +73,7 @@ namespace creatures {
                     debug("sorting by number");
                     break;
 
-                // Default is by name
+                    // Default is by name
                 default:
                     sort_doc << "name" << 1;
                     debug("sorting by name");
@@ -76,27 +92,29 @@ namespace creatures {
                 debug("loaded {}", creature->name());
             }
 
-            status = grpc::Status::OK;
-            return status;
+            return;
+
+        } catch (const DataFormatException& e) {
+
+                // Log the error
+                std::string errorMessage = fmt::format("Failed to get all creatures: {}", e.what());
+                error(errorMessage);
+                throw creatures::DataFormatException(errorMessage);
 
         } catch (const std::exception& e) {
 
             // Log the error
             std::string errorMessage = fmt::format("Failed to get all creatures: {}", e.what());
-
             error(errorMessage);
-            status = grpc::Status(grpc::StatusCode::INTERNAL, fmt::format(errorMessage));
-            return status;
+            throw e;
         }
 
         catch (...) {
 
             // Log the error
             std::string errorMessage = "Failed to get all creatures: unknown error";
-
             error(errorMessage);
-            status = grpc::Status(grpc::StatusCode::INTERNAL, fmt::format(errorMessage));
-            return status;
+            throw creatures::InternalError(errorMessage);
         }
 
     }

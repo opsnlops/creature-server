@@ -34,7 +34,7 @@ namespace creatures {
     public:
         explicit Database(mongocxx::pool &pool);
 
-        grpc::Status createCreature(const Creature *creature, DatabaseInfo *reply);
+        void createCreature(const Creature *creature, DatabaseInfo *reply);
 
         void updateCreature(const Creature *creature);
 
@@ -42,14 +42,14 @@ namespace creatures {
 
         void getCreature(const CreatureId *creatureId, Creature *creature);
 
-        grpc::Status getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList);
+        void getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList);
 
         grpc::Status listCreatures(const CreatureFilter *filter, ListCreaturesResponse *creatureList);
 
         grpc::Status createAnimation(const Animation *animation, DatabaseInfo *reply);
 
         // Animation Stuff
-        grpc::Status listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList);
+        void listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList);
         void getAnimation(const AnimationId *animationId, Animation *animation);
         void getAnimationIdentifier(const AnimationId *animationId, AnimationIdentifier *animationIdentifier);
         void updateAnimation(const Animation *animation);

@@ -29,7 +29,28 @@ namespace creatures {
                                               ListAnimationsResponse *response) {
 
         info("Listing the animations in the database");
-        return db->listAnimations(request, response);
+        try {
+            db->listAnimations(request, response);
+            debug("animations listed");
+            return grpc::Status(grpc::StatusCode::OK, "✅ Got all animations");
+
+        } catch (const creatures::DataFormatException &e) {
+            error("Data format exception while listing animations: {}", e.what());
+            return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
+
+        } catch (const creatures::InternalError &e) {
+            error("Internal error while listing animations: {}", e.what());
+            return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
+
+        } catch (const creatures::NotFoundException &e) {
+            error("Not found error while listing animations: {}", e.what());
+            return grpc::Status(grpc::StatusCode::NOT_FOUND, e.what());
+
+        } catch (...) {
+
+            error("Unknown error while listing animations");
+            return grpc::Status(grpc::StatusCode::INTERNAL, "Unknown error");
+        }
     }
 
     /**
@@ -39,7 +60,7 @@ namespace creatures {
      * @param animationList the list to fill out
      * @return the status of this request
      */
-    grpc::Status Database::listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList) {
+    void Database::listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList) {
 
         trace("attempting to list all of the animation for a filter ({})", toascii(filter->type()));
 
@@ -98,35 +119,30 @@ namespace creatures {
                 numberOfAnimationsFound++;
             }
         }
-        catch(const DataFormatException &e) {
-            warn("DataFormatException while getting animations: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  fmt::format("🚨 Server-side error while getting animations: {}", e.what()));
-            return status;
+        catch(const DataFormatException& e) {
+            std::string errorMessage = fmt::format("Failed to get all animations: {}", e.what());
+            warn(errorMessage);
+            throw creatures::DataFormatException(errorMessage);
         }
         catch(const mongocxx::exception &e) {
-            critical("MongoDB error while attempting to load animations: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  fmt::format("🚨 MongoDB error while attempting to load animations: {}", e.what()));
-            return status;
+            std::string errorMessage = fmt::format("MongoDB Exception while loading animation: {}", e.what());
+            critical(errorMessage);
+            throw creatures::InternalError(errorMessage);
         }
         catch(const bsoncxx::exception &e) {
-            critical("BSON error while attempting to load animations: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  fmt::format("🚨 BSON error while attempting to load animations: {}", e.what()));
-            return status;
+            std::string errorMessage = fmt::format("BSON error while attempting to load animations: {}", e.what());
+            critical(errorMessage);
+            throw creatures::InternalError(errorMessage);
         }
 
         // Return a 404 if nothing as found
         if(numberOfAnimationsFound == 0) {
-            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                  "🚫 No animations for that creature type found");
-            return status;
+            std::string errorMessage = fmt::format("No animations for that creature type found");
+            warn(errorMessage);
+            throw creatures::NotFoundException(errorMessage);
         }
 
-        // If we made this far, we're good! 😍
-        status = grpc::Status(grpc::StatusCode::OK,
-                              fmt::format("✅ Found {} animations", numberOfAnimationsFound));
-        return status;
+        std::string okayMessage = fmt::format("✅ Found {} animations", numberOfAnimationsFound);
+        info(okayMessage);
     }
 }

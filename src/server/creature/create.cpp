@@ -29,15 +29,29 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
 
-    Status CreatureServerImpl::CreateCreature(ServerContext *context, const Creature *creature, DatabaseInfo *reply) {
-        debug("hello from save");
+    Status CreatureServerImpl::CreateCreature(ServerContext *context, const Creature *creature, DatabaseInfo *reply) {debug("hello from save");
 
-        debug("asking the server to save maybe?");
-        return db->createCreature(creature, reply);
+        debug("attempting to save a new creature");
+        try {
+            db->createCreature(creature, reply);
+            return grpc::Status(grpc::StatusCode::OK, "✅ Created new creature");
+        }
+        catch (const creatures::InvalidArgumentException &e) {
+            error("Invalid argument exception while creating a creature: {}", e.what());
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, e.what());
+        }
+        catch (const creatures::InternalError &e) {
+            error("Internal error while creating a creature: {}", e.what());
+            return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
+        }
+        catch (...) {
+            error("Unknown error while creating a creature");
+            return grpc::Status(grpc::StatusCode::INTERNAL, "Unknown error");
+        }
     }
 
 
-    grpc::Status Database::createCreature(const Creature *creature, server::DatabaseInfo *reply) {
+    void Database::createCreature(const Creature *creature, server::DatabaseInfo *reply) {
 
         info("attempting to save a creature in the database");
 
@@ -55,28 +69,38 @@ namespace creatures {
 
             info("saved creature in the database");
 
-            status = grpc::Status::OK;
-            reply->set_message("saved thingy in the thingy");
+            reply->set_message("created new creature in the database");
 
         }
         catch (const mongocxx::exception &e) {
             // Was this an attempt to make a duplicate creature?
             if (e.code().value() == 11000) {
-                error("attempted to insert a duplicate Creature in the database for id {}", creature->_id());
-                status = grpc::Status(grpc::StatusCode::ALREADY_EXISTS, e.what());
+                std::string error_message = fmt::format("attempted to insert a duplicate Creature in the database for id {}",
+                                                        creature->_id());
+
                 reply->set_message("Unable to create new creature");
                 reply->set_help(fmt::format("ID {} already exists", creature->_id()));
-            } else {
-                critical("Error updating database: {}", e.what());
-                status = grpc::Status(grpc::StatusCode::UNKNOWN, e.what(), fmt::to_string(e.code().value()));
-                reply->set_message(
-                        fmt::format("Unable to create Creature in database: {} ({})", e.what(), e.code().value()));
-                reply->set_help(e.code().message());
-            }
+                throw creatures::InvalidArgumentException(error_message);
 
+            } else {
+
+                std::string error_message = fmt::format("Error in the database while adding a creature: {} ({})",
+                                                        e.what(), e.code().value());
+                critical(error_message);
+                status = grpc::Status(grpc::StatusCode::UNKNOWN, e.what(), fmt::to_string(e.code().value()));
+                reply->set_message(error_message);
+                reply->set_help(e.code().message());
+                throw creatures::InternalError(error_message);
+            }
         }
 
-        return status;
+        catch (...) {
+            std::string error_message = "Unknown error while adding a creature to the database";
+            critical(error_message);
+            reply->set_message(error_message);
+            throw creatures::InternalError(error_message);
+        }
+
     }
 
 }
