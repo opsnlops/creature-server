@@ -33,53 +33,71 @@ namespace creatures {
                                                GetAllCreaturesResponse *response) {
 
         debug("called handleListCreatures()");
-        grpc::Status status;
+        return db->getAllCreatures(filter, response);
 
-        db->getAllCreatures(filter, response);
-        status = grpc::Status(grpc::StatusCode::OK,
-                              fmt::format("🐰🐻🦁 Returned all creatures!"));
-
-        return status;
     }
 
 
     grpc::Status Database::getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList) {
         grpc::Status status;
-        info("getting all of the creatures");
+        info("attempting to get all of the creatures");
 
-        auto collection = getCollection(CREATURES_COLLECTION);
-        trace("collection obtained");
+        // Start an exception frame
+        try {
 
-        document query_doc{};
-        document sort_doc{};
+            auto collection = getCollection(CREATURES_COLLECTION);
+            trace("collection obtained");
 
-        switch (filter->sortby()) {
-            case server::SortBy::number:
-                sort_doc << "number" << 1;
-                debug("sorting by number");
-                break;
+            document query_doc{};
+            document sort_doc{};
+
+            switch (filter->sortby()) {
+                case server::SortBy::number:
+                    sort_doc << "number" << 1;
+                    debug("sorting by number");
+                    break;
 
                 // Default is by name
-            default:
-                sort_doc << "name" << 1;
-                debug("sorting by name");
-                break;
+                default:
+                    sort_doc << "name" << 1;
+                    debug("sorting by name");
+                    break;
+            }
+
+            mongocxx::options::find opts{};
+            opts.sort(sort_doc.view());
+            mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
+
+            for (auto &&doc: cursor) {
+
+                auto creature = creatureList->add_creatures();
+                creatureFromBson(doc, creature);
+
+                debug("loaded {}", creature->name());
+            }
+
+            status = grpc::Status::OK;
+            return status;
+
+        } catch (const std::exception& e) {
+
+            // Log the error
+            std::string errorMessage = fmt::format("Failed to get all creatures: {}", e.what());
+
+            error(errorMessage);
+            status = grpc::Status(grpc::StatusCode::INTERNAL, fmt::format(errorMessage));
+            return status;
         }
 
-        mongocxx::options::find opts{};
-        opts.sort(sort_doc.view());
-        mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
+        catch (...) {
 
-        for (auto &&doc: cursor) {
+            // Log the error
+            std::string errorMessage = "Failed to get all creatures: unknown error";
 
-            auto creature = creatureList->add_creatures();
-            creatureFromBson(doc, creature);
-
-            debug("loaded {}", creature->name());
+            error(errorMessage);
+            status = grpc::Status(grpc::StatusCode::INTERNAL, fmt::format(errorMessage));
+            return status;
         }
-
-        status = grpc::Status::OK;
-        return status;
 
     }
 

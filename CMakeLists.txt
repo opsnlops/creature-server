@@ -9,6 +9,14 @@ project(creature-server
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
+# Overshadowed declarations keep biting me in the butt 😅
+add_compile_options(-Wshadow)
+add_compile_options(-Wall)
+add_compile_options(-Wextra)
+add_compile_options(-Wpedantic)
+
+set(PACKAGE_AUTHOR "April White")
+
 # I hate that this has to be done, but I'm in a bad spot with gRPC right now
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
         set(_CREATURES_GRPC_VERSION 1.60.0)
