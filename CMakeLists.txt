@@ -12,8 +12,8 @@ set(CMAKE_CXX_STANDARD 20)
 # Overshadowed declarations keep biting me in the butt 😅
 add_compile_options(-Wshadow)
 add_compile_options(-Wall)
-add_compile_options(-Wextra)
-add_compile_options(-Wpedantic)
+#add_compile_options(-Wextra)
+#add_compile_options(-Wpedantic)
 
 set(PACKAGE_AUTHOR "April White")
 
@@ -172,6 +172,7 @@ file(GLOB serverFiles
         src/server/metrics/*
         src/server/playlist/*
         src/server/sound/*
+        src/server/watchdog/*
         src/util/*
 )
 
@@ -202,6 +203,8 @@ message(STATUS "Using Protocol Buffers ${protobuf_VERSION}")
 
 add_executable(creature-server
         ${serverFiles}
+        src/server/watchdog/Watchdog.cpp
+        src/server/watchdog/Watchdog.h
 )
 
 target_link_libraries(creature-server

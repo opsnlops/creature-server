@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <string>
 
@@ -58,12 +59,21 @@ namespace creatures {
         void getPlaylist(const PlaylistIdentifier *playlistIdentifier, Playlist *playlist);
         void updatePlaylist(const Playlist *playlist);
 
+
         /**
-         * Ping the database to make sure it's alive
+         * Request that the database perform a health check
          *
-         * @return Status::OK if the DB is okay
+         * This is what updates the serverPingable flag
          */
-        grpc::Status ping();
+        void performHealthCheck();
+
+
+        /**
+         * Can the server be pinged?
+         *
+         * @return true if the server is pingable
+         */
+        bool isServerPingable();
 
     private:
         mongocxx::pool &pool;
@@ -104,6 +114,9 @@ namespace creatures {
         static int32_t playlistItemsToBson(bsoncxx::builder::stream::document &doc, const server::Playlist *playlist);
         static void bsonToPlaylist(const bsoncxx::document::view &doc, Playlist *playlist);
         static void bsonToPlaylistItems(const bsoncxx::document::view &doc, server::Playlist *playlist);
+
+        // Start out thinking that the server is pingable
+        std::atomic<bool> serverPingable{true};
 
     };
 

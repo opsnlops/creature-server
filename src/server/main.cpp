@@ -38,6 +38,7 @@
 #include "util/cache.h"
 #include "util/environment.h"
 #include "util/threadName.h"
+#include "watchdog/Watchdog.h"
 
 
 #include "server/namespace-stuffs.h"
@@ -68,7 +69,7 @@ namespace creatures {
     SDL_AudioSpec audioSpec;
     std::thread serverThread;
     std::thread watchdogThread;
-    bool serverShouldRun = true;
+    std::atomic<bool> serverShouldRun{true};
 }
 
 void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue);
@@ -85,7 +86,7 @@ void signal_handler(int signal) {
         SDL_Quit();
 
         info("shutting down the gRPC service");
-        creatures::serverShouldRun = false;
+        creatures::serverShouldRun.store(false);
 
         info("stopping the watchdog");
         creatures::statusLights->stop();
@@ -197,7 +198,7 @@ int main(int argc, char **argv) {
     MusicEvent::listAudioDevices();
     if(!MusicEvent::locateAudioDevice()) {
         error("unable to open audio device; halting");
-        return 0;
+        std::exit(EXIT_FAILURE);
     }
 
     // Fire up the GPIO
@@ -232,14 +233,20 @@ int main(int argc, char **argv) {
     // TODO: Remove this, this is just for debugging. Universe 1000 is "production."
     //creatures::e131Server->createUniverse(1000);
 
+    // Fire up the watchdog
+    auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);
+    watchdog->start();
 
     RunServer(6666, log_queue);
     info("Startup complete!");
 
     // Wait for the signal handler to know when to stop
-    while (creatures::serverShouldRun) {
+    while (creatures::serverShouldRun.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
+
+    // Tell the watchdog to stop
+    watchdog->shutdown();
 
     StopServer();
 
@@ -247,5 +254,5 @@ int main(int argc, char **argv) {
 
     // This will cause a sig11 and I don't know why, but don't really care, either.
 
-    return 0;
+    std::exit(EXIT_SUCCESS);
 }
