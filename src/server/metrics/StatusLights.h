@@ -4,6 +4,7 @@
 #include "server/metrics/counters.h"
 #include "server/gpio/gpio.h"
 #include "server/config.h"
+#include "util/StoppableThread.h"
 
 
 namespace creatures {
@@ -15,14 +16,17 @@ namespace creatures {
      * to not have it run as an event, because then it wouldn't be able to detect stalls in
      * the event queue.
      */
-    class StatusLights {
+    class StatusLights : public StoppableThread {
 
     public:
         StatusLights();
         ~StatusLights() = default;
 
-        void run();
-        void stop();
+        void start() override;
+
+    protected:
+        void run() override;
+
 
     private:
 
@@ -33,8 +37,6 @@ namespace creatures {
         bool runningLightOn;
         bool dmxEventLightOn;
         bool streamingLightOn;
-
-        bool shouldRun;
 
     };
 

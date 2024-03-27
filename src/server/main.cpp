@@ -6,9 +6,6 @@
 #include <string>
 #include <thread>
 
-// gRPC
-#include "absl/strings/str_format.h"
-#include <grpcpp/grpcpp.h>
 
 // spdlog
 #include "spdlog/spdlog.h"
@@ -22,6 +19,7 @@
 
 
 // Our stuff
+#include "GrpcServerManager.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
@@ -33,7 +31,7 @@
 #include "server/logging/concurrentqueue.h"
 #include "server/logging/creature_log_sink.h"
 #include "server/metrics/counters.h"
-#include "server/metrics/status-lights.h"
+#include "server/metrics/StatusLights.h"
 #include "Version.h"
 #include "util/cache.h"
 #include "util/environment.h"
@@ -55,11 +53,9 @@ using creatures::MusicEvent;
 using moodycamel::ConcurrentQueue;
 
 namespace creatures {
-    std::atomic<bool> eventLoopRunning{true};
     std::shared_ptr<Configuration> config{};
     std::shared_ptr<Database> db{};
     std::shared_ptr <creatures::e131::E131Server> e131Server;
-    std::unique_ptr<Server> grpcServer;
     std::shared_ptr<EventLoop> eventLoop;
     std::shared_ptr<ObjectCache<std::string, PlaylistIdentifier>> runningPlaylists;
     std::shared_ptr<GPIO> gpioPins;
@@ -72,59 +68,23 @@ namespace creatures {
     std::atomic<bool> serverShouldRun{true};
 }
 
-void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue);
-void StopServer();
 
 // Signal handler to stop the event loop
 void signal_handler(int signal) {
-    if (signal == SIGINT) {
-        info("stopping the event loop");
-        creatures::eventLoopRunning = false;
 
-        // Clean up SDL
-        info("shutting down SDL");
-        SDL_Quit();
-
-        info("shutting down the gRPC service");
-        creatures::serverShouldRun.store(false);
-
-        info("stopping the watchdog");
-        creatures::statusLights->stop();
-        if(creatures::watchdogThread.joinable()) {
-            creatures::watchdogThread.join();
-        }
+    switch (signal) {
+        case SIGINT:
+            info("SIGINT! signalling that we should stop the server");
+            creatures::serverShouldRun.store(false);
+            break;
+        case SIGTERM:
+            info("SIGTERM! signalling that we should stop the server");
+            creatures::serverShouldRun.store(false);
+            break;
+        default:
+            info("signal {} received, ignoring", signal);
+            break;
     }
-}
-
-
-void RunServer(uint16_t port, ConcurrentQueue<LogItem> &log_queue) {
-    std::string server_address = absl::StrFormat("0.0.0.0:%d", port);
-    creatures::CreatureServerImpl service(log_queue);
-
-    ServerBuilder builder;
-    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-    builder.RegisterService(&service);
-
-    // 🚜 Build and start!
-    creatures::grpcServer = builder.BuildAndStart();
-    info("Server listening on {}", server_address);
-    //creatures::serverThread = std::thread([]() {
-        creatures::grpcServer->Wait();
-    //});
-
-}
-
-void StopServer() {
-    info("stopping the gRPC service");
-
-    if (creatures::grpcServer) {
-        creatures::grpcServer->Shutdown();
-        creatures::grpcServer = nullptr;
-    }
-    //if (creatures::serverThread.joinable()) {
-    //    creatures::serverThread.join();
-    //}
-
 }
 
 
@@ -132,6 +92,7 @@ int main(int argc, char **argv) {
 
     // Fire up the signal handlers
     std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
 
     // Set up our locale
     std::locale::global(std::locale("en_US.UTF-8"));
@@ -206,17 +167,17 @@ int main(int argc, char **argv) {
     creatures::gpioPins = std::make_shared<creatures::GPIO>();
 
     // Fire up the watchdog
-    debug("Starting up the watchdog");
+    debug("Starting up the status lights");
     creatures::statusLights = std::make_shared<creatures::StatusLights>();
-    creatures::watchdogThread = std::thread(&creatures::StatusLights::run, creatures::statusLights.get());
+    creatures::statusLights->start();
 
     // Create the playlist cache
     creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<std::string, PlaylistIdentifier>>();
     debug("Playlist cache made");
 
     // Start up the event loop
-    creatures::eventLoop = std::make_unique<EventLoop>();
-    creatures::eventLoop->run();
+    creatures::eventLoop = std::make_shared<EventLoop>();
+    creatures::eventLoop->start();
 
     // Seed the tick task
     auto tickEvent = std::make_shared<creatures::TickEvent>(TICK_TIME_FRAMES);
@@ -237,22 +198,42 @@ int main(int argc, char **argv) {
     auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);
     watchdog->start();
 
-    RunServer(6666, log_queue);
-    info("Startup complete!");
+    // Start up gRPC
+    auto grpcServer = creatures::GrpcServerManager("0.0.0.0", 6666, log_queue);
+    grpcServer.start();
+
 
     // Wait for the signal handler to know when to stop
     while (creatures::serverShouldRun.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
+    info("starting shutdown process");
+
+    // It's time to shut down! Everyone out!
 
     // Tell the watchdog to stop
     watchdog->shutdown();
 
-    StopServer();
+    // Halt the event loop
+    creatures::eventLoop->shutdown();
+
+    // Halt gRPC
+    grpcServer.shutdown();
 
     creatures::gpioPins->serverOnline(false);
 
+    creatures::statusLights->shutdown();
+
+    // Clean up SDL
+    info("shutting down SDL");
+    SDL_Quit();
+    debug("SDL shut down");
+
     // This will cause a sig11 and I don't know why, but don't really care, either.
 
+    debug("waiting for a few seconds to let everyone clean up");
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    std::cout << "Bye!" << std::endl;
     std::exit(EXIT_SUCCESS);
 }

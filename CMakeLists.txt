@@ -205,6 +205,8 @@ add_executable(creature-server
         ${serverFiles}
         src/server/watchdog/Watchdog.cpp
         src/server/watchdog/Watchdog.h
+        src/server/GrpcServerManager.cpp
+        src/server/GrpcServerManager.h
 )
 
 target_link_libraries(creature-server

@@ -9,17 +9,16 @@
 #include "spdlog/spdlog.h"
 
 #include "server/eventloop/event.h"
+#include "util/StoppableThread.h"
 
 
 namespace creatures {
 
-    class EventLoop {
+    class EventLoop : public StoppableThread {
 
     public:
         EventLoop();
-        ~EventLoop();
-
-        void run();
+        ~EventLoop() = default;
 
         void scheduleEvent(const std::shared_ptr<Event>& e);
 
@@ -27,11 +26,13 @@ namespace creatures {
         [[nodiscard]] uint64_t getNextFrameNumber() const;
         [[nodiscard]] uint32_t getQueueSize() const;
 
+        void start() override;
+
+    protected:
+        void run() override;
+
+
     private:
-
-        void main_loop();
-
-        std::thread eventLoopThread;
 
         uint64_t frameCount = 0;
 

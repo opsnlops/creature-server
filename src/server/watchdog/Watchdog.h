@@ -22,7 +22,7 @@ namespace creatures {
         Watchdog(std::shared_ptr<creatures::Database> db);
 
         ~Watchdog() override {
-            this->logger->info("SerialReader destroyed");
+            logger->info("Watchdog destroyed");
         }
 
         void start() override;
