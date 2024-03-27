@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <vector>
 
 #include <fmt/format.h>
@@ -29,6 +30,7 @@ namespace creatures::e131 {
 
         void init(uint16_t _networkDevice, std::string _version);
         void start();
+        void shutdown();
 
         // Add a new universe
         void createUniverse(uint16_t universeNumber);
@@ -46,7 +48,7 @@ namespace creatures::e131 {
 
         std::thread worker;
 
-        [[noreturn]] void workerTask();
+        void workerTask();
 
         uuid_t cid;
         int socket;
@@ -57,6 +59,8 @@ namespace creatures::e131 {
 
         std::string version;
         uint8_t sourceName[SOURCE_NAME_LENGTH] = { 0 };
+
+        std::atomic<bool> stopRequested = false;
     };
 
 } // creatures::e131

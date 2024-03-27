@@ -212,6 +212,8 @@ int main(int argc, char **argv) {
 
     info("starting shutdown process");
 
+    // Tell the E131Server to stop
+    creatures::e131Server->shutdown();
 
     // Tell the watchdog to stop
     watchdog->shutdown();

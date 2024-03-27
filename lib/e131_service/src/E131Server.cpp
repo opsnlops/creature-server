@@ -78,9 +78,20 @@ namespace creatures::e131 {
 
         logger->debug("starting the E131Server");
 
+        stopRequested.store(false);
+
         // Start our worker thread
         this->worker = std::thread(&E131Server::workerTask, this);
         worker.detach();
+    }
+
+    void E131Server::shutdown() {
+        logger->info("shutting down the E131Server");
+        stopRequested.store(true);
+
+        // Pause for a moment to let the worker thread finish
+        if(worker.joinable())
+            worker.join();
     }
 
     void E131Server::createUniverse(uint16_t universeNumber) {
@@ -111,7 +122,7 @@ namespace creatures::e131 {
     }
 
 
-    [[noreturn]] void E131Server::workerTask() {
+    void E131Server::workerTask() {
 
         // Set the thread name
 #if defined(__linux__)
@@ -128,7 +139,7 @@ namespace creatures::e131 {
         auto nextTargetTime = high_resolution_clock::now() + targetDelta;
 
 
-        while (true) {
+        while (!stopRequested.load()) {
 
             // Visit all of the universes in the galaxy
             for (const auto& pair : galaxy) {
