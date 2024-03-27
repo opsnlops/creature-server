@@ -59,7 +59,7 @@ namespace creatures {
             std::this_thread::sleep_for(std::chrono::milliseconds(WATCHDOG_THREAD_PERIOD_MS));
 
             // Make sure the pointers we touch are valid
-            if(metrics && gpioPins) {
+            if(metrics != nullptr && gpioPins != nullptr) {
 
                 // Most important one first, let's see if frames are progressing
                 if (lastFrameSeen <= metrics->getTotalFrames()) {
@@ -133,7 +133,7 @@ namespace creatures {
         info("StatusLights thread is stopping!");
 
         // Turn off all the lights on the way out the door, if we can
-        if(creatures::gpioPins)
+        if(creatures::gpioPins != nullptr)
             creatures::gpioPins->allOff();
 
     }

@@ -63,8 +63,6 @@ namespace creatures {
     std::shared_ptr<StatusLights> statusLights;
     const char* audioDevice;
     SDL_AudioSpec audioSpec;
-    std::thread serverThread;
-    std::thread watchdogThread;
     std::atomic<bool> serverShouldRun{true};
 }
 
@@ -221,7 +219,6 @@ int main(int argc, char **argv) {
     grpcServer.shutdown();
 
     creatures::gpioPins->serverOnline(false);
-
     creatures::statusLights->shutdown();
 
     // Clean up SDL
@@ -232,8 +229,8 @@ int main(int argc, char **argv) {
     // This will cause a sig11 and I don't know why, but don't really care, either.
 
     debug("waiting for a few seconds to let everyone clean up");
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 
-    std::cout << "Bye!" << std::endl;
+    std::cout << "Bye! 🖖🏻" << std::endl;
     std::exit(EXIT_SUCCESS);
 }
