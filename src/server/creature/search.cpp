@@ -6,18 +6,15 @@
 #include "spdlog/spdlog.h"
 
 #include "exception/exception.h"
-#include "server.pb.h"
 #include "server/database.h"
 #include "server/creature-server.h"
 
-
-#include <fmt/format.h>
 
 #include <grpcpp/grpcpp.h>
 
 #include <bsoncxx/json.hpp>
 #include <mongocxx/client.hpp>
-#include <mongocxx/exception/bulk_write_exception.hpp>
+
 
 
 #include <bsoncxx/builder/stream/document.hpp>
@@ -40,36 +37,33 @@ namespace creatures {
         try {
             db->searchCreatures(request, reply);
             debug("creature {} found in DB!", request->name());
-            status = grpc::Status(grpc::StatusCode::OK,
-                                  fmt::format("✅ Searched for creature name '{}' successfully!", request->name()));
-            return status;
+            return {grpc::StatusCode::OK,
+                      fmt::format("✅ Searched for creature name '{}' successfully!", request->name())};
 
         }
         catch (const creatures::NotFoundException &e) {
-            info("creature {} not found", request->name());
-            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                  e.what(),
-                                  fmt::format("🚫 Creature name '{}' not found", request->name()));
-            return status;
+            std::string errorMessage = fmt::format("creature {} not found", request->name());
+            info(errorMessage);
+            return {grpc::StatusCode::NOT_FOUND, e.what(), errorMessage};
+
         }
         catch (const creatures::DataFormatException &e) {
-            critical("Data format exception while looking for a creature: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  e.what(),
-                                  "A data formatting error occurred while looking for this creature");
-            return status;
+            std::string errorMessage = fmt::format("Data format exception while looking for a creature: {}", e.what());
+            critical(errorMessage);
+            return {grpc::StatusCode::INTERNAL, e.what(), errorMessage};
+
         }
         catch (const creatures::InvalidArgumentException &e) {
-            error("an empty name was passed into searchCreatures()");
-            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+            std::string errorMessage = "an empty name was passed into searchCreatures()";
+            error(errorMessage);
+            return {grpc::StatusCode::INVALID_ARGUMENT,
                                   e.what(),
-                                  fmt::format("⚠️ A creature name must be supplied"));
-            return status;
+                                  fmt::format("⚠️ A creature name must be supplied")};
         }
 
     }
 
-    grpc::Status Database::searchCreatures(const CreatureName *creatureName, Creature *creature) {
+    void Database::searchCreatures(const CreatureName *creatureName, Creature *creature) {
 
         grpc::Status status;
         if (creatureName->name().empty()) {
@@ -102,7 +96,6 @@ namespace creatures {
 
             debug("find completed!");
 
-            return grpc::Status::OK;
         }
         catch (const mongocxx::exception &e) {
             critical("an unhandled error happened while searching for a creature: {}", e.what());

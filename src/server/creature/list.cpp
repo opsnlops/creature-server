@@ -11,8 +11,6 @@
 #include <grpcpp/grpcpp.h>
 
 #include <mongocxx/client.hpp>
-#include <mongocxx/cursor.hpp>
-
 #include <bsoncxx/builder/stream/document.hpp>
 
 #include "server/namespace-stuffs.h"
@@ -29,59 +27,97 @@ namespace creatures {
                                              ListCreaturesResponse *response) {
         debug("calling listCreatures()");
 
-        grpc::Status status;
-
-        db->listCreatures(filter, response);
-        status = grpc::Status(grpc::StatusCode::OK,
-                              fmt::format("✅🦖Returned all creatures IDs and names"));
-        return status;
+        try {
+            db->listCreatures(filter, response);
+            debug("got all creatures");
+            return {grpc::StatusCode::OK, "✅ Got a list of all of the creatures successfully!"};
+        }
+        catch (const creatures::DatabaseError &e) {
+            error("Database error while getting all creatures: {}", e.what());
+            return {grpc::StatusCode::INTERNAL, e.what()};
+        }
+        catch (const creatures::InternalError &e) {
+            error("Internal error while getting all creatures: {}", e.what());
+            return {grpc::StatusCode::INTERNAL, e.what()};
+        }
+        catch (...) {
+            error("Unknown error while getting all creatures");
+            return {grpc::StatusCode::INTERNAL, "Unknown error"};
+        }
     }
 
-    grpc::Status Database::listCreatures(const CreatureFilter *filter, ListCreaturesResponse *creatureList) {
+    void Database::listCreatures(const CreatureFilter *filter, ListCreaturesResponse *creatureList) {
 
-        grpc::Status status;
         info("getting the list of creatures");
 
-        auto collection = getCollection(CREATURES_COLLECTION);
-        trace("collection obtained");
-
-        document query_doc{};
-        document projection_doc{};
-        document sort_doc{};
-
-        switch (filter->sortby()) {
-            case server::SortBy::number:
-                sort_doc << "number" << 1;
-                debug("sorting by number");
-                break;
-
-                // Default is by name
-            default:
-                sort_doc << "name" << 1;
-                debug("sorting by name");
-                break;
+        mongocxx::collection collection;
+        try {
+            collection = getCollection(CREATURES_COLLECTION);
+            trace("collection obtained");
+        }
+        catch (const std::exception &e) {
+            std::string errorMessage = fmt::format("Internal error while getting the collection for getting all creatures: {}", e.what());
+            error(errorMessage);
+            throw creatures::DatabaseError(errorMessage);
+        }
+        catch (...) {
+            std::string errorMessage = "Unknown error getting the collection for while getting all creatures";
+            error(errorMessage);
+            throw creatures::DatabaseError(errorMessage);
         }
 
-        // We only want the name and _id
-        projection_doc << "_id" << 1 << "name" << 1;
+        try {
 
-        mongocxx::options::find opts{};
-        opts.projection(projection_doc.view());
-        opts.sort(sort_doc.view());
-        mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
+            document query_doc{};
+            document projection_doc{};
+            document sort_doc{};
 
-        for (auto &&doc: cursor) {
+            switch (filter->sortby()) {
+                case server::SortBy::number:
+                    sort_doc << "number" << 1;
+                    debug("sorting by number");
+                    break;
 
-            auto creatureId = creatureList->add_creaturesids();
-            creatureIdentifierFromBson(doc, creatureId);
+                    // Default is by name
+                default:
+                    sort_doc << "name" << 1;
+                    debug("sorting by name");
+                    break;
+            }
 
-            debug("loaded {}", creatureId->name());
+            // We only want the name and _id
+            projection_doc << "_id" << 1 << "name" << 1;
 
+            mongocxx::options::find opts{};
+            opts.projection(projection_doc.view());
+            opts.sort(sort_doc.view());
+            mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
+
+            for (auto &&doc: cursor) {
+
+                auto creatureId = creatureList->add_creaturesids();
+                creatureIdentifierFromBson(doc, creatureId);
+
+                debug("loaded {}", creatureId->name());
+
+            }
+        }
+        catch (const creatures::DataFormatException &e) {
+            std::string errorMessage = fmt::format("Failed to get all creatures: {}", e.what());
+            error(errorMessage);
+            throw creatures::DataFormatException(errorMessage);
+        }
+        catch (const std::exception &e) {
+            std::string errorMessage = fmt::format("Internal error while building the document result for getting all creatures: {}", e.what());
+            error(errorMessage);
+            throw creatures::InternalError(errorMessage);
+        }
+        catch (...) {
+            std::string errorMessage = "Unknown error while building the document result for getting all creatures";
+            error(errorMessage);
+            throw creatures::InternalError(errorMessage);
         }
 
-        status = grpc::Status::OK;
-
-        return status;
     }
 
 }

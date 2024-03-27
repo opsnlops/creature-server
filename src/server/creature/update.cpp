@@ -15,7 +15,6 @@
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/exception/exception.hpp>
 #include <mongocxx/client.hpp>
-#include <mongocxx/exception/bulk_write_exception.hpp>
 
 #include "server/namespace-stuffs.h"
 
@@ -31,58 +30,57 @@ namespace creatures {
     Status CreatureServerImpl::UpdateCreature(grpc::ServerContext *context, const Creature *creature,
                                               DatabaseInfo *response) {
 
-        grpc::Status status;
-
         debug("trying to update a creature");
 
         try {
             db->updateCreature(creature);
-            status = grpc::Status(grpc::StatusCode::OK,
-                                  "🦜 Creature updated in database!",
-                                  fmt::format("Name: {}, Number of Motors: {}",
-                                              creature->name(),
-                                              creature->number_of_motors()));
-            response->set_message(fmt::format("🦜 Creature updated in database!"));
+            std::string statusMessage = fmt::format("✅ Creature updated in database! Name: {}, Number of Motors: {}",
+                                                    creature->name(), creature->number_of_motors());
+            response->set_message(statusMessage);
+            info(statusMessage);
+            return {grpc::StatusCode::OK, statusMessage};
+
         }
         catch (const InvalidArgumentException &e) {
-            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                  "CreatureID was empty on updateCreatyre()",
-                                  fmt::format("⛔️️ A creature ID must be supplied"));
-            response->set_message(fmt::format("⛔️ A creature ID must be supplied"));
-            response->set_help(fmt::format("creatureID cannot be empty"));
+            std::string  errorMessage = fmt::format("CreatureID was empty on updateCreature()");
+            error(errorMessage);
+            response->set_message("⛔️ A creature ID must be supplied");
+            response->set_help("creatureID cannot be empty");
+            return {grpc::StatusCode::INVALID_ARGUMENT, "⛔️️ A creature ID must be supplied"};
+
         }
         catch (const NotFoundException &e) {
-            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                  fmt::format("⚠️ No creature with ID '{}' found",
-                                              bsoncxx::oid(creature->_id()).to_string()),
-                                  "Try another ID! 😅");
-            response->set_message(
-                    fmt::format("⚠️ No creature with ID '{}' found", bsoncxx::oid(creature->_id()).to_string()));
+            std::string errorMessage = fmt::format("⚠️ No creature with ID '{}' found",
+                                                   bsoncxx::oid(creature->_id()).to_string());
+            debug(errorMessage);
+            response->set_message(errorMessage);
             response->set_help("Try another ID! 😅");
+            return {grpc::StatusCode::NOT_FOUND, errorMessage};
+
         }
         catch (const DataFormatException &e) {
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  "Unable to encode request into BSON",
-                                  e.what());
+            std::string errorMessage = fmt::format("Unable to encode creature into BSON: {}", e.what());
+            critical(errorMessage);
             response->set_message("Unable to encode creature into BSON");
             response->set_help(e.what());
+            return {grpc::StatusCode::INTERNAL,errorMessage};
+
         }
         catch (const InternalError &e) {
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  fmt::format("MongoDB error while updating a creature: {}", e.what()),
-                                  e.what());
+            std::string errorMessage = fmt::format("MongoDB error while updating a creature: {}", e.what());
+            critical(errorMessage);
             response->set_message("MongoDB error while updating creature");
             response->set_help(e.what());
+            return {grpc::StatusCode::INTERNAL, errorMessage};
         }
         catch (...) {
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  "🚨 An unknown error happened while updating a creature 🚨",
-                                  "Default catch hit?");
-            response->set_message("Unknown error while updating a creature");
-            response->set_help("Default catch hit. How did this happen? 🤔");
+            std::string errorMessage = "🚨 An unknown error happened while updating a creature 🚨";
+            error(errorMessage);
+            response->set_message("An unknown error happened while updating a creature");
+            response->set_help("Default catch hit?");
+            return {grpc::StatusCode::INTERNAL, errorMessage};
         }
 
-        return status;
     }
 
 

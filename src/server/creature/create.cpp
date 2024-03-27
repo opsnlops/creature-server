@@ -9,12 +9,11 @@
 #include "server/creature-server.h"
 #include "exception/exception.h"
 
-#include <fmt/format.h>
 
 #include <grpcpp/grpcpp.h>
 
 #include <mongocxx/client.hpp>
-#include <mongocxx/exception/bulk_write_exception.hpp>
+
 
 
 #include <bsoncxx/builder/stream/document.hpp>
@@ -34,19 +33,19 @@ namespace creatures {
         debug("attempting to save a new creature");
         try {
             db->createCreature(creature, reply);
-            return grpc::Status(grpc::StatusCode::OK, "✅ Created new creature");
+            return {grpc::StatusCode::OK, "✅ Created new creature"};
         }
         catch (const creatures::InvalidArgumentException &e) {
             error("Invalid argument exception while creating a creature: {}", e.what());
-            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, e.what());
+            return {grpc::StatusCode::INVALID_ARGUMENT, e.what()};
         }
         catch (const creatures::InternalError &e) {
             error("Internal error while creating a creature: {}", e.what());
-            return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
+            return {grpc::StatusCode::INTERNAL, e.what()};
         }
         catch (...) {
             error("Unknown error while creating a creature");
-            return grpc::Status(grpc::StatusCode::INTERNAL, "Unknown error");
+            return {grpc::StatusCode::INTERNAL, "Unknown error"};
         }
     }
 
@@ -87,7 +86,6 @@ namespace creatures {
                 std::string error_message = fmt::format("Error in the database while adding a creature: {} ({})",
                                                         e.what(), e.code().value());
                 critical(error_message);
-                status = grpc::Status(grpc::StatusCode::UNKNOWN, e.what(), fmt::to_string(e.code().value()));
                 reply->set_message(error_message);
                 reply->set_help(e.code().message());
                 throw creatures::InternalError(error_message);

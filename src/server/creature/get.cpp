@@ -39,31 +39,26 @@ namespace creatures {
         try {
             db->getCreature(id, reply);
             debug("creature found in DB on get!");
-            status = grpc::Status(grpc::StatusCode::OK,
-                                  fmt::format("✅ Got creature by id successfully!"));
-            return status;
+            return {grpc::StatusCode::OK, fmt::format("✅ Got creature by id successfully!")};
 
         }
         catch (const creatures::NotFoundException &e) {
             info("creature id not found");
-            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                  e.what(),
-                                  fmt::format("🚫 Creature id not found"));
-            return status;
+            return {grpc::StatusCode::NOT_FOUND, e.what(), "🚫 Creature id not found"};
+
         }
         catch (const creatures::DataFormatException &e) {
             critical("Data format exception while getting a creature by id: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  e.what(),
-                                  "A data formatting error occurred while looking for a creature by id");
-            return status;
+            return {grpc::StatusCode::INTERNAL,
+                      e.what(),
+                      "A data formatting error occurred while looking for a creature by id"};
         }
         catch (const creatures::InvalidArgumentException &e) {
             error("an empty name was passed into getCreature()");
-            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                  e.what(),
-                                  fmt::format("⚠️ A creature id must be supplied"));
-            return status;
+            return {grpc::StatusCode::INVALID_ARGUMENT,
+                      e.what(),
+                      fmt::format("⚠️ A creature id must be supplied")};
+
         }
     }
 

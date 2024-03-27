@@ -36,19 +36,19 @@ namespace creatures {
 
         try {
             db->getAllCreatures(filter, response);
-            return grpc::Status(grpc::StatusCode::OK, "Got all of the creatures! ✅🦁🦜");
+            return {grpc::StatusCode::OK, "Got all of the creatures! ✅🦁🦜"};
         }
         catch( const DataFormatException& e) {
             error("Data format exception while getting all creatures: {}", e.what());
-            return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
+            return {grpc::StatusCode::INTERNAL, e.what()};
         }
         catch( const InternalError& e) {
             error("Internal error while getting all creatures: {}", e.what());
-            return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
+            return {grpc::StatusCode::INTERNAL, e.what()};
         }
         catch ( ... ) {
             error("Unknown error while getting all creatures");
-            return grpc::Status(grpc::StatusCode::INTERNAL, "Unknown error");
+            return {grpc::StatusCode::INTERNAL, "Unknown error"};
         }
 
     }

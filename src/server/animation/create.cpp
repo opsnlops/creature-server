@@ -8,8 +8,6 @@
 #include <bsoncxx/json.hpp>
 
 
-#include <mongocxx/client.hpp>
-#include <mongocxx/exception/bulk_write_exception.hpp>
 
 
 #include "server/database.h"
@@ -37,8 +35,32 @@ namespace creatures {
                                                const Animation *animation,
                                                DatabaseInfo *reply) {
 
-        info("Creating a new animation in the database");
-        return db->createAnimation(animation, reply);
+        debug("creating a new animation in the database");
+        try {
+            db->createAnimation(animation, reply);
+            info("created new animation in the database");
+            return {grpc::StatusCode::OK, "✅ Created new animation in the database"};
+        }
+        catch (const creatures::DuplicateFoundError &e) {
+            debug("Duplicate found while creating a new animation: {}", e.what());
+            return {grpc::StatusCode::ALREADY_EXISTS, e.what()};
+        }
+        catch (const creatures::DataFormatException &e) {
+            error("Data format error while creating a new animation: {}", e.what());
+            return {grpc::StatusCode::INVALID_ARGUMENT, e.what()};
+        }
+        catch (const creatures::DatabaseError &e) {
+            error("Database error while creating a new animation: {}", e.what());
+            return {grpc::StatusCode::INTERNAL, e.what()};
+        }
+        catch (const creatures::InternalError &e) {
+            error("Internal error while creating a new animation: {}", e.what());
+            return {grpc::StatusCode::INTERNAL, e.what()};
+        }
+        catch (...) {
+            error("Unknown error while creating a new animation");
+            return {grpc::StatusCode::INTERNAL, "Unknown error"};
+        }
     }
 
     /**
@@ -46,9 +68,9 @@ namespace creatures {
      *
      * @param animation the `Animation` to save
      * @param reply Information about the save
-     * @return a gRPC Status on how things went
+     * @return nothing, but tosses exceptions if bad things happen
      */
-    grpc::Status Database::createAnimation(const Animation *animation, DatabaseInfo *reply) {
+    void Database::createAnimation(const Animation *animation, DatabaseInfo *reply) {
 
         debug("creating a new animation in the database");
 
@@ -70,44 +92,44 @@ namespace creatures {
             trace("run_command done");
 
             info("saved new animation in the database 💃🏽");
-
-            status = grpc::Status(grpc::StatusCode::OK, "✅ Saved new animation in the database");
             reply->set_message("✅ Saved new animation in the database");
         }
         catch (const mongocxx::exception &e) {
 
             // Code 11000 means id collision
             if (e.code().value() == 11000) {
-                error("attempted to insert a duplicate Animation in the database for id {}", animation->_id());
-                status = grpc::Status(grpc::StatusCode::ALREADY_EXISTS, e.what());
+                std::string errorMessage = fmt::format("attempted to insert a duplicate Animation in the database for id {}", animation->_id());
+                error(errorMessage);
                 reply->set_message("Unable to create new animation");
                 reply->set_help(fmt::format("ID {} already exists", animation->_id()));
+                throw creatures::DuplicateFoundError(errorMessage);
+
             } else {
-                critical("Error updating database: {}", e.what());
-                status = grpc::Status(grpc::StatusCode::UNKNOWN, e.what(), fmt::to_string(e.code().value()));
+                std::string errorMessage = fmt::format("Error updating database: {}", e.what());
+                critical(errorMessage);
                 reply->set_message(
                         fmt::format("Unable to create Animation in database: {} ({})",
                                     e.what(), e.code().value()));
                 reply->set_help(e.code().message());
+                throw creatures::InternalError(errorMessage);
             }
         }
         catch (creatures::DataFormatException &e) {
-            error("server refused to save animation: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, e.what());
+            std::string errorMessage = fmt::format("Data format error while creating an animation: {}", e.what());
+            error(errorMessage);
             reply->set_message(fmt::format("Unable to create new Animation: {}", e.what()));
             reply->set_help("Sorry! 💜");
+            throw creatures::DataFormatException(errorMessage);
+
         }
         catch (const bsoncxx::exception &e) {
-            error("unable to convert the incoming animation to BSON: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, e.what());
+            std::string errorMessage = fmt::format("BSON error while creating an animation: {}", e.what());
+            error(errorMessage);
             reply->set_message(fmt::format("Unable to create new animation: {}", e.what()));
             reply->set_help(fmt::format("Check to make sure the message is well-formed"));
+            throw creatures::DatabaseError(errorMessage);
         }
 
-        return status;
     }
-
-
-
 
 }
