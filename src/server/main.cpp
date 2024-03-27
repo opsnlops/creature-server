@@ -205,9 +205,13 @@ int main(int argc, char **argv) {
     while (creatures::serverShouldRun.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
+
+    /*
+     * IT'S SHUT DOWN TIME! 🤪
+     */
+
     info("starting shutdown process");
 
-    // It's time to shut down! Everyone out!
 
     // Tell the watchdog to stop
     watchdog->shutdown();
@@ -226,8 +230,8 @@ int main(int argc, char **argv) {
     SDL_Quit();
     debug("SDL shut down");
 
-    // This will cause a sig11 and I don't know why, but don't really care, either.
-
+    // This most likely isn't needed, but given that there's so many threads
+    // running, I figure it's a good thing to do.
     debug("waiting for a few seconds to let everyone clean up");
     std::this_thread::sleep_for(std::chrono::seconds(2));
 
