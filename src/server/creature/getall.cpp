@@ -32,7 +32,7 @@ namespace creatures {
     grpc::Status CreatureServerImpl::GetAllCreatures(ServerContext *context, const CreatureFilter *filter,
                                                GetAllCreaturesResponse *response) {
 
-        debug("called handleListCreatures()");
+        debug("called GetAllCreatures()");
 
         try {
             db->getAllCreatures(filter, response);
@@ -97,21 +97,20 @@ namespace creatures {
         } catch (const DataFormatException& e) {
 
                 // Log the error
-                std::string errorMessage = fmt::format("Failed to get all creatures: {}", e.what());
+                std::string errorMessage = fmt::format("Data format error while trying to get all of the creatures: {}", e.what());
                 error(errorMessage);
-                throw creatures::DataFormatException(errorMessage);
+                throw creatures::DataFormatException(errorMessage);}
+        catch (const DatabaseError& e) {
+                std::string errorMessage = fmt::format("A database error happened while getting all of the creatures: {}", e.what());
+                error(errorMessage);
+                throw creatures::InternalError(errorMessage);
 
         } catch (const std::exception& e) {
-
-            // Log the error
             std::string errorMessage = fmt::format("Failed to get all creatures: {}", e.what());
             error(errorMessage);
-            throw e;
+            throw creatures::InternalError(errorMessage);
         }
-
         catch (...) {
-
-            // Log the error
             std::string errorMessage = "Failed to get all creatures: unknown error";
             error(errorMessage);
             throw creatures::InternalError(errorMessage);
