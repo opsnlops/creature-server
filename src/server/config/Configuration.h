@@ -52,7 +52,7 @@ namespace creatures {
         std::string soundFileLocation = DEFAULT_SOUND_FILE_LOCATION;
 
         // Network stuff
-        uint16_t networkDevice = DEFAULT_NETWORK_DEVICE_NUMBER;
+        uint16_t networkDevice = 0;
     };
 
 

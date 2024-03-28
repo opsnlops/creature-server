@@ -22,7 +22,7 @@
 #define EVENT_LOOP_PERIOD_MS            1
 
 #define DB_URI_ENV                      "MONGO_URI"
-#define DEFAULT_DB_URI                  "mongodb://10.3.2.11"
+#define DEFAULT_DB_URI                  "mongodb://10.3.2.11/?serverSelectionTimeoutMS=2000"
 #define DB_NAME                         "creature_server"
 #define CREATURES_COLLECTION            "creatures"
 #define ANIMATIONS_COLLECTION           "animation"
@@ -43,8 +43,8 @@
 #define SOUND_CHANNELS_ENV              "SOUND_CHANNELS"
 #define DEFAULT_SOUND_CHANNELS          6
 
-#define NETWORK_DEVICE_NUMBER_ENV       "NETWORK_DEVICE_NUMBER"
-#define DEFAULT_NETWORK_DEVICE_NUMBER   1
+#define NETWORK_DEVICE_NAME_ENV         "NETWORK_DEVICE_NAME"
+#define DEFAULT_NETWORK_DEVICE_NAME     "eth0"
 
 #define SOUND_BUFFER_SIZE               2048    // Higher = less CPU, lower = less latency
 

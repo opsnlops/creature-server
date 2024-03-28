@@ -16,6 +16,7 @@ namespace creatures {
     private:
         static void listSoundDevices();
         static void listNetworkDevices();
+        static uint8_t getInterfaceIndex(const std::string& interfaceName);
         std::string getVersion();
     };
 
