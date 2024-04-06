@@ -26,16 +26,13 @@ using grpc::Status;
 using grpc::ClientWriter;
 
 using server::Animation;
-using server::Animation_Metadata;
+using server::AnimationMetadata;
 using server::AnimationFilter;
-using server::AnimationIdentifier;
 using server::CreatureServer;
 using server::Creature;
 using server::CreatureFilter;
 using server::CreatureId;
 using server::CreatureName;
-using server::Frame;
-using server::FrameResponse;
 using server::ListAnimationsResponse;
 using server::ListCreaturesResponse;
 using server::LogItem;
@@ -49,6 +46,8 @@ using server::ListPlaylistsResponse;
 using server::CreaturePlaylistStatus;
 using server::PlaySoundRequest;
 using server::PlaySoundResponse;
+using server::StreamFrameData;
+using server::StreamFrameDataResponse;
 
 using spdlog::trace;
 using spdlog::debug;
@@ -140,7 +139,7 @@ int main(int argc, char** argv) {
     auto everyone = client.GetAllCreatures(filter);
     for(const auto& c : everyone.creatures() )
     {
-        debug("Creature found {} with {} motors", c.name(), c.number_of_motors());
+        debug("Creature found: {}", c.name());
     }
 
 #if 0
@@ -209,11 +208,10 @@ int main(int argc, char** argv) {
 
     // List all the animations for WLED lights
     AnimationFilter animationFilter = AnimationFilter();
-    animationFilter.set_type(server::CreatureType::wled_light);
 
     ListAnimationsResponse response = client.ListAnimations(animationFilter);
     for (const auto& a: response.animations())
-        info("Found: {}", a.metadata().title());
+        info("Found: {}", a.title());
 
 /* Show animation test */
 #if 0
@@ -261,8 +259,8 @@ int main(int argc, char** argv) {
     const char* animation_oid_data = animation_oid.bytes();
     animationId.set__id(animation_oid_data, bsoncxx::oid::k_oid_length);
 
-    AnimationIdentifier animationIdentifier = client.GetAnimationIdentifier(animationId);
-    info("found! Title: {}", animationIdentifier.metadata().title());
+    AnimationMetadata animationMetadata = client.GetAnimationMetadata(animationId);
+    info("found! Title: {}", animationMetadata.title());
 
 #endif
 

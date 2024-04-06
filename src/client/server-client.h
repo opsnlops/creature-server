@@ -198,22 +198,20 @@ public:
         return reply;
     }
 
-    server::FrameResponse StreamFrames() {
-        FrameResponse response;
+    server::StreamFrameDataResponse StreamFrames() {
+        StreamFrameDataResponse response;
         ClientContext context;
         // Create a writer for the stream of frames
-        std::unique_ptr<ClientWriter<Frame>> writer(stub_->StreamFrames(&context, &response));
+        std::unique_ptr<ClientWriter<StreamFrameData>> writer(stub_->StreamFrames(&context, &response));
 
         // Some frames to the stream
         for (int i = 0; i <= 1000; i += 10) {
 
-            Frame frame = Frame();
+            StreamFrameData frame = StreamFrameData();
 
             // Send five test frames
-            frame.set_creature_name("Beaky");
-            frame.set_channel_offset(0);
+            frame.set_creature_id("Beaky");
             frame.set_universe(3);
-            frame.set_number_of_motors(4);
 
             char notdata[9] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9};
 
@@ -223,7 +221,7 @@ public:
             data.push_back(i);
             data.push_back(255);
 
-            frame.set_frame(data.data(), 4);
+            frame.set_data(data.data(), 4);
             writer->Write(frame);
 
             debug("sent");
@@ -331,14 +329,14 @@ public:
         Status status = stub_->ListAnimations(&context, filter, &reply);
 
         if(status.ok()) {
-            debug("Got an OK from the server while trying to list all of the animations for creature type {}", static_cast<int32_t>(filter.type()));
+            debug("Got an OK from the server while trying to list all of the animations for creature {}", creatures::creatureIdToString(filter.creature_id()));
         }
         else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            info("No animations for creature type {} found. (This might be expected!)", static_cast<int32_t>(filter.type()));
+            info("No animations for creature {} found. (This might be expected!)", creatures::creatureIdToString(filter.creature_id()));
         }
         else {
-            error("An error occurred while trying to get all of the animations for creature type {}: {} ({})",
-                  static_cast<int32_t>(filter.type()), status.error_message(), status.error_details());
+            error("An error occurred while trying to get all of the animations for creature {}: {} ({})",
+                  creatures::creatureIdToString(filter.creature_id()), status.error_message(), status.error_details());
         }
 
         return reply;
@@ -365,12 +363,12 @@ public:
         return reply;
     }
 
-    server::AnimationIdentifier GetAnimationIdentifier(const AnimationId& id) {
+    server::AnimationMetadata GetAnimationMetadata(const AnimationId& id) {
 
         ClientContext context;
-        AnimationIdentifier reply;
+        AnimationMetadata reply;
 
-        Status status = stub_->GetAnimationIdentifier(&context, id, &reply);
+        Status status = stub_->GetAnimationMetadata(&context, id, &reply);
 
         if(status.ok()) {
             debug("Got an OK while loading one animation");
@@ -380,7 +378,7 @@ public:
         }
         else {
             error("An error happened while loading an animationIdentifier. ID {}: {} ({})",
-                  id._id(), status.error_message(), status.error_details());
+                  creatures::animationIdToString(id), status.error_message(), status.error_details());
         }
 
         return reply;
@@ -455,14 +453,14 @@ public:
         Status status = stub_->ListPlaylists(&context, filter, &reply);
 
         if(status.ok()) {
-            debug("Got an OK from the server while trying to list all of the playlists for creature type {}", static_cast<int32_t>(filter.creature_type()));
+            debug("Got an OK from the server while trying to list all of the playlists");
         }
         else if(status.error_code() == grpc::StatusCode::NOT_FOUND) {
-            info("No playlists for creature type {} found. (This might be expected!)", static_cast<int32_t>(filter.creature_type()));
+            info("No playlists found. (This might be expected!)");
         }
         else {
-            error("An error occurred while trying to get all of the playlists for creature type {}: {} ({})",
-                  static_cast<int32_t>(filter.creature_type()), status.error_message(), status.error_details());
+            error("An error occurred while trying to get all of the playlists: {} ({})",
+                 status.error_message(), status.error_details());
         }
 
         return reply;
