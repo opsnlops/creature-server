@@ -18,10 +18,10 @@ import public "google/protobuf/timestamp.proto";
 service CreatureServer {
 
   // Fetches one from the database
-  rpc GetCreature (CreatureId) returns (Creature) {}
+  rpc GetCreature(CreatureId) returns (Creature) {}
 
   // Get all of them
-  rpc GetAllCreatures (CreatureFilter) returns (GetAllCreaturesResponse) {}
+  rpc GetAllCreatures(CreatureFilter) returns (GetAllCreaturesResponse) {}
 
   // Create a new creature in the database
   rpc CreateCreature(Creature) returns (DatabaseInfo) {}
@@ -39,7 +39,7 @@ service CreatureServer {
 
   // Stream frames from the client to a Creature. Used for real time control, if
   // that's something I want to do.
-  rpc StreamFrames(stream Frame) returns (FrameResponse) {}
+  rpc StreamFrames(stream StreamFrameData) returns (StreamFrameDataResponse) {}
 
   rpc GetServerStatus(google.protobuf.Empty) returns (ServerStatus) {}
 
@@ -123,10 +123,10 @@ message Creature {
   bytes _id = 1;
   string name = 2;
   google.protobuf.Timestamp last_updated = 3;
-  uint32 universe = 5;
-  uint32 channel_offset = 6;
-  uint32 number_of_motors = 7;
-  CreatureType type = 8;
+  //uint32 universe = 5;      /* No, don't do this. I need to have dev and prod network */
+  uint32 channel_offset = 4;
+  uint32 audio_channel = 5;
+  string notes = 6;
 }
 
 
@@ -158,12 +158,6 @@ enum SortBy {
 }
 
 
-enum CreatureType {
-  parrot = 0;
-  wled_light = 1;
-
-  other = 999;
-}
 
 /**
   One frame to send to a creature
@@ -176,57 +170,47 @@ message Frame {
   bytes frame = 10;
 }
 
-message FrameResponse {
-  uint32 frames_processed = 1;
-  string message = 2;
-}
+
 
 message ServerStatus {
   uint64 frames_processed = 1;
   google.protobuf.Timestamp started_at = 2;
+  bool database_connected = 3;
 }
-
-
 
 
 /**
- Animation document that's stored in the database!
+  Stream frames to a creature
 
- These are what run on the creatures themselves
+  This is used for real time control of a creature from the console.
+
  */
-message Animation {
-  message Metadata {
-    string title = 1;
-    int32 milliseconds_per_frame = 2;
-    int32 number_of_frames = 3;
-    CreatureType creature_type = 4;
-    int32 number_of_motors = 5;
-    string notes = 6;
 
-    // This is a duplicate of the ID of the main animation. It's repeated here
-    // So that we can work backwards from a metadata to a given animation. This
-    // is used in the UI to go from the list of animations into the editor.
-    bytes animationId = 7;
-
-    // The sound file to play while this animation is running.
-    string sound_file = 8;
-    }
-
-  message Frame {
-    repeated bytes bytes = 1;
-  }
-
-  bytes _id = 1;
-  Metadata metadata = 2;
-  repeated Frame frames = 3;
+// One frame to stream to the creature in the StreamFrameRequest. Offset is looked
+// up in the database.
+message StreamFrameData {
+  bytes creature_id = 1;
+  uint32 universe = 2;
+  repeated bytes data = 10;
 }
+
+message StreamFrameDataResponse {
+  uint32 frames_processed = 1;
+  string message = 2;
+}
+
+
+
+
+
+
 
 message AnimationId {
   bytes _id = 1;
 }
 
 message AnimationFilter {
-  CreatureType type = 1;
+  //CreatureType type = 1;
 }
 
 message ListAnimationsResponse {
@@ -234,14 +218,20 @@ message ListAnimationsResponse {
 }
 
 message AnimationIdentifier {
-  bytes _id  = 1;
-  Animation.Metadata metadata = 2;
+  bytes _id = 1;
 }
 
 
+/**
+  Play an animation on a creature
+
+  This plays an animation that's out of the database, on a given universe. The universe
+  is allowed to be given so that I can have a dev and prod network on the same wire.
+
+ */
 message PlayAnimationRequest {
-  CreatureId creatureId = 1;
-  AnimationId animationId = 2;
+  AnimationId animationId = 1;
+  uint32 universe = 2;
 }
 
 message PlayAnimationResponse {
@@ -279,7 +269,7 @@ message Playlist {
 
   PlaylistIdentifier _id = 1;
   string name = 2;
-  CreatureType creature_type = 3;
+  //CreatureType creature_type = 3;
   google.protobuf.Timestamp last_updated = 4;
 
   // The actual items themselves
@@ -288,7 +278,7 @@ message Playlist {
 }
 
 message PlaylistFilter {
-  CreatureType creature_type = 1;
+  //CreatureType creature_type = 1;
   SortBy sortBy = 2;
 }
 
@@ -309,4 +299,95 @@ message CreaturePlaylistResponse {
 message CreaturePlaylistStatus {
   bool               playing = 1;
   PlaylistIdentifier playlistId = 2;
+}
+
+
+
+//
+// Animations 2.0
+//
+
+/*
+  Animations 2.0 is a different approach for animations. This new take is gives up
+  the idea that one animation could be played on more than one creature. (I have figured
+  out that that's not really a good idea.)
+
+  Each creature involved in the animation will have its own set of frames, represented
+  as a FrameData object. Each item in the FrameData object should have the same number of
+  frames.
+
+  Playing an animation is a lot more complex. The server needs to look up each creature in
+  the animation to know which e1.31 frame offset to use. This allows me to move creatures
+  around as needed, rather than being hard coded. I can also edit one creature's set of
+  frames independently of the others.
+
+ */
+
+message Animation {
+  // Unique ID
+  bytes _id = 1;
+
+  // Metadata
+  AnimationMetaData metadata = 5;
+
+
+  // Actual frame data
+  repeated FrameData frames = 20;
+
+}
+
+/**
+  Metadata for an animation
+
+  This is the information that's displayed in the UI. It's a separate object so that we can get
+  a list of the animations without having to load all of the frame data.
+
+ */
+message AnimationMetaData {
+  // Title as it appears in the UI
+  string title = 2;
+
+  // Last time this was updated
+  google.protobuf.Timestamp last_updated = 3;
+
+  // Data pacing (almost always 20)
+  uint32 milliseconds_per_frame = 4;
+
+  // A note for myself in the UI
+  string note = 5;
+
+  // Sound file to play
+  string sound_file = 6;
+
+  // Number of frames that should be expected in each FrameData
+  uint32 number_of_frames = 7;
+
+  // Does this animation have more than one audio track?
+  bool mutlitrack_audio = 8;
+}
+
+
+
+/**
+  I considered embedding the FrameData in the Animation object, but I think it's better
+  like this. It will make it easier to deal with in the application.
+ */
+
+
+//
+// One creature's frames in an animation
+//
+message FrameData {
+
+  // Unique ID
+  bytes _id = 1;
+
+  // The creature ID that this frame data is for
+  bytes creature_id = 2;
+
+  // Which animation ID is this data connected to for reference
+  bytes animation_id = 3;
+
+  // The actual frames
+  repeated bytes frames = 20;
 }
