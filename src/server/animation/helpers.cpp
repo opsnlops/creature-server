@@ -14,6 +14,14 @@
 
 namespace creatures {
 
+    /**
+     * This function is responsible serializing an animation to BSON
+     *
+     * @param Animation* animation  // The animation to be handled.
+     * @param int animationId // The unique identifier for the animation.
+     *
+     * @return bool // Returns true if the animation is successfully handled, false otherwise.
+     */
     bsoncxx::document::value Database::animationToBson(const server::Animation *animation, bsoncxx::oid animationId) {
 
         trace("converting an animation to BSON");
@@ -72,11 +80,7 @@ namespace creatures {
                     << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().milliseconds_per_frame())}
                     << "number_of_frames"
                     << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().number_of_frames())}
-                    << "creature_type"
-                    << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().creature_type())}
-                    << "number_of_motors"
-                    << bsoncxx::types::b_int32{static_cast<int32_t>(animation->metadata().number_of_motors())}
-                    << "notes" << animation->metadata().notes()
+                    << "note" << animation->metadata().note()
                     << "sound_file" << animation->metadata().sound_file()
                     << bsoncxx::builder::stream::finalize;
 
@@ -121,7 +125,7 @@ namespace creatures {
      * @param doc the doc to look at
      * @param metadata a Animation_Metadata to fill out
      */
-    void Database::bsonToAnimationMetadata(const bsoncxx::document::view &doc, Animation_Metadata *metadata) {
+    void Database::bsonToAnimationMetaData(const bsoncxx::document::view &doc, AnimationMetaData *metadata) {
 
         trace("attempting to build an Animation.Metadata from BSON");
 
@@ -226,7 +230,7 @@ namespace creatures {
         }
         string_value = element.get_string().value;
         metadata->set_sound_file(std::string{string_value});
-        trace("set the sound_file to {}", metadata->notes());
+        trace("set the sound_file to {}", metadata->sound_file());
 
 
         // And finally, the notes!
@@ -240,8 +244,8 @@ namespace creatures {
             throw DataFormatException("Animation.Metadata value 'notes' is not a string");
         }
         string_value = element.get_string().value;
-        metadata->set_notes(std::string{string_value});
-        trace("set the notes to {}", metadata->notes());
+        metadata->set_note(std::string{string_value});
+        trace("set the notes to {}", metadata->note());
 
 
         trace("all done creating a metadata from BSON!");

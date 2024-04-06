@@ -54,7 +54,7 @@ public protocol Server_CreatureServerClientProtocol: GRPCClient {
 
   func streamFrames(
     callOptions: CallOptions?
-  ) -> ClientStreamingCall<Server_Frame, Server_FrameResponse>
+  ) -> ClientStreamingCall<Server_StreamFrameData, Server_StreamFrameDataResponse>
 
   func getServerStatus(
     _ request: SwiftProtobuf.Google_Protobuf_Empty,
@@ -277,7 +277,7 @@ extension Server_CreatureServerClientProtocol {
   /// - Returns: A `ClientStreamingCall` with futures for the metadata, status and response.
   public func streamFrames(
     callOptions: CallOptions? = nil
-  ) -> ClientStreamingCall<Server_Frame, Server_FrameResponse> {
+  ) -> ClientStreamingCall<Server_StreamFrameData, Server_StreamFrameDataResponse> {
     return self.makeClientStreamingCall(
       path: Server_CreatureServerClientMetadata.Methods.streamFrames.path,
       callOptions: callOptions ?? self.defaultCallOptions,
@@ -661,7 +661,7 @@ public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
 
   func makeStreamFramesCall(
     callOptions: CallOptions?
-  ) -> GRPCAsyncClientStreamingCall<Server_Frame, Server_FrameResponse>
+  ) -> GRPCAsyncClientStreamingCall<Server_StreamFrameData, Server_StreamFrameDataResponse>
 
   func makeGetServerStatusCall(
     _ request: SwiftProtobuf.Google_Protobuf_Empty,
@@ -835,7 +835,7 @@ extension Server_CreatureServerAsyncClientProtocol {
 
   public func makeStreamFramesCall(
     callOptions: CallOptions? = nil
-  ) -> GRPCAsyncClientStreamingCall<Server_Frame, Server_FrameResponse> {
+  ) -> GRPCAsyncClientStreamingCall<Server_StreamFrameData, Server_StreamFrameDataResponse> {
     return self.makeAsyncClientStreamingCall(
       path: Server_CreatureServerClientMetadata.Methods.streamFrames.path,
       callOptions: callOptions ?? self.defaultCallOptions,
@@ -1113,7 +1113,7 @@ extension Server_CreatureServerAsyncClientProtocol {
   public func streamFrames<RequestStream>(
     _ requests: RequestStream,
     callOptions: CallOptions? = nil
-  ) async throws -> Server_FrameResponse where RequestStream: Sequence, RequestStream.Element == Server_Frame {
+  ) async throws -> Server_StreamFrameDataResponse where RequestStream: Sequence, RequestStream.Element == Server_StreamFrameData {
     return try await self.performAsyncClientStreamingCall(
       path: Server_CreatureServerClientMetadata.Methods.streamFrames.path,
       requests: requests,
@@ -1125,7 +1125,7 @@ extension Server_CreatureServerAsyncClientProtocol {
   public func streamFrames<RequestStream>(
     _ requests: RequestStream,
     callOptions: CallOptions? = nil
-  ) async throws -> Server_FrameResponse where RequestStream: AsyncSequence & Sendable, RequestStream.Element == Server_Frame {
+  ) async throws -> Server_StreamFrameDataResponse where RequestStream: AsyncSequence & Sendable, RequestStream.Element == Server_StreamFrameData {
     return try await self.performAsyncClientStreamingCall(
       path: Server_CreatureServerClientMetadata.Methods.streamFrames.path,
       requests: requests,
@@ -1356,7 +1356,7 @@ public protocol Server_CreatureServerClientInterceptorFactoryProtocol: Sendable 
   func makeListCreaturesInterceptors() -> [ClientInterceptor<Server_CreatureFilter, Server_ListCreaturesResponse>]
 
   /// - Returns: Interceptors to use when invoking 'streamFrames'.
-  func makeStreamFramesInterceptors() -> [ClientInterceptor<Server_Frame, Server_FrameResponse>]
+  func makeStreamFramesInterceptors() -> [ClientInterceptor<Server_StreamFrameData, Server_StreamFrameDataResponse>]
 
   /// - Returns: Interceptors to use when invoking 'getServerStatus'.
   func makeGetServerStatusInterceptors() -> [ClientInterceptor<SwiftProtobuf.Google_Protobuf_Empty, Server_ServerStatus>]

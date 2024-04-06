@@ -104,7 +104,7 @@ namespace creatures {
         static bsoncxx::document::value animationToBson(const Animation *animation, bsoncxx::oid animationId);
         static bsoncxx::document::value metadataToBson(const Animation *animation, bsoncxx::oid animationId);
         static uint32_t framesToBson(bsoncxx::builder::stream::document &doc, const Animation *animation);
-        static void bsonToAnimationMetadata(const bsoncxx::document::view &doc, Animation_Metadata *metadata);
+        static void bsonToAnimationMetaData(const bsoncxx::document::view &doc, AnimationMetaData *metadata);
         static void populateFramesFromBson(const bsoncxx::document::view &doc, Animation *animation);
 
         /*

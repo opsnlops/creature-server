@@ -152,7 +152,7 @@ namespace creatures {
             // Grab the metadata
             bsoncxx::document::element element = doc["metadata"];
             Animation_Metadata metadata = Animation_Metadata();
-            bsonToAnimationMetadata(element.get_document().view(), &metadata);
+            bsonToAnimationMetaData(element.get_document().view(), &metadata);
             *animation->mutable_metadata() = metadata;
             trace("metadata loaded");
 
@@ -218,7 +218,7 @@ namespace creatures {
             // Grab the metadata
             bsoncxx::document::element element = doc["metadata"];
             Animation_Metadata metadata = Animation_Metadata();
-            bsonToAnimationMetadata(element.get_document().view(), &metadata);
+            bsonToAnimationMetaData(element.get_document().view(), &metadata);
             *animationIdentifier->mutable_metadata() = metadata;
             trace("metadata loaded");
 
