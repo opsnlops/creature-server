@@ -92,11 +92,10 @@ int main(int argc, char** argv) {
 #if 0
     // Let's try to save one
     server::Creature creature = server::Creature();
-    creature.set_name("Mango");
+    creature.set_name("Test Creature from client.cpp");
     creature.set_channel_offset(10);
-    creature.set_number_of_motors(6);
-    creature.set_universe(1);
-    creature.set_type(server::CreatureType::parrot);
+    creature.set_audio_channel(1);
+    creature.set_notes("This is a note! 🐰");
     *creature.mutable_last_updated() = current_timestamp;
 
     client.CreateCreature(creature);
@@ -104,7 +103,7 @@ int main(int argc, char** argv) {
 #endif
 
     // Try to get a creature by ID
-    std::string oid_string = "6431c48d6e9cc35e2d089263";
+    std::string oid_string = "6611de58e98d776bb0025301";
     info("attempting to search for creature ID {} in the database...", oid_string);
 
     bsoncxx::oid oid(oid_string);
@@ -177,7 +176,7 @@ int main(int argc, char** argv) {
 
 
 /* Creature Update Tests */
-#if 1
+#if 0
 
     std::string unitTestCreatureId = "64717ff45809fc63850d4671";
 
@@ -245,8 +244,8 @@ int main(int argc, char** argv) {
     client.UpdateAnimation(testAnimation);
 #endif
 
-    /* Animation Identifier Tests */
-#if 1
+    /* Animation Metadata Tests */
+#if 0
     // Attempt to load an animationIdentifier
     debug("attempting to load an animationIdentifier");
 
