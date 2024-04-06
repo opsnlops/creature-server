@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <sstream>
 
+#include <bsoncxx/types.hpp>
 #include <bsoncxx/oid.hpp>
 
 #include "server/namespace-stuffs.h"
@@ -56,21 +57,51 @@ namespace creatures {
         return playlistIdentifier;
     }
 
+    AnimationId stringToAnimationId(const std::string &animationIdString) {
+        bsoncxx::oid animationIdOid(animationIdString);
+        AnimationId animationId;
 
-    void displayFrames(const Animation& animation) {
+        const char* animationIdOidData = animationIdOid.bytes();
+        animationId.set__id(animationIdOidData, bsoncxx::oid::k_oid_length);
+
+        return animationId;
+    }
+
+    void displayFrames(const server::FrameData& animation) {
         int frameCounter = 0;
         for (const auto& frame : animation.frames()) {
             std::ostringstream byteStream;
             byteStream << std::hex << std::setfill('0');
-            for (const auto& byteBlock : frame.bytes()) {
-                for (unsigned char byte : byteBlock) {
-                    byteStream << std::setw(2) << static_cast<int>(byte) << " ";
-                }
+            for (unsigned char byte : frame) { // Directly iterate over the bytes in the frame
+                byteStream << std::setw(2) << static_cast<int>(byte) << " ";
             }
 
-            std::cout << "Frame " << frameCounter << ": [ " << byteStream.str() << "]" << std::endl;
+            std::cout << "Frame " << frameCounter << ": [" << byteStream.str() << "]" << std::endl;
             frameCounter++;
         }
+    }
+
+    std::string animationFilterToString(const AnimationFilter* filter) {
+        std::ostringstream oss;
+        oss << "AnimationFilter{ creatureId=" << creatureIdToString(filter->creature_id()) << " }";
+        return oss.str();
+    }
+
+    bsoncxx::oid creatureIdToOid(const CreatureId& creature_id) {
+        // Error checking
+        if (creature_id._id().size() != bsoncxx::oid::k_oid_length) {
+            throw std::runtime_error("Invalid ObjectId size.");
+        }
+
+        return bsoncxx::oid(creature_id._id().data(), bsoncxx::oid::k_oid_length);
+    }
+
+    bsoncxx::oid animationIdToOid(const AnimationId& animation_id) {
+          if (animation_id._id().size() != bsoncxx::oid::k_oid_length) {
+            throw std::runtime_error("Invalid ObjectId size.");
+        }
+
+        return bsoncxx::oid(animation_id._id().data(), bsoncxx::oid::k_oid_length);
     }
 
     std::string ProtobufTimestampToHumanReadable(const google::protobuf::Timestamp& timestamp) {

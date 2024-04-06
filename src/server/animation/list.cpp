@@ -12,6 +12,7 @@
 #include "server/database.h"
 #include "exception/exception.h"
 #include "server/creature-server.h"
+#include "util/helpers.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -60,9 +61,9 @@ namespace creatures {
      * @param animationList the list to fill out
      * @return the status of this request
      */
-    void Database::listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList) {
+    void Database::listAnimations(const AnimationFilter *filter, ListAnimationsResponse *response) {
 
-        trace("attempting to list all of the animation for a filter ({})", toascii(filter->type()));
+        trace("attempting to list all of the animation for a filter ({})", animationFilterToString(filter));
 
         grpc::Status status;
 
@@ -79,11 +80,12 @@ namespace creatures {
             // We only want to sort by name at this point
             sort_doc << "metadata.title" << 1;
 
-            // We want the idea and metadata only (no frames)
-            projection_doc << "_id" << 1 << "metadata" << 1;
+            // Don't return the frame data. Otherwise we'd be loading most of the
+            // entire collection into memory just to get a list!
+            projection_doc << "frames" << 0;
 
             // We only want documents of the given creature type
-            query_doc << "metadata.creature_type" << bsoncxx::types::b_int32{static_cast<int32_t>(filter->type())};
+            query_doc << "frames.creature_id" << bsoncxx::types::b_oid{creatureIdToOid(filter->creature_id())};
 
             mongocxx::options::find findOptions{};
             findOptions.projection(projection_doc.view());
@@ -94,28 +96,13 @@ namespace creatures {
             // Go Mongo, go! 🎉
             for (auto &&doc: cursor) {
 
-                auto animationId = animationList->add_animations();
+                // Create AnimationMetadata objects for what we've gotten back
+                auto animationMetadata = response->add_animations();
 
-                // Extract the ID
-                bsoncxx::document::element element = doc["_id"];
-                if (element && element.type() != bsoncxx::type::k_oid) {
-                    error("Field `_id` was not an OID in the database");
-                    throw DataFormatException("Field '_id' was not a bsoncxx::oid in the database");
-                }
-                const bsoncxx::oid &oid = element.get_oid().value;
-                const char *oid_data = oid.bytes();
-                animationId->set__id(oid_data, bsoncxx::oid::k_oid_length);
-                trace("set the _id to {}", oid.to_string());
+                // doc is going to be an animation document
+                bsonToAnimationMetadata(doc, animationMetadata);
 
-                // Grab the metadata
-                element = doc["metadata"];
-
-                Animation_Metadata metadata = Animation_Metadata();
-
-                bsonToAnimationMetadata(element.get_document().view(), &metadata);
-                *animationId->mutable_metadata() = metadata;
-
-                debug("loaded {}", animationId->metadata().title());
+                debug("loaded {}", animationMetadata->title());
                 numberOfAnimationsFound++;
             }
         }

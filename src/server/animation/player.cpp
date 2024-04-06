@@ -28,16 +28,53 @@ namespace creatures {
     /**
      * Schedules an animation on a given creature
      *
-     * @param startingFrame the frame to start the animation on
-     * @param creatureId the CreatureId of the creature
      * @param animationId the AnimationId of the animation
+     * @param universe the universe to play the animation on
+     *
      * @return the frame number of last frame of the animation
      */
-    uint64_t scheduleAnimation(uint64_t startingFrame, const CreatureId& creatureId, const AnimationId& animationId) {
+    uint64_t scheduleAnimation(uint64_t startingFrame, const AnimationId& animationId, uint32_t universe) {
 
-        debug("scheduling animation {} on creature {}", animationIdToString(animationId), creatureIdToString(creatureId));
+        debug("scheduling animation {} on universe {}", animationIdToString(animationId), universe);
 
-         // Load the creature
+
+        // Load the animation
+        auto animation = std::make_unique<Animation>();
+        try {
+            db->getAnimation(&animationId, animation.get());
+            debug("loaded animation {}", animation->metadata().title());
+        }
+        catch(const NotFoundException &e) {
+            warn("animation ({}) not found while attempting to schedule an animation", animationIdToString(animationId));
+            std::throw_with_nested(e);
+        }
+        catch(const DataFormatException &e) {
+            error("data format error while loading an animation ({}) for playback", animationIdToString(animationId));
+            std::throw_with_nested(e);
+        }
+        catch (...) {
+            warn("an unknown exception was thrown while attempting to load a animation to schedule an animation");
+            throw;
+        }
+
+        info("Attempting to play animation {} ({})", animation->metadata().title(), animationIdToString(animationId));
+
+
+
+        for(const auto& a : animation->frames()) {
+            CreatureId creatureId = stringToCreatureId(a.creature_id());
+
+            auto creature = std::make_unique<Creature>();
+            db->getCreature(&creatureId, creature.get());
+
+            info("One of the creatures is {}", creature->name());
+        }
+
+        return 0;
+
+        /*
+
+        // Load the creature
         auto creature = std::make_unique<Creature>();
         try {
             db->getCreature(&creatureId, creature.get());
@@ -61,39 +98,7 @@ namespace creatures {
         }
 
 
-        // Load the animation
-        auto animation = std::make_unique<Animation>();
-        try {
-            db->getAnimation(&animationId, animation.get());
-            debug("loaded animation {}", animation->metadata().title());
-        }
-        catch(const NotFoundException &e) {
-            warn("animation ({}) not found while attempting to schedule an animation", animationIdToString(animationId));
-            std::throw_with_nested(e);
-        }
-        catch(const DataFormatException &e) {
-            error("data format error while loading an animation ({}) for playback", animationIdToString(animationId));
-            std::throw_with_nested(e);
-        }
-        catch (...) {
-            warn("an unknown exception was thrown while attempting to load a animation to schedule an animation");
-            throw;
-        }
 
-
-#ifdef DISABLE_PLAY_SAFETY_CHECKS
-#warning Animation playing safety checks off!
-#else
-        // Make sure this animation is for this type of creature
-        if(animation->metadata().creature_type() != creature->type()) {
-            std::string errorMessage = "Invalid animation type for this creature";
-            warn(errorMessage);
-            throw InvalidArgumentException(errorMessage);
-        }
-        debug("passed check of animation type and creature type");
-
-        // TODO: Make sure the number of motors is the same, maybe?
-#endif
 
         // Schedule this animation in the event loop
         trace("starting with frame {}", startingFrame);
@@ -162,6 +167,7 @@ namespace creatures {
 
         // Let the caller know all is well
         return currentFrame-msPerFrame;
+         */
     }
 
 }

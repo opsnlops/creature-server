@@ -7,9 +7,6 @@
 #include <bsoncxx/exception/exception.hpp>
 #include <bsoncxx/json.hpp>
 
-
-
-
 #include "server/database.h"
 #include "exception/exception.h"
 #include "server/creature-server.h"

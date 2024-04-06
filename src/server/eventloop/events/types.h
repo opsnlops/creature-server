@@ -26,7 +26,6 @@ namespace creatures {
 
         uint32_t universe;
         uint32_t channelOffset;
-        uint32_t numMotors;
 
         // Used every time to send data
         std::vector<uint8_t> data;
@@ -50,11 +49,11 @@ namespace creatures {
     class PlaylistEvent : public EventBase<PlaylistEvent> {
     public:
         using EventBase::EventBase;
-        PlaylistEvent(uint64_t frameNumber, std::string creatureIdString);
+        PlaylistEvent(uint64_t frameNumber, universe_t universe);
         void executeImpl();
 
     private:
-        std::string creatureIdString;
+        universe_t activeUniverse;
     };
 
 

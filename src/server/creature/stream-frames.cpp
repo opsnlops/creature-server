@@ -12,9 +12,12 @@
 
 #include "server/namespace-stuffs.h"
 
+#include "util/helpers.h"
+
 namespace creatures {
 
     extern std::shared_ptr<SystemCounters> metrics;
+    extern std::shared_ptr<Database> db;
 
     /**
      * Send frames from a client to a Creature
@@ -31,26 +34,49 @@ namespace creatures {
 
         // Grab the first one now, so we can log it
         reader->Read(&frame);
-        info("sending frames to {}", frame->());
+
+
+        // Look up this creature in the database
+        CreatureId creatureId = stringToCreatureId(frame.creature_id());
+
+        // Load the creature
+        Creature creature;
+        try {
+            db->getCreature(&creatureId, &creature);
+        }
+        catch( const NotFoundException& e) {
+            error("Creature {} not found", frame.creature_id());
+            return Status{grpc::StatusCode::NOT_FOUND, e.what()};
+        }
+        catch( const DataFormatException& e) {
+            error("Data format exception while loading creature {}: {}", frame.creature_id(), e.what());
+            return Status{grpc::StatusCode::INTERNAL, e.what()};
+        }
+        catch( ... ) {
+            error("Unknown error while loading creature {}", frame.creature_id());
+            return Status{grpc::StatusCode::INTERNAL, "Unknown error"};
+        }
+
+        // Woo, we found it!
+        info("sending frames to {}", creature.name());
 
 
         // Process the incoming stream of frames
         do {
 #if DEBUG_STREAM_FRAMES
-            trace("received frame {} for {}", frame_count, frame.creature_name());
+            trace("received frame {} for {}", frame_count, creature.name());
 #endif
-            const std::string &frame_data = frame.frame();
+            const std::string &frame_data = frame.data();
 
             // Create a new event and schedule it for the next frame
             auto event = std::make_shared<DMXEvent>(eventLoop->getNextFrameNumber());
-            event->numMotors = frame.number_of_motors();
             event->universe = frame.universe();
-            event->channelOffset = frame.channel_offset();
-            event->data.reserve(frame.number_of_motors());
+            event->channelOffset = creature.channel_offset();
+            event->data.reserve(frame_data.size());
 
 #if DEBUG_STREAM_FRAMES
-            trace("creature {} has {} motors and a channel offset of {}",
-                  frame.creature_name(), frame.number_of_motors(), frame.channel_offset());
+            trace("creature {} a channel offset of {}",
+                  creature.name(), creature.channel_offset());
 #endif
 
             uint8_t i = 0;
@@ -67,7 +93,7 @@ namespace creatures {
 
             // Log a message every 100 frames
             if (++frame_count % 100 == 0)
-                debug("transmitted {} frames to {}", frame_count, frame.creature_name());
+                debug("transmitted {} frames to {}", frame_count, creature.name());
 
             metrics->incrementFramesStreamed();
 

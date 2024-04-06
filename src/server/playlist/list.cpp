@@ -40,7 +40,7 @@ namespace creatures {
      */
     grpc::Status Database::listPlaylists(const PlaylistFilter *filter, ListPlaylistsResponse *playlistsResponse) {
 
-        trace("attempting to list all of the playlists for a filter ({})", toascii(filter->creature_type()));
+        trace("attempting to list all of the playlists");
 
         grpc::Status status;
 
@@ -55,9 +55,6 @@ namespace creatures {
 
             // First pass, sort by name
             sort_doc << "name" << 1;
-
-            // We only want documents of the given creature type
-            query_doc << "creature_type" << bsoncxx::types::b_int32{static_cast<int32_t>(filter->creature_type())};
 
             mongocxx::options::find findOptions{};
             findOptions.sort(sort_doc.view());

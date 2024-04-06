@@ -26,17 +26,14 @@ using grpc::Status;
 using grpc::ClientWriter;
 
 using server::Animation;
-using server::Animation_Metadata;
+using server::AnimationMetadata;
 using server::AnimationFilter;
 using server::AnimationId;
-using server::AnimationIdentifier;
 using server::CreatureServer;
 using server::Creature;
 using server::CreatureFilter;
 using server::CreatureId;
 using server::CreatureName;
-using server::Frame;
-using server::FrameResponse;
 using server::ListAnimationsResponse;
 using server::ListCreaturesResponse;
 using server::LogItem;
@@ -49,6 +46,8 @@ using server::PlaylistIdentifier;
 using server::PlaylistFilter;
 using server::PlaySoundRequest;
 using server::PlaySoundResponse;
+using server::StreamFrameData;
+using server::StreamFrameDataResponse;
 
 
 

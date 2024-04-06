@@ -31,7 +31,7 @@ namespace creatures {
         uint64_t lastFrame;
 
         try {
-            lastFrame = scheduleAnimation(startingFrame, request->creatureid(),request->animationid());
+            lastFrame = scheduleAnimation(startingFrame, request->animationid(), request->universe());
         }
         catch (const creatures::NotFoundException &e) {
             info("creature not found");

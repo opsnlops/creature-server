@@ -51,7 +51,7 @@ service CreatureServer {
   rpc CreateAnimation(Animation) returns (DatabaseInfo) {}
   rpc UpdateAnimation(Animation) returns (DatabaseInfo) {}
   rpc GetAnimation(AnimationId) returns (Animation) {}
-  rpc GetAnimationIdentifier(AnimationId) returns (AnimationIdentifier) {}
+  rpc GetAnimationMetadata(AnimationId) returns (AnimationMetadata) {}
 
 
   /**
@@ -124,8 +124,8 @@ message Creature {
   string name = 2;
   google.protobuf.Timestamp last_updated = 3;
   //uint32 universe = 5;      /* No, don't do this. I need to have dev and prod network */
-  uint32 channel_offset = 4;
-  uint32 audio_channel = 5;
+  int32 channel_offset = 4;
+  int32 audio_channel = 5;
   string notes = 6;
 }
 
@@ -162,13 +162,13 @@ enum SortBy {
 /**
   One frame to send to a creature
  */
-message Frame {
-  uint32 universe = 1;
-  uint32 channel_offset = 2;
-  string creature_name = 3;
-  uint32 number_of_motors = 4;
-  bytes frame = 10;
-}
+//message Frame {
+//  uint32 universe = 1;
+//  uint32 channel_offset = 2;
+//  string creature_name = 3;
+//  uint32 number_of_motors = 4;
+//  bytes frame = 10;
+//}
 
 
 
@@ -191,7 +191,7 @@ message ServerStatus {
 message StreamFrameData {
   bytes creature_id = 1;
   uint32 universe = 2;
-  repeated bytes data = 10;
+  bytes data = 10;
 }
 
 message StreamFrameDataResponse {
@@ -209,16 +209,17 @@ message AnimationId {
   bytes _id = 1;
 }
 
+/*
+  Parameters for the ListAnimations request
+
+  This is used to filter the list of animations that are returned.
+ */
 message AnimationFilter {
-  //CreatureType type = 1;
+  CreatureId creature_id = 1;
 }
 
 message ListAnimationsResponse {
-  repeated AnimationIdentifier animations = 1;
-}
-
-message AnimationIdentifier {
-  bytes _id = 1;
+  repeated AnimationMetadata animations = 1;
 }
 
 
@@ -269,17 +270,15 @@ message Playlist {
 
   PlaylistIdentifier _id = 1;
   string name = 2;
-  //CreatureType creature_type = 3;
-  google.protobuf.Timestamp last_updated = 4;
+  google.protobuf.Timestamp last_updated = 3;
 
   // The actual items themselves
-  repeated PlaylistItem items = 5;
+  repeated PlaylistItem items = 10;
 
 }
 
 message PlaylistFilter {
-  //CreatureType creature_type = 1;
-  SortBy sortBy = 2;
+  SortBy sortBy = 1;
 }
 
 message ListPlaylistsResponse {
@@ -287,7 +286,7 @@ message ListPlaylistsResponse {
 }
 
 message CreaturePlaylistRequest {
-  CreatureId         creatureId = 1;
+  uint32             universe = 1;
   PlaylistIdentifier playlistId = 2;
 }
 
@@ -299,6 +298,7 @@ message CreaturePlaylistResponse {
 message CreaturePlaylistStatus {
   bool               playing = 1;
   PlaylistIdentifier playlistId = 2;
+  uint32             universe = 3;
 }
 
 

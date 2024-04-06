@@ -57,14 +57,21 @@ namespace creatures {
     std::shared_ptr<Database> db{};
     std::shared_ptr <creatures::e131::E131Server> e131Server;
     std::shared_ptr<EventLoop> eventLoop;
-    std::shared_ptr<ObjectCache<std::string, PlaylistIdentifier>> runningPlaylists;
+
+    /**
+     * Only one playlist can be running on a universe at a time. This is because animation can
+     * involve any creature in a universe, so it doesn't make sense to have more than one playing
+     * at any one time.
+     */
+    std::shared_ptr<ObjectCache<universe_t, PlaylistIdentifier>> runningPlaylists;
+
+
     std::shared_ptr<GPIO> gpioPins;
     std::shared_ptr<SystemCounters> metrics;
     std::shared_ptr<StatusLights> statusLights;
     const char* audioDevice;
     SDL_AudioSpec audioSpec;
     std::atomic<bool> serverShouldRun{true};
-    std::shared_ptr<ObjectCache<std::string, Creature>> creatureCache; // bsoncxx:oid isn't hashable, sigh.
 }
 
 
@@ -171,12 +178,8 @@ int main(int argc, char **argv) {
     creatures::statusLights->start();
 
     // Create the playlist cache
-    creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<std::string, PlaylistIdentifier>>();
+    creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<universe_t, PlaylistIdentifier>>();
     debug("Playlist cache made");
-
-    // Create the Creature cache
-    creatures::creatureCache = std::make_shared<creatures::ObjectCache<std::string, Creature>>();
-    debug("Creature cache made");
 
     // Start up the event loop
     creatures::eventLoop = std::make_shared<EventLoop>();

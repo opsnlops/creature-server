@@ -58,9 +58,9 @@ namespace creatures {
         Status ListAnimations(ServerContext *context, const AnimationFilter *request, ListAnimationsResponse *response) override;
 
         Status GetAnimation(ServerContext *context, const AnimationId *id, Animation *animation) override;
-        Status GetAnimationIdentifier(ServerContext *context,
+        Status GetAnimationMetadata(ServerContext *context,
                                       const AnimationId *animationId,
-                                      AnimationIdentifier *animationIdentifier) override;
+                                      AnimationMetadata *animationMetadata) override;
 
         Status PlayAnimation(ServerContext *context, const PlayAnimationRequest *request, PlayAnimationResponse *response) override;
 

@@ -40,8 +40,7 @@ namespace creatures {
             trace("_id set");
 
             doc << "name" << playlist->name()
-            << "creature_type" << bsoncxx::types::b_int32{static_cast<int32_t>(playlist->creature_type())}
-            << "last_updated" << bsoncxx::types::b_date{last_updated};
+                << "last_updated" << bsoncxx::types::b_date{last_updated};
 
             // Add the items
             int32_t itemCount = playlistItemsToBson(doc, playlist);
@@ -123,28 +122,6 @@ namespace creatures {
         playlist->set_name(std::string{string_value});
         trace("set the name to {}", playlist->name());
 
-        // Creature type, which is an enum, so there's extra work to do
-        element = doc["creature_type"];
-        if (!element) {
-            error("Playlist value 'creature_type' is not found");
-            throw DataFormatException("Playlist value 'creature_type' is not found");
-        }
-        if (element.type() != bsoncxx::type::k_int32) {
-            error("Playlist value 'creature_type' is not an int");
-            throw DataFormatException("Playlist value 'creature_type' is not an int");
-        }
-        int32_t creature_type = element.get_int32().value;
-
-        // Check if the integer matches up to CreatureType
-        if (!server::CreatureType_IsValid(creature_type)) {
-            error("Playlist field 'creature_type' does not map to our enum: {}", creature_type);
-            throw DataFormatException(
-                    fmt::format("Playlist field 'creature_type' does not map to our enum: {}", creature_type));
-        }
-        playlist->set_creature_type(static_cast<server::CreatureType>(creature_type));
-        trace("set the creature type to {}", toascii(playlist->creature_type()));
-
-
 
         // Last updated
         element = doc["last_updated"];
@@ -152,7 +129,7 @@ namespace creatures {
 
 
 
-        // Now go get the playlist itens
+        // Now go get the playlist items
         bsonToPlaylistItems(doc, playlist);
     }
 

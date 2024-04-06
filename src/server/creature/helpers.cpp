@@ -58,11 +58,10 @@ namespace creatures {
 
             builder << "_id" << id
                     << "name" << creature->name()
-                    << "type" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->type())}
                     << "last_updated" << bsoncxx::types::b_date{last_updated}
-                    << "universe" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->universe())}
                     << "channel_offset" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->channel_offset())}
-                    << "number_of_motors" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->number_of_motors())};
+                    << "audio_channel" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->audio_channel())}
+                    << "notes" << creature->notes();
             trace("fields added");
 
         }
@@ -106,15 +105,10 @@ namespace creatures {
         }
 
 
-        // e1.31 Universe
-        element = doc["universe"];
-        if (element && element.type() == bsoncxx::type::k_int32) {
-            int32_t int32_value = element.get_int32().value;
-            creature->set_universe(int32_value);
-            trace("set the DMX universe to {}", creature->universe());
-        } else {
-            throw creatures::DataFormatException("Field universe was not an int32 in the database");
-        }
+        // Last updated
+        element = doc["last_updated"];
+        *creature->mutable_last_updated() = convertMongoDateToProtobufTimestamp(element);
+
 
         // Channel Offset
         element = doc["channel_offset"];
@@ -127,35 +121,25 @@ namespace creatures {
         }
 
         // Number of motors
-        element = doc["number_of_motors"];
+        element = doc["audio_channel"];
         if (element && element.type() == bsoncxx::type::k_int32) {
             int32_t int32_value = element.get_int32().value;
-            creature->set_number_of_motors(int32_value);
-            trace("set the number of motors to {}", creature->number_of_motors());
+            creature->set_audio_channel(int32_value);
+            trace("set the audio channel to {}", creature->audio_channel());
         } else {
-            throw creatures::DataFormatException("Field number_of_motors was not an int32 in the database");
+            throw creatures::DataFormatException("Field audio_channel was not an int32 in the database");
         }
 
-        // Motor type
-        element = doc["type"];
-        if (element && element.type() != bsoncxx::type::k_int32) {
-            error("creature field 'type' is not an int");
-            throw creatures::DataFormatException("creature field 'type' is not an int in the database");
+
+        // Notes
+        element = doc["notes"];
+        if (element && element.type() == bsoncxx::type::k_utf8) {
+            bsoncxx::stdx::string_view string_value = element.get_string().value;
+            creature->set_notes(std::string{string_value});
+            trace("set the notes to {}", creature->notes());
+        } else {
+            throw creatures::DataFormatException("Field notes was not a string in the database");
         }
-
-        // Check and see if it's accurate
-        int32_t creatureType = element.get_int32().value;
-        if (!server::CreatureType_IsValid((creatureType))) {
-            error("creature field 'type' does not map to our enum: {}", creatureType);
-            throw creatures::DataFormatException(
-                    fmt::format("creature field 'type' does not map to our enum: {}", creatureType));
-        }
-        creature->set_type(static_cast<CreatureType>(creatureType));
-
-
-        // Last updated
-        element = doc["last_updated"];
-        *creature->mutable_last_updated() = convertMongoDateToProtobufTimestamp(element);
 
         debug("done loading creature");
     }

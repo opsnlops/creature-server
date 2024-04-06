@@ -8,10 +8,10 @@ using server::Animation;
 using server::AnimationMetadata;
 using server::AnimationFilter;
 using server::AnimationId;
-using server::AnimationIdentifier;
 using server::ListAnimationsResponse;
 using server::PlayAnimationRequest;
 using server::PlayAnimationResponse;
+using server::FrameData;
 
 
 using server::Creature;
@@ -24,7 +24,7 @@ using server::ListCreaturesResponse;
 
 using server::DatabaseInfo;
 
-using server::Frame;
+//using server::Frame;
 using server::StreamFrameDataResponse;
 using server::StreamFrameData;
 
@@ -48,3 +48,7 @@ using spdlog::info;
 using spdlog::warn;
 using spdlog::error;
 using spdlog::critical;
+
+
+using universe_t = uint32_t;
+using framenum_t = uint64_t;

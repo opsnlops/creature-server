@@ -34,8 +34,7 @@ namespace creatures {
 
         try {
             db->updateCreature(creature);
-            std::string statusMessage = fmt::format("✅ Creature updated in database! Name: {}, Number of Motors: {}",
-                                                    creature->name(), creature->number_of_motors());
+            std::string statusMessage = fmt::format("✅ Creature updated in database! Name: {}", creature->name());
             response->set_message(statusMessage);
             info(statusMessage);
             return {grpc::StatusCode::OK, statusMessage};

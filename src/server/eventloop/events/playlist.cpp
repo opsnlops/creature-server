@@ -25,15 +25,15 @@ namespace creatures {
     extern std::shared_ptr<Database> db;
     extern std::shared_ptr<EventLoop> eventLoop;
     extern std::shared_ptr<SystemCounters> metrics;
-    extern std::shared_ptr<ObjectCache<std::string, PlaylistIdentifier>> runningPlaylists;
+    extern std::shared_ptr<ObjectCache<universe_t, PlaylistIdentifier>> runningPlaylists;
 
-    PlaylistEvent::PlaylistEvent(uint64_t frameNumber, std::string creatureIdString)
-            : EventBase(frameNumber), creatureIdString(std::move(creatureIdString)) {}
+    PlaylistEvent::PlaylistEvent(uint64_t frameNumber, universe_t universe)
+            : EventBase(frameNumber), activeUniverse(universe) {}
 
     void PlaylistEvent::executeImpl() {
 
 
-        debug("hello from a playlist event for creature {}", creatureIdString);
+        debug("hello from a playlist event for universe {}", activeUniverse);
         metrics->incrementPlaylistsEventsProcessed();
 
 
@@ -41,11 +41,11 @@ namespace creatures {
 
         // Load the playlist
         try {
-            activePlaylistId = runningPlaylists->get(creatureIdString);
-            debug("found a playlist for creature {} in the cache", creatureIdString);
+            activePlaylistId = runningPlaylists->get(activeUniverse);
+            debug("found a playlist for universe {} in the cache", activeUniverse);
         }
             catch (std::out_of_range& e) {
-            info("No active playlist for creature {}. Assuming we've been stopped.", creatureIdString);
+            info("No active playlist for universe {}. Assuming we've been stopped.", activeUniverse);
             return;
         }
 
@@ -96,15 +96,16 @@ namespace creatures {
         auto chosenAnimation = choices[theChosenOne];
         debug("...and the chosen one is {}", animationIdToString(chosenAnimation));
 
-        CreatureId creatureId = stringToCreatureId(creatureIdString);
-
         // Schedule this animation
-        uint64_t lastFrame = scheduleAnimation(eventLoop->getNextFrameNumber(), creatureId, chosenAnimation);
-        debug("scheduled animation {}. Last frame: {}", animationIdToString(chosenAnimation), lastFrame);
+        uint64_t lastFrame = scheduleAnimation(eventLoop->getNextFrameNumber(), chosenAnimation, activeUniverse);
+        debug("scheduled animation {} on universe {}. Last frame: {}",
+              animationIdToString(chosenAnimation),
+              activeUniverse,
+              lastFrame);
 
 
         // Add another one of us to go again later
-        auto nextEvent = std::make_shared<PlaylistEvent>(lastFrame+1, creatureIdString);
+        auto nextEvent = std::make_shared<PlaylistEvent>(lastFrame+1, activeUniverse);
         eventLoop->scheduleEvent(nextEvent);
         debug("scheduled next event for frame {}. later!", lastFrame+1);
     }

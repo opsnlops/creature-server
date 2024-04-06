@@ -49,7 +49,7 @@ namespace creatures {
         void createAnimation(const Animation *animation, DatabaseInfo *reply);
         void listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList);
         void getAnimation(const AnimationId *animationId, Animation *animation);
-        void getAnimationIdentifier(const AnimationId *animationId, AnimationIdentifier *animationIdentifier);
+        void getAnimationMetadata(const AnimationId *animationId, AnimationMetadata *animationMetadata);
         void updateAnimation(const Animation *animation);
 
 

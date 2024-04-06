@@ -4,6 +4,10 @@
 #pragma once
 
 #include <string>
+
+#include <bsoncxx/oid.hpp>
+#include <bsoncxx/types.hpp>
+
 #include "server/namespace-stuffs.h"
 
 
@@ -15,6 +19,18 @@ namespace creatures {
     std::string playlistIdentifierToString(const PlaylistIdentifier &playlistIdentifier);
     CreatureId stringToCreatureId(const std::string &creatureIdString);
     PlaylistIdentifier stringToPlaylistIdentifier(const std::string &playlistIdString);
+    AnimationId stringToAnimationId(const std::string &animationIdString);
+
+    /**
+     * Cleanly prints out the things that we're filtering for in an animation list
+     *
+     * @param filter
+     * @return
+     */
+    std::string animationFilterToString(const AnimationFilter* filter);
+
+    bsoncxx::oid creatureIdToOid(const CreatureId& creature_id);
+    bsoncxx::oid animationIdToOid(const AnimationId& animation_id);
 
     void displayFrames(const Animation& animation);
     std::string ProtobufTimestampToHumanReadable(const google::protobuf::Timestamp& timestamp);

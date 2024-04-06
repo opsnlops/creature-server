@@ -12,6 +12,7 @@
 #include "server/database.h"
 #include "exception/exception.h"
 #include "server/creature-server.h"
+#include "util/helpers.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -69,24 +70,24 @@ namespace creatures {
     }
 
 
-    Status CreatureServerImpl::GetAnimationIdentifier(ServerContext *context,
-                                                      const AnimationId *animationId,
-                                                      AnimationIdentifier *animationIdentifier) {
+    Status CreatureServerImpl::GetAnimationMetadata(grpc::ServerContext *context,
+                                                    const server::AnimationId *animationId,
+                                                    server::AnimationMetadata *animationMetadata) {
 
         grpc::Status status;
 
-        debug("Loading an animationIdentifier from the database");
+        debug("Loading an animationMetadata from the database");
 
         try {
-            db->getAnimationIdentifier(animationId, animationIdentifier);
+            db->getAnimationMetadata(animationId, animationMetadata);
             status = grpc::Status(grpc::StatusCode::OK,
                                   "Loaded an animationIdentifier from the database",
                                   fmt::format("Title: {}",
-                                              animationIdentifier->metadata().title()));
+                                              animationMetadata->title()));
         }
         catch(const InvalidArgumentException &e) {
             status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                  "AnimationId was empty on getAnimation()",
+                                  "AnimationId was empty on GetAnimationMetadata()",
                                   fmt::format("⛔️️ An animation ID must be supplied"));
         }
         catch(const NotFoundException &e) {
@@ -101,12 +102,12 @@ namespace creatures {
         }
         catch(const InternalError &e) {
             status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  fmt::format("MongoDB error while loading an animationIdentifier: {}", e.what()),
+                                  fmt::format("MongoDB error while loading an animationMetadata: {}", e.what()),
                                   e.what());
         }
         catch( ... ) {
             status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  "An unknown error happened while getting animationIdentifier",
+                                  "An unknown error happened while getting animationMetadata",
                                   "Default catch hit?");
         }
 
@@ -150,9 +151,8 @@ namespace creatures {
             trace("id loaded");
 
             // Grab the metadata
-            bsoncxx::document::element element = doc["metadata"];
-            Animation_Metadata metadata = Animation_Metadata();
-            bsonToAnimationMetadata(element.get_document().view(), &metadata);
+            AnimationMetadata metadata = AnimationMetadata();
+            bsonToAnimationMetadata(doc, &metadata);
             *animation->mutable_metadata() = metadata;
             trace("metadata loaded");
 
@@ -176,16 +176,17 @@ namespace creatures {
     }
 
     /**
-     * Load one AnimationIdentifier from the database
+     * Load one AnimationMetadata from the database
      *
      * @param animationId the ID to load
-     * @param animationIdentifier the AnimationIdentifier to fill out
+     * @param animationMetadata the AnimationMetadata to fill out
      */
-    void Database::getAnimationIdentifier(const AnimationId *animationId, AnimationIdentifier *animationIdentifier) {
+    void Database::getAnimationMetadata(const server::AnimationId *animationId,
+                                        server::AnimationMetadata *animationMetadata) {
 
         if (animationId->_id().empty()) {
-            error("an empty animationId was passed into getAnimationIdentifier()");
-            throw InvalidArgumentException("an empty animationId was passed into getAnimationIdentifier()");
+            error("an empty animationId was passed into getAnimationMetadata()");
+            throw InvalidArgumentException("an empty animationId was passed into getAnimationMetadata()");
         }
 
         auto collection = getCollection(ANIMATIONS_COLLECTION);
@@ -212,14 +213,11 @@ namespace creatures {
 
             // Get an owning reference to this doc since it's ours now
             bsoncxx::document::value doc = *result;
-            animationIdentifier->set__id(animationId->_id());
+            animationMetadata->set_animation_id(animationId->_id());
             trace("id loaded");
 
             // Grab the metadata
-            bsoncxx::document::element element = doc["metadata"];
-            Animation_Metadata metadata = Animation_Metadata();
-            bsonToAnimationMetadata(element.get_document().view(), &metadata);
-            *animationIdentifier->mutable_metadata() = metadata;
+            bsonToAnimationMetadata(doc, animationMetadata);
             trace("metadata loaded");
 
         }
