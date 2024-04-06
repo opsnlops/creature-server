@@ -328,12 +328,10 @@ message Animation {
   bytes _id = 1;
 
   // Metadata
-  AnimationMetaData metadata = 5;
-
+  AnimationMetadata metadata = 5;
 
   // Actual frame data
   repeated FrameData frames = 20;
-
 }
 
 /**
@@ -343,7 +341,17 @@ message Animation {
   a list of the animations without having to load all of the frame data.
 
  */
-message AnimationMetaData {
+message AnimationMetadata {
+
+  /*
+    The animation that we're connected to
+
+    This is used to link the metadata to the actual frame data. It's kept like this
+    so that we can link back to the frame data from the UI.
+
+   */
+  bytes animation_id = 1;
+
   // Title as it appears in the UI
   string title = 2;
 
@@ -363,7 +371,7 @@ message AnimationMetaData {
   uint32 number_of_frames = 7;
 
   // Does this animation have more than one audio track?
-  bool mutlitrack_audio = 8;
+  bool multitrack_audio = 8;
 }
 
 

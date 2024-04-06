@@ -4,10 +4,8 @@
 #include "server.pb.h"
 #include "spdlog/spdlog.h"
 
-
-
 using server::Animation;
-using server::AnimationMetaData;
+using server::AnimationMetadata;
 using server::AnimationFilter;
 using server::AnimationId;
 using server::AnimationIdentifier;

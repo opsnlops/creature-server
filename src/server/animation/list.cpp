@@ -112,7 +112,7 @@ namespace creatures {
 
                 Animation_Metadata metadata = Animation_Metadata();
 
-                bsonToAnimationMetaData(element.get_document().view(), &metadata);
+                bsonToAnimationMetadata(element.get_document().view(), &metadata);
                 *animationId->mutable_metadata() = metadata;
 
                 debug("loaded {}", animationId->metadata().title());
