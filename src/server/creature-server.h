@@ -49,7 +49,7 @@ namespace creatures {
          */
         Status StreamLogs(ServerContext* context, const LogFilter* request, ServerWriter<LogItem>* writer) override;
 
-        Status StreamFrames(ServerContext* context, ServerReader<Frame>* reader, FrameResponse* response) override;
+        Status StreamFrames(ServerContext* context, ServerReader<StreamFrameData>* reader, StreamFrameDataResponse* response) override;
 
         Status CreateAnimation(ServerContext *context, const Animation *animation, DatabaseInfo *reply) override;
 

@@ -20,18 +20,18 @@ namespace creatures {
      * Send frames from a client to a Creature
      */
     grpc::Status CreatureServerImpl::StreamFrames(ServerContext *context,
-                                                  ServerReader<Frame> *reader,
-                                                  FrameResponse *response) {
+                                                  ServerReader<StreamFrameData>* reader,
+                                                  StreamFrameDataResponse* response) {
 
         info("a request to receive frames has come in");
-        Frame frame;
+        StreamFrameData frame;
         int32_t frame_count = 0;
 
         extern std::shared_ptr<EventLoop> eventLoop;
 
         // Grab the first one now, so we can log it
         reader->Read(&frame);
-        info("sending frames to {}", frame.creature_name());
+        info("sending frames to {}", frame->());
 
 
         // Process the incoming stream of frames

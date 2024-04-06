@@ -64,6 +64,7 @@ namespace creatures {
     const char* audioDevice;
     SDL_AudioSpec audioSpec;
     std::atomic<bool> serverShouldRun{true};
+    std::shared_ptr<ObjectCache<std::string, Creature>> creatureCache; // bsoncxx:oid isn't hashable, sigh.
 }
 
 
@@ -172,6 +173,10 @@ int main(int argc, char **argv) {
     // Create the playlist cache
     creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<std::string, PlaylistIdentifier>>();
     debug("Playlist cache made");
+
+    // Create the Creature cache
+    creatures::creatureCache = std::make_shared<creatures::ObjectCache<std::string, Creature>>();
+    debug("Creature cache made");
 
     // Start up the event loop
     creatures::eventLoop = std::make_shared<EventLoop>();

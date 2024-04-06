@@ -26,6 +26,7 @@ using server::DatabaseInfo;
 
 using server::Frame;
 using server::StreamFrameDataResponse;
+using server::StreamFrameData;
 
 using server::Playlist;
 using server::PlaylistFilter;
