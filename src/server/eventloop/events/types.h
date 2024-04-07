@@ -24,7 +24,7 @@ namespace creatures {
         using EventBase::EventBase;
         void executeImpl();
 
-        uint32_t universe;
+        universe_t universe;
         uint32_t channelOffset;
 
         // Used every time to send data

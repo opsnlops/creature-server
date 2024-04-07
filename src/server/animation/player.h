@@ -18,6 +18,6 @@ namespace creatures {
      * @param universe
      * @return the last frame number of the animation
      */
-    uint64_t scheduleAnimation(uint64_t startingFrame, const AnimationId& animationId, uint32_t universe);
+    uint64_t scheduleAnimation(uint64_t startingFrame, const AnimationId& animationId, universe_t universe);
 
 }

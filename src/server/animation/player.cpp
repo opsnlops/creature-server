@@ -33,7 +33,7 @@ namespace creatures {
      *
      * @return the frame number of last frame of the animation
      */
-    uint64_t scheduleAnimation(uint64_t startingFrame, const AnimationId& animationId, uint32_t universe) {
+    uint64_t scheduleAnimation(uint64_t startingFrame, const AnimationId& animationId, universe_t universe) {
 
         debug("scheduling animation {} on universe {}", animationIdToString(animationId), universe);
 
@@ -72,6 +72,7 @@ namespace creatures {
 
         return 0;
 
+#warning remember that this is a stub and needs to be implemented
         /*
 
         // Load the creature
