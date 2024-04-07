@@ -507,10 +507,10 @@ public:
 
     }
 
-    server::CreaturePlaylistResponse StartPlaylist(const server::CreaturePlaylistRequest& request) {
+    server::PlaylistResponse StartPlaylist(const server::PlaylistRequest& request) {
 
         ClientContext context;
-        server::CreaturePlaylistResponse reply;
+        server::PlaylistResponse reply;
 
         Status status = stub_->StartPlaylist(&context, request, &reply);
 
@@ -527,12 +527,12 @@ public:
     }
 
 
-    server::CreaturePlaylistResponse StopPlaylist(const server::CreatureId& creatureId) {
+    server::PlaylistResponse StopPlaylist(const server::PlaylistStopRequest& request) {
 
         ClientContext context;
-        server::CreaturePlaylistResponse reply;
+        server::PlaylistResponse reply;
 
-        Status status = stub_->StopPlaylist(&context, creatureId, &reply);
+        Status status = stub_->StopPlaylist(&context, request, &reply);
 
         if(status.ok()) {
             debug("Got an okay from the server on a request to stop playback on a creature ({})", reply.message());
@@ -546,12 +546,12 @@ public:
 
     }
 
-    server::CreaturePlaylistStatus GetPlaylistStatus(const server::CreatureId& creatureId) {
+    server::PlaylistStatus GetPlaylistStatus(const server::PlaylistRequest& request) {
 
         ClientContext context;
-        server::CreaturePlaylistStatus reply;
+        server::PlaylistStatus reply;
 
-        Status status = stub_->GetPlaylistStatus(&context, creatureId, &reply);
+        Status status = stub_->GetPlaylistStatus(&context, request, &reply);
 
         if(status.ok()) {
             debug("Got an okay from the server while getting a creature's playlist status");
