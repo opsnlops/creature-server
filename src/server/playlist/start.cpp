@@ -25,8 +25,8 @@ namespace creatures {
     extern std::shared_ptr<ObjectCache<universe_t, PlaylistIdentifier>> runningPlaylists;
 
     grpc::Status CreatureServerImpl::StartPlaylist(ServerContext *context,
-                                                   const CreaturePlaylistRequest *request,
-                                                   CreaturePlaylistResponse *response) {
+                                                   const PlaylistRequest *request,
+                                                   PlaylistResponse *response) {
 
         info("Starting a playlist from a gRPC request");
 

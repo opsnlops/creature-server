@@ -73,9 +73,9 @@ namespace creatures {
         Status ListPlaylists(ServerContext *context, const PlaylistFilter *request, ListPlaylistsResponse *response) override;
         Status GetPlaylist(ServerContext *context, const PlaylistIdentifier *id, Playlist *playlist) override;
         Status UpdatePlaylist(ServerContext *context, const Playlist *playlist, DatabaseInfo *reply) override;
-        Status StartPlaylist(ServerContext *context, const CreaturePlaylistRequest *request, CreaturePlaylistResponse *response) override;
-        Status StopPlaylist(ServerContext *context, const CreatureId *creatureId, CreaturePlaylistResponse *response) override;
-        Status GetPlaylistStatus(ServerContext *context, const CreatureId *creatureId, CreaturePlaylistStatus *response) override;
+        Status StartPlaylist(ServerContext *context, const PlaylistRequest *request, PlaylistResponse *response) override;
+        Status StopPlaylist(ServerContext *context, const PlaylistStopRequest *stopRequest, PlaylistResponse *response) override;
+        Status GetPlaylistStatus(ServerContext *context, const PlaylistRequest *playlistRequest, PlaylistStatus *response) override;
 
 
     private:

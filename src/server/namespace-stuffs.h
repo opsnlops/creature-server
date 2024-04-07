@@ -32,9 +32,10 @@ using server::Playlist;
 using server::PlaylistFilter;
 using server::PlaylistIdentifier;
 using server::ListPlaylistsResponse;
-using server::CreaturePlaylistResponse;
-using server::CreaturePlaylistRequest;
-using server::CreaturePlaylistStatus;
+using server::PlaylistResponse;
+using server::PlaylistRequest;
+using server::PlaylistStatus;
+using server::PlaylistStopRequest;
 
 using server::PlaySoundRequest;
 using server::PlaySoundResponse;

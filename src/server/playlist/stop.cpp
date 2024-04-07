@@ -19,64 +19,30 @@ namespace creatures {
     extern std::shared_ptr<Database> db;
     extern std::shared_ptr<EventLoop> eventLoop;
     extern std::shared_ptr<SystemCounters> metrics;
-    extern std::shared_ptr<ObjectCache<std::string, PlaylistIdentifier>> runningPlaylists;
+    extern std::shared_ptr<ObjectCache<universe_t, PlaylistIdentifier>> runningPlaylists;
 
     /**
      * Stop any playlists running on a creature
      *
      * @param context ServerContext from gPRC
-     * @param creatureId the CreatureID to stop playlist playback on
+     * @param stopRequest the universe to stop the playlist on
      * @param response the response
      * @return a status for the end user
      */
     grpc::Status CreatureServerImpl::StopPlaylist(ServerContext *context,
-                                                  const CreatureId *creatureId,
-                                                  CreaturePlaylistResponse *response) {
+                                                  const PlaylistStopRequest *stopRequest,
+                                                  PlaylistResponse *response) {
 
-        info("Stopping all playlists on creature {} due to a gRPC request", creatureIdToString(*creatureId));
+        info("Stopping all playlists on universe {} due to a gRPC request", stopRequest->universe());
 
         grpc::Status status;
 
-
-        // Load the creature
-        auto creature = std::make_shared<Creature>();
-        try {
-            db->getCreature(creatureId, creature.get());
-            debug("loaded creature {}", creature->name());
-        }
-        catch (const creatures::NotFoundException &e) {
-            info("creature not found");
-            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                  e.what(),
-                                  fmt::format("🚫 Creature id not found"));
-            return status;
-        }
-        catch (const creatures::DataFormatException &e) {
-            critical("Data format exception while loading a creature on playlist stop: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  e.what(),
-                                  "Data format exception while loading a creature on playlist stop");
-            return status;
-        }
-        catch (const creatures::InvalidArgumentException &e) {
-            error("an empty creatureID was passed in while attempting to play an animation");
-            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                  e.what(),
-                                  fmt::format("⚠️ A creature id must be supplied"));
-            return status;
-        }
-
-
-        // Looks good!
-        debug("the creature ID is valid! (it's {})", creature->name());
-
-
         // Remove the creature's key from the cache
-        runningPlaylists->remove(creatureIdToString(*creatureId));
+        runningPlaylists->remove((universe_t)stopRequest->universe());
         trace("removed from map");
 
 
-        std::string okayMessage = fmt::format("🎵 Stopped playlists on creature {}", creature->name());
+        std::string okayMessage = fmt::format("🎵 Stopped playlists on universe {}", stopRequest->universe());
 
         info(okayMessage);
         response->set_message(okayMessage);

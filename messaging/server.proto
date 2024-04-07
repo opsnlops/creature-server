@@ -74,9 +74,9 @@ service CreatureServer {
   rpc UpdatePlaylist(Playlist) returns (DatabaseInfo) {}
   rpc GetPlaylist(PlaylistIdentifier) returns (Playlist) {}
   rpc ListPlaylists(PlaylistFilter) returns (ListPlaylistsResponse) {}
-  rpc StartPlaylist(CreaturePlaylistRequest) returns (CreaturePlaylistResponse) {}
-  rpc StopPlaylist(CreatureId) returns (CreaturePlaylistResponse) {}
-  rpc GetPlaylistStatus(CreatureId) returns (CreaturePlaylistStatus) {}
+  rpc StartPlaylist(PlaylistRequest) returns (PlaylistResponse) {}
+  rpc StopPlaylist(PlaylistStopRequest) returns (PlaylistResponse) {}
+  rpc GetPlaylistStatus(PlaylistRequest) returns (PlaylistStatus) {}
 
 }
 
@@ -285,17 +285,21 @@ message ListPlaylistsResponse {
   repeated Playlist playlists = 1;
 }
 
-message CreaturePlaylistRequest {
+message PlaylistRequest {
   uint32             universe = 1;
   PlaylistIdentifier playlistId = 2;
 }
 
-message CreaturePlaylistResponse {
+message PlaylistStopRequest {
+  uint32 universe = 1;
+}
+
+message PlaylistResponse {
   bool   success = 1;
   string message = 2;
 }
 
-message CreaturePlaylistStatus {
+message PlaylistStatus {
   bool               playing = 1;
   PlaylistIdentifier playlistId = 2;
   uint32             universe = 3;
