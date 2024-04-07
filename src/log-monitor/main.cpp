@@ -1,12 +1,4 @@
 
-
-#include <chrono>
-#include <ctime>
-#include <thread>
-
-#include <bsoncxx/oid.hpp>
-#include <fmt/format.h>
-#include <google/protobuf/timestamp.pb.h>
 #include <grpcpp/grpcpp.h>
 
 #include "server.grpc.pb.h"
@@ -24,8 +16,7 @@ using server::CreatureServer;
 using server::Creature;
 using server::CreatureName;
 using server::CreatureId;
-using server::Frame;
-using server::FrameResponse;
+
 using server::ListCreaturesResponse;
 using server::CreatureFilter;
 
