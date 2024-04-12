@@ -76,10 +76,10 @@ public protocol Server_CreatureServerClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Server_AnimationId, Server_Animation>
 
-  func getAnimationIdentifier(
+  func getAnimationMetadata(
     _ request: Server_AnimationId,
     callOptions: CallOptions?
-  ) -> UnaryCall<Server_AnimationId, Server_AnimationIdentifier>
+  ) -> UnaryCall<Server_AnimationId, Server_AnimationMetadata>
 
   func listAnimations(
     _ request: Server_AnimationFilter,
@@ -117,19 +117,19 @@ public protocol Server_CreatureServerClientProtocol: GRPCClient {
   ) -> UnaryCall<Server_PlaylistFilter, Server_ListPlaylistsResponse>
 
   func startPlaylist(
-    _ request: Server_CreaturePlaylistRequest,
+    _ request: Server_PlaylistRequest,
     callOptions: CallOptions?
-  ) -> UnaryCall<Server_CreaturePlaylistRequest, Server_CreaturePlaylistResponse>
+  ) -> UnaryCall<Server_PlaylistRequest, Server_PlaylistResponse>
 
   func stopPlaylist(
-    _ request: Server_CreatureId,
+    _ request: Server_PlaylistStopRequest,
     callOptions: CallOptions?
-  ) -> UnaryCall<Server_CreatureId, Server_CreaturePlaylistResponse>
+  ) -> UnaryCall<Server_PlaylistStopRequest, Server_PlaylistResponse>
 
   func getPlaylistStatus(
-    _ request: Server_CreatureId,
+    _ request: Server_PlaylistRequest,
     callOptions: CallOptions?
-  ) -> UnaryCall<Server_CreatureId, Server_CreaturePlaylistStatus>
+  ) -> UnaryCall<Server_PlaylistRequest, Server_PlaylistStatus>
 }
 
 extension Server_CreatureServerClientProtocol {
@@ -360,21 +360,21 @@ extension Server_CreatureServerClientProtocol {
     )
   }
 
-  /// Unary call to GetAnimationIdentifier
+  /// Unary call to GetAnimationMetadata
   ///
   /// - Parameters:
-  ///   - request: Request to send to GetAnimationIdentifier.
+  ///   - request: Request to send to GetAnimationMetadata.
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  public func getAnimationIdentifier(
+  public func getAnimationMetadata(
     _ request: Server_AnimationId,
     callOptions: CallOptions? = nil
-  ) -> UnaryCall<Server_AnimationId, Server_AnimationIdentifier> {
+  ) -> UnaryCall<Server_AnimationId, Server_AnimationMetadata> {
     return self.makeUnaryCall(
-      path: Server_CreatureServerClientMetadata.Methods.getAnimationIdentifier.path,
+      path: Server_CreatureServerClientMetadata.Methods.getAnimationMetadata.path,
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetAnimationIdentifierInterceptors() ?? []
+      interceptors: self.interceptors?.makeGetAnimationMetadataInterceptors() ?? []
     )
   }
 
@@ -514,9 +514,9 @@ extension Server_CreatureServerClientProtocol {
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
   public func startPlaylist(
-    _ request: Server_CreaturePlaylistRequest,
+    _ request: Server_PlaylistRequest,
     callOptions: CallOptions? = nil
-  ) -> UnaryCall<Server_CreaturePlaylistRequest, Server_CreaturePlaylistResponse> {
+  ) -> UnaryCall<Server_PlaylistRequest, Server_PlaylistResponse> {
     return self.makeUnaryCall(
       path: Server_CreatureServerClientMetadata.Methods.startPlaylist.path,
       request: request,
@@ -532,9 +532,9 @@ extension Server_CreatureServerClientProtocol {
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
   public func stopPlaylist(
-    _ request: Server_CreatureId,
+    _ request: Server_PlaylistStopRequest,
     callOptions: CallOptions? = nil
-  ) -> UnaryCall<Server_CreatureId, Server_CreaturePlaylistResponse> {
+  ) -> UnaryCall<Server_PlaylistStopRequest, Server_PlaylistResponse> {
     return self.makeUnaryCall(
       path: Server_CreatureServerClientMetadata.Methods.stopPlaylist.path,
       request: request,
@@ -550,9 +550,9 @@ extension Server_CreatureServerClientProtocol {
   ///   - callOptions: Call options.
   /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
   public func getPlaylistStatus(
-    _ request: Server_CreatureId,
+    _ request: Server_PlaylistRequest,
     callOptions: CallOptions? = nil
-  ) -> UnaryCall<Server_CreatureId, Server_CreaturePlaylistStatus> {
+  ) -> UnaryCall<Server_PlaylistRequest, Server_PlaylistStatus> {
     return self.makeUnaryCall(
       path: Server_CreatureServerClientMetadata.Methods.getPlaylistStatus.path,
       request: request,
@@ -683,10 +683,10 @@ public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Server_AnimationId, Server_Animation>
 
-  func makeGetAnimationIdentifierCall(
+  func makeGetAnimationMetadataCall(
     _ request: Server_AnimationId,
     callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Server_AnimationId, Server_AnimationIdentifier>
+  ) -> GRPCAsyncUnaryCall<Server_AnimationId, Server_AnimationMetadata>
 
   func makeListAnimationsCall(
     _ request: Server_AnimationFilter,
@@ -724,19 +724,19 @@ public protocol Server_CreatureServerAsyncClientProtocol: GRPCClient {
   ) -> GRPCAsyncUnaryCall<Server_PlaylistFilter, Server_ListPlaylistsResponse>
 
   func makeStartPlaylistCall(
-    _ request: Server_CreaturePlaylistRequest,
+    _ request: Server_PlaylistRequest,
     callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Server_CreaturePlaylistRequest, Server_CreaturePlaylistResponse>
+  ) -> GRPCAsyncUnaryCall<Server_PlaylistRequest, Server_PlaylistResponse>
 
   func makeStopPlaylistCall(
-    _ request: Server_CreatureId,
+    _ request: Server_PlaylistStopRequest,
     callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Server_CreatureId, Server_CreaturePlaylistResponse>
+  ) -> GRPCAsyncUnaryCall<Server_PlaylistStopRequest, Server_PlaylistResponse>
 
   func makeGetPlaylistStatusCall(
-    _ request: Server_CreatureId,
+    _ request: Server_PlaylistRequest,
     callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Server_CreatureId, Server_CreaturePlaylistStatus>
+  ) -> GRPCAsyncUnaryCall<Server_PlaylistRequest, Server_PlaylistStatus>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -891,15 +891,15 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
-  public func makeGetAnimationIdentifierCall(
+  public func makeGetAnimationMetadataCall(
     _ request: Server_AnimationId,
     callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Server_AnimationId, Server_AnimationIdentifier> {
+  ) -> GRPCAsyncUnaryCall<Server_AnimationId, Server_AnimationMetadata> {
     return self.makeAsyncUnaryCall(
-      path: Server_CreatureServerClientMetadata.Methods.getAnimationIdentifier.path,
+      path: Server_CreatureServerClientMetadata.Methods.getAnimationMetadata.path,
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetAnimationIdentifierInterceptors() ?? []
+      interceptors: self.interceptors?.makeGetAnimationMetadataInterceptors() ?? []
     )
   }
 
@@ -988,9 +988,9 @@ extension Server_CreatureServerAsyncClientProtocol {
   }
 
   public func makeStartPlaylistCall(
-    _ request: Server_CreaturePlaylistRequest,
+    _ request: Server_PlaylistRequest,
     callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Server_CreaturePlaylistRequest, Server_CreaturePlaylistResponse> {
+  ) -> GRPCAsyncUnaryCall<Server_PlaylistRequest, Server_PlaylistResponse> {
     return self.makeAsyncUnaryCall(
       path: Server_CreatureServerClientMetadata.Methods.startPlaylist.path,
       request: request,
@@ -1000,9 +1000,9 @@ extension Server_CreatureServerAsyncClientProtocol {
   }
 
   public func makeStopPlaylistCall(
-    _ request: Server_CreatureId,
+    _ request: Server_PlaylistStopRequest,
     callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Server_CreatureId, Server_CreaturePlaylistResponse> {
+  ) -> GRPCAsyncUnaryCall<Server_PlaylistStopRequest, Server_PlaylistResponse> {
     return self.makeAsyncUnaryCall(
       path: Server_CreatureServerClientMetadata.Methods.stopPlaylist.path,
       request: request,
@@ -1012,9 +1012,9 @@ extension Server_CreatureServerAsyncClientProtocol {
   }
 
   public func makeGetPlaylistStatusCall(
-    _ request: Server_CreatureId,
+    _ request: Server_PlaylistRequest,
     callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Server_CreatureId, Server_CreaturePlaylistStatus> {
+  ) -> GRPCAsyncUnaryCall<Server_PlaylistRequest, Server_PlaylistStatus> {
     return self.makeAsyncUnaryCall(
       path: Server_CreatureServerClientMetadata.Methods.getPlaylistStatus.path,
       request: request,
@@ -1182,15 +1182,15 @@ extension Server_CreatureServerAsyncClientProtocol {
     )
   }
 
-  public func getAnimationIdentifier(
+  public func getAnimationMetadata(
     _ request: Server_AnimationId,
     callOptions: CallOptions? = nil
-  ) async throws -> Server_AnimationIdentifier {
+  ) async throws -> Server_AnimationMetadata {
     return try await self.performAsyncUnaryCall(
-      path: Server_CreatureServerClientMetadata.Methods.getAnimationIdentifier.path,
+      path: Server_CreatureServerClientMetadata.Methods.getAnimationMetadata.path,
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetAnimationIdentifierInterceptors() ?? []
+      interceptors: self.interceptors?.makeGetAnimationMetadataInterceptors() ?? []
     )
   }
 
@@ -1279,9 +1279,9 @@ extension Server_CreatureServerAsyncClientProtocol {
   }
 
   public func startPlaylist(
-    _ request: Server_CreaturePlaylistRequest,
+    _ request: Server_PlaylistRequest,
     callOptions: CallOptions? = nil
-  ) async throws -> Server_CreaturePlaylistResponse {
+  ) async throws -> Server_PlaylistResponse {
     return try await self.performAsyncUnaryCall(
       path: Server_CreatureServerClientMetadata.Methods.startPlaylist.path,
       request: request,
@@ -1291,9 +1291,9 @@ extension Server_CreatureServerAsyncClientProtocol {
   }
 
   public func stopPlaylist(
-    _ request: Server_CreatureId,
+    _ request: Server_PlaylistStopRequest,
     callOptions: CallOptions? = nil
-  ) async throws -> Server_CreaturePlaylistResponse {
+  ) async throws -> Server_PlaylistResponse {
     return try await self.performAsyncUnaryCall(
       path: Server_CreatureServerClientMetadata.Methods.stopPlaylist.path,
       request: request,
@@ -1303,9 +1303,9 @@ extension Server_CreatureServerAsyncClientProtocol {
   }
 
   public func getPlaylistStatus(
-    _ request: Server_CreatureId,
+    _ request: Server_PlaylistRequest,
     callOptions: CallOptions? = nil
-  ) async throws -> Server_CreaturePlaylistStatus {
+  ) async throws -> Server_PlaylistStatus {
     return try await self.performAsyncUnaryCall(
       path: Server_CreatureServerClientMetadata.Methods.getPlaylistStatus.path,
       request: request,
@@ -1370,8 +1370,8 @@ public protocol Server_CreatureServerClientInterceptorFactoryProtocol: Sendable 
   /// - Returns: Interceptors to use when invoking 'getAnimation'.
   func makeGetAnimationInterceptors() -> [ClientInterceptor<Server_AnimationId, Server_Animation>]
 
-  /// - Returns: Interceptors to use when invoking 'getAnimationIdentifier'.
-  func makeGetAnimationIdentifierInterceptors() -> [ClientInterceptor<Server_AnimationId, Server_AnimationIdentifier>]
+  /// - Returns: Interceptors to use when invoking 'getAnimationMetadata'.
+  func makeGetAnimationMetadataInterceptors() -> [ClientInterceptor<Server_AnimationId, Server_AnimationMetadata>]
 
   /// - Returns: Interceptors to use when invoking 'listAnimations'.
   func makeListAnimationsInterceptors() -> [ClientInterceptor<Server_AnimationFilter, Server_ListAnimationsResponse>]
@@ -1395,13 +1395,13 @@ public protocol Server_CreatureServerClientInterceptorFactoryProtocol: Sendable 
   func makeListPlaylistsInterceptors() -> [ClientInterceptor<Server_PlaylistFilter, Server_ListPlaylistsResponse>]
 
   /// - Returns: Interceptors to use when invoking 'startPlaylist'.
-  func makeStartPlaylistInterceptors() -> [ClientInterceptor<Server_CreaturePlaylistRequest, Server_CreaturePlaylistResponse>]
+  func makeStartPlaylistInterceptors() -> [ClientInterceptor<Server_PlaylistRequest, Server_PlaylistResponse>]
 
   /// - Returns: Interceptors to use when invoking 'stopPlaylist'.
-  func makeStopPlaylistInterceptors() -> [ClientInterceptor<Server_CreatureId, Server_CreaturePlaylistResponse>]
+  func makeStopPlaylistInterceptors() -> [ClientInterceptor<Server_PlaylistStopRequest, Server_PlaylistResponse>]
 
   /// - Returns: Interceptors to use when invoking 'getPlaylistStatus'.
-  func makeGetPlaylistStatusInterceptors() -> [ClientInterceptor<Server_CreatureId, Server_CreaturePlaylistStatus>]
+  func makeGetPlaylistStatusInterceptors() -> [ClientInterceptor<Server_PlaylistRequest, Server_PlaylistStatus>]
 }
 
 public enum Server_CreatureServerClientMetadata {
@@ -1421,7 +1421,7 @@ public enum Server_CreatureServerClientMetadata {
       Server_CreatureServerClientMetadata.Methods.createAnimation,
       Server_CreatureServerClientMetadata.Methods.updateAnimation,
       Server_CreatureServerClientMetadata.Methods.getAnimation,
-      Server_CreatureServerClientMetadata.Methods.getAnimationIdentifier,
+      Server_CreatureServerClientMetadata.Methods.getAnimationMetadata,
       Server_CreatureServerClientMetadata.Methods.listAnimations,
       Server_CreatureServerClientMetadata.Methods.playAnimation,
       Server_CreatureServerClientMetadata.Methods.playSound,
@@ -1508,9 +1508,9 @@ public enum Server_CreatureServerClientMetadata {
       type: GRPCCallType.unary
     )
 
-    public static let getAnimationIdentifier = GRPCMethodDescriptor(
-      name: "GetAnimationIdentifier",
-      path: "/server.CreatureServer/GetAnimationIdentifier",
+    public static let getAnimationMetadata = GRPCMethodDescriptor(
+      name: "GetAnimationMetadata",
+      path: "/server.CreatureServer/GetAnimationMetadata",
       type: GRPCCallType.unary
     )
 
