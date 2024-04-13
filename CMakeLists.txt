@@ -114,6 +114,30 @@ FetchContent_MakeAvailable(googletest)
 add_subdirectory(lib/e131_service)
 
 
+#
+# uWebSockets doesn't use CMake, so we have to do it ourselves. This is
+# a bit of a hack, but it works.
+#
+
+# Build the stuff that uWebSockets needs
+set(UWEBSOCKETS_DIR "${CMAKE_SOURCE_DIR}/lib/uWebSockets")
+
+# Custom command to make the uWebSockets
+add_custom_command(
+        OUTPUT ${UWEBSOCKETS_DIR}/uSockets/uSockets.a
+        COMMAND WITH_BORINGSSL=1 make all
+        WORKING_DIRECTORY ${UWEBSOCKETS_DIR}
+        COMMENT "Building uWebSockets"
+)
+
+# Custom target that depends on the output
+add_custom_target(uWebSockets DEPENDS ${UWEBSOCKETS_DIR}/uSockets/uSockets.a)
+
+# Copy the headers to a proper include directory
+file(COPY ${UWEBSOCKETS_DIR}/src/
+        DESTINATION ${UWEBSOCKETS_DIR}/include/uWebSockets/)
+
+
 # MongoDB (built by us on Linux, but the macOS/brew version is fine)
 find_package(mongocxx REQUIRED)
 find_package(bsoncxx REQUIRED)
@@ -206,6 +230,8 @@ file(GLOB logReaderFiles
 include_directories(
         src/
         ${UUID_INCLUDE_DIRS}
+        ${UWEBSOCKETS_DIR}/include
+        ${UWEBSOCKETS_DIR}/uSockets/src
         ${argparse_SOURCE_DIR}/include
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
@@ -226,7 +252,9 @@ add_executable(creature-server
         src/model/FrameData.h
         src/model/AnimationMetadata.h
         src/model/Animation.h
+        src/server/ws/WebSocketServer.cpp
 )
+add_dependencies(creature-server uWebSockets)
 
 target_link_libraries(creature-server
         PRIVATE server_grpc_proto
@@ -240,6 +268,7 @@ target_link_libraries(creature-server
         PRIVATE mongo::bsoncxx_shared
         argparse
         e131_service
+        ${UWEBSOCKETS_DIR}/uSockets/uSockets.a
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
