@@ -6,5 +6,4 @@ build/
 package/
 *.DS_Store
 external/build/
-lib/uWebSockets
 
