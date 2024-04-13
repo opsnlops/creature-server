@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "1.5.0"
+        VERSION "1.6.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -95,6 +95,19 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/p-ranav/argparse.git
 )
 FetchContent_MakeAvailable(argparse)
+
+# json
+FetchContent_Declare(
+        json
+        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
+FetchContent_MakeAvailable(json)
+
+# Google Test
+FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+)
+FetchContent_MakeAvailable(googletest)
 
 
 # ...and our own library
@@ -207,6 +220,12 @@ add_executable(creature-server
         src/server/watchdog/Watchdog.h
         src/server/GrpcServerManager.cpp
         src/server/GrpcServerManager.h
+        src/model/Creature.h
+        src/model/LogLevel.h
+        src/model/LogItem.h
+        src/model/FrameData.h
+        src/model/AnimationMetadata.h
+        src/model/Animation.h
 )
 
 target_link_libraries(creature-server
@@ -216,6 +235,7 @@ target_link_libraries(creature-server
         fmt::fmt
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
+        nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
         argparse
@@ -228,12 +248,19 @@ target_link_libraries(creature-server
 
 add_executable(client
         ${clientFiles}
+        src/model/Creature.h
+        src/model/LogLevel.h
+        src/model/LogItem.h
+        src/model/FrameData.h
+        src/model/AnimationMetadata.h
+        src/model/Animation.h
 )
 
 target_link_libraries(client
         PRIVATE server_grpc_proto
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
+        nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
         ${_REFLECTION}
@@ -243,12 +270,14 @@ target_link_libraries(client
 
 add_executable(logreader
         ${logReaderFiles}
+        src/model/LogLevel.h
 )
 
 target_link_libraries(logreader
         PRIVATE server_grpc_proto
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
+        nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
         ${_REFLECTION}
@@ -269,6 +298,56 @@ install(DIRECTORY /usr/local/lib
         COMPONENT creature-server
         PATTERN "python" EXCLUDE
 )
+
+
+
+#
+# Set up testing
+#
+
+enable_testing()
+
+add_executable(creature-server-test
+        tests/model/Creature_test.cpp
+        tests/model/LogItem_test.cpp
+        tests/model/Animation_test.cpp
+        tests/model/FrameData_test.cpp
+        tests/model/AnimationMetadata_test.cpp
+)
+
+target_link_libraries(creature-server-test
+        PRIVATE server_grpc_proto
+        PRIVATE ${UUID_LIBRARIES}
+        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
+        fmt::fmt
+        SDL2::SDL2
+        SDL2_mixer::SDL2_mixer
+        nlohmann_json::nlohmann_json
+        PRIVATE mongo::mongocxx_shared
+        PRIVATE mongo::bsoncxx_shared
+        argparse
+        e131_service
+        gtest_main
+        gmock_main
+        ${_REFLECTION}
+        ${_GRPC_GRPCPP}
+        ${_PROTOBUF_LIBPROTOBUF}
+)
+
+# This is to include Google Test and Google Mock headers
+target_include_directories(creature-server-test PRIVATE
+        ${googletest_SOURCE_DIR}/include
+        ${googlemock_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/
+)
+
+# Tell CMake where our tests are
+set_property(TARGET creature-server-test PROPERTY FOLDER "tests")
+
+# Register the test with CTest
+include(GoogleTest)
+gtest_discover_tests(creature-server-test)
+
 
 
 # where to find our CMake modules
