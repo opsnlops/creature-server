@@ -41,6 +41,7 @@ COPY src/ /build/creature-server/src
 COPY messaging/ /build/creature-server/messaging
 COPY cmake/ /build/creature-server/cmake
 COPY lib/ /build/creature-server/lib
+COPY tests/ /build/creature-server/tests
 COPY LICENSE README.md CMakeLists.txt /build/creature-server/
 RUN ls -lart /build/creature-server/
 RUN cd /build/creature-server && \
