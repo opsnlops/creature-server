@@ -30,7 +30,16 @@ namespace creatures ::ws {
         HttpStatus status;   // HTTP status code
         std::string body;    // Serialized JSON string for the body
 
-        // Constructor for initializing with any serializable object
+        /**
+         * Construct an HttpResponse with a status and a string body
+         *
+         * This is taking advantage of the fact that nlohmann::json knows what to do with any STL container. It allows
+         * us to return a consistent response format without having to write a bunch of custom serialization code.
+         *
+         * @tparam Serializable
+         * @param status
+         * @param serializable
+         */
         template<typename Serializable>
         HttpResponse(HttpStatus status, const Serializable &serializable)
                 : status(status) {
@@ -38,14 +47,16 @@ namespace creatures ::ws {
             body = j.dump(); // Serialize the object to a JSON string
         }
 
-        // Accessors
+
         HttpStatus getStatus() const {
             return status;
         }
 
+
         const std::string &getBody() const {
             return body;
         }
+
     };
 
     /**

@@ -206,8 +206,8 @@ int main(int argc, char **argv) {
     watchdog->start();
 
     // Start up gRPC
-    auto grpcServer = creatures::GrpcServerManager("0.0.0.0", 6666, log_queue);
-    grpcServer.start();
+    //auto grpcServer = creatures::GrpcServerManager("0.0.0.0", 6666, log_queue);
+    //grpcServer.start();
 
 
     // Start up the WebSocket server
@@ -236,7 +236,7 @@ int main(int argc, char **argv) {
     creatures::eventLoop->shutdown();
 
     // Halt gRPC
-    grpcServer.shutdown();
+    //grpcServer.shutdown();
 
     // Stop the websocket server
     wsServer.shutdown();

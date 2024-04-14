@@ -254,6 +254,9 @@ add_executable(creature-server
         src/model/Animation.h
         src/server/ws/WebSocketServer.cpp
         src/server/ws/HttpResponse.h
+        src/server/ws/routes/BaseRoute.h
+        src/server/ws/routes/HelloRoute.h
+        src/server/ws/routes/CreatureById.h
 )
 add_dependencies(creature-server uWebSockets)
 
@@ -345,6 +348,7 @@ add_executable(creature-server-test
         tests/model/FrameData_test.cpp
         tests/model/AnimationMetadata_test.cpp
         tests/server/ws/HttpResponse_test.cpp
+        src/server/ws/routes/BaseRoute.h
 )
 
 target_link_libraries(creature-server-test

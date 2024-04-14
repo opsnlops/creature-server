@@ -1,28 +1,33 @@
 
+#include <memory>
+#include <thread>
+#include <vector>
+
 #include <fmt/format.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
-
 #include <uWebSockets/App.h>
 
-
-#include "model/Creature.h"
-#include "server/database.h"
+#include "server/ws/routes/AllCreatures.h"
+#include "server/ws/routes/CreatureById.h"
+#include "server/ws/routes/HelloRoute.h"
 #include "util/StoppableThread.h"
 #include "util/threadName.h"
 
-#include "HttpResponse.h"
+
 #include "WebSocketServer.h"
 
 
 namespace creatures::ws {
 
 
-    extern std::shared_ptr<Database> db;
-
     WebSocketServer::WebSocketServer(uint16_t serverPort) : serverPort(serverPort) {
 
         // Get our logger going
         logger = spdlog::stdout_color_mt("WebSocketServer");
+
+        // Extend the default format by added the thread ID
+        logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [%n] [thread %t] %v");
+
         logger->set_level(spdlog::level::debug);
 
     }
@@ -33,55 +38,53 @@ namespace creatures::ws {
 
 
     void WebSocketServer::run() {
-
         setThreadName("WebSocketServer::run");
+        logger->info("Firing off WebSocket server thread!");
 
-        logger->info("firing off WebSocket server thread!");
+        // Create the app
+        uWS::App app;
 
-        auto app = uWS::App();
+        // Add our routes
+        addRoute<HelloRoute>(app, logger);
 
-        app.get("/hello", [this](auto *res, auto *req) {
+        // Creatures routes
+        addRoute<AllCreatures>(app, logger);
+        addRoute<CreatureById>(app, logger);
 
-             logger->debug("someone said hello!");
-             WebSocketServer::sendResponse(res, {HttpStatus::OK, "Hellorld!"});
+        // Start the server on a specific port, check if successful
+        app.listen(serverPort, [this](auto *listenSocket) {
 
-        });
-
-        app.get("/creature/:id", [](auto *res, auto */*req*/) {
-
-            auto creature1 = creatures::Creature{"1234", "Beaky", 2, 1, "This is a note!"};
-            auto creature2 = creatures::Creature{"4567", "Mango 😍", 2, 5, "This is a note, too"};
-
-            std::vector<creatures::Creature> creatures = {creature1, creature2};
-            WebSocketServer::sendResponse(res, {HttpStatus::OK, creatures});
-
-        });
-
-        app.listen(serverPort, [this](auto *listen_socket) {
-            if (listen_socket) {
-                logger->info("Listening on port {}", serverPort);
+            if (listenSocket) {
+                this->logger->info("Listening on port {}", serverPort);
+            } else {
+                this->logger->error("Failed to load certs or to bind to port");
             }
+
         });
 
-        app.run();
 
+        // Determine the number of threads to use
+        unsigned int numberOfThreads = std::thread::hardware_concurrency();
+        logger->info("Using {} threads", numberOfThreads);
 
-        // Wait until we're asked to stop
-        while (!stop_requested.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        // Run the app in multiple threads
+        std::vector<std::thread> threads(numberOfThreads - 1);  // Create threads for all but the main thread
+        for (std::thread &t : threads) {
+            t = std::thread([&app]() {
+                app.run();  // Each thread runs the app
+            });
         }
 
+        app.run();  // Run also on the main thread
 
-        logger->info("goodbye from the WebSocket server!");
-    }
+        // Join all threads to ensure clean exit
+        for (std::thread &t : threads) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
 
-
-    void WebSocketServer::sendResponse(uWS::HttpResponse<false> *res, const HttpResponse& response) {
-        auto [code, message] = getHttpStatusMessage(response.getStatus());
-        std::string status = std::to_string(code) + " " + message;
-        res->writeStatus(status);
-        res->writeHeader("Content-Type", "application/json; charset=utf-8");
-        res->end(response.getBody());
+        logger->info("Server threads joined");
     }
 
 }
