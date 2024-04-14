@@ -64,7 +64,7 @@ namespace creatures {
         for(const auto& a : animation->frames()) {
             CreatureId creatureId = stringToCreatureId(a.creature_id());
 
-            auto creature = std::make_unique<Creature>();
+            auto creature = std::make_unique<server::Creature>();
             db->getCreature(&creatureId, creature.get());
 
             info("One of the creatures is {}", creature->name());

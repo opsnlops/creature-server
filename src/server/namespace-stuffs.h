@@ -14,7 +14,6 @@ using server::PlayAnimationResponse;
 using server::FrameData;
 
 
-using server::Creature;
 using server::CreatureFilter;
 using server::CreatureId;
 using server::CreatureIdentifier;

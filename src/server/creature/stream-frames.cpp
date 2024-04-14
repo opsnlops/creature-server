@@ -40,7 +40,7 @@ namespace creatures {
         CreatureId creatureId = stringToCreatureId(frame.creature_id());
 
         // Load the creature
-        Creature creature;
+        server::Creature creature;
         try {
             db->getCreature(&creatureId, &creature);
         }

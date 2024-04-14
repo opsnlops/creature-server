@@ -29,7 +29,7 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
 
-    Status CreatureServerImpl::SearchCreatures(ServerContext *context, const CreatureName *request, Creature *reply) {
+    Status CreatureServerImpl::SearchCreatures(ServerContext *context, const CreatureName *request, server::Creature *reply) {
         debug("calling searching for a creature");
 
         grpc::Status status;
@@ -63,7 +63,7 @@ namespace creatures {
 
     }
 
-    void Database::searchCreatures(const CreatureName *creatureName, Creature *creature) {
+    void Database::searchCreatures(const CreatureName *creatureName, server::Creature *creature) {
 
         grpc::Status status;
         if (creatureName->name().empty()) {

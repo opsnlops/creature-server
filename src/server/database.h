@@ -26,6 +26,7 @@
 
 #include <google/protobuf/timestamp.pb.h>
 
+//#include "model/Creature.h"
 #include "server/namespace-stuffs.h"
 
 namespace creatures {
@@ -36,12 +37,13 @@ namespace creatures {
         explicit Database(mongocxx::pool &pool);
 
         // Creature stuff
-        void createCreature(const Creature *creature, DatabaseInfo *reply);
-        void updateCreature(const Creature *creature);
-        void searchCreatures(const CreatureName *creatureName, Creature *creature);
-        void getCreature(const CreatureId *creatureId, Creature *creature);
+        void createCreature(const server::Creature *creature, DatabaseInfo *reply);
+        void updateCreature(const server::Creature *creature);
+        void searchCreatures(const CreatureName *creatureName, server::Creature *creature);
+        void getCreature(const CreatureId *creatureId, server::Creature *creature);
         void getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList);
         void listCreatures(const CreatureFilter *filter, ListCreaturesResponse *creatureList);
+
 
 
 
@@ -80,9 +82,9 @@ namespace creatures {
 
         mongocxx::collection getCollection(const std::string &collectionName);
 
-        static bsoncxx::document::value creatureToBson(const Creature *creature, bool assignNewId);
+        static bsoncxx::document::value creatureToBson(const server::Creature *creature, bool assignNewId);
 
-        static void creatureFromBson(const bsoncxx::document::view &doc, Creature *creature);
+        static void creatureFromBson(const bsoncxx::document::view &doc, server::Creature *creature);
 
         static void
         creatureIdentifierFromBson(const bsoncxx::document::view &doc, CreatureIdentifier *identifier);

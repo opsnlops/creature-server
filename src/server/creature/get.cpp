@@ -32,7 +32,7 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
 
-    Status CreatureServerImpl::GetCreature(ServerContext *context, const CreatureId *id, Creature *reply) {
+    Status CreatureServerImpl::GetCreature(ServerContext *context, const CreatureId *id, server::Creature *reply) {
         debug("calling getCreature()");
 
         grpc::Status status;
@@ -75,7 +75,7 @@ namespace creatures {
      * @throws InternalError if a database error occurs
      *
      */
-    void Database::getCreature(const CreatureId *creatureId, Creature *creature) {
+    void Database::getCreature(const CreatureId *creatureId, server::Creature *creature) {
 
         if (creatureId->_id().empty()) {
             info("an empty creatureID was passed into getCreature()");

@@ -28,7 +28,7 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
 
-    Status CreatureServerImpl::CreateCreature(ServerContext *context, const Creature *creature, DatabaseInfo *reply) {debug("hello from save");
+    Status CreatureServerImpl::CreateCreature(ServerContext *context, const server::Creature *creature, DatabaseInfo *reply) {debug("hello from save");
 
         debug("attempting to save a new creature");
         try {
@@ -50,7 +50,7 @@ namespace creatures {
     }
 
 
-    void Database::createCreature(const Creature *creature, server::DatabaseInfo *reply) {
+    void Database::createCreature(const server::Creature *creature, server::DatabaseInfo *reply) {
 
         info("attempting to save a creature in the database");
 

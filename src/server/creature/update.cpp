@@ -27,7 +27,7 @@ namespace creatures {
     extern std::shared_ptr<Database> db;
 
 
-    Status CreatureServerImpl::UpdateCreature(grpc::ServerContext *context, const Creature *creature,
+    Status CreatureServerImpl::UpdateCreature(grpc::ServerContext *context, const server::Creature *creature,
                                               DatabaseInfo *response) {
 
         debug("trying to update a creature");

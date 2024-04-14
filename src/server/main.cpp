@@ -32,6 +32,7 @@
 #include "server/logging/creature_log_sink.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/StatusLights.h"
+#include "server/ws/WebSocketServer.h"
 #include "Version.h"
 #include "util/cache.h"
 #include "util/environment.h"
@@ -209,6 +210,11 @@ int main(int argc, char **argv) {
     grpcServer.start();
 
 
+    // Start up the WebSocket server
+    creatures::ws::WebSocketServer wsServer(3000);
+    wsServer.start();
+
+
     // Wait for the signal handler to know when to stop
     while (creatures::serverShouldRun.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -231,6 +237,9 @@ int main(int argc, char **argv) {
 
     // Halt gRPC
     grpcServer.shutdown();
+
+    // Stop the websocket server
+    wsServer.shutdown();
 
     creatures::gpioPins->serverOnline(false);
     creatures::statusLights->shutdown();

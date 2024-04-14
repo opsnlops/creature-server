@@ -35,13 +35,13 @@ namespace creatures {
     public:
         explicit CreatureServerImpl(ConcurrentQueue<LogItem> &_queue) : log_queue(_queue) {};
 
-        Status SearchCreatures(ServerContext *context, const CreatureName *request, Creature *reply) override;
-        Status CreateCreature(ServerContext *context, const Creature *creature, DatabaseInfo *reply) override;
-        Status GetCreature(ServerContext *context, const CreatureId *id, Creature *reply) override;
+        Status SearchCreatures(ServerContext *context, const CreatureName *request, server::Creature *reply) override;
+        Status CreateCreature(ServerContext *context, const server::Creature *creature, DatabaseInfo *reply) override;
+        Status GetCreature(ServerContext *context, const CreatureId *id, server::Creature *reply) override;
         Status ListCreatures(ServerContext *context, const CreatureFilter *filter, ListCreaturesResponse *response) override;
         Status GetAllCreatures(ServerContext *context, const CreatureFilter *filter,
                                GetAllCreaturesResponse *response) override;
-        Status UpdateCreature(ServerContext *context, const Creature *creature, DatabaseInfo *reply) override;
+        Status UpdateCreature(ServerContext *context, const server::Creature *creature, DatabaseInfo *reply) override;
         //Status GetServerStatus(ServerContext* context, const Empty* request, ServerStatus* response) override;
 
         /**

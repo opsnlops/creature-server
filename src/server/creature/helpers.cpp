@@ -34,7 +34,7 @@ using bsoncxx::builder::basic::make_document;
 using bsoncxx::builder::basic::kvp;
 
 namespace creatures {
-    bsoncxx::document::value Database::creatureToBson(const Creature *creature, bool assignNewId) {
+    bsoncxx::document::value Database::creatureToBson(const server::Creature *creature, bool assignNewId) {
         using bsoncxx::builder::stream::document;
         using bsoncxx::builder::stream::finalize;
         using std::chrono::system_clock;
@@ -80,7 +80,7 @@ namespace creatures {
     }
 
 
-    void Database::creatureFromBson(const bsoncxx::document::view &doc, Creature *creature) {
+    void Database::creatureFromBson(const bsoncxx::document::view &doc, server::Creature *creature) {
 
         trace("attempting to create a creature from a BSON document");
 
