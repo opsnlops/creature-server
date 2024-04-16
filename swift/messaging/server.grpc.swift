@@ -1436,7 +1436,7 @@ public enum Server_CreatureServerClientMetadata {
   )
 
   public enum Methods {
-    public static let getCreature = GRPCMethodDescriptor(
+    public static let gRPCgetCreature = GRPCMethodDescriptor(
       name: "GetCreature",
       path: "/server.CreatureServer/GetCreature",
       type: GRPCCallType.unary
@@ -1448,13 +1448,13 @@ public enum Server_CreatureServerClientMetadata {
       type: GRPCCallType.unary
     )
 
-    public static let createCreature = GRPCMethodDescriptor(
+    public static let gRPCcreateCreature = GRPCMethodDescriptor(
       name: "CreateCreature",
       path: "/server.CreatureServer/CreateCreature",
       type: GRPCCallType.unary
     )
 
-    public static let updateCreature = GRPCMethodDescriptor(
+    public static let gRPCupdateCreature = GRPCMethodDescriptor(
       name: "UpdateCreature",
       path: "/server.CreatureServer/UpdateCreature",
       type: GRPCCallType.unary

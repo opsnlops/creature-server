@@ -7,6 +7,9 @@
 #include "spdlog/spdlog.h"
 #include <uWebSockets/App.h>
 
+#include "exception/exception.h"
+
+
 // Define a concept for a route
 template<typename T>
 concept RouteConcept = requires(T a, uWS::App& app) {

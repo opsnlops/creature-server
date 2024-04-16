@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <string>
+#include <vector>
 
 #include <bsoncxx/json.hpp>
 #include <mongocxx/client.hpp>
@@ -26,7 +27,8 @@
 
 #include <google/protobuf/timestamp.pb.h>
 
-//#include "model/Creature.h"
+#include "model/Creature.h"
+#include "model/SortBy.h"
 #include "server/namespace-stuffs.h"
 
 namespace creatures {
@@ -37,12 +39,29 @@ namespace creatures {
         explicit Database(mongocxx::pool &pool);
 
         // Creature stuff
-        void createCreature(const server::Creature *creature, DatabaseInfo *reply);
-        void updateCreature(const server::Creature *creature);
+        void gRPCcreateCreature(const server::Creature *creature, DatabaseInfo *reply);
+        void gRPCupdateCreature(const server::Creature *creature);
         void searchCreatures(const CreatureName *creatureName, server::Creature *creature);
-        void getCreature(const CreatureId *creatureId, server::Creature *creature);
+        void gRPCgetCreature(const CreatureId *creatureId, server::Creature *creature);
         void getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList);
         void listCreatures(const CreatureFilter *filter, ListCreaturesResponse *creatureList);
+
+
+        /*
+         * RESTful methods
+         */
+
+        creatures::Creature getCreature(std::string creatureId);
+        std::vector<creatures::Creature> getAllCreatures(creatures::SortBy sortBy, bool ascending);
+
+        /**
+         * Create a new creature in the database
+         *
+         * @param creature the creature to create. The ID is ignored.
+         * @return the creature that was created, with the ID set
+         */
+        creatures::Creature createCreature(creatures::Creature creature);
+
 
 
 
@@ -82,9 +101,11 @@ namespace creatures {
 
         mongocxx::collection getCollection(const std::string &collectionName);
 
-        static bsoncxx::document::value creatureToBson(const server::Creature *creature, bool assignNewId);
+        static bsoncxx::document::value creatureToBson(const creatures::Creature &creature);
+        static bsoncxx::document::value gRPCcreatureToBson(const server::Creature *creature, bool assignNewId);
 
-        static void creatureFromBson(const bsoncxx::document::view &doc, server::Creature *creature);
+        static creatures::Creature creatureFromBson(const bsoncxx::document::view &doc);
+        static void gRPCCreatureFromBson(const bsoncxx::document::view &doc, server::Creature *creature);
 
         static void
         creatureIdentifierFromBson(const bsoncxx::document::view &doc, CreatureIdentifier *identifier);

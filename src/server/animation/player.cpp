@@ -65,7 +65,7 @@ namespace creatures {
             CreatureId creatureId = stringToCreatureId(a.creature_id());
 
             auto creature = std::make_unique<server::Creature>();
-            db->getCreature(&creatureId, creature.get());
+            db->gRPCgetCreature(&creatureId, creature.get());
 
             info("One of the creatures is {}", creature->name());
         }

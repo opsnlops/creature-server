@@ -32,6 +32,18 @@ namespace creatures {
     bsoncxx::oid creatureIdToOid(const CreatureId& creature_id);
     bsoncxx::oid animationIdToOid(const AnimationId& animation_id);
 
+    /**
+     * Converts the string version of an OID as seen in the MongoDB Compass application, such
+     * as `6611dfb4e98d776bb0025304` to a `bsoncxx::oid`
+     *
+     * @param id_string the OID in string format
+     * @return a `bsoncxx::oid` object
+     * @throws creatures::InvalidArgumentException if the string is not the correct length or invalid
+     */
+    bsoncxx::oid stringToOid(const std::string &id_string);
+
+    bsoncxx::oid generateNewOid();
+
     void displayFrames(const Animation& animation);
     std::string ProtobufTimestampToHumanReadable(const google::protobuf::Timestamp& timestamp);
     google::protobuf::Timestamp time_point_to_protobuf_timestamp(const std::chrono::system_clock::time_point& time_point);

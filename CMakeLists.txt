@@ -256,7 +256,10 @@ add_executable(creature-server
         src/server/ws/HttpResponse.h
         src/server/ws/routes/BaseRoute.h
         src/server/ws/routes/HelloRoute.h
-        src/server/ws/routes/CreatureById.h
+        src/server/ws/routes/creature/CreatureById.h
+        src/model/SortBy.h
+        src/server/ws/WebSocketHandler.h
+        src/server/ws/routes/creature/CreateCreature.h
 )
 add_dependencies(creature-server uWebSockets)
 
@@ -349,6 +352,9 @@ add_executable(creature-server-test
         tests/model/AnimationMetadata_test.cpp
         tests/server/ws/HttpResponse_test.cpp
         src/server/ws/routes/BaseRoute.h
+        src/model/SortBy.h
+        src/server/ws/WebSocketHandler.h
+        src/server/ws/routes/creature/CreateCreature.h
 )
 
 target_link_libraries(creature-server-test

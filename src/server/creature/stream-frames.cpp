@@ -42,7 +42,7 @@ namespace creatures {
         // Load the creature
         server::Creature creature;
         try {
-            db->getCreature(&creatureId, &creature);
+            db->gRPCgetCreature(&creatureId, &creature);
         }
         catch( const NotFoundException& e) {
             error("Creature {} not found", frame.creature_id());

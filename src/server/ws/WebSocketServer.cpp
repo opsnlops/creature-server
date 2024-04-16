@@ -7,9 +7,11 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <uWebSockets/App.h>
 
-#include "server/ws/routes/AllCreatures.h"
-#include "server/ws/routes/CreatureById.h"
+#include "server/ws/routes/creature/AllCreatures.h"
+#include "server/ws/routes/creature/CreateCreature.h"
+#include "server/ws/routes/creature/CreatureById.h"
 #include "server/ws/routes/HelloRoute.h"
+#include "server/ws/WebSocketHandler.h"
 #include "util/StoppableThread.h"
 #include "util/threadName.h"
 
@@ -50,6 +52,10 @@ namespace creatures::ws {
         // Creatures routes
         addRoute<AllCreatures>(app, logger);
         addRoute<CreatureById>(app, logger);
+        addRoute<CreateCreature>(app, logger);
+
+        // The main websocket
+        addRoute<WebSocketHandler>(app, logger);
 
         // Start the server on a specific port, check if successful
         app.listen(serverPort, [this](auto *listenSocket) {

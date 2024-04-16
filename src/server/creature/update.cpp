@@ -33,7 +33,7 @@ namespace creatures {
         debug("trying to update a creature");
 
         try {
-            db->updateCreature(creature);
+            db->gRPCupdateCreature(creature);
             std::string statusMessage = fmt::format("✅ Creature updated in database! Name: {}", creature->name());
             response->set_message(statusMessage);
             info(statusMessage);
@@ -41,7 +41,7 @@ namespace creatures {
 
         }
         catch (const InvalidArgumentException &e) {
-            std::string  errorMessage = fmt::format("CreatureID was empty on updateCreature()");
+            std::string  errorMessage = fmt::format("CreatureID was empty on gRPCupdateCreature()");
             error(errorMessage);
             response->set_message("⛔️ A creature ID must be supplied");
             response->set_help("creatureID cannot be empty");
@@ -88,14 +88,14 @@ namespace creatures {
      *
      * @param creature
      */
-    void Database::updateCreature(const server::Creature *creature) {
+    void Database::gRPCupdateCreature(const server::Creature *creature) {
 
         debug("attempting to update a creature in the database");
 
         // Error checking
         if (creature->_id().empty()) {
-            error("an empty creatureId was passed into updateCreature()");
-            throw InvalidArgumentException("an empty creatureId was passed into updateCreature()");
+            error("an empty creatureId was passed into gRPCupdateCreature()");
+            throw InvalidArgumentException("an empty creatureId was passed into gRPCupdateCreature()");
         }
 
         //debug("creature ID for update: {}", bytesToString(creature->_id()));
@@ -112,7 +112,7 @@ namespace creatures {
             bsoncxx::builder::stream::document filter_builder{};
             filter_builder << "_id" << creatureId;
 
-            auto doc_view = creatureToBson(creature, false);
+            auto doc_view = gRPCcreatureToBson(creature, false);
             auto result = collection.replace_one(filter_builder.view(), doc_view.view());
 
             if (result) {
@@ -120,7 +120,7 @@ namespace creatures {
 
                     // Whoa, this should never happen
                     std::string errorMessage = fmt::format(
-                            "more than one document updated at once in updateCreature()!! Count: {}",
+                            "more than one document updated at once in gRPCupdateCreature()!! Count: {}",
                             result->matched_count());
                     critical(errorMessage);
                     throw InternalError(errorMessage);

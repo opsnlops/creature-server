@@ -104,7 +104,6 @@ message CreatureFilter {
 message DatabaseInfo {
   string message = 1;
   string help = 2;
-
 }
 
 message LogFilter {

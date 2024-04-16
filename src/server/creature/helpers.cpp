@@ -12,6 +12,7 @@
 #include "server.pb.h"
 #include "server/database.h"
 #include "exception/exception.h"
+#include "util/helpers.h"
 
 
 #include <google/protobuf/timestamp.pb.h>
@@ -34,7 +35,7 @@ using bsoncxx::builder::basic::make_document;
 using bsoncxx::builder::basic::kvp;
 
 namespace creatures {
-    bsoncxx::document::value Database::creatureToBson(const server::Creature *creature, bool assignNewId) {
+    bsoncxx::document::value Database::gRPCcreatureToBson(const server::Creature *creature, bool assignNewId) {
         using bsoncxx::builder::stream::document;
         using bsoncxx::builder::stream::finalize;
         using std::chrono::system_clock;
@@ -58,7 +59,6 @@ namespace creatures {
 
             builder << "_id" << id
                     << "name" << creature->name()
-                    << "last_updated" << bsoncxx::types::b_date{last_updated}
                     << "channel_offset" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->channel_offset())}
                     << "audio_channel" << bsoncxx::types::b_int32{static_cast<int32_t>(creature->audio_channel())}
                     << "notes" << creature->notes();
@@ -80,7 +80,41 @@ namespace creatures {
     }
 
 
-    void Database::creatureFromBson(const bsoncxx::document::view &doc, server::Creature *creature) {
+    bsoncxx::document::value Database::creatureToBson(const creatures::Creature &creature) {
+
+        debug("converting a creature to bson");
+
+        bsoncxx::builder::stream::document builder{};
+        trace("builder made");
+
+        try {
+
+            builder << "_id" << stringToOid(creature.id)
+                    << "name" << creature.name
+                    << "channel_offset" << bsoncxx::types::b_int32{static_cast<int32_t>(creature.channel_offset)}
+                    << "audio_channel" << bsoncxx::types::b_int32{static_cast<int32_t>(creature.audio_channel)}
+                    << "notes" << creature.notes;
+            trace("fields added");
+
+        }
+        catch (const mongocxx::exception &e) {
+            std::string errorMessage = fmt::format("Problems making the document for a creature: {}", e.what());
+            error(errorMessage);
+            throw creatures::InternalError(errorMessage);
+        }
+
+        // All done, close up the doc!
+        bsoncxx::document::value doc = builder.extract();
+        trace("extract done");
+
+        // Log this so I can see what was made
+        trace("Built doc: {}", bsoncxx::to_json(doc));
+
+        return doc;
+    }
+
+
+    void Database::gRPCCreatureFromBson(const bsoncxx::document::view &doc, server::Creature *creature) {
 
         trace("attempting to create a creature from a BSON document");
 
@@ -103,11 +137,6 @@ namespace creatures {
         } else {
             throw creatures::DataFormatException("Field name was not a string in the database");
         }
-
-
-        // Last updated
-        element = doc["last_updated"];
-        *creature->mutable_last_updated() = convertMongoDateToProtobufTimestamp(element);
 
 
         // Channel Offset
@@ -142,6 +171,58 @@ namespace creatures {
         }
 
         debug("done loading creature");
+    }
+
+    creatures::Creature Database::creatureFromBson(const bsoncxx::document::view &doc) {
+
+        trace("attempting to create a creature from a BSON document");
+
+
+        Creature c;
+
+        bsoncxx::document::element element = doc["_id"];
+        if (element && element.type() == bsoncxx::type::k_oid) {
+            const bsoncxx::oid &oid = element.get_oid().value;
+            const char *oid_data = oid.bytes();
+            c.id = bytesToString(oid_data);
+            trace("set the _id to {}", c.id);
+        } else {
+            throw creatures::DataFormatException("Field _id was not a bsoncxx::oid in the database");
+        }
+
+        element = doc["name"];
+        if (element && element.type() == bsoncxx::type::k_utf8) {
+            bsoncxx::stdx::string_view string_value = element.get_string().value;
+            c.name = std::string{string_value};
+            trace("set the name to {}", c.name);
+        } else {
+            throw creatures::DataFormatException("Field name was not a string in the database");
+        }
+
+
+
+        // Number of audio channels
+        element = doc["audio_channel"];
+        if (element && element.type() == bsoncxx::type::k_int32) {
+            c.audio_channel = element.get_int32().value;
+            trace("set the audio channel to {}", c.audio_channel);
+        } else {
+            throw creatures::DataFormatException("Field audio_channel was not an int32 in the database");
+        }
+
+
+        // Notes
+        element = doc["notes"];
+        if (element && element.type() == bsoncxx::type::k_utf8) {
+            bsoncxx::stdx::string_view string_value = element.get_string().value;
+            c.notes = std::string{string_value};
+            trace("set the notes to {}", c.notes);
+        } else {
+            throw creatures::DataFormatException("Field notes was not a string in the database");
+        }
+
+        debug("done loading creature");
+        return c;
     }
 
 

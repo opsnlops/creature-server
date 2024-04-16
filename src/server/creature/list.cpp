@@ -23,6 +23,11 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
 
+    /*
+     * NOTE: Not converting this one to the RESTful API. This was never needed in the first place.
+     */
+
+
     grpc::Status CreatureServerImpl::ListCreatures(ServerContext *context, const CreatureFilter *filter,
                                              ListCreaturesResponse *response) {
         debug("calling listCreatures()");

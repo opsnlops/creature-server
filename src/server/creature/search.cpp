@@ -92,7 +92,7 @@ namespace creatures {
 
             // Unwrap the optional to obtain the bsoncxx::document::value
             bsoncxx::document::value found_document = *result;
-            creatureFromBson(found_document, creature);
+            gRPCCreatureFromBson(found_document, creature);
 
             debug("find completed!");
 

@@ -1,14 +1,12 @@
 
 #pragma once
 
-
 #include <nlohmann/json.hpp>
 
 #include <string>
 #include <sstream>
 
-
-namespace creatures ::ws {
+namespace creatures :: ws {
 
     enum class HttpStatus {
         OK = 200,
@@ -20,6 +18,7 @@ namespace creatures ::ws {
         Forbidden = 403,
         NotFound = 404,
         MethodNotAllowed = 405,
+        Conflict = 409,
         InternalServerError = 500,
         NotImplemented = 501,
         BadGateway = 502,
@@ -85,6 +84,8 @@ namespace creatures ::ws {
                 return {404, "Not Found"};
             case HttpStatus::MethodNotAllowed:
                 return {405, "Method Not Allowed"};
+            case HttpStatus::Conflict:
+                return {409, "Conflict"};
             case HttpStatus::InternalServerError:
                 return {500, "Internal Server Error"};
             case HttpStatus::NotImplemented:
@@ -98,4 +99,4 @@ namespace creatures ::ws {
         }
     }
 
-}
+} // creatures :: ws
