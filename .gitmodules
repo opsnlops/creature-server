@@ -8,3 +8,6 @@
 [submodule "lib/uWebSockets"]
 	path = lib/uWebSockets
 	url = git@github.com:uNetworking/uWebSockets.git
+[submodule "lib/base64"]
+	path = lib/base64
+	url = git@github.com:tobiaslocker/base64.git

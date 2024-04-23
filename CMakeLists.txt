@@ -138,6 +138,10 @@ file(COPY ${UWEBSOCKETS_DIR}/src/
         DESTINATION ${UWEBSOCKETS_DIR}/include/uWebSockets/)
 
 
+# Build the stuff that uWebSockets needs
+set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
+
+
 # MongoDB (built by us on Linux, but the macOS/brew version is fine)
 find_package(mongocxx REQUIRED)
 find_package(bsoncxx REQUIRED)
@@ -235,6 +239,7 @@ include_directories(
         ${argparse_SOURCE_DIR}/include
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
+        ${LIBBASE64_DIR}/include
         PRIVATE ${CMAKE_BINARY_DIR}
 )
 

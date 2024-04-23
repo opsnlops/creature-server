@@ -1,6 +1,8 @@
 
 #include "spdlog/spdlog.h"
 
+#include <base64.hpp>
+
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/exception/exception.hpp>
 #include <bsoncxx/json.hpp>
