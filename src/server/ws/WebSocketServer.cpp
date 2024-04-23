@@ -7,6 +7,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <uWebSockets/App.h>
 
+#include "server/ws/routes/animation/ListAnimations.h"
 #include "server/ws/routes/creature/AllCreatures.h"
 #include "server/ws/routes/creature/CreateCreature.h"
 #include "server/ws/routes/creature/CreatureById.h"
@@ -53,6 +54,10 @@ namespace creatures::ws {
         addRoute<AllCreatures>(app, logger);
         addRoute<CreatureById>(app, logger);
         addRoute<CreateCreature>(app, logger);
+
+        // Animation routes
+        addRoute<ListAnimations>(app, logger);
+
 
         // The main websocket
         addRoute<WebSocketHandler>(app, logger);

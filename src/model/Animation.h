@@ -13,8 +13,8 @@ namespace creatures {
     struct Animation {
         std::string id;
         AnimationMetadata metadata;
-        std::vector<FrameData> frames;
+        std::vector<FrameData> tracks;
 
-        NLOHMANN_DEFINE_TYPE_INTRUSIVE(Animation, id, metadata, frames)
+        NLOHMANN_DEFINE_TYPE_INTRUSIVE(Animation, id, metadata, tracks)
     };
 }

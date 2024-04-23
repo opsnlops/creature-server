@@ -28,7 +28,7 @@ namespace creatures {
      * @param reply a `DatabaseInfo` that will be filled out for the reply
      * @return state of the request
      */
-    Status CreatureServerImpl::CreateAnimation(ServerContext *context,
+    Status CreatureServerImpl::gRPCCreateAnimation(ServerContext *context,
                                                const Animation *animation,
                                                DatabaseInfo *reply) {
 
@@ -82,10 +82,10 @@ namespace creatures {
             // Create the new animationId
             bsoncxx::oid animationId;
 
-            auto doc_view = animationToBson(animation, animationId);
-            trace("doc_value made: {}", bsoncxx::to_json(doc_view));
+            //auto doc_view = animationToBson(animation);
+            //trace("doc_value made: {}", bsoncxx::to_json(doc_view));
 
-            collection.insert_one(doc_view.view());
+            //collection.insert_one(doc_view.view());
             trace("run_command done");
 
             info("saved new animation in the database 💃🏽");
@@ -95,11 +95,11 @@ namespace creatures {
 
             // Code 11000 means id collision
             if (e.code().value() == 11000) {
-                std::string errorMessage = fmt::format("attempted to insert a duplicate Animation in the database for id {}", animation->_id());
-                error(errorMessage);
+                //std::string errorMessage = fmt::format("attempted to insert a duplicate Animation in the database for id {}", animation->_id());
+                //error(errorMessage);
                 reply->set_message("Unable to create new animation");
-                reply->set_help(fmt::format("ID {} already exists", animation->_id()));
-                throw creatures::DuplicateFoundError(errorMessage);
+                //reply->set_help(fmt::format("ID {} already exists", animation->_id()));
+                //throw creatures::DuplicateFoundError(errorMessage);
 
             } else {
                 std::string errorMessage = fmt::format("Error updating database: {}", e.what());

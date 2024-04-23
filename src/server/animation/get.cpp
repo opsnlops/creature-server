@@ -70,54 +70,11 @@ namespace creatures {
     }
 
 
-    Status CreatureServerImpl::GetAnimationMetadata(grpc::ServerContext *context,
-                                                    const server::AnimationId *animationId,
-                                                    server::AnimationMetadata *animationMetadata) {
-
-        grpc::Status status;
-
-        debug("Loading an animationMetadata from the database");
-
-        try {
-            db->getAnimationMetadata(animationId, animationMetadata);
-            status = grpc::Status(grpc::StatusCode::OK,
-                                  "Loaded an animationIdentifier from the database",
-                                  fmt::format("Title: {}",
-                                              animationMetadata->title()));
-        }
-        catch(const InvalidArgumentException &e) {
-            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                  "AnimationId was empty on GetAnimationMetadata()",
-                                  fmt::format("⛔️️ An animation ID must be supplied"));
-        }
-        catch(const NotFoundException &e) {
-            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                  fmt::format("⚠️ No animation with ID '{}' found", bsoncxx::oid(animationId->_id()).to_string()),
-                                  "Try another ID! 😅");
-        }
-        catch(const DataFormatException &e) {
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  "Unable to encode request into BSON",
-                                  e.what());
-        }
-        catch(const InternalError &e) {
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  fmt::format("MongoDB error while loading an animationMetadata: {}", e.what()),
-                                  e.what());
-        }
-        catch( ... ) {
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  "An unknown error happened while getting animationMetadata",
-                                  "Default catch hit?");
-        }
-
-        return status;
-    }
 
 
-    void Database::getAnimation(const AnimationId *animationId, Animation *animation) {
+    creatures::Animation Database::getAnimation(std::string animationId) {
 
-        if (animationId->_id().empty()) {
+        if (animationId.empty()) {
             error("an empty animationId was passed into getAnimation()");
             throw InvalidArgumentException("an empty animationId was passed into getAnimation()");
         }
@@ -130,7 +87,7 @@ namespace creatures {
 
             // Convert the ID into an OID
             trace("attempting to convert the ID");
-            bsoncxx::oid id = bsoncxx::oid(animationId->_id().data(), bsoncxx::oid::k_oid_length);
+            bsoncxx::oid id = stringToOid(animationId);
             debug("found animation ID: {}", id.to_string());
 
             // Create a filter BSON document to match the target document
@@ -147,18 +104,12 @@ namespace creatures {
 
             // Get an owning reference to this doc since it's ours now
             bsoncxx::document::value doc = *result;
-            animation->set__id(animationId->_id());
-            trace("id loaded");
 
-            // Grab the metadata
-            AnimationMetadata metadata = AnimationMetadata();
-            bsonToAnimationMetadata(doc, &metadata);
-            *animation->mutable_metadata() = metadata;
-            trace("metadata loaded");
+            creatures::Animation animation = animationFromBson(doc);
+            debug("loaded animation {} from the database", animation.metadata.title);
 
-            // And load the frames
-            populateFramesFromBson(doc, animation);
-            trace("frames loaded");
+            return animation;
+
 
         }
         catch (const bsoncxx::exception &e) {
@@ -169,9 +120,6 @@ namespace creatures {
             error("MongoDB exception while loading an animation: {}", e.what());
 
         }
-
-        // Hooray, we loaded it all!
-        info("done loading an animation");
 
     }
 

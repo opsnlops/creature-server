@@ -50,14 +50,7 @@ service CreatureServer {
    */
   rpc CreateAnimation(Animation) returns (DatabaseInfo) {}
   rpc UpdateAnimation(Animation) returns (DatabaseInfo) {}
-  rpc GetAnimation(AnimationId) returns (Animation) {}
-  rpc GetAnimationMetadata(AnimationId) returns (AnimationMetadata) {}
 
-
-  /**
-    Returns a list of the animations that match a filter
-   */
-  rpc ListAnimations(AnimationFilter) returns (ListAnimationsResponse) {}
 
   // Request that an animation get played on a creature
   rpc PlayAnimation(PlayAnimationRequest) returns (PlayAnimationResponse) {}

@@ -51,16 +51,9 @@ namespace creatures {
 
         Status StreamFrames(ServerContext* context, ServerReader<StreamFrameData>* reader, StreamFrameDataResponse* response) override;
 
-        Status CreateAnimation(ServerContext *context, const Animation *animation, DatabaseInfo *reply) override;
+       Status gRPCCreateAnimation(ServerContext *context, const Animation *animation, DatabaseInfo *reply);
 
-        Status UpdateAnimation(ServerContext *context, const Animation *animation, DatabaseInfo *reply) override;
-
-        Status ListAnimations(ServerContext *context, const AnimationFilter *request, ListAnimationsResponse *response) override;
-
-        Status GetAnimation(ServerContext *context, const AnimationId *id, Animation *animation) override;
-        Status GetAnimationMetadata(ServerContext *context,
-                                      const AnimationId *animationId,
-                                      AnimationMetadata *animationMetadata) override;
+        //Status UpdateAnimation(ServerContext *context, const Animation *animation, DatabaseInfo *reply) override;
 
         Status PlayAnimation(ServerContext *context, const PlayAnimationRequest *request, PlayAnimationResponse *response) override;
 

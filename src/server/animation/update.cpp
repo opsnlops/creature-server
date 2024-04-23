@@ -12,6 +12,7 @@
 #include <mongocxx/exception/bulk_write_exception.hpp>
 
 
+#include "model/Animation.h"
 #include "server/database.h"
 #include "exception/exception.h"
 #include "server/creature-server.h"
@@ -23,65 +24,10 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
 
-
-    Status CreatureServerImpl::UpdateAnimation(ServerContext *context,
-                                               const Animation *animation,
-                                               DatabaseInfo *reply) {
-
-        grpc::Status status;
-
-        debug("trying to update an animation");
-
-        try {
-            db->updateAnimation(animation);
-            status = grpc::Status(grpc::StatusCode::OK,
-                                  "🎉 Animation updated in database!",
-                                  fmt::format("Title: {}, Number of Frames: {}",
-                                              animation->metadata().title(),
-                                              animation->frames_size()));
-            reply->set_message(fmt::format("🎉 Animation updated in database!"));
-        }
-        catch(const InvalidArgumentException &e) {
-            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                  "AnimationId was empty on updateAnimation()",
-                                  fmt::format("⛔️️ An animation ID must be supplied"));
-            reply->set_message(fmt::format("⛔️ An animation ID must be supplied"));
-            reply->set_help(fmt::format("animationId cannot be empty"));
-        }
-        catch(const NotFoundException &e) {
-            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                  fmt::format("⚠️ No animation with ID '{}' found", bsoncxx::oid(animation->_id()).to_string()),
-                                  "Try another ID! 😅");
-            reply->set_message(fmt::format("⚠️ No animation with ID '{}' found", bsoncxx::oid(animation->_id()).to_string()));
-            reply->set_help("Try another ID! 😅");
-        }
-        catch(const DataFormatException &e) {
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  "Unable to encode request into BSON",
-                                  e.what());
-            reply->set_message("Unable to encode animation into BSON");
-            reply->set_help(e.what());
-        }
-        catch(const InternalError &e) {
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  fmt::format("MongoDB error while updating an animation: {}", e.what()),
-                                  e.what());
-            reply->set_message("MongoDB error while updating animation");
-            reply->set_help(e.what());
-        }
-        catch( ... ) {
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  "🚨 An unknown error happened while updating animation 🚨",
-                                  "Default catch hit?");
-            reply->set_message("Unknown error while updating an animation");
-            reply->set_help("Default catch hit. How did this happen? 🤔");
-        }
-
-        return status;
-    }
+\
 
 
-    void Database::updateAnimation(const server::Animation *animation) {
+    void Database::updateAnimation(const creatures::Animation animation) {
 
         debug("attempting to update an animation in the database");
 

@@ -1,10 +1,11 @@
 
 #pragma once
 
-#pragma once
-
 #include <string>
 
+#include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/exception/exception.hpp>
+#include <bsoncxx/json.hpp>
 #include <bsoncxx/oid.hpp>
 #include <bsoncxx/types.hpp>
 
@@ -32,6 +33,8 @@ namespace creatures {
     bsoncxx::oid creatureIdToOid(const CreatureId& creature_id);
     bsoncxx::oid animationIdToOid(const AnimationId& animation_id);
 
+
+
     /**
      * Converts the string version of an OID as seen in the MongoDB Compass application, such
      * as `6611dfb4e98d776bb0025304` to a `bsoncxx::oid`
@@ -40,7 +43,35 @@ namespace creatures {
      * @return a `bsoncxx::oid` object
      * @throws creatures::InvalidArgumentException if the string is not the correct length or invalid
      */
-    bsoncxx::oid stringToOid(const std::string &id_string);
+    static bsoncxx::oid stringToOid(const std::string &id_string);
+
+    /**
+     * Convert an oid into the string representation of it
+     *
+     * @param oid the OID to convert
+     * @return
+     */
+    static std::string oidToString(const bsoncxx::oid& oid);
+
+
+
+    /**
+       * Convert a vector of strings to a BSON array
+       *
+       * @param vector
+       * @return
+       */
+    bsoncxx::document::value stringVectorToBson(const std::vector<std::string> &vector);
+
+
+    /**
+     * Convert a BSON array to a vector of strings
+     *
+     * @param doc
+     * @return
+     */
+    std::vector<std::string> stringVectorFromBson(const bsoncxx::document::view &doc);
+
 
     bsoncxx::oid generateNewOid();
 

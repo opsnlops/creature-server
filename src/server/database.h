@@ -27,7 +27,10 @@
 
 #include <google/protobuf/timestamp.pb.h>
 
+#include "model/Animation.h"
+#include "model/AnimationMetadata.h"
 #include "model/Creature.h"
+#include "model/FrameData.h"
 #include "model/SortBy.h"
 #include "server/namespace-stuffs.h"
 
@@ -54,6 +57,10 @@ namespace creatures {
         creatures::Creature getCreature(std::string creatureId);
         std::vector<creatures::Creature> getAllCreatures(creatures::SortBy sortBy, bool ascending);
 
+
+
+
+
         /**
          * Create a new creature in the database
          *
@@ -65,8 +72,16 @@ namespace creatures {
 
 
 
+        /*
+         * Since the format of the Animations changed completely in Animations 2.0, I'm just removing
+         * the old gRPC-based stuff. It's not worth trying to port it over.
+         */
 
         // Animation stuff
+        creatures::Animation getAnimation(std::string animationId);
+        std::vector<creatures::AnimationMetadata> listAnimations(creatures::SortBy sortBy);
+
+        // Old gRPC methods
         void createAnimation(const Animation *animation, DatabaseInfo *reply);
         void listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList);
         void getAnimation(const AnimationId *animationId, Animation *animation);
@@ -116,21 +131,21 @@ namespace creatures {
         static google::protobuf::Timestamp
         convertMongoDateToProtobufTimestamp(const bsoncxx::document::element &mongo_timestamp_element);
 
-        /**
-         * Serialize an animation to BSON
-         *
-         * @param animation the Animation itself
-         * @param animationId the ID of this animation. Passed separately in case we need to assign a new one.
-         *                    Done this way since animation is const.
-         * @return the BSON document
+
+
+        /*
+         * Animations
          */
-        static bsoncxx::document::value animationToBson(const Animation *animation, bsoncxx::oid animationId);
-        static void appendMetadataToAnimationDoc(bsoncxx::builder::stream::document& doc,
-                                                 const Animation *animation,
-                                                 bsoncxx::oid animationId);
-        static uint32_t framesToBson(bsoncxx::builder::stream::document &doc, const Animation *animation);
-        static void bsonToAnimationMetadata(const bsoncxx::document::view &doc, AnimationMetadata *metadata);
-        static void populateFramesFromBson(const bsoncxx::document::view &doc, Animation *animation);
+        static bsoncxx::document::value animationToBson(const creatures::Animation &animation);
+        static creatures::Animation animationFromBson(const bsoncxx::document::view &doc);
+
+        static bsoncxx::document::value animationMetadataToBson(const creatures::AnimationMetadata &metadata);
+        static creatures::AnimationMetadata animationMetadataFromBson(const bsoncxx::document::element &doc);
+
+        static bsoncxx::document::value frameDataToBson(const FrameData &frameData);
+        static FrameData frameDataFromBson(const bsoncxx::document::view &doc);
+
+
 
         /*
          * Playlists
@@ -142,6 +157,7 @@ namespace creatures {
 
         // Start out thinking that the server is pingable
         std::atomic<bool> serverPingable{true};
+
 
     };
 

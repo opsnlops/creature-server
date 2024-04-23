@@ -4,8 +4,14 @@
 #include <iomanip>
 #include <sstream>
 
-#include <bsoncxx/types.hpp>
+
+#include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/exception/exception.hpp>
+#include <bsoncxx/json.hpp>
 #include <bsoncxx/oid.hpp>
+#include <bsoncxx/types.hpp>
+
+
 
 #include "exception/exception.h"
 #include "server/namespace-stuffs.h"
@@ -149,6 +155,11 @@ namespace creatures {
         return bsoncxx::oid(creature_id._id().data(), bsoncxx::oid::k_oid_length);
     }
 
+    // This is super simple, but easier for me to read!
+    std::string oidToString(const bsoncxx::oid& oid) {
+        return oid.to_string();
+    }
+
     bsoncxx::oid animationIdToOid(const AnimationId& animation_id) {
           if (animation_id._id().size() != bsoncxx::oid::k_oid_length) {
             throw std::runtime_error("Invalid ObjectId size.");
@@ -156,6 +167,12 @@ namespace creatures {
 
         return bsoncxx::oid(animation_id._id().data(), bsoncxx::oid::k_oid_length);
     }
+
+
+    // Mostly used by FrameData
+    bsoncxx::document::value stringVectorToBson(const std::vector<std::string> &vector);
+    std::vector<std::string> stringVectorFromBson(const bsoncxx::document::view &doc);
+
 
     std::string ProtobufTimestampToHumanReadable(const google::protobuf::Timestamp& timestamp) {
         // Combine seconds and nanoseconds into a single duration
