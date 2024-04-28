@@ -24,9 +24,9 @@ namespace creatures {
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
-    class AnimationMetadataDTO : public oatpp::DTO {
+    class AnimationMetadataDto : public oatpp::DTO {
 
-        DTO_INIT(AnimationMetadataDTO, DTO /* extends */)
+        DTO_INIT(AnimationMetadataDto, DTO /* extends */)
 
         DTO_FIELD(String, animation_id);
         DTO_FIELD(String, title);
@@ -37,6 +37,10 @@ namespace creatures {
         DTO_FIELD(Boolean, multitrack_audio);
 
     };
+
+
+    std::shared_ptr<AnimationMetadataDto> convertToDto(const AnimationMetadata &animationMetadata);
+    AnimationMetadata convertFromDto(const std::shared_ptr<AnimationMetadataDto> &animationMetadataDto);
 
 #include OATPP_CODEGEN_END(DTO)
 }

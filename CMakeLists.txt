@@ -85,7 +85,13 @@ FetchContent_MakeAvailable(googletest)
 
 
 # Use the oatpp that we've already made
-find_package(oatpp REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
+find_package(oatpp         REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
+find_package(oatpp-swagger REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
+
+add_definitions(
+        ## define path to swagger-ui static resources folder
+        -DOATPP_SWAGGER_RES_PATH="${oatpp-swagger_INCLUDE_DIRS}/../bin/oatpp-swagger/res"
+)
 
 
 # ...and our own library
@@ -161,15 +167,28 @@ add_executable(creature-server
         src/server/watchdog/Watchdog.cpp
         src/server/watchdog/Watchdog.h
         src/model/Creature.h
+        src/model/Creature.cpp
         src/model/LogLevel.h
         src/model/LogItem.h
         src/model/FrameData.h
         src/model/AnimationMetadata.h
         src/model/Animation.h
-        src/server/ws/routes/creature/CreatureById.h
         src/model/SortBy.h
-        src/server/ws/routes/creature/CreateCreature.h
         src/model/FrameData.cpp
+        src/server/ws/AppComponent.h
+        src/server/ws/controller/StaticController.h
+        src/server/ws/App.h
+        src/server/ws/App.cpp
+        src/server/ws/dto/StatusDto.h
+        src/server/ws/ErrorHandler.cpp
+        src/server/ws/ErrorHandler.h
+        src/server/ws/controller/CreatureController.h
+        src/server/ws/service/AnimationService.cpp
+        src/server/ws/service/AnimationService.h
+        src/server/ws/service/CreatureService.cpp
+        src/server/ws/service/CreatureService.h
+        src/server/ws/dto/PageDto.h
+        src/model/AnimationMetadata.cpp
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
@@ -182,6 +201,7 @@ target_link_libraries(creature-server
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
         oatpp::oatpp
+        oatpp::oatpp-swagger
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
@@ -251,7 +271,6 @@ add_executable(creature-server-test
         tests/model/Animation_test.cpp
         tests/model/AnimationMetadata_test.cpp
         src/model/SortBy.h
-        src/server/ws/routes/creature/CreateCreature.h
         src/model/FrameData.cpp
 )
 
@@ -262,6 +281,7 @@ target_link_libraries(creature-server-test
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
         oatpp::oatpp
+        oatpp::oatpp-swagger
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared

@@ -168,12 +168,14 @@ namespace creatures {
 
         element = doc["milliseconds_per_frame"];
         if (!element) {
-            error("Animation.Metadata value 'milliseconds_per_frame' is not found");
-            throw creatures::DataFormatException("AnimationMetadata value 'milliseconds_per_frame' is not found");
+            std::string errorMessage = fmt::format("AnimationMetadata value 'milliseconds_per_frame' is not found on {}", metadata.title);
+            error(errorMessage);
+            throw creatures::DataFormatException(errorMessage);
         }
         if (element.type() != bsoncxx::type::k_int32) {
-            error("Animation.Metadata value 'milliseconds_per_frame' is not an int");
-            throw DataFormatException("AnimationMetadata value 'milliseconds_per_frame' is not an int");
+            std::string errorMessage = fmt::format("AnimationMetadata value 'milliseconds_per_frame' is not an int on {}", metadata.title);
+            error(errorMessage);
+            throw DataFormatException(errorMessage);
         }
         metadata.milliseconds_per_frame = element.get_int32().value;
         trace("set the milliseconds_per_frame to {}", metadata.milliseconds_per_frame);
@@ -181,12 +183,14 @@ namespace creatures {
 
         element = doc["number_of_frames"];
         if (!element) {
-            error("Animation.Metadata value 'number_of_frames' is not found");
-            throw DataFormatException("AnimationMetadata value 'number_of_frames' is not found");
+            std::string errorMessage = fmt::format("AnimationMetadata value 'number_of_frames' is not found on {}", metadata.title);
+            error(errorMessage);
+            throw DataFormatException(errorMessage);
         }
         if (element.type() != bsoncxx::type::k_int32) {
-            error("Animation.Metadata value 'number_of_frames' is not an int");
-            throw DataFormatException("AnimationMetadata value 'number_of_frames' is not an int");
+            std::string errorMessage = fmt::format("AnimationMetadata value 'number_of_frames' is not an int on {}", metadata.title);
+            error(errorMessage);
+            throw DataFormatException(errorMessage);
         }
         metadata.number_of_frames = element.get_int32().value;
         trace("set the number_of_frames to {}", metadata.number_of_frames);
@@ -195,12 +199,14 @@ namespace creatures {
 
         element = doc["sound_file"];
         if (!element) {
-            error("AnimationMetadata value 'sound_file' is not found");
-            throw DataFormatException("AnimationMetadata value 'sound_file' is not found");
+            std::string errorMessage = fmt::format("AnimationMetadata value 'sound_file' is not found on {}", metadata.title);
+            error(errorMessage);
+            throw DataFormatException(errorMessage);
         }
         if (element.type() != bsoncxx::type::k_utf8) {
-            error("AnimationMetadata value 'sound_file' is not an int");
-            throw DataFormatException("AnimationMetadata value 'sound_file' is not a string");
+            std::string errorMessage = fmt::format("AnimationMetadata value 'sound_file' is not a string on {}", metadata.title);
+            error(errorMessage);
+            throw DataFormatException(errorMessage);
         }
         string_value = element.get_string().value;
         metadata.sound_file = std::string{string_value};
@@ -208,31 +214,35 @@ namespace creatures {
 
 
 
-        element = doc["multitrack_audio"];
-        if (!element) {
-            error("AnimationMetadata value 'multitrack_audio' is not found");
-            throw DataFormatException("AnimationMetadata value 'multitrack_audio' is not found");
-        }
-        if (element.type() != bsoncxx::type::k_bool) {
-            error("AnimationMetadata value 'multitrack_audio' is not a boolean");
-            throw DataFormatException("AnimationMetadata value 'multitrack_audio' is not a boolean");
-        }
-        metadata.multitrack_audio = element.get_bool().value;
-        trace("set the multitrack_audio to {}", metadata.multitrack_audio);
+//        element = doc["multitrack_audio"];
+//        if (!element) {
+//            std::string errorMessage = fmt::format("AnimationMetadata value 'multitrack_audio' is not found on {}", metadata.title);
+//            error(errorMessage);
+//            throw DataFormatException(errorMessage);
+//        }
+//        if (element.type() != bsoncxx::type::k_bool) {
+//            std::string errorMessage = fmt::format("AnimationMetadata value 'multitrack_audio' is not a boolean on {}", metadata.title);
+//            error(errorMessage);
+//            throw DataFormatException(errorMessage);
+//        }
+//        metadata.multitrack_audio = element.get_bool().value;
+//        trace("set the multitrack_audio to {}", metadata.multitrack_audio);
 
 
         // And finally, the note!
-        element = doc["note"];
-        if (!element) {
-            error("AnimationMetadata value 'note' is not found");
-            throw DataFormatException("AnimationMetadata value 'notes' is not found");
-        }
-        if (element.type() != bsoncxx::type::k_utf8) {
-            error("AnimationMetadata value 'notes' is not an string");
-            throw DataFormatException("AnimationMetadata value 'notes' is not a string");
-        }
-        metadata.note = std::string{element.get_string().value};
-        trace("set the notes to {}", metadata.note);
+//        element = doc["note"];
+//        if (!element) {
+//            std::string errorMessage = fmt::format("AnimationMetadata value 'note' is not found on {}", metadata.title);
+//            error(errorMessage);
+//            throw DataFormatException(errorMessage);
+//        }
+//        if (element.type() != bsoncxx::type::k_utf8) {
+//            std::string errorMessage = fmt::format("AnimationMetadata value 'note' is not a string {}", metadata.title);
+//            error(errorMessage);
+//            throw DataFormatException(errorMessage);
+//        }
+//        metadata.note = std::string{element.get_string().value};
+//        trace("set the notes to {}", metadata.note);
 
         trace("all done creating a metadata from BSON!");
 

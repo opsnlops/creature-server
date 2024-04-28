@@ -178,9 +178,15 @@ namespace creatures {
 
         bsoncxx::document::element element = doc["_id"];
         if (element && element.type() == bsoncxx::type::k_oid) {
+            trace("_id is valid and is {} bytes", element.get_oid().value.size());
             const bsoncxx::oid &oid = element.get_oid().value;
             const char *oid_data = oid.bytes();
-            c.id = bytesToString(oid_data);
+
+            // Make sure we only have the data we're expecting
+            char byteData[element.get_oid().value.size()];
+            std::copy(oid_data, oid_data + element.get_oid().value.size(), byteData);
+
+            c.id = bytesToString(byteData);
             trace("set the _id to {}", c.id);
         } else {
             throw creatures::DataFormatException("Field _id was not a bsoncxx::oid in the database");

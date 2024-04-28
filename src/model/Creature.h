@@ -42,9 +42,9 @@ namespace creatures {
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
-    class CreatureDTO : public oatpp::DTO {
+    class CreatureDto : public oatpp::DTO {
 
-        DTO_INIT(CreatureDTO, DTO /* extends */)
+        DTO_INIT(CreatureDto, DTO /* extends */)
 
         DTO_FIELD(String, id);
         DTO_FIELD(String, name);
@@ -55,5 +55,9 @@ namespace creatures {
     };
 
 #include OATPP_CODEGEN_END(DTO)
+
+    std::shared_ptr<CreatureDto> convertToDto(const Creature &creature);
+    Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto);
+
 
 }

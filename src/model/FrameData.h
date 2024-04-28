@@ -23,9 +23,9 @@ namespace creatures {
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
-    class FrameDataDTO : public oatpp::DTO {
+    class FrameDataDto : public oatpp::DTO {
 
-        DTO_INIT(FrameDataDTO, DTO /* extends */)
+        DTO_INIT(FrameDataDto, DTO /* extends */)
 
         DTO_FIELD(String, id);
         DTO_FIELD(String, creature_id);
@@ -37,8 +37,8 @@ namespace creatures {
 #include OATPP_CODEGEN_END(DTO)
 
 
-    std::shared_ptr<FrameDataDTO> convertToDTO(const FrameData &frameData);
-    FrameData convertFromDTO(const std::shared_ptr<FrameDataDTO> &frameDataDTO);
+    std::shared_ptr<FrameDataDto> convertToDto(const FrameData &frameData);
+    FrameData convertFromDto(const std::shared_ptr<FrameDataDto> &frameDataDTO);
 
 
 }

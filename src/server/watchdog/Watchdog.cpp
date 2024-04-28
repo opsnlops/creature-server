@@ -16,7 +16,7 @@ namespace creatures {
 
     Watchdog::Watchdog(std::shared_ptr<creatures::Database> db) : db(db) {
         logger = spdlog::stdout_color_mt("watchdog");
-        logger->set_level(spdlog::level::info);
+        logger->set_level(spdlog::level::debug);
 
         logger->info("Watchdog created");
     }

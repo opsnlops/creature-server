@@ -37,6 +37,7 @@
 #include "util/threadName.h"
 #include "watchdog/Watchdog.h"
 
+#include "server/ws/App.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -116,11 +117,11 @@ int main(int argc, char **argv) {
     //queue_sink->set_level(spdlog::level::trace);
 
     // There's no need to set a name, it's just noise
-    //spdlog::logger logger("", {console_sink, queue_sink});
-    //logger.set_level(spdlog::level::trace);
+    spdlog::logger logger("", {console_sink /*, queue_sink*/});
+    logger.set_level(spdlog::level::trace);
 
     // Take over the default logger with our new one
-    //spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
 
 
     // Parse out the command line options
@@ -196,14 +197,10 @@ int main(int argc, char **argv) {
     auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);
     watchdog->start();
 
-    // Start up gRPC
-    //auto grpcServer = creatures::GrpcServerManager("0.0.0.0", 6666, log_queue);
-    //grpcServer.start();
 
-
-    // Start up the WebSocket server
-    //creatures::ws::WebSocketServer wsServer(3000);
-    //wsServer.start();
+    // Start the web server
+    auto webServer = std::make_shared<creatures::ws::App>();
+    webServer->start();
 
 
     // Wait for the signal handler to know when to stop
@@ -226,11 +223,8 @@ int main(int argc, char **argv) {
     // Halt the event loop
     creatures::eventLoop->shutdown();
 
-    // Halt gRPC
-    //grpcServer.shutdown();
-
     // Stop the websocket server
-    //wsServer.shutdown();
+    webServer->shutdown();
 
     creatures::gpioPins->serverOnline(false);
     creatures::statusLights->shutdown();

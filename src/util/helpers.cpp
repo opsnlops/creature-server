@@ -20,11 +20,14 @@ namespace creatures {
 
     std::string bytesToString(const std::string& id_bytes) {
 
+        trace("converting {} bytes to a string", id_bytes.size());
+
         std::ostringstream oss;
         for (unsigned char c: id_bytes) {
             oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(c);
         }
 
+        debug("converted bytes to string: {}", oss.str());
         return oss.str();
 
     }

@@ -22,9 +22,9 @@ namespace creatures {
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
-    class AnimationDTO : public oatpp::DTO {
+    class AnimationDto : public oatpp::DTO {
 
-        DTO_INIT(AnimationDTO, DTO /* extends */);
+        DTO_INIT(AnimationDto, DTO /* extends */);
 
         DTO_FIELD(String, id);
         DTO_FIELD(Int32, age);
@@ -32,6 +32,9 @@ namespace creatures {
     };
 
 #include OATPP_CODEGEN_END(DTO)
+
+    std::shared_ptr<AnimationDto> convertToDto(const Animation &creature);
+    Animation convertFromDto(const std::shared_ptr<AnimationDto> &creatureDto);
 
 
 }
