@@ -19,7 +19,6 @@
 
 
 // Our stuff
-#include "GrpcServerManager.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
@@ -32,7 +31,6 @@
 #include "server/logging/creature_log_sink.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/StatusLights.h"
-#include "server/ws/WebSocketServer.h"
 #include "Version.h"
 #include "util/cache.h"
 #include "util/environment.h"
@@ -41,11 +39,6 @@
 
 
 #include "server/namespace-stuffs.h"
-
-using grpc::Server;
-using grpc::ServerBuilder;
-using grpc::ServerContext;
-using grpc::Status;
 
 using creatures::Database;
 using creatures::EventLoop;
@@ -64,7 +57,7 @@ namespace creatures {
      * involve any creature in a universe, so it doesn't make sense to have more than one playing
      * at any one time.
      */
-    std::shared_ptr<ObjectCache<universe_t, PlaylistIdentifier>> runningPlaylists;
+    std::shared_ptr<ObjectCache<universe_t, std::string>> runningPlaylists;
 
 
     std::shared_ptr<GPIO> gpioPins;
@@ -118,16 +111,16 @@ int main(int argc, char **argv) {
     console_sink->set_level(spdlog::level::trace);
 
     // Queue logger
-    ConcurrentQueue<LogItem> log_queue;
-    auto queue_sink = std::make_shared<spdlog::sinks::CreatureLogSink<std::mutex>>(log_queue);
-    queue_sink->set_level(spdlog::level::trace);
+    //ConcurrentQueue<LogItem> log_queue;
+    //auto queue_sink = std::make_shared<spdlog::sinks::CreatureLogSink<std::mutex>>(log_queue);
+    //queue_sink->set_level(spdlog::level::trace);
 
     // There's no need to set a name, it's just noise
-    spdlog::logger logger("", {console_sink, queue_sink});
-    logger.set_level(spdlog::level::trace);
+    //spdlog::logger logger("", {console_sink, queue_sink});
+    //logger.set_level(spdlog::level::trace);
 
     // Take over the default logger with our new one
-    spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
+    //spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
 
 
     // Parse out the command line options
@@ -140,8 +133,6 @@ int main(int argc, char **argv) {
     debug("spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
     debug("fmt version {}", FMT_VERSION);
     debug("MongoDB C++ driver version {}", MONGOCXX_VERSION_STRING);
-    debug("gRPC version {}.{}.{}", GRPC_CPP_VERSION_MAJOR, GRPC_CPP_VERSION_MINOR, GRPC_CPP_VERSION_PATCH);
-    debug("Protobuf version {}", GOOGLE_PROTOBUF_VERSION);
     debug("SDL version {}.{}.{}", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
     debug("Sound file location: {}", creatures::config->getSoundFileLocation());
 
@@ -179,7 +170,7 @@ int main(int argc, char **argv) {
     creatures::statusLights->start();
 
     // Create the playlist cache
-    creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<universe_t, PlaylistIdentifier>>();
+    creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<universe_t, std::string>>();
     debug("Playlist cache made");
 
     // Start up the event loop
@@ -211,8 +202,8 @@ int main(int argc, char **argv) {
 
 
     // Start up the WebSocket server
-    creatures::ws::WebSocketServer wsServer(3000);
-    wsServer.start();
+    //creatures::ws::WebSocketServer wsServer(3000);
+    //wsServer.start();
 
 
     // Wait for the signal handler to know when to stop
@@ -239,7 +230,7 @@ int main(int argc, char **argv) {
     //grpcServer.shutdown();
 
     // Stop the websocket server
-    wsServer.shutdown();
+    //wsServer.shutdown();
 
     creatures::gpioPins->serverOnline(false);
     creatures::statusLights->shutdown();

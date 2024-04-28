@@ -3,7 +3,11 @@
 
 #include <vector>
 #include <string>
-#include <nlohmann/json.hpp>
+
+#include <oatpp/core/Types.hpp>
+#include <oatpp/core/macro/codegen.hpp>
+
+
 
 #include "model/AnimationMetadata.h"
 #include "model/FrameData.h"
@@ -14,7 +18,21 @@ namespace creatures {
         std::string id;
         AnimationMetadata metadata;
         std::vector<FrameData> tracks;
-
-        NLOHMANN_DEFINE_TYPE_INTRUSIVE(Animation, id, metadata, tracks)
     };
+
+#include OATPP_CODEGEN_BEGIN(DTO)
+
+    class AnimationDTO : public oatpp::DTO {
+
+        DTO_INIT(AnimationDTO, DTO /* extends */);
+
+        DTO_FIELD(String, id);
+        DTO_FIELD(Int32, age);
+
+    };
+
+#include OATPP_CODEGEN_END(DTO)
+
+
 }
+

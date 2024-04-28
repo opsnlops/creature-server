@@ -1,7 +1,9 @@
 
 #pragma once
 
-#include <nlohmann/json.hpp>
+#include <oatpp/core/Types.hpp>
+#include <unordered_map>
+
 
 namespace creatures {
 
@@ -15,16 +17,5 @@ namespace creatures {
         off = 6,
         unknown = 7
     };
-
-    NLOHMANN_JSON_SERIALIZE_ENUM( LogLevel, {
-        {LogLevel::trace, "trace"},
-        {LogLevel::debug, "debug"},
-        {LogLevel::info, "info"},
-        {LogLevel::warn, "warn"},
-        {LogLevel::error, "error"},
-        {LogLevel::critical, "critical"},
-        {LogLevel::off, "off"},
-        {LogLevel::unknown, "unknown"}
-    })
 
 } // namespace creatures

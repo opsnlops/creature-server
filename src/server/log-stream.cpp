@@ -15,31 +15,31 @@
  * server within the application.
  *
  */
-Status creatures::CreatureServerImpl::StreamLogs(ServerContext* context,
-                                                 const LogFilter* request,
-                                                 ServerWriter<LogItem>* writer) {
-    info("request to stream logs received");
-
-    LogItem logItem;
-
-    int requestedLevel = request->level();
-
-    while (!context->IsCancelled()) {
-        if (log_queue.try_dequeue(logItem)) {
-
-            // If this message is equal to, or higher than the log level the requested,
-            // send it down the wire to it.
-            if(logItem.level() >= requestedLevel)
-                writer->Write(logItem);
-
-        } else {
-
-            // Sleep for a bit before checking again
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
-
-    info("done streaming logs");
-    return Status::OK;
-
-}
+//Status creatures::CreatureServerImpl::StreamLogs(ServerContext* context,
+//                                                 const LogFilter* request,
+//                                                 ServerWriter<LogItem>* writer) {
+//    info("request to stream logs received");
+//
+//    LogItem logItem;
+//
+//    int requestedLevel = request->level();
+//
+//    while (!context->IsCancelled()) {
+//        if (log_queue.try_dequeue(logItem)) {
+//
+//            // If this message is equal to, or higher than the log level the requested,
+//            // send it down the wire to it.
+//            if(logItem.level() >= requestedLevel)
+//                writer->Write(logItem);
+//
+//        } else {
+//
+//            // Sleep for a bit before checking again
+//            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+//        }
+//    }
+//
+//    info("done streaming logs");
+//    return Status::OK;
+//
+//}

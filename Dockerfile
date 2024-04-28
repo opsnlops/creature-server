@@ -34,14 +34,19 @@ RUN cd /build/mongo/mongo-cxx-driver-r3.8.0/build && \
 
 
 # Build our stuff
-RUN mkdir -p /build/creature-server/src /build/creature-server/messaging
+RUN mkdir -p /build/creature-server/src
 COPY src/ /build/creature-server/src
-COPY messaging/ /build/creature-server/messaging
 COPY cmake/ /build/creature-server/cmake
 COPY lib/ /build/creature-server/lib
 COPY tests/ /build/creature-server/tests
-COPY LICENSE README.md CMakeLists.txt /build/creature-server/
+COPY externals/ /build/creature-server/externals
+COPY LICENSE README.md CMakeLists.txt build_oatpp.sh /build/creature-server/
 RUN ls -lart /build/creature-server/
+
+# Install the externals
+RUN cd /build/creature-server/ && ./build_oatpp.sh
+
+# Build the server
 RUN cd /build/creature-server && \
     mkdir build && \
     cd build && \

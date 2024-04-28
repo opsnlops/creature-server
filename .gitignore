@@ -5,5 +5,5 @@ cmake-*/
 build/
 package/
 *.DS_Store
-external/build/
-
+externals/build/
+externals/install/

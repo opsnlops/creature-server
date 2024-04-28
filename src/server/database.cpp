@@ -6,10 +6,8 @@
 
 #include "spdlog/spdlog.h"
 
-#include "server.pb.h"
-#include "server/database.h"
 
-#include <grpcpp/grpcpp.h>
+#include "server/database.h"
 
 #include <bsoncxx/builder/stream/document.hpp>
 #include <mongocxx/client.hpp>

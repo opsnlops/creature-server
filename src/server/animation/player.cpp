@@ -34,9 +34,9 @@ namespace creatures {
      *
      * @return the frame number of last frame of the animation
      */
-    uint64_t scheduleAnimation(uint64_t startingFrame, const Animation& animation, universe_t universe) {
+    uint64_t scheduleAnimation(uint64_t startingFrame, const std::string& animation, universe_t universe) {
 
-        debug("scheduling animation {} ({}) on universe {}", animation.metadata.title, animation.id, universe);
+       // debug("scheduling animation {} ({}) on universe {}", animation.metadata.title, animation.id, universe);
 
 
 #warning remember that this is a stub and needs to be implemented

@@ -9,29 +9,20 @@
 #include <bsoncxx/oid.hpp>
 #include <bsoncxx/types.hpp>
 
+#include "model/Animation.h"
+
 #include "server/namespace-stuffs.h"
 
 
 namespace creatures {
 
-    std::string bytesToString(const std::string& id_bytes);
-    std::string animationIdToString(const AnimationId &animationId);
-    std::string creatureIdToString(const CreatureId &creature_id);
-    std::string playlistIdentifierToString(const PlaylistIdentifier &playlistIdentifier);
-    CreatureId stringToCreatureId(const std::string &creatureIdString);
-    PlaylistIdentifier stringToPlaylistIdentifier(const std::string &playlistIdString);
-    AnimationId stringToAnimationId(const std::string &animationIdString);
-
-    /**
-     * Cleanly prints out the things that we're filtering for in an animation list
-     *
-     * @param filter
-     * @return
-     */
-    std::string animationFilterToString(const AnimationFilter* filter);
-
-    bsoncxx::oid creatureIdToOid(const CreatureId& creature_id);
-    bsoncxx::oid animationIdToOid(const AnimationId& animation_id);
+    std::string bytesToString(const std::string &id_bytes);
+//    std::string animationIdToString(const AnimationId &animationId);
+//    std::string creatureIdToString(const CreatureId &creature_id);
+//    std::string playlistIdentifierToString(const PlaylistIdentifier &playlistIdentifier);
+//    CreatureId stringToCreatureId(const std::string &creatureIdString);
+//    PlaylistIdentifier stringToPlaylistIdentifier(const std::string &playlistIdString);
+//    AnimationId stringToAnimationId(const std::string &animationIdString);
 
 
 
@@ -43,7 +34,7 @@ namespace creatures {
      * @return a `bsoncxx::oid` object
      * @throws creatures::InvalidArgumentException if the string is not the correct length or invalid
      */
-    static bsoncxx::oid stringToOid(const std::string &id_string);
+    bsoncxx::oid stringToOid(const std::string &id_string);
 
     /**
      * Convert an oid into the string representation of it
@@ -51,8 +42,7 @@ namespace creatures {
      * @param oid the OID to convert
      * @return
      */
-    static std::string oidToString(const bsoncxx::oid& oid);
-
+    std::string oidToString(const bsoncxx::oid &oid);
 
 
     /**
@@ -73,10 +63,21 @@ namespace creatures {
     std::vector<std::string> stringVectorFromBson(const bsoncxx::document::view &doc);
 
 
+
+    /*
+     * Animations
+     */
+    bsoncxx::document::value animationToBson(const creatures::Animation &animation);
+    creatures::Animation animationFromBson(const bsoncxx::document::view &doc);
+
+    bsoncxx::document::value animationMetadataToBson(const creatures::AnimationMetadata &metadata);
+    creatures::AnimationMetadata animationMetadataFromBson(const bsoncxx::document::element &doc);
+
+    bsoncxx::document::value frameDataToBson(const FrameData &frameData);
+    FrameData frameDataFromBson(const bsoncxx::document::view &doc);
+
+
     bsoncxx::oid generateNewOid();
 
-    void displayFrames(const Animation& animation);
-    std::string ProtobufTimestampToHumanReadable(const google::protobuf::Timestamp& timestamp);
-    google::protobuf::Timestamp time_point_to_protobuf_timestamp(const std::chrono::system_clock::time_point& time_point);
-
+    void displayFrames(const creatures::Animation &animation);
 }

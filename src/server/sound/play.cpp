@@ -6,7 +6,6 @@
 
 #include "spdlog/spdlog.h"
 
-#include "server.pb.h"
 #include "server/config/Configuration.h"
 #include "server/creature-server.h"
 #include "exception/exception.h"
@@ -16,14 +15,7 @@
 
 #include <fmt/format.h>
 
-#include <grpcpp/grpcpp.h>
 
-using spdlog::trace;
-using spdlog::debug;
-using spdlog::info;
-using spdlog::warn;
-using spdlog::error;
-using spdlog::critical;
 
 using creatures::MusicEvent;
 
@@ -42,25 +34,25 @@ namespace creatures {
      *
      * However! If there's a need to play a sound for testing, here's how it's done.
      */
-    grpc::Status CreatureServerImpl::PlaySound(grpc::ServerContext *context, const PlaySoundRequest *request,
-                                               PlaySoundResponse *response) {
-
-        info("Playing a sound via gPRC request");
-
-        std::string soundFileName = config->getSoundFileLocation() + "/" + request->filename();
-        debug("using sound file name: {}", soundFileName);
-        uint64_t frameNumber = eventLoop->getNextFrameNumber();
-
-
-        // Create the event and schedule it
-        auto playEvent = std::make_shared<MusicEvent>(frameNumber, soundFileName);
-        eventLoop->scheduleEvent(playEvent);
-
-        debug("scheduled sound to play on frame {}", frameNumber);
-
-        response->set_message(fmt::format("Scheduled {} for frame {}", soundFileName, frameNumber));
-
-        return grpc::Status::OK;
-    }
+//    grpc::Status CreatureServerImpl::PlaySound(grpc::ServerContext *context, const PlaySoundRequest *request,
+//                                               PlaySoundResponse *response) {
+//
+//        info("Playing a sound via gPRC request");
+//
+//        std::string soundFileName = config->getSoundFileLocation() + "/" + request->filename();
+//        debug("using sound file name: {}", soundFileName);
+//        uint64_t frameNumber = eventLoop->getNextFrameNumber();
+//
+//
+//        // Create the event and schedule it
+//        auto playEvent = std::make_shared<MusicEvent>(frameNumber, soundFileName);
+//        eventLoop->scheduleEvent(playEvent);
+//
+//        debug("scheduled sound to play on frame {}", frameNumber);
+//
+//        response->set_message(fmt::format("Scheduled {} for frame {}", soundFileName, frameNumber));
+//
+//        return grpc::Status::OK;
+//    }
 
 }

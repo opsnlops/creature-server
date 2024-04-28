@@ -4,7 +4,9 @@
 #include <chrono>
 #include <string>
 
-#include <nlohmann/json.hpp>
+#include <oatpp/core/Types.hpp>
+#include <oatpp/core/macro/codegen.hpp>
+
 
 namespace creatures {
 
@@ -35,6 +37,23 @@ namespace creatures {
          */
         std::string notes;
 
-        NLOHMANN_DEFINE_TYPE_INTRUSIVE(Creature, id, name, channel_offset, audio_channel, notes)
     };
+
+
+#include OATPP_CODEGEN_BEGIN(DTO)
+
+    class CreatureDTO : public oatpp::DTO {
+
+        DTO_INIT(CreatureDTO, DTO /* extends */)
+
+        DTO_FIELD(String, id);
+        DTO_FIELD(String, name);
+        DTO_FIELD(UInt16, channel_offset);
+        DTO_FIELD(UInt16, audio_channel);
+        DTO_FIELD(String, notes);
+
+    };
+
+#include OATPP_CODEGEN_END(DTO)
+
 }

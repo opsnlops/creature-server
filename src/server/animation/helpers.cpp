@@ -25,7 +25,7 @@ namespace creatures {
      *
      * @return bool // Returns true if the animation is successfully handled, false otherwise.
      */
-    bsoncxx::document::value Database::animationToBson(const creatures::Animation &animation) {
+    bsoncxx::document::value animationToBson(const creatures::Animation &animation) {
 
         debug("converting an animation to BSON");
 
@@ -54,6 +54,11 @@ namespace creatures {
                                                   e.what(),
                                                   e.code().message()));
         }
+    }
+
+
+    creatures::Animation animationFromBson(const bsoncxx::document::view &doc) {
+        throw InternalError("Not implemented");
     }
 
 
@@ -127,7 +132,7 @@ namespace creatures {
      *
      * @param doc the doc to look at
      */
-    creatures::AnimationMetadata Database::animationMetadataFromBson(const bsoncxx::document::element &doc) {
+    creatures::AnimationMetadata animationMetadataFromBson(const bsoncxx::document::element &doc) {
 
         debug("attempting to build an AnimationMetadata from BSON");
 
@@ -240,7 +245,7 @@ namespace creatures {
      *
      * @param doc a bsoncxx::document::view with an element called "frames" to read
      */
-    FrameData Database::frameDataFromBson(const bsoncxx::document::view &doc) {
+    FrameData frameDataFromBson(const bsoncxx::document::view &doc) {
         trace("trying to populate the frames from BSON");
 
         auto frameData = FrameData();
