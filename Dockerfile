@@ -11,11 +11,11 @@ RUN apt install -y cmake libssl-dev libsasl2-dev gcc git file \
 
 # Install the latest Mongo driver
 RUN mkdir -p /build/mongo
-ADD https://github.com/mongodb/mongo-c-driver/releases/download/1.24.3/mongo-c-driver-1.24.3.tar.gz /build/mongo/c-driver.tar.gz
-ADD https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.8.0/mongo-cxx-driver-r3.8.0.tar.gz /build/mongo/cxx-driver.tar.gz
+ADD https://github.com/mongodb/mongo-c-driver/archive/refs/tags/1.26.2.tar.gz /build/mongo/c-driver.tar.gz
+ADD https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.10.1/mongo-cxx-driver-r3.10.1.tar.gz /build/mongo/cxx-driver.tar.gz
 RUN cd /build/mongo && tar -xzvf c-driver.tar.gz && tar -xzvf cxx-driver.tar.gz
 
-RUN cd /build/mongo/mongo-c-driver-1.24.3/build && \
+RUN cd /build/mongo/mongo-c-driver-1.26.2/build && \
     cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=/usr/local \
@@ -24,7 +24,7 @@ RUN cd /build/mongo/mongo-c-driver-1.24.3/build && \
     ninja && \
     ninja install
 
-RUN cd /build/mongo/mongo-cxx-driver-r3.8.0/build && \
+RUN cd /build/mongo/mongo-cxx-driver-r3.10.1/build && \
     cmake -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=/usr/local \
           -DBUILD_SHARED_AND_STATIC_LIBS=ON \
