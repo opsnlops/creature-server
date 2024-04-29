@@ -166,15 +166,20 @@ add_executable(creature-server
         ${serverFiles}
         src/server/watchdog/Watchdog.cpp
         src/server/watchdog/Watchdog.h
-        src/model/Creature.h
-        src/model/Creature.cpp
+
         src/model/LogLevel.h
         src/model/LogItem.h
-        src/model/FrameData.h
+
+        src/model/AnimationMetadata.cpp
         src/model/AnimationMetadata.h
+        src/model/Animation.cpp
         src/model/Animation.h
-        src/model/SortBy.h
         src/model/FrameData.cpp
+        src/model/FrameData.h
+        src/model/Creature.h
+        src/model/Creature.cpp
+
+        src/model/SortBy.h
         src/server/ws/AppComponent.h
         src/server/ws/controller/StaticController.h
         src/server/ws/App.h
@@ -188,7 +193,6 @@ add_executable(creature-server
         src/server/ws/service/CreatureService.cpp
         src/server/ws/service/CreatureService.h
         src/server/ws/dto/PageDto.h
-        src/model/AnimationMetadata.cpp
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)

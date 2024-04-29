@@ -132,7 +132,7 @@ namespace creatures {
      *
      * @param doc the doc to look at
      */
-    creatures::AnimationMetadata animationMetadataFromBson(const bsoncxx::document::element &doc) {
+    creatures::AnimationMetadata animationMetadataFromBson(const bsoncxx::document::view &doc) {
 
         debug("attempting to build an AnimationMetadata from BSON");
 
@@ -156,9 +156,9 @@ namespace creatures {
 
 
         // Extract the animation ID
-        element = doc["animation_id"];
+        element = doc["_id"];
         if (element && element.type() != bsoncxx::type::k_oid) {
-            error("Field `animation_id` was not an OID in the database while loading an animation metadata");
+            error("Field `_id` was not an OID in the database while loading an animation metadata");
             throw DataFormatException("Field 'animation_id' was not a bsoncxx::oid in the database");
         }
         const bsoncxx::oid &oid = element.get_oid().value;
@@ -214,35 +214,35 @@ namespace creatures {
 
 
 
-//        element = doc["multitrack_audio"];
-//        if (!element) {
-//            std::string errorMessage = fmt::format("AnimationMetadata value 'multitrack_audio' is not found on {}", metadata.title);
-//            error(errorMessage);
-//            throw DataFormatException(errorMessage);
-//        }
-//        if (element.type() != bsoncxx::type::k_bool) {
-//            std::string errorMessage = fmt::format("AnimationMetadata value 'multitrack_audio' is not a boolean on {}", metadata.title);
-//            error(errorMessage);
-//            throw DataFormatException(errorMessage);
-//        }
-//        metadata.multitrack_audio = element.get_bool().value;
-//        trace("set the multitrack_audio to {}", metadata.multitrack_audio);
+        element = doc["multitrack_audio"];
+        if (!element) {
+            std::string errorMessage = fmt::format("AnimationMetadata value 'multitrack_audio' is not found on {}", metadata.title);
+            error(errorMessage);
+            throw DataFormatException(errorMessage);
+        }
+        if (element.type() != bsoncxx::type::k_bool) {
+            std::string errorMessage = fmt::format("AnimationMetadata value 'multitrack_audio' is not a boolean on {}", metadata.title);
+            error(errorMessage);
+            throw DataFormatException(errorMessage);
+        }
+        metadata.multitrack_audio = element.get_bool().value;
+        trace("set the multitrack_audio to {}", metadata.multitrack_audio);
 
 
         // And finally, the note!
-//        element = doc["note"];
-//        if (!element) {
-//            std::string errorMessage = fmt::format("AnimationMetadata value 'note' is not found on {}", metadata.title);
-//            error(errorMessage);
-//            throw DataFormatException(errorMessage);
-//        }
-//        if (element.type() != bsoncxx::type::k_utf8) {
-//            std::string errorMessage = fmt::format("AnimationMetadata value 'note' is not a string {}", metadata.title);
-//            error(errorMessage);
-//            throw DataFormatException(errorMessage);
-//        }
-//        metadata.note = std::string{element.get_string().value};
-//        trace("set the notes to {}", metadata.note);
+        element = doc["note"];
+        if (!element) {
+            std::string errorMessage = fmt::format("AnimationMetadata value 'note' is not found on {}", metadata.title);
+            error(errorMessage);
+            throw DataFormatException(errorMessage);
+        }
+        if (element.type() != bsoncxx::type::k_utf8) {
+            std::string errorMessage = fmt::format("AnimationMetadata value 'note' is not a string {}", metadata.title);
+            error(errorMessage);
+            throw DataFormatException(errorMessage);
+        }
+        metadata.note = std::string{element.get_string().value};
+        trace("set the notes to {}", metadata.note);
 
         trace("all done creating a metadata from BSON!");
 

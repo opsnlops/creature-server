@@ -71,7 +71,7 @@ namespace creatures {
     creatures::Animation animationFromBson(const bsoncxx::document::view &doc);
 
     bsoncxx::document::value animationMetadataToBson(const creatures::AnimationMetadata &metadata);
-    creatures::AnimationMetadata animationMetadataFromBson(const bsoncxx::document::element &doc);
+    creatures::AnimationMetadata animationMetadataFromBson(const bsoncxx::document::view &doc);
 
     bsoncxx::document::value frameDataToBson(const FrameData &frameData);
     FrameData frameDataFromBson(const bsoncxx::document::view &doc);

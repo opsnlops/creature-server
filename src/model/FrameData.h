@@ -27,9 +27,24 @@ namespace creatures {
 
         DTO_INIT(FrameDataDto, DTO /* extends */)
 
+        DTO_FIELD_INFO(id) {
+            info->description = "The ID of this frame data object in the form of a MongoDB OID";
+        }
         DTO_FIELD(String, id);
+
+        DTO_FIELD_INFO(creature_id) {
+            info->description = "The ID of the creature this frame data belongs to";
+        }
         DTO_FIELD(String, creature_id);
+
+        DTO_FIELD_INFO(animation_id) {
+            info->description = "The ID of the animation this frame data belongs to";
+        }
         DTO_FIELD(String, animation_id);
+
+        DTO_FIELD_INFO(frames) {
+            info->description = "An array of base64 encoded strings that represent the frames of the animation. Each frame is a 2D array of pixel data.";
+        }
         DTO_FIELD(List <String>, frames);
 
     };

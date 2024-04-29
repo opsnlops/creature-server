@@ -61,10 +61,7 @@ namespace creatures {
             // Go Mongo, go! 🎉
             for (auto &&doc: cursor) {
 
-                auto animationMetadataDoc = doc["metadata"];
-                trace("got the metadata doc");
-
-                auto animationMetadata = animationMetadataFromBson(animationMetadataDoc);
+                auto animationMetadata = animationMetadataFromBson(doc);
                 animations.push_back(animationMetadata);
                 debug("found {}", animationMetadata.title);
 
@@ -88,7 +85,7 @@ namespace creatures {
 
         // Return a 404 if nothing as found
         if(animations.empty()) {
-            std::string errorMessage = fmt::format("No animations for that creature type found");
+            std::string errorMessage = fmt::format("No animations found");
             warn(errorMessage);
             throw creatures::NotFoundException(errorMessage);
         }

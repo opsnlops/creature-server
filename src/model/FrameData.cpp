@@ -28,7 +28,7 @@ namespace creatures {
     }
 
     // Convert FrameData to FrameDataDTO
-    std::shared_ptr<FrameDataDto> convertToDTO(const FrameData &frameData) {
+    std::shared_ptr<FrameDataDto> convertToDto(const FrameData &frameData) {
         auto frameDataDTO = FrameDataDto::createShared();  // Create a shared_ptr DTO
         frameDataDTO->id = frameData.id;  // Map fields
         frameDataDTO->creature_id = frameData.creature_id;

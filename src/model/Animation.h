@@ -26,8 +26,20 @@ namespace creatures {
 
         DTO_INIT(AnimationDto, DTO /* extends */);
 
+        DTO_FIELD_INFO(id) {
+            info->description = "Animation ID in the form of a MongoDB OID";
+        }
         DTO_FIELD(String, id);
-        DTO_FIELD(Int32, age);
+
+        DTO_FIELD_INFO(metadata) {
+            info->description = "An array of AnimationMetadataDto objects that describe the animations";
+        }
+        DTO_FIELD(Object<AnimationMetadataDto>, metadata);
+
+        DTO_FIELD_INFO(tracks) {
+            info->description = "Frame data for the animation tracks";
+        }
+        DTO_FIELD(Vector<oatpp::Object<FrameDataDto>>, tracks);
 
     };
 

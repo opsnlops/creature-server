@@ -46,10 +46,29 @@ namespace creatures {
 
         DTO_INIT(CreatureDto, DTO /* extends */)
 
+        DTO_FIELD_INFO(id) {
+            info->description = "Creature ID in the form of a MongoDB OID";
+        }
         DTO_FIELD(String, id);
+
+        DTO_FIELD_INFO(name) {
+            info->description = "The creature's name";
+        }
         DTO_FIELD(String, name);
+
+        DTO_FIELD_INFO(channel_offset) {
+            info->description = "The offset of the channel for this creature in the universe";
+        }
         DTO_FIELD(UInt16, channel_offset);
+
+        DTO_FIELD_INFO(audio_channel) {
+            info->description = "The audio channel for this creature";
+        }
         DTO_FIELD(UInt16, audio_channel);
+
+        DTO_FIELD_INFO(notes) {
+            info->description = "A general notes field for the creature";
+        }
         DTO_FIELD(String, notes);
 
     };

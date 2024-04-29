@@ -37,11 +37,30 @@ namespace creatures :: ws {
             info->summary = "List all of the animations";
 
             info->addResponse<Object<AnimationsPageDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
         }
         ENDPOINT("GET", "api/v1/animation", listAllAnimations)
         {
             return createDtoResponse(Status::CODE_200, m_animationService.listAllAnimations());
+        }
+
+        ENDPOINT_INFO(getAnimation) {
+            info->summary = "Get an animation by id";
+
+            info->addResponse<Object<CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+
+            info->pathParams["creatureId"].description = "Animation ID in the form of a MongoDB OID";
+        }
+        ENDPOINT("GET", "api/v1/animation/{animationId}", getAnimation,
+                 PATH(String, animationId))
+        {
+            return createDtoResponse(Status::CODE_200, m_animationService.getAnimation(animationId));
         }
 
     };
