@@ -1,5 +1,6 @@
 
 
+#include <string>
 
 #include "exception/exception.h"
 #include "model/Animation.h"
@@ -133,5 +134,59 @@ namespace creatures :: ws {
 
     }
 
+    oatpp::String AnimationService::createAnimation(const oatpp::Object<creatures::AnimationDto>& inAnimationDto) {
+        OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+
+        appLogger->info("AnimationService::createAnimation({})", std::string(inAnimationDto->metadata->title));
+
+        bool error = false;
+        oatpp::String message;
+        Status status = Status::CODE_200;
+
+        try {
+
+            // Try to convert the Dto to a model object
+            auto animation = creatures::convertFromDto(inAnimationDto.getPtr());
+            appLogger->debug("Converted animation: {}", animation.metadata.title);
+
+            message = creatures::db->createAnimation(animation);
+            appLogger->info(std::string(message));
+        }
+        catch (const creatures::DuplicateFoundError &e) {
+            message = fmt::format("Duplicate animation ID found on create?: {}", e.what());
+            appLogger->debug(std::string(message));
+            error = true;
+            status = Status::CODE_409;
+        }
+        catch (const creatures::InvalidArgumentException &e) {
+            message = fmt::format("Unable to parse animation: {}", e.what());
+            appLogger->debug(std::string(message));
+            error = true;
+            status = Status::CODE_400;
+        }
+        catch (const creatures::InternalError &e) {
+            message = fmt::format("Internal error: {}", e.what());
+            appLogger->error(std::string(message));
+            error = true;
+            status = Status::CODE_500;
+        }
+        catch (const creatures::DataFormatException &e) {
+            message = fmt::format("Data format error: {}", e.what());
+            appLogger->error(std::string(message));
+            error = true;
+            status = Status::CODE_500;
+        }
+        catch (...) {
+            message = fmt::format("Unknown error");
+            appLogger->error(std::string(message));
+            error = true;
+            status = Status::CODE_500;
+        }
+        OATPP_ASSERT_HTTP(!error, status, message)
+
+        appLogger->debug("returning success!");
+        return message;
+
+    }
 
 } // creatures :: ws

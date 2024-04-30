@@ -56,7 +56,6 @@ namespace creatures {
 
 
 
-
         /**
          * Create a new creature in the database
          *
@@ -76,6 +75,7 @@ namespace creatures {
         // Animation stuff
         creatures::Animation getAnimation(const std::string& animationId);
         std::vector<creatures::AnimationMetadata> listAnimations(creatures::SortBy sortBy);
+        std::string createAnimation(creatures::Animation animation);
 
         // Old gRPC methods
 //        void createAnimation(const Animation *animation, DatabaseInfo *reply);

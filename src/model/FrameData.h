@@ -15,7 +15,6 @@ namespace creatures {
         std::string creature_id;
         std::string animation_id;
         std::vector<std::string> frames;  // The frame data will be base64 encoded strings
-
     };
 
 
@@ -23,6 +22,9 @@ namespace creatures {
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
+    /**
+     * Data transfer object for FrameData
+     */
     class FrameDataDto : public oatpp::DTO {
 
         DTO_INIT(FrameDataDto, DTO /* extends */)
@@ -43,7 +45,7 @@ namespace creatures {
         DTO_FIELD(String, animation_id);
 
         DTO_FIELD_INFO(frames) {
-            info->description = "An array of base64 encoded strings that represent the frames of the animation. Each frame is a 2D array of pixel data.";
+            info->description = "An array of base64 encoded strings that represent the frames of the animation. Each frame is a 2D array of motion data.";
         }
         DTO_FIELD(List <String>, frames);
 

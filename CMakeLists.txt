@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.0.0"
+        VERSION "1.9.10"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -85,8 +85,9 @@ FetchContent_MakeAvailable(googletest)
 
 
 # Use the oatpp that we've already made
-find_package(oatpp         REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
-find_package(oatpp-swagger REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
+find_package(oatpp           REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
+find_package(oatpp-swagger   REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
+find_package(oatpp-websocket REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-websocket-1.3.0)
 
 add_definitions(
         ## define path to swagger-ui static resources folder
@@ -174,10 +175,13 @@ add_executable(creature-server
         src/model/AnimationMetadata.h
         src/model/Animation.cpp
         src/model/Animation.h
-        src/model/FrameData.cpp
-        src/model/FrameData.h
         src/model/Creature.h
         src/model/Creature.cpp
+        src/model/FrameData.cpp
+        src/model/FrameData.h
+        src/model/StreamFrame.cpp
+        src/model/StreamFrame.h
+
 
         src/model/SortBy.h
         src/server/ws/AppComponent.h
@@ -193,6 +197,8 @@ add_executable(creature-server
         src/server/ws/service/CreatureService.cpp
         src/server/ws/service/CreatureService.h
         src/server/ws/dto/PageDto.h
+        src/model/StreamFrame.h
+        src/model/StreamFrame.cpp
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
@@ -206,6 +212,7 @@ target_link_libraries(creature-server
         SDL2_mixer::SDL2_mixer
         oatpp::oatpp
         oatpp::oatpp-swagger
+        oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
@@ -286,6 +293,7 @@ target_link_libraries(creature-server-test
         SDL2_mixer::SDL2_mixer
         oatpp::oatpp
         oatpp::oatpp-swagger
+        oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared

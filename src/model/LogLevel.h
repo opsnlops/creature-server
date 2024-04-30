@@ -1,9 +1,11 @@
 
 #pragma once
 
+#include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/Types.hpp>
-#include <unordered_map>
 
+#include <unordered_map>
+#include <string>
 
 namespace creatures {
 

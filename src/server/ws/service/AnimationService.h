@@ -22,6 +22,7 @@ namespace creatures :: ws {
 
         oatpp::Object<PageDto<oatpp::Object<creatures::AnimationMetadataDto>>> listAllAnimations();
         oatpp::Object<creatures::AnimationDto> getAnimation(const oatpp::String& animationId);
+        oatpp::String createAnimation(const oatpp::Object<creatures::AnimationDto>& inAnimationDto);
 
     };
 

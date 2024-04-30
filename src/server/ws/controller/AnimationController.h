@@ -63,6 +63,20 @@ namespace creatures :: ws {
             return createDtoResponse(Status::CODE_200, m_animationService.getAnimation(animationId));
         }
 
+        ENDPOINT_INFO(createAnimation) {
+            info->summary = "Create a new animation in the database. The Animation ID will be ignored and a new one created.";
+
+            info->addResponse<Object<CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        }
+        ENDPOINT("POST", "api/v1/animation", createAnimation,
+                 BODY_DTO(Object<creatures::AnimationDto>, animationDto))
+        {
+            return createDtoResponse(Status::CODE_200, m_animationService.createAnimation(animationDto));
+        }
+
     };
 
 }
