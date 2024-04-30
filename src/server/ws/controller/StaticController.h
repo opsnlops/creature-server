@@ -1,10 +1,14 @@
 
 #pragma once
 
+#include <fmt/format.h>
+
 #include <oatpp/web/server/api/ApiController.hpp>
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
+
+#include "Version.h"
 
 
 namespace creatures ::ws {
@@ -33,12 +37,16 @@ public:
                 "    <meta charset=utf-8/>"
                 "  </head>"
                 "  <body>"
-                "    <p>Hello CRUD example project!</p>"
-                "    <a href='swagger/ui'>Checkout Swagger-UI page</a>"
+                "    <h1>April's Creature Workshop</h1>"
+                "    <p>This is the server that controls everything. <a href='swagger/ui'>Checkout the Swagger-UI page</a>!</p>"
                 "  </body>"
                 "</html>";
         auto response = createResponse(Status::CODE_200, html);
+        std::string version = fmt::format("Creature-Server/{}.{}.{}", CREATURE_SERVER_VERSION_MAJOR, CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH);
         response->putHeader(Header::CONTENT_TYPE, "text/html");
+        response->putHeader(Header::SERVER, oatpp::String(version));
+        response->putHeader("All-The-Birds-Sing-Words", oatpp::String("yes"));
+        response->putHeader("And-The-Flowers-Croon", oatpp::String("of course"));
         return response;
     }
 
