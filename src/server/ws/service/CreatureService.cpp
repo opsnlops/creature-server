@@ -5,7 +5,7 @@
 #include "model/Creature.h"
 #include "server/database.h"
 
-#include "server/ws/dto/PageDto.h"
+#include "server/ws/dto/ListDto.h"
 
 #include "CreatureService.h"
 
@@ -19,7 +19,7 @@ namespace creatures :: ws {
 
     using oatpp::web::protocol::http::Status;
 
-    oatpp::Object<PageDto<oatpp::Object<creatures::CreatureDto>>> CreatureService::getAllCreatures() {
+    oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>> CreatureService::getAllCreatures() {
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
@@ -59,7 +59,7 @@ namespace creatures :: ws {
             items->emplace_back(creatures::convertToDto(creature));
         }
 
-        auto page = PageDto<oatpp::Object<creatures::CreatureDto>>::createShared();
+        auto page = ListDto<oatpp::Object<creatures::CreatureDto>>::createShared();
         page->count = items->size();
         page->items = items;
 

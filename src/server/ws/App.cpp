@@ -16,6 +16,7 @@
 #include "SwaggerComponent.h"
 #include "controller/AnimationController.h"
 #include "controller/CreatureController.h"
+#include "controller/SoundController.h"
 #include "controller/StaticController.h"
 
 
@@ -56,10 +57,12 @@ namespace creatures ::ws {
 
         docEndpoints.append(router->addController(AnimationController::createShared())->getEndpoints());
         docEndpoints.append(router->addController(CreatureController::createShared())->getEndpoints());
+        docEndpoints.append(router->addController(SoundController::createShared())->getEndpoints());
 
         router->addController(oatpp::swagger::Controller::createShared(docEndpoints));
         router->addController(AnimationController::createShared());
         router->addController(CreatureController::createShared());
+        router->addController(SoundController::createShared());
         router->addController(StaticController::createShared());
 
         /* Get connection handler component */

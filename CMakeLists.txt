@@ -181,6 +181,8 @@ add_executable(creature-server
         src/model/FrameData.h
         src/model/StreamFrame.cpp
         src/model/StreamFrame.h
+        src/model/Sound.h
+        src/model/Sound.cpp
 
 
         src/model/SortBy.h
@@ -188,17 +190,22 @@ add_executable(creature-server
         src/server/ws/controller/StaticController.h
         src/server/ws/App.h
         src/server/ws/App.cpp
+        src/server/ws/dto/ListDto.h
         src/server/ws/dto/StatusDto.h
+
         src/server/ws/ErrorHandler.cpp
         src/server/ws/ErrorHandler.h
+
+
         src/server/ws/controller/CreatureController.h
+        src/server/ws/controller/SoundController.h
         src/server/ws/service/AnimationService.cpp
         src/server/ws/service/AnimationService.h
         src/server/ws/service/CreatureService.cpp
         src/server/ws/service/CreatureService.h
-        src/server/ws/dto/PageDto.h
-        src/model/StreamFrame.h
-        src/model/StreamFrame.cpp
+        src/server/ws/service/SoundService.cpp
+        src/server/ws/service/SoundService.h
+
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)

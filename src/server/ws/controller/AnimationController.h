@@ -36,7 +36,7 @@ namespace creatures :: ws {
         ENDPOINT_INFO(listAllAnimations) {
             info->summary = "List all of the animations";
 
-            info->addResponse<Object<AnimationsPageDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<AnimationsListDto>>(Status::CODE_200, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");

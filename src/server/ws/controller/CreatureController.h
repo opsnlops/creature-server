@@ -34,7 +34,7 @@ namespace creatures :: ws {
         ENDPOINT_INFO(getAllCreatures) {
             info->summary = "Get all of the creatures";
 
-            info->addResponse<Object<CreaturesPageDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<CreaturesListDto>>(Status::CODE_200, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
         }
         ENDPOINT("GET", "api/v1/creature", getAllCreatures)

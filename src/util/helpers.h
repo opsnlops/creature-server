@@ -77,6 +77,14 @@ namespace creatures {
     FrameData frameDataFromBson(const bsoncxx::document::view &doc);
 
 
+    /**
+     * Check if a file is readable
+     *
+     * @param path the file path to check
+     * @return true if it exists and is readable, false otherwise
+     */
+    bool fileIsReadable(const std::string& path);
+
     bsoncxx::oid generateNewOid();
 
     void displayFrames(const creatures::Animation &animation);

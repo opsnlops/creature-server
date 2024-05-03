@@ -1,7 +1,10 @@
 
 
+#include <fstream>
+#include <filesystem>
 #include <string>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 
 
@@ -15,6 +18,9 @@
 
 #include "exception/exception.h"
 #include "server/namespace-stuffs.h"
+
+namespace fs = std::filesystem;
+
 
 namespace creatures {
 
@@ -179,5 +185,30 @@ namespace creatures {
     std::vector<std::string> stringVectorFromBson(const bsoncxx::document::view &doc) {
         throw InternalError("Not implemented");
     }
+
+
+    bool fileIsReadable(const std::string& path) {
+
+        debug("checking to see if file is readable: {}", path);
+
+        fs::path file_path = path;
+
+        // Check if the file exists and has read permissions
+        if (fs::exists(file_path) && fs::is_regular_file(file_path)) {
+            std::error_code ec;
+
+            // Try to open the file
+            std::ifstream file(file_path, std::ios::in);
+            if (file) {
+                file.close();
+                debug("file is readable");
+                return true;
+            }
+        }
+
+        debug("file is not readable");
+        return false;
+    }
+
 
 }

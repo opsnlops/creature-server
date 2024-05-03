@@ -7,7 +7,7 @@
 #include "model/AnimationMetadata.h"
 #include "server/database.h"
 
-#include "server/ws/dto/PageDto.h"
+#include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 
 #include "AnimationService.h"
@@ -22,7 +22,7 @@ namespace creatures :: ws {
 
     using oatpp::web::protocol::http::Status;
 
-    oatpp::Object<PageDto<oatpp::Object<creatures::AnimationMetadataDto>>> AnimationService::listAllAnimations() {
+    oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> AnimationService::listAllAnimations() {
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
@@ -71,7 +71,7 @@ namespace creatures :: ws {
             items->emplace_back(creatures::convertToDto(metadata));
         }
 
-        auto page = PageDto<oatpp::Object<creatures::AnimationMetadataDto>>::createShared();
+        auto page = ListDto<oatpp::Object<creatures::AnimationMetadataDto>>::createShared();
         page->count = items->size();
         page->items = items;
 

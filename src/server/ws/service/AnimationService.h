@@ -8,7 +8,7 @@
 
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
-#include "server/ws/dto/PageDto.h"
+#include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 
 namespace creatures :: ws {
@@ -20,7 +20,7 @@ namespace creatures :: ws {
 
     public:
 
-        oatpp::Object<PageDto<oatpp::Object<creatures::AnimationMetadataDto>>> listAllAnimations();
+        oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> listAllAnimations();
         oatpp::Object<creatures::AnimationDto> getAnimation(const oatpp::String& animationId);
         oatpp::String createAnimation(const oatpp::Object<creatures::AnimationDto>& inAnimationDto);
 

@@ -7,7 +7,7 @@
 #include <oatpp/core/macro/component.hpp>
 
 #include "model/Creature.h"
-#include "server/ws/dto/PageDto.h"
+#include "server/ws/dto/ListDto.h"
 
 namespace creatures :: ws {
 
@@ -18,7 +18,7 @@ namespace creatures :: ws {
 
     public:
 
-        oatpp::Object<PageDto<oatpp::Object<creatures::CreatureDto>>> getAllCreatures();
+        oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>> getAllCreatures();
 
         oatpp::Object<creatures::CreatureDto> getCreature(const oatpp::String& inCreatureId);
 
