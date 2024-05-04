@@ -96,4 +96,28 @@ namespace creatures {
     uint64_t SystemCounters::getPlaylistStatusRequests() {
         return playlistStatusRequests.load();
     }
+
+    /**
+     * Create a DTO from the current state of the counters
+     *
+     * @return a shared pointer to the DTO
+     */
+    std::shared_ptr<SystemCountersDto> SystemCounters::convertToDto() {
+
+        auto dto = SystemCountersDto::createShared();
+
+        dto->totalFrames = totalFrames.load();
+        dto->eventsProcessed = eventsProcessed.load();
+        dto->framesStreamed = framesStreamed.load();
+        dto->dmxEventsProcessed = dmxEventsProcessed.load();
+        dto->animationsPlayed = animationsPlayed.load();
+        dto->soundsPlayed = soundsPlayed.load();
+        dto->playlistsStarted = playlistsStarted.load();
+        dto->playlistsStopped = playlistsStopped.load();
+        dto->playlistsEventsProcessed = playlistsEventsProcessed.load();
+        dto->playlistStatusRequests = playlistStatusRequests.load();
+
+        return dto.getPtr();
+
+    }
 }

@@ -198,11 +198,14 @@ add_executable(creature-server
 
 
         src/server/ws/controller/CreatureController.h
+        src/server/ws/controller/MetricsController.h
         src/server/ws/controller/SoundController.h
         src/server/ws/service/AnimationService.cpp
         src/server/ws/service/AnimationService.h
         src/server/ws/service/CreatureService.cpp
         src/server/ws/service/CreatureService.h
+        src/server/ws/service/MetricsService.cpp
+        src/server/ws/service/MetricsService.cpp
         src/server/ws/service/SoundService.cpp
         src/server/ws/service/SoundService.h
 

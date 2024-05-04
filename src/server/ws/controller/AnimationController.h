@@ -39,7 +39,6 @@ namespace creatures :: ws {
             info->addResponse<Object<AnimationsListDto>>(Status::CODE_200, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-            info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
         }
         ENDPOINT("GET", "api/v1/animation", listAllAnimations)
