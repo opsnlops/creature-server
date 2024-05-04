@@ -25,7 +25,7 @@ namespace creatures :: ws {
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
-        appLogger->info("MetricsService::getCounters()");
+        appLogger->trace("MetricsService::getCounters()");
 
         bool error = false;
         oatpp::String errorMessage;

@@ -26,7 +26,7 @@ namespace creatures :: ws {
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
-        appLogger->info("AnimationService::listAllAnimations()");
+        appLogger->debug("AnimationService::listAllAnimations()");
 
         bool error = false;
         oatpp::String errorMessage;
@@ -86,7 +86,7 @@ namespace creatures :: ws {
         // Convert the oatpp string to a std::string
         std::string animationId = std::string(inAnimationId);
 
-        appLogger->info("AnimationService::getAnimation({})", animationId);
+        appLogger->debug("AnimationService::getAnimation({})", animationId);
 
         bool error = false;
         oatpp::String errorMessage;

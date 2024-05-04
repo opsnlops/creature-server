@@ -23,7 +23,7 @@ namespace creatures :: ws {
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
-        appLogger->info("CreatureService::getAllCreatures()");
+        appLogger->debug("CreatureService::getAllCreatures()");
 
         bool error = false;
         oatpp::String errorMessage;
@@ -73,7 +73,7 @@ namespace creatures :: ws {
         // Convert the oatpp string to a std::string
         std::string creatureId = std::string(inCreatureId);
 
-        appLogger->info("CreatureService::getCreature({})", creatureId);
+        appLogger->debug("CreatureService::getCreature({})", creatureId);
 
         bool error = false;
         oatpp::String errorMessage;

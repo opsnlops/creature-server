@@ -37,7 +37,7 @@ namespace creatures :: ws {
     oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllSounds() {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
-        appLogger->info("Request to return a list of the sound files");
+        appLogger->debug("Request to return a list of the sound files");
 
         // Copy the path locally
         std::string path = config->getSoundFileLocation();
@@ -106,7 +106,7 @@ namespace creatures :: ws {
 
         std::string soundFile = std::string(inSoundFile);
 
-        appLogger->info("Request to play sound file: {}", soundFile);
+        appLogger->debug("Request to play sound file: {}", soundFile);
 
 
         // Fill out the full path to the file

@@ -17,7 +17,7 @@ namespace creatures {
     void TickEvent::executeImpl() {
 
         // Just go tick!
-        debug("⌚️ Hello from frame {:L}! Event queue length: {}, events: {:L}, frames streamed: {:L}, animations played: {:L}, DMX events sent: {:L}, sounds played: {:L}, playlists started: {:L}, playlists stopped: {:L}, playlists events processed: {:L}",
+        debug("⌚️ Hello from frame {:L}! Event queue length: {}, events: {:L}, frames streamed: {:L}, animations played: {:L}, DMX events sent: {:L}, sounds played: {:L}, playlists started: {:L}, playlists stopped: {:L}, playlists events processed: {:L}, web api requests: {:L}",
               eventLoop->getCurrentFrameNumber(),
               eventLoop->getQueueSize(),
               metrics->getEventsProcessed(),
@@ -27,7 +27,8 @@ namespace creatures {
               metrics->getSoundsPlayed(),
               metrics->getPlaylistsStarted(),
               metrics->getPlaylistsStopped(),
-              metrics->getPlaylistsEventsProcessed());
+              metrics->getPlaylistsEventsProcessed(),
+              metrics->getRestRequestsProcessed());
 
 
         // Make another event
