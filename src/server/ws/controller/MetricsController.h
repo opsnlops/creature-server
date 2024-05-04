@@ -11,6 +11,12 @@
 #include "server/ws/service/MetricsService.h"
 #include "server/ws/dto/StatusDto.h"
 
+#include "server/metrics/counters.h"
+
+namespace creatures {
+    extern std::shared_ptr<SystemCounters> metrics;
+}
+
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
 
 namespace creatures :: ws {
@@ -39,6 +45,7 @@ namespace creatures :: ws {
         }
         ENDPOINT("GET", "api/v1/metric/counters", counters)
         {
+            creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_metricsService.getCounters());
         }
 

@@ -73,6 +73,11 @@ namespace creatures {
         }
         DTO_FIELD(UInt64, playlistStatusRequests);
 
+        DTO_FIELD_INFO(restRequestsProcessed) {
+            info->description = "Number of RESTful requests that have been processed";
+        }
+        DTO_FIELD(UInt64, restRequestsProcessed);
+
     };
 
 #include OATPP_CODEGEN_END(DTO)
@@ -95,6 +100,7 @@ namespace creatures {
         void incrementPlaylistsStopped();
         void incrementPlaylistsEventsProcessed();
         void incrementPlaylistStatusRequests();
+        void incrementRestRequestsProcessed();
 
         uint64_t getTotalFrames();
         uint64_t getEventsProcessed();
@@ -106,6 +112,7 @@ namespace creatures {
         uint64_t getPlaylistsStopped();
         uint64_t getPlaylistsEventsProcessed();
         uint64_t getPlaylistStatusRequests();
+        uint64_t getRestRequestsProcessed();
 
         // This one is different for how it gets to a DTO since it's not a normal type of object
         std::shared_ptr<SystemCountersDto> convertToDto();
@@ -121,6 +128,7 @@ namespace creatures {
         std::atomic<uint64_t> playlistsStopped;
         std::atomic<uint64_t> playlistsEventsProcessed;
         std::atomic<uint64_t> playlistStatusRequests;
+        std::atomic<uint64_t> restRequestsProcessed;
     };
 
 

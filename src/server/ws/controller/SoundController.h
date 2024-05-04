@@ -14,6 +14,11 @@
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/SoundService.h"
 
+#include "server/metrics/counters.h"
+
+namespace creatures {
+    extern std::shared_ptr<SystemCounters> metrics;
+}
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
 
@@ -44,6 +49,7 @@ namespace creatures :: ws {
         }
         ENDPOINT("GET", "api/v1/sound", getAllSounds)
         {
+            creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_soundService.getAllSounds());
         }
 
@@ -59,6 +65,7 @@ namespace creatures :: ws {
         ENDPOINT("GET", "api/v1/sound/play/{fileName}", playSound,
                  PATH(String, fileName))
         {
+            creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_soundService.playSound(fileName));
         }
 

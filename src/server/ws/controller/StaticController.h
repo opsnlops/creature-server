@@ -10,6 +10,11 @@
 
 #include "Version.h"
 
+#include "server/metrics/counters.h"
+
+namespace creatures {
+    extern std::shared_ptr<SystemCounters> metrics;
+}
 
 namespace creatures ::ws {
 
@@ -47,6 +52,7 @@ public:
         response->putHeader(Header::SERVER, oatpp::String(version));
         response->putHeader("All-The-Birds-Sing-Words", oatpp::String("yes"));
         response->putHeader("And-The-Flowers-Croon", oatpp::String("of course"));
+        creatures::metrics->incrementRestRequestsProcessed();
         return response;
     }
 

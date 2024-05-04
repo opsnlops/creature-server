@@ -12,7 +12,11 @@
 #include "server/database.h"
 
 #include "server/ws/service/AnimationService.h"
+#include "server/metrics/counters.h"
 
+namespace creatures {
+    extern std::shared_ptr<SystemCounters> metrics;
+}
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
 
@@ -43,6 +47,7 @@ namespace creatures :: ws {
         }
         ENDPOINT("GET", "api/v1/animation", listAllAnimations)
         {
+            creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_animationService.listAllAnimations());
         }
 
@@ -59,6 +64,7 @@ namespace creatures :: ws {
         ENDPOINT("GET", "api/v1/animation/{animationId}", getAnimation,
                  PATH(String, animationId))
         {
+            creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_animationService.getAnimation(animationId));
         }
 
@@ -73,6 +79,7 @@ namespace creatures :: ws {
         ENDPOINT("POST", "api/v1/animation", createAnimation,
                  BODY_DTO(Object<creatures::AnimationDto>, animationDto))
         {
+            creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_animationService.createAnimation(animationDto));
         }
 

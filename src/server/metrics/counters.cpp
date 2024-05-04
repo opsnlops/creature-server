@@ -15,6 +15,7 @@ namespace creatures {
         playlistsStopped = 0;
         playlistsEventsProcessed = 0;
         playlistStatusRequests = 0;
+        restRequestsProcessed = 0;
     }
 
     void SystemCounters::incrementTotalFrames() {
@@ -57,6 +58,10 @@ namespace creatures {
         playlistStatusRequests++;
     }
 
+    void SystemCounters::incrementRestRequestsProcessed() {
+        restRequestsProcessed++;
+    }
+
     uint64_t SystemCounters::getTotalFrames() {
         return totalFrames.load();
     }
@@ -97,6 +102,10 @@ namespace creatures {
         return playlistStatusRequests.load();
     }
 
+    uint64_t SystemCounters::getRestRequestsProcessed() {
+        return restRequestsProcessed.load();
+    }
+
     /**
      * Create a DTO from the current state of the counters
      *
@@ -116,6 +125,7 @@ namespace creatures {
         dto->playlistsStopped = playlistsStopped.load();
         dto->playlistsEventsProcessed = playlistsEventsProcessed.load();
         dto->playlistStatusRequests = playlistStatusRequests.load();
+        dto->restRequestsProcessed = restRequestsProcessed.load();
 
         return dto.getPtr();
 
