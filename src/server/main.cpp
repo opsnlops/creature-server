@@ -19,6 +19,7 @@
 
 
 // Our stuff
+#include "model/WebsocketMessage.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
@@ -72,7 +73,7 @@ namespace creatures {
     // A queue for messages going out to the websocket. This is the same queue that's used
     // on the controller. There's a ConcurrentQueue in here that uses moodycamel, but this
     // one is very much battle tested.
-    std::shared_ptr<MessageQueue<std::string>> websocketOutgoingMessages;
+    std::shared_ptr<MessageQueue<WebsocketMessage>> websocketOutgoingMessages;
 }
 
 
@@ -157,8 +158,8 @@ int main(int argc, char **argv) {
     debug("Mongo pool up and running");
 
     // Bring up the websocket outgoing queue
-    creatures::websocketOutgoingMessages = std::make_shared<creatures::MessageQueue<std::string>>();
-
+    creatures::websocketOutgoingMessages = std::make_shared<creatures::MessageQueue<creatures::WebsocketMessage>>();
+    debug("Websocket outgoing message queue created");
 
     // Fire up SDL
     if(!MusicEvent::initSDL()) {
@@ -211,6 +212,10 @@ int main(int argc, char **argv) {
     // Start the web server
     auto webServer = std::make_shared<creatures::ws::App>();
     webServer->start();
+
+    // Seed the metric send task
+    auto metricSendEvent = std::make_shared<creatures::CounterSendEvent>(SEND_COUNTERS_FRAMES);
+    creatures::eventLoop->scheduleEvent(metricSendEvent);
 
 
     // Wait for the signal handler to know when to stop

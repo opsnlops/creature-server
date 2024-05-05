@@ -14,6 +14,8 @@
 
 #include "AppComponent.h"
 #include "controller/StaticController.h"
+#include "model/WebsocketMessage.h"
+#include "util/MessageQueue.h"
 
 namespace creatures :: ws {
 
@@ -29,7 +31,6 @@ namespace creatures :: ws {
 
     private:
         std::shared_ptr<spdlog::logger> internalLogger;
-
 
     };
 

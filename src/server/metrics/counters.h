@@ -154,7 +154,7 @@ namespace creatures {
 
 
         // This one is different for how it gets to a DTO since it's not a normal type of object
-        std::shared_ptr<SystemCountersDto> convertToDto();
+        oatpp::Object<SystemCountersDto> convertToDto();
 
     private:
         std::atomic<uint64_t> totalFrames;

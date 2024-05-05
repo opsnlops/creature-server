@@ -6,6 +6,7 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp-websocket/ConnectionHandler.hpp>
 #include <oatpp-websocket/WebSocket.hpp>
 
@@ -21,6 +22,18 @@ namespace creatures {
 
 
 namespace creatures :: ws {
+
+    void ClientConnection::sendTextMessage(const WebsocketMessage& message) {
+        appLogger->debug("Sending message to client {}", clientId);
+
+        OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
+
+        auto dto = convertToDto(message);
+        auto messageToSend = apiObjectMapper->writeToString(dto);
+
+        ourSocket.sendOneFrameText(messageToSend);
+        creatures::metrics->incrementWebsocketMessagesSent();
+    }
 
     void ClientConnection::sendPing() {
         appLogger->debug("Sending ping to client {}", clientId);

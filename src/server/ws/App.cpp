@@ -85,6 +85,12 @@ namespace creatures ::ws {
             cafe->runPingLoop(std::chrono::seconds(30));
         });
 
+        // Run the message processing loop
+        std::thread queueWorkerThread([]{
+            OATPP_COMPONENT(std::shared_ptr<ClientCafe>, cafe);
+            cafe->runMessageLoop();
+        });
+
         /* create server */
         oatpp::network::Server server(connectionProvider,
                                       connectionHandler);

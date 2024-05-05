@@ -184,6 +184,8 @@ add_executable(creature-server
         src/model/Sound.h
         src/model/Sound.cpp
         src/model/SortBy.h
+        src/model/WebsocketMessage.h
+        src/model/WebsocketMessage.cpp
 
 
         src/server/ws/AppComponent.h
@@ -220,6 +222,7 @@ add_executable(creature-server
         src/server/ws/websocket/ClientConnection.h
         src/server/ws/websocket/ClientCafe.cpp
         src/server/ws/websocket/ClientConnection.cpp
+
 
 
 )

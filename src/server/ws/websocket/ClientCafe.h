@@ -12,6 +12,7 @@
 
 #include <oatpp/core/macro/component.hpp>
 
+#include "model/WebsocketMessage.h"
 #include "server/ws/websocket/ClientConnection.h"
 
 namespace creatures :: ws {
@@ -28,6 +29,12 @@ namespace creatures :: ws {
                        public std::enable_shared_from_this<ClientCafe> {
 
     public:
+
+        /**
+         * Broadcast a message to all connected clients
+         */
+        void broadcastMessage(const WebsocketMessage& message);
+
 
         /**
          * Gets the next client ID
@@ -50,7 +57,12 @@ namespace creatures :: ws {
          *
          * @param interval how long to wait between pings (default 30 seconds)
          */
-        [[noreturn]] [[noreturn]] [[noreturn]] void runPingLoop(const std::chrono::duration<v_int64, std::micro>& interval = std::chrono::seconds(30));
+        [[noreturn]] void runPingLoop(const std::chrono::duration<v_int64, std::micro>& interval = std::chrono::seconds(30));
+
+        /**
+         * Run the message loop
+         */
+        [[noreturn]] void runMessageLoop();
 
     private:
 

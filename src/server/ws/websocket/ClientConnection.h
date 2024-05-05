@@ -5,12 +5,13 @@
 #include <mutex>
 #include <vector>
 
-
+#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp-websocket/ConnectionHandler.hpp>
 #include <oatpp-websocket/WebSocket.hpp>
 
 #include <oatpp/core/macro/component.hpp>
 
+#include "model/WebsocketMessage.h"
 #include "server/ws/websocket/ClientCafe.h"
 #include "server/ws/websocket/ClientConnection.h"
 
@@ -49,6 +50,13 @@ namespace creatures :: ws {
          * Called on each message frame. After the last message will be called once-again with size == 0 to designate end of the message.
          */
         void readMessage(const WebSocket& socket, v_uint8 opcode, p_char8 data, oatpp::v_io_size size) override;
+
+        /**
+         * Send a message to our client
+         *
+         * @param message the message to send
+         */
+        void sendTextMessage(const WebsocketMessage& message);
 
         /**
          * Our client ID

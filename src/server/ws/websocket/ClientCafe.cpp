@@ -6,21 +6,36 @@
 
 #include <oatpp/core/macro/component.hpp>
 
+#include "model/WebsocketMessage.h"
 
 #include "server/metrics/counters.h"
 #include "server/ws/websocket/ClientConnection.h"
 #include "server/ws/websocket/ClientCafe.h"
 
+#include "util/MessageQueue.h"
 #include "util/threadName.h"
 
 namespace creatures {
     extern std::shared_ptr<SystemCounters> metrics;
+    extern std::shared_ptr<MessageQueue<WebsocketMessage>> websocketOutgoingMessages;
 }
 
 namespace creatures :: ws {
 
 
     std::atomic<v_int32> ClientCafe::clientsConnected(0);
+
+
+    void ClientCafe::broadcastMessage(const WebsocketMessage& message) {
+
+        OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
+        appLogger->debug("Broadcasting message to all clients");
+
+        std::lock_guard<std::mutex> guard(clientConnectionMapMutex);
+        for (const auto &client: clientConnectionMap) {
+            client.second->sendTextMessage(message);
+        }
+    }
 
 
     v_int64 ClientCafe::getNextClientId() {
@@ -66,6 +81,17 @@ namespace creatures :: ws {
         }
     }
 
+    [[noreturn]] void ClientCafe::runMessageLoop() {
+
+        // Make sure this shows up in the debugger correctly
+        setThreadName("ClientCafe::runMessageLoop");
+
+        while(true) {
+            WebsocketMessage message = creatures::websocketOutgoingMessages->pop();
+            broadcastMessage(message);
+            appLogger->debug("Sent message to all clients from the queue");
+        }
+    }
 
     [[noreturn]] void ClientCafe::runPingLoop(const std::chrono::duration<v_int64, std::micro>& interval) {
 
@@ -97,6 +123,5 @@ namespace creatures :: ws {
         }
 
     }
-
 
 }

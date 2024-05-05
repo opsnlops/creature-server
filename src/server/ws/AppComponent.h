@@ -21,8 +21,9 @@
 #include "SwaggerComponent.h"
 #include "ErrorHandler.h"
 
-
+#include "model/WebsocketMessage.h"
 #include "server/ws/websocket/ClientCafe.h"
+#include "util/MessageQueue.h"
 
 namespace creatures :: ws {
 
@@ -50,6 +51,7 @@ namespace creatures :: ws {
             objectMapper->getDeserializer()->getConfig()->allowUnknownFields = false;
             return objectMapper;
         }());
+
 
         /**
          *  Create ConnectionProvider component which listens on the port

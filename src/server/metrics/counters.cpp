@@ -16,6 +16,11 @@ namespace creatures {
         playlistsEventsProcessed = 0;
         playlistStatusRequests = 0;
         restRequestsProcessed = 0;
+        websocketConnectionsProcessed = 0;
+        websocketMessagesReceived = 0;
+        websocketMessagesSent = 0;
+        websocketPingsSent = 0;
+        websocketPongsReceived = 0;
     }
 
     void SystemCounters::incrementTotalFrames() {
@@ -156,7 +161,7 @@ namespace creatures {
      *
      * @return a shared pointer to the DTO
      */
-    std::shared_ptr<SystemCountersDto> SystemCounters::convertToDto() {
+    oatpp::Object<SystemCountersDto> SystemCounters::convertToDto() {
 
         auto dto = SystemCountersDto::createShared();
 
@@ -177,7 +182,7 @@ namespace creatures {
         dto->websocketPingsSent = websocketPingsSent.load();
         dto->websocketPongsReceived = websocketPongsReceived.load();
 
-        return dto.getPtr();
+        return dto;
 
     }
 }

@@ -19,6 +19,12 @@ namespace creatures {
         void executeImpl();
     };
 
+    class CounterSendEvent : public EventBase<CounterSendEvent> {
+    public:
+        using EventBase::EventBase;
+        void executeImpl();
+    };
+
     class DMXEvent : public EventBase<DMXEvent> {
     public:
         using EventBase::EventBase;
