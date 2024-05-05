@@ -183,13 +183,14 @@ add_executable(creature-server
         src/model/StreamFrame.h
         src/model/Sound.h
         src/model/Sound.cpp
-
-
         src/model/SortBy.h
+
+
         src/server/ws/AppComponent.h
-        src/server/ws/controller/StaticController.h
         src/server/ws/App.h
         src/server/ws/App.cpp
+
+
         src/server/ws/dto/ListDto.h
         src/server/ws/dto/StatusDto.h
 
@@ -200,6 +201,11 @@ add_executable(creature-server
         src/server/ws/controller/CreatureController.h
         src/server/ws/controller/MetricsController.h
         src/server/ws/controller/SoundController.h
+        src/server/ws/controller/StaticController.h
+        src/server/ws/controller/WebSocketController.h
+
+
+
         src/server/ws/service/AnimationService.cpp
         src/server/ws/service/AnimationService.h
         src/server/ws/service/CreatureService.cpp
@@ -208,6 +214,13 @@ add_executable(creature-server
         src/server/ws/service/MetricsService.cpp
         src/server/ws/service/SoundService.cpp
         src/server/ws/service/SoundService.h
+
+
+        src/server/ws/websocket/ClientCafe.h
+        src/server/ws/websocket/ClientConnection.h
+        src/server/ws/websocket/ClientCafe.cpp
+        src/server/ws/websocket/ClientConnection.cpp
+
 
 )
 

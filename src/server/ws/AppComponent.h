@@ -5,6 +5,9 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 
+
+
+
 #include <oatpp/web/server/HttpConnectionHandler.hpp>
 #include <oatpp/web/server/HttpRouter.hpp>
 #include <oatpp/network/tcp/server/ConnectionProvider.hpp>
@@ -13,8 +16,13 @@
 
 #include <oatpp/core/macro/component.hpp>
 
+#include <oatpp-websocket/ConnectionHandler.hpp>
+
 #include "SwaggerComponent.h"
 #include "ErrorHandler.h"
+
+
+#include "server/ws/websocket/ClientCafe.h"
 
 namespace creatures :: ws {
 
@@ -60,7 +68,7 @@ namespace creatures :: ws {
         /**
          *  Create ConnectionHandler component which uses Router component to route requests
          */
-        OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::network::ConnectionHandler>, serverConnectionHandler)([] {
+        OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::network::ConnectionHandler>, serverConnectionHandler)("rest", [] {
 
             OATPP_COMPONENT(std::shared_ptr<oatpp::web::server::HttpRouter>, router); // get Router component
             OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, objectMapper); // get ObjectMapper component
@@ -69,6 +77,20 @@ namespace creatures :: ws {
             connectionHandler->setErrorHandler(std::make_shared<ErrorHandler>(objectMapper));
             return connectionHandler;
 
+        }());
+
+        OATPP_CREATE_COMPONENT(std::shared_ptr<ClientCafe>, cafe)([] {
+            return std::make_shared<ClientCafe>();
+        }());
+
+        /**
+         *  Create websocket connection handler
+         */
+        OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::network::ConnectionHandler>, websocketConnectionHandler)("websocket" /* qualifier */, [] {
+            OATPP_COMPONENT(std::shared_ptr<ClientCafe>, cafe); // This isn't a shadowed variable. The macros make it look like it is.
+            auto wsConnectionHandler = oatpp::websocket::ConnectionHandler::createShared();
+            wsConnectionHandler->setSocketInstanceListener(cafe);
+            return wsConnectionHandler;
         }());
 
     };

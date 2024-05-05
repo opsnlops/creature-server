@@ -1,6 +1,4 @@
 
-
-
 #include "exception/exception.h"
 #include "model/Creature.h"
 #include "server/database.h"
@@ -20,7 +18,6 @@ namespace creatures :: ws {
     using oatpp::web::protocol::http::Status;
 
     oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>> CreatureService::getAllCreatures() {
-
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
         appLogger->debug("CreatureService::getAllCreatures()");

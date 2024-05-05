@@ -16,7 +16,7 @@ namespace creatures {
     extern std::shared_ptr<SystemCounters> metrics;
 }
 
-namespace creatures ::ws {
+namespace creatures :: ws {
 
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen

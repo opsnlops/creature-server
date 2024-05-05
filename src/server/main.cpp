@@ -34,6 +34,7 @@
 #include "Version.h"
 #include "util/cache.h"
 #include "util/environment.h"
+#include "util/MessageQueue.h"
 #include "util/threadName.h"
 #include "watchdog/Watchdog.h"
 
@@ -67,6 +68,11 @@ namespace creatures {
     const char* audioDevice;
     SDL_AudioSpec audioSpec;
     std::atomic<bool> serverShouldRun{true};
+
+    // A queue for messages going out to the websocket. This is the same queue that's used
+    // on the controller. There's a ConcurrentQueue in here that uses moodycamel, but this
+    // one is very much battle tested.
+    std::shared_ptr<MessageQueue<std::string>> websocketOutgoingMessages;
 }
 
 
@@ -149,6 +155,10 @@ int main(int argc, char **argv) {
     // Start up the database
     creatures::db = std::make_shared<Database>(mongo_pool);
     debug("Mongo pool up and running");
+
+    // Bring up the websocket outgoing queue
+    creatures::websocketOutgoingMessages = std::make_shared<creatures::MessageQueue<std::string>>();
+
 
     // Fire up SDL
     if(!MusicEvent::initSDL()) {

@@ -19,6 +19,9 @@
 #include "controller/MetricsController.h"
 #include "controller/SoundController.h"
 #include "controller/StaticController.h"
+#include "controller/WebSocketController.h"
+
+#include "server/ws/websocket/ClientCafe.h"
 
 
 namespace creatures ::ws {
@@ -60,6 +63,7 @@ namespace creatures ::ws {
         docEndpoints.append(router->addController(CreatureController::createShared())->getEndpoints());
         docEndpoints.append(router->addController(MetricsController::createShared())->getEndpoints());
         docEndpoints.append(router->addController(SoundController::createShared())->getEndpoints());
+        docEndpoints.append(router->addController(WebSocketController::createShared())->getEndpoints());
 
         router->addController(oatpp::swagger::Controller::createShared(docEndpoints));
         router->addController(AnimationController::createShared());
@@ -67,12 +71,19 @@ namespace creatures ::ws {
         router->addController(MetricsController::createShared());
         router->addController(SoundController::createShared());
         router->addController(StaticController::createShared());
+        router->addController(WebSocketController::createShared());
 
         /* Get connection handler component */
-        OATPP_COMPONENT(std::shared_ptr<oatpp::network::ConnectionHandler>, connectionHandler);
+        OATPP_COMPONENT(std::shared_ptr<oatpp::network::ConnectionHandler>, connectionHandler, "rest");
 
         /* Get connection provider component */
         OATPP_COMPONENT(std::shared_ptr<oatpp::network::ServerConnectionProvider>, connectionProvider);
+
+        // Run the ping loop
+        std::thread pingThread([]{
+            OATPP_COMPONENT(std::shared_ptr<ClientCafe>, cafe);
+            cafe->runPingLoop(std::chrono::seconds(30));
+        });
 
         /* create server */
         oatpp::network::Server server(connectionProvider,

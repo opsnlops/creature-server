@@ -62,6 +62,31 @@ namespace creatures {
         restRequestsProcessed++;
     }
 
+    void SystemCounters::incrementWebsocketConnectionsProcessed() {
+        websocketConnectionsProcessed++;
+    }
+
+    void SystemCounters::incrementWebsocketMessagesReceived() {
+        websocketMessagesReceived++;
+    }
+
+    void SystemCounters::incrementWebsocketMessagesSent() {
+        websocketMessagesSent++;
+    }
+
+    void SystemCounters::incrementWebsocketPingsSent() {
+        websocketPingsSent++;
+    }
+
+    void SystemCounters::incrementWebsocketPongsReceived() {
+        websocketPongsReceived++;
+    }
+
+
+
+
+
+
     uint64_t SystemCounters::getTotalFrames() {
         return totalFrames.load();
     }
@@ -106,6 +131,26 @@ namespace creatures {
         return restRequestsProcessed.load();
     }
 
+    uint64_t SystemCounters::getWebsocketConnectionsProcessed() {
+        return websocketConnectionsProcessed.load();
+    }
+
+    uint64_t SystemCounters::getWebsocketMessagesReceived() {
+        return websocketMessagesReceived.load();
+    }
+
+    uint64_t SystemCounters::getWebsocketMessagesSent() {
+        return websocketMessagesSent.load();
+    }
+
+    uint64_t SystemCounters::getWebsocketPingsSent() {
+        return websocketPingsSent.load();
+    }
+
+    uint64_t SystemCounters::getWebsocketPongsReceived() {
+        return websocketPongsReceived.load();
+    }
+
     /**
      * Create a DTO from the current state of the counters
      *
@@ -126,6 +171,11 @@ namespace creatures {
         dto->playlistsEventsProcessed = playlistsEventsProcessed.load();
         dto->playlistStatusRequests = playlistStatusRequests.load();
         dto->restRequestsProcessed = restRequestsProcessed.load();
+        dto->websocketConnectionsProcessed = websocketConnectionsProcessed.load();
+        dto->websocketMessagesReceived = websocketMessagesReceived.load();
+        dto->websocketMessagesSent = websocketMessagesSent.load();
+        dto->websocketPingsSent = websocketPingsSent.load();
+        dto->websocketPongsReceived = websocketPongsReceived.load();
 
         return dto.getPtr();
 

@@ -78,6 +78,31 @@ namespace creatures {
         }
         DTO_FIELD(UInt64, restRequestsProcessed);
 
+        DTO_FIELD_INFO(websocketConnectionsProcessed) {
+            info->description = "Number of websocket connections that have been processed";
+        }
+        DTO_FIELD(UInt64, websocketConnectionsProcessed);
+
+        DTO_FIELD_INFO(websocketMessagesReceived) {
+            info->description = "Number of messages that have been received by the web socket";
+        }
+        DTO_FIELD(UInt64, websocketMessagesReceived);
+
+        DTO_FIELD_INFO(websocketMessagesSent) {
+            info->description = "Number of messages that have been sent by the web socket";
+        }
+        DTO_FIELD(UInt64, websocketMessagesSent);
+
+        DTO_FIELD_INFO(websocketPingsSent) {
+            info->description = "Number of pings that have been sent by the web socket";
+        }
+        DTO_FIELD(UInt64, websocketPingsSent);
+
+        DTO_FIELD_INFO(websocketPongsReceived) {
+            info->description = "Number of pongs that have been received by the web socket";
+        }
+        DTO_FIELD(UInt64, websocketPongsReceived);
+
     };
 
 #include OATPP_CODEGEN_END(DTO)
@@ -101,6 +126,13 @@ namespace creatures {
         void incrementPlaylistsEventsProcessed();
         void incrementPlaylistStatusRequests();
         void incrementRestRequestsProcessed();
+        void incrementWebsocketConnectionsProcessed();
+        void incrementWebsocketMessagesReceived();
+        void incrementWebsocketMessagesSent();
+        void incrementWebsocketPingsSent();
+        void incrementWebsocketPongsReceived();
+
+
 
         uint64_t getTotalFrames();
         uint64_t getEventsProcessed();
@@ -113,6 +145,13 @@ namespace creatures {
         uint64_t getPlaylistsEventsProcessed();
         uint64_t getPlaylistStatusRequests();
         uint64_t getRestRequestsProcessed();
+        uint64_t getWebsocketConnectionsProcessed();
+        uint64_t getWebsocketMessagesReceived();
+        uint64_t getWebsocketMessagesSent();
+        uint64_t getWebsocketPingsSent();
+        uint64_t getWebsocketPongsReceived();
+
+
 
         // This one is different for how it gets to a DTO since it's not a normal type of object
         std::shared_ptr<SystemCountersDto> convertToDto();
@@ -129,6 +168,11 @@ namespace creatures {
         std::atomic<uint64_t> playlistsEventsProcessed;
         std::atomic<uint64_t> playlistStatusRequests;
         std::atomic<uint64_t> restRequestsProcessed;
+        std::atomic<uint64_t> websocketConnectionsProcessed;
+        std::atomic<uint64_t> websocketMessagesReceived;
+        std::atomic<uint64_t> websocketMessagesSent;
+        std::atomic<uint64_t> websocketPingsSent;
+        std::atomic<uint64_t> websocketPongsReceived;
     };
 
 
