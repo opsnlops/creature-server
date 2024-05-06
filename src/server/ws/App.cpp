@@ -22,15 +22,15 @@
 #include "controller/WebSocketController.h"
 
 #include "server/ws/websocket/ClientCafe.h"
-
+#include "util/loggingUtils.h"
 
 namespace creatures ::ws {
 
 
     App::App() {
-        internalLogger = spdlog::stdout_color_mt("web-server-system");
-        internalLogger->set_level(spdlog::level::debug);
-
+        //internalLogger = spdlog::stdout_color_mt("web-server-system");
+        //internalLogger->set_level(spdlog::level::debug);
+        internalLogger = creatures::makeLogger("web-server-system", spdlog::level::debug);
         internalLogger->info("web-server created");
     }
 

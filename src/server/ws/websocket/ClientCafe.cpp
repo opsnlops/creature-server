@@ -6,6 +6,8 @@
 
 #include <oatpp/core/macro/component.hpp>
 
+#include "blockingconcurrentqueue.h"
+
 #include "server/metrics/counters.h"
 #include "server/ws/websocket/ClientConnection.h"
 #include "server/ws/websocket/ClientCafe.h"
@@ -15,7 +17,7 @@
 
 namespace creatures {
     extern std::shared_ptr<SystemCounters> metrics;
-    extern std::shared_ptr<MessageQueue<std::string>> websocketOutgoingMessages;
+    extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 }
 
 #define DEBUG_WS_LOGGING 0
@@ -87,12 +89,10 @@ namespace creatures :: ws {
         // Make sure this shows up in the debugger correctly
         setThreadName("ClientCafe::runMessageLoop");
 
+        std::string message;
         while(true) {
-            auto message = creatures::websocketOutgoingMessages->pop();
+            creatures::websocketOutgoingMessages->wait_dequeue(message);
             broadcastMessage(message);
-#if DEBUG_WS_LOGGING
-            appLogger->trace("Sent message to all clients from the queue");
-#endif
         }
     }
 
@@ -101,12 +101,14 @@ namespace creatures :: ws {
         // Make sure this shows up in the debugger correctly
         setThreadName("ClientCafe::runPingLoop");
 
+        appLogger->info("Starting the ping loop");
+
         while(true) {
 
             std::chrono::duration<v_int64, std::micro> elapsed = std::chrono::microseconds(0);
             auto startTime = std::chrono::system_clock::now();
 
-            appLogger->debug("Running ping loop");
+            appLogger->debug("pinging all websocket clients");
 
             do {
                 std::this_thread::sleep_for(interval - elapsed);

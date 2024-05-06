@@ -6,6 +6,8 @@
 #include <iomanip>
 #include <iostream>
 
+#include "blockingconcurrentqueue.h"
+
 #include "spdlog/spdlog.h"
 #include "spdlog/common.h"
 #include "spdlog/details/log_msg.h"
@@ -34,7 +36,7 @@ namespace spdlog::sinks {
     template<typename Mutex>
     class CreatureLogSink : public base_sink<Mutex> {
     public:
-        explicit CreatureLogSink(std::shared_ptr<creatures::MessageQueue<std::string>> &queue) : queue_(queue) {
+        explicit CreatureLogSink(std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> &queue) : queue_(queue) {
             jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
         }
 
@@ -59,7 +61,7 @@ namespace spdlog::sinks {
             std::string messageAsString = jsonMapper->writeToString(message);
 
             // Off to the queue with you!
-            queue_->push(messageAsString);
+            queue_->enqueue(messageAsString);
 
         }
 
@@ -105,7 +107,7 @@ namespace spdlog::sinks {
         }
 
     private:
-        std::shared_ptr<creatures::MessageQueue<std::string>> &queue_;
+        std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> &queue_;
         std::shared_ptr<oatpp::parser::json::mapping::ObjectMapper> jsonMapper;
 
     };

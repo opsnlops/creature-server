@@ -4,7 +4,7 @@
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/core/Types.hpp>
 
-
+#include "blockingconcurrentqueue.h"
 
 #include "server/config.h"
 
@@ -17,13 +17,11 @@
 #include "server/ws/dto/websocket/MessageTypes.h"
 #include "server/ws/dto/websocket/ServerCountersMessage.h"
 
-#include "util/MessageQueue.h"
-
 namespace creatures {
 
     extern std::shared_ptr<EventLoop> eventLoop;
     extern std::shared_ptr<SystemCounters> metrics;
-    extern std::shared_ptr<MessageQueue<std::string>> websocketOutgoingMessages;
+    extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 
     void CounterSendEvent::executeImpl() {
 
@@ -41,7 +39,7 @@ namespace creatures {
         trace("message as string: {}", messageAsString);
 
         // Push this into the queue
-        websocketOutgoingMessages->push(messageAsString);
+        websocketOutgoingMessages->enqueue(messageAsString);
 
         // Make another event
         auto nextTick = std::make_shared<CounterSendEvent>(this->frameNumber + SEND_COUNTERS_FRAMES);

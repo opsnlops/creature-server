@@ -99,8 +99,11 @@ add_definitions(
 add_subdirectory(lib/e131_service)
 
 
-# Build the stuff that uWebSockets needs
+# Set up a base64 encoder/decoder
 set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
+
+# Set up a concurrent queue
+set(MOODYCAMEL_DIR "${CMAKE_SOURCE_DIR}/lib/concurrentqueue")
 
 
 # MongoDB (built by us on Linux, but the macOS/brew version is fine)
@@ -158,6 +161,7 @@ include_directories(
         ${argparse_SOURCE_DIR}/include
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
+        ${MOODYCAMEL_DIR}
         ${LIBBASE64_DIR}/include
         ${oatpp_INCLUDE_DIRS}
         PRIVATE ${CMAKE_BINARY_DIR}

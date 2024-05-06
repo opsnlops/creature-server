@@ -5,14 +5,14 @@
 
 #include <utility>
 
+#include "concurrentqueue.h"
 
 #include "server/logging/CreatureLogSink.h"
 #include "util/MessageQueue.h"
 
 namespace creatures {
-    extern std::shared_ptr<MessageQueue<std::string>> websocketOutgoingMessages;
+    extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 }
-
 
 namespace creatures {
 

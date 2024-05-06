@@ -17,6 +17,9 @@
 // E131Sever
 #include <E131Server.h>
 
+// MoodyCamel
+#include "blockingconcurrentqueue.h"
+
 // Our stuff
 #include "server/config.h"
 #include "server/config/CommandLine.h"
@@ -68,10 +71,8 @@ namespace creatures {
     SDL_AudioSpec audioSpec;
     std::atomic<bool> serverShouldRun{true};
 
-    // A queue for messages going out to the websocket. This is the same queue that's used
-    // on the controller. There's a ConcurrentQueue in here that uses moodycamel, but this
-    // one is very much battle tested.
-    std::shared_ptr<MessageQueue<std::string>> websocketOutgoingMessages;
+    // MoodyCamel queue for outgoing websocket messages
+    std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 }
 
 
@@ -113,7 +114,7 @@ int main(int argc, char **argv) {
     creatures::metrics = std::make_shared<creatures::SystemCounters>();
 
     // Bring up the websocket outgoing queue
-    creatures::websocketOutgoingMessages = std::make_shared<creatures::MessageQueue<std::string>>();
+    creatures::websocketOutgoingMessages = std::make_shared<moodycamel::BlockingConcurrentQueue<std::string>>();
 
     // Make a logger that goes to the console and websocket clients
     auto logger = creatures::makeLogger("main", spdlog::level::debug);

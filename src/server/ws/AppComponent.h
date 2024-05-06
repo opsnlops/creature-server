@@ -37,6 +37,11 @@ namespace creatures :: ws {
          *  Create Logger component
          */
         OATPP_CREATE_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger)([] {
+
+            // This doesn't work very well and I haven't figured out why yet
+            //auto logger = creatures::makeLogger("web-server", spdlog::level::debug);
+            //return logger;
+
             auto _appLogger = spdlog::stdout_color_mt("web-server");
             _appLogger->set_level(spdlog::level::debug);
             return _appLogger;
