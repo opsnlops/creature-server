@@ -1,5 +1,6 @@
 
 
+#include <ctime>
 #include <fstream>
 #include <filesystem>
 #include <string>
@@ -210,5 +211,16 @@ namespace creatures {
         return false;
     }
 
+    std::string getCurrentTimeISO8601() {
+        // Get the current time point from the system clock
+        auto now = std::chrono::system_clock::now();
+        auto time_now = std::chrono::system_clock::to_time_t(now);
+
+        // Create a stringstream to store the formatted time
+        std::stringstream ss;
+        ss << std::put_time(std::gmtime(&time_now), "%Y-%m-%dT%H:%M:%SZ");
+
+        return ss.str();
+    }
 
 }

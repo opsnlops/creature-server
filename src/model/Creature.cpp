@@ -24,7 +24,7 @@ namespace creatures {
     }
 
 
-    std::shared_ptr<CreatureDto> convertToDto(const Creature &creature) {
+    oatpp::Object<CreatureDto> convertToDto(const Creature &creature) {
         auto creatureDto = CreatureDto::createShared();
         creatureDto->id = creature.id;
         creatureDto->name = creature.name;
@@ -32,7 +32,7 @@ namespace creatures {
         creatureDto->audio_channel = creature.audio_channel;
         creatureDto->notes = creature.notes;
 
-        return creatureDto.getPtr();
+        return creatureDto;
     }
 
 }

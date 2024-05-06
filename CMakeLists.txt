@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "1.9.11"
+        VERSION "1.9.13"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -11,8 +11,8 @@ set(CMAKE_CXX_STANDARD 20)
 
 # Overshadowed declarations keep biting me in the butt 😅
 add_compile_options(-Wshadow)
-#add_compile_options(-Wall)
-#add_compile_options(-Wextra)
+add_compile_options(-Wall)
+add_compile_options(-Wextra)
 #add_compile_options(-Wpedantic)
 
 set(PACKAGE_AUTHOR "April White")
@@ -179,13 +179,20 @@ add_executable(creature-server
         src/model/Creature.cpp
         src/model/FrameData.cpp
         src/model/FrameData.h
+        src/model/LogLevel.h
+        src/model/LogItem.h
+        src/model/LogItem.cpp
+        src/model/Notice.h
+        src/model/Notice.cpp
         src/model/StreamFrame.cpp
         src/model/StreamFrame.h
         src/model/Sound.h
         src/model/Sound.cpp
         src/model/SortBy.h
-        src/model/WebsocketMessage.h
-        src/model/WebsocketMessage.cpp
+
+
+        src/util/loggingUtils.cpp
+        src/util/loggingUtils.h
 
 
         src/server/ws/AppComponent.h
@@ -199,14 +206,18 @@ add_executable(creature-server
         src/server/ws/ErrorHandler.cpp
         src/server/ws/ErrorHandler.h
 
-
         src/server/ws/controller/CreatureController.h
         src/server/ws/controller/MetricsController.h
         src/server/ws/controller/SoundController.h
         src/server/ws/controller/StaticController.h
         src/server/ws/controller/WebSocketController.h
 
-
+        src/server/ws/dto/websocket/LogMessage.h
+        src/server/ws/dto/websocket/MessageTypes.h
+        src/server/ws/dto/websocket/MessageTypes.cpp
+        src/server/ws/dto/websocket/NoticeMessage.h
+        src/server/ws/dto/websocket/ServerCountersMessage.h
+        src/server/ws/dto/websocket/WebSocketMessageDto.h
 
         src/server/ws/service/AnimationService.cpp
         src/server/ws/service/AnimationService.h
@@ -217,13 +228,10 @@ add_executable(creature-server
         src/server/ws/service/SoundService.cpp
         src/server/ws/service/SoundService.h
 
-
         src/server/ws/websocket/ClientCafe.h
         src/server/ws/websocket/ClientConnection.h
         src/server/ws/websocket/ClientCafe.cpp
         src/server/ws/websocket/ClientConnection.cpp
-
-
 
 )
 

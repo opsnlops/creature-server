@@ -12,9 +12,17 @@
 
 #include <oatpp/core/macro/component.hpp>
 
+
+#include "model/Notice.h"
+
 #include "server/metrics/counters.h"
 #include "server/ws/websocket/ClientConnection.h"
 #include "server/ws/websocket/ClientCafe.h"
+#include "server/ws/dto/websocket/NoticeMessage.h"
+#include "server/ws/dto/websocket/MessageTypes.h"
+
+#include "util/helpers.h"
+
 
 namespace creatures {
     extern std::shared_ptr<SystemCounters> metrics;
@@ -23,21 +31,15 @@ namespace creatures {
 
 namespace creatures :: ws {
 
-    void ClientConnection::sendTextMessage(const WebsocketMessage& message) {
-        appLogger->debug("Sending message to client {}", clientId);
-
-        OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
-
-        auto dto = convertToDto(message);
-        auto messageToSend = apiObjectMapper->writeToString(dto);
-
-        ourSocket.sendOneFrameText(messageToSend);
+    void ClientConnection::sendTextMessage(const std::string& message) {
+        //appLogger->trace("Sending message to client {}", clientId);
+        ourSocket.sendOneFrameText(message);
         creatures::metrics->incrementWebsocketMessagesSent();
     }
 
     void ClientConnection::sendPing() {
         appLogger->debug("Sending ping to client {}", clientId);
-        ourSocket.sendPing("ping"); // We should fo reference counting here
+        ourSocket.sendPing("ping"); // We should be reference counting here
     }
 
     void ClientConnection::onPing(const WebSocket& socket, const oatpp::String& message) {
@@ -64,10 +66,22 @@ namespace creatures :: ws {
 
             appLogger->debug("received a message from client {}: {}", clientId, std::string(wholeMessage));
 
-            /* Send message in reply */
-            std::string message = fmt::format("Hello from client {}!: {}", clientId, std::string(wholeMessage));
-            socket.sendOneFrameText(message);
+            std::string clientMessage = fmt::format("Hello from client {}!: {}", clientId, std::string(wholeMessage));
 
+
+            Notice notice;
+            notice.timestamp = getCurrentTimeISO8601();
+            notice.message = clientMessage;
+
+
+            auto message = oatpp::Object<ws::NoticeMessage>::createShared();
+            message->command = toString(ws::MessageType::Notice);
+            message->payload = creatures::convertToDto(notice);
+
+
+            std::string messageAsString = apiObjectMapper->writeToString(message);
+
+            socket.sendOneFrameText(messageAsString);
             metrics->incrementWebsocketMessagesReceived();
 
         } else if(size > 0) { // message frame received

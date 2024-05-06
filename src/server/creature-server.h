@@ -3,8 +3,7 @@
 
 
 #include "server/database.h"
-#include "server/logging/concurrentqueue.h"
-#include "server/logging/creature_log_sink.h"
+#include "server/logging/CreatureLogSink.h"
 
 //using google::protobuf::Empty;
 

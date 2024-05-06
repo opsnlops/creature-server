@@ -1,6 +1,11 @@
 
 #pragma once
 
+#include <iostream>
+#include <iomanip>
+#include <chrono>
+#include <ctime>
+#include <sstream>
 #include <string>
 
 #include <bsoncxx/builder/stream/document.hpp>
@@ -88,4 +93,11 @@ namespace creatures {
     bsoncxx::oid generateNewOid();
 
     void displayFrames(const creatures::Animation &animation);
+
+    /**
+     * Get the current time in ISO8601 format (JavaScript format)
+     *
+     * @return the current time in ISO8601 format
+     */
+    std::string getCurrentTimeISO8601();
 }

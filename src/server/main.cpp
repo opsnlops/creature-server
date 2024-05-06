@@ -17,9 +17,7 @@
 // E131Sever
 #include <E131Server.h>
 
-
 // Our stuff
-#include "model/WebsocketMessage.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
@@ -28,13 +26,14 @@
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
-#include "server/logging/concurrentqueue.h"
-#include "server/logging/creature_log_sink.h"
+#include "server/logging/CreatureLogSink.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/StatusLights.h"
+#include "server/ws/dto/websocket/WebSocketMessageDto.h"
 #include "Version.h"
 #include "util/cache.h"
 #include "util/environment.h"
+#include "util/loggingUtils.h"
 #include "util/MessageQueue.h"
 #include "util/threadName.h"
 #include "watchdog/Watchdog.h"
@@ -47,7 +46,6 @@ using creatures::Database;
 using creatures::EventLoop;
 using creatures::MusicEvent;
 
-using moodycamel::ConcurrentQueue;
 
 namespace creatures {
     std::shared_ptr<Configuration> config{};
@@ -73,7 +71,7 @@ namespace creatures {
     // A queue for messages going out to the websocket. This is the same queue that's used
     // on the controller. There's a ConcurrentQueue in here that uses moodycamel, but this
     // one is very much battle tested.
-    std::shared_ptr<MessageQueue<WebsocketMessage>> websocketOutgoingMessages;
+    std::shared_ptr<MessageQueue<std::string>> websocketOutgoingMessages;
 }
 
 
@@ -114,21 +112,14 @@ int main(int argc, char **argv) {
     // Create our metric counters
     creatures::metrics = std::make_shared<creatures::SystemCounters>();
 
-    // Console logger
-    auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    console_sink->set_level(spdlog::level::trace);
+    // Bring up the websocket outgoing queue
+    creatures::websocketOutgoingMessages = std::make_shared<creatures::MessageQueue<std::string>>();
 
-    // Queue logger
-    //ConcurrentQueue<LogItem> log_queue;
-    //auto queue_sink = std::make_shared<spdlog::sinks::CreatureLogSink<std::mutex>>(log_queue);
-    //queue_sink->set_level(spdlog::level::trace);
-
-    // There's no need to set a name, it's just noise
-    spdlog::logger logger("", {console_sink /*, queue_sink*/});
-    logger.set_level(spdlog::level::trace);
+    // Make a logger that goes to the console and websocket clients
+    auto logger = creatures::makeLogger("main", spdlog::level::debug);
 
     // Take over the default logger with our new one
-    spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
+    spdlog::set_default_logger(logger);
 
 
     // Parse out the command line options
@@ -156,10 +147,6 @@ int main(int argc, char **argv) {
     // Start up the database
     creatures::db = std::make_shared<Database>(mongo_pool);
     debug("Mongo pool up and running");
-
-    // Bring up the websocket outgoing queue
-    creatures::websocketOutgoingMessages = std::make_shared<creatures::MessageQueue<creatures::WebsocketMessage>>();
-    debug("Websocket outgoing message queue created");
 
     // Fire up SDL
     if(!MusicEvent::initSDL()) {

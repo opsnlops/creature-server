@@ -17,12 +17,16 @@ namespace creatures {
     public:
         using EventBase::EventBase;
         void executeImpl();
+
+        virtual ~TickEvent() = default;
     };
 
     class CounterSendEvent : public EventBase<CounterSendEvent> {
     public:
         using EventBase::EventBase;
         void executeImpl();
+
+        virtual ~CounterSendEvent() = default;
     };
 
     class DMXEvent : public EventBase<DMXEvent> {
@@ -41,6 +45,7 @@ namespace creatures {
     public:
         using EventBase::EventBase;
         MusicEvent(uint64_t frameNumber, std::string filePath);
+        virtual ~MusicEvent() = default;
         void executeImpl();
 
         static int initSDL();

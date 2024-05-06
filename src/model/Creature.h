@@ -75,8 +75,7 @@ namespace creatures {
 
 #include OATPP_CODEGEN_END(DTO)
 
-    std::shared_ptr<CreatureDto> convertToDto(const Creature &creature);
+    oatpp::Object<CreatureDto> convertToDto(const Creature &creature);
     Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto);
-
 
 }

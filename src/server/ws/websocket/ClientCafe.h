@@ -12,7 +12,6 @@
 
 #include <oatpp/core/macro/component.hpp>
 
-#include "model/WebsocketMessage.h"
 #include "server/ws/websocket/ClientConnection.h"
 
 namespace creatures :: ws {
@@ -30,10 +29,13 @@ namespace creatures :: ws {
 
     public:
 
+        ClientCafe() : clientIdCounter(0) {}
+        virtual ~ClientCafe() {};
+
         /**
          * Broadcast a message to all connected clients
          */
-        void broadcastMessage(const WebsocketMessage& message);
+        void broadcastMessage(const std::string& message);
 
 
         /**

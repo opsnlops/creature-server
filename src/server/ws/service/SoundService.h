@@ -20,6 +20,9 @@ namespace creatures :: ws {
 
     public:
 
+        SoundService() = default;
+        virtual ~SoundService() = default;
+
         /**
          * Play a sound file for testing
          *

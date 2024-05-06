@@ -21,8 +21,8 @@
 #include "SwaggerComponent.h"
 #include "ErrorHandler.h"
 
-#include "model/WebsocketMessage.h"
 #include "server/ws/websocket/ClientCafe.h"
+#include "util/loggingUtils.h"
 #include "util/MessageQueue.h"
 
 namespace creatures :: ws {
@@ -85,15 +85,23 @@ namespace creatures :: ws {
             return std::make_shared<ClientCafe>();
         }());
 
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
         /**
          *  Create websocket connection handler
          */
-        OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::network::ConnectionHandler>, websocketConnectionHandler)("websocket" /* qualifier */, [] {
-            OATPP_COMPONENT(std::shared_ptr<ClientCafe>, cafe); // This isn't a shadowed variable. The macros make it look like it is.
-            auto wsConnectionHandler = oatpp::websocket::ConnectionHandler::createShared();
-            wsConnectionHandler->setSocketInstanceListener(cafe);
-            return wsConnectionHandler;
-        }());
+        OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::network::ConnectionHandler>, websocketConnectionHandler)(
+                "websocket" /* qualifier */, [] {
+                    OATPP_COMPONENT(std::shared_ptr<ClientCafe>,
+                                    cafe); // This isn't a shadowed variable. The macros make it look like it is.
+                    auto wsConnectionHandler = oatpp::websocket::ConnectionHandler::createShared();
+                    wsConnectionHandler->setSocketInstanceListener(cafe);
+                    return wsConnectionHandler;
+                }());
+
+#pragma GCC diagnostic pop
 
     };
 

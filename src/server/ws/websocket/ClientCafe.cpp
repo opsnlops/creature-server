@@ -6,8 +6,6 @@
 
 #include <oatpp/core/macro/component.hpp>
 
-#include "model/WebsocketMessage.h"
-
 #include "server/metrics/counters.h"
 #include "server/ws/websocket/ClientConnection.h"
 #include "server/ws/websocket/ClientCafe.h"
@@ -17,8 +15,10 @@
 
 namespace creatures {
     extern std::shared_ptr<SystemCounters> metrics;
-    extern std::shared_ptr<MessageQueue<WebsocketMessage>> websocketOutgoingMessages;
+    extern std::shared_ptr<MessageQueue<std::string>> websocketOutgoingMessages;
 }
+
+#define DEBUG_WS_LOGGING 0
 
 namespace creatures :: ws {
 
@@ -26,10 +26,11 @@ namespace creatures :: ws {
     std::atomic<v_int32> ClientCafe::clientsConnected(0);
 
 
-    void ClientCafe::broadcastMessage(const WebsocketMessage& message) {
+    void ClientCafe::broadcastMessage(const std::string& message) {
 
-        OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
+#if DEBUG_WS_LOGGING
         appLogger->debug("Broadcasting message to all clients");
+#endif
 
         std::lock_guard<std::mutex> guard(clientConnectionMapMutex);
         for (const auto &client: clientConnectionMap) {
@@ -87,9 +88,11 @@ namespace creatures :: ws {
         setThreadName("ClientCafe::runMessageLoop");
 
         while(true) {
-            WebsocketMessage message = creatures::websocketOutgoingMessages->pop();
+            auto message = creatures::websocketOutgoingMessages->pop();
             broadcastMessage(message);
-            appLogger->debug("Sent message to all clients from the queue");
+#if DEBUG_WS_LOGGING
+            appLogger->trace("Sent message to all clients from the queue");
+#endif
         }
     }
 

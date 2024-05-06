@@ -11,7 +11,6 @@
 
 #include <oatpp/core/macro/component.hpp>
 
-#include "model/WebsocketMessage.h"
 #include "server/ws/websocket/ClientCafe.h"
 #include "server/ws/websocket/ClientConnection.h"
 
@@ -28,7 +27,7 @@ namespace creatures :: ws {
     public:
 
         ClientConnection(const oatpp::websocket::WebSocket& socket, v_int64 clientId, std::shared_ptr<ClientCafe> cafe)
-                : ourSocket(socket), clientId(clientId), cafe(cafe) {
+                : clientId(clientId), ourSocket(socket), cafe(cafe) {
             appLogger->debug("Client {} checking in!", clientId);
         }
         /**
@@ -56,7 +55,7 @@ namespace creatures :: ws {
          *
          * @param message the message to send
          */
-        void sendTextMessage(const WebsocketMessage& message);
+        void sendTextMessage(const std::string& message);
 
         /**
          * Our client ID
@@ -78,6 +77,7 @@ namespace creatures :: ws {
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
+        OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
 
         /**
          * The socket we are connected to
