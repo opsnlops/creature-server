@@ -61,7 +61,7 @@ namespace spdlog::sinks {
             std::string messageAsString = jsonMapper->writeToString(message);
 
             // Off to the queue with you!
-            queue_->enqueue(messageAsString);
+            queue_->enqueue(std::move(messageAsString));
 
         }
 

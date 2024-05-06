@@ -43,7 +43,7 @@ namespace creatures :: ws {
     }
 
     void ClientConnection::onPing(const WebSocket& socket, const oatpp::String& message) {
-        appLogger->debug("onPing");
+        appLogger->debug("client {} sent a ping!", clientId);
         socket.sendPong(message);
     }
 
@@ -53,7 +53,7 @@ namespace creatures :: ws {
     }
 
     void ClientConnection::onClose(const WebSocket& socket, v_uint16 code, const oatpp::String& message) {
-        appLogger->debug("onClose code={}", code);
+        appLogger->debug("onClose code={}, message={}", code, std::string(message));
     }
 
     void ClientConnection::readMessage(const WebSocket& socket, v_uint8 opcode, p_char8 data, oatpp::v_io_size size) {
