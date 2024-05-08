@@ -12,6 +12,7 @@
 
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
+#include "server/ws/dto/PlaySoundRequestDTO.h"
 #include "server/ws/service/SoundService.h"
 
 #include "server/metrics/counters.h"
@@ -62,11 +63,11 @@ namespace creatures :: ws {
             info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
         }
-        ENDPOINT("GET", "api/v1/sound/play/{fileName}", playSound,
-                 PATH(String, fileName))
+        ENDPOINT("POST", "api/v1/sound/play", playSound,
+                 BODY_DTO(Object<creatures::ws::PlaySoundRequestDTO>, requestBody))
         {
             creatures::metrics->incrementRestRequestsProcessed();
-            return createDtoResponse(Status::CODE_200, m_soundService.playSound(fileName));
+            return createDtoResponse(Status::CODE_200, m_soundService.playSound(std::string(requestBody->file_name)));
         }
 
 

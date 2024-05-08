@@ -205,6 +205,7 @@ add_executable(creature-server
 
 
         src/server/ws/dto/ListDto.h
+        src/server/ws/dto/PlaySoundRequestDTO.h
         src/server/ws/dto/StatusDto.h
 
         src/server/ws/ErrorHandler.cpp
