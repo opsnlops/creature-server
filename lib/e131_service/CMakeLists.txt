@@ -6,9 +6,7 @@ project(e131_service)
 set(CMAKE_CXX_STANDARD 20)
 
 # Why are UUIDs so hard in 2024
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    find_library(UUID uuid REQUIRED)
-else()
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     pkg_search_module(UUID REQUIRED uuid)
 endif()
 

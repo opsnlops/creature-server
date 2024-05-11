@@ -34,10 +34,8 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 # Why are UUIDs so hard in 2024
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-        find_library(UUID uuid REQUIRED)
-else()
-        pkg_search_module(UUID REQUIRED uuid)
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    pkg_search_module(UUID REQUIRED uuid)
 endif()
 
 
