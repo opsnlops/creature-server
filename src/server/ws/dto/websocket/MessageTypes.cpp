@@ -12,6 +12,7 @@ namespace creatures::ws {
             case MessageType::LogMessage: return "log";
             case MessageType::ServerCounters: return "server-counters";
             case MessageType::Notice: return "notice";
+            case MessageType::StreamFrame: return "stream-frame";
 
             default: return "unknown";
         }

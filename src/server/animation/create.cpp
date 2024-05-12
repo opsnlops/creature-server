@@ -26,46 +26,7 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
 
-    /**
-     * Save a new animation in the database
-     *
-     * @param context the `ServerContext` of this request
-     * @param animation an `Animation` to save
-     * @param reply a `DatabaseInfo` that will be filled out for the reply
-     * @return state of the request
-     */
-//    Status CreatureServerImpl::gRPCCreateAnimation(ServerContext *context,
-//                                               const Animation *animation,
-//                                               DatabaseInfo *reply) {
-//
-//        debug("creating a new animation in the database");
-//        try {
-//            db->createAnimation(animation, reply);
-//            info("created new animation in the database");
-//            return {grpc::StatusCode::OK, "✅ Created new animation in the database"};
-//        }
-//        catch (const creatures::DuplicateFoundError &e) {
-//            debug("Duplicate found while creating a new animation: {}", e.what());
-//            return {grpc::StatusCode::ALREADY_EXISTS, e.what()};
-//        }
-//        catch (const creatures::DataFormatException &e) {
-//            error("Data format error while creating a new animation: {}", e.what());
-//            return {grpc::StatusCode::INVALID_ARGUMENT, e.what()};
-//        }
-//        catch (const creatures::DatabaseError &e) {
-//            error("Database error while creating a new animation: {}", e.what());
-//            return {grpc::StatusCode::INTERNAL, e.what()};
-//        }
-//        catch (const creatures::InternalError &e) {
-//            error("Internal error while creating a new animation: {}", e.what());
-//            return {grpc::StatusCode::INTERNAL, e.what()};
-//        }
-//        catch (...) {
-//            error("Unknown error while creating a new animation");
-//            return {grpc::StatusCode::INTERNAL, "Unknown error"};
-//        }
-//    }
-//
+
     /**
      * Create a new animation in the database
      *

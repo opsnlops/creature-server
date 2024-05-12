@@ -13,3 +13,5 @@ using spdlog::critical;
 
 using universe_t = uint32_t;
 using framenum_t = uint64_t;
+
+using creatureId_t = std::string;

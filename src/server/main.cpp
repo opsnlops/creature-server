@@ -53,7 +53,7 @@ using creatures::MusicEvent;
 namespace creatures {
     std::shared_ptr<Configuration> config{};
     std::shared_ptr<Database> db{};
-    std::shared_ptr <creatures::e131::E131Server> e131Server;
+    std::shared_ptr<creatures::e131::E131Server> e131Server;
     std::shared_ptr<EventLoop> eventLoop;
 
     /**
@@ -62,6 +62,13 @@ namespace creatures {
      * at any one time.
      */
     std::shared_ptr<ObjectCache<universe_t, std::string>> runningPlaylists;
+
+    /**
+     * Maintain a cache of the creatures. While going to the DB is very quick, there's some operations
+     * that require looking them up over and over again, like streaming frames. Rather than going back
+     * to the database each time, let's keep a cache of them on hand.
+     */
+    std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 
 
     std::shared_ptr<GPIO> gpioPins;
@@ -172,6 +179,10 @@ int main(int argc, char **argv) {
     // Create the playlist cache
     creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<universe_t, std::string>>();
     debug("Playlist cache made");
+
+    // Create the Creature cache
+    creatures::creatureCache = std::make_shared<creatures::ObjectCache<creatureId_t, creatures::Creature>>();
+    debug("Created the creature cache");
 
     // Start up the event loop
     creatures::eventLoop = std::make_shared<EventLoop>();

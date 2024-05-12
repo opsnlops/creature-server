@@ -220,6 +220,7 @@ add_executable(creature-server
         src/server/ws/dto/websocket/MessageTypes.cpp
         src/server/ws/dto/websocket/NoticeMessage.h
         src/server/ws/dto/websocket/ServerCountersMessage.h
+        src/server/ws/dto/websocket/StreamFrameMessage.h
         src/server/ws/dto/websocket/WebSocketMessageDto.h
 
         src/server/ws/service/AnimationService.cpp

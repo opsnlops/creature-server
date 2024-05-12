@@ -9,6 +9,7 @@
 #include "model/Creature.h"
 #include "server/database.h"
 #include "server/creature-server.h"
+#include "util/cache.h"
 #include "util/helpers.h"
 
 #include <mongocxx/client.hpp>
@@ -26,6 +27,7 @@ using bsoncxx::builder::basic::kvp;
 namespace creatures {
 
     extern std::shared_ptr<Database> db;
+    extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 
 //    Status CreatureServerImpl::CreateCreature(ServerContext *context, const server::Creature *creature, DatabaseInfo *reply) {debug("hello from save");
 //
@@ -154,6 +156,10 @@ namespace creatures {
             trace("run_command done");
 
             info("created a new creature in the database with ID {}", creature.id);
+
+            // And update the cache
+            creatureCache->put(creature.id, creature);
+
             return creature;
 
         }

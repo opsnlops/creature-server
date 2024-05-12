@@ -29,9 +29,9 @@ namespace creatures {
 }
 
 
-namespace creatures :: ws {
+namespace creatures ::ws {
 
-    void ClientConnection::sendTextMessage(const std::string& message) {
+    void ClientConnection::sendTextMessage(const std::string &message) {
         //appLogger->trace("Sending message to client {}", clientId);
         ourSocket.sendOneFrameText(message);
         creatures::metrics->incrementWebsocketMessagesSent();
@@ -42,24 +42,26 @@ namespace creatures :: ws {
         ourSocket.sendPing("ping"); // We should be reference counting here
     }
 
-    void ClientConnection::onPing(const WebSocket& socket, const oatpp::String& message) {
+    void ClientConnection::onPing(const WebSocket &socket, const oatpp::String &message) {
         appLogger->debug("client {} sent a ping!", clientId);
         socket.sendPong(message);
     }
 
-    void ClientConnection::onPong(const WebSocket& socket, const oatpp::String& message) {
+    void ClientConnection::onPong(const WebSocket &socket, const oatpp::String &message) {
         appLogger->trace("pong received from client {}!", clientId);
         metrics->incrementWebsocketPongsReceived();
     }
 
-    void ClientConnection::onClose(const WebSocket& socket, v_uint16 code, const oatpp::String& message) {
+    void ClientConnection::onClose(const WebSocket &socket, v_uint16 code, const oatpp::String &message) {
         appLogger->debug("onClose code={}, message={}", code, std::string(message));
     }
 
-    void ClientConnection::readMessage(const WebSocket& socket, v_uint8 opcode, p_char8 data, oatpp::v_io_size size) {
+    void ClientConnection::readMessage(const WebSocket &socket, v_uint8 opcode, p_char8 data, oatpp::v_io_size size) {
 
+        // Silence the warnings about an unused parameter
+        (void) opcode;
 
-        if(size == 0) { // message transfer finished
+        if (size == 0) { // message transfer finished
 
             auto wholeMessage = m_messageBuffer.toString();
             m_messageBuffer.setCurrentPosition(0);
@@ -84,7 +86,7 @@ namespace creatures :: ws {
             socket.sendOneFrameText(messageAsString);
             metrics->incrementWebsocketMessagesReceived();
 
-        } else if(size > 0) { // message frame received
+        } else if (size > 0) { // message frame received
             m_messageBuffer.writeSimple(data, size);
         }
 

@@ -9,7 +9,8 @@ namespace creatures::ws {
         Database,
         LogMessage,
         ServerCounters,
-        Notice
+        Notice,
+        StreamFrame
     };
 
    // Don't forget to update the toString function in MessageTypes.cpp

@@ -7,6 +7,7 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
+#include "server/namespace-stuffs.h"
 
 namespace creatures {
 
@@ -18,11 +19,10 @@ namespace creatures {
      * only one frame of data.
      */
     struct StreamFrame {
-        std::string creature_id;
+        creatureId_t creature_id;
+        universe_t universe;
         std::string data;  // The frame data will be base64 encoded strings
     };
-
-
 
 
 #include OATPP_CODEGEN_BEGIN(DTO)
@@ -37,13 +37,24 @@ class StreamFrameDto : public oatpp::DTO {
 
     DTO_FIELD_INFO(creature_id) {
         info->description = "The ID of the creature we are streaming to. This might not be validated during a stream.";
+        info->required = true;
     }
+
     DTO_FIELD(String, creature_id);
 
 
+    DTO_FIELD_INFO(universe) {
+        info->description = "The universe to stream to this creature in";
+        info->required = true;
+    }
+
+    DTO_FIELD(UInt32, universe);
+
     DTO_FIELD_INFO(data) {
         info->description = "A base64 encoded string that represents the requested joint positions";
+        info->required = true;
     }
+
     DTO_FIELD(String, data);
 
 };
@@ -51,7 +62,8 @@ class StreamFrameDto : public oatpp::DTO {
 #include OATPP_CODEGEN_END(DTO)
 
 
-    std::shared_ptr<StreamFrameDto> convertToDto(const StreamFrame &streamFrame);
+    oatpp::Object<StreamFrameDto> convertToDto(const StreamFrame &streamFrame);
+
     StreamFrame convertFromDto(const std::shared_ptr<StreamFrameDto> &streamFrametoO);
 
 
