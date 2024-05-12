@@ -27,6 +27,7 @@ namespace creatures {
     protected:
         void run() override;
 
+        void sendUpdateToClients() const;
 
     private:
 

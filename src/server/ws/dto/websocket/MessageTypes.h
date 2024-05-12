@@ -10,7 +10,8 @@ namespace creatures::ws {
         LogMessage,
         ServerCounters,
         Notice,
-        StreamFrame
+        StreamFrame,
+        VirtualStatusLights,
     };
 
    // Don't forget to update the toString function in MessageTypes.cpp

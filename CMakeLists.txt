@@ -191,6 +191,8 @@ add_executable(creature-server
         src/model/Sound.h
         src/model/Sound.cpp
         src/model/SortBy.h
+        src/model/VirtualStatusLights.cpp
+        src/model/VirtualStatusLights.h
 
 
         src/util/loggingUtils.cpp
@@ -221,6 +223,7 @@ add_executable(creature-server
         src/server/ws/dto/websocket/NoticeMessage.h
         src/server/ws/dto/websocket/ServerCountersMessage.h
         src/server/ws/dto/websocket/StreamFrameMessage.h
+        src/server/ws/dto/websocket/VirtualStatusLightsMessage.h
         src/server/ws/dto/websocket/WebSocketMessageDto.h
 
         src/server/ws/service/AnimationService.cpp

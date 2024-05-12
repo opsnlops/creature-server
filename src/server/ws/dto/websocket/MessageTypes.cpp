@@ -13,6 +13,7 @@ namespace creatures::ws {
             case MessageType::ServerCounters: return "server-counters";
             case MessageType::Notice: return "notice";
             case MessageType::StreamFrame: return "stream-frame";
+            case MessageType::VirtualStatusLights: return "status-lights";
 
             default: return "unknown";
         }

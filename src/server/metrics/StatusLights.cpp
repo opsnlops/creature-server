@@ -1,6 +1,12 @@
 
 #include "spdlog/spdlog.h"
 
+#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
+#include <oatpp/core/Types.hpp>
+
+#include "blockingconcurrentqueue.h"
+
+#include "model/VirtualStatusLights.h"
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/StatusLights.h"
@@ -10,10 +16,14 @@
 #include "server/config.h"
 #include "server/namespace-stuffs.h"
 
+#include "server/ws/dto/websocket/MessageTypes.h"
+#include "server/ws/dto/websocket/VirtualStatusLightsMessage.h"
+
 namespace creatures {
 
     extern std::shared_ptr<SystemCounters> metrics;
     extern std::shared_ptr<GPIO> gpioPins;
+    extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;;
 
 
     StatusLights::StatusLights() {
@@ -46,6 +56,8 @@ namespace creatures {
         debug("starting the status light loop");
 
 
+
+
         // Set up the counters to the current state
         lastDmxEventSeen = metrics->getDMXEventsProcessed();
         lastFrameSeen = metrics->getTotalFrames();
@@ -53,6 +65,7 @@ namespace creatures {
 
         while(!stop_requested.load()) {
 
+            bool changesMade = false;
 
             // This one doesn't need to be as precise as the others. It's okay to stop for
             // the config value. A few missed milliseconds is meaningless here.
@@ -69,6 +82,7 @@ namespace creatures {
                         debug("turning on the running light");
                         runningLightOn = true;
                         gpioPins->serverOnline(runningLightOn);
+                        changesMade = true;
                     }
                 } else {
 
@@ -77,6 +91,7 @@ namespace creatures {
                         debug("turning off the running light");
                         runningLightOn = false;
                         gpioPins->serverOnline(runningLightOn);
+                        changesMade = true;
                     }
                 }
                 lastFrameSeen = metrics->getTotalFrames();
@@ -90,6 +105,7 @@ namespace creatures {
                         debug("turning on the streaming light");
                         streamingLightOn = true;
                         gpioPins->receivingStreamFrames(streamingLightOn);
+                        changesMade = true;
                     }
 
                     lastStreamedFrameSeen = metrics->getFramesStreamed();
@@ -101,6 +117,7 @@ namespace creatures {
                         debug("turning off the streaming light");
                         streamingLightOn = false;
                         gpioPins->receivingStreamFrames(streamingLightOn);
+                        changesMade = true;
                     }
                 }
 
@@ -114,6 +131,7 @@ namespace creatures {
                         debug("turning on the DMX light");
                         dmxEventLightOn = true;
                         gpioPins->sendingDMX(dmxEventLightOn);
+                        changesMade = true;
                     }
 
                     lastDmxEventSeen = metrics->getDMXEventsProcessed();
@@ -125,8 +143,14 @@ namespace creatures {
                         debug("turning off the DMX light");
                         dmxEventLightOn = false;
                         gpioPins->sendingDMX(dmxEventLightOn);
+                        changesMade = true;
                     }
                 }
+            }
+
+            if(changesMade) {
+                debug("the state of the status lights changed! Sending an update");
+                sendUpdateToClients();
             }
         }
 
@@ -138,5 +162,27 @@ namespace creatures {
 
     }
 
+    void StatusLights::sendUpdateToClients() const {
+
+        // Create the object to send
+        auto virtualStatusLights = VirtualStatusLights();
+        virtualStatusLights.running = runningLightOn;
+        virtualStatusLights.dmx = dmxEventLightOn;
+        virtualStatusLights.streaming = streamingLightOn;
+
+        // Create the message to send
+        auto message = oatpp::Object<ws::VirtualStatusLightsMessage>::createShared();
+        message->command = toString(ws::MessageType::VirtualStatusLights);
+        message->payload = convertToDto(virtualStatusLights);
+
+        // Make a JSON mapper
+        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+
+        std::string outgoingMessage = jsonMapper->writeToString(message);
+        debug("Outgoing message to clients: {}", outgoingMessage);
+
+        websocketOutgoingMessages->enqueue(outgoingMessage);
+
+    }
 
 }
