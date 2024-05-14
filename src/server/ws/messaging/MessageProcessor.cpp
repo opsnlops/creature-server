@@ -9,6 +9,7 @@
 
 #include "MessageProcessor.h"
 #include "NoticeMessageHandler.h"
+#include "StreamFrameHandler.h"
 
 namespace creatures::ws {
 
@@ -20,6 +21,9 @@ namespace creatures::ws {
         // Register the handles
         handlers[toString(MessageType::Notice)] = std::make_unique<creatures::ws::NoticeMessageHandler>();
         appLogger->debug("added the handler for {}", toString(MessageType::Notice));
+
+        handlers[toString(MessageType::StreamFrame)] = std::make_unique<creatures::ws::StreamFrameHandler>();
+        appLogger->debug("added the handler for {}", toString(MessageType::StreamFrame));
 
         // Log how many we have total
         appLogger->info("{} message handler{} registered", handlers.size(), handlers.size() != 1 ? "s" : "");

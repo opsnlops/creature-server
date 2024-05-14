@@ -21,7 +21,7 @@ namespace creatures :: ws {
     /**
      * One connection to a client!
      */
-    class ClientConnection : public oatpp::websocket::WebSocket::Listener {
+class ClientConnection : public oatpp::websocket::WebSocket::Listener {
 
 
     public:

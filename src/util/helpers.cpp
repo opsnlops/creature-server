@@ -15,7 +15,7 @@
 #include <bsoncxx/oid.hpp>
 #include <bsoncxx/types.hpp>
 
-
+#include <base64.hpp>
 
 #include "exception/exception.h"
 #include "server/namespace-stuffs.h"
@@ -181,9 +181,11 @@ namespace creatures {
 
 
     bsoncxx::document::value stringVectorToBson(const std::vector<std::string> &vector) {
+        (void) vector;
         throw InternalError("Not implemented");
     }
     std::vector<std::string> stringVectorFromBson(const bsoncxx::document::view &doc) {
+        (void) doc;
         throw InternalError("Not implemented");
     }
 
@@ -223,4 +225,30 @@ namespace creatures {
         return ss.str();
     }
 
+    std::vector<uint8_t> decodeBase64(const std::string& base64Data) {
+
+        // Decode the base64 string to raw bytes
+        std::string decodedString = base64::from_base64(base64Data);
+
+        // Convert the decoded string to a std::vector<uint8_t>
+        std::vector<uint8_t> result(decodedString.begin(), decodedString.end());
+
+        return result;
+    }
+
+
+    std::string vectorToHexString(const std::vector<uint8_t>& byteVector) {
+        std::ostringstream oss;
+        oss << "[ ";
+
+        for (size_t i = 0; i < byteVector.size(); ++i) {
+            if (i != 0) {
+                oss << ", ";
+            }
+            oss << "0x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byteVector[i]);
+        }
+
+        oss << " ]";
+        return oss.str();
+    }
 }

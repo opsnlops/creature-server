@@ -48,14 +48,6 @@ namespace creatures :: ws {
             return _appLogger;
         }());
 
-        /**
-         * Create the MessageProcessor
-         */
-        OATPP_CREATE_COMPONENT(std::shared_ptr<creatures::ws::MessageProcessor>, messageProcessor)([] {
-            auto _messageProcessor = std::make_shared<creatures::ws::MessageProcessor>();
-            return _messageProcessor;
-        }());
-
 
         /**
          * Create ObjectMapper component to serialize/deserialize DTOs in Controller's API
@@ -99,6 +91,14 @@ namespace creatures :: ws {
             return std::make_shared<ClientCafe>();
         }());
 
+
+        /**
+         * Create the MessageProcessor
+         */
+        OATPP_CREATE_COMPONENT(std::shared_ptr<creatures::ws::MessageProcessor>, messageProcessor)([] {
+            auto _messageProcessor = std::make_shared<creatures::ws::MessageProcessor>();
+            return _messageProcessor;
+        }());
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"

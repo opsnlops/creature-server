@@ -233,6 +233,8 @@ add_executable(creature-server
         src/server/ws/messaging/NoticeMessageHandler.h
         src/server/ws/messaging/MessageProcessor.h
         src/server/ws/messaging/MessageProcessor.cpp
+        src/server/ws/messaging/StreamFrameHandler.h
+        src/server/ws/messaging/StreamFrameHandler.cpp
 
         src/server/ws/service/AnimationService.cpp
         src/server/ws/service/AnimationService.h

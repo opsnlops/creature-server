@@ -64,7 +64,7 @@ class StreamFrameDto : public oatpp::DTO {
 
     oatpp::Object<StreamFrameDto> convertToDto(const StreamFrame &streamFrame);
 
-    StreamFrame convertFromDto(const std::shared_ptr<StreamFrameDto> &streamFrametoO);
+    StreamFrame convertFromDto(const std::shared_ptr<StreamFrameDto> &streamFrameDto);
 
 
 }

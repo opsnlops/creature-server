@@ -50,7 +50,7 @@ namespace creatures {
          * RESTful methods
          */
 
-        creatures::Creature getCreature(std::string creatureId);
+        creatures::Creature getCreature(creatureId_t creatureId);
         std::vector<creatures::Creature> getAllCreatures(creatures::SortBy sortBy, bool ascending);
 
 

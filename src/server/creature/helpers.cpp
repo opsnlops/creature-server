@@ -111,6 +111,16 @@ namespace creatures {
         }
 
 
+        // Channel offset
+        element = doc["channel_offset"];
+        if (element && element.type() == bsoncxx::type::k_int32) {
+            c.channel_offset = element.get_int32().value;
+            trace("set the channel offset to {}", c.channel_offset);
+        } else {
+            throw creatures::DataFormatException("Field channel_offset was not an int32 in the database");
+        }
+
+
         // Notes
         element = doc["notes"];
         if (element && element.type() == bsoncxx::type::k_utf8) {

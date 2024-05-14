@@ -100,4 +100,22 @@ namespace creatures {
      * @return the current time in ISO8601 format
      */
     std::string getCurrentTimeISO8601();
+
+    /**
+     * Decode a string of bases64 data into a `std::vector<uint8_t>`. (ie, the type
+     * that we normally use for sending data to the creature.)
+     *
+     * @param base64Data the string to decode
+     * @return the decided data
+     */
+    std::vector<uint8_t> decodeBase64(const std::string& base64Data);
+
+    /**
+     * Generate a std::string out of a std::vector<uint8_t>. Useful for
+     * debugging frames.
+     *
+     * @param byteVector the data to look at
+     * @return A std::string in the format of "[ 0x01, 0x02, 0x03 ]"
+     */
+    std::string vectorToHexString(const std::vector<uint8_t>& byteVector);
 }

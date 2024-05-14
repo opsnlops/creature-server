@@ -32,6 +32,7 @@ namespace creatures {
     class DMXEvent : public EventBase<DMXEvent> {
     public:
         using EventBase::EventBase;
+        virtual ~DMXEvent() = default;
         void executeImpl();
 
         universe_t universe;

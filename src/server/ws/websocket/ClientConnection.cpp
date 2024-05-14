@@ -48,11 +48,18 @@ namespace creatures ::ws {
     }
 
     void ClientConnection::onPong(const WebSocket &socket, const oatpp::String &message) {
+
+        (void)socket;
+        (void)message;
+
         appLogger->trace("pong received from client {}!", clientId);
         metrics->incrementWebsocketPongsReceived();
     }
 
     void ClientConnection::onClose(const WebSocket &socket, v_uint16 code, const oatpp::String &message) {
+
+        (void)socket;
+
         appLogger->debug("onClose code={}, message={}", code, std::string(message));
     }
 
@@ -78,7 +85,7 @@ namespace creatures ::ws {
                 auto basicDto = permissiveJsonMapper->readFromString<oatpp::Object<BasicCommandDto>>(wholeMessage);
                 if (basicDto) {
 
-                    appLogger->debug("Message coded as a BasicCommandDto! command: {}", std::string(basicDto->command));
+                    appLogger->debug("request decoded, command: {}", std::string(basicDto->command));
 
                     auto command = basicDto->command;
                     messageProcessor->processIncomingMessage(command, wholeMessage);

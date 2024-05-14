@@ -1,7 +1,6 @@
 
-#include <chrono>
 #include <mutex>
-#include <vector>
+
 #include <spdlog/spdlog.h>
 
 #include <oatpp/core/macro/component.hpp>
@@ -14,7 +13,6 @@
 #include "server/ws/websocket/ClientCafe.h"
 
 
-#include "util/MessageQueue.h"
 #include "util/threadName.h"
 
 namespace creatures {
@@ -49,6 +47,7 @@ namespace creatures :: ws {
 
     void ClientCafe::onAfterCreate(const oatpp::websocket::WebSocket& socket, const std::shared_ptr<const ParameterMap>& params) {
 
+        (void)params;
 
         clientsConnected ++;
         appLogger->debug("New client connection! Total connected: {}", clientsConnected.load());
