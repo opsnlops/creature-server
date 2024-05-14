@@ -9,8 +9,10 @@
 #include "blockingconcurrentqueue.h"
 
 #include "server/metrics/counters.h"
+#include "server/ws/messaging/MessageProcessor.h"
 #include "server/ws/websocket/ClientConnection.h"
 #include "server/ws/websocket/ClientCafe.h"
+
 
 #include "util/MessageQueue.h"
 #include "util/threadName.h"

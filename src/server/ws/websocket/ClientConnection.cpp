@@ -1,24 +1,24 @@
 
-#include <atomic>
-#include <mutex>
-#include <vector>
+
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
-#include <oatpp-websocket/ConnectionHandler.hpp>
+
 #include <oatpp-websocket/WebSocket.hpp>
 
 #include <oatpp/core/macro/component.hpp>
 
-
 #include "model/Notice.h"
 
 #include "server/metrics/counters.h"
+#include "server/ws/messaging/MessageProcessor.h"
 #include "server/ws/websocket/ClientConnection.h"
 #include "server/ws/websocket/ClientCafe.h"
+#include "server/ws/messaging/BasicCommandDto.h"
+#include "server/ws/dto/websocket/MessageTypes.h"
 #include "server/ws/dto/websocket/NoticeMessage.h"
+#include "server/ws/dto/websocket/WebSocketMessageDto.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
 
 #include "util/helpers.h"
@@ -68,22 +68,62 @@ namespace creatures ::ws {
 
             appLogger->debug("received a message from client {}: {}", clientId, std::string(wholeMessage));
 
-            std::string clientMessage = fmt::format("Hello from client {}!: {}", clientId, std::string(wholeMessage));
+            try {
 
+                // Make a new JSON Mapper that allows for unknown fields
+                auto permissiveJsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+                permissiveJsonMapper->getDeserializer()->getConfig()->allowUnknownFields = true;
 
-            Notice notice;
-            notice.timestamp = getCurrentTimeISO8601();
-            notice.message = clientMessage;
+                // Pull out just the command via a BasicCommandDto.
+                auto basicDto = permissiveJsonMapper->readFromString<oatpp::Object<BasicCommandDto>>(wholeMessage);
+                if (basicDto) {
 
+                    appLogger->debug("Message coded as a BasicCommandDto! command: {}", std::string(basicDto->command));
 
-            auto message = oatpp::Object<ws::NoticeMessage>::createShared();
-            message->command = toString(ws::MessageType::Notice);
-            message->payload = creatures::convertToDto(notice);
+                    auto command = basicDto->command;
+                    messageProcessor->processIncomingMessage(command, wholeMessage);
 
+                } else {
+                    appLogger->warn("Failed to parse command from message");
+                }
 
-            std::string messageAsString = apiObjectMapper->writeToString(message);
+            }
+            catch (const oatpp::parser::ParsingError& e) {
+                appLogger->warn("parser error decoding a message: {}", e.what());
+            }
+            catch (const std::exception& e) {
+                appLogger->warn("exception thrown while decoding an incoming message: {}", e.what());
+            }
+            catch ( ... ) {
 
-            socket.sendOneFrameText(messageAsString);
+                    /*
+                    * Whoa, the client sent us something we don't know how to handle. Let's let them know.
+                    */
+                    appLogger->warn("A websocket client sent us a junk message: {}", std::string(wholeMessage));
+
+                    try {
+                        auto clientMessage = fmt::format(
+                                "WARNING: You send us a junk message, so we just dropped it on the floor! It was: {}",
+                                std::string(wholeMessage));
+
+                        // Send a message back to the client to let them know something was wrong
+                        Notice notice;
+                        notice.timestamp = getCurrentTimeISO8601();
+                        notice.message = clientMessage;
+
+                        auto message = oatpp::Object<ws::NoticeMessage>::createShared();
+                        message->command = toString(ws::MessageType::Notice);
+                        message->payload = creatures::convertToDto(notice);
+
+                        // Switch back to the real JSON parser to send things
+                        std::string messageAsString = apiObjectMapper->writeToString(message);
+                        socket.sendOneFrameText(messageAsString);
+                    }
+                    catch ( ... ) {
+                        appLogger->warn("Unable to send a message to a client that sent us junk?!");
+                    }
+                }
+
             metrics->incrementWebsocketMessagesReceived();
 
         } else if (size > 0) { // message frame received

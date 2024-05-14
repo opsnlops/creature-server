@@ -226,6 +226,14 @@ add_executable(creature-server
         src/server/ws/dto/websocket/VirtualStatusLightsMessage.h
         src/server/ws/dto/websocket/WebSocketMessageDto.h
 
+
+        src/server/ws/messaging/BasicCommandDto.h
+        src/server/ws/messaging/IMessageHandler.h
+        src/server/ws/messaging/NoticeMessageHandler.cpp
+        src/server/ws/messaging/NoticeMessageHandler.h
+        src/server/ws/messaging/MessageProcessor.h
+        src/server/ws/messaging/MessageProcessor.cpp
+
         src/server/ws/service/AnimationService.cpp
         src/server/ws/service/AnimationService.h
         src/server/ws/service/CreatureService.cpp
@@ -239,6 +247,7 @@ add_executable(creature-server
         src/server/ws/websocket/ClientConnection.h
         src/server/ws/websocket/ClientCafe.cpp
         src/server/ws/websocket/ClientConnection.cpp
+        src/server/ws/messaging/NoticeMessageCommandDTO.h
 
 )
 

@@ -76,8 +76,8 @@ namespace creatures :: ws {
         oatpp::data::stream::BufferOutputStream m_messageBuffer;
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-
         OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
+        OATPP_COMPONENT(std::shared_ptr<creatures::ws::MessageProcessor>, messageProcessor);
 
         /**
          * The socket we are connected to

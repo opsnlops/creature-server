@@ -21,6 +21,7 @@
 #include "SwaggerComponent.h"
 #include "ErrorHandler.h"
 
+#include "server/ws/messaging/MessageProcessor.h"
 #include "server/ws/websocket/ClientCafe.h"
 #include "util/loggingUtils.h"
 #include "util/MessageQueue.h"
@@ -45,6 +46,14 @@ namespace creatures :: ws {
             auto _appLogger = spdlog::stdout_color_mt("web-server");
             _appLogger->set_level(spdlog::level::debug);
             return _appLogger;
+        }());
+
+        /**
+         * Create the MessageProcessor
+         */
+        OATPP_CREATE_COMPONENT(std::shared_ptr<creatures::ws::MessageProcessor>, messageProcessor)([] {
+            auto _messageProcessor = std::make_shared<creatures::ws::MessageProcessor>();
+            return _messageProcessor;
         }());
 
 
