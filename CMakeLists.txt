@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "1.9.14"
+        VERSION "1.9.15"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -84,7 +84,7 @@ FetchContent_MakeAvailable(googletest)
 
 # Use the oatpp that we've already made
 find_package(oatpp           REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
-find_package(oatpp-swagger   REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
+#find_package(oatpp-swagger   REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
 find_package(oatpp-websocket REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-websocket-1.3.0)
 
 add_definitions(
@@ -263,7 +263,7 @@ target_link_libraries(creature-server
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
         oatpp::oatpp
-        oatpp::oatpp-swagger
+#        oatpp::oatpp-swagger
         oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
@@ -344,7 +344,7 @@ target_link_libraries(creature-server-test
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
         oatpp::oatpp
-        oatpp::oatpp-swagger
+#        oatpp::oatpp-swagger
         oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared

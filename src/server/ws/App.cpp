@@ -5,7 +5,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <oatpp/network/Server.hpp>
-#include <oatpp-swagger/Controller.hpp>
+//#include <oatpp-swagger/Controller.hpp>
 
 #include "util/threadName.h"
 #include "util/StoppableThread.h"
@@ -57,15 +57,15 @@ namespace creatures ::ws {
         // Register our logger in the environment
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
-        oatpp::web::server::api::Endpoints docEndpoints;
+//        oatpp::web::server::api::Endpoints docEndpoints;
+//
+//        docEndpoints.append(router->addController(AnimationController::createShared())->getEndpoints());
+//        docEndpoints.append(router->addController(CreatureController::createShared())->getEndpoints());
+//        docEndpoints.append(router->addController(MetricsController::createShared())->getEndpoints());
+//        docEndpoints.append(router->addController(SoundController::createShared())->getEndpoints());
+//        docEndpoints.append(router->addController(WebSocketController::createShared())->getEndpoints());
+//        router->addController(oatpp::swagger::Controller::createShared(docEndpoints));
 
-        docEndpoints.append(router->addController(AnimationController::createShared())->getEndpoints());
-        docEndpoints.append(router->addController(CreatureController::createShared())->getEndpoints());
-        docEndpoints.append(router->addController(MetricsController::createShared())->getEndpoints());
-        docEndpoints.append(router->addController(SoundController::createShared())->getEndpoints());
-        docEndpoints.append(router->addController(WebSocketController::createShared())->getEndpoints());
-
-        router->addController(oatpp::swagger::Controller::createShared(docEndpoints));
         router->addController(AnimationController::createShared());
         router->addController(CreatureController::createShared());
         router->addController(MetricsController::createShared());
