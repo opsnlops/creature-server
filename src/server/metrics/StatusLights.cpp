@@ -79,7 +79,7 @@ namespace creatures {
 
                     // Time has progressed! That's good.
                     if (!runningLightOn) {
-                        debug("turning on the running light");
+                        info("turning on the running light");
                         runningLightOn = true;
                         gpioPins->serverOnline(runningLightOn);
                         changesMade = true;
@@ -88,7 +88,7 @@ namespace creatures {
 
                     // Ut oh. We're not progressing.
                     if (runningLightOn) {
-                        debug("turning off the running light");
+                        info("turning off the running light");
                         runningLightOn = false;
                         gpioPins->serverOnline(runningLightOn);
                         changesMade = true;
@@ -102,7 +102,7 @@ namespace creatures {
 
                     // We're streaming!.
                     if (!streamingLightOn) {
-                        debug("turning on the streaming light");
+                        info("turning on the streaming light");
                         streamingLightOn = true;
                         gpioPins->receivingStreamFrames(streamingLightOn);
                         changesMade = true;
@@ -114,7 +114,7 @@ namespace creatures {
 
                     // Not streaming!
                     if (streamingLightOn) {
-                        debug("turning off the streaming light");
+                        info("turning off the streaming light");
                         streamingLightOn = false;
                         gpioPins->receivingStreamFrames(streamingLightOn);
                         changesMade = true;
@@ -128,7 +128,7 @@ namespace creatures {
 
                     // We are!
                     if (!dmxEventLightOn) {
-                        debug("turning on the DMX light");
+                        info("turning on the DMX light");
                         dmxEventLightOn = true;
                         gpioPins->sendingDMX(dmxEventLightOn);
                         changesMade = true;
@@ -140,7 +140,7 @@ namespace creatures {
 
                     // Not sending DMX
                     if (dmxEventLightOn) {
-                        debug("turning off the DMX light");
+                        info("turning off the DMX light");
                         dmxEventLightOn = false;
                         gpioPins->sendingDMX(dmxEventLightOn);
                         changesMade = true;

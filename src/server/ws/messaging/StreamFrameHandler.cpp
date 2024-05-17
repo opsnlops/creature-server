@@ -117,8 +117,16 @@ namespace creatures ::ws {
             event->data.push_back(byte);
         }
 
+
+
         eventLoop->scheduleEvent(event);
         metrics->incrementFramesStreamed();
+
+        // Keep some metrics internally
+        framesStreamed += 1;
+        if(framesStreamed % 500 == 0) {
+            debug("streamed {} frames", framesStreamed);
+        }
     }
 
 }

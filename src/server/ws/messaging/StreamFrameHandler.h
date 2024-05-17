@@ -29,6 +29,8 @@ namespace creatures::ws {
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
         OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
+
+        uint64_t framesStreamed = 0;
     };
 
 } //  creatures: ws
