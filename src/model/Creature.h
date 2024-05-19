@@ -1,13 +1,22 @@
 
 #pragma once
 
-#include <chrono>
 #include <string>
 
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
 #include "server/namespace-stuffs.h"
+
+
+/**
+ * Note to myself for later!
+ *
+ * Don't get confused by `id` and `_id` in Mongo. `id` is what we use. It can be basically any string. Normally
+ * it looks like an OID, but it doesn't have to. It could be a UUID or whatever.
+ */
+
+
 
 namespace creatures {
 
@@ -32,11 +41,6 @@ namespace creatures {
          * The audio channel for this creature
          */
         uint16_t audio_channel;
-
-        /**
-         * Any notes to save in the database
-         */
-        std::string notes;
 
     };
 
@@ -71,18 +75,12 @@ class CreatureDto : public oatpp::DTO {
 
     DTO_FIELD(UInt16, audio_channel);
 
-    DTO_FIELD_INFO(notes) {
-        info->description = "A general notes field for the creature";
-    }
-
-    DTO_FIELD(String, notes);
-
 };
 
 #include OATPP_CODEGEN_END(DTO)
 
     oatpp::Object<CreatureDto> convertToDto(const Creature &creature);
 
-    Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto);
+    creatures::Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto);
 
 }

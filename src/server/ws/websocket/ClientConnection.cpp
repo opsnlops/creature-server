@@ -6,7 +6,6 @@
 
 
 #include <oatpp-websocket/WebSocket.hpp>
-
 #include <oatpp/core/macro/component.hpp>
 
 #include "model/Notice.h"

@@ -14,6 +14,7 @@ namespace creatures::ws {
             case MessageType::Notice: return "notice";
             case MessageType::StreamFrame: return "stream-frame";
             case MessageType::VirtualStatusLights: return "status-lights";
+            case MessageType::UpsertCreature: return "upsert-creature";
 
             default: return "unknown";
         }

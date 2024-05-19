@@ -12,6 +12,7 @@ namespace creatures::ws {
         Notice,
         StreamFrame,
         VirtualStatusLights,
+        UpsertCreature,
     };
 
    // Don't forget to update the toString function in MessageTypes.cpp

@@ -1,17 +1,9 @@
 
-#include "server/config.h"
 
 #include <string>
 #include <cstdlib>
-#include <iomanip>
-#include <sstream>
-#include <chrono>
 
-#include "spdlog/spdlog.h"
-
-#include "server/database.h"
-#include "exception/exception.h"
-#include "util/helpers.h"
+#include <spdlog/spdlog.h>
 
 #include <bsoncxx/json.hpp>
 #include <mongocxx/client.hpp>
@@ -23,6 +15,10 @@
 #include <mongocxx/cursor.hpp>
 
 #include <bsoncxx/builder/stream/document.hpp>
+
+#include "server/database.h"
+#include "exception/exception.h"
+#include "util/helpers.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -44,8 +40,7 @@ namespace creatures {
             builder << "_id" << stringToOid(creature.id)
                     << "name" << creature.name
                     << "channel_offset" << bsoncxx::types::b_int32{static_cast<int32_t>(creature.channel_offset)}
-                    << "audio_channel" << bsoncxx::types::b_int32{static_cast<int32_t>(creature.audio_channel)}
-                    << "notes" << creature.notes;
+                    << "audio_channel" << bsoncxx::types::b_int32{static_cast<int32_t>(creature.audio_channel)};
             trace("fields added");
 
         }
@@ -74,20 +69,13 @@ namespace creatures {
 
         Creature c;
 
-        bsoncxx::document::element element = doc["_id"];
-        if (element && element.type() == bsoncxx::type::k_oid) {
-            trace("_id is valid and is {} bytes", element.get_oid().value.size());
-            const bsoncxx::oid &oid = element.get_oid().value;
-            const char *oid_data = oid.bytes();
-
-            // Make sure we only have the data we're expecting
-            char byteData[element.get_oid().value.size()];
-            std::copy(oid_data, oid_data + element.get_oid().value.size(), byteData);
-
-            c.id = bytesToString(byteData);
+        bsoncxx::document::element element = doc["id"];
+        if (element && element.type() == bsoncxx::type::k_utf8) {
+            bsoncxx::stdx::string_view string_value = element.get_string().value;
+            c.id = std::string{string_value};
             trace("set the _id to {}", c.id);
         } else {
-            throw creatures::DataFormatException("Field _id was not a bsoncxx::oid in the database");
+            throw creatures::DataFormatException("Field id was not a string in the database");
         }
 
         element = doc["name"];
@@ -121,48 +109,39 @@ namespace creatures {
         }
 
 
-        // Notes
-        element = doc["notes"];
-        if (element && element.type() == bsoncxx::type::k_utf8) {
-            bsoncxx::stdx::string_view string_value = element.get_string().value;
-            c.notes = std::string{string_value};
-            trace("set the notes to {}", c.notes);
-        } else {
-            throw creatures::DataFormatException("Field notes was not a string in the database");
-        }
-
         debug("done loading creature");
         return c;
     }
 
 
-//    void
-//    Database::creatureIdentifierFromBson(const bsoncxx::document::view &doc, server::CreatureIdentifier *identifier) {
-//
-//        trace("attempting to create a creatureIdentifier from a BSON document");
-//
-//        bsoncxx::document::element element = doc["_id"];
-//        if (element && element.type() == bsoncxx::type::k_oid) {
-//            const bsoncxx::oid &oid = element.get_oid().value;
-//            const char *oid_data = oid.bytes();
-//            identifier->set__id(oid_data, bsoncxx::oid::k_oid_length);
-//            trace("set the _id to {}", oid.to_string());
-//        } else {
-//            throw creatures::DataFormatException("Field '_id' was not a bsoncxx::oid in the database");
-//        }
-//
-//        element = doc["name"];
-//        if (element && element.type() == bsoncxx::type::k_utf8) {
-//            bsoncxx::stdx::string_view string_value = element.get_string().value;
-//            identifier->set_name(std::string{string_value});
-//            trace("set the name to {}", identifier->name());
-//        } else {
-//            throw creatures::DataFormatException("Field 'name' was not a string in the database");
-//        }
-//
-//        debug("done loading creatureIdentifier");
-//    }
+    Result<creatures::Creature> Database::creatureFromJson(json creatureJson) {
 
+        try {
 
+            auto creature = Creature();
+            creature.id = creatureJson["id"];
+            creature.name = creatureJson["name"];
+            creature.audio_channel = creatureJson["audio_channel"];
+            creature.channel_offset = creatureJson["channel_offset"];
 
+            if(creature.id.empty()) {
+                std::string errorMessage = "Creature ID is empty";
+                warn(errorMessage);
+                return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+
+            if(creature.name.empty()) {
+                std::string errorMessage = "Creature name is empty";
+                warn(errorMessage);
+                return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+
+            return Result<creatures::Creature>{creature};
+
+        } catch ( const nlohmann::json::exception& e ) {
+            std::string errorMessage = fmt::format("Error while converting JSON to Creature: {}", e.what());
+            warn(errorMessage);
+            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
+    }
 }

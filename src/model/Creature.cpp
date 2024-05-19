@@ -1,5 +1,7 @@
 
 
+#include <spdlog/spdlog.h>
+
 #include <vector>
 #include <string>
 
@@ -13,12 +15,21 @@ namespace creatures {
 
     // Convert a CreatureDto to a Creature
     Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto) {
+
+        debug("Converting CreatureDto to Creature");
+
         Creature creature;
         creature.id = creatureDto->id;
+        debug("id: {}", creature.id);
+
         creature.name = creatureDto->name;
+        debug("name: {}", creature.name);
+
         creature.channel_offset = creatureDto->channel_offset;
+        debug("channel_offset: {}", creature.channel_offset);
+
         creature.audio_channel = creatureDto->audio_channel;
-        creature.notes = creatureDto->notes;
+        debug("audio_channel: {}", creature.audio_channel);
 
         return creature;
     }
@@ -30,7 +41,6 @@ namespace creatures {
         creatureDto->name = creature.name;
         creatureDto->channel_offset = creature.channel_offset;
         creatureDto->audio_channel = creature.audio_channel;
-        creatureDto->notes = creature.notes;
 
         return creatureDto;
     }

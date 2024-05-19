@@ -7,6 +7,13 @@
 #include <oatpp/core/macro/component.hpp>
 
 
+#include "oatpp/web/protocol/http/Http.hpp"
+#include "oatpp/core/macro/component.hpp"
+#include "oatpp/core/Types.hpp"
+#include "oatpp/web/server/HttpConnectionHandler.hpp"
+#include "oatpp/web/server/AsyncHttpConnectionHandler.hpp"
+#include "oatpp/parser/json/mapping/ObjectMapper.hpp"
+
 #include "server/database.h"
 
 #include "server/ws/service/CreatureService.h"
@@ -63,6 +70,24 @@ namespace creatures :: ws {
             creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_creatureService.getCreature(creatureId));
         }
+
+
+        ENDPOINT_INFO(upsertCreature) {
+            info->summary = "Update or insert a creature";
+
+            info->addResponse<Object<creatures::CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        }
+        ENDPOINT("POST", "api/v1/creature", upsertCreature,
+                 REQUEST(std::shared_ptr<IncomingRequest>, request))
+        {
+            debug("new creature configuration uploaded via REST API");
+            creatures::metrics->incrementRestRequestsProcessed();
+            auto requestAsString = request->readBodyToString();
+            return createDtoResponse(Status::CODE_200, m_creatureService.upsertCreature(requestAsString));
+        }
+
     };
 
 }

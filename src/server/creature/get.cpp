@@ -3,17 +3,8 @@
 
 #include <string>
 
-#include "spdlog/spdlog.h"
-
-#include "exception/exception.h"
-#include "model/Creature.h"
-
-#include "server/database.h"
-#include "server/creature-server.h"
-#include "util/cache.h"
-#include "util/helpers.h"
-
-
+#include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 #include <fmt/format.h>
 
 
@@ -21,14 +12,24 @@
 #include <mongocxx/client.hpp>
 #include <bsoncxx/types.hpp>
 #include <mongocxx/exception/bulk_write_exception.hpp>
-
 #include <bsoncxx/builder/stream/document.hpp>
+
+
+#include "exception/exception.h"
+#include "model/Creature.h"
+#include "server/database.h"
+#include "server/creature-server.h"
+#include "util/cache.h"
+#include "util/helpers.h"
+#include "util/Result.h"
+
 
 #include "server/namespace-stuffs.h"
 
 using bsoncxx::builder::stream::document;
 using bsoncxx::builder::basic::make_document;
 using bsoncxx::builder::basic::kvp;
+using json = nlohmann::json;
 
 namespace creatures {
 
@@ -36,63 +37,88 @@ namespace creatures {
     extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 
 
+
+
+    Result<json> Database::getCreatureJson(creatureId_t creatureId) {
+
+        debug("attempting to get a creature's JSON by ID: {}", creatureId);
+
+        if(creatureId.empty()) {
+            info("an empty creatureID was passed into getCreatureJson()");
+            return Result<json>{ServerError(ServerError::InvalidData, "unable to get a creature because the id was empty")};
+        }
+
+        try {
+            bsoncxx::builder::stream::document filter_builder;
+            filter_builder << "id" << creatureId;
+
+            // Search for the document
+            auto collection = getCollection(CREATURES_COLLECTION);
+            auto maybe_result = collection.find_one(filter_builder.view());
+
+            // Check if the document was found
+            if (maybe_result) {
+                // Convert BSON document to JSON using nlohmann::json
+                bsoncxx::document::view view = maybe_result->view();
+                nlohmann::json json_result = nlohmann::json::parse(bsoncxx::to_json(view));
+                return Result<json>{json_result};
+            } else {
+                std::string errorMessage = fmt::format("no creature id '{}' found", creatureId);
+                warn(errorMessage);
+                return Result<json>{ServerError(ServerError::NotFound, errorMessage)};
+            }
+        } catch (const mongocxx::exception &e) {
+            std::string errorMessage = fmt::format("a MongoDB error happened while loading a creature by ID: {}", e.what());
+            critical(errorMessage);
+            return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
+        } catch ( ... ) {
+            std::string errorMessage = fmt::format("An unknown error happened while loading a creature by ID");
+            critical(errorMessage);
+            return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
+        }
+
+    }
+
+
+
     /**
      * Get a creature from the database
      *
      * @param creatureId The creature ID to look up
      *
-     * @throws InvalidArgumentException if creatureID is empty
-     * @throws CreatureNotFoundException if the creature ID is not found
-     * @throws InternalError if a database error occurs
-     *
      */
-    creatures::Creature Database::getCreature(creatureId_t creatureId) {
+    Result<creatures::Creature> Database::getCreature(const creatureId_t& creatureId) {
 
         if (creatureId.empty()) {
-            info("an empty creatureID was passed into gRPCgetCreature()");
-            throw creatures::InvalidArgumentException("unable to get a creature because the id was empty");
+            std::string errorMessage = "unable to get a creature because the id was empty";
+            warn(errorMessage);
+            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
         }
 
-        Creature c;
-
-        // Convert the ID into MongoID's oid
-        bsoncxx::oid id = stringToOid(creatureId);
-        debug("attempting to search for a creature by ID: {}", creatureId);
-
-        auto collection = getCollection(CREATURES_COLLECTION);
-        trace("collection located");
-
-        try {
-
-            // Create a filter BSON document to match the target document
-            auto filter = bsoncxx::builder::stream::document{} << "_id" << id << bsoncxx::builder::stream::finalize;
-            trace("filter doc: {}", bsoncxx::to_json(filter));
-
-            // Find the document with the matching _id field
-            bsoncxx::stdx::optional<bsoncxx::document::value> result = collection.find_one(filter.view());
-
-            if (!result) {
-                info("no creature with ID '{}' found", creatureId);
-                throw creatures::NotFoundException(fmt::format("no creature id '{}' found", creatureId));
-            }
-
-            // Unwrap the optional to obtain the bsoncxx::document::value
-            bsoncxx::document::value found_document = *result;
-            c = creatureFromBson(found_document);
-
-            debug("get completed!");
-
-            // As long as we're here, let's update the cache
-            creatureCache->put(creatureId, c);
-
-            return c;
-
+        // Go to the database and get the creature
+        auto creatureJson = getCreatureJson(creatureId);
+        if(!creatureJson.isSuccess()) {
+            auto error = creatureJson.getError().value();
+            std::string errorMessage = fmt::format("unable to get a creature by ID: {}", creatureJson.getError()->getMessage());
+            warn(errorMessage);
+            return Result<creatures::Creature>{error};
         }
-        catch (const mongocxx::exception &e) {
-            std::string errorMessage = fmt::format("an unhandled error happened while loading a creature by ID: {}", e.what());
-            critical(errorMessage);
-            throw creatures::InternalError(errorMessage);
+
+        // Covert it to our Creature object if we can
+        auto result = creatureFromJson(creatureJson.getValue().value());
+        if(!result.isSuccess()) {
+            auto error = result.getError().value();
+            std::string errorMessage = fmt::format("unable to get a creature by ID: {}", result.getError()->getMessage());
+            warn(errorMessage);
+            return Result<creatures::Creature>{error};
         }
+
+        // Create the creature
+        auto creature = result.getValue().value();
+
+        // As long as we're here, let's update the cache
+        creatureCache->put(creatureId, creature);
+        return creature;
     }
 
 

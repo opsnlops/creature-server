@@ -16,8 +16,7 @@ protected:
         creature.name = "BunnyBot";
         creature.channel_offset = 10;
         creature.audio_channel = 5;
-        creature.notes = "Needs new carrot batteries";
-    }
+     }
 };
 
 // Test serialization to JSON

@@ -8,6 +8,8 @@
 
 #include "model/Creature.h"
 #include "server/ws/dto/ListDto.h"
+#include "server/ws/dto/SimpleResponseDto.h"
+#include "server/ws/dto/StatusDto.h"
 
 namespace creatures :: ws {
 
@@ -22,6 +24,14 @@ namespace creatures :: ws {
 
         oatpp::Object<creatures::CreatureDto> getCreature(const oatpp::String& inCreatureId);
 
+        /**
+         * Upsert (create or update) a creature
+         *
+         * @param jsonCreature a JSON representation of the creature. All fields will be stored in MongoDB, but the
+         *                     required fields must me present.
+         * @return the creature that was created or updated in the standard form
+         */
+        oatpp::Object<creatures::CreatureDto> upsertCreature(const oatpp::String& jsonCreature);
     };
 
 

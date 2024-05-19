@@ -13,8 +13,12 @@
 #include <mongocxx/client.hpp>
 #include <mongocxx/pool.hpp>
 
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
 #include "exception/exception.h"
 #include "server/namespace-stuffs.h"
+#include "util/Result.h"
 
 using bsoncxx::builder::stream::document;
 using bsoncxx::builder::basic::make_document;
@@ -101,5 +105,17 @@ namespace creatures {
         }
 
     }
+
+
+    Result<bool> Database::checkJsonField(const nlohmann::json& jsonObj, const std::string& fieldName) {
+        if (!jsonObj.contains(fieldName)) {
+            std::string errorMessage = fmt::format("JSON is missing required field: {}", fieldName);
+            warn(errorMessage);
+            return Result<bool>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
+
+        return true;
+    }
+
 
 }

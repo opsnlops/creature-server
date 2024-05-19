@@ -83,7 +83,13 @@ namespace creatures ::ws {
             creature = creatureCache->get(frame.creature_id);
         } catch (const std::out_of_range &e) {
             appLogger->debug(" 🛜  creature {} was not found in the cache. Going to the DB...", frame.creature_id);
-            creature = std::make_shared<Creature>(db->getCreature(frame.creature_id));
+
+            auto result = db->getCreature(frame.creature_id);
+            if(!result.isSuccess()) {
+                appLogger->warn("Dropping stream frame to {} because it can't be found", frame.creature_id);
+                return;
+            }
+            creature = std::make_shared<Creature>(result.getValue().value());
             appLogger->debug("creature is now: name: {}, channel_offset: {}", creature->name, creature->channel_offset);
         }
 

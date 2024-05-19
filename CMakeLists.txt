@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "1.9.16"
+        VERSION "1.9.17"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -197,6 +197,8 @@ add_executable(creature-server
 
         src/util/loggingUtils.cpp
         src/util/loggingUtils.h
+        src/util/Result.cpp
+        src/util/Result.h
 
 
         src/server/ws/AppComponent.h
@@ -206,6 +208,7 @@ add_executable(creature-server
 
         src/server/ws/dto/ListDto.h
         src/server/ws/dto/PlaySoundRequestDTO.h
+        src/server/ws/dto/SimpleResponseDto.h
         src/server/ws/dto/StatusDto.h
 
         src/server/ws/ErrorHandler.cpp
@@ -250,6 +253,7 @@ add_executable(creature-server
         src/server/ws/websocket/ClientCafe.cpp
         src/server/ws/websocket/ClientConnection.cpp
         src/server/ws/messaging/NoticeMessageCommandDTO.h
+
 
 )
 

@@ -22,6 +22,9 @@
 
 #include <bsoncxx/builder/stream/document.hpp>
 
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
 
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
@@ -29,6 +32,7 @@
 #include "model/FrameData.h"
 #include "model/SortBy.h"
 #include "server/namespace-stuffs.h"
+#include "util/Result.h"
 
 namespace creatures {
 
@@ -38,31 +42,24 @@ namespace creatures {
         explicit Database(mongocxx::pool &pool);
 
         // Creature stuff
-//        void gRPCcreateCreature(const server::Creature *creature, DatabaseInfo *reply);
-//        void gRPCupdateCreature(const server::Creature *creature);
-//        void searchCreatures(const CreatureName *creatureName, server::Creature *creature);
-//        void gRPCgetCreature(const CreatureId *creatureId, server::Creature *creature);
-//        void getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList);
-//        void listCreatures(const CreatureFilter *filter, ListCreaturesResponse *creatureList);
 
 
-        /*
-         * RESTful methods
-         */
-
-        creatures::Creature getCreature(creatureId_t creatureId);
+        Result<creatures::Creature> getCreature(const creatureId_t& creatureId);
         std::vector<creatures::Creature> getAllCreatures(creatures::SortBy sortBy, bool ascending);
 
 
 
 
         /**
-         * Create a new creature in the database
+         * Upsert a creature in the database
          *
-         * @param creature the creature to create. The ID is ignored.
-         * @return the creature that was created, with the ID set
+         * @param creatureJson The full JSON string of the creature. It's stored in the database (as long as all of the
+         *                     needed fields are there) so that the controller and console get get a full view of what
+         *                     the creature actually is.
+         *
+         * @return a `Result<creatures::Creature>` with the encoded creature that we can return to the client
          */
-        creatures::Creature createCreature(creatures::Creature creature);
+        Result<creatures::Creature> upsertCreature(const std::string& creatureJson);
 
 
 
@@ -107,6 +104,17 @@ namespace creatures {
          */
         bool isServerPingable();
 
+
+    protected:
+        /**
+         * Check to see if a field is present in a JSON object
+         *
+         * @param jsonObj the object to check
+         * @param fieldName the field to look for
+         * @return true if it's there, or a ServerError if it's not
+         */
+        static Result<bool> checkJsonField(const nlohmann::json& jsonObj, const std::string& fieldName);
+
     private:
         mongocxx::pool &pool;
 
@@ -121,7 +129,8 @@ namespace creatures {
         //static void creatureIdentifierFromBson(const bsoncxx::document::view &doc, CreatureIdentifier *identifier);
 
 
-
+        Result<json> getCreatureJson(creatureId_t creatureId);
+        static Result<creatures::Creature> creatureFromJson(json creatureJson);
 
 
 
