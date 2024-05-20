@@ -45,9 +45,7 @@ namespace creatures {
 
 
         Result<creatures::Creature> getCreature(const creatureId_t& creatureId);
-        std::vector<creatures::Creature> getAllCreatures(creatures::SortBy sortBy, bool ascending);
-
-
+        Result<std::vector<creatures::Creature>> getAllCreatures(creatures::SortBy sortBy, bool ascending);
 
 
         /**
@@ -74,12 +72,6 @@ namespace creatures {
         std::vector<creatures::AnimationMetadata> listAnimations(creatures::SortBy sortBy);
         std::string createAnimation(creatures::Animation animation);
 
-        // Old gRPC methods
-//        void createAnimation(const Animation *animation, DatabaseInfo *reply);
-//        void listAnimations(const AnimationFilter *filter, ListAnimationsResponse *animationList);
-//        void getAnimation(const AnimationId *animationId, Animation *animation);
-//        void getAnimationMetadata(const AnimationId *animationId, AnimationMetadata *animationMetadata);
-//        void updateAnimation(const Animation *animation);
 
 
         // Playlist stuff
@@ -119,15 +111,6 @@ namespace creatures {
         mongocxx::pool &pool;
 
         mongocxx::collection getCollection(const std::string &collectionName);
-
-        bsoncxx::document::value creatureToBson(const creatures::Creature &creature);
-        //static bsoncxx::document::value gRPCcreatureToBson(const server::Creature *creature, bool assignNewId);
-
-        creatures::Creature creatureFromBson(const bsoncxx::document::view &doc);
-        //static void gRPCCreatureFromBson(const bsoncxx::document::view &doc, server::Creature *creature);
-
-        //static void creatureIdentifierFromBson(const bsoncxx::document::view &doc, CreatureIdentifier *identifier);
-
 
         Result<json> getCreatureJson(creatureId_t creatureId);
         static Result<creatures::Creature> creatureFromJson(json creatureJson);

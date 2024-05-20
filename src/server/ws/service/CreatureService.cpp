@@ -30,33 +30,34 @@ namespace creatures :: ws {
 
         bool error = false;
         oatpp::String errorMessage;
-        std::vector<creatures::Creature> creatures;
+        Status status = Status::CODE_200;
 
-        try {
-            creatures = creatures::db->getAllCreatures(creatures::SortBy::name, true);
-            appLogger->debug("Found {} creatures", creatures.size());
-        }
-        catch (const creatures::InternalError &e) {
-            errorMessage = fmt::format("Internal error: {}", e.what());
-            appLogger->error(std::string(errorMessage));
-            error = true;
-        }
-        catch (const creatures::DataFormatException &e) {
-            errorMessage = fmt::format("Data format error: {}", e.what());
-            appLogger->error(std::string(errorMessage));
-            error = true;
-        }
-        catch (...) {
-            errorMessage = fmt::format("Unknown error");
-            appLogger->error(std::string(errorMessage));
-            error = true;
-        }
-        OATPP_ASSERT_HTTP(!error, Status::CODE_500, errorMessage)
+        auto result = db->getAllCreatures(creatures::SortBy::name, true);
+        if(!result.isSuccess()) {
 
+            // If we get an error, let's set it up right
+            auto errorCode = result.getError().value().getCode();
+            switch(errorCode) {
+                case ServerError::NotFound:
+                    status = Status::CODE_404;
+                    break;
+                case ServerError::InvalidData:
+                    status = Status::CODE_400;
+                    break;
+                default:
+                    status = Status::CODE_500;
+                    break;
+            }
+            errorMessage = result.getError()->getMessage();
+            appLogger->warn(std::string(result.getError()->getMessage()));
+            error = true;
+        }
+        OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
 
         auto items = oatpp::Vector<oatpp::Object<creatures::CreatureDto>>::createShared();
 
+        auto creatures = result.getValue().value();
         for (const auto &creature : creatures) {
             appLogger->debug("Adding creature: {}", creature.id);
             items->emplace_back(creatures::convertToDto(creature));
@@ -110,20 +111,19 @@ namespace creatures :: ws {
     }
 
 
-    oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const oatpp::String& jsonCreature) {
+    oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std::string& jsonCreature) {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
-        appLogger->debug("attempting to upsert a creature");
+        appLogger->info("attempting to upsert a creature");
 
-        appLogger->debug("JSON: {}", std::string(jsonCreature));
+        appLogger->trace("JSON: {}", jsonCreature);
 
         bool error = false;
         oatpp::String errorMessage;
         Status status = Status::CODE_200;
 
-        appLogger->debug("all looks good, passing the data off to the database");
-
-        auto result = db->upsertCreature(std::string(jsonCreature));
+        appLogger->debug("passing the upsert request off to the database");
+        auto result = db->upsertCreature(jsonCreature);
 
         // If there's an error, let the client know
         if(!result.isSuccess()) {

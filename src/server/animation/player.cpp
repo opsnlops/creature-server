@@ -36,6 +36,11 @@ namespace creatures {
      */
     uint64_t scheduleAnimation(uint64_t startingFrame, const std::string& animation, universe_t universe) {
 
+        // Slience the warnings for now
+        (void) startingFrame;
+        (void) animation;
+        (void) universe;
+
        // debug("scheduling animation {} ({}) on universe {}", animation.metadata.title, animation.id, universe);
 
 

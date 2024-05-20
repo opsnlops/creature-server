@@ -31,7 +31,7 @@ namespace creatures :: ws {
          *                     required fields must me present.
          * @return the creature that was created or updated in the standard form
          */
-        oatpp::Object<creatures::CreatureDto> upsertCreature(const oatpp::String& jsonCreature);
+        oatpp::Object<creatures::CreatureDto> upsertCreature(const std::string& jsonCreature);
     };
 
 

@@ -14,6 +14,10 @@
 #include "oatpp/web/server/AsyncHttpConnectionHandler.hpp"
 #include "oatpp/parser/json/mapping/ObjectMapper.hpp"
 
+
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
 #include "server/database.h"
 
 #include "server/ws/service/CreatureService.h"
@@ -84,8 +88,11 @@ namespace creatures :: ws {
         {
             debug("new creature configuration uploaded via REST API");
             creatures::metrics->incrementRestRequestsProcessed();
-            auto requestAsString = request->readBodyToString();
-            return createDtoResponse(Status::CODE_200, m_creatureService.upsertCreature(requestAsString));
+            auto requestAsString = std::string(request->readBodyToString());
+            trace("request was: {}", requestAsString);
+
+            return createDtoResponse(Status::CODE_200,
+                                     m_creatureService.upsertCreature(requestAsString));
         }
 
     };

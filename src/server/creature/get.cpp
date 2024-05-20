@@ -38,7 +38,6 @@ namespace creatures {
 
 
 
-
     Result<json> Database::getCreatureJson(creatureId_t creatureId) {
 
         debug("attempting to get a creature's JSON by ID: {}", creatureId);

@@ -31,6 +31,19 @@ namespace creatures {
         creature.audio_channel = creatureDto->audio_channel;
         debug("audio_channel: {}", creature.audio_channel);
 
+        // Make sure we're not about to read a null pointer
+        if (creatureDto->inputs) {
+            for (const auto &inputDto: *creatureDto->inputs) {
+                Input newInput;
+                newInput.name = inputDto->name;
+                newInput.slot = inputDto->slot;
+                newInput.width = inputDto->width;
+                newInput.joystick_axis = inputDto->joystick_axis;
+
+                creature.inputs.push_back(newInput);
+            }
+        }
+
         return creature;
     }
 
@@ -41,6 +54,17 @@ namespace creatures {
         creatureDto->name = creature.name;
         creatureDto->channel_offset = creature.channel_offset;
         creatureDto->audio_channel = creature.audio_channel;
+        creatureDto->inputs = oatpp::List<oatpp::Object<InputDto>>::createShared();
+
+        for( const auto& input : creature.inputs ) {
+            auto inputDto = InputDto::createShared();
+            inputDto->name = input.name;
+            inputDto->slot = input.slot;
+            inputDto->width = input.width;
+            inputDto->joystick_axis = input.joystick_axis;
+
+            creatureDto->inputs->push_back(inputDto);
+        }
 
         return creatureDto;
     }

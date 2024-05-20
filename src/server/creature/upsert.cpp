@@ -41,14 +41,12 @@ namespace creatures {
 
         info("attempting to upsert a creature in the database");
 
-
-
         try {
 
             auto jsonObject = nlohmann::json::parse(creatureJson);
 
             // Create the Creature object while we're here
-            auto result = creatureFromJson(creatureJson);
+            auto result = creatureFromJson(jsonObject);
             if(!result.isSuccess()) {
                 auto error = result.getError();
                 warn("Error while creating a creature from JSON: {}", error->getMessage());

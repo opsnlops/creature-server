@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "1.9.17"
+        VERSION "1.9.18"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -181,6 +181,8 @@ add_executable(creature-server
         src/model/Creature.cpp
         src/model/FrameData.cpp
         src/model/FrameData.h
+        src/model/Input.h
+        src/model/Input.cpp
         src/model/LogLevel.h
         src/model/LogItem.h
         src/model/LogItem.cpp

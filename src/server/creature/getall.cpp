@@ -32,7 +32,9 @@ namespace creatures {
     extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 
 
-    std::vector<creatures::Creature> Database::getAllCreatures(creatures::SortBy sortBy, bool ascending) {
+    Result<std::vector<creatures::Creature>> Database::getAllCreatures(creatures::SortBy sortBy, bool ascending) {
+
+        (void) ascending;
 
         info("attempting to get all of the creatures");
 
@@ -71,36 +73,52 @@ namespace creatures {
 
             for (auto &&doc: cursor) {
 
-                auto creature = creatureFromBson(doc);
+                std::string json_str = bsoncxx::to_json(doc);
+                debug("Document JSON: {}", json_str);
+
+                // Parse JSON string to nlohmann::json
+                nlohmann::json json_doc = nlohmann::json::parse(json_str);
+
+                // Create creature from JSON
+                auto creatureResult = creatureFromJson(json_doc);
+                if (!creatureResult.isSuccess()) {
+                    std::string errorMessage = fmt::format("Unable to parse the JSON in the database to a Creature: {}", creatureResult.getError()->getMessage());
+                    warn(errorMessage);
+                    continue;
+                }
+
+                auto creature = creatureResult.getValue().value();
                 creatureList.push_back(creature);
 
                 // Update the cache since we went all the way to the DB to get it
                 creatureCache->put(creature.id, creature);
             }
-            debug("found {} creatures", creatureList.size());
 
-            return creatureList;
+            debug("found {} creatures", creatureList.size());
+            return Result<std::vector<creatures::Creature>>{creatureList};
 
         } catch (const DataFormatException& e) {
 
             // Log the error
-            std::string errorMessage = fmt::format("Data format error while trying to get all of the creatures: {}", e.what());
+            std::string errorMessage = fmt::format("Data format error while trying to get all of the creatures: {}",
+                                                   e.what());
             error(errorMessage);
-            throw creatures::DataFormatException(errorMessage);}
+            return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
+        }
         catch (const DatabaseError& e) {
             std::string errorMessage = fmt::format("A database error happened while getting all of the creatures: {}", e.what());
             error(errorMessage);
-            throw creatures::InternalError(errorMessage);
+            return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
 
         } catch (const std::exception& e) {
             std::string errorMessage = fmt::format("Failed to get all creatures: {}", e.what());
             error(errorMessage);
-            throw creatures::InternalError(errorMessage);
+            return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
         }
         catch (...) {
             std::string errorMessage = "Failed to get all creatures: unknown error";
             error(errorMessage);
-            throw creatures::InternalError(errorMessage);
+            return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
         }
 
     }
