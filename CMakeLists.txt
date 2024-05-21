@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "1.9.18"
+        VERSION "1.9.19"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -13,7 +13,7 @@ set(CMAKE_CXX_STANDARD 20)
 add_compile_options(-Wshadow)
 add_compile_options(-Wall)
 add_compile_options(-Wextra)
-#add_compile_options(-Wpedantic)
+add_compile_options(-Wpedantic)
 
 set(PACKAGE_AUTHOR "April White")
 

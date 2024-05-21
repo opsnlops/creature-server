@@ -122,6 +122,35 @@ namespace creatures :: ws {
         oatpp::String errorMessage;
         Status status = Status::CODE_200;
 
+        // Validate the JSON
+        try {
+
+            /*
+             * This is a bit weird. Yes we're parsing the JSON twice. Once here, and once in upsertCreature().
+             * This is because we need to validate the JSON before we pass it off to the database. If we don't,
+             * we'll get a cryptic error from the database that doesn't tell us what's wrong with the JSON.
+             *
+             * We have to do this twice because the database stores whatever the client gives us. This means
+             * that we need to pass in the raw JSON, but we also need to validate it here.
+             */
+            auto jsonObject = nlohmann::json::parse(jsonCreature);
+            auto result = db->validateCreatureJson(jsonObject);
+            if(!result.isSuccess()) {
+                errorMessage = result.getError()->getMessage();
+                appLogger->warn(std::string(result.getError()->getMessage()));
+                status = Status::CODE_400;
+                error = true;
+            }
+        }
+        catch ( const nlohmann::json::parse_error& e) {
+            errorMessage = e.what();
+            appLogger->warn(std::string(e.what()));
+            status = Status::CODE_400;
+            error = true;
+        }
+        OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
+
         appLogger->debug("passing the upsert request off to the database");
         auto result = db->upsertCreature(jsonCreature);
 

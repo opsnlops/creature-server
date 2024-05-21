@@ -60,6 +60,29 @@ namespace creatures {
         Result<creatures::Creature> upsertCreature(const std::string& creatureJson);
 
 
+        /**
+         * Validates that the JSON for a Creature contains the fields we expect.
+         *
+         * It only validates `inputs` if it exists!
+         *
+         * @param json the JSON to validate
+         * @return true if good, or ServerError if not
+         */
+        static Result<bool> validateCreatureJson(const nlohmann::json& json);
+
+
+        /**
+         * Helper function that checks if a JSON object has all of the required fields. Used
+         * heavily by `validateCreatureJson()`.
+         *
+         * @tparam N the number of fields
+         * @param j the JSON object to check
+         * @param required_fields an array of fields to validate
+         * @return true if all fields are present, or a ServerError if not
+         */
+        template<std::size_t N>
+        static Result<bool> has_required_fields(const nlohmann::json& j,
+                                                const std::array<const char*, N>& required_fields);
 
 
         /*

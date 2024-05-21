@@ -12,7 +12,6 @@
 
 namespace creatures {
 
-
     // Convert a CreatureDto to a Creature
     Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto) {
 

@@ -113,4 +113,39 @@ namespace creatures {
             return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
         }
     }
+
+
+
+    template<std::size_t N>
+    Result<bool> Database::has_required_fields(const nlohmann::json& j, const std::array<const char*, N>& required_fields) {
+        for (const auto& field : required_fields) {
+            if (!j.contains(field)) {
+                std::string errorMessage = fmt::format("Missing required field '{}'", field);
+                warn(errorMessage);
+                return Result<bool>{ServerError(ServerError::InvalidData, errorMessage)};;
+            }
+        }
+
+        return Result<bool>{true};
+    }
+
+    Result<bool> Database::validateCreatureJson(const nlohmann::json& json) {
+
+        auto topOkay = has_required_fields(json, creatures::Creature::required_top_level_fields);
+        if(!topOkay.isSuccess()) {
+            return topOkay;
+        }
+
+        // If there's inputs, validate them
+        if(json.contains("inputs")) {
+            for (const auto& input : json["inputs"]) {
+                auto inputOkay = has_required_fields(input, creatures::Creature::required_input_fields);
+                if(!inputOkay.isSuccess()) {
+                    return inputOkay;
+                }
+            }
+        }
+
+        return Result<bool>{true};
+    }
 }
