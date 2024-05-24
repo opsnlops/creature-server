@@ -39,6 +39,7 @@
 #include "util/loggingUtils.h"
 #include "util/MessageQueue.h"
 #include "util/threadName.h"
+#include "util/websocketUtils.h"
 #include "watchdog/Watchdog.h"
 
 #include "server/ws/App.h"
@@ -227,6 +228,11 @@ int main(int argc, char **argv) {
      */
 
     info("starting shutdown process");
+
+    // Inform all currently connected clients we're stopping and then wait a second
+    // to make sure that it goes out!
+    creatures::broadcastNoticeToAllClients("Server is shutting down");
+    std::this_thread::sleep_for(std::chrono::seconds(1));
 
     // Tell the E131Server to stop
     creatures::e131Server->shutdown();

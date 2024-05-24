@@ -1,5 +1,5 @@
 
-#include "spdlog/spdlog.h"
+#include <spdlog/spdlog.h>
 
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/core/Types.hpp>
@@ -23,7 +23,7 @@ namespace creatures {
 
     extern std::shared_ptr<SystemCounters> metrics;
     extern std::shared_ptr<GPIO> gpioPins;
-    extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;;
+    extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 
 
     StatusLights::StatusLights() {

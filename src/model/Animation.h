@@ -27,7 +27,7 @@ namespace creatures {
         DTO_INIT(AnimationDto, DTO /* extends */);
 
         DTO_FIELD_INFO(id) {
-            info->description = "Animation ID in the form of a MongoDB OID";
+            info->description = "Animation ID in the form of a UUID";
         }
         DTO_FIELD(String, id);
 
