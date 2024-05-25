@@ -7,17 +7,27 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
-
-
 #include "model/AnimationMetadata.h"
-#include "model/FrameData.h"
+#include "model/Track.h"
 
 namespace creatures {
 
     struct Animation {
         std::string id;
         AnimationMetadata metadata;
-        std::vector<FrameData> tracks;
+        std::vector<Track> tracks;
+
+        // List of required fields
+        static constexpr std::array<const char*, 3> required_top_level_fields =
+                {"id", "metadata", "tracks"};
+
+        static constexpr std::array<const char*, 6> required_metadata_fields =
+                {"animation_id", "title", "milliseconds_per_frame",
+                 "sound_file", "number_of_frames", "multitrack_audio"};
+
+        static constexpr std::array<const char*, 4> required_track_fields =
+                {"id", "creature_id", "animation_id", "frames"};
+
     };
 
 #include OATPP_CODEGEN_BEGIN(DTO)
@@ -32,14 +42,14 @@ namespace creatures {
         DTO_FIELD(String, id);
 
         DTO_FIELD_INFO(metadata) {
-            info->description = "An array of AnimationMetadataDto objects that describe the animations";
+            info->description = "An AnimationMetadataDto with the data for this animation";
         }
         DTO_FIELD(Object<AnimationMetadataDto>, metadata);
 
         DTO_FIELD_INFO(tracks) {
-            info->description = "Frame data for the animation tracks";
+            info->description = "The tracks of motion data";
         }
-        DTO_FIELD(Vector<oatpp::Object<FrameDataDto>>, tracks);
+        DTO_FIELD(Vector<oatpp::Object<TrackDto>>, tracks);
 
     };
 

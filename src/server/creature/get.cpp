@@ -117,7 +117,7 @@ namespace creatures {
 
         // As long as we're here, let's update the cache
         creatureCache->put(creatureId, creature);
-        return creature;
+        return Result<creatures::Creature>{creature};
     }
 
 

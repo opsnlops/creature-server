@@ -30,44 +30,36 @@ namespace creatures :: ws {
 
         bool error = false;
         oatpp::String errorMessage;
-        std::vector<creatures::AnimationMetadata> metadatas;
         Status status = Status::CODE_200;
 
-        try {
-            metadatas = creatures::db->listAnimations(creatures::SortBy::name);
-            appLogger->debug("Found {} animations", metadatas.size());
-        }
-        catch (const creatures::InternalError &e) {
-            errorMessage = fmt::format("Internal error: {}", e.what());
-            appLogger->error(std::string(errorMessage));
-            error = true;
-            status = Status::CODE_500;
-        }
-        catch (const creatures::DataFormatException &e) {
-            errorMessage = fmt::format("Data format error: {}", e.what());
-            appLogger->error(std::string(errorMessage));
-            error = true;
-            status = Status::CODE_500;
-        }
-        catch (const creatures::NotFoundException &e) {
-            errorMessage = fmt::format("No animations found: {}", e.what());
-            appLogger->error(std::string(errorMessage));
-            error = true;
-            status = Status::CODE_404;
-        }
-        catch (...) {
-            errorMessage = fmt::format("Unknown error");
-            appLogger->error(std::string(errorMessage));
+        auto result = db->listAnimations(creatures::SortBy::name);
+        if(!result.isSuccess()) {
+
+            // If we get an error, let's set it up right
+            auto errorCode = result.getError().value().getCode();
+            switch(errorCode) {
+                case ServerError::NotFound:
+                    status = Status::CODE_404;
+                    break;
+                case ServerError::InvalidData:
+                    status = Status::CODE_400;
+                    break;
+                default:
+                    status = Status::CODE_500;
+                    break;
+            }
+            errorMessage = result.getError()->getMessage();
+            appLogger->warn(std::string(result.getError()->getMessage()));
             error = true;
         }
         OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
 
-
         auto items = oatpp::Vector<oatpp::Object<creatures::AnimationMetadataDto>>::createShared();
 
+        auto metadatas = result.getValue().value();
         for (const auto &metadata : metadatas) {
-            appLogger->debug("Adding animation: {}", metadata.animation_id);
+            appLogger->debug("Adding animation metadata: {}", metadata.animation_id);
             items->emplace_back(creatures::convertToDto(metadata));
         }
 
@@ -90,103 +82,100 @@ namespace creatures :: ws {
 
         bool error = false;
         oatpp::String errorMessage;
-        creatures::Animation animation;
         Status status = Status::CODE_200;
 
-        try {
-            animation = creatures::db->getAnimation(animationId);
-            appLogger->debug("Found animation: {}", animation.metadata.title);
-        }
-        catch (const creatures::NotFoundException &e) {
-            errorMessage = fmt::format("Unable to locate animation {}: {}", animationId, e.what());
-            appLogger->debug(std::string(errorMessage));
+        auto result = db->getAnimation(animationId);
+        if(!result.isSuccess()) {
+
+            // If we get an error, let's set it up right
+            auto errorCode = result.getError().value().getCode();
+            switch(errorCode) {
+                case ServerError::NotFound:
+                    status = Status::CODE_404;
+                    break;
+                case ServerError::InvalidData:
+                    status = Status::CODE_400;
+                    break;
+                default:
+                    status = Status::CODE_500;
+                    break;
+            }
+            errorMessage = result.getError().value().getMessage();
+            appLogger->warn(std::string(errorMessage));
             error = true;
-            status = Status::CODE_404;
-        }
-        catch (const creatures::InvalidArgumentException &e) {
-            errorMessage = fmt::format("Unable to parse animation ID {}: {}", animationId, e.what());
-            appLogger->debug(std::string(errorMessage));
-            error = true;
-            status = Status::CODE_400;
-        }
-        catch (const creatures::InternalError &e) {
-            errorMessage = fmt::format("Internal error: {}", e.what());
-            appLogger->error(std::string(errorMessage));
-            error = true;
-            status = Status::CODE_500;
-        }
-        catch (const creatures::DataFormatException &e) {
-            errorMessage = fmt::format("Data format error: {}", e.what());
-            appLogger->error(std::string(errorMessage));
-            error = true;
-            status = Status::CODE_500;
-        }
-        catch (...) {
-            errorMessage = fmt::format("Unknown error");
-            appLogger->error(std::string(errorMessage));
-            error = true;
-            status = Status::CODE_500;
         }
         OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-        appLogger->debug("returning a 200");
+        auto animation = result.getValue().value();
         return creatures::convertToDto(animation);
 
     }
 
-    oatpp::String AnimationService::createAnimation(const oatpp::Object<creatures::AnimationDto>& inAnimationDto) {
+    oatpp::Object<creatures::AnimationDto> AnimationService::upsertAnimation(const std::string& jsonAnimation) {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
-        appLogger->info("AnimationService::createAnimation({})", std::string(inAnimationDto->metadata->title));
+
+        appLogger->info("attempting to upsert an animation");
+
+        appLogger->trace("JSON: {}", jsonAnimation);
+
 
         bool error = false;
-        oatpp::String message;
+        oatpp::String errorMessage;
         Status status = Status::CODE_200;
 
         try {
 
-            // Try to convert the Dto to a model object
-            auto animation = creatures::convertFromDto(inAnimationDto.getPtr());
-            appLogger->debug("Converted animation: {}", animation.metadata.title);
-
-            message = creatures::db->createAnimation(animation);
-            appLogger->info(std::string(message));
+            /*
+             * There's the same weirdness here that's in the Creature version of this Service (which is what
+             * this one is based on). I want to be able to store the raw JSON in the database, but I also want
+             * to validate it to make sure it has what data the front end needs.
+             */
+            auto jsonObject = nlohmann::json::parse(jsonAnimation);
+            auto result = db->validateAnimationJson(jsonObject);
+            if(!result.isSuccess()) {
+                errorMessage = result.getError()->getMessage();
+                appLogger->warn(std::string(result.getError()->getMessage()));
+                status = Status::CODE_400;
+                error = true;
+            }
         }
-        catch (const creatures::DuplicateFoundError &e) {
-            message = fmt::format("Duplicate animation ID found on create?: {}", e.what());
-            appLogger->debug(std::string(message));
-            error = true;
-            status = Status::CODE_409;
-        }
-        catch (const creatures::InvalidArgumentException &e) {
-            message = fmt::format("Unable to parse animation: {}", e.what());
-            appLogger->debug(std::string(message));
-            error = true;
+        catch ( const nlohmann::json::parse_error& e) {
+            errorMessage = e.what();
+            appLogger->warn(std::string(e.what()));
             status = Status::CODE_400;
-        }
-        catch (const creatures::InternalError &e) {
-            message = fmt::format("Internal error: {}", e.what());
-            appLogger->error(std::string(message));
             error = true;
-            status = Status::CODE_500;
         }
-        catch (const creatures::DataFormatException &e) {
-            message = fmt::format("Data format error: {}", e.what());
-            appLogger->error(std::string(message));
-            error = true;
-            status = Status::CODE_500;
-        }
-        catch (...) {
-            message = fmt::format("Unknown error");
-            appLogger->error(std::string(message));
-            error = true;
-            status = Status::CODE_500;
-        }
-        OATPP_ASSERT_HTTP(!error, status, message)
+        OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-        appLogger->debug("returning success!");
-        return message;
 
+
+
+        appLogger->debug("passing the upsert request off to the database");
+        auto result = db->upsertAnimation(jsonAnimation);
+
+        // If there's an error, let the client know
+        if(!result.isSuccess()) {
+
+            errorMessage = result.getError()->getMessage();
+            appLogger->warn(std::string(result.getError()->getMessage()));
+            status = Status::CODE_500;
+            error = true;
+        }
+        OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
+        // This should never happen and is a bad bug if it does 😱
+        if(!result.getValue().has_value()) {
+            errorMessage = "DB didn't return a value after upserting an animation. This is a bug. Please report it.";
+            appLogger->error(std::string(errorMessage));
+            OATPP_ASSERT_HTTP(true, Status::CODE_500, errorMessage);
+        }
+
+        // Yay! All good! Send it along
+        auto animation = result.getValue().value();
+        info("Updated animation '{}' in the database (id: {})",
+             animation.metadata.title, animation.id);
+        return convertToDto(animation);
     }
 
 } // creatures :: ws

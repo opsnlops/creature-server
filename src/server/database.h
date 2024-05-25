@@ -29,7 +29,7 @@ using json = nlohmann::json;
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
 #include "model/Creature.h"
-#include "model/FrameData.h"
+#include "model/Track.h"
 #include "model/SortBy.h"
 #include "server/namespace-stuffs.h"
 #include "util/Result.h"
@@ -72,8 +72,17 @@ namespace creatures {
 
 
         /**
+         * Validates that the JSON for an Animation contains the fields we expect.
+         *
+         * @param json the JSON to validate
+         * @return true if good, or ServerError if not
+         */
+        static Result<bool> validateAnimationJson(const nlohmann::json& json);
+
+
+        /**
          * Helper function that checks if a JSON object has all of the required fields. Used
-         * heavily by `validateCreatureJson()`.
+         * heavily by `validate[Thing]Json()`.
          *
          * @tparam N the number of fields
          * @param j the JSON object to check
@@ -91,9 +100,10 @@ namespace creatures {
          */
 
         // Animation stuff
-        creatures::Animation getAnimation(const std::string& animationId);
-        std::vector<creatures::AnimationMetadata> listAnimations(creatures::SortBy sortBy);
-        std::string createAnimation(creatures::Animation animation);
+        Result<json> getAnimationJson(animationId_t animationId);
+        Result<creatures::Animation> getAnimation(const animationId_t& animationId);
+        Result<std::vector<creatures::AnimationMetadata>> listAnimations(creatures::SortBy sortBy);
+        Result<creatures::Animation> upsertAnimation(const std::string& animationJson);
 
 
 
@@ -139,6 +149,11 @@ namespace creatures {
         static Result<creatures::Creature> creatureFromJson(json creatureJson);
 
 
+
+
+        static Result<creatures::Animation> animationFromJson(json animationJson);
+        static Result<creatures::AnimationMetadata> animationMetadataFromJson(json animationMetadataJson);
+        static Result<creatures::Track> trackFromJson(json trackJson);
 
         /*
          * Playlists

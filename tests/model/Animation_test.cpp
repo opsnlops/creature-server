@@ -25,13 +25,13 @@ namespace creatures {
                     100,
                     true
             };
-            FrameData frameData = {
+            Track trackData = {
                     "frame123",
                     "creature456",
                     "anim123",
                     {"base64encodedframe1", "base64encodedframe2"}
             };
-           animation.tracks.push_back(frameData);
+           animation.tracks.push_back(trackData);
         }
     };
 

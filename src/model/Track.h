@@ -10,7 +10,7 @@
 
 namespace creatures {
 
-    struct FrameData {
+    struct Track {
         std::string id;
         std::string creature_id;
         std::string animation_id;
@@ -25,22 +25,22 @@ namespace creatures {
     /**
      * Data transfer object for FrameData
      */
-    class FrameDataDto : public oatpp::DTO {
+    class TrackDto : public oatpp::DTO {
 
-        DTO_INIT(FrameDataDto, DTO /* extends */)
+        DTO_INIT(TrackDto, DTO /* extends */)
 
         DTO_FIELD_INFO(id) {
-            info->description = "The ID of this frame data object in the form of a MongoDB OID";
+            info->description = "The ID of this track in the form of an UUID";
         }
         DTO_FIELD(String, id);
 
         DTO_FIELD_INFO(creature_id) {
-            info->description = "The ID of the creature this frame data belongs to";
+            info->description = "The ID of the creature this track belongs to";
         }
         DTO_FIELD(String, creature_id);
 
         DTO_FIELD_INFO(animation_id) {
-            info->description = "The ID of the animation this frame data belongs to";
+            info->description = "The ID of the animation this track belongs to";
         }
         DTO_FIELD(String, animation_id);
 
@@ -53,9 +53,7 @@ namespace creatures {
 
 #include OATPP_CODEGEN_END(DTO)
 
-
-    std::shared_ptr<FrameDataDto> convertToDto(const FrameData &frameData);
-    FrameData convertFromDto(const std::shared_ptr<FrameDataDto> &frameDataDTO);
-
+    oatpp::Object<TrackDto> convertToDto(const Track &track);
+    Track convertFromDto(const std::shared_ptr<TrackDto> &trackDto);
 
 }

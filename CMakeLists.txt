@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "1.9.20"
+        VERSION "1.9.21"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -179,8 +179,6 @@ add_executable(creature-server
         src/model/Animation.h
         src/model/Creature.h
         src/model/Creature.cpp
-        src/model/FrameData.cpp
-        src/model/FrameData.h
         src/model/Input.h
         src/model/Input.cpp
         src/model/LogLevel.h
@@ -193,6 +191,8 @@ add_executable(creature-server
         src/model/Sound.h
         src/model/Sound.cpp
         src/model/SortBy.h
+        src/model/Track.cpp
+        src/model/Track.h
         src/model/VirtualStatusLights.cpp
         src/model/VirtualStatusLights.h
 
@@ -341,7 +341,7 @@ add_executable(creature-server-test
         tests/model/Animation_test.cpp
         tests/model/AnimationMetadata_test.cpp
         src/model/SortBy.h
-        src/model/FrameData.cpp
+        src/model/Track.cpp
 )
 
 target_link_libraries(creature-server-test

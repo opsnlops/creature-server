@@ -148,4 +148,39 @@ namespace creatures {
 
         return Result<bool>{true};
     }
+
+
+
+
+
+    /*
+     * This is for animations, not creatures. For some reason the linker doesn't
+     * like it in the place and heck if I know.
+     */
+
+    Result<bool> Database::validateAnimationJson(const nlohmann::json &json) {
+
+        auto topLevelOkay = has_required_fields(json, creatures::Animation::required_top_level_fields);
+        if(!topLevelOkay.isSuccess()) {
+            return topLevelOkay;
+        }
+
+        auto metadataOkay = has_required_fields(json["metadata"], creatures::Animation::required_metadata_fields);
+        if(!metadataOkay.isSuccess()) {
+            return metadataOkay;
+        }
+
+        // Confirm that the tracks are valid
+        for( const auto& track : json["tracks"]) {
+            auto trackOkay = has_required_fields(track, creatures::Animation::required_track_fields);
+            if(!trackOkay.isSuccess()) {
+                return trackOkay;
+            }
+        }
+
+
+        // TODO: Make sure that the creature_ids in the tracks are valid
+
+        return Result<bool>{true};
+    }
 }

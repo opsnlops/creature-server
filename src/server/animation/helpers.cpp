@@ -1,284 +1,172 @@
 
 #include "spdlog/spdlog.h"
 
-#include <base64.hpp>
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
-#include <bsoncxx/builder/stream/document.hpp>
-#include <bsoncxx/exception/exception.hpp>
-#include <bsoncxx/json.hpp>
-#include <bsoncxx/types.hpp>
-
-#include "exception/exception.h"
-#include "server/creature-server.h"
 #include "server/database.h"
+
 #include "util/helpers.h"
+#include "util/Result.h"
 
 #include "server/namespace-stuffs.h"
 
 namespace creatures {
 
-    /**
-     * This function is responsible serializing an animation to BSON
-     *
-     * @param Animation* animation  // The animation to be handled.
-     * @param int animationId // The unique identifier for the animation.
-     *
-     * @return bool // Returns true if the animation is successfully handled, false otherwise.
-     */
-    bsoncxx::document::value animationToBson(const creatures::Animation &animation) {
 
-        debug("converting an animation to BSON");
+    Result<creatures::Track> Database::trackFromJson(json trackJson) {
 
-        bsoncxx::builder::stream::document doc{};
+        debug("attempting to create a Track from JSON via trackFromJson()");
+
         try {
 
-            // The `_id` is the top level, as Mongo expects
-            doc << "_id" << stringToOid(animation.id);
-            trace("_id set");
+            auto track = Track();
+            track.id = trackJson["id"];
+            debug("id: {}", track.id);
 
-            // Metadata
-            doc << "metadata" << animationMetadataToBson(animation.metadata);
-            trace("metadata created, title: {}", animation.metadata.title);
-
-            // Go load each track
-            for(const auto& track : animation.tracks) {
-                doc << "frames" << frameDataToBson(track);
+            if(track.id.empty()) {
+                std::string errorMessage = "Track id is empty";
+                warn(errorMessage);
+                return ServerError(ServerError::InvalidData, errorMessage);
             }
-            trace("added the frame data");
 
-            return doc.extract();
-        }
-        catch (const bsoncxx::exception& e) {
-            error("Error encoding the animation to BSON: {}", e.what());
-            throw DataFormatException(fmt::format("Error encoding the animation to BSON: {} ({})",
-                                                  e.what(),
-                                                  e.code().message()));
-        }
-    }
+            track.animation_id = trackJson["animation_id"];
+            debug("animation_id: {}", track.animation_id);
+
+            if(track.animation_id.empty()) {
+                std::string errorMessage = "Track animation_id is empty";
+                warn(errorMessage);
+                return ServerError(ServerError::InvalidData, errorMessage);
+            }
+
+            track.creature_id = trackJson["creature_id"];
+            debug("creature_id: {}", track.creature_id);
+
+            if(track.creature_id.empty()) {
+                std::string errorMessage = "Track creature_id is empty";
+                warn(errorMessage);
+                return ServerError(ServerError::InvalidData, errorMessage);
+            }
+
+            track.frames = trackJson["frames"];
 
 
-    creatures::Animation animationFromBson(const bsoncxx::document::view &doc) {
-        throw InternalError("Not implemented");
-    }
+            debug("all checked out, returning a valid Track");
+            return Result<creatures::Track>{track};
 
-
-    /**
-     * Create the BSON representation of an `AnimationMetadata`
-     *
-     * @param metadata the `AnimationMetadata` to serialize
-     * @return a `bsoncxx::document::value` with the metadata
-     */
-    bsoncxx::document::value animationMetadataToBson(const creatures::AnimationMetadata &metadata) {
-
-        debug("attempting to serial an AnimationMetadata to BSON");
-
-        // Do some light error checking
-        if(metadata.animation_id.empty()) {
-            error("Unable to serialize AnimationMetadata because it does not have an animation_id");
-            throw DataFormatException("Unable to serialize AnimationMetadata because it does not have an animation_id");
+        } catch (const nlohmann::json::exception &e) {
+            std::string errorMessage = fmt::format("Error while creating a Track from JSON: {}", e.what());
+            warn(errorMessage);
+            return Result<creatures::Track>{ServerError(ServerError::InvalidData, errorMessage)};
         }
 
-        bsoncxx::builder::stream::document builder{};
-
-        try {
-            builder << "animation_id" << metadata.animation_id
-                << "title" << metadata.title
-                << "milliseconds_per_frame"
-                << bsoncxx::types::b_int32{static_cast<int32_t>(metadata.milliseconds_per_frame)}
-                << "number_of_frames"
-                << bsoncxx::types::b_int32{static_cast<int32_t>(metadata.number_of_frames)}
-                << "note" << metadata.note
-                << "sound_file" << metadata.sound_file
-                << "multitrack_audio" << metadata.multitrack_audio;
-
-            return builder.extract();
-
-        }
-        catch (const bsoncxx::exception& e) {
-            error("Unable to encode an AnimationMetadata to BSON: {}", e.what());
-            throw e;
-        }
 
     }
 
 
-    bsoncxx::document::value frameDataToBson(const creatures::FrameData &frameData) {
+    Result<creatures::AnimationMetadata> Database::animationMetadataFromJson(json animationMetadataJson) {
 
-        if(frameData.id.empty()) {
-            error("Unable to serialize FrameData because it does not have an id");
-            throw DataFormatException("Unable to serialize FrameData because it does not have an id");
-        }
-
-        bsoncxx::builder::stream::document doc{};
-        try {
-
-            // Include the easy stuff :)
-            doc << "_id" << stringToOid(frameData.id)
-                << "creature_id" << stringToOid(frameData.creature_id)
-                << "animation_id" << stringToOid(frameData.animation_id)
-                << "frames" << stringVectorToBson(frameData.frames);
-
-            return doc.extract();
-
-        }
-        catch (const bsoncxx::exception& e) {
-            error("Error encoding a FrameData to BSON: {}", e.what());
-            throw;
-        }
-    }
-
-    /**
-     * Extract an AnimationMetadata object from a BSON document
-     *
-     * @param doc the doc to look at
-     */
-    creatures::AnimationMetadata animationMetadataFromBson(const bsoncxx::document::view &doc) {
-
-        debug("attempting to build an AnimationMetadata from BSON");
-
-        auto metadata = creatures::AnimationMetadata();
-
-        bsoncxx::document::element element = doc["title"];
-        if (!element) {
-            error("AnimationMetadata value 'title' is not found");
-            throw DataFormatException("AnimationMetadata value 'title' is not found");
-        }
-
-        if (element.type() != bsoncxx::type::k_utf8) {
-            error("Animation.Metadata value 'title' is not a string");
-            throw creatures::DataFormatException("AnimationMetadata value 'title' is not a string");
-        }
-        bsoncxx::stdx::string_view string_value = element.get_string().value;
-        metadata.title = std::string{string_value};
-        trace("set the title to {}", metadata.title);
-
-
-
-
-        // Extract the animation ID
-        element = doc["_id"];
-        if (element && element.type() != bsoncxx::type::k_oid) {
-            error("Field `_id` was not an OID in the database while loading an animation metadata");
-            throw DataFormatException("Field 'animation_id' was not a bsoncxx::oid in the database");
-        }
-        const bsoncxx::oid &oid = element.get_oid().value;
-        metadata.animation_id = oidToString(oid);
-        trace("set the animation_id to {}", metadata.animation_id);
-
-
-        element = doc["milliseconds_per_frame"];
-        if (!element) {
-            std::string errorMessage = fmt::format("AnimationMetadata value 'milliseconds_per_frame' is not found on {}", metadata.title);
-            error(errorMessage);
-            throw creatures::DataFormatException(errorMessage);
-        }
-        if (element.type() != bsoncxx::type::k_int32) {
-            std::string errorMessage = fmt::format("AnimationMetadata value 'milliseconds_per_frame' is not an int on {}", metadata.title);
-            error(errorMessage);
-            throw DataFormatException(errorMessage);
-        }
-        metadata.milliseconds_per_frame = element.get_int32().value;
-        trace("set the milliseconds_per_frame to {}", metadata.milliseconds_per_frame);
-
-
-        element = doc["number_of_frames"];
-        if (!element) {
-            std::string errorMessage = fmt::format("AnimationMetadata value 'number_of_frames' is not found on {}", metadata.title);
-            error(errorMessage);
-            throw DataFormatException(errorMessage);
-        }
-        if (element.type() != bsoncxx::type::k_int32) {
-            std::string errorMessage = fmt::format("AnimationMetadata value 'number_of_frames' is not an int on {}", metadata.title);
-            error(errorMessage);
-            throw DataFormatException(errorMessage);
-        }
-        metadata.number_of_frames = element.get_int32().value;
-        trace("set the number_of_frames to {}", metadata.number_of_frames);
-
-
-
-        element = doc["sound_file"];
-        if (!element) {
-            std::string errorMessage = fmt::format("AnimationMetadata value 'sound_file' is not found on {}", metadata.title);
-            error(errorMessage);
-            throw DataFormatException(errorMessage);
-        }
-        if (element.type() != bsoncxx::type::k_utf8) {
-            std::string errorMessage = fmt::format("AnimationMetadata value 'sound_file' is not a string on {}", metadata.title);
-            error(errorMessage);
-            throw DataFormatException(errorMessage);
-        }
-        string_value = element.get_string().value;
-        metadata.sound_file = std::string{string_value};
-        trace("set the sound_file to {}", metadata.sound_file);
-
-
-
-        element = doc["multitrack_audio"];
-        if (!element) {
-            std::string errorMessage = fmt::format("AnimationMetadata value 'multitrack_audio' is not found on {}", metadata.title);
-            error(errorMessage);
-            throw DataFormatException(errorMessage);
-        }
-        if (element.type() != bsoncxx::type::k_bool) {
-            std::string errorMessage = fmt::format("AnimationMetadata value 'multitrack_audio' is not a boolean on {}", metadata.title);
-            error(errorMessage);
-            throw DataFormatException(errorMessage);
-        }
-        metadata.multitrack_audio = element.get_bool().value;
-        trace("set the multitrack_audio to {}", metadata.multitrack_audio);
-
-
-        // And finally, the note!
-        element = doc["note"];
-        if (!element) {
-            std::string errorMessage = fmt::format("AnimationMetadata value 'note' is not found on {}", metadata.title);
-            error(errorMessage);
-            throw DataFormatException(errorMessage);
-        }
-        if (element.type() != bsoncxx::type::k_utf8) {
-            std::string errorMessage = fmt::format("AnimationMetadata value 'note' is not a string {}", metadata.title);
-            error(errorMessage);
-            throw DataFormatException(errorMessage);
-        }
-        metadata.note = std::string{element.get_string().value};
-        trace("set the notes to {}", metadata.note);
-
-        trace("all done creating a metadata from BSON!");
-
-        return metadata;
-    }
-
-
-    /**
-     * Loads frame data from MongoDB
-     *
-     * @param doc a bsoncxx::document::view with an element called "frames" to read
-     */
-    FrameData frameDataFromBson(const bsoncxx::document::view &doc) {
-        trace("trying to populate the frames from BSON");
-
-        auto frameData = FrameData();
+        debug("attempting to create an AnimationMetadata from JSON via animationMetadataFromJson()");
+        debug("JSON: {}", animationMetadataJson.dump(4));
 
 
         try {
 
-            frameData.id = oidToString(doc["_id"].get_oid().value);
-            frameData.animation_id = oidToString(doc["animation_id"].get_oid().value);
-            frameData.creature_id = oidToString(doc["creature_id"].get_oid().value);
+            auto metadata = AnimationMetadata();
+            metadata.animation_id = animationMetadataJson["animation_id"];
+            debug("animation_id: {}", metadata.animation_id);
 
-            frameData.frames = stringVectorFromBson(doc["frames"].get_array().value);
+            metadata.title = animationMetadataJson["title"];
+            debug("title: {}", metadata.title);
 
-            debug("loaded frame data, {} tracks found", frameData.frames.size());
+            metadata.milliseconds_per_frame = animationMetadataJson["milliseconds_per_frame"];
+            debug("milliseconds_per_frame: {}", metadata.milliseconds_per_frame);
 
-        } catch (const bsoncxx::exception& e) {
-            error("Error decoding the animation frames from BSON: {}", e.what());
-            throw DataFormatException(fmt::format("Error decoding the animation frames from BSON: {}", e.what()));
+            metadata.number_of_frames = animationMetadataJson["number_of_frames"];
+            debug("number_of_frames: {}", metadata.number_of_frames);
+
+            metadata.note = animationMetadataJson["note"];
+            debug("note: {}", metadata.note);
+
+            metadata.sound_file = animationMetadataJson["sound_file"];
+            debug("sound_file: {}", metadata.sound_file);
+
+            metadata.multitrack_audio = animationMetadataJson["multitrack_audio"];
+            debug("multitrack_audio: {}", metadata.multitrack_audio);
+
+
+            // Now let's validate it
+            if (metadata.animation_id.empty()) {
+                std::string errorMessage = "AnimationMetadata animation_id is empty";
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+
+            if (metadata.title.empty()) {
+                std::string errorMessage = "AnimationMetadata title is empty";
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+
+            debug("all checked out, returning a valid AnimationMetadata");
+            return Result<creatures::AnimationMetadata>{metadata};
+
+        } catch (const nlohmann::json::exception &e) {
+            std::string errorMessage = fmt::format("Error while creating an AnimationMetadata from JSON: {}", e.what());
+            warn(errorMessage);
+            return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
         }
+    }
 
-        return frameData;
+    Result<creatures::Animation> Database::animationFromJson(json animationJson) {
+
+        debug("attempting to create an animation from JSON via animationFromJson()");
+
+        try {
+
+            auto animation = Animation();
+            animation.id = animationJson["id"];
+            debug("id: {}", animation.id);
+
+            auto metadata = animationMetadataFromJson(animationJson["metadata"]);
+            if (!metadata.isSuccess()) {
+                auto error = metadata.getError().value();
+                warn("Error while creating an AnimationMetadata from JSON: {}", error.getMessage());
+                return Result<creatures::Animation>{ServerError(ServerError::InvalidData, error.getMessage())};
+            }
+            animation.metadata = metadata.getValue().value();
+
+
+            // Add all of the tracks
+            std::vector<json> tracksJson = animationJson["tracks"];
+            for(const auto& trackJson : tracksJson) {
+                auto track = trackFromJson(trackJson);
+                if (!track.isSuccess()) {
+                    auto error = track.getError();
+                    warn("Error while creating a Track from JSON: {}", error->getMessage());
+                    return Result<creatures::Animation>{ServerError(ServerError::InvalidData, error->getMessage())};
+                }
+                animation.tracks.push_back(track.getValue().value());
+            }
+
+            return Result<creatures::Animation>{animation};
+        }
+        catch (const nlohmann::json::exception &e) {
+            std::string errorMessage = fmt::format("Error while creating an animation from JSON: {}", e.what());
+            warn(errorMessage);
+            return Result<creatures::Animation>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
     }
 
 
+
+    /*
+     * NOTE
+     *
+     * validateAnimationJson() is over in src/server/creature/helpers.cpp.
+     *
+     * The linker can't find it if it's here and heck if I know.
+     *
+     */
 
 }

@@ -6,7 +6,7 @@
 
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
-#include "model/FrameData.h"
+#include "model/Track.h"
 
 
 namespace creatures {
@@ -15,6 +15,8 @@ namespace creatures {
         auto animationDto = AnimationDto::createShared();
         animationDto->id = animation.id;
         animationDto->metadata = convertToDto(animation.metadata);
+        animationDto->tracks = oatpp::Vector<oatpp::Object<TrackDto>>::createShared();
+
 
         for (const auto &frame : animation.tracks) {
             animationDto->tracks->emplace_back(convertToDto(frame));
