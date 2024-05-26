@@ -15,6 +15,12 @@ namespace creatures {
         playlistsStopped = 0;
         playlistsEventsProcessed = 0;
         playlistStatusRequests = 0;
+        restRequestsProcessed = 0;
+        websocketConnectionsProcessed = 0;
+        websocketMessagesReceived = 0;
+        websocketMessagesSent = 0;
+        websocketPingsSent = 0;
+        websocketPongsReceived = 0;
     }
 
     void SystemCounters::incrementTotalFrames() {
@@ -57,6 +63,35 @@ namespace creatures {
         playlistStatusRequests++;
     }
 
+    void SystemCounters::incrementRestRequestsProcessed() {
+        restRequestsProcessed++;
+    }
+
+    void SystemCounters::incrementWebsocketConnectionsProcessed() {
+        websocketConnectionsProcessed++;
+    }
+
+    void SystemCounters::incrementWebsocketMessagesReceived() {
+        websocketMessagesReceived++;
+    }
+
+    void SystemCounters::incrementWebsocketMessagesSent() {
+        websocketMessagesSent++;
+    }
+
+    void SystemCounters::incrementWebsocketPingsSent() {
+        websocketPingsSent++;
+    }
+
+    void SystemCounters::incrementWebsocketPongsReceived() {
+        websocketPongsReceived++;
+    }
+
+
+
+
+
+
     uint64_t SystemCounters::getTotalFrames() {
         return totalFrames.load();
     }
@@ -95,5 +130,59 @@ namespace creatures {
 
     uint64_t SystemCounters::getPlaylistStatusRequests() {
         return playlistStatusRequests.load();
+    }
+
+    uint64_t SystemCounters::getRestRequestsProcessed() {
+        return restRequestsProcessed.load();
+    }
+
+    uint64_t SystemCounters::getWebsocketConnectionsProcessed() {
+        return websocketConnectionsProcessed.load();
+    }
+
+    uint64_t SystemCounters::getWebsocketMessagesReceived() {
+        return websocketMessagesReceived.load();
+    }
+
+    uint64_t SystemCounters::getWebsocketMessagesSent() {
+        return websocketMessagesSent.load();
+    }
+
+    uint64_t SystemCounters::getWebsocketPingsSent() {
+        return websocketPingsSent.load();
+    }
+
+    uint64_t SystemCounters::getWebsocketPongsReceived() {
+        return websocketPongsReceived.load();
+    }
+
+    /**
+     * Create a DTO from the current state of the counters
+     *
+     * @return a shared pointer to the DTO
+     */
+    oatpp::Object<SystemCountersDto> SystemCounters::convertToDto() {
+
+        auto dto = SystemCountersDto::createShared();
+
+        dto->totalFrames = totalFrames.load();
+        dto->eventsProcessed = eventsProcessed.load();
+        dto->framesStreamed = framesStreamed.load();
+        dto->dmxEventsProcessed = dmxEventsProcessed.load();
+        dto->animationsPlayed = animationsPlayed.load();
+        dto->soundsPlayed = soundsPlayed.load();
+        dto->playlistsStarted = playlistsStarted.load();
+        dto->playlistsStopped = playlistsStopped.load();
+        dto->playlistsEventsProcessed = playlistsEventsProcessed.load();
+        dto->playlistStatusRequests = playlistStatusRequests.load();
+        dto->restRequestsProcessed = restRequestsProcessed.load();
+        dto->websocketConnectionsProcessed = websocketConnectionsProcessed.load();
+        dto->websocketMessagesReceived = websocketMessagesReceived.load();
+        dto->websocketMessagesSent = websocketMessagesSent.load();
+        dto->websocketPingsSent = websocketPingsSent.load();
+        dto->websocketPongsReceived = websocketPongsReceived.load();
+
+        return dto;
+
     }
 }

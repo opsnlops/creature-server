@@ -2,17 +2,18 @@
 #include "server/config.h"
 
 #include <string>
+#include <vector>
 
-#include "spdlog/spdlog.h"
 
-#include "server.pb.h"
+#include "exception/exception.h"
+#include "model/Creature.h"
 #include "server/database.h"
 #include "server/creature-server.h"
-#include "exception/exception.h"
+#include "util/cache.h"
+#include "util/helpers.h"
 
+#include "spdlog/spdlog.h"
 #include <fmt/format.h>
-
-#include <grpcpp/grpcpp.h>
 
 #include <mongocxx/client.hpp>
 #include <mongocxx/cursor.hpp>
@@ -28,35 +29,16 @@ using bsoncxx::builder::basic::kvp;
 namespace creatures {
 
     extern std::shared_ptr<Database> db;
-
-    grpc::Status CreatureServerImpl::GetAllCreatures(ServerContext *context, const CreatureFilter *filter,
-                                               GetAllCreaturesResponse *response) {
-
-        debug("called GetAllCreatures()");
-
-        try {
-            db->getAllCreatures(filter, response);
-            return {grpc::StatusCode::OK, "Got all of the creatures! ✅🦁🦜"};
-        }
-        catch( const DataFormatException& e) {
-            error("Data format exception while getting all creatures: {}", e.what());
-            return {grpc::StatusCode::INTERNAL, e.what()};
-        }
-        catch( const InternalError& e) {
-            error("Internal error while getting all creatures: {}", e.what());
-            return {grpc::StatusCode::INTERNAL, e.what()};
-        }
-        catch ( ... ) {
-            error("Unknown error while getting all creatures");
-            return {grpc::StatusCode::INTERNAL, "Unknown error"};
-        }
-
-    }
+    extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 
 
-    void Database::getAllCreatures(const CreatureFilter *filter, GetAllCreaturesResponse *creatureList) {
-        grpc::Status status;
+    Result<std::vector<creatures::Creature>> Database::getAllCreatures(creatures::SortBy sortBy, bool ascending) {
+
+        (void) ascending;
+
         info("attempting to get all of the creatures");
+
+        auto creatureList = std::vector<creatures::Creature>{};
 
         // Start an exception frame
         try {
@@ -67,16 +49,21 @@ namespace creatures {
             document query_doc{};
             document sort_doc{};
 
-            switch (filter->sortby()) {
-                case server::SortBy::number:
+            switch (sortBy) {
+                case SortBy::number:
                     sort_doc << "number" << 1;
                     debug("sorting by number");
+                    break;
+
+                case SortBy::name:
+                    sort_doc << "name" << 1;
+                    debug("sorting by name");
                     break;
 
                     // Default is by name
                 default:
                     sort_doc << "name" << 1;
-                    debug("sorting by name");
+                    debug("sorting by name (as default)");
                     break;
             }
 
@@ -86,34 +73,52 @@ namespace creatures {
 
             for (auto &&doc: cursor) {
 
-                auto creature = creatureList->add_creatures();
-                creatureFromBson(doc, creature);
+                std::string json_str = bsoncxx::to_json(doc);
+                debug("Document JSON: {}", json_str);
 
-                debug("loaded {}", creature->name());
+                // Parse JSON string to nlohmann::json
+                nlohmann::json json_doc = nlohmann::json::parse(json_str);
+
+                // Create creature from JSON
+                auto creatureResult = creatureFromJson(json_doc);
+                if (!creatureResult.isSuccess()) {
+                    std::string errorMessage = fmt::format("Unable to parse the JSON in the database to a Creature: {}", creatureResult.getError()->getMessage());
+                    warn(errorMessage);
+                    continue;
+                }
+
+                auto creature = creatureResult.getValue().value();
+                creatureList.push_back(creature);
+
+                // Update the cache since we went all the way to the DB to get it
+                creatureCache->put(creature.id, creature);
             }
 
-            return;
+            debug("found {} creatures", creatureList.size());
+            return Result<std::vector<creatures::Creature>>{creatureList};
 
         } catch (const DataFormatException& e) {
 
-                // Log the error
-                std::string errorMessage = fmt::format("Data format error while trying to get all of the creatures: {}", e.what());
-                error(errorMessage);
-                throw creatures::DataFormatException(errorMessage);}
+            // Log the error
+            std::string errorMessage = fmt::format("Data format error while trying to get all of the creatures: {}",
+                                                   e.what());
+            error(errorMessage);
+            return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
+        }
         catch (const DatabaseError& e) {
-                std::string errorMessage = fmt::format("A database error happened while getting all of the creatures: {}", e.what());
-                error(errorMessage);
-                throw creatures::InternalError(errorMessage);
+            std::string errorMessage = fmt::format("A database error happened while getting all of the creatures: {}", e.what());
+            error(errorMessage);
+            return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
 
         } catch (const std::exception& e) {
             std::string errorMessage = fmt::format("Failed to get all creatures: {}", e.what());
             error(errorMessage);
-            throw creatures::InternalError(errorMessage);
+            return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
         }
         catch (...) {
             std::string errorMessage = "Failed to get all creatures: unknown error";
             error(errorMessage);
-            throw creatures::InternalError(errorMessage);
+            return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
         }
 
     }

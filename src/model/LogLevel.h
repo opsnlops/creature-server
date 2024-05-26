@@ -1,7 +1,11 @@
 
 #pragma once
 
-#include <nlohmann/json.hpp>
+#include <oatpp/core/macro/codegen.hpp>
+#include <oatpp/core/Types.hpp>
+
+#include <unordered_map>
+#include <string>
 
 namespace creatures {
 
@@ -16,15 +20,29 @@ namespace creatures {
         unknown = 7
     };
 
-    NLOHMANN_JSON_SERIALIZE_ENUM( LogLevel, {
-        {LogLevel::trace, "trace"},
-        {LogLevel::debug, "debug"},
-        {LogLevel::info, "info"},
-        {LogLevel::warn, "warn"},
-        {LogLevel::error, "error"},
-        {LogLevel::critical, "critical"},
-        {LogLevel::off, "off"},
-        {LogLevel::unknown, "unknown"}
-    })
+    constexpr std::string toString(LogLevel type) {
+        switch (type) {
+            case LogLevel::trace: return "trace";
+            case LogLevel::debug: return "debug";
+            case LogLevel::info: return "info";
+            case LogLevel::warn: return "warning";
+            case LogLevel::error: return "error";
+            case LogLevel::critical: return "critical";
+            case LogLevel::off: return "off";
+
+            default: return "unknown";
+        }
+    }
+
+    constexpr LogLevel fromString(const std::string& str) {
+        if (str == "trace") return LogLevel::trace;
+        else if (str == "debug") return LogLevel::debug;
+        else if (str == "info") return LogLevel::info;
+        else if (str == "warning") return LogLevel::warn;
+        else if (str == "error") return LogLevel::error;
+        else if (str == "critical") return LogLevel::critical;
+        else if (str == "off") return LogLevel::off;
+        else throw std::invalid_argument("Invalid LogLevel string: " + str);
+    }
 
 } // namespace creatures

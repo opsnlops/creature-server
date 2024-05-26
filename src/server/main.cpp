@@ -17,9 +17,10 @@
 // E131Sever
 #include <E131Server.h>
 
+// MoodyCamel
+#include "blockingconcurrentqueue.h"
 
 // Our stuff
-#include "GrpcServerManager.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
@@ -28,34 +29,32 @@
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
-#include "server/logging/concurrentqueue.h"
-#include "server/logging/creature_log_sink.h"
+#include "server/logging/CreatureLogSink.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/StatusLights.h"
+#include "server/ws/dto/websocket/WebSocketMessageDto.h"
 #include "Version.h"
 #include "util/cache.h"
 #include "util/environment.h"
+#include "util/loggingUtils.h"
+#include "util/MessageQueue.h"
 #include "util/threadName.h"
+#include "util/websocketUtils.h"
 #include "watchdog/Watchdog.h"
 
+#include "server/ws/App.h"
 
 #include "server/namespace-stuffs.h"
-
-using grpc::Server;
-using grpc::ServerBuilder;
-using grpc::ServerContext;
-using grpc::Status;
 
 using creatures::Database;
 using creatures::EventLoop;
 using creatures::MusicEvent;
 
-using moodycamel::ConcurrentQueue;
 
 namespace creatures {
     std::shared_ptr<Configuration> config{};
     std::shared_ptr<Database> db{};
-    std::shared_ptr <creatures::e131::E131Server> e131Server;
+    std::shared_ptr<creatures::e131::E131Server> e131Server;
     std::shared_ptr<EventLoop> eventLoop;
 
     /**
@@ -63,7 +62,14 @@ namespace creatures {
      * involve any creature in a universe, so it doesn't make sense to have more than one playing
      * at any one time.
      */
-    std::shared_ptr<ObjectCache<universe_t, PlaylistIdentifier>> runningPlaylists;
+    std::shared_ptr<ObjectCache<universe_t, std::string>> runningPlaylists;
+
+    /**
+     * Maintain a cache of the creatures. While going to the DB is very quick, there's some operations
+     * that require looking them up over and over again, like streaming frames. Rather than going back
+     * to the database each time, let's keep a cache of them on hand.
+     */
+    std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 
 
     std::shared_ptr<GPIO> gpioPins;
@@ -72,6 +78,9 @@ namespace creatures {
     const char* audioDevice;
     SDL_AudioSpec audioSpec;
     std::atomic<bool> serverShouldRun{true};
+
+    // MoodyCamel queue for outgoing websocket messages
+    std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 }
 
 
@@ -112,21 +121,14 @@ int main(int argc, char **argv) {
     // Create our metric counters
     creatures::metrics = std::make_shared<creatures::SystemCounters>();
 
-    // Console logger
-    auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    console_sink->set_level(spdlog::level::trace);
+    // Bring up the websocket outgoing queue
+    creatures::websocketOutgoingMessages = std::make_shared<moodycamel::BlockingConcurrentQueue<std::string>>();
 
-    // Queue logger
-    ConcurrentQueue<LogItem> log_queue;
-    auto queue_sink = std::make_shared<spdlog::sinks::CreatureLogSink<std::mutex>>(log_queue);
-    queue_sink->set_level(spdlog::level::trace);
-
-    // There's no need to set a name, it's just noise
-    spdlog::logger logger("", {console_sink, queue_sink});
-    logger.set_level(spdlog::level::trace);
+    // Make a logger that goes to the console and websocket clients
+    auto logger = creatures::makeLogger("main", spdlog::level::debug);
 
     // Take over the default logger with our new one
-    spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
+    spdlog::set_default_logger(logger);
 
 
     // Parse out the command line options
@@ -139,8 +141,6 @@ int main(int argc, char **argv) {
     debug("spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
     debug("fmt version {}", FMT_VERSION);
     debug("MongoDB C++ driver version {}", MONGOCXX_VERSION_STRING);
-    debug("gRPC version {}.{}.{}", GRPC_CPP_VERSION_MAJOR, GRPC_CPP_VERSION_MINOR, GRPC_CPP_VERSION_PATCH);
-    debug("Protobuf version {}", GOOGLE_PROTOBUF_VERSION);
     debug("SDL version {}.{}.{}", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
     debug("Sound file location: {}", creatures::config->getSoundFileLocation());
 
@@ -178,8 +178,12 @@ int main(int argc, char **argv) {
     creatures::statusLights->start();
 
     // Create the playlist cache
-    creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<universe_t, PlaylistIdentifier>>();
+    creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<universe_t, std::string>>();
     debug("Playlist cache made");
+
+    // Create the Creature cache
+    creatures::creatureCache = std::make_shared<creatures::ObjectCache<creatureId_t, creatures::Creature>>();
+    debug("Created the creature cache");
 
     // Start up the event loop
     creatures::eventLoop = std::make_shared<EventLoop>();
@@ -204,9 +208,14 @@ int main(int argc, char **argv) {
     auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);
     watchdog->start();
 
-    // Start up gRPC
-    auto grpcServer = creatures::GrpcServerManager("0.0.0.0", 6666, log_queue);
-    grpcServer.start();
+
+    // Start the web server
+    auto webServer = std::make_shared<creatures::ws::App>();
+    webServer->start();
+
+    // Seed the metric send task
+    auto metricSendEvent = std::make_shared<creatures::CounterSendEvent>(SEND_COUNTERS_FRAMES);
+    creatures::eventLoop->scheduleEvent(metricSendEvent);
 
 
     // Wait for the signal handler to know when to stop
@@ -220,6 +229,11 @@ int main(int argc, char **argv) {
 
     info("starting shutdown process");
 
+    // Inform all currently connected clients we're stopping and then wait a second
+    // to make sure that it goes out!
+    creatures::broadcastNoticeToAllClients("Server is shutting down");
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
     // Tell the E131Server to stop
     creatures::e131Server->shutdown();
 
@@ -229,8 +243,8 @@ int main(int argc, char **argv) {
     // Halt the event loop
     creatures::eventLoop->shutdown();
 
-    // Halt gRPC
-    grpcServer.shutdown();
+    // Stop the websocket server
+    webServer->shutdown();
 
     creatures::gpioPins->serverOnline(false);
     creatures::statusLights->shutdown();

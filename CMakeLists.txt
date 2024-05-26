@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "1.6.0"
+        VERSION "2.0.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -12,18 +12,11 @@ set(CMAKE_CXX_STANDARD 20)
 # Overshadowed declarations keep biting me in the butt 😅
 add_compile_options(-Wshadow)
 add_compile_options(-Wall)
-#add_compile_options(-Wextra)
-#add_compile_options(-Wpedantic)
+add_compile_options(-Wextra)
+add_compile_options(-Wpedantic)
 
 set(PACKAGE_AUTHOR "April White")
 
-# I hate that this has to be done, but I'm in a bad spot with gRPC right now
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-        set(_CREATURES_GRPC_VERSION 1.60.0)
-else()
-        set(_CREATURES_GRPC_VERSION 1.60.0)
-endif()
-message(STATUS "Using gRPC version ${_CREATURES_GRPC_VERSION}")
 
 find_package(PkgConfig REQUIRED)
 
@@ -40,32 +33,11 @@ set(FETCHCONTENT_QUIET OFF)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-# Configure gRPC to use bundled libraries
-set(gRPC_ABSL_PROVIDER "module" CACHE STRING "Use bundled ABSL library")
-set(gRPC_CARES_PROVIDER "module" CACHE STRING "Use bundled CARES library")
-set(gRPC_PROTOBUF_PROVIDER "module" CACHE STRING "Use bundled protobuf library")
-set(gRPC_RE2_PROVIDER "module" CACHE STRING "Use bundled RE2 library")
-set(gRPC_SSL_PROVIDER "module" CACHE STRING "Use bundled SSL library")
-set(gRPC_ZLIB_PROVIDER "module" CACHE STRING "Use bundled ZLIB library")
-set(gRPC_INSTALL ON CACHE BOOL "Install gRPC")
-set(gRPC_BUILD_TESTS OFF CACHE BOOL "Build tests")
-set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "Propagate ABSL CXX_STD to subprojects")
+# Why are UUIDs so hard in 2024
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    pkg_search_module(UUID REQUIRED uuid)
+endif()
 
-# grpc
-message(STATUS "Building gRPC ${_CREATURES_GRPC_VERSION}")
-FetchContent_Declare(
-        gRPC
-        GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG        v${_CREATURES_GRPC_VERSION}
-)
-FetchContent_MakeAvailable(gRPC)
-# Since FetchContent uses add_subdirectory under the hood, we can use
-# the grpc targets directly from this build.
-set(_PROTOBUF_LIBPROTOBUF libprotobuf)
-set(_REFLECTION grpc++_reflection)
-set(_PROTOBUF_PROTOC $<TARGET_FILE:protoc>)
-set(_GRPC_GRPCPP grpc++)
-set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 
 
 # fmt
@@ -110,32 +82,26 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 
+# Use the oatpp that we've already made
+find_package(oatpp           REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
+#find_package(oatpp-swagger   REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
+find_package(oatpp-websocket REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-websocket-1.3.0)
+
+add_definitions(
+        ## define path to swagger-ui static resources folder
+        -DOATPP_SWAGGER_RES_PATH="${oatpp-swagger_INCLUDE_DIRS}/../bin/oatpp-swagger/res"
+)
+
+
 # ...and our own library
 add_subdirectory(lib/e131_service)
 
 
-#
-# uWebSockets doesn't use CMake, so we have to do it ourselves. This is
-# a bit of a hack, but it works.
-#
+# Set up a base64 encoder/decoder
+set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
 
-# Build the stuff that uWebSockets needs
-set(UWEBSOCKETS_DIR "${CMAKE_SOURCE_DIR}/lib/uWebSockets")
-
-# Custom command to make the uWebSockets
-add_custom_command(
-        OUTPUT ${UWEBSOCKETS_DIR}/uSockets/uSockets.a
-        COMMAND WITH_BORINGSSL=1 make all
-        WORKING_DIRECTORY ${UWEBSOCKETS_DIR}
-        COMMENT "Building uWebSockets"
-)
-
-# Custom target that depends on the output
-add_custom_target(uWebSockets DEPENDS ${UWEBSOCKETS_DIR}/uSockets/uSockets.a)
-
-# Copy the headers to a proper include directory
-file(COPY ${UWEBSOCKETS_DIR}/src/
-        DESTINATION ${UWEBSOCKETS_DIR}/include/uWebSockets/)
+# Set up a concurrent queue
+set(MOODYCAMEL_DIR "${CMAKE_SOURCE_DIR}/lib/concurrentqueue")
 
 
 # MongoDB (built by us on Linux, but the macOS/brew version is fine)
@@ -147,56 +113,15 @@ find_package(bsoncxx REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(SDL2_mixer REQUIRED)
 
-# Why are UUIDs so hard in 2024
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-        find_library(UUID uuid REQUIRED)
-else()
-        pkg_search_module(UUID REQUIRED uuid)
-endif()
 
 
 # Leave a message
 message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
 
-# Proto file
-get_filename_component(server_proto "messaging/server.proto" ABSOLUTE)
-get_filename_component(server_proto_path "${server_proto}" PATH)
-
-# Generated sources
-set(server_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/server.pb.cc")
-set(server_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/server.pb.h")
-set(server_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/server.grpc.pb.cc")
-set(server_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/server.grpc.pb.h")
-add_custom_command(
-        OUTPUT "${server_proto_srcs}" "${server_proto_hdrs}" "${server_grpc_srcs}" "${server_grpc_hdrs}"
-        COMMAND ${_PROTOBUF_PROTOC}
-        ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
-        --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
-        -I "${server_proto_path}"
-        -I "${grpc_SOURCE_DIR}/third_party/protobuf/src"
-        --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
-        "${server_proto}"
-        DEPENDS "${server_proto}")
-
-add_library(server_grpc_proto
-        ${server_grpc_srcs}
-        ${server_grpc_hdrs}
-        ${server_proto_srcs}
-        ${server_proto_hdrs}
-)
-target_link_libraries(server_grpc_proto
-        ${_REFLECTION}
-        ${_GRPC_GRPCPP}
-        ${_PROTOBUF_LIBPROTOBUF}
-)
-target_include_directories(server_grpc_proto
-        PUBLIC
-        ${CMAKE_CURRENT_BINARY_DIR}
-)
-
 
 # Our source files
 file(GLOB serverFiles
+        src/util/*
         src/exception/*
         src/server/*
         src/server/animation/*
@@ -208,9 +133,8 @@ file(GLOB serverFiles
         src/server/logging/*
         src/server/metrics/*
         src/server/playlist/*
-        src/server/sound/*
         src/server/watchdog/*
-        src/util/*
+        src/model/*
 )
 
 file(GLOB clientFiles
@@ -229,90 +153,165 @@ file(GLOB logReaderFiles
 # Set up our includes
 include_directories(
         src/
+        util/
         ${UUID_INCLUDE_DIRS}
-        ${UWEBSOCKETS_DIR}/include
-        ${UWEBSOCKETS_DIR}/uSockets/src
         ${argparse_SOURCE_DIR}/include
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
+        ${MOODYCAMEL_DIR}
+        ${LIBBASE64_DIR}/include
+        ${oatpp_INCLUDE_DIRS}
         PRIVATE ${CMAKE_BINARY_DIR}
 )
-
-message(STATUS "Using Protocol Buffers ${protobuf_VERSION}")
 
 add_executable(creature-server
         ${serverFiles}
         src/server/watchdog/Watchdog.cpp
         src/server/watchdog/Watchdog.h
-        src/server/GrpcServerManager.cpp
-        src/server/GrpcServerManager.h
-        src/model/Creature.h
+
         src/model/LogLevel.h
         src/model/LogItem.h
-        src/model/FrameData.h
+
+        src/model/AnimationMetadata.cpp
         src/model/AnimationMetadata.h
+        src/model/Animation.cpp
         src/model/Animation.h
-        src/server/ws/WebSocketServer.cpp
+        src/model/Creature.h
+        src/model/Creature.cpp
+        src/model/Input.h
+        src/model/Input.cpp
+        src/model/LogLevel.h
+        src/model/LogItem.h
+        src/model/LogItem.cpp
+        src/model/Notice.h
+        src/model/Notice.cpp
+        src/model/StreamFrame.cpp
+        src/model/StreamFrame.h
+        src/model/Sound.h
+        src/model/Sound.cpp
+        src/model/SortBy.h
+        src/model/Track.cpp
+        src/model/Track.h
+        src/model/VirtualStatusLights.cpp
+        src/model/VirtualStatusLights.h
+
+
+        src/util/loggingUtils.cpp
+        src/util/loggingUtils.h
+        src/util/Result.cpp
+        src/util/Result.h
+        src/util/websocketUtils.h
+        src/util/websocketUtils.cpp
+
+
+        src/server/ws/AppComponent.h
+        src/server/ws/App.h
+        src/server/ws/App.cpp
+
+
+        src/server/ws/dto/ListDto.h
+        src/server/ws/dto/PlayAnimationRequestDto.h
+        src/server/ws/dto/PlaySoundRequestDTO.h
+        src/server/ws/dto/SimpleResponseDto.h
+        src/server/ws/dto/StatusDto.h
+
+        src/server/ws/ErrorHandler.cpp
+        src/server/ws/ErrorHandler.h
+
+        src/server/ws/controller/CreatureController.h
+        src/server/ws/controller/MetricsController.h
+        src/server/ws/controller/SoundController.h
+        src/server/ws/controller/StaticController.h
+        src/server/ws/controller/WebSocketController.h
+
+        src/server/ws/dto/websocket/LogMessage.h
+        src/server/ws/dto/websocket/MessageTypes.h
+        src/server/ws/dto/websocket/MessageTypes.cpp
+        src/server/ws/dto/websocket/NoticeMessage.h
+        src/server/ws/dto/websocket/ServerCountersMessage.h
+        src/server/ws/dto/websocket/StreamFrameMessage.h
+        src/server/ws/dto/websocket/VirtualStatusLightsMessage.h
+        src/server/ws/dto/websocket/WebSocketMessageDto.h
+
+
+        src/server/ws/messaging/BasicCommandDto.h
+        src/server/ws/messaging/IMessageHandler.h
+        src/server/ws/messaging/NoticeMessageHandler.cpp
+        src/server/ws/messaging/NoticeMessageHandler.h
+        src/server/ws/messaging/MessageProcessor.h
+        src/server/ws/messaging/MessageProcessor.cpp
+        src/server/ws/messaging/StreamFrameHandler.h
+        src/server/ws/messaging/StreamFrameHandler.cpp
+
+        src/server/ws/service/AnimationService.cpp
+        src/server/ws/service/AnimationService.h
+        src/server/ws/service/CreatureService.cpp
+        src/server/ws/service/CreatureService.h
+        src/server/ws/service/MetricsService.cpp
+        src/server/ws/service/MetricsService.cpp
+        src/server/ws/service/SoundService.cpp
+        src/server/ws/service/SoundService.h
+
+        src/server/ws/websocket/ClientCafe.h
+        src/server/ws/websocket/ClientConnection.h
+        src/server/ws/websocket/ClientCafe.cpp
+        src/server/ws/websocket/ClientConnection.cpp
+        src/server/ws/messaging/NoticeMessageCommandDTO.h
+
 )
-add_dependencies(creature-server uWebSockets)
+
+target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
+
 
 target_link_libraries(creature-server
-        PRIVATE server_grpc_proto
         PRIVATE ${UUID_LIBRARIES}
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
+        oatpp::oatpp
+#        oatpp::oatpp-swagger
+        oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
         argparse
         e131_service
-        ${UWEBSOCKETS_DIR}/uSockets/uSockets.a
-        ${_REFLECTION}
-        ${_GRPC_GRPCPP}
-        ${_PROTOBUF_LIBPROTOBUF}
 )
 
 
-add_executable(client
-        ${clientFiles}
-        src/model/Creature.h
-        src/model/LogLevel.h
-        src/model/LogItem.h
-        src/model/FrameData.h
-        src/model/AnimationMetadata.h
-        src/model/Animation.h
-)
+#add_executable(client
+#        ${clientFiles}
+#        src/model/Creature.h
+#        src/model/LogLevel.h
+#        src/model/LogItem.h
+#        src/model/FrameData.h
+#        src/model/AnimationMetadata.h
+#        src/model/Animation.h
+#)
+#
+#target_link_libraries(client PRIVATE
+#        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
+#        fmt::fmt
+#        oatpp::oatpp
+#        nlohmann_json::nlohmann_json
+#        PRIVATE mongo::mongocxx_shared
+#        PRIVATE mongo::bsoncxx_shared
+#)
 
-target_link_libraries(client
-        PRIVATE server_grpc_proto
-        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
-        fmt::fmt
-        nlohmann_json::nlohmann_json
-        PRIVATE mongo::mongocxx_shared
-        PRIVATE mongo::bsoncxx_shared
-        ${_REFLECTION}
-        ${_GRPC_GRPCPP}
-        ${_PROTOBUF_LIBPROTOBUF}
-)
-
-add_executable(logreader
-        ${logReaderFiles}
-        src/model/LogLevel.h
-)
-
-target_link_libraries(logreader
-        PRIVATE server_grpc_proto
-        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
-        fmt::fmt
-        nlohmann_json::nlohmann_json
-        PRIVATE mongo::mongocxx_shared
-        PRIVATE mongo::bsoncxx_shared
-        ${_REFLECTION}
-        ${_GRPC_GRPCPP}
-        ${_PROTOBUF_LIBPROTOBUF}
-)
+#add_executable(logreader
+#        ${logReaderFiles}
+#        src/model/LogLevel.h
+#)
+#
+#target_link_libraries(logreader PRIVATE
+#        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
+#        fmt::fmt
+#        oatpp::oatpp
+#        nlohmann_json::nlohmann_json
+#        PRIVATE mongo::mongocxx_shared
+#        PRIVATE mongo::bsoncxx_shared
+#)
 
 install(TARGETS creature-server
         COMPONENT creature-server
@@ -340,17 +339,20 @@ add_executable(creature-server-test
         tests/model/Creature_test.cpp
         tests/model/LogItem_test.cpp
         tests/model/Animation_test.cpp
-        tests/model/FrameData_test.cpp
         tests/model/AnimationMetadata_test.cpp
+        src/model/SortBy.h
+        src/model/Track.cpp
 )
 
 target_link_libraries(creature-server-test
-        PRIVATE server_grpc_proto
         PRIVATE ${UUID_LIBRARIES}
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
+        oatpp::oatpp
+#        oatpp::oatpp-swagger
+        oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
@@ -358,9 +360,6 @@ target_link_libraries(creature-server-test
         e131_service
         gtest_main
         gmock_main
-        ${_REFLECTION}
-        ${_GRPC_GRPCPP}
-        ${_PROTOBUF_LIBPROTOBUF}
 )
 
 # This is to include Google Test and Google Mock headers

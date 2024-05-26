@@ -31,7 +31,7 @@ namespace creatures {
     /**
      * This event type plays a sound file on a thread in the background
      */
-    MusicEvent::MusicEvent(uint64_t frameNumber, std::string filePath)
+    MusicEvent::MusicEvent(framenum_t frameNumber, std::string filePath)
             : EventBase(frameNumber), filePath(std::move(filePath)) {}
 
     void MusicEvent::executeImpl() {

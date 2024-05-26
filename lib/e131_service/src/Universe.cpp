@@ -20,6 +20,12 @@ namespace creatures::e131 {
         // Get the number of elements in the vector
         size_t N = values.size();
 
+        // Useful for debugging sometimes
+        logger->trace("firstSlot + N = {}, UNIVERSE_SLOT_COUNT = {}, firstSlot = {}",
+                      (firstSlot + N),
+                      UNIVERSE_SLOT_COUNT,
+                      firstSlot );
+
         // Ensure the firstSlot plus the size of values doesn't exceed UNIVERSE_SLOT_COUNT and firstSlot isn't zero
         if (firstSlot + N <= UNIVERSE_SLOT_COUNT && firstSlot > 0) {
 

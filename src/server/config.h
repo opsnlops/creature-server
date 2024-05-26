@@ -15,6 +15,9 @@
 // How often the timer event fires
 #define TICK_TIME_FRAMES                60000
 
+// How often should we send our counters to the web socket clients?
+#define SEND_COUNTERS_FRAMES            15000         // 15 * 1000 (the server runs at a 1ms frame rate)
+
 // How many frames should we wait before starting an animation
 #define ANIMATION_DELAY_FRAMES          500
 
@@ -25,7 +28,7 @@
 #define DEFAULT_DB_URI                  "mongodb://10.3.2.11/?serverSelectionTimeoutMS=2000"
 #define DB_NAME                         "creature_server"
 #define CREATURES_COLLECTION            "creatures"
-#define ANIMATIONS_COLLECTION           "animation"
+#define ANIMATIONS_COLLECTION           "animations"
 #define PLAYLISTS_COLLECTION            "playlists"
 
 

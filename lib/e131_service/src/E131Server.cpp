@@ -8,7 +8,7 @@
 #include <uuid/uuid.h>
 
 extern "C" {
-    #include <e131.h>
+#include <e131.h>
 }
 
 
@@ -41,18 +41,19 @@ namespace creatures::e131 {
         // Set up our source name, being careful to not exceed the length limit
         logger->debug("hostname: {}", hostname);
         std::string sourceHeader = fmt::format("creature-server v{} on {}", this->version, hostname);
-        memcpy(this->sourceName, sourceHeader.c_str(), sourceHeader.size() < SOURCE_NAME_LENGTH ? sourceHeader.size() : SOURCE_NAME_LENGTH);
+        memcpy(this->sourceName, sourceHeader.c_str(),
+               sourceHeader.size() < SOURCE_NAME_LENGTH ? sourceHeader.size() : SOURCE_NAME_LENGTH);
 
         logger->debug("source header: {}, size: {}", sourceHeader, sourceHeader.size());
 
         // Create our socket for talking out to the E1.31 network
         if ((socket = e131_socket()) < 0) {
-            logger->critical( "e131_socket: {}", strerror(errno));
+            logger->critical("e131_socket: {}", strerror(errno));
         }
 
         // Join our multicast group
         if (e131_multicast_iface(socket, this->networkDevice) < 0) {
-            logger->critical( "e131_multicast_join: {}", strerror(errno));
+            logger->critical("e131_multicast_join: {}", strerror(errno));
         }
 
         // Create our CID
@@ -90,7 +91,7 @@ namespace creatures::e131 {
         stopRequested.store(true);
 
         // Pause for a moment to let the worker thread finish
-        if(worker.joinable())
+        if (worker.joinable())
             worker.join();
     }
 
@@ -112,8 +113,7 @@ namespace creatures::e131 {
         if (universe) {
             universe->setFragment(firstSlot, values);
             logger->debug("set values starting at slot {} on universe {}", firstSlot, universeNumber);
-        }
-        else {
+        } else {
             createUniverse(universeNumber);
             universe = this->galaxy[universeNumber];
             universe->setFragment(firstSlot, values);
@@ -142,7 +142,7 @@ namespace creatures::e131 {
         while (!stopRequested.load()) {
 
             // Visit all of the universes in the galaxy
-            for (const auto& pair : galaxy) {
+            for (const auto &pair: galaxy) {
                 uint16_t universeNumber = pair.first;
                 auto universe = pair.second;
 
@@ -160,7 +160,8 @@ namespace creatures::e131 {
                 std::copy(state.begin(), state.end(), packet.dmp.prop_val);
 
                 // Copy our source name
-                std::copy(std::begin(this->sourceName), std::end(this->sourceName), std::begin(packet.frame.source_name));
+                std::copy(std::begin(this->sourceName), std::end(this->sourceName),
+                          std::begin(packet.frame.source_name));
 
                 // Make sure we don't set the START code to anything other than zero
                 packet.dmp.prop_val[0] = 0;
@@ -173,7 +174,7 @@ namespace creatures::e131 {
             }
 
             // Leave a clue on what happened
-            if(++frameCounter % 1000 == 0) {
+            if (++frameCounter % 1000 == 0) {
                 logger->debug("sent {} e1.31 frames", frameCounter);
             }
 

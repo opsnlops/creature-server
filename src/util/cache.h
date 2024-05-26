@@ -15,14 +15,22 @@ namespace creatures {
         ObjectCache() = default;
         ~ObjectCache() = default;
 
+        /**
+         * Put an item into the cache, replacing what's there if it already exists
+         *
+         * @param key the key
+         * @param value the thing to put in
+         */
         void put(const Key& key, std::shared_ptr<Value> value) {
             std::unique_lock lock(mutex_);
+            map_.erase(key);
             map_[key] = value;
         }
 
         // Overloaded put method that takes a normal object and wraps it into a shared_ptr
         void put(const Key& key, const Value& value) {
             std::unique_lock lock(mutex_);
+            map_.erase(key);
             map_[key] = std::make_shared<Value>(value);
         }
 

@@ -8,7 +8,7 @@
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/metrics/counters.h"
-#include "exception/exception.h"
+#include "util/Result.h"
 
 
 #include "server/namespace-stuffs.h"
@@ -20,71 +20,49 @@ namespace creatures {
     extern std::shared_ptr<EventLoop> eventLoop;
     extern std::shared_ptr<SystemCounters> metrics;
 
-    grpc::Status CreatureServerImpl::PlayAnimation(grpc::ServerContext *context, const PlayAnimationRequest *request,
-                                                   PlayAnimationResponse *response) {
 
-        info("Playing an animation from a gRPC request");
+    /**
+     * Fetch an animation from the database and then play it
+     *
+     * TODO: This shouldn't be in the database class. This is an artifact of the old gRPC code.
+     *
+     * @param animationId the id of the animation to play
+     * @param universe which universe to play the animation on
+     * @return a status message
+     */
+    Result<std::string> Database::playStoredAnimation(animationId_t animationId, universe_t universe) {
 
-        grpc::Status status;
+        debug("Playing a stored animation {} on universe {}", animationId, universe);
 
-        uint64_t startingFrame = eventLoop->getNextFrameNumber() + ANIMATION_DELAY_FRAMES;
-        uint64_t lastFrame;
+        framenum_t startingFrame = eventLoop->getNextFrameNumber() + ANIMATION_DELAY_FRAMES;
+        framenum_t lastFrame;
 
-        try {
-            lastFrame = scheduleAnimation(startingFrame, request->animationid(), request->universe());
+        auto animationResult = db->getAnimation(animationId);
+        if (!animationResult.isSuccess()) {
+            auto error = animationResult.getError().value();
+            auto errorMessage = fmt::format("Not able to play animation: {}", error.getMessage());
+            warn(errorMessage);
+            return Result<std::string>{error};
         }
-        catch (const creatures::NotFoundException &e) {
-            info("creature not found");
-            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                  e.what(),
-                                  fmt::format("🚫 Creature id not found"));
-            return status;
-        }
-        catch (const creatures::DataFormatException &e) {
-            critical("Data format exception while loading a creature on animation playback: {}", e.what());
-            status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                  e.what(),
-                                  "Data format exception while loading a creature on animation playback");
-            return status;
-        }
-        catch (const creatures::InvalidArgumentException &e) {
-            error("an empty creatureID was passed in while attempting to play an animation");
-            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                  e.what(),
-                                  fmt::format("⚠️ A creature id must be supplied"));
-            return status;
-        }
-        catch( ... ) {
 
-            // Try to cast it as an exception and re-throw (which we then catch ourselves)
-            std::exception_ptr p = std::current_exception();
-            try {
-                std::rethrow_exception(p);
-            }
-            catch(const std::exception& e) {
-                warn("an unknown exception was thrown while attempting to load a creature to schedule an animation: {}", e.what());
-                status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                      e.what(),
-                                      fmt::format("🤯️ An unhandled exception happened while trying to schedule an animation"));
-            }
-            catch(...) {
+        auto animation = animationResult.getValue().value();
+        info("Playing animation {} on universe {}", animation.metadata.title, universe);
 
-                // Still don't know what it is, so give a generic message
-                warn("A non-standard exception was thrown");
-                status = grpc::Status(grpc::StatusCode::INTERNAL,
-                                      "Non-standard exception",
-                                      fmt::format("🤯️ A non-standard exception happened while trying to schedule an animation"));
-            }
-            return status;
+        auto playResult = scheduleAnimation(startingFrame, animation, universe);
+        if (!playResult.isSuccess()) {
+            auto error = playResult.getError().value();
+            auto errorMessage = fmt::format("Not able to schedule animation: {}", error.getMessage());
+            warn(errorMessage);
+            return Result<std::string>{error};
         }
-        std::string okayMessage = fmt::format("✅ Animation scheduled from frame {} to {}", startingFrame, lastFrame);
 
+        // What was the last frame of the animation?
+        lastFrame = playResult.getValue().value();
+        auto okayMessage = fmt::format("✅ Animation scheduled from frame {} to {}", startingFrame, lastFrame);
         info(okayMessage);
-        *response->mutable_status() = okayMessage;
-        status = grpc::Status(grpc::StatusCode::OK,
-                              okayMessage);
 
-        return status;
+        return Result<std::string>{okayMessage};
     }
+
 
 }

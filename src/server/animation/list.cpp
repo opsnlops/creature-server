@@ -18,56 +18,25 @@
 
 using bsoncxx::builder::stream::document;
 
-using grpc::ServerContext;
-
 
 namespace creatures {
 
     extern std::shared_ptr<Database> db;
 
-    Status CreatureServerImpl::ListAnimations(ServerContext *context,
-                                              const AnimationFilter *request,
-                                              ListAnimationsResponse *response) {
-
-        info("Listing the animations in the database");
-        try {
-            db->listAnimations(request, response);
-            debug("animations listed");
-            return grpc::Status(grpc::StatusCode::OK, "✅ Got all animations");
-
-        } catch (const creatures::DataFormatException &e) {
-            error("Data format exception while listing animations: {}", e.what());
-            return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
-
-        } catch (const creatures::InternalError &e) {
-            error("Internal error while listing animations: {}", e.what());
-            return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
-
-        } catch (const creatures::NotFoundException &e) {
-            error("Not found error while listing animations: {}", e.what());
-            return grpc::Status(grpc::StatusCode::NOT_FOUND, e.what());
-
-        } catch (...) {
-
-            error("Unknown error while listing animations");
-            return grpc::Status(grpc::StatusCode::INTERNAL, "Unknown error");
-        }
-    }
 
     /**
      * List animations in the database for a given creature type
      *
-     * @param filter what CreatureType to look for
-     * @param animationList the list to fill out
+     * @param sortBy How to sort the list (currently unused)
      * @return the status of this request
      */
-    void Database::listAnimations(const AnimationFilter *filter, ListAnimationsResponse *response) {
+    Result<std::vector<creatures::AnimationMetadata>> Database::listAnimations(creatures::SortBy sortBy) {
 
-        trace("attempting to list all of the animation for a filter ({})", animationFilterToString(filter));
+        debug("attempting to list all of the animations");
 
-        grpc::Status status;
+        (void)sortBy;
 
-        uint32_t numberOfAnimationsFound = 0;
+        std::vector<creatures::AnimationMetadata> animations;
 
         try {
             auto collection = getCollection(ANIMATIONS_COLLECTION);
@@ -80,12 +49,10 @@ namespace creatures {
             // We only want to sort by name at this point
             sort_doc << "metadata.title" << 1;
 
-            // Don't return the frame data. Otherwise we'd be loading most of the
+            // Don't return the track data. Otherwise we'd be loading most of the
             // entire collection into memory just to get a list!
-            projection_doc << "frames" << 0;
+            projection_doc << "tracks" << 0;
 
-            // We only want documents of the given creature type
-            query_doc << "frames.creature_id" << bsoncxx::types::b_oid{creatureIdToOid(filter->creature_id())};
 
             mongocxx::options::find findOptions{};
             findOptions.projection(projection_doc.view());
@@ -96,40 +63,52 @@ namespace creatures {
             // Go Mongo, go! 🎉
             for (auto &&doc: cursor) {
 
-                // Create AnimationMetadata objects for what we've gotten back
-                auto animationMetadata = response->add_animations();
 
-                // doc is going to be an animation document
-                bsonToAnimationMetadata(doc, animationMetadata);
+                std::string json_str = bsoncxx::to_json(doc);
+                trace("Document JSON out of Mongo: {}", json_str);
 
-                debug("loaded {}", animationMetadata->title());
-                numberOfAnimationsFound++;
+                // Parse JSON string to nlohmann::json
+                nlohmann::json json_doc = nlohmann::json::parse(json_str);
+
+                // Create the animation from JSON
+                auto animationResult = animationMetadataFromJson(json_doc["metadata"]);
+                if (!animationResult.isSuccess()) {
+                    std::string errorMessage = fmt::format("Unable to parse the JSON in the database to an AnimationMetadata: {}",
+                                                           animationResult.getError()->getMessage());
+                    warn(errorMessage);
+                    Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InvalidData, errorMessage)};
+                }
+
+                auto animationMetadata = animationResult.getValue().value();
+                animations.push_back(animationMetadata);
+                debug("found {}", animationMetadata.title);
+
             }
         }
         catch(const DataFormatException& e) {
             std::string errorMessage = fmt::format("Failed to get all animations: {}", e.what());
             warn(errorMessage);
-            throw creatures::DataFormatException(errorMessage);
+            return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InvalidData, errorMessage)};
         }
         catch(const mongocxx::exception &e) {
             std::string errorMessage = fmt::format("MongoDB Exception while loading animation: {}", e.what());
             critical(errorMessage);
-            throw creatures::InternalError(errorMessage);
+            return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InternalError, errorMessage)};
         }
         catch(const bsoncxx::exception &e) {
             std::string errorMessage = fmt::format("BSON error while attempting to load animations: {}", e.what());
             critical(errorMessage);
-            throw creatures::InternalError(errorMessage);
+            return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InternalError, errorMessage)};
         }
 
         // Return a 404 if nothing as found
-        if(numberOfAnimationsFound == 0) {
-            std::string errorMessage = fmt::format("No animations for that creature type found");
+        if(animations.empty()) {
+            std::string errorMessage = fmt::format("No animations found");
             warn(errorMessage);
-            throw creatures::NotFoundException(errorMessage);
+            return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
-        std::string okayMessage = fmt::format("✅ Found {} animations", numberOfAnimationsFound);
-        info(okayMessage);
+        info("done loading the animation list");
+        return Result<std::vector<creatures::AnimationMetadata>>{animations};
     }
 }

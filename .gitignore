@@ -5,6 +5,5 @@ cmake-*/
 build/
 package/
 *.DS_Store
-external/build/
-lib/uWebSockets
-
+externals/build/
+externals/install/

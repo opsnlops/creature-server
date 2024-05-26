@@ -4,7 +4,7 @@
 #include <memory>
 #include <queue>
 
-
+#include "server/namespace-stuffs.h"
 
 namespace creatures {
 
@@ -13,17 +13,17 @@ namespace creatures {
      */
     class Event {
     public:
-        explicit Event(uint64_t frame) : frameNumber(frame) {}
+        explicit Event(framenum_t frame) : frameNumber(frame) {}
         virtual void execute() = 0;
 
-        uint64_t frameNumber = 0;
+        framenum_t frameNumber = 0;
     };
 
     // This is the Curiously Recurring Template Pattern (ç)
     template <typename Derived>
     class EventBase : public Event {
     public:
-        explicit EventBase(uint64_t frame) : Event(frame) {}
+        explicit EventBase(framenum_t frame) : Event(frame) {}
         void execute() override {
             static_cast<Derived*>(this)->executeImpl();
         }

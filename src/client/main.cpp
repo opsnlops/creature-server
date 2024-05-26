@@ -8,11 +8,8 @@
 
 #include <bsoncxx/oid.hpp>
 #include <fmt/format.h>
-#include <google/protobuf/timestamp.pb.h>
-#include <google/protobuf/util/time_util.h>
-#include <grpcpp/grpcpp.h>
 
-#include "server.grpc.pb.h"
+
 
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
@@ -20,34 +17,6 @@
 #include "client/server-client.h"
 #include "util/helpers.h"
 
-using grpc::Channel;
-using grpc::ClientContext;
-using grpc::Status;
-using grpc::ClientWriter;
-
-using server::Animation;
-using server::AnimationMetadata;
-using server::AnimationFilter;
-using server::CreatureServer;
-using server::Creature;
-using server::CreatureFilter;
-using server::CreatureId;
-using server::CreatureName;
-using server::ListAnimationsResponse;
-using server::ListCreaturesResponse;
-using server::LogItem;
-using server::LogLevel;
-using server::LogFilter;
-using server::Playlist;
-using server::PlaylistIdentifier;
-using server::PlaylistRequest;
-using server::PlaylistResponse;
-using server::ListPlaylistsResponse;
-using server::PlaylistStatus;
-using server::PlaySoundRequest;
-using server::PlaySoundResponse;
-using server::StreamFrameData;
-using server::StreamFrameDataResponse;
 
 using spdlog::trace;
 using spdlog::debug;

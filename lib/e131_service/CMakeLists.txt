@@ -5,7 +5,10 @@ project(e131_service)
 
 set(CMAKE_CXX_STANDARD 20)
 
-
+# Why are UUIDs so hard in 2024
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    pkg_search_module(UUID REQUIRED uuid)
+endif()
 
 
 # Create a static library out of libe131
@@ -31,5 +34,5 @@ target_link_libraries(e131_service
         libe131
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
-        ${UUID_LIBRARY}
+        ${UUID_LIBRARIES}
 )
