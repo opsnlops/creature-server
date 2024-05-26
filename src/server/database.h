@@ -84,14 +84,12 @@ namespace creatures {
          * Helper function that checks if a JSON object has all of the required fields. Used
          * heavily by `validate[Thing]Json()`.
          *
-         * @tparam N the number of fields
          * @param j the JSON object to check
          * @param required_fields an array of fields to validate
          * @return true if all fields are present, or a ServerError if not
          */
-        template<std::size_t N>
-        static Result<bool> has_required_fields(const nlohmann::json& j,
-                                                const std::array<const char*, N>& required_fields);
+         static Result<bool> has_required_fields(const nlohmann::json& j,
+                                                 const std::vector<std::string>& required_fields);
 
 
         /*

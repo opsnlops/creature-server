@@ -12,6 +12,14 @@
 
 namespace creatures {
 
+    // List of required fields
+    std::vector<std::string> creature_required_top_level_fields =
+            {"id", "name", "audio_channel", "channel_offset"};
+
+    std::vector<std::string> creature_required_input_fields =
+            {"name", "slot", "width", "joystick_axis"};
+
+
     // Convert a CreatureDto to a Creature
     Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto) {
 

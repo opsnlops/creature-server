@@ -26,7 +26,7 @@ namespace creatures {
 
 class LogItemDto : public oatpp::DTO {
 
-    DTO_INIT(LogItemDto, DTO /* extends */);
+    DTO_INIT(LogItemDto, DTO /* extends */)
 
     DTO_FIELD(String, timestamp);
     DTO_FIELD(String, level);

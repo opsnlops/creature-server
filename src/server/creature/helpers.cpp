@@ -28,6 +28,13 @@ using bsoncxx::builder::basic::kvp;
 
 namespace creatures {
 
+    extern std::vector<std::string> animation_required_top_level_fields;
+    extern std::vector<std::string> animation_required_metadata_fields;
+    extern std::vector<std::string> animation_required_track_fields;
+
+    extern std::vector<std::string> creature_required_top_level_fields;
+    extern std::vector<std::string> creature_required_input_fields;
+
     Result<creatures::Creature> Database::creatureFromJson(json creatureJson) {
 
         debug("attempting to create a creature from JSON via creatureFromJson()");
@@ -116,13 +123,12 @@ namespace creatures {
 
 
 
-    template<std::size_t N>
-    Result<bool> Database::has_required_fields(const nlohmann::json& j, const std::array<const char*, N>& required_fields) {
+    Result<bool> Database::has_required_fields(const nlohmann::json& j, const std::vector<std::string>& required_fields) {
         for (const auto& field : required_fields) {
             if (!j.contains(field)) {
                 std::string errorMessage = fmt::format("Missing required field '{}'", field);
                 warn(errorMessage);
-                return Result<bool>{ServerError(ServerError::InvalidData, errorMessage)};;
+                return Result<bool>{ServerError(ServerError::InvalidData, errorMessage)};
             }
         }
 
@@ -131,7 +137,7 @@ namespace creatures {
 
     Result<bool> Database::validateCreatureJson(const nlohmann::json& json) {
 
-        auto topOkay = has_required_fields(json, creatures::Creature::required_top_level_fields);
+        auto topOkay = has_required_fields(json, creature_required_top_level_fields);
         if(!topOkay.isSuccess()) {
             return topOkay;
         }
@@ -139,7 +145,7 @@ namespace creatures {
         // If there's inputs, validate them
         if(json.contains("inputs")) {
             for (const auto& input : json["inputs"]) {
-                auto inputOkay = has_required_fields(input, creatures::Creature::required_input_fields);
+                auto inputOkay = has_required_fields(input, creature_required_input_fields);
                 if(!inputOkay.isSuccess()) {
                     return inputOkay;
                 }
@@ -160,19 +166,19 @@ namespace creatures {
 
     Result<bool> Database::validateAnimationJson(const nlohmann::json &json) {
 
-        auto topLevelOkay = has_required_fields(json, creatures::Animation::required_top_level_fields);
+        auto topLevelOkay = has_required_fields(json, creatures::animation_required_top_level_fields);
         if(!topLevelOkay.isSuccess()) {
             return topLevelOkay;
         }
 
-        auto metadataOkay = has_required_fields(json["metadata"], creatures::Animation::required_metadata_fields);
+        auto metadataOkay = has_required_fields(json["metadata"], animation_required_metadata_fields);
         if(!metadataOkay.isSuccess()) {
             return metadataOkay;
         }
 
         // Confirm that the tracks are valid
         for( const auto& track : json["tracks"]) {
-            auto trackOkay = has_required_fields(track, creatures::Animation::required_track_fields);
+            auto trackOkay = has_required_fields(track, animation_required_track_fields);
             if(!trackOkay.isSuccess()) {
                 return trackOkay;
             }

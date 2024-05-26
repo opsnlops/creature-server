@@ -16,25 +16,13 @@ namespace creatures {
         std::string id;
         AnimationMetadata metadata;
         std::vector<Track> tracks;
-
-        // List of required fields
-        static constexpr std::array<const char*, 3> required_top_level_fields =
-                {"id", "metadata", "tracks"};
-
-        static constexpr std::array<const char*, 6> required_metadata_fields =
-                {"animation_id", "title", "milliseconds_per_frame",
-                 "sound_file", "number_of_frames", "multitrack_audio"};
-
-        static constexpr std::array<const char*, 4> required_track_fields =
-                {"id", "creature_id", "animation_id", "frames"};
-
     };
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
     class AnimationDto : public oatpp::DTO {
 
-        DTO_INIT(AnimationDto, DTO /* extends */);
+        DTO_INIT(AnimationDto, DTO /* extends */)
 
         DTO_FIELD_INFO(id) {
             info->description = "Animation ID in the form of a UUID";

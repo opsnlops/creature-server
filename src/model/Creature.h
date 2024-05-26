@@ -50,13 +50,6 @@ namespace creatures {
          */
         std::vector<Input> inputs;
 
-        // List of required fields
-        static constexpr std::array<const char*, 4> required_top_level_fields =
-                {"id", "name", "audio_channel", "channel_offset"};
-
-        static constexpr std::array<const char*, 4> required_input_fields =
-                {"name", "slot", "width", "joystick_axis"};
-
     };
 
 

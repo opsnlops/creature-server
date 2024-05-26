@@ -19,7 +19,7 @@ namespace creatures {
 
     class SoundDto : public oatpp::DTO {
 
-        DTO_INIT(SoundDto, DTO /* extends */);
+        DTO_INIT(SoundDto, DTO /* extends */)
 
         DTO_FIELD_INFO(file_name) {
             info->description = "The name of the sound file on the file system";
