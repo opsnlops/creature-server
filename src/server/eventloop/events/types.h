@@ -45,7 +45,7 @@ namespace creatures {
     class MusicEvent : public EventBase<MusicEvent> {
     public:
         using EventBase::EventBase;
-        MusicEvent(uint64_t frameNumber, std::string filePath);
+        MusicEvent(framenum_t frameNumber, std::string filePath);
         virtual ~MusicEvent() = default;
         void executeImpl();
 
@@ -61,7 +61,7 @@ namespace creatures {
     class PlaylistEvent : public EventBase<PlaylistEvent> {
     public:
         using EventBase::EventBase;
-        PlaylistEvent(uint64_t frameNumber, universe_t universe);
+        PlaylistEvent(framenum_t frameNumber, universe_t universe);
         void executeImpl();
 
     private:
@@ -81,7 +81,8 @@ namespace creatures {
     class StatusLightEvent : public EventBase<StatusLightEvent> {
     public:
         using EventBase::EventBase;
-        StatusLightEvent(uint64_t frameNumber, StatusLight light, bool on);
+        StatusLightEvent(framenum_t frameNumber, StatusLight light, bool on);
+        virtual ~StatusLightEvent() = default;
         void executeImpl();
 
     private:

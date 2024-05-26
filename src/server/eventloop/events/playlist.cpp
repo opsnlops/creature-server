@@ -27,7 +27,7 @@ namespace creatures {
     extern std::shared_ptr<SystemCounters> metrics;
     extern std::shared_ptr<ObjectCache<universe_t, std::string>> runningPlaylists;
 
-    PlaylistEvent::PlaylistEvent(uint64_t frameNumber, universe_t universe)
+    PlaylistEvent::PlaylistEvent(framenum_t frameNumber, universe_t universe)
             : EventBase(frameNumber), activeUniverse(universe) {}
 
     void PlaylistEvent::executeImpl() {
@@ -97,7 +97,7 @@ namespace creatures {
 //        debug("...and the chosen one is {}", animationIdToString(chosenAnimation));
 //
 //        // Schedule this animation
-//        uint64_t lastFrame = scheduleAnimation(eventLoop->getNextFrameNumber(), chosenAnimation, activeUniverse);
+//        framenum_t lastFrame = scheduleAnimation(eventLoop->getNextFrameNumber(), chosenAnimation, activeUniverse);
 //        debug("scheduled animation {} on universe {}. Last frame: {}",
 //              animationIdToString(chosenAnimation),
 //              activeUniverse,

@@ -87,7 +87,6 @@ namespace creatures :: ws {
         auto result = db->getAnimation(animationId);
         if(!result.isSuccess()) {
 
-            // If we get an error, let's set it up right
             auto errorCode = result.getError().value().getCode();
             switch(errorCode) {
                 case ServerError::NotFound:
@@ -117,7 +116,7 @@ namespace creatures :: ws {
 
         appLogger->info("attempting to upsert an animation");
 
-        appLogger->trace("JSON: {}", jsonAnimation);
+        appLogger->debug("JSON: {}", jsonAnimation);
 
 
         bool error = false;
@@ -176,6 +175,45 @@ namespace creatures :: ws {
         info("Updated animation '{}' in the database (id: {})",
              animation.metadata.title, animation.id);
         return convertToDto(animation);
+    }
+
+
+    oatpp::Object<creatures::ws::StatusDto> AnimationService::playStoredAnimation(const oatpp::String& animationId, universe_t universe) {
+        OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+
+        appLogger->debug("AnimationService::playStoredAnimation({}, {})", std::string(animationId), universe);
+
+        bool error = false;
+        oatpp::String errorMessage;
+        Status status = Status::CODE_200;
+
+        auto result = db->playStoredAnimation(std::string(animationId), universe);
+        if(!result.isSuccess()) {
+
+            auto errorCode = result.getError().value().getCode();
+            switch(errorCode) {
+                case ServerError::NotFound:
+                    status = Status::CODE_404;
+                    break;
+                case ServerError::InvalidData:
+                    status = Status::CODE_400;
+                    break;
+                default:
+                    status = Status::CODE_500;
+                    break;
+            }
+            errorMessage = result.getError().value().getMessage();
+            appLogger->warn(std::string(errorMessage));
+            error = true;
+        }
+        OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
+        auto playResult = StatusDto::createShared();
+        playResult->status = "OK";
+        playResult->message = result.getValue().value();
+        playResult->code = 200;
+
+        return playResult;
     }
 
 } // creatures :: ws

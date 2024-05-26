@@ -22,8 +22,8 @@ namespace creatures {
 
         void scheduleEvent(const std::shared_ptr<Event>& e);
 
-        [[nodiscard]] uint64_t getCurrentFrameNumber() const;
-        [[nodiscard]] uint64_t getNextFrameNumber() const;
+        [[nodiscard]] framenum_t getCurrentFrameNumber() const;
+        [[nodiscard]] framenum_t getNextFrameNumber() const;
         [[nodiscard]] uint32_t getQueueSize() const;
 
         void start() override;
@@ -34,7 +34,7 @@ namespace creatures {
 
     private:
 
-        uint64_t frameCount = 0;
+        framenum_t frameCount = 0;
 
         std::unique_ptr<EventScheduler> eventScheduler;
         std::mutex eventQueueMutex;

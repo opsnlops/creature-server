@@ -13,6 +13,7 @@ namespace creatures {
         virtualStatusLights.running = virtualStatusLightsDto->running;
         virtualStatusLights.dmx = virtualStatusLightsDto->dmx;
         virtualStatusLights.streaming = virtualStatusLightsDto->streaming;
+        virtualStatusLights.animation_playing = virtualStatusLightsDto->animation_playing;
 
         return virtualStatusLights;
     }
@@ -23,6 +24,7 @@ namespace creatures {
         virtualStatusLightsDto->running = virtualStatusLights.running;
         virtualStatusLightsDto->dmx = virtualStatusLights.dmx;
         virtualStatusLightsDto->streaming = virtualStatusLights.streaming;
+        virtualStatusLightsDto->animation_playing = virtualStatusLights.animation_playing;
 
         return virtualStatusLightsDto;
     }

@@ -20,6 +20,7 @@ namespace creatures {
         bool running;
         bool dmx;
         bool streaming;
+        bool animation_playing;
     };
 
 
@@ -47,6 +48,11 @@ class VirtualStatusLightsDto : public oatpp::DTO {
         info->description = "Is a client streaming to us?";
     }
     DTO_FIELD(Boolean, streaming);
+
+    DTO_FIELD_INFO(animation_playing) {
+        info->description = "Is an animation playing?";
+    }
+    DTO_FIELD(Boolean, animation_playing);
 
 
 };

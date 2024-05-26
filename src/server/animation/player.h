@@ -2,6 +2,7 @@
 
 #include "server/namespace-stuffs.h"
 #include "util/helpers.h"
+#include "util/Result.h"
 
 namespace creatures {
 
@@ -13,11 +14,11 @@ namespace creatures {
      * are suppose to do a thing, and then schedule the animation in the
      * event loop.
      *
-     * @param startingFrame
-     * @param animationId
-     * @param universe
+     * @param startingFrame the frame number to start the animation on
+     * @param animation the animation to play
+     * @param universe the universe to play the animation on
      * @return the last frame number of the animation
      */
-    uint64_t scheduleAnimation(uint64_t startingFrame, const std::string& animationId, universe_t universe);
+    Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::Animation& animation, universe_t universe);
 
 }

@@ -12,6 +12,7 @@
 #include "server/database.h"
 
 #include "server/ws/service/AnimationService.h"
+#include "server/ws/dto/PlayAnimationRequestDto.h"
 #include "server/metrics/counters.h"
 
 namespace creatures {
@@ -54,7 +55,7 @@ namespace creatures :: ws {
         ENDPOINT_INFO(getAnimation) {
             info->summary = "Get an animation by id";
 
-            info->addResponse<Object<CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<AnimationDto>>(Status::CODE_200, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -64,6 +65,7 @@ namespace creatures :: ws {
         ENDPOINT("GET", "api/v1/animation/{animationId}", getAnimation,
                  PATH(String, animationId))
         {
+            debug("get animation by ID via REST API: {}", std::string(animationId));
             creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_animationService.getAnimation(animationId));
         }
@@ -91,6 +93,23 @@ namespace creatures :: ws {
 
             return createDtoResponse(Status::CODE_200,
                                      m_animationService.upsertAnimation(requestAsString));
+        }
+
+
+        ENDPOINT_INFO(playStoredAnimation) {
+            info->summary = "Play one animation out of the database on a given universe";
+
+            info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        }
+        ENDPOINT("POST", "api/v1/animation/play", playStoredAnimation,
+                 BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody))
+        {
+            creatures::metrics->incrementRestRequestsProcessed();
+            return createDtoResponse(Status::CODE_200,
+                                     m_animationService.playStoredAnimation(std::string(requestBody->animation_id),
+                                                                            requestBody->universe));
         }
 
     };

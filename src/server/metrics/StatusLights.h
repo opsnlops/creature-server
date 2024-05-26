@@ -1,6 +1,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include "server/metrics/counters.h"
 #include "server/gpio/gpio.h"
 #include "server/config.h"
@@ -24,6 +26,10 @@ namespace creatures {
 
         void start() override;
 
+        // These are turned on and off by the event loop
+        std::atomic<bool> animationLightOn;
+        std::atomic<bool> soundLightOn;
+
     protected:
         void run() override;
 
@@ -31,13 +37,16 @@ namespace creatures {
 
     private:
 
-        uint64_t lastFrameSeen;
-        uint64_t lastDmxEventSeen;
-        uint64_t lastStreamedFrameSeen;
+        framenum_t lastFrameSeen;
+        framenum_t lastDmxEventSeen;
+        framenum_t lastStreamedFrameSeen;
 
         bool runningLightOn;
         bool dmxEventLightOn;
         bool streamingLightOn;
+
+        bool lastAnimationLightOn;
+        bool lastSoundLightOn;
 
     };
 

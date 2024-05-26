@@ -123,7 +123,7 @@ namespace creatures :: ws {
         oatpp::String message;
 
         try {
-            uint64_t frameNumber = eventLoop->getNextFrameNumber();
+            framenum_t frameNumber = eventLoop->getNextFrameNumber();
 
             // Create the event and schedule it
             auto playEvent = std::make_shared<MusicEvent>(frameNumber, fullFilePath);

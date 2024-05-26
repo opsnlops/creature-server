@@ -99,11 +99,11 @@ namespace creatures {
     }
 
 
-    uint64_t EventLoop::getCurrentFrameNumber() const {
+    framenum_t EventLoop::getCurrentFrameNumber() const {
         return frameCount;
     }
 
-    uint64_t EventLoop::getNextFrameNumber() const {
+    framenum_t EventLoop::getNextFrameNumber() const {
         return frameCount + 1;
     }
 

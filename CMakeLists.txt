@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "1.9.21"
+        VERSION "1.9.22"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -133,7 +133,6 @@ file(GLOB serverFiles
         src/server/logging/*
         src/server/metrics/*
         src/server/playlist/*
-        src/server/sound/*
         src/server/watchdog/*
         src/model/*
 )
@@ -211,6 +210,7 @@ add_executable(creature-server
 
 
         src/server/ws/dto/ListDto.h
+        src/server/ws/dto/PlayAnimationRequestDto.h
         src/server/ws/dto/PlaySoundRequestDTO.h
         src/server/ws/dto/SimpleResponseDto.h
         src/server/ws/dto/StatusDto.h

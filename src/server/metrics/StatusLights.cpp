@@ -35,6 +35,8 @@ namespace creatures {
         runningLightOn = false;
         dmxEventLightOn = false;
         streamingLightOn = false;
+        animationLightOn = false;
+        soundLightOn = false;
 
         // Start by turning off all the lights
         gpioPins->serverOnline(runningLightOn);
@@ -62,6 +64,7 @@ namespace creatures {
         lastDmxEventSeen = metrics->getDMXEventsProcessed();
         lastFrameSeen = metrics->getTotalFrames();
         lastStreamedFrameSeen = metrics->getFramesStreamed();
+        lastAnimationLightOn = animationLightOn;
 
         while(!stop_requested.load()) {
 
@@ -146,6 +149,15 @@ namespace creatures {
                         changesMade = true;
                     }
                 }
+
+
+                // Is there an animation playing?
+                if (lastAnimationLightOn != animationLightOn.load()) {
+                    info("toggling the animation virtual light");
+                    lastAnimationLightOn = animationLightOn.load();
+                    changesMade = true;
+                }
+
             }
 
             if(changesMade) {
@@ -169,6 +181,7 @@ namespace creatures {
         virtualStatusLights.running = runningLightOn;
         virtualStatusLights.dmx = dmxEventLightOn;
         virtualStatusLights.streaming = streamingLightOn;
+        virtualStatusLights.animation_playing = animationLightOn;
 
         // Create the message to send
         auto message = oatpp::Object<ws::VirtualStatusLightsMessage>::createShared();

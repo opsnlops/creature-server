@@ -104,6 +104,7 @@ namespace creatures {
         Result<creatures::Animation> getAnimation(const animationId_t& animationId);
         Result<std::vector<creatures::AnimationMetadata>> listAnimations(creatures::SortBy sortBy);
         Result<creatures::Animation> upsertAnimation(const std::string& animationJson);
+        Result<std::string> playStoredAnimation(animationId_t animationId, universe_t universe);
 
 
 

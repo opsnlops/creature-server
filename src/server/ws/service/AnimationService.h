@@ -23,6 +23,16 @@ namespace creatures :: ws {
         oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> listAllAnimations();
         oatpp::Object<creatures::AnimationDto> getAnimation(const oatpp::String& animationId);
         oatpp::Object<creatures::AnimationDto> upsertAnimation(const std::string& animationJson);
+
+
+        /**
+         * Play a single animation on one universe out of the database
+         *
+         * @param animationId the animation to play
+         * @param universe which universe to play the animation in
+         * @return The status of what happened
+         */
+        oatpp::Object<creatures::ws::StatusDto> playStoredAnimation(const oatpp::String& animationId, universe_t universe);
     };
 
 

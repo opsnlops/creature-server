@@ -75,7 +75,7 @@ namespace creatures {
 
 
         // Go to the database and get the animation's raw JSON
-        auto animationJson = getCreatureJson(animationId);
+        auto animationJson = getAnimationJson(animationId);
         if (!animationJson.isSuccess()) {
             auto error = animationJson.getError().value();
             std::string errorMessage = fmt::format("unable to get an animation by ID: {}",
