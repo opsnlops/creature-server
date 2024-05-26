@@ -95,7 +95,7 @@ namespace creatures {
 
 
        // Keep track of the last frame we schedule. Bear in mind that all of the tracks may not be the same length
-       framenum_t lastFrame;
+       framenum_t lastFrame = startingFrame;
 
 
        /*
