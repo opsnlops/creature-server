@@ -78,6 +78,11 @@ namespace creatures {
                 .default_value(environmentToString(NETWORK_DEVICE_NAME_ENV, DEFAULT_NETWORK_DEVICE_NAME))
                 .nargs(1);
 
+        program.add_argument("-v", "--voice-api-key")
+                .help("ElevenLabs API key")
+                .default_value(environmentToString(VOICE_API_KEY_ENV, DEFAULT_VOICE_API_KEY))
+                .nargs(1);
+
         auto &oneShots = program.add_mutually_exclusive_group();
         oneShots.add_argument("--list-sound-devices")
                 .help("list available sound devices and exit")
@@ -162,6 +167,13 @@ namespace creatures {
         if(!soundsLocation.empty()) {
             config->setSoundFileLocation(soundsLocation);
             debug("set our sound file location to {}", soundsLocation);
+        }
+
+        auto voiceApiKey = program.get<std::string>("-v");
+        debug("read voice API key {} from command line", voiceApiKey);
+        if(!voiceApiKey.empty()) {
+            config->setVoiceApiKey(voiceApiKey);
+            debug("set our voice API key to {}", voiceApiKey);
         }
 
         auto networkDeviceName = program.get<std::string>("-n");

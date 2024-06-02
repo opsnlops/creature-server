@@ -18,13 +18,21 @@
 
 #include <oatpp-websocket/ConnectionHandler.hpp>
 
+#include <CreatureVoices.h>
+
+
 #include "SwaggerComponent.h"
 #include "ErrorHandler.h"
 
+#include "server/config/Configuration.h"
 #include "server/ws/messaging/MessageProcessor.h"
 #include "server/ws/websocket/ClientCafe.h"
 #include "util/loggingUtils.h"
 #include "util/MessageQueue.h"
+
+namespace creatures {
+    extern std::shared_ptr<creatures::Configuration> config;
+}
 
 namespace creatures :: ws {
 
@@ -98,6 +106,14 @@ namespace creatures :: ws {
 
         OATPP_CREATE_COMPONENT(std::shared_ptr<ClientCafe>, cafe)([] {
             return std::make_shared<ClientCafe>();
+        }());
+
+
+        /**
+         * Register the voice service
+         */
+        OATPP_CREATE_COMPONENT(std::shared_ptr<creatures::voice::CreatureVoices>, voiceService)([] {
+            return std::make_shared<creatures::voice::CreatureVoices>(config->getVoiceApiKey());
         }());
 
 

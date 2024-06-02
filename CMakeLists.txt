@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.0.0"
+        VERSION "2.1.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -93,8 +93,9 @@ add_definitions(
 )
 
 
-# ...and our own library
+# ...and our own libraries
 add_subdirectory(lib/e131_service)
+add_subdirectory(lib/CreatureVoicesLib)
 
 
 # Set up a base64 encoder/decoder
@@ -257,6 +258,8 @@ add_executable(creature-server
         src/server/ws/websocket/ClientCafe.cpp
         src/server/ws/websocket/ClientConnection.cpp
         src/server/ws/messaging/NoticeMessageCommandDTO.h
+        src/server/ws/service/VoiceService.h
+        src/server/ws/service/VoiceService.cpp
 
 )
 
@@ -277,6 +280,7 @@ target_link_libraries(creature-server
         PRIVATE mongo::bsoncxx_shared
         argparse
         e131_service
+        CreatureVoicesLib
 )
 
 
@@ -358,6 +362,7 @@ target_link_libraries(creature-server-test
         PRIVATE mongo::bsoncxx_shared
         argparse
         e131_service
+        CreatureVoicesLib
         gtest_main
         gmock_main
 )

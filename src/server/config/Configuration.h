@@ -25,6 +25,8 @@ namespace creatures {
         std::string getSoundFileLocation() const;
         uint16_t getNetworkDevice() const;
 
+        std::string getVoiceApiKey() const;
+
 
     protected:
         void setUseGPIO(bool _useGPIO);
@@ -35,6 +37,8 @@ namespace creatures {
         void setSoundChannels(uint8_t _soundChannels);
         void setSoundFileLocation(std::string _soundFileLocation);
         void setNetworkDevice(uint16_t _networkDevice);
+
+        void setVoiceApiKey(std::string _voiceApiKey);
 
     private:
 
@@ -53,6 +57,9 @@ namespace creatures {
 
         // Network stuff
         uint16_t networkDevice = 0;
+
+        // ElevenLabs (Voice) stuff
+        std::string voiceApiKey = DEFAULT_VOICE_API_KEY;
     };
 
 

@@ -19,6 +19,7 @@
 #include "controller/MetricsController.h"
 #include "controller/SoundController.h"
 #include "controller/StaticController.h"
+#include "controller/VoiceController.h"
 #include "controller/WebSocketController.h"
 
 #include "server/ws/websocket/ClientCafe.h"
@@ -71,6 +72,7 @@ namespace creatures ::ws {
         router->addController(MetricsController::createShared());
         router->addController(SoundController::createShared());
         router->addController(StaticController::createShared());
+        router->addController(VoiceController::createShared());
         router->addController(WebSocketController::createShared());
 
         /* Get connection handler component */

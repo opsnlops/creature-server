@@ -49,6 +49,10 @@
 #define NETWORK_DEVICE_NAME_ENV         "NETWORK_DEVICE_NAME"
 #define DEFAULT_NETWORK_DEVICE_NAME     "eth0"
 
+#define VOICE_API_KEY_ENV               "VOICE_API_KEY"
+#define DEFAULT_VOICE_API_KEY           ""
+
+
 #define SOUND_BUFFER_SIZE               2048    // Higher = less CPU, lower = less latency
 
 // Should we use the GPIO devices for LEDs? This only works on the Raspberry Pi,

@@ -59,4 +59,11 @@ namespace creatures {
     void Configuration::setNetworkDevice(uint16_t _networkDevice) {
         this->networkDevice = _networkDevice;
     }
+
+    std::string Configuration::getVoiceApiKey() const {
+        return this->voiceApiKey;
+    }
+    void Configuration::setVoiceApiKey(std::string _voiceApiKey) {
+        this->voiceApiKey = std::move(_voiceApiKey);
+    }
 }
