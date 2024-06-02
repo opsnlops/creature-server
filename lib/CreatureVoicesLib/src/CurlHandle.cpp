@@ -26,11 +26,42 @@ namespace creatures :: voice {
         if (curl) {
             curl_easy_cleanup(curl);
         }
+        if (headers) {
+            curl_slist_free_all(headers);
+        }
+        spdlog::trace("CurlHandle destroyed");
     }
 
 
+    CurlHandle::CurlHandle(CurlHandle&& other) noexcept : curl(other.curl), headers(other.headers) {
+        other.curl = nullptr;
+        other.headers = nullptr;
+    }
+
+    CurlHandle& CurlHandle::operator=(CurlHandle&& other) noexcept {
+        if (this != &other) {
+            if (curl) {
+                curl_easy_cleanup(curl);
+            }
+            if (headers) {
+                curl_slist_free_all(headers);
+            }
+            spdlog::trace("CurlHandle destroyed via move assignment");
+            curl = other.curl;
+            headers = other.headers;
+            other.curl = nullptr;
+            other.headers = nullptr;
+        }
+        return *this;
+    }
+
     CURL* CurlHandle::get() const {
         return curl;
+    }
+
+    void CurlHandle::addHeader(const std::string& header) {
+        headers = curl_slist_append(headers, header.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     }
 
     size_t CurlHandle::WriteCallback(char* ptr, size_t size, size_t nmemb, std::string* data) {

@@ -16,16 +16,23 @@ namespace creatures :: voice {
     public:
         CurlHandle(const std::string& url);
         ~CurlHandle();
-        //CurlHandle(CurlHandle&& other) noexcept;
+
+        // Allow move semantics
+        CurlHandle(CurlHandle&& other) noexcept;
 
         // Delete copy constructor and copy assignment to avoid double cleanup
         CurlHandle(const CurlHandle&) = delete;
         CurlHandle& operator=(const CurlHandle&) = delete;
 
+        CurlHandle& operator=(CurlHandle&& other) noexcept;
+
         CURL* get() const;
+
+        void addHeader(const std::string& header);
 
     private:
         CURL* curl = nullptr;
+        struct curl_slist* headers = nullptr;
         static size_t WriteCallback(char* ptr, size_t size, size_t nmemb, std::string* data);
 
     };

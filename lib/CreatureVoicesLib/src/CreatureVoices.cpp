@@ -28,14 +28,12 @@ namespace creatures::voice {
         debug("Fetching available voices");
 
         auto curlHandle = createCurlHandle(url);
-        auto res = performRequest(curlHandle, HttpMethod::GET, "");
+        auto res = performRequest(curlHandle, apiKey, HttpMethod::GET, "");
         if(!res.isSuccess()) {
             auto error = res.getError();
             std::string errorMessage = fmt::format("Failed to fetch available voices: {}", error->getMessage());
-            curl_easy_cleanup(curlHandle.get());
             return VoiceResult<std::vector<Voice>>{VoiceError(error->getCode(), error->getMessage())};
         }
-        curl_easy_cleanup(curlHandle.get());
 
         auto httpResponse = res.getValue().value();
         trace("httpResponse was: {}", httpResponse);

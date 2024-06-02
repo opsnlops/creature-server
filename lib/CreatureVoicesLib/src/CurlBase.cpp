@@ -28,6 +28,7 @@ namespace creatures::voice {
     }
 
     VoiceResult<std::string> CurlBase::performRequest(CurlHandle& curlHandle,
+                                                            const std::string& apiKey,
                                                             HttpMethod method,
                                                             const std::string& data) {
 
@@ -42,6 +43,11 @@ namespace creatures::voice {
             error(errorMessage);
             return VoiceResult<std::string>{VoiceError(VoiceError::InternalError, errorMessage)};
         }
+
+        // Set headers
+        std::string apiKeyHeader = fmt::format("xi-api-key: {}", apiKey);
+        curlHandle.addHeader(apiKeyHeader);
+        curlHandle.addHeader("Content-Type: application/json");
 
         curl_easy_setopt(curlHandle.get(), CURLOPT_WRITEDATA, &response);
         trace("CURL handle set up for writing");
@@ -64,7 +70,6 @@ namespace creatures::voice {
             default:
                 errorMessage = fmt::format("Unknown HTTP method: {}", httpMethodToString(method));
                 error(errorMessage);
-                curl_easy_cleanup(curlHandle.get());
                 return VoiceResult<std::string>{VoiceError(VoiceError::InternalError, errorMessage)};
         }
 
@@ -73,7 +78,6 @@ namespace creatures::voice {
         if (res != CURLE_OK) {
             errorMessage = fmt::format("CURL request failed: {}", curl_easy_strerror(res));
             error(errorMessage);
-            curl_easy_cleanup(curlHandle.get());
             return VoiceResult<std::string>{VoiceError(VoiceError::InternalError, errorMessage)};
         }
 
@@ -89,39 +93,32 @@ namespace creatures::voice {
                 break;
             case 301:
             case 302:
-                errorMessage = fmt::format("HTTP error: {} - redirect", http_code);
+                errorMessage = fmt::format("11labs API error: {} - redirect", http_code);
                 warn(errorMessage);
-                curl_easy_cleanup(curlHandle.get());
                 return VoiceResult<std::string>{VoiceError(VoiceError::InvalidData, errorMessage)};
             case 400:
-                errorMessage = fmt::format("HTTP error: {} - bad request", http_code);
+                errorMessage = fmt::format("11labs API error: {} - bad request", http_code);
                 warn(errorMessage);
-                curl_easy_cleanup(curlHandle.get());
                 return VoiceResult<std::string>{VoiceError(VoiceError::InvalidData, errorMessage)};
             case 401:
             case 403:
-                errorMessage = fmt::format("HTTP error: {} - unauthorized", http_code);
+                errorMessage = fmt::format("11labs API error: {} - unauthorized (make sure the server has a good apiKey!)", http_code);
                 warn(errorMessage);
-                curl_easy_cleanup(curlHandle.get());
                 return VoiceResult<std::string>{VoiceError(VoiceError::InvalidApiKey, errorMessage)};
             case 404:
-                errorMessage = fmt::format("HTTP error: {} - not found", http_code);
+                errorMessage = fmt::format("11labs API error: {} - not found", http_code);
                 warn(errorMessage);
-                curl_easy_cleanup(curlHandle.get());
                 return VoiceResult<std::string>{VoiceError(VoiceError::NotFound, errorMessage)};
 
                 // Map everything else to an error
             default:
-                errorMessage = fmt::format("HTTP error: {}", http_code);
+                errorMessage = fmt::format("11labs API error: {} ({})", http_code, response);
                 error(errorMessage);
-                curl_easy_cleanup(curlHandle.get());
                 return VoiceResult<std::string>{VoiceError(VoiceError::InternalError, errorMessage)};
         }
 
 
         // Looks good! We have good data
-        curl_easy_cleanup(curlHandle.get());
-
         debug("request successful!");
         return VoiceResult<std::string>{response};
     }

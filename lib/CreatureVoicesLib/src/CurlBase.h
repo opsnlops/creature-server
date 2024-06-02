@@ -27,7 +27,8 @@ namespace creatures :: voice {
 
     protected:
         CurlHandle createCurlHandle(const std::string& url);
-        VoiceResult<std::string> performRequest(CurlHandle& curlHandle, HttpMethod method, const std::string& data);
+        VoiceResult<std::string> performRequest(CurlHandle& curlHandle, const std::string& apiKey,
+                                                HttpMethod method, const std::string& data);
         static size_t WriteCallback(char* ptr, size_t size, size_t nmemb, std::string* data);
     };
 
