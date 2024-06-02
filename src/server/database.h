@@ -46,6 +46,7 @@ namespace creatures {
 
         Result<creatures::Creature> getCreature(const creatureId_t& creatureId);
         Result<std::vector<creatures::Creature>> getAllCreatures(creatures::SortBy sortBy, bool ascending);
+        Result<json> getCreatureJson(creatureId_t creatureId);
 
 
         /**
@@ -128,7 +129,6 @@ namespace creatures {
          */
         bool isServerPingable();
 
-
     protected:
         /**
          * Check to see if a field is present in a JSON object
@@ -144,10 +144,8 @@ namespace creatures {
 
         mongocxx::collection getCollection(const std::string &collectionName);
 
-        Result<json> getCreatureJson(creatureId_t creatureId);
+
         static Result<creatures::Creature> creatureFromJson(json creatureJson);
-
-
 
 
         static Result<creatures::Animation> animationFromJson(json animationJson);

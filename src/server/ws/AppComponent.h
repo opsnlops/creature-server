@@ -112,7 +112,7 @@ namespace creatures :: ws {
         /**
          * Register the voice service
          */
-        OATPP_CREATE_COMPONENT(std::shared_ptr<creatures::voice::CreatureVoices>, voiceService)([] {
+        OATPP_CREATE_COMPONENT(std::shared_ptr<creatures::voice::CreatureVoices>, creatureVoices)([] {
             return std::make_shared<creatures::voice::CreatureVoices>(config->getVoiceApiKey());
         }());
 

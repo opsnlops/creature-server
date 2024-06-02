@@ -7,6 +7,7 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include "CreatureVoices.h"
 
 #include "model/HttpMethod.h"
 #include "VoiceResult.h"
@@ -24,7 +25,11 @@ namespace creatures::voice {
 
     CurlHandle CurlBase::createCurlHandle(const std::string& url) {
         debug("Creating a curl handle for URL: {}", url);
-        return CurlHandle(url);
+
+        auto fullUrl = fmt::format("{}{}", VOICES_API_BASE_URL, url);
+        debug("fullUrl: {}", fullUrl);
+
+        return CurlHandle(fullUrl);
     }
 
     VoiceResult<std::string> CurlBase::performRequest(CurlHandle& curlHandle,
@@ -47,7 +52,6 @@ namespace creatures::voice {
         // Set headers
         std::string apiKeyHeader = fmt::format("xi-api-key: {}", apiKey);
         curlHandle.addHeader(apiKeyHeader);
-        curlHandle.addHeader("Content-Type: application/json");
 
         curl_easy_setopt(curlHandle.get(), CURLOPT_WRITEDATA, &response);
         trace("CURL handle set up for writing");

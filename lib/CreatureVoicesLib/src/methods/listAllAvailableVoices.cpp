@@ -18,16 +18,15 @@ using json = nlohmann::json;
 
 namespace creatures::voice {
 
-
-    CreatureVoices::CreatureVoices(std::string apiKey) : apiKey(std::move(apiKey)) {}
-
-
     VoiceResult<std::vector<Voice>> CreatureVoices::listAllAvailableVoices() {
-        const std::string url ="https://api.elevenlabs.io/v1/voices";
+        const std::string url = "/v1/voices";
 
         debug("Fetching available voices");
 
         auto curlHandle = createCurlHandle(url);
+        curlHandle.addHeader("Content-Type: application/json");
+
+
         auto res = performRequest(curlHandle, apiKey, HttpMethod::GET, "");
         if(!res.isSuccess()) {
             auto error = res.getError();

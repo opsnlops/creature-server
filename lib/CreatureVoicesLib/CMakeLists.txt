@@ -65,19 +65,30 @@ find_package(oatpp           REQUIRED PATHS ${CMAKE_SOURCE_DIR}/../../externals/
 # Define our library
 add_library(CreatureVoicesLib STATIC
 
+        src/model/CreatureSpeechRequest.h
+        src/model/CreatureSpeechRequest.cpp
+        src/model/CreatureSpeechResponse.h
+        src/model/CreatureSpeechResponse.cpp
         src/model/HttpMethod.h
         src/model/HttpMethod.cpp
+        src/model/Subscription.h
+        src/model/Subscription.cpp
         src/model/Voice.h
         src/model/Voice.cpp
 
 
         src/CreatureVoices.h
-        src/CreatureVoices.cpp
         src/VoiceResult.h
         src/CurlBase.h
         src/CurlBase.cpp
         src/CurlHandle.h
         src/CurlHandle.cpp
+
+
+        src/methods/CreatureVoices.cpp
+        src/methods/generateCreatureSpeech.cpp
+        src/methods/getSubscriptionStatus.cpp
+        src/methods/listAllAvailableVoices.cpp
 
 
 )
