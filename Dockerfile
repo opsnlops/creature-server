@@ -6,7 +6,7 @@ RUN apt update && apt upgrade -y
 RUN apt install -y cmake libssl-dev libsasl2-dev gcc git file \
     pkgconf libbson-dev libpthreadpool-dev libutf8proc-dev \
     libsystemd-dev ninja-build libsdl2-mixer-dev dpkg-dev uuid-dev \
-    util-linux libpipewire-0.3-dev libuv1-dev
+    util-linux libpipewire-0.3-dev libuv1-dev libcurl4-openssl-dev
 
 
 # Install the latest Mongo driver
@@ -65,7 +65,7 @@ FROM debian:bookworm-slim as runtime
 # Some of our libs need runtime bits
 RUN apt update && apt upgrade -y && \
     apt install -y libsasl2-2 libicu72 libsdl2-mixer-2.0-0 flac locales-all libutf8proc2 \
-                   libuuid1 util-linux pipewire libuv1 && \
+                   libuuid1 util-linux pipewire libuv1 libcurl4 && \
     rm -rf /var/lib/apt/lists
 
 RUN mkdir /app
