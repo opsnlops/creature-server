@@ -96,7 +96,7 @@ namespace creatures::voice {
 
         // If we've made it this far, we're good to go. Let's generate the sound file.
         auto soundFilePath = fileSavePath / fmt::format("{}.mp3", fileBaseName);
-        debug("Generating speech for creature: {} to file {}", speechRequest.creature_name);
+        debug("Generating speech for creature: {} to file {}", speechRequest.creature_name, soundFilePath.string());
 
 
 
