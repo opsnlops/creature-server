@@ -149,8 +149,8 @@ namespace creatures::voice {
         debug("done! sound file written to {}", soundFilePath.string());
 
         CreatureSpeechResponse response;
-        response.sound_file_name = soundFilePath.string();
-        response.transcript_file_name = transcriptPath.string();
+        response.sound_file_name = fmt::format("{}.mp3", fileBaseName);
+        response.transcript_file_name = fmt::format("{}.txt", fileBaseName);
         response.sound_file_size = httpResponse.size();
         response.success = true;
 

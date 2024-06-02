@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.25)
 
 
 project(CreatureVoicesLib
-        VERSION "0.1.0"
+        VERSION "0.2.0"
         DESCRIPTION "Voice library for April's Creatures"
-        HOMEPAGE_URL https://github.com/opsnlops/creature-server
+        HOMEPAGE_URL https://github.com/opsnlops/creature-server/lib/CreatureVoicesLib
         LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
