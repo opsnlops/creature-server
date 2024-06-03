@@ -1,7 +1,8 @@
 
-
+#include <algorithm>
 #include <iostream>
 #include <filesystem>
+#include <unordered_set>
 
 
 #include "exception/exception.h"
@@ -49,32 +50,54 @@ namespace creatures :: ws {
         Status status = Status::CODE_200;
         oatpp::String message;
 
+        // Define acceptable sound file extensions
+        std::unordered_set<std::string> acceptableExtensions = {".mp3", ".wav", ".flac"};
+
         try {
             if (fs::exists(path) && fs::is_directory(path)) {
                 for (const auto& entry : fs::directory_iterator(path)) {
                     const auto& filepath = entry.path();
                     if (fs::is_regular_file(entry.status())) {
-                        auto filename = filepath.filename();  // Get the filename
-                        auto size = fs::file_size(filepath);  // Get the file size
+                        std::string extension = filepath.extension().string();
+                        if (acceptableExtensions.find(extension) != acceptableExtensions.end()) {
+                            auto filename = filepath.filename().string();  // Get the filename
+                            auto size = fs::file_size(filepath);  // Get the file size
+                            std::string transcript;
 
-                        Sound sound{filename, (uint32_t)size};
+                            // Create a non-const copy of filepath to modify the extension
+                            auto transcriptPath = filepath;
+                            transcriptPath.replace_extension(".txt");
+                            if (fs::exists(transcriptPath)) {
+                                transcript = transcriptPath.filename().string();
+                            }
 
-                        appLogger->debug("Adding sound file: {} ({})", sound.fileName, sound.size);
-                        soundList->emplace_back(creatures::convertSoundToDto(sound));
+                            Sound sound{filename, (uint32_t)size, transcript};
+
+                            appLogger->debug("Adding sound file: {} ({})", sound.fileName, sound.size);
+                            soundList->emplace_back(creatures::convertSoundToDto(sound));
+                        }
                     }
                 }
 
-                debug("found {} sound files", soundList->size());
+                // Sort the list by file name (case-insensitive)
+                std::sort(soundList->begin(), soundList->end(), [](const oatpp::Object<creatures::SoundDto>& a, const oatpp::Object<creatures::SoundDto>& b) {
+                    std::string aLower = a->file_name;
+                    std::string bLower = b->file_name;
+                    std::transform(aLower.begin(), aLower.end(), aLower.begin(), ::tolower);
+                    std::transform(bLower.begin(), bLower.end(), bLower.begin(), ::tolower);
+                    return aLower < bLower;
+                });
+
+                appLogger->debug("found {} sound files", soundList->size());
 
             } else {
-                warn("Sound file location not found: {}", path);
+                appLogger->warn("Sound file location not found: {}", path);
 
                 status = Status::CODE_404;
                 message = fmt::format("No files found in {}", path);
                 error = true;
             }
         } catch (const fs::filesystem_error& e) {
-
             appLogger->error("Error reading sound file location: {}", e.what());
 
             status = Status::CODE_500;

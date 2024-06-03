@@ -50,7 +50,7 @@ namespace creatures :: ws {
             info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
         }
-        ENDPOINT("GET", "api/v1/voice", getAllVoices)
+        ENDPOINT("GET", "api/v1/voice/list-available", getAllVoices)
         {
             creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_voiceService.getAllVoices());
