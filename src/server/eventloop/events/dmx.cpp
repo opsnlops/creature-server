@@ -1,16 +1,15 @@
 
-#include <vector>
-#include <sstream>
-#include <iostream>
 
-#include "spdlog/spdlog.h"
+#include <sstream>
+
+#include <spdlog/spdlog.h>
 
 #include <E131Server.h>
 
 #include "server/config.h"
 #include "server/eventloop/events/types.h"
 #include "server/metrics/counters.h"
-#include "util/cache.h"
+#include "util/helpers.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -28,14 +27,7 @@ namespace creatures {
         metrics->incrementDMXEventsProcessed();
 
 #if DEBUG_EVENT_DMX
-
-        std::ostringstream oss;
-        for (const auto& value : data) {
-            oss << static_cast<int>(value) << " ";
-        }
-        trace("Frame data: {}", oss.str());
-
-        debug(" -------> DMX data sent");
+        debug("DMX data: Offset: {}, data: {}", channelOffset, vectorToHexString(data));
 #endif
 
     }

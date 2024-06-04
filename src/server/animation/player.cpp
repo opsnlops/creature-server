@@ -124,12 +124,12 @@ namespace creatures {
                 thisFrame->channelOffset = creature->channel_offset;
 
                 auto frameData = decodeBase64(frame);
-
-                for (uint8_t byte: frame) {
+                thisFrame->data.reserve(frameData.size());
 
 #if DEBUG_ANIMATION_PLAY
-                    trace("byte {}: 0x{:02x}", i++, byte);
+                debug("Player Frame: {}", vectorToHexString(frameData));
 #endif
+                for (uint8_t byte: frameData) {
                     thisFrame->data.push_back(byte);
                 }
 
