@@ -100,7 +100,7 @@ namespace creatures::voice {
 
 
 
-        const std::string url = fmt::format("/v1/text-to-speech/{}", speechRequest.voice_id);
+        const std::string url = fmt::format("/v1/text-to-speech/{}?output_format=mp3_44100_192", speechRequest.voice_id);
         auto curlHandle = createCurlHandle(url);
         curlHandle.addHeader("Content-Type: application/json");
         curlHandle.addHeader("Accept: audio/mpeg");
