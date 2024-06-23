@@ -9,6 +9,7 @@
 
 #include "MessageProcessor.h"
 #include "NoticeMessageHandler.h"
+#include "SensorReportHandler.h"
 #include "StreamFrameHandler.h"
 
 namespace creatures::ws {
@@ -24,6 +25,9 @@ namespace creatures::ws {
 
         handlers[toString(MessageType::StreamFrame)] = std::make_unique<creatures::ws::StreamFrameHandler>();
         appLogger->debug("added the handler for {}", toString(MessageType::StreamFrame));
+
+        handlers[toString(MessageType::CreatureSensorReport)] = std::make_unique<creatures::ws::SensorReportHandler>();
+        appLogger->debug("added the handler for {}", toString(MessageType::CreatureSensorReport));
 
         // Log how many we have total
         appLogger->info("{} message handler{} registered", handlers.size(), handlers.size() != 1 ? "s" : "");
