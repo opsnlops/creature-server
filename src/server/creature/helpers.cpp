@@ -35,6 +35,10 @@ namespace creatures {
     extern std::vector<std::string> creature_required_top_level_fields;
     extern std::vector<std::string> creature_required_input_fields;
 
+    extern std::vector<std::string> playlist_required_fields;
+    extern std::vector<std::string> playlistitems_required_fields;
+
+
     Result<creatures::Creature> Database::creatureFromJson(json creatureJson) {
 
         debug("attempting to create a creature from JSON via creatureFromJson()");
@@ -186,6 +190,24 @@ namespace creatures {
 
 
         // TODO: Make sure that the creature_ids in the tracks are valid
+
+        return Result<bool>{true};
+    }
+
+    Result<bool> Database::validatePlaylistJson(const nlohmann::json &json) {
+
+        auto topLevelOkay = has_required_fields(json, creatures::playlist_required_fields);
+        if(!topLevelOkay.isSuccess()) {
+            return topLevelOkay;
+        }
+
+        // Confirm that the items are valid
+        for( const auto& item : json["items"]) {
+            auto itemOkay = has_required_fields(item, playlistitems_required_fields);
+            if(!itemOkay.isSuccess()) {
+                return itemOkay;
+            }
+        }
 
         return Result<bool>{true};
     }

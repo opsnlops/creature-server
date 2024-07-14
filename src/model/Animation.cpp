@@ -1,7 +1,6 @@
 
-
-#include <vector>
 #include <string>
+#include <vector>
 
 
 #include "model/Animation.h"
@@ -31,7 +30,6 @@ namespace creatures {
         animationDto->id = animation.id;
         animationDto->metadata = convertToDto(animation.metadata);
         animationDto->tracks = oatpp::Vector<oatpp::Object<TrackDto>>::createShared();
-
 
         for (const auto &frame : animation.tracks) {
             animationDto->tracks->emplace_back(convertToDto(frame));

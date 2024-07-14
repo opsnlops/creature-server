@@ -29,6 +29,7 @@ using json = nlohmann::json;
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
 #include "model/Creature.h"
+#include "model/Playlist.h"
 #include "model/Track.h"
 #include "model/SortBy.h"
 #include "server/namespace-stuffs.h"
@@ -80,6 +81,14 @@ namespace creatures {
          */
         static Result<bool> validateAnimationJson(const nlohmann::json& json);
 
+        /**
+         * Validates that the JSON for an Playlist contains the fields we expect.
+         *
+         * @param json the JSON to validate
+         * @return true if good, or ServerError if not
+         */
+        static Result<bool> validatePlaylistJson(const nlohmann::json& json);
+
 
         /**
          * Helper function that checks if a JSON object has all of the required fields. Used
@@ -108,11 +117,10 @@ namespace creatures {
 
 
         // Playlist stuff
-//        grpc::Status createPlaylist(const Playlist *playlist, DatabaseInfo *reply);
-//        grpc::Status listPlaylists(const PlaylistFilter *filter, ListPlaylistsResponse *animationList);
-//        void getPlaylist(const PlaylistIdentifier *playlistIdentifier, Playlist *playlist);
-//        void updatePlaylist(const Playlist *playlist);
-
+        Result<json> getPlaylistJson(playlistId_t playlistId);
+        Result<std::vector<creatures::Playlist>> getAllPlaylists();
+        Result<creatures::Playlist> getPlaylist(const playlistId_t& playlistId);
+        Result<creatures::Playlist> upsertPlaylist(const std::string& playlistJson);
 
         /**
          * Request that the database perform a health check
@@ -155,14 +163,11 @@ namespace creatures {
         /*
          * Playlists
          */
-//        static bsoncxx::document::value playlistToBson(const Playlist *playlist, bsoncxx::oid playlistId);
-//        static int32_t playlistItemsToBson(bsoncxx::builder::stream::document &doc, const server::Playlist *playlist);
-//        static void bsonToPlaylist(const bsoncxx::document::view &doc, Playlist *playlist);
-//        static void bsonToPlaylistItems(const bsoncxx::document::view &doc, server::Playlist *playlist);
+        static Result<creatures::Playlist> playlistFromJson(json playlistJson);
+        static Result<creatures::PlaylistItem> playlistItemFromJson(json playlistItemJson);
 
         // Start out thinking that the server is pingable
         std::atomic<bool> serverPingable{true};
-
 
     };
 

@@ -17,6 +17,7 @@
 #include "controller/AnimationController.h"
 #include "controller/CreatureController.h"
 #include "controller/MetricsController.h"
+#include "controller/PlaylistController.h"
 #include "controller/SoundController.h"
 #include "controller/StaticController.h"
 #include "controller/VoiceController.h"
@@ -70,6 +71,7 @@ namespace creatures ::ws {
         router->addController(AnimationController::createShared());
         router->addController(CreatureController::createShared());
         router->addController(MetricsController::createShared());
+        router->addController(PlaylistController::createShared());
         router->addController(SoundController::createShared());
         router->addController(StaticController::createShared());
         router->addController(VoiceController::createShared());

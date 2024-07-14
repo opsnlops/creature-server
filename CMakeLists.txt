@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.1.8"
+        VERSION "2.2.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -186,6 +186,10 @@ add_executable(creature-server
         src/model/LogItem.cpp
         src/model/Notice.h
         src/model/Notice.cpp
+        src/model/Playlist.h
+        src/model/Playlist.cpp
+        src/model/PlaylistItem.h
+        src/model/PlaylistItem.cpp
         src/model/StreamFrame.cpp
         src/model/StreamFrame.h
         src/model/Sound.h
@@ -244,22 +248,25 @@ add_executable(creature-server
         src/server/ws/messaging/StreamFrameHandler.h
         src/server/ws/messaging/StreamFrameHandler.cpp
 
-        src/server/ws/service/AnimationService.cpp
         src/server/ws/service/AnimationService.h
-        src/server/ws/service/CreatureService.cpp
+        src/server/ws/service/AnimationService.cpp
         src/server/ws/service/CreatureService.h
+        src/server/ws/service/CreatureService.cpp
+        src/server/ws/service/MetricsService.h
         src/server/ws/service/MetricsService.cpp
-        src/server/ws/service/MetricsService.cpp
-        src/server/ws/service/SoundService.cpp
+        src/server/ws/service/PlaylistService.h
+        src/server/ws/service/PlaylistService.cpp
         src/server/ws/service/SoundService.h
+        src/server/ws/service/SoundService.cpp
+        src/server/ws/service/VoiceService.h
+        src/server/ws/service/VoiceService.cpp
 
         src/server/ws/websocket/ClientCafe.h
         src/server/ws/websocket/ClientConnection.h
         src/server/ws/websocket/ClientCafe.cpp
         src/server/ws/websocket/ClientConnection.cpp
         src/server/ws/messaging/NoticeMessageCommandDTO.h
-        src/server/ws/service/VoiceService.h
-        src/server/ws/service/VoiceService.cpp
+
         src/server/ws/messaging/SensorReportHandler.h
         src/server/ws/messaging/SensorReportHandler.cpp
 

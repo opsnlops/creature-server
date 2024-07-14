@@ -22,101 +22,79 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
 
-//    Status CreatureServerImpl::GetPlaylist(grpc::ServerContext *context, const server::PlaylistIdentifier *id,
-//                                           server::Playlist *playlist) {
-//
-//        grpc::Status status;
-//
-//        info("Loading one animation from the database");
-//
-//        try {
-//            db->getPlaylist(id, playlist);
-//            status = grpc::Status(grpc::StatusCode::OK,
-//                                  "Loaded a playlist from the database",
-//                                  fmt::format("Name: {}, Number of Items: {}",
-//                                              playlist->name(),
-//                                              playlist->items_size()));
-//        }
-//        catch(const InvalidArgumentException &e) {
-//            status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-//                                  "PlaylistIdentifier was empty on getPlaylist()",
-//                                  fmt::format("⛔️️ A PlaylistIdentifier must be supplied"));
-//        }
-//        catch(const NotFoundException &e) {
-//            status = grpc::Status(grpc::StatusCode::NOT_FOUND,
-//                                  fmt::format("⚠️ No playlist with ID '{}' found", bsoncxx::oid(id->_id()).to_string()),
-//                                  "Try another ID! 😅");
-//        }
-//        catch(const DataFormatException &e) {
-//            status = grpc::Status(grpc::StatusCode::INTERNAL,
-//                                  "Unable to encode request into BSON",
-//                                  e.what());
-//        }
-//        catch(const InternalError &e) {
-//            status = grpc::Status(grpc::StatusCode::INTERNAL,
-//                                  fmt::format("MongoDB error while loading a playlist: {}", e.what()),
-//                                  e.what());
-//        }
-//        catch( ... ) {
-//            status = grpc::Status(grpc::StatusCode::INTERNAL,
-//                                  "An unknown error happened while getting a playlist",
-//                                  "Default catch hit?");
-//        }
-//
-//        return status;
-//    }
-//
-//
-//    void Database::getPlaylist(const PlaylistIdentifier *playlistIdentifier, Playlist *playlist) {
-//
-//        if (playlistIdentifier->_id().empty()) {
-//            error("an empty playlistIdentifier was passed into getPlaylist()");
-//            throw InvalidArgumentException("an empty playlistIdentifier was passed into getPlaylist()");
-//        }
-//
-//        auto collection = getCollection(PLAYLISTS_COLLECTION);
-//        trace("collection gotten");
-//
-//
-//        try {
-//
-//            // Convert the ID into an OID
-//            trace("attempting to convert the ID");
-//            bsoncxx::oid id = bsoncxx::oid(playlistIdentifier->_id().data(), bsoncxx::oid::k_oid_length);
-//            debug("found playlistIdentifier ID: {}", id.to_string());
-//
-//            // Create a filter BSON document to match the target document
-//            auto filter = bsoncxx::builder::stream::document{} << "_id" << id << bsoncxx::builder::stream::finalize;
-//            trace("filter doc: {}", bsoncxx::to_json(filter));
-//
-//            // Go try to load it
-//            bsoncxx::stdx::optional<bsoncxx::document::value> result = collection.find_one(filter.view());
-//
-//            if (!result) {
-//                info("🚫 No playlist with ID '{}' found", id.to_string());
-//                throw NotFoundException(fmt::format("🚫 No playlist with ID '{}' found", id.to_string()));
-//            }
-//
-//            // Get an owning reference to this doc since it's ours now
-//            bsoncxx::document::value doc = *result;
-//
-//            Database::bsonToPlaylist(doc, playlist);
-//            debug("loaded the playlist");
-//
-//
-//        }
-//        catch (const bsoncxx::exception &e) {
-//            error("BSON exception while loading a playlist: {}", e.what());
-//            throw DataFormatException(fmt::format("BSON exception while loading a playlist: {}", e.what()));
-//        }
-//        catch (const mongocxx::exception &e) {
-//            error("MongoDB exception while loading a playlist: {}", e.what());
-//
-//        }
-//
-//        // Hooray, we loaded it all!
-//        info("done loading a playlist");
-//
-//    }
+    Result<json> Database::getPlaylistJson(playlistId_t playlistId) {
 
+        debug("attempting to get the JSON for a playlist by ID: {}", playlistId);
+
+        if(playlistId.empty()) {
+            info("an empty playlistId was passed into getPlaylistJson()");
+            return Result<json>{ServerError(ServerError::InvalidData, "unable to get a playlist because the id was empty")};
+        }
+
+        try {
+            bsoncxx::builder::stream::document filter_builder;
+            filter_builder << "id" << playlistId;
+
+            // Search for the document
+            auto collection = getCollection(PLAYLISTS_COLLECTION);
+            auto maybe_result = collection.find_one(filter_builder.view());
+
+            // Check if the document was found
+            if (maybe_result) {
+                // Convert BSON document to JSON using nlohmann::json
+                bsoncxx::document::view view = maybe_result->view();
+                nlohmann::json json_result = nlohmann::json::parse(bsoncxx::to_json(view));
+                return Result<json>{json_result};
+            } else {
+                std::string errorMessage = fmt::format("no playlist id '{}' found", playlistId);
+                warn(errorMessage);
+                return Result<json>{ServerError(ServerError::NotFound, errorMessage)};
+            }
+        } catch (const mongocxx::exception &e) {
+            std::string errorMessage = fmt::format("a MongoDB error happened while loading a playlist by ID: {}", e.what());
+            critical(errorMessage);
+            return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
+        } catch ( ... ) {
+            std::string errorMessage = fmt::format("An unknown error happened while loading a playlist by ID");
+            critical(errorMessage);
+            return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
+        }
+
+    }
+
+
+    Result<creatures::Playlist> Database::getPlaylist(const playlistId_t& playlistId) {
+
+        if (playlistId.empty()) {
+            std::string errorMessage = "unable to get a playlist because the id was empty";
+            warn(errorMessage);
+            return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
+
+
+        // Go to the database and get the playlist's raw JSON
+        auto playlistJson = getPlaylistJson(playlistId);
+        if (!playlistJson.isSuccess()) {
+            auto error = playlistJson.getError().value();
+            std::string errorMessage = fmt::format("unable to get a playlist by ID: {}",
+                                                   playlistJson.getError()->getMessage());
+            warn(errorMessage);
+            return Result<creatures::Playlist>{error};
+        }
+
+        // Covert it to an Playlist object (if possible)
+        auto result = playlistFromJson(playlistJson.getValue().value());
+        if (!result.isSuccess()) {
+            auto error = result.getError().value();
+            std::string errorMessage = fmt::format("unable to get a playlist by ID: {}",
+                                                   result.getError()->getMessage());
+            warn(errorMessage);
+            return Result<creatures::Playlist>{error};
+        }
+
+        // Create the playlist
+        auto playlist = result.getValue().value();
+        return Result<creatures::Playlist>{playlist};
+
+    }
 }
