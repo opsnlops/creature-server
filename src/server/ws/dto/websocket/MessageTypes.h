@@ -14,6 +14,7 @@ namespace creatures::ws {
         VirtualStatusLights,
         UpsertCreature,
         CreatureSensorReport,
+        CacheInvalidation,
     };
 
    // Don't forget to update the toString function in MessageTypes.cpp

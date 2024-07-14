@@ -72,3 +72,7 @@
 
 // How often should the watchdog / status lights thread run?
 #define WATCHDOG_THREAD_PERIOD_MS        250
+
+// When a client updates the database, how long should we wait before sending a message to invalidate
+// the caches?
+#define CACHE_INVALIDATION_DELAY_TIME    50

@@ -9,11 +9,12 @@
 
 #include "model/AnimationMetadata.h"
 
+#include "server/config.h"
 #include "server/database.h"
-
 #include "server/ws/service/AnimationService.h"
 #include "server/ws/dto/PlayAnimationRequestDto.h"
 #include "server/metrics/counters.h"
+#include "util/websocketUtils.h"
 
 namespace creatures {
     extern std::shared_ptr<SystemCounters> metrics;
@@ -90,6 +91,9 @@ namespace creatures :: ws {
             creatures::metrics->incrementRestRequestsProcessed();
             auto requestAsString = std::string(request->readBodyToString());
             trace("request was: {}", requestAsString);
+
+            // Schedule an event to invalidate the animation cache on the clients
+            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
 
             return createDtoResponse(Status::CODE_200,
                                      m_animationService.upsertAnimation(requestAsString));

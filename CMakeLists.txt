@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.2.0"
+        VERSION "2.2.2"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -177,6 +177,8 @@ add_executable(creature-server
         src/model/AnimationMetadata.h
         src/model/Animation.cpp
         src/model/Animation.h
+        src/model/CacheInvalidation.h
+        src/model/CacheInvalidation.cpp
         src/model/Creature.h
         src/model/Creature.cpp
         src/model/Input.h
@@ -269,6 +271,8 @@ add_executable(creature-server
 
         src/server/ws/messaging/SensorReportHandler.h
         src/server/ws/messaging/SensorReportHandler.cpp
+        src/server/ws/dto/websocket/CacheInvalidationMessage.h
+
 
 )
 

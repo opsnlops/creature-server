@@ -90,6 +90,9 @@ namespace creatures :: ws {
             auto requestAsString = std::string(request->readBodyToString());
             trace("request was: {}", requestAsString);
 
+            // Schedule an event to invalidate the playlist cache on the clients
+            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Playlist);
+
             return createDtoResponse(Status::CODE_200,
                                      m_playlistService.upsertPlaylist(requestAsString));
         }

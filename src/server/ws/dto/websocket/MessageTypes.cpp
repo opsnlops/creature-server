@@ -16,6 +16,7 @@ namespace creatures::ws {
             case MessageType::VirtualStatusLights: return "status-lights";
             case MessageType::UpsertCreature: return "upsert-creature";
             case MessageType::CreatureSensorReport: return "sensor-report";
+            case MessageType::CacheInvalidation: return "cache-invalidation";
 
             default: return "unknown";
         }

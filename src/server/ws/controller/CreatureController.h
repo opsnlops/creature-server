@@ -91,6 +91,9 @@ namespace creatures :: ws {
             auto requestAsString = std::string(request->readBodyToString());
             trace("request was: {}", requestAsString);
 
+            // Schedule an event to invalidate the creature cache on the clients
+            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Creature);
+
             return createDtoResponse(Status::CODE_200,
                                      m_creatureService.upsertCreature(requestAsString));
         }

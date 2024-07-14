@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <vector>
 
+#include "model/CacheInvalidation.h"
 #include "server/config.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/event.h"
@@ -88,6 +89,18 @@ namespace creatures {
     private:
         StatusLight light;
         bool on;
+    };
+
+
+    class CacheInvalidateEvent : public EventBase<CacheInvalidateEvent> {
+    public:
+        using EventBase::EventBase;
+        CacheInvalidateEvent(framenum_t frameNumber, CacheType cacheType);
+        virtual ~CacheInvalidateEvent() = default;
+        void executeImpl();
+
+    private:
+        CacheType cacheType;
     };
 
 }
