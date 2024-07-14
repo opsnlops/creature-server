@@ -46,7 +46,7 @@ namespace creatures {
      *
      */
     struct CacheInvalidation {
-        CacheType cacheType;
+        CacheType cache_type;
     };
 
 
@@ -56,10 +56,10 @@ namespace creatures {
 
     DTO_INIT(CacheInvalidationDto, DTO /* extends */)
 
-    DTO_FIELD_INFO(cacheType) {
+    DTO_FIELD_INFO(cache_type) {
         info->description = "A string representation of the type of cache that should be invalidated";
     }
-    DTO_FIELD(String, cacheType);
+    DTO_FIELD(String, cache_type);
 
 };
 #include OATPP_CODEGEN_END(DTO)

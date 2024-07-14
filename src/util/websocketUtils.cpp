@@ -86,7 +86,7 @@ namespace creatures {
 
         try {
             CacheInvalidation cacheInvalidation{};
-            cacheInvalidation.cacheType = type;
+            cacheInvalidation.cache_type = type;
 
              // Create the message to send with the command and payload
             auto invalidateMessage = oatpp::Object<ws::CacheInvalidationMessage>::createShared();

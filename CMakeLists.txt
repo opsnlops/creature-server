@@ -226,6 +226,7 @@ add_executable(creature-server
         src/server/ws/ErrorHandler.h
 
         src/server/ws/controller/CreatureController.h
+        src/server/ws/controller/DebugController.h
         src/server/ws/controller/MetricsController.h
         src/server/ws/controller/SoundController.h
         src/server/ws/controller/StaticController.h

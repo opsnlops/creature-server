@@ -33,14 +33,14 @@ namespace creatures {
 
      oatpp::Object<CacheInvalidationDto> convertToDto(const CacheInvalidation &cacheInvalidation) {
         auto cacheInvalidationDto = CacheInvalidationDto::createShared();
-        cacheInvalidationDto->cacheType = toString(cacheInvalidation.cacheType);
+        cacheInvalidationDto->cache_type = toString(cacheInvalidation.cache_type);
 
         return cacheInvalidationDto;
     }
 
     CacheInvalidation convertFromDto(const std::shared_ptr<CacheInvalidationDto> &cacheInvalidationDto) {
         CacheInvalidation cacheInvalidation{};
-        cacheInvalidation.cacheType = cacheTypeFromString(cacheInvalidationDto->cacheType);
+        cacheInvalidation.cache_type = cacheTypeFromString(cacheInvalidationDto->cache_type);
 
         return cacheInvalidation;
     }

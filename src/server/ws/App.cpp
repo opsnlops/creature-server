@@ -16,6 +16,7 @@
 #include "SwaggerComponent.h"
 #include "controller/AnimationController.h"
 #include "controller/CreatureController.h"
+#include "controller/DebugController.h"
 #include "controller/MetricsController.h"
 #include "controller/PlaylistController.h"
 #include "controller/SoundController.h"
@@ -70,6 +71,7 @@ namespace creatures ::ws {
 
         router->addController(AnimationController::createShared());
         router->addController(CreatureController::createShared());
+        router->addController(DebugController::createShared());
         router->addController(MetricsController::createShared());
         router->addController(PlaylistController::createShared());
         router->addController(SoundController::createShared());
