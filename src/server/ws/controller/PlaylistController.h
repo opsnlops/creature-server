@@ -11,6 +11,9 @@
 
 #include "server/database.h"
 
+#include "model/PlaylistStatus.h"
+#include "server/ws/dto/StartPlaylistRequestDto.h"
+#include "server/ws/dto/StopPlaylistRequestDto.h"
 #include "server/ws/service/PlaylistService.h"
 #include "server/metrics/counters.h"
 
@@ -61,7 +64,7 @@ namespace creatures :: ws {
 
             info->pathParams["playlistId"].description = "Playlist ID in the form of a UUID";
         }
-        ENDPOINT("GET", "api/v1/playlist/{playlistId}", getPlaylist,
+        ENDPOINT("GET", "api/v1/playlist/id/{playlistId}", getPlaylist,
                  PATH(String, playlistId))
         {
             debug("get playlist by ID via REST API: {}", std::string(playlistId));
@@ -96,24 +99,65 @@ namespace creatures :: ws {
             return createDtoResponse(Status::CODE_200,
                                      m_playlistService.upsertPlaylist(requestAsString));
         }
-//
-//
-//        ENDPOINT_INFO(playStoredAnimation) {
-//            info->summary = "Play one animation out of the database on a given universe";
-//
-//            info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
-//            info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-//            info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
-//        }
-//        ENDPOINT("POST", "api/v1/animation/play", playStoredAnimation,
-//                 BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody))
-//        {
-//            creatures::metrics->incrementRestRequestsProcessed();
-//            return createDtoResponse(Status::CODE_200,
-//                                     m_animationService.playStoredAnimation(std::string(requestBody->animation_id),
-//                                                                            requestBody->universe));
-//        }
 
+        ENDPOINT_INFO(startPlaylist) {
+            info->summary = "Start a playlist";
+
+            info->addResponse<Object<PlaylistStatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        }
+        ENDPOINT("POST", "api/v1/playlist/start", startPlaylist,
+                 BODY_DTO(Object<StartPlaylistRequestDto>, playlistStartDto))
+        {
+            creatures::metrics->incrementRestRequestsProcessed();
+            return createDtoResponse(Status::CODE_200,
+                                     m_playlistService.startPlaylist(playlistStartDto->universe, playlistStartDto->playlist_id));
+        }
+
+        ENDPOINT_INFO(stopPlaylist) {
+            info->summary = "Stop a playlist";
+
+            info->addResponse<Object<PlaylistStatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        }
+        ENDPOINT("POST", "api/v1/playlist/stop", stopPlaylist,
+                 BODY_DTO(Object<StopPlaylistRequestDto>, stopPlaylistDto))
+        {
+            creatures::metrics->incrementRestRequestsProcessed();
+            return createDtoResponse(Status::CODE_200,
+                                     m_playlistService.stopPlaylist(stopPlaylistDto->universe));
+        }
+
+        // Get the status a universe's playlist
+        ENDPOINT_INFO(playlistStatus) {
+            info->summary = "Get the status of a universe's playlist";
+
+            info->addResponse<Object<PlaylistStatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        }
+        ENDPOINT("GET", "api/v1/playlist/status/{universe}", playlistStatus,
+                 PATH(UInt32, universe))
+        {
+            creatures::metrics->incrementRestRequestsProcessed();
+            return createDtoResponse(Status::CODE_200, m_playlistService.playlistStatus(universe));
+        }
+
+        // Get the status of all playlists
+        ENDPOINT_INFO(getAllPlaylistStatuses) {
+            info->summary = "Get the status of all playlists";
+
+            info->addResponse<Object<ListDto<oatpp::Object<PlaylistStatusDto>>>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        }
+        ENDPOINT("GET", "api/v1/playlist/status", getAllPlaylistStatuses)
+        {
+            creatures::metrics->incrementRestRequestsProcessed();
+            return createDtoResponse(Status::CODE_200, m_playlistService.getAllPlaylistStatuses());
+        }
     };
 
 }

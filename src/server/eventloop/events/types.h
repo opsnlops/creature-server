@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "model/CacheInvalidation.h"
+#include "model/PlaylistStatus.h"
 #include "server/config.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/event.h"
@@ -63,10 +64,13 @@ namespace creatures {
     public:
         using EventBase::EventBase;
         PlaylistEvent(framenum_t frameNumber, universe_t universe);
+        virtual ~PlaylistEvent() = default;
         void executeImpl();
 
     private:
         universe_t activeUniverse;
+        static void sendEmptyPlaylistUpdate(universe_t universe);
+        static void sendPlaylistUpdate(const PlaylistStatus &playlistStatus);
     };
 
 

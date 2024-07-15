@@ -4,6 +4,7 @@
 #include <string>
 
 #include "model/CacheInvalidation.h"
+#include "model/PlaylistStatus.h"
 #include "util/Result.h"
 
 #include "server/namespace-stuffs.h"
@@ -40,5 +41,17 @@ namespace creatures {
      * @param type which type?
      */
     void scheduleCacheInvalidationEvent(framenum_t frameOffset, CacheType type);
+
+
+    /**
+     * Let all of the clients know that the status of a playlist has changed
+     *
+     * This is useful because the status contains the name of the currently running animation, which
+     * can be helpful to show in the UI.
+     *
+     * @param playlistStatus The status to shout into the world
+     * @return true if successful
+     */
+    Result<bool> broadcastPlaylistStatusToAllClients(const PlaylistStatus &playlistStatus);
 
 }

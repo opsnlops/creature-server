@@ -192,6 +192,8 @@ add_executable(creature-server
         src/model/Playlist.cpp
         src/model/PlaylistItem.h
         src/model/PlaylistItem.cpp
+        src/model/PlaylistStatus.h
+        src/model/PlaylistStatus.cpp
         src/model/StreamFrame.cpp
         src/model/StreamFrame.h
         src/model/Sound.h
@@ -232,6 +234,7 @@ add_executable(creature-server
         src/server/ws/controller/StaticController.h
         src/server/ws/controller/WebSocketController.h
 
+        src/server/ws/dto/websocket/CacheInvalidationMessage.h
         src/server/ws/dto/websocket/LogMessage.h
         src/server/ws/dto/websocket/MessageTypes.h
         src/server/ws/dto/websocket/MessageTypes.cpp
@@ -272,7 +275,6 @@ add_executable(creature-server
 
         src/server/ws/messaging/SensorReportHandler.h
         src/server/ws/messaging/SensorReportHandler.cpp
-        src/server/ws/dto/websocket/CacheInvalidationMessage.h
 
 
 )

@@ -15,6 +15,7 @@ namespace creatures::ws {
         UpsertCreature,
         CreatureSensorReport,
         CacheInvalidation,
+        PlaylistStatus,
     };
 
    // Don't forget to update the toString function in MessageTypes.cpp

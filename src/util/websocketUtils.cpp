@@ -13,6 +13,7 @@
 #include "server/ws/dto/websocket/CacheInvalidationMessage.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
 #include "server/ws/dto/websocket/NoticeMessage.h"
+#include "server/ws/dto/websocket/PlaylistStatusMessage.h"
 #include "util/helpers.h"
 #include "util/websocketUtils.h"
 #include "util/Result.h"
@@ -121,5 +122,35 @@ namespace creatures {
 
         eventLoop->scheduleEvent(invalidateEvent);
         debug("cache invalidate message for the '{}' cache scheduled for frame {}", toString(type), eventTime);
+    }
+
+
+    Result<bool> broadcastPlaylistStatusToAllClients(const PlaylistStatus &playlistStatus) {
+
+        debug("broadcasting playlist status to all clients: {}", playlistStatus.playlist);
+
+        try {
+
+             // Create the message to send with the command and payload
+            auto playlistStatusMessage = oatpp::Object<ws::PlaylistStatusMessage>::createShared();
+            playlistStatusMessage->command = toString(ws::MessageType::PlaylistStatus);
+            playlistStatusMessage->payload = creatures::convertToDto(playlistStatus);
+
+            // Make a JSON mapper
+            auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+
+            std::string outgoingMessage = jsonMapper->writeToString(playlistStatusMessage);
+            debug("Outgoing playlist update for clients: {}", outgoingMessage);
+
+            websocketOutgoingMessages->enqueue(outgoingMessage);
+            return Result<bool>{true};
+        }
+        catch (const std::exception &e) {
+            return Result<bool>{ServerError(ServerError::InternalError, e.what())};
+        }
+        catch (...) {
+            return Result<bool>{ServerError(ServerError::InternalError,
+                                            "broadcastPlaylistStatusToAllClients() caught an unknown exception")};
+        }
     }
 }

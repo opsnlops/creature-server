@@ -17,6 +17,7 @@ namespace creatures::ws {
             case MessageType::UpsertCreature: return "upsert-creature";
             case MessageType::CreatureSensorReport: return "sensor-report";
             case MessageType::CacheInvalidation: return "cache-invalidation";
+            case MessageType::PlaylistStatus: return "playlist-status";
 
             default: return "unknown";
         }

@@ -48,6 +48,31 @@ namespace creatures {
             map_.erase(key);
         }
 
+        /**
+         * Check if the cache contains a key
+         *
+         * @param key the key to check
+         * @return true if the key exists, false otherwise
+         */
+        bool contains(const Key& key) const {
+            std::shared_lock lock(mutex_);
+            return map_.find(key) != map_.end();
+        }
+
+        /**
+         * Get all the keys in the cache
+         *
+         * @return a vector of keys
+         */
+        std::vector<Key> getAllKeys() const {
+            std::shared_lock lock(mutex_);
+            std::vector<Key> keys;
+            for (const auto& pair : map_) {
+                keys.push_back(pair.first);
+            }
+            return keys;
+        }
+
     private:
         std::unordered_map<Key, std::shared_ptr<Value>> map_;
         mutable std::shared_mutex mutex_;

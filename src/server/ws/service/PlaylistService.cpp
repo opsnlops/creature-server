@@ -1,18 +1,24 @@
 
 
 #include <string>
-#include <vector>
+
 
 #include "model/Playlist.h"
 #include "server/database.h"
+#include "server/eventloop/eventloop.h"
+#include "server/eventloop/events/types.h"
+#include "server/metrics/counters.h"
 #include "server/ws/dto/ListDto.h"
-#include "server/ws/dto/StatusDto.h"
+#include "util/cache.h"
 
 #include "PlaylistService.h"
 
 
 namespace creatures {
     extern std::shared_ptr<Database> db;
+    extern std::shared_ptr<EventLoop> eventLoop;
+    extern std::shared_ptr<SystemCounters> metrics;
+    extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 }
 
 namespace creatures :: ws {
@@ -71,7 +77,6 @@ namespace creatures :: ws {
         return page;
 
     }
-
 
     oatpp::Object<creatures::PlaylistDto> PlaylistService::getPlaylist(const oatpp::String &inPlaylistId) {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
@@ -176,43 +181,130 @@ namespace creatures :: ws {
         return convertToDto(playlist);
     }
 
-//
-//    oatpp::Object<creatures::ws::StatusDto> AnimationService::playStoredAnimation(const oatpp::String& animationId, universe_t universe) {
-//        OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-//
-//        appLogger->debug("AnimationService::playStoredAnimation({}, {})", std::string(animationId), universe);
-//
-//        bool error = false;
-//        oatpp::String errorMessage;
-//        Status status = Status::CODE_200;
-//
-//        auto result = db->playStoredAnimation(std::string(animationId), universe);
-//        if(!result.isSuccess()) {
-//
-//            auto errorCode = result.getError().value().getCode();
-//            switch(errorCode) {
-//                case ServerError::NotFound:
-//                    status = Status::CODE_404;
-//                    break;
-//                case ServerError::InvalidData:
-//                    status = Status::CODE_400;
-//                    break;
-//                default:
-//                    status = Status::CODE_500;
-//                    break;
-//            }
-//            errorMessage = result.getError().value().getMessage();
-//            appLogger->warn(std::string(errorMessage));
-//            error = true;
-//        }
-//        OATPP_ASSERT_HTTP(!error, status, errorMessage)
-//
-//        auto playResult = StatusDto::createShared();
-//        playResult->status = "OK";
-//        playResult->message = result.getValue().value();
-//        playResult->code = 200;
-//
-//        return playResult;
-//    }
+
+    oatpp::Object<creatures::PlaylistStatusDto> PlaylistService::startPlaylist(universe_t universe, const oatpp::String& inPlaylistId) {
+        OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+
+        // Convert the oatpp string to a std::string
+        std::string playlistId = std::string(inPlaylistId);
+
+        appLogger->debug("PlaylistService::startPlaylist({}, {})", universe, std::string(playlistId));
+
+        bool error = false;
+        oatpp::String errorMessage;
+        Status status = Status::CODE_200;
+
+        // First make sure the playlist is valid
+        if(playlistId.empty()) {
+            errorMessage = "No playlist ID provided";
+            appLogger->warn(std::string(errorMessage));
+            status = Status::CODE_400;
+            error = true;
+        }
+        OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
+
+        // Now go see if that playlist exists
+        auto playlistResult = db->getPlaylist(playlistId);
+        if(!playlistResult.isSuccess()) {
+            auto errorCode = playlistResult.getError().value().getCode();
+            switch(errorCode) {
+                case ServerError::NotFound:
+                    status = Status::CODE_404;
+                    break;
+                case ServerError::InvalidData:
+                    status = Status::CODE_400;
+                    break;
+                default:
+                    status = Status::CODE_500;
+                    break;
+            }
+            errorMessage = playlistResult.getError().value().getMessage();
+            appLogger->warn(std::string(errorMessage));
+            error = true;
+        }
+        OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
+        // Yay it exists!
+        auto playlist = playlistResult.getValue().value();
+        debug("confirmed that playlist '{}' exists ({})", playlist.id, playlist.name);
+
+
+        // Now let's go start it
+
+        // Set the playlist in the cache
+        PlaylistStatus playlistStatus;
+        playlistStatus.universe = universe;
+        playlistStatus.playlist = playlistId;
+        playlistStatus.playing = true;
+        playlistStatus.current_animation = ""; // Will get filled in on the next frame
+        runningPlaylists->put(universe, playlistStatus);
+
+        auto playEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
+        eventLoop->scheduleEvent(playEvent);
+
+        std::string okayMessage = fmt::format("🎵 Started playing playlist {} on universe {}", playlist.name, universe);
+        info(okayMessage);
+
+        metrics->incrementPlaylistsStarted();
+
+        return convertToDto(playlistStatus);
+
+    }
+
+
+    oatpp::Object<creatures::PlaylistStatusDto> PlaylistService::stopPlaylist(universe_t universe) {
+
+        info("stopping playlist on universe {}", universe);
+
+        // Remove the playlist from the cache
+        runningPlaylists->remove(universe);
+
+        PlaylistStatus playlistStatus;
+        playlistStatus.universe = universe;
+        playlistStatus.playlist = "";
+        playlistStatus.playing = false;
+        playlistStatus.current_animation = "";
+
+        return convertToDto(playlistStatus);
+
+    }
+
+    oatpp::Object<creatures::PlaylistStatusDto> PlaylistService::playlistStatus(universe_t universe) {
+        debug("returning the status of the playlist on universe {}", universe);
+
+        if(runningPlaylists->contains(universe)) {
+            auto playlistStatus = runningPlaylists->get(universe);
+            return convertToDto(*playlistStatus);
+
+        } else {
+
+            // It doesn't exist, so let's make a blank one
+            PlaylistStatus playlistStatus;
+            playlistStatus.universe = universe;
+            playlistStatus.playlist = "";
+            playlistStatus.playing = false;
+            playlistStatus.current_animation = "";
+            return convertToDto(playlistStatus);
+        }
+
+    }
+
+
+    oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistStatusDto>>> PlaylistService::getAllPlaylistStatuses() {
+        debug("returning the status of all playlists");
+
+        auto playlists = oatpp::Vector<oatpp::Object<creatures::PlaylistStatusDto>>::createShared();
+
+        auto keys = runningPlaylists->getAllKeys();
+        for (const auto &key : keys) {
+            playlists->emplace_back(playlistStatus(key));
+        }
+
+        auto page = ListDto<oatpp::Object<creatures::PlaylistStatusDto>>::createShared();
+        page->count = playlists->size();
+        page->items = playlists;
+        return page;
+    }
 
 } // creatures :: ws

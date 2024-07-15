@@ -21,23 +21,19 @@
 #include "blockingconcurrentqueue.h"
 
 // Our stuff
+#include "model/PlaylistStatus.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
-#include "server/creature-server.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
-#include "server/logging/CreatureLogSink.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/StatusLights.h"
-#include "server/ws/dto/websocket/WebSocketMessageDto.h"
 #include "Version.h"
 #include "util/cache.h"
-#include "util/environment.h"
 #include "util/loggingUtils.h"
-#include "util/MessageQueue.h"
 #include "util/threadName.h"
 #include "util/websocketUtils.h"
 #include "watchdog/Watchdog.h"
@@ -62,7 +58,7 @@ namespace creatures {
      * involve any creature in a universe, so it doesn't make sense to have more than one playing
      * at any one time.
      */
-    std::shared_ptr<ObjectCache<universe_t, std::string>> runningPlaylists;
+    std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 
     /**
      * Maintain a cache of the creatures. While going to the DB is very quick, there's some operations
@@ -178,7 +174,7 @@ int main(int argc, char **argv) {
     creatures::statusLights->start();
 
     // Create the playlist cache
-    creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<universe_t, std::string>>();
+    creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<universe_t, creatures::PlaylistStatus>>();
     debug("Playlist cache made");
 
     // Create the Creature cache
