@@ -106,6 +106,31 @@ namespace creatures :: ws {
         }
 
 
+        ENDPOINT_INFO(test_playlist_updates) {
+            info->summary = "Tests the ability to send a playlist update";
+
+            info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+            info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        }
+        ENDPOINT("GET", "api/v1/debug/playlist/update", test_playlist_updates)
+        {
+
+            PlaylistStatus playlistStatus{};
+            playlistStatus.universe = 42;
+            playlistStatus.playlist = "4b5aa09e-9a61-47e7-86d2-3d8f59ebd9a7";
+            playlistStatus.playing = true;
+            playlistStatus.current_animation = "2241e872-57b3-4fa3-8e76-1c2f517f998d";
+
+            broadcastPlaylistStatusToAllClients(playlistStatus);
+
+            auto status = StatusDto::createShared();
+            status->code = 200;
+            status->message = "Playlist update sent";
+            status->status = "OK";
+            creatures::metrics->incrementRestRequestsProcessed();
+            return createDtoResponse(Status::CODE_200, status);
+        }
+
     };
 
 }
