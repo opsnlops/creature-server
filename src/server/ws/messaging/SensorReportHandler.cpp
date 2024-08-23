@@ -19,7 +19,7 @@ namespace creatures ::ws {
 
         appLogger->debug("processing an incoming SensorReport message");
 
-        // There's not a lot to do for this one besides send it to all the currently connected clients
+        // There's not a lot to do for these besides send it to all the currently connected clients
         websocketOutgoingMessages->enqueue(message);
 
     }

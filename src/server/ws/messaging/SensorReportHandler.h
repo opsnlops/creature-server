@@ -8,6 +8,11 @@
 
 namespace creatures::ws {
 
+    /**
+     * Handler for sensor report messages.
+     *
+     * This handles both motor and board sensor reports.
+     */
     class SensorReportHandler : public IMessageHandler {
 
     public:

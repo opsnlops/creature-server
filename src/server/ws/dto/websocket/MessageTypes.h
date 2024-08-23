@@ -13,7 +13,8 @@ namespace creatures::ws {
         StreamFrame,
         VirtualStatusLights,
         UpsertCreature,
-        CreatureSensorReport,
+        BoardSensorReport,
+        MotorSensorReport,
         CacheInvalidation,
         PlaylistStatus,
     };

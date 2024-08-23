@@ -15,7 +15,8 @@ namespace creatures::ws {
             case MessageType::StreamFrame: return "stream-frame";
             case MessageType::VirtualStatusLights: return "status-lights";
             case MessageType::UpsertCreature: return "upsert-creature";
-            case MessageType::CreatureSensorReport: return "sensor-report";
+            case MessageType::BoardSensorReport: return "board-sensor-report";
+            case MessageType::MotorSensorReport: return "motor-sensor-report";
             case MessageType::CacheInvalidation: return "cache-invalidation";
             case MessageType::PlaylistStatus: return "playlist-status";
 
