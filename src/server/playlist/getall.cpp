@@ -48,7 +48,7 @@ namespace creatures {
             for (auto &&doc: cursor) {
 
                 std::string json_str = bsoncxx::to_json(doc);
-                debug("Document JSON out of Mongo: {}", json_str);
+                debug("Playlist JSON out of Mongo: {}", json_str);
 
                 // Parse JSON string to nlohmann::json
                 nlohmann::json json_doc = nlohmann::json::parse(json_str);

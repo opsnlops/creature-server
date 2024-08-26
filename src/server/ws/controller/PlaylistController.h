@@ -50,6 +50,7 @@ namespace creatures :: ws {
         }
         ENDPOINT("GET", "api/v1/playlist", getAllPlaylists)
         {
+            debug("REST request to get all playlists");
             creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_playlistService.getAllPlaylists());
         }

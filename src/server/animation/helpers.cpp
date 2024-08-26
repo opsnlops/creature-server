@@ -112,7 +112,8 @@ namespace creatures {
             return Result<creatures::AnimationMetadata>{metadata};
 
         } catch (const nlohmann::json::exception &e) {
-            std::string errorMessage = fmt::format("Error while creating an AnimationMetadata from JSON: {}", e.what());
+            std::string errorMessage = fmt::format("Error while creating an AnimationMetadata from JSON: {}, (object: {})",
+                                                   e.what(), animationMetadataJson.dump(4));
             warn(errorMessage);
             return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
         }

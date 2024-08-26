@@ -55,8 +55,8 @@ namespace creatures {
             return Result<creatures::Playlist>{playlist};
         }
         catch (const nlohmann::json::exception &e) {
-            std::string errorMessage = fmt::format("Error while creating a playlist from JSON (field '{}'): {}",
-                                                   working_on, e.what());
+            std::string errorMessage = fmt::format("Error while creating a playlist from JSON (field '{}'): {} (object: {})",
+                                                   working_on, e.what(), playlistJson.dump(4));
             warn(errorMessage);
             return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
         }

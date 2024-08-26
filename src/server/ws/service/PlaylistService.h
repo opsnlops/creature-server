@@ -25,8 +25,8 @@ namespace creatures :: ws {
         static oatpp::Object<creatures::PlaylistDto> upsertPlaylist(const std::string& playlistJson);
 
 
-        static oatpp::Object<creatures::PlaylistStatusDto> startPlaylist(universe_t universe, const oatpp::String& playlistId);
-        static oatpp::Object<creatures::PlaylistStatusDto> stopPlaylist(universe_t universe);
+        static oatpp::Object<creatures::ws::StatusDto> startPlaylist(universe_t universe, const oatpp::String& playlistId);
+        static oatpp::Object<creatures::ws::StatusDto> stopPlaylist(universe_t universe);
         static oatpp::Object<creatures::PlaylistStatusDto> playlistStatus(universe_t universe);
 
         static oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistStatusDto>>> getAllPlaylistStatuses();

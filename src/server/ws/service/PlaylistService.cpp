@@ -32,7 +32,7 @@ namespace creatures :: ws {
         appLogger->debug("PlaylistService::getAllPlaylists()");
 
         bool error = false;
-        oatpp::String errorMessage;
+        std::string errorMessage;
         Status status = Status::CODE_200;
 
         auto result = db->getAllPlaylists();
@@ -40,21 +40,26 @@ namespace creatures :: ws {
 
             debug("getAllPlaylists() was not a success 😫");
 
+            uint16_t errorValue;
+
             // If we get an error, let's set it up right
             auto errorCode = result.getError().value().getCode();
             switch(errorCode) {
                 case ServerError::NotFound:
                     status = Status::CODE_404;
+                    errorValue = 404;
                     break;
                 case ServerError::InvalidData:
                     status = Status::CODE_400;
+                    errorValue = 400;
                     break;
                 default:
                     status = Status::CODE_500;
+                    errorValue = 500;
                     break;
             }
-            errorMessage = result.getError()->getMessage();
-            appLogger->warn(std::string(result.getError()->getMessage()));
+            errorMessage = fmt::format("getAllPlaylists() error {}: {}", errorValue,  result.getError()->getMessage());
+            appLogger->warn(errorMessage);
             error = true;
         }
         OATPP_ASSERT_HTTP(!error, status, errorMessage)
@@ -182,7 +187,7 @@ namespace creatures :: ws {
     }
 
 
-    oatpp::Object<creatures::PlaylistStatusDto> PlaylistService::startPlaylist(universe_t universe, const oatpp::String& inPlaylistId) {
+    oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_t universe, const oatpp::String& inPlaylistId) {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
         // Convert the oatpp string to a std::string
@@ -248,25 +253,31 @@ namespace creatures :: ws {
 
         metrics->incrementPlaylistsStarted();
 
-        return convertToDto(playlistStatus);
+        auto response = StatusDto::createShared();
+        response->code = 200;
+        response->message = "Started playback";
+        response->status = "OK";
+
+        debug("returning a 200");
+        return response;
 
     }
 
 
-    oatpp::Object<creatures::PlaylistStatusDto> PlaylistService::stopPlaylist(universe_t universe) {
+    oatpp::Object<creatures::ws::StatusDto> PlaylistService::stopPlaylist(universe_t universe) {
 
         info("stopping playlist on universe {}", universe);
 
         // Remove the playlist from the cache
         runningPlaylists->remove(universe);
 
-        PlaylistStatus playlistStatus;
-        playlistStatus.universe = universe;
-        playlistStatus.playlist = "";
-        playlistStatus.playing = false;
-        playlistStatus.current_animation = "";
+        auto response = StatusDto::createShared();
+        response->code = 200;
+        response->message = "Stopped playback";
+        response->status = "OK";
 
-        return convertToDto(playlistStatus);
+        debug("returning a 200");
+        return response;
 
     }
 

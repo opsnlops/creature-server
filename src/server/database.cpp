@@ -32,7 +32,7 @@ namespace creatures {
 
     mongocxx::collection Database::getCollection(const std::string &collectionName) {
 
-        debug("connecting to a collection");
+        debug("getting a handle to collection {}", collectionName);
 
         // Don't do this if we can't ping the server (ie, short-circuit quickly)
         if(!serverPingable.load()) {
@@ -56,7 +56,6 @@ namespace creatures {
             std::string errorMessage = fmt::format("Unknown error while getting the collection '{}'", collectionName);
             critical(errorMessage);
             throw creatures::DatabaseError(errorMessage);
-
         }
 
     }

@@ -49,6 +49,7 @@ namespace creatures :: ws {
         }
         ENDPOINT("GET", "api/v1/animation", listAllAnimations)
         {
+            debug("REST call to listAllAnimations");
             creatures::metrics->incrementRestRequestsProcessed();
             return createDtoResponse(Status::CODE_200, m_animationService.listAllAnimations());
         }
