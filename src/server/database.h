@@ -40,11 +40,9 @@ namespace creatures {
     class Database {
 
     public:
-        explicit Database(mongocxx::pool &pool);
+        explicit Database(const std::string& mongoURI);
 
         // Creature stuff
-
-
         Result<creatures::Creature> getCreature(const creatureId_t& creatureId);
         Result<std::vector<creatures::Creature>> getAllCreatures(creatures::SortBy sortBy, bool ascending);
         Result<json> getCreatureJson(creatureId_t creatureId);
@@ -148,7 +146,8 @@ namespace creatures {
         static Result<bool> checkJsonField(const nlohmann::json& jsonObj, const std::string& fieldName);
 
     private:
-        mongocxx::pool &pool;
+        std::string mongoURI;
+        mongocxx::pool mongoPool;
 
         mongocxx::collection getCollection(const std::string &collectionName);
 

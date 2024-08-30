@@ -26,8 +26,8 @@ using bsoncxx::builder::basic::kvp;
 
 namespace creatures {
 
-    Database::Database(mongocxx::pool &pool) : pool(pool) {
-        info("starting up database connection");
+    Database::Database(const std::string& mongoURI) : mongoURI(mongoURI), mongoPool(mongocxx::uri{mongoURI})  {
+        info("starting up database connection for {}. Database name {} will be used", mongoURI, DB_NAME);
     }
 
     mongocxx::collection Database::getCollection(const std::string &collectionName) {
@@ -43,9 +43,8 @@ namespace creatures {
 
         // Acquire a MongoDB client from the pool
         try {
-            auto client = pool.acquire();
-            auto collection = (*client)[DB_NAME][collectionName];
-            return collection;
+            thread_local auto client = mongoPool.acquire();
+            return (*client)[DB_NAME][collectionName];
         }
         catch (const std::exception &e) {
             std::string errorMessage = fmt::format("Internal error while getting the collection '{}': {}", collectionName, e.what());
@@ -70,7 +69,7 @@ namespace creatures {
         try {
             const auto ping_cmd = make_document(kvp("ping", 1));
 
-            auto client = pool.acquire();
+            auto client = mongoPool.acquire();
             mongocxx::database db = (*client)[DB_NAME];
             db.run_command(ping_cmd.view());
 

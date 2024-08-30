@@ -145,13 +145,10 @@ int main(int argc, char **argv) {
     std::string mongoURI = creatures::config->getMongoURI();
     debug("MongoDB URI: {}", mongoURI);
 
-    mongocxx::instance instance{};
-    mongocxx::uri uri(mongoURI);
-    mongocxx::pool mongo_pool(uri);
-
     // Start up the database
-    creatures::db = std::make_shared<Database>(mongo_pool);
-    debug("Mongo pool up and running");
+    mongocxx::instance instance{}; // Make sure the client is ready to go
+    creatures::db = std::make_shared<Database>(mongoURI);
+    debug("MongoDB connection created");
 
     // Fire up SDL
     if(!MusicEvent::initSDL()) {
