@@ -149,7 +149,7 @@ namespace creatures {
         std::string mongoURI;
         mongocxx::pool mongoPool;
 
-        mongocxx::collection getCollection(const std::string &collectionName);
+        Result<mongocxx::collection> getCollection(const std::string &collectionName);
 
 
         static Result<creatures::Creature> creatureFromJson(json creatureJson);

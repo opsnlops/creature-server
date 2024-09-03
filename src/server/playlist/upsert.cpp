@@ -39,7 +39,14 @@ namespace creatures {
             auto playlist = playlistResult.getValue().value();
 
             // Now go save it in Mongo
-            auto collection = getCollection(PLAYLISTS_COLLECTION);
+            auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+            if(!collectionResult.isSuccess()) {
+                auto error = collectionResult.getError().value();
+                std::string errorMessage = fmt::format("database error upserting a playlist: {}", error.getMessage());
+                warn(errorMessage);
+                return Result<creatures::Playlist>{error};
+            }
+            auto collection = collectionResult.getValue().value();
             trace("collection obtained");
 
             // Convert the JSON string into BSON

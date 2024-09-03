@@ -52,7 +52,14 @@ namespace creatures {
             filter_builder << "id" << creatureId;
 
             // Search for the document
-            auto collection = getCollection(CREATURES_COLLECTION);
+           auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+            if(!collectionResult.isSuccess()) {
+                auto error = collectionResult.getError().value();
+                std::string errorMessage = fmt::format("database error while getting a creature's JSON: {}", error.getMessage());
+                warn(errorMessage);
+                return Result<json>{error};
+            }
+            auto collection = collectionResult.getValue().value();
             auto maybe_result = collection.find_one(filter_builder.view());
 
             // Check if the document was found

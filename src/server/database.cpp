@@ -16,7 +16,6 @@
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
-#include "exception/exception.h"
 #include "server/namespace-stuffs.h"
 #include "util/Result.h"
 
@@ -30,7 +29,7 @@ namespace creatures {
         info("starting up database connection for {}. Database name {} will be used", mongoURI, DB_NAME);
     }
 
-    mongocxx::collection Database::getCollection(const std::string &collectionName) {
+    Result<mongocxx::collection> Database::getCollection(const std::string &collectionName) {
 
         debug("getting a handle to collection {}", collectionName);
 
@@ -38,7 +37,7 @@ namespace creatures {
         if(!serverPingable.load()) {
             std::string errorMessage = "Unable to get a collection because the server is not pingable";
             critical(errorMessage);
-            throw creatures::DatabaseError(errorMessage);
+            return Result<mongocxx::collection>{ServerError(ServerError::DatabaseError, errorMessage)};
         }
 
         // Acquire a MongoDB client from the pool
@@ -49,12 +48,12 @@ namespace creatures {
         catch (const std::exception &e) {
             std::string errorMessage = fmt::format("Internal error while getting the collection '{}': {}", collectionName, e.what());
             critical(errorMessage);
-            throw creatures::DatabaseError(errorMessage);
+            return Result<mongocxx::collection>{ServerError(ServerError::DatabaseError, errorMessage)};
         }
         catch ( ... ) {
             std::string errorMessage = fmt::format("Unknown error while getting the collection '{}'", collectionName);
             critical(errorMessage);
-            throw creatures::DatabaseError(errorMessage);
+            return Result<mongocxx::collection>{ServerError(ServerError::DatabaseError, errorMessage)};
         }
 
     }

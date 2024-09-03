@@ -39,9 +39,6 @@ namespace creatures {
         std::vector<creatures::AnimationMetadata> animations;
 
         try {
-            auto collection = getCollection(ANIMATIONS_COLLECTION);
-            trace("collection obtained");
-
             document query_doc{};
             document projection_doc{};
             document sort_doc{};
@@ -53,10 +50,18 @@ namespace creatures {
             // entire collection into memory just to get a list!
             projection_doc << "tracks" << 0;
 
-
             mongocxx::options::find findOptions{};
             findOptions.projection(projection_doc.view());
             findOptions.sort(sort_doc.view());
+
+            auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+            if(!collectionResult.isSuccess()) {
+                auto error = collectionResult.getError().value();
+                std::string errorMessage = fmt::format("database error while listing all of the animations: {}", error.getMessage());
+                warn(errorMessage);
+                return Result<std::vector<creatures::AnimationMetadata>>{error};
+            }
+            auto collection = collectionResult.getValue().value();
 
             mongocxx::cursor cursor = collection.find(query_doc.view(), findOptions);
 

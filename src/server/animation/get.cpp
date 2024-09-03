@@ -38,7 +38,14 @@ namespace creatures {
             filter_builder << "id" << animationId;
 
             // Search for the document
-            auto collection = getCollection(ANIMATIONS_COLLECTION);
+            auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+            if(!collectionResult.isSuccess()) {
+                auto error = collectionResult.getError().value();
+                std::string errorMessage = fmt::format("Database error while attempting to get an animation by ID: {}", error.getMessage());
+                warn(errorMessage);
+                return Result<json>{error};
+            }
+            auto collection = collectionResult.getValue().value();
             auto maybe_result = collection.find_one(filter_builder.view());
 
             // Check if the document was found

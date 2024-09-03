@@ -43,9 +43,6 @@ namespace creatures {
         // Start an exception frame
         try {
 
-            auto collection = getCollection(CREATURES_COLLECTION);
-            trace("collection obtained");
-
             document query_doc{};
             document sort_doc{};
 
@@ -69,6 +66,15 @@ namespace creatures {
 
             mongocxx::options::find opts{};
             opts.sort(sort_doc.view());
+
+            auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+            if(!collectionResult.isSuccess()) {
+                auto error = collectionResult.getError().value();
+                std::string errorMessage = fmt::format("database error while listing all of the creatures: {}", error.getMessage());
+                warn(errorMessage);
+                return Result<std::vector<creatures::Creature>>{error};
+            }
+            auto collection = collectionResult.getValue().value();
             mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
 
             for (auto &&doc: cursor) {

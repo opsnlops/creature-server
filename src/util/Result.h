@@ -14,7 +14,8 @@ namespace creatures {
             NotFound,
             Forbidden,
             InternalError,
-            InvalidData
+            InvalidData,
+            DatabaseError
         };
 
         ServerError(Code code, const std::string& message);
@@ -66,7 +67,6 @@ namespace creatures {
         switch (code) {
             case ServerError::NotFound: return 404;
             case ServerError::Forbidden: return 403;
-            case ServerError::InternalError: return 500;
             case ServerError::InvalidData: return 400;
             default: return 500;
         }

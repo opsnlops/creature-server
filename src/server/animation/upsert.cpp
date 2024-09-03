@@ -49,7 +49,14 @@ namespace creatures {
             }
 
             // Now go save it in Mongo
-            auto collection = getCollection(ANIMATIONS_COLLECTION);
+            auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+            if(!collectionResult.isSuccess()) {
+                auto error = collectionResult.getError().value();
+                std::string errorMessage = fmt::format("database error while upserting an animation: {}", error.getMessage());
+                warn(errorMessage);
+                return Result<creatures::Animation>{error};
+            }
+            auto collection = collectionResult.getValue().value();
             trace("collection obtained");
 
             // Convert the JSON string into BSON
