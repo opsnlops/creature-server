@@ -28,7 +28,7 @@ namespace creatures {
         std::vector<creatures::Playlist> playlists;
 
         try {
-            auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+            auto collectionResult = getCollection(PLAYLISTS_COLLECTION);
             if(!collectionResult.isSuccess()) {
                 auto error = collectionResult.getError().value();
                 std::string errorMessage = fmt::format("database error while getting all of the playlists: {}", error.getMessage());

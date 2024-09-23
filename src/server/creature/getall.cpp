@@ -67,7 +67,7 @@ namespace creatures {
             mongocxx::options::find opts{};
             opts.sort(sort_doc.view());
 
-            auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+            auto collectionResult = getCollection(CREATURES_COLLECTION);
             if(!collectionResult.isSuccess()) {
                 auto error = collectionResult.getError().value();
                 std::string errorMessage = fmt::format("database error while listing all of the creatures: {}", error.getMessage());

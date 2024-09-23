@@ -39,7 +39,7 @@ namespace creatures {
             auto playlist = playlistResult.getValue().value();
 
             // Now go save it in Mongo
-            auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+            auto collectionResult = getCollection(PLAYLISTS_COLLECTION);
             if(!collectionResult.isSuccess()) {
                 auto error = collectionResult.getError().value();
                 std::string errorMessage = fmt::format("database error upserting a playlist: {}", error.getMessage());
