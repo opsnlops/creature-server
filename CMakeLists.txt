@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.2.7"
+        VERSION "2.2.8"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -300,39 +300,6 @@ target_link_libraries(creature-server
 )
 
 
-#add_executable(client
-#        ${clientFiles}
-#        src/model/Creature.h
-#        src/model/LogLevel.h
-#        src/model/LogItem.h
-#        src/model/FrameData.h
-#        src/model/AnimationMetadata.h
-#        src/model/Animation.h
-#)
-#
-#target_link_libraries(client PRIVATE
-#        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
-#        fmt::fmt
-#        oatpp::oatpp
-#        nlohmann_json::nlohmann_json
-#        PRIVATE mongo::mongocxx_shared
-#        PRIVATE mongo::bsoncxx_shared
-#)
-
-#add_executable(logreader
-#        ${logReaderFiles}
-#        src/model/LogLevel.h
-#)
-#
-#target_link_libraries(logreader PRIVATE
-#        spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
-#        fmt::fmt
-#        oatpp::oatpp
-#        nlohmann_json::nlohmann_json
-#        PRIVATE mongo::mongocxx_shared
-#        PRIVATE mongo::bsoncxx_shared
-#)
-
 install(TARGETS creature-server
         COMPONENT creature-server
         RUNTIME DESTINATION "/bin"
@@ -371,7 +338,7 @@ target_link_libraries(creature-server-test
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
         oatpp::oatpp
-#        oatpp::oatpp-swagger
+#       oatpp::oatpp-swagger
         oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
