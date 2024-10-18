@@ -67,8 +67,15 @@ namespace creatures :: ws {
 
 
         auto items = oatpp::Vector<oatpp::Object<creatures::PlaylistDto>>::createShared();
-
         auto playlists = result.getValue().value();
+
+        // If there aren't any playlists, return a 404
+        if(playlists.empty()) {
+            errorMessage = "No playlists found";
+            appLogger->warn(errorMessage);
+            OATPP_ASSERT_HTTP(false, Status::CODE_404, errorMessage)
+        }
+
         for (const auto &playlist : playlists) {
             appLogger->debug("Adding playlist: {}", playlist.id);
             items->emplace_back(creatures::convertToDto(playlist));

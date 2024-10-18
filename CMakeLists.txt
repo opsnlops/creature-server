@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.2.8"
+        VERSION "2.2.10"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -84,7 +84,7 @@ FetchContent_MakeAvailable(googletest)
 
 # Use the oatpp that we've already made
 find_package(oatpp           REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
-#find_package(oatpp-swagger   REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
+find_package(oatpp-swagger   REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
 find_package(oatpp-websocket REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-websocket-1.3.0)
 
 add_definitions(
@@ -103,6 +103,17 @@ set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
 
 # Set up a concurrent queue
 set(MOODYCAMEL_DIR "${CMAKE_SOURCE_DIR}/lib/concurrentqueue")
+
+
+#
+# If we're on macOS, use the local copy of the Swagger UI. On Linux, use the one from the
+# package that we installed.
+#
+if(APPLE)
+    add_definitions(-DSWAGGER_UI_PATH="${CMAKE_SOURCE_DIR}/externals/build/oatpp-swagger-prefix/src/oatpp-swagger/res/")
+else()
+    add_definitions(-DSWAGGER_UI_PATH="/usr/share/creature-server/swagger-ui/")
+endif()
 
 
 # MongoDB (built by us on Linux, but the macOS/brew version is fine)
@@ -289,7 +300,7 @@ target_link_libraries(creature-server
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
         oatpp::oatpp
-#        oatpp::oatpp-swagger
+        oatpp::oatpp-swagger
         oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
@@ -338,7 +349,7 @@ target_link_libraries(creature-server-test
         SDL2::SDL2
         SDL2_mixer::SDL2_mixer
         oatpp::oatpp
-#       oatpp::oatpp-swagger
+        oatpp::oatpp-swagger
         oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared

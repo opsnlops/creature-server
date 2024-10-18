@@ -40,7 +40,7 @@ namespace creatures :: ws {
     public:
 
 
-//        SwaggerComponent swaggerComponent;
+        SwaggerComponent swaggerComponent;
 
         /**
          *  Create Logger component
@@ -94,14 +94,6 @@ namespace creatures :: ws {
             return connectionHandler;
 
         }());
-
-        /**
-         *  Swagger-Ui Resources (<oatpp-examples>/lib/oatpp-swagger/res)
-         */
-//        OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::swagger::Resources>, swaggerResources)([] {
-//          // Make sure to specify correct full path to oatpp-swagger/res folder !!!
-//          return oatpp::swagger::Resources::loadResources("/lib/oatpp-swagger/res");
-//        }());
 
 
         OATPP_CREATE_COMPONENT(std::shared_ptr<ClientCafe>, cafe)([] {
