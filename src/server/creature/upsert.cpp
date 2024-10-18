@@ -90,7 +90,7 @@ namespace creatures {
             auto bsonDoc = bsoncxx::from_json(creatureJson);
 
 
-            auto collectionResult = getCollection(PLAYLISTS_COLLECTION);
+            auto collectionResult = getCollection(CREATURES_COLLECTION);
             if(!collectionResult.isSuccess()) {
                 auto error = collectionResult.getError().value();
                 std::string errorMessage = fmt::format("database error while getting creature: {}", error.getMessage());
