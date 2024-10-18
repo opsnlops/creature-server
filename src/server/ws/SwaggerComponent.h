@@ -38,7 +38,9 @@ public:
 
                 .setTermsOfService("Private")
 
-                .addServer("http://localhost:8000", "creature-server on localhost");
+                .addServer("https://server.prod.chirpchirp.dev", "production")
+                .addServer("http://localhost:8000", "localhost");
+
 
 
         return builder.build();
