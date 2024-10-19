@@ -66,7 +66,7 @@ namespace creatures :: ws {
             info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
 
-            info->pathParams["creatureId"].description = "Creature ID in the form of a MongoDB OID";
+            info->pathParams["creatureId"].description = "Creature ID in the form of an UUID";
         }
         ENDPOINT("GET", "api/v1/creature/{creatureId}", getCreature,
                  PATH(String, creatureId))

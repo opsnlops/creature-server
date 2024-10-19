@@ -56,6 +56,23 @@ public:
         return response;
     }
 
+
+    ENDPOINT_INFO(health) {
+        info->summary = "Returns OK if the server is healthy";
+
+        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/health", health) {
+
+        auto response = StatusDto::createShared();
+        response->status = "OK";
+        response->message = "HOP! I'm hopping!";
+        response->code = 200;
+
+        creatures::metrics->incrementRestRequestsProcessed();
+        return createDtoResponse(Status::CODE_200, response);
+    }
+
 };
 
 #include OATPP_CODEGEN_END(ApiController) //<- End Codegen
