@@ -80,7 +80,13 @@ namespace creatures :: ws {
                  BODY_DTO(Object<creatures::ws::MakeSoundFileRequestDto>, requestBody))
         {
             creatures::metrics->incrementRestRequestsProcessed();
-            return createDtoResponse(Status::CODE_200, m_voiceService.generateCreatureSpeech(requestBody));
+
+            auto response = m_voiceService.generateCreatureSpeech(requestBody);
+
+            // Schedule an event to invalidate the sound list cache on the clients
+            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
+
+            return createDtoResponse(Status::CODE_200, response);
         }
     };
 

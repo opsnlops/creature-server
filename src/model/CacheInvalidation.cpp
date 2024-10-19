@@ -11,6 +11,7 @@ namespace creatures {
     const std::string ANIMATION_CACHE_TYPE = "animation";
     const std::string CREATURE_CACHE_TYPE = "creature";
     const std::string PLAYLIST_CACHE_TYPE = "playlist";
+    const std::string SOUND_LIST_CACHE_TYPE = "sound-list";
     const std::string UNKNOWN_CACHE_TYPE = "unknown";
 
     std::string toString(CacheType type) {
@@ -19,6 +20,7 @@ namespace creatures {
             case CacheType::Animation: return ANIMATION_CACHE_TYPE;
             case CacheType::Creature: return CREATURE_CACHE_TYPE;
             case CacheType::Playlist: return PLAYLIST_CACHE_TYPE;
+            case CacheType::SoundList: return SOUND_LIST_CACHE_TYPE;
 
             default: return UNKNOWN_CACHE_TYPE;
         }
@@ -28,6 +30,7 @@ namespace creatures {
         if (cacheTypeString == ANIMATION_CACHE_TYPE) return CacheType::Animation;
         if (cacheTypeString == CREATURE_CACHE_TYPE) return CacheType::Creature;
         if (cacheTypeString == PLAYLIST_CACHE_TYPE) return CacheType::Playlist;
+        if (cacheTypeString == SOUND_LIST_CACHE_TYPE) return CacheType::SoundList;
         return CacheType::Unknown;
     }
 

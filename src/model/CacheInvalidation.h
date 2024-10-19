@@ -15,6 +15,7 @@ namespace creatures {
         Animation,
         Creature,
         Playlist,
+        SoundList,
         Unknown,
     };
 
