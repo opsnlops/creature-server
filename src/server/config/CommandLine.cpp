@@ -96,8 +96,8 @@ namespace creatures {
 
 
         program.add_description("Creature Server for April's Creature Workshop! 🐰\n\n"
-                                "This application is the heart of my creature magic. It contains a gRPC-based server\n"
-                                "as well as the event loop that schedules events to happen in real time.");
+                                "This application is the heart of my creature magic. It contains a websocket-based\n"
+                                "server as well as the event loop that schedules events to happen in real time.");
         program.add_epilog("There are environment variables, too, if you'd rather configure in a Docker-friendly\n"
                            "sort of way.\n\n"
                            "This is version " + getVersion() + ".\n\n"

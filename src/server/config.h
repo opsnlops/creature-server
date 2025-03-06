@@ -25,7 +25,7 @@
 #define EVENT_LOOP_PERIOD_MS            1
 
 #define DB_URI_ENV                      "MONGO_URI"
-#define DEFAULT_DB_URI                  "mongodb://10.3.2.11/?serverSelectionTimeoutMS=2000"
+#define DEFAULT_DB_URI                  "mongodb://10.19.63.10/?serverSelectionTimeoutMS=2000"
 #define DB_NAME                         "creature_server"
 #define CREATURES_COLLECTION            "creatures"
 #define ANIMATIONS_COLLECTION           "animations"
