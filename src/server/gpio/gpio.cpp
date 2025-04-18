@@ -10,16 +10,13 @@
 #include "server/config.h"
 #include "server/creature-server.h"
 
-#include "server/namespace-stuffs.h"
-
-#include "util/environment.h"
 
 #include "gpio.h"
 
 
 namespace creatures {
 
-    extern std::shared_ptr<creatures::Configuration> config;
+    extern std::shared_ptr<Configuration> config;
 
     GPIO::GPIO() {
 
@@ -55,7 +52,7 @@ namespace creatures {
         }
 
         // Always use volatile pointer to hardware registers
-        gpio = (volatile unsigned *)gpio_map;
+        gpio = static_cast<volatile unsigned *>(gpio_map);
 
         // Set up the pins as output pins
         set_output(gpio,SERVER_RUNNING_GPIO_PIN);
@@ -71,7 +68,7 @@ namespace creatures {
     }
 
 
-    void GPIO::serverOnline(bool online) {
+    void GPIO::serverOnline(const bool online) const {
         if(enabled) {
             if(online) {
                 turn_on(SERVER_RUNNING_GPIO_PIN);
@@ -84,7 +81,7 @@ namespace creatures {
         }
     }
 
-    void GPIO::heartbeat(bool heartbeat) {
+    void GPIO::heartbeat(const bool heartbeat) const {
         if(enabled) {
             if(heartbeat) {
                 turn_on(HEARTBEAT_GPIO_PIN);
@@ -97,7 +94,7 @@ namespace creatures {
         }
     }
 
-    void GPIO::playingAnimation(bool playingAnimation) {
+    void GPIO::playingAnimation(const bool playingAnimation) const {
         if(enabled) {
             if(playingAnimation) {
                 turn_on(PLAYING_ANIMATION_GPIO_PIN);
@@ -110,7 +107,7 @@ namespace creatures {
         }
     }
 
-    void GPIO::playingSound(bool playingSound) {
+    void GPIO::playingSound(const bool playingSound) const {
         if(enabled) {
             if(playingSound) {
                 turn_on(PLAYING_SOUND_GPIO_PIN);
@@ -123,7 +120,7 @@ namespace creatures {
         }
     }
 
-    void GPIO::receivingStreamFrames(bool receivingStreamFrames) {
+    void GPIO::receivingStreamFrames(const bool receivingStreamFrames) const {
         if(enabled) {
             if(receivingStreamFrames) {
                 turn_on(RECEIVING_STREAM_FRAMES_GPIO_PIN);
@@ -136,7 +133,7 @@ namespace creatures {
         }
     }
 
-    void GPIO::sendingDMX(bool sendingDMX) {
+    void GPIO::sendingDMX(const bool sendingDMX) const {
         if(enabled) {
             if(sendingDMX) {
                 turn_on(SENDING_DMX_GPIO_PIN);
@@ -149,20 +146,20 @@ namespace creatures {
         }
     }
 
-    void GPIO::set_output(volatile unsigned *gpio, int g) {
-        *(gpio+((g)/10)) &= ~(7<<(((g)%10)*3));
-        *(gpio+((g)/10)) |=  (1<<(((g)%10)*3));
+    void GPIO::set_output(volatile unsigned *gpio, const int g) {
+        *(gpio+g/10) &= ~(7<<(g%10*3));
+        *(gpio+g/10) |=  1<<g%10*3;
     }
 
-    void GPIO::turn_on(int pin) {
+    void GPIO::turn_on(int pin) const {
         GPIO_SET = 1 << pin;
     }
 
-    void GPIO::turn_off(int pin) {
+    void GPIO::turn_off(int pin) const {
         GPIO_CLR = 1 << pin;
     }
 
-    void GPIO::allOff() {
+    void GPIO::allOff() const {
         if(enabled) {
             turn_off(SERVER_RUNNING_GPIO_PIN);
             turn_off(SENDING_DMX_GPIO_PIN);

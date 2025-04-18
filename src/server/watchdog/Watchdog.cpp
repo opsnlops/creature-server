@@ -14,7 +14,7 @@ namespace creatures {
 
     using creatures::Database;
 
-    Watchdog::Watchdog(std::shared_ptr<creatures::Database> db) : db(db) {
+    Watchdog::Watchdog(const std::shared_ptr<Database> &db) : db(db) {
         logger = spdlog::stdout_color_mt("watchdog");
         logger->set_level(spdlog::level::debug);
 
@@ -23,7 +23,7 @@ namespace creatures {
 
     void Watchdog::start() {
         logger->info("starting the watchdog thread");
-        creatures::StoppableThread::start();
+        StoppableThread::start();
     }
 
     void Watchdog::run() {

@@ -2,17 +2,13 @@
 #pragma once
 
 #include <chrono>
-#include <ctime>
 #include <iomanip>
-#include <iostream>
 
 #include "blockingconcurrentqueue.h"
 
-#include "spdlog/spdlog.h"
 #include "spdlog/common.h"
 #include "spdlog/details/log_msg.h"
 #include "spdlog/sinks/base_sink.h"
-#include <spdlog/details/synchronous_factory.h>
 
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/core/Types.hpp>
@@ -20,7 +16,6 @@
 #include "model/LogItem.h"
 #include "server/ws/dto/websocket/LogMessage.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
-#include "util/MessageQueue.h"
 
 
 namespace spdlog::sinks {
@@ -34,14 +29,14 @@ namespace spdlog::sinks {
      * @tparam Mutex From the base_sink
      */
     template<typename Mutex>
-    class CreatureLogSink : public base_sink<Mutex> {
+    class CreatureLogSink final : public base_sink<Mutex> {
     public:
         explicit CreatureLogSink(std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> &queue) : queue_(queue) {
             jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
         }
 
     protected:
-        void sink_it_(const spdlog::details::log_msg &msg) override {
+        void sink_it_(const details::log_msg &msg) override {
 
             /*
              * WARNING:
@@ -50,11 +45,11 @@ namespace spdlog::sinks {
              * recursive call to sink_it_. 😅
              */
 
-            auto logItem = convertSpdlogToLogItem(msg);
-            auto logItemDto = creatures::convertToDto(logItem);
+            const auto logItem = convertSpdlogToLogItem(msg);
+            const auto logItemDto = creatures::convertToDto(logItem);
 
 
-            auto message = oatpp::Object<creatures::ws::LogMessage>::createShared();
+            const auto message = oatpp::Object<creatures::ws::LogMessage>::createShared();
             message->command = toString(creatures::ws::MessageType::LogMessage);
             message->payload = logItemDto;
 
@@ -67,12 +62,12 @@ namespace spdlog::sinks {
 
         void flush_() override {}
 
-        static std::string formatSpdlogTimestamp(const spdlog::details::log_msg& log_msg) {
+        static std::string formatSpdlogTimestamp(const details::log_msg& log_msg) {
             // Extract the time_point directly from the log_msg
-            auto time_point = log_msg.time;
+            const auto time_point = log_msg.time;
 
             // Convert to time_t for easy formatting
-            auto time_t_time = std::chrono::system_clock::to_time_t(time_point);
+            const auto time_t_time = std::chrono::system_clock::to_time_t(time_point);
 
             // Format the time using std::put_time
             std::stringstream ss;
@@ -80,20 +75,20 @@ namespace spdlog::sinks {
             return ss.str();
         }
 
-        static creatures::LogLevel mapSpdlogLevel(spdlog::level::level_enum spdlog_level) {
+        static creatures::LogLevel mapSpdlogLevel(const level::level_enum spdlog_level) {
             switch (spdlog_level) {
-                case spdlog::level::trace: return creatures::LogLevel::trace;
-                case spdlog::level::debug: return creatures::LogLevel::debug;
-                case spdlog::level::info: return creatures::LogLevel::info;
-                case spdlog::level::warn: return creatures::LogLevel::warn;
-                case spdlog::level::err: return creatures::LogLevel::error;
-                case spdlog::level::critical: return creatures::LogLevel::critical;
-                case spdlog::level::off: return creatures::LogLevel::off;
+                case level::trace: return creatures::LogLevel::trace;
+                case level::debug: return creatures::LogLevel::debug;
+                case level::info: return creatures::LogLevel::info;
+                case level::warn: return creatures::LogLevel::warn;
+                case level::err: return creatures::LogLevel::error;
+                case level::critical: return creatures::LogLevel::critical;
+                case level::off: return creatures::LogLevel::off;
                 default: return creatures::LogLevel::unknown;  // Default to unknown
             }
         }
 
-        static creatures::LogItem convertSpdlogToLogItem(const spdlog::details::log_msg& log_msg) {
+        static creatures::LogItem convertSpdlogToLogItem(const details::log_msg& log_msg) {
 
             auto logItem = creatures::LogItem();
 

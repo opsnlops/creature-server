@@ -181,8 +181,7 @@ namespace creatures {
 
         // Try to convert the name to an index number
         try {
-            uint8_t networkDevice = getInterfaceIndex(networkDeviceName);
-            if(networkDevice > 0) {
+            if(uint8_t networkDevice = getInterfaceIndex(networkDeviceName); networkDevice > 0) {
                 config->setNetworkDevice(networkDevice);
                 debug("set our network device to {}", networkDevice);
             }
@@ -201,17 +200,16 @@ namespace creatures {
     void CommandLine::listSoundDevices() {
 
         if(SDL_Init(SDL_INIT_AUDIO) < 0) {
-            std::string errorMessage = fmt::format("Couldn't initialize SDL: {}\n", SDL_GetError());
+            const std::string errorMessage = fmt::format("Couldn't initialize SDL: {}\n", SDL_GetError());
             fprintf(stderr, "%s", errorMessage.c_str());
             return;
         }
 
-        int numDevices = SDL_GetNumAudioDevices(0);
+        const int numDevices = SDL_GetNumAudioDevices(0);
         printf("Number of audio devices found: %d\n", numDevices);
 
         for (int i = 0; i < numDevices; ++i) {
-            const char* deviceName = SDL_GetAudioDeviceName(i, 0);
-            if (deviceName) {
+            if (const char* deviceName = SDL_GetAudioDeviceName(i, 0)) {
                 printf(" Device: %d, Name: %s\n", i, deviceName);
             }
         }
@@ -225,7 +223,7 @@ namespace creatures {
      * @return the index of the interface, or throws if the interface can't be found
      */
     uint8_t CommandLine::getInterfaceIndex(const std::string& interfaceName) {
-        uint8_t index = if_nametoindex(interfaceName.c_str());
+        const uint8_t index = if_nametoindex(interfaceName.c_str());
         if (index == 0) {
             throw std::system_error(errno, std::generic_category(), "Failed to find interface: " + interfaceName);
         }
@@ -234,8 +232,7 @@ namespace creatures {
 
 
     void CommandLine::listNetworkDevices() {
-
-        struct ifaddrs *ifaddr, *ifa;
+        ifaddrs *ifaddr;
         char addrBuff[INET6_ADDRSTRLEN];
 
         if (getifaddrs(&ifaddr) == -1) {
@@ -246,19 +243,19 @@ namespace creatures {
         // Map to store device name, index, and IP addresses
         std::map<std::string, std::pair<int, std::vector<std::string>>> interfaces;
 
-        for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+        for (const ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
             if (ifa->ifa_addr == nullptr)
                 continue;
 
-            void *tmpAddrPtr = nullptr;
+            const void *tmpAddrPtr = nullptr;
             bool isIPv4 = false;
 
             // Check if it is IP4 or IP6 and set tmpAddrPtr accordingly
             if (ifa->ifa_addr->sa_family == AF_INET) { // IPv4
-                tmpAddrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+                tmpAddrPtr = &reinterpret_cast<sockaddr_in *>(ifa->ifa_addr)->sin_addr;
                 isIPv4 = true;
             } else if (ifa->ifa_addr->sa_family == AF_INET6) { // IPv6
-                tmpAddrPtr = &((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+                tmpAddrPtr = &reinterpret_cast<sockaddr_in6 *>(ifa->ifa_addr)->sin6_addr;
             }
 
             if (tmpAddrPtr) {
@@ -276,10 +273,10 @@ namespace creatures {
         freeifaddrs(ifaddr);
 
         std::cout << "List of network devices:" << std::endl;
-        for (const auto &iface : interfaces) {
-            std::cout << " Name: " << iface.first;
+        for (const auto &[fst, snd] : interfaces) {
+            std::cout << " Name: " << fst;
             std::cout << ", IPs: ";
-            for (const auto &ip : iface.second.second) {
+            for (const auto &ip : snd.second) {
                 std::cout << ip << " ";
             }
             std::cout << std::endl;

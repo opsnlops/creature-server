@@ -22,30 +22,30 @@ namespace creatures {
 
 
     // Convert a CreatureDto to a Creature
-    AnimationMetadata convertFromDto(const std::shared_ptr<AnimationMetadataDto> &metadataDto) {
+    AnimationMetadata convertFromDto(const std::shared_ptr<AnimationMetadataDto> &animationMetadataDto) {
         AnimationMetadata metadata;
-        metadata.animation_id = metadataDto->animation_id;
-        metadata.title = metadataDto->title;
-        metadata.milliseconds_per_frame = metadataDto->milliseconds_per_frame;
-        metadata.note = metadataDto->note;
-        metadata.sound_file = metadataDto->sound_file;
-        metadata.number_of_frames = metadataDto->number_of_frames;
-        metadata.multitrack_audio = metadataDto->multitrack_audio;
+        metadata.animation_id = animationMetadataDto->animation_id;
+        metadata.title = animationMetadataDto->title;
+        metadata.milliseconds_per_frame = animationMetadataDto->milliseconds_per_frame;
+        metadata.note = animationMetadataDto->note;
+        metadata.sound_file = animationMetadataDto->sound_file;
+        metadata.number_of_frames = animationMetadataDto->number_of_frames;
+        metadata.multitrack_audio = animationMetadataDto->multitrack_audio;
 
 
         return metadata;
     }
 
 
-    std::shared_ptr<AnimationMetadataDto> convertToDto(const AnimationMetadata &metadata) {
+    std::shared_ptr<AnimationMetadataDto> convertToDto(const AnimationMetadata &animationMetadata) {
         auto metadataDto = AnimationMetadataDto::createShared();
-        metadataDto->animation_id = metadata.animation_id;
-        metadataDto->title = metadata.title;
-        metadataDto->milliseconds_per_frame = metadata.milliseconds_per_frame;
-        metadataDto->note = metadata.note;
-        metadataDto->sound_file = metadata.sound_file;
-        metadataDto->number_of_frames = metadata.number_of_frames;
-        metadataDto->multitrack_audio = metadata.multitrack_audio;
+        metadataDto->animation_id = animationMetadata.animation_id;
+        metadataDto->title = animationMetadata.title;
+        metadataDto->milliseconds_per_frame = animationMetadata.milliseconds_per_frame;
+        metadataDto->note = animationMetadata.note;
+        metadataDto->sound_file = animationMetadata.sound_file;
+        metadataDto->number_of_frames = animationMetadata.number_of_frames;
+        metadataDto->multitrack_audio = animationMetadata.multitrack_audio;
 
         return metadataDto.getPtr();
     }

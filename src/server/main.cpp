@@ -40,8 +40,6 @@
 
 #include "server/ws/App.h"
 
-#include "server/namespace-stuffs.h"
-
 using creatures::Database;
 using creatures::EventLoop;
 using creatures::MusicEvent;
@@ -50,7 +48,7 @@ using creatures::MusicEvent;
 namespace creatures {
     std::shared_ptr<Configuration> config{};
     std::shared_ptr<Database> db{};
-    std::shared_ptr<creatures::e131::E131Server> e131Server;
+    std::shared_ptr<e131::E131Server> e131Server;
     std::shared_ptr<EventLoop> eventLoop;
 
     /**
@@ -73,7 +71,7 @@ namespace creatures {
     std::shared_ptr<StatusLights> statusLights;
     const char* audioDevice;
     SDL_AudioSpec audioSpec;
-    std::atomic<bool> serverShouldRun{true};
+    std::atomic serverShouldRun{true};
 
     // MoodyCamel queue for outgoing websocket messages
     std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
@@ -99,7 +97,7 @@ void signal_handler(int signal) {
 }
 
 
-int main(int argc, char **argv) {
+int main(const int argc, char **argv) {
 
     // Fire up the signal handlers
     std::signal(SIGINT, signal_handler);
@@ -121,14 +119,14 @@ int main(int argc, char **argv) {
     creatures::websocketOutgoingMessages = std::make_shared<moodycamel::BlockingConcurrentQueue<std::string>>();
 
     // Make a logger that goes to the console and websocket clients
-    auto logger = creatures::makeLogger("main", spdlog::level::debug);
+    const auto logger = creatures::makeLogger("main", spdlog::level::debug);
 
     // Take over the default logger with our new one
     spdlog::set_default_logger(logger);
 
 
     // Parse out the command line options
-    auto commandLine = std::make_unique<creatures::CommandLine>();
+    const auto commandLine = std::make_unique<creatures::CommandLine>();
     creatures::config = commandLine->parseCommandLine(argc, argv);
 
 
@@ -136,7 +134,6 @@ int main(int argc, char **argv) {
     info("Creature Server version {}", version);
     debug("spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
     debug("fmt version {}", FMT_VERSION);
-    debug("MongoDB C++ driver version {}", MONGOCXX_VERSION_STRING);
     debug("SDL version {}.{}.{}", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
     debug("Sound file location: {}", creatures::config->getSoundFileLocation());
 
@@ -183,7 +180,7 @@ int main(int argc, char **argv) {
     creatures::eventLoop->start();
 
     // Seed the tick task
-    auto tickEvent = std::make_shared<creatures::TickEvent>(TICK_TIME_FRAMES);
+    const auto tickEvent = std::make_shared<creatures::TickEvent>(TICK_TIME_FRAMES);
     creatures::eventLoop->scheduleEvent(tickEvent);
 
     // Signal that we're online
@@ -198,16 +195,16 @@ int main(int argc, char **argv) {
     //creatures::e131Server->createUniverse(1000);
 
     // Fire up the watchdog
-    auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);
+    const auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);
     watchdog->start();
 
 
     // Start the web server
-    auto webServer = std::make_shared<creatures::ws::App>();
+    const auto webServer = std::make_shared<creatures::ws::App>();
     webServer->start();
 
     // Seed the metric send task
-    auto metricSendEvent = std::make_shared<creatures::CounterSendEvent>(SEND_COUNTERS_FRAMES);
+    const auto metricSendEvent = std::make_shared<creatures::CounterSendEvent>(SEND_COUNTERS_FRAMES);
     creatures::eventLoop->scheduleEvent(metricSendEvent);
 
 

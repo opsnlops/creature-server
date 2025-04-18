@@ -24,7 +24,7 @@ namespace creatures {
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
-    class AnimationMetadataDto : public oatpp::DTO {
+    class AnimationMetadataDto final : public oatpp::DTO {
 
         DTO_INIT(AnimationMetadataDto, DTO /* extends */)
 

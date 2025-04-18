@@ -14,7 +14,7 @@ namespace creatures {
     const std::string SOUND_LIST_CACHE_TYPE = "sound-list";
     const std::string UNKNOWN_CACHE_TYPE = "unknown";
 
-    std::string toString(CacheType type) {
+    std::string toString(const CacheType type) {
         switch (type) {
 
             case CacheType::Animation: return ANIMATION_CACHE_TYPE;

@@ -16,7 +16,6 @@
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
-#include "server/namespace-stuffs.h"
 #include "util/Result.h"
 
 using bsoncxx::builder::stream::document;
@@ -35,7 +34,7 @@ namespace creatures {
 
         // Don't do this if we can't ping the server (ie, short-circuit quickly)
         if(!serverPingable.load()) {
-            std::string errorMessage = "Unable to get a collection because the server is not pingable";
+            const std::string errorMessage = "Unable to get a collection because the server is not pingable";
             critical(errorMessage);
             return Result<mongocxx::collection>{ServerError(ServerError::DatabaseError, errorMessage)};
         }
@@ -46,12 +45,12 @@ namespace creatures {
             return (*client)[DB_NAME][collectionName];
         }
         catch (const std::exception &e) {
-            std::string errorMessage = fmt::format("Internal error while getting the collection '{}': {}", collectionName, e.what());
+            const std::string errorMessage = fmt::format("Internal error while getting the collection '{}': {}", collectionName, e.what());
             critical(errorMessage);
             return Result<mongocxx::collection>{ServerError(ServerError::DatabaseError, errorMessage)};
         }
         catch ( ... ) {
-            std::string errorMessage = fmt::format("Unknown error while getting the collection '{}'", collectionName);
+            const std::string errorMessage = fmt::format("Unknown error while getting the collection '{}'", collectionName);
             critical(errorMessage);
             return Result<mongocxx::collection>{ServerError(ServerError::DatabaseError, errorMessage)};
         }
@@ -59,7 +58,7 @@ namespace creatures {
     }
 
     // Return a copy of the atomic
-    bool Database::isServerPingable() {
+    bool Database::isServerPingable() const {
         return serverPingable.load();
     }
 
@@ -68,7 +67,7 @@ namespace creatures {
         try {
             const auto ping_cmd = make_document(kvp("ping", 1));
 
-            auto client = mongoPool.acquire();
+            const auto client = mongoPool.acquire();
             mongocxx::database db = (*client)[DB_NAME];
             db.run_command(ping_cmd.view());
 
@@ -83,20 +82,20 @@ namespace creatures {
             if (serverPingable.load()) {
 
                 // The server just went offline
-                std::string errorMessage = fmt::format("Database now offline. Error pinging the server: {}", e.what());
+                const std::string errorMessage = fmt::format("Database now offline. Error pinging the server: {}", e.what());
                 error(errorMessage);
             }
             else {
 
                 // We're still down. Throw a trace message just in case.
-                std::string errorMessage = fmt::format("Error pinging the server: {}", e.what());
+                const std::string errorMessage = fmt::format("Error pinging the server: {}", e.what());
                 trace(errorMessage);
             }
 
             serverPingable.store(false);
         }
         catch( ... ) {
-            std::string errorMessage = "Unknown error pinging the server";
+            const std::string errorMessage = "Unknown error pinging the server";
             critical(errorMessage);
             serverPingable.store(false);
         }
@@ -106,7 +105,7 @@ namespace creatures {
 
     Result<bool> Database::checkJsonField(const nlohmann::json& jsonObj, const std::string& fieldName) {
         if (!jsonObj.contains(fieldName)) {
-            std::string errorMessage = fmt::format("JSON is missing required field: {}", fieldName);
+            const std::string errorMessage = fmt::format("JSON is missing required field: {}", fieldName);
             warn(errorMessage);
             return Result<bool>{ServerError(ServerError::InvalidData, errorMessage)};
         }

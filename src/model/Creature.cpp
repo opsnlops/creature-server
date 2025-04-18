@@ -63,12 +63,12 @@ namespace creatures {
         creatureDto->audio_channel = creature.audio_channel;
         creatureDto->inputs = oatpp::List<oatpp::Object<InputDto>>::createShared();
 
-        for( const auto& input : creature.inputs ) {
+        for( const auto&[name, slot, width, joystick_axis] : creature.inputs ) {
             auto inputDto = InputDto::createShared();
-            inputDto->name = input.name;
-            inputDto->slot = input.slot;
-            inputDto->width = input.width;
-            inputDto->joystick_axis = input.joystick_axis;
+            inputDto->name = name;
+            inputDto->slot = slot;
+            inputDto->width = width;
+            inputDto->joystick_axis = joystick_axis;
 
             creatureDto->inputs->push_back(inputDto);
         }

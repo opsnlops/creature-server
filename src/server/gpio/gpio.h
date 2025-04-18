@@ -18,25 +18,25 @@ namespace creatures {
         GPIO();
         ~GPIO();
 
-        void serverOnline(bool online);
-        void playingAnimation(bool playingAnimation);
-        void playingSound(bool playingSound);
-        void receivingStreamFrames(bool receivingStreamFrames);
-        void sendingDMX(bool sendingDMX);
-        void heartbeat(bool heartbeat);
+        void serverOnline(bool online) const;
+        void playingAnimation(bool playingAnimation) const;
+        void playingSound(bool playingSound) const;
+        void receivingStreamFrames(bool receivingStreamFrames) const;
+        void sendingDMX(bool sendingDMX) const;
+        void heartbeat(bool heartbeat) const;
 
         /**
          * Turn off everything
          */
-        void allOff();
+        void allOff() const;
 
     private:
         bool enabled;
         void *gpio_map;
         volatile unsigned *gpio;
 
-        void turn_off(int pin);
-        void turn_on(int pin);
+        void turn_off(int pin) const;
+        void turn_on(int pin) const;
         static void set_output(volatile unsigned *gpio, int g);
 
     };

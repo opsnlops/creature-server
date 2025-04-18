@@ -1,3 +1,10 @@
+/**
+ * @file eventloop.cpp
+ * @brief Implementation of the EventLoop class methods
+ *
+ * This file contains the implementation of the event loop system that drives
+ * the timing and execution of all scheduled events in the creature server.
+ */
 
 #include <atomic>
 #include <chrono>
@@ -10,9 +17,6 @@
 #include "server/eventloop/eventloop.h"
 #include "server/metrics/counters.h"
 #include "util/threadName.h"
-
-#include "server/namespace-stuffs.h"
-
 
 namespace creatures {
 
@@ -28,7 +32,7 @@ namespace creatures {
         frameCount = 0;
 
         debug("firing off event loop thread!");
-        creatures::StoppableThread::start();
+        StoppableThread::start();
     }
 
 
@@ -39,7 +43,7 @@ namespace creatures {
         using namespace std::chrono;
         info("✨ eventloop running!");
 
-        auto target_delta = milliseconds(EVENT_LOOP_PERIOD_MS);
+        constexpr auto target_delta = milliseconds(EVENT_LOOP_PERIOD_MS);
         auto next_target_time = high_resolution_clock::now() + target_delta;
 
         while (!stop_requested.load()) {
@@ -53,7 +57,7 @@ namespace creatures {
                 std::shared_ptr<Event> event;
 
                 {
-                    std::unique_lock<std::mutex> lock(eventQueueMutex); // Unlocks when it goes out of scope
+                    std::unique_lock lock(eventQueueMutex); // Unlocks when it goes out of scope
                     if (!eventScheduler->event_queue.empty() &&
                         eventScheduler->event_queue.top()->frameNumber <= frameCount) {
                         event = eventScheduler->event_queue.top();
@@ -82,10 +86,9 @@ namespace creatures {
             }
 
             // Figure out how much time we have until the next tick
-            auto remaining_time = next_target_time - high_resolution_clock::now();
 
             // If there's time left, wait.
-            if (remaining_time > nanoseconds(0)) {
+            if (auto remaining_time = next_target_time - high_resolution_clock::now(); remaining_time > nanoseconds(0)) {
                 // Sleep for the remaining time
                 std::this_thread::sleep_for(remaining_time);
             }
@@ -113,7 +116,7 @@ namespace creatures {
 
 
     void EventLoop::scheduleEvent(const std::shared_ptr<Event>& e) {
-        std::lock_guard<std::mutex> lock(eventQueueMutex);
+        std::lock_guard lock(eventQueueMutex);
         eventScheduler->event_queue.push(e);
     }
 

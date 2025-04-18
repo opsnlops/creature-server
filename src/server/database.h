@@ -133,7 +133,7 @@ namespace creatures {
          *
          * @return true if the server is pingable
          */
-        bool isServerPingable();
+        bool isServerPingable() const;
 
     protected:
         /**

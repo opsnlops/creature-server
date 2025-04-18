@@ -14,7 +14,7 @@
 
 namespace creatures {
 
-    class EventLoop : public StoppableThread {
+    class EventLoop final : public StoppableThread {
 
     public:
         EventLoop();
