@@ -12,7 +12,7 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "April's Creature Workshop Server")
 
 set(CPACK_PACKAGE_DESCRIPTION
         "The 'Creature Server' for April's Creature Workshop. Offers
-        a gRPC based service for playing and managing creatures."
+        a websocket based service for playing and managing creatures."
         )
 
 set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")

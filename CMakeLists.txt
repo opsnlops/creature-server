@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.3.0"
+        VERSION "2.3.1"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -107,6 +107,11 @@ FetchContent_Declare(
         GIT_TAG v1.21.0
         GIT_SHALLOW TRUE
 )
+
+# After FetchContent_Declare but before FetchContent_MakeAvailable
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
+set(OPENTELEMETRY_BUILD_SHARED_LIBS OFF CACHE BOOL "Build OpenTelemetry as static" FORCE)
+
 FetchContent_MakeAvailable(opentelemetry-cpp)
 
 
