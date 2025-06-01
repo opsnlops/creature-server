@@ -6,7 +6,7 @@ RUN apt update && apt upgrade -y
 RUN apt install -y cmake libssl-dev libsasl2-dev gcc git file \
     pkgconf libbson-dev libpthreadpool-dev libutf8proc-dev \
     libsystemd-dev ninja-build libsdl2-mixer-dev dpkg-dev uuid-dev \
-    util-linux libpipewire-0.3-dev libuv1-dev libcurl4-openssl-dev libprotobuf-dev
+    util-linux libpipewire-0.3-dev libuv1-dev libcurl4-openssl-dev libprotobuf-dev protobuf-compiler
 
 
 # Install the latest Mongo driver
