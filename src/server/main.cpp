@@ -34,6 +34,7 @@
 #include "Version.h"
 #include "util/cache.h"
 #include "util/loggingUtils.h"
+#include "util/ObservabilityManager.h"
 #include "util/threadName.h"
 #include "util/websocketUtils.h"
 #include "watchdog/Watchdog.h"
@@ -75,6 +76,9 @@ namespace creatures {
 
     // MoodyCamel queue for outgoing websocket messages
     std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
+
+    // Observability manager for tracing and metrics
+    std::shared_ptr<ObservabilityManager> observability;
 }
 
 
@@ -137,6 +141,15 @@ int main(const int argc, char **argv) {
     debug("SDL version {}.{}.{}", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
     debug("Sound file location: {}", creatures::config->getSoundFileLocation());
 
+    // Create the observability manager
+    creatures::observability = std::make_shared<creatures::ObservabilityManager>();
+    creatures::observability->initialize(
+        "creature-server",                          // service name
+        version,                                       // service version
+        creatures::config->getHoneycombApiKey(),       // Honeycomb API key (empty = use local collector)
+        "creature-server"                           // Honeycomb dataset name
+    );
+    debug("Observability manager initialized");
 
     // Fire up the Mongo client
     std::string mongoURI = creatures::config->getMongoURI();

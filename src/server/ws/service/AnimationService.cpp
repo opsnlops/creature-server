@@ -10,11 +10,14 @@
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 
+#include "util/ObservabilityManager.h"
+
 #include "AnimationService.h"
 
 
 namespace creatures {
     extern std::shared_ptr<Database> db;
+    extern std::shared_ptr<ObservabilityManager> observability;
 }
 
 
@@ -27,6 +30,19 @@ namespace creatures :: ws {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
         appLogger->debug("AnimationService::listAllAnimations()");
+
+
+
+
+        // 🐰 Create a trace span for this request
+        auto span = creatures::observability->createRequestSpan(
+            "GET /api/v1/animation", "GET", "api/v1/animation"
+        );
+        if (span) {
+            span->setAttribute("endpoint", "listAllAnimations");
+            span->setAttribute("ws_service", "AnimationService");
+        }
+
 
         bool error = false;
         oatpp::String errorMessage;
@@ -50,6 +66,11 @@ namespace creatures :: ws {
             }
             errorMessage = result.getError()->getMessage();
             appLogger->warn(std::string(result.getError()->getMessage()));
+
+            // Update the span with the error
+            span->setAttribute("error", errorMessage);
+            span->setHttpStatus(status.code);
+
             error = true;
         }
         OATPP_ASSERT_HTTP(!error, status, errorMessage)
@@ -67,6 +88,12 @@ namespace creatures :: ws {
         page->count = items->size();
         page->items = items;
 
+        // Record success metrics in the span
+        if (span) {
+            span->setAttribute("animations.count", static_cast<int64_t>(page->count));
+            span->setHttpStatus(200);
+        }
+
         return page;
 
     }
@@ -79,6 +106,20 @@ namespace creatures :: ws {
         std::string animationId = std::string(inAnimationId);
 
         appLogger->debug("AnimationService::getAnimation({})", animationId);
+
+        auto span = creatures::observability->createOperationSpan("AnimationService.getAnimation");
+
+        if (span) {
+            span->setAttribute("service", "AnimationService");
+            span->setAttribute("operation", "getAnimation");
+            span->setAttribute("animation.id", std::string(animationId));
+        }
+
+        debug("get animation by ID via REST API: {}", std::string(animationId));
+
+        if (span) {
+            span->setAttribute("animation.id", std::string(animationId));
+        }
 
         bool error = false;
         oatpp::String errorMessage;
@@ -101,11 +142,34 @@ namespace creatures :: ws {
             }
             errorMessage = result.getError().value().getMessage();
             appLogger->warn(std::string(errorMessage));
+
+            if (span) {
+                span->setError(std::string(errorMessage));
+                span->setAttribute("error.type", [errorCode]() {
+                    switch(errorCode) {
+                        case ServerError::NotFound: return "NotFound";
+                        case ServerError::InvalidData: return "InvalidData";
+                        case ServerError::DatabaseError: return "DatabaseError";
+                        default: return "InternalError";
+                    }
+                }());
+                span->setAttribute("error.code", static_cast<int64_t>(errorCode));
+            }
+
             error = true;
         }
         OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-        auto animation = result.getValue().value();
+        const auto animation = result.getValue().value();
+
+        if (span) {
+            span->setAttribute("animation.title", animation.metadata.title);
+            span->setAttribute("animation.tracks", static_cast<int64_t>(animation.tracks.size()));
+            span->setAttribute("animation.number_of_frames", static_cast<int64_t>(animation.metadata.number_of_frames));
+            span->setAttribute("animation.milliseconds_per_frame", static_cast<int64_t>(animation.metadata.milliseconds_per_frame));
+            span->setSuccess();
+        }
+
         return creatures::convertToDto(animation);
 
     }

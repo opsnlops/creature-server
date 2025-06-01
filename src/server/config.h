@@ -52,6 +52,8 @@
 #define VOICE_API_KEY_ENV               "VOICE_API_KEY"
 #define DEFAULT_VOICE_API_KEY           ""
 
+#define HONEYCOMB_API_KEY_ENV          "HONEYCOMB_API_KEY"
+#define DEFAULT_HONEYCOMB_API_KEY      ""
 
 #define SOUND_BUFFER_SIZE               2048    // Higher = less CPU, lower = less latency
 

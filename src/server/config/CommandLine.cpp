@@ -83,6 +83,11 @@ namespace creatures {
                 .default_value(environmentToString(VOICE_API_KEY_ENV, DEFAULT_VOICE_API_KEY))
                 .nargs(1);
 
+        program.add_argument("-h", "--honeycomb-api-key")
+                .help("Honeycomb API key")
+                .default_value(environmentToString(HONEYCOMB_API_KEY_ENV, DEFAULT_HONEYCOMB_API_KEY))
+                .nargs(1);
+
         auto &oneShots = program.add_mutually_exclusive_group();
         oneShots.add_argument("--list-sound-devices")
                 .help("list available sound devices and exit")
@@ -174,6 +179,13 @@ namespace creatures {
         if(!voiceApiKey.empty()) {
             config->setVoiceApiKey(voiceApiKey);
             debug("set our voice API key to {}", voiceApiKey);
+        }
+
+        auto honeycombApiKey = program.get<std::string>("-h");
+        debug("read honeycomb API key {} from command line", honeycombApiKey);
+        if(!honeycombApiKey.empty()) {
+            config->setHoneycombApiKey(honeycombApiKey);
+            debug("set our honeycomb API key to {}", honeycombApiKey);
         }
 
         auto networkDeviceName = program.get<std::string>("-n");

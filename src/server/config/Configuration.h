@@ -49,6 +49,9 @@ public:
     /** @return API key for voice synthesis service */
     std::string getVoiceApiKey() const;
 
+    /** @return API key for Honeycomb observability service */
+    std::string getHoneycombApiKey() const;
+
 protected:
     // Setters used by CommandLine to configure values from command line arguments
     
@@ -75,6 +78,9 @@ protected:
     
     /** @param _voiceApiKey API key for voice synthesis service */
     void setVoiceApiKey(std::string _voiceApiKey);
+
+    /** @param _honeycombApiKey API key for Honeycomb observability service */
+    void setHoneycombApiKey(std::string _honeycombApiKey);
 
 private:
     // Hardware configuration
@@ -110,6 +116,9 @@ private:
     
     /** API key for ElevenLabs voice synthesis service */
     std::string voiceApiKey = DEFAULT_VOICE_API_KEY;
+
+    /** API key for Honeycomb observability service */
+    std::string honeycombApiKey = DEFAULT_HONEYCOMB_API_KEY;
 };
 
 } // namespace creatures

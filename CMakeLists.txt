@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.2.16"
+        VERSION "2.3.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -80,6 +80,34 @@ FetchContent_Declare(
         URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
 )
 FetchContent_MakeAvailable(googletest)
+
+# Now configure OpenTelemetry with very specific settings
+set(BUILD_TESTING OFF CACHE BOOL "Disable testing" FORCE)
+set(WITH_EXAMPLES OFF CACHE BOOL "Disable examples" FORCE)
+set(WITH_BENCHMARK OFF CACHE BOOL "Disable benchmarks" FORCE)
+set(WITH_FUNC_TESTS OFF CACHE BOOL "Disable functional tests" FORCE)
+set(OPENTELEMETRY_INSTALL OFF CACHE BOOL "Disable install" FORCE)
+
+# Enable only what we need
+set(WITH_OTLP_HTTP ON CACHE BOOL "Enable OTLP HTTP exporter" FORCE)
+set(WITH_OTLP_GRPC OFF CACHE BOOL "Disable OTLP gRPC exporter" FORCE)
+
+# Disable everything else to avoid dependencies
+set(WITH_ZIPKIN OFF CACHE BOOL "Disable Zipkin" FORCE)
+set(WITH_JAEGER OFF CACHE BOOL "Disable Jaeger" FORCE)
+set(WITH_PROMETHEUS OFF CACHE BOOL "Disable Prometheus" FORCE)
+set(WITH_METRICS_PREVIEW OFF CACHE BOOL "Disable metrics preview" FORCE)
+set(WITH_LOGS_PREVIEW OFF CACHE BOOL "Disable logs preview" FORCE)
+
+
+# OpenTelemetry
+FetchContent_Declare(
+        opentelemetry-cpp
+        GIT_REPOSITORY https://github.com/open-telemetry/opentelemetry-cpp.git
+        GIT_TAG v1.21.0
+        GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(opentelemetry-cpp)
 
 
 # Use the oatpp that we've already made
@@ -286,6 +314,8 @@ add_executable(creature-server
 
         src/server/ws/messaging/SensorReportHandler.h
         src/server/ws/messaging/SensorReportHandler.cpp
+        src/util/ObservabilityManager.h
+        src/util/ObservabilityManager.cpp
 
 
 )
@@ -305,6 +335,11 @@ target_link_libraries(creature-server
         nlohmann_json::nlohmann_json
         PRIVATE mongo::mongocxx_shared
         PRIVATE mongo::bsoncxx_shared
+        opentelemetry_trace
+        opentelemetry_exporter_otlp_http
+        opentelemetry_resources
+        opentelemetry_common
+        opentelemetry_http_client_curl  # Needed for HTTP exporter
         argparse
         e131_service
         CreatureVoicesLib

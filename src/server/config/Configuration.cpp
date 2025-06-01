@@ -84,4 +84,15 @@ namespace creatures {
         this->voiceApiKey = std::move(_voiceApiKey);
     }
 
+    std::string Configuration::getHoneycombApiKey() const {
+        return this->honeycombApiKey;
+    }
+
+    void Configuration::setHoneycombApiKey(std::string _honeycombApiKey) {
+        this->honeycombApiKey = std::move(_honeycombApiKey);
+    }
+
+
+
+
 } // namespace creatures
