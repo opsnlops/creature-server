@@ -175,7 +175,7 @@ namespace creatures :: ws {
 
     }
 
-    oatpp::Object<creatures::AnimationDto> AnimationService::upsertAnimation(const std::string& jsonAnimation) {
+    oatpp::Object<creatures::AnimationDto> AnimationService::upsertAnimation(const std::string& jsonAnimation, std::shared_ptr<RequestSpan> parentSpan) {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
 
