@@ -10,6 +10,7 @@
 #include "model/AnimationMetadata.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
+#include "util/ObservabilityManager.h"
 
 namespace creatures :: ws {
 
@@ -20,8 +21,8 @@ namespace creatures :: ws {
 
     public:
 
-        oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> listAllAnimations();
-        oatpp::Object<creatures::AnimationDto> getAnimation(const oatpp::String& animationId);
+        oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> listAllAnimations(std::unique_ptr<RequestSpan> parentSpan = nullptr);
+        oatpp::Object<creatures::AnimationDto> getAnimation(const oatpp::String& animationId, std::unique_ptr<RequestSpan> parentSpan = nullptr);
         oatpp::Object<creatures::AnimationDto> upsertAnimation(const std::string& animationJson);
 
 

@@ -13,6 +13,7 @@
 #include "exception/exception.h"
 #include "server/creature-server.h"
 #include "util/helpers.h"
+#include "util/ObservabilityManager.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -22,19 +23,27 @@ using bsoncxx::builder::stream::document;
 namespace creatures {
 
     extern std::shared_ptr<Database> db;
+    extern std::shared_ptr<ObservabilityManager> observability;
 
 
     /**
      * List animations in the database for a given creature type
      *
      * @param sortBy How to sort the list (currently unused)
+     * @param parentSpan The parent span for tracing, if any
      * @return the status of this request
      */
-    Result<std::vector<creatures::AnimationMetadata>> Database::listAnimations(creatures::SortBy sortBy) {
+    Result<std::vector<creatures::AnimationMetadata>> Database::listAnimations(creatures::SortBy sortBy, std::unique_ptr<OperationSpan> parentSpan) {
 
         debug("attempting to list all of the animations");
+        auto dbSpan = creatures::observability->createChildOperationSpan("Database.listAnimations",
+                    std::move(parentSpan));
 
-        (void)sortBy;
+        if (dbSpan) {
+            dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
+            dbSpan->setAttribute("database.operation", "findOne");
+            dbSpan->setAttribute("animation.sort_by", static_cast<int64_t>(sortBy));
+        }
 
         std::vector<creatures::AnimationMetadata> animations;
 
@@ -59,6 +68,13 @@ namespace creatures {
                 auto error = collectionResult.getError().value();
                 std::string errorMessage = fmt::format("database error while listing all of the animations: {}", error.getMessage());
                 warn(errorMessage);
+
+                if (dbSpan) {
+                    dbSpan->setError(errorMessage);
+                    dbSpan->setAttribute("error.type", "DatabaseError");
+                    dbSpan->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
+                }
+
                 return Result<std::vector<creatures::AnimationMetadata>>{error};
             }
             auto collection = collectionResult.getValue().value();
@@ -87,22 +103,45 @@ namespace creatures {
                 auto animationMetadata = animationResult.getValue().value();
                 animations.push_back(animationMetadata);
                 debug("found {}", animationMetadata.title);
-
             }
         }
         catch(const DataFormatException& e) {
             std::string errorMessage = fmt::format("Failed to get all animations: {}", e.what());
             warn(errorMessage);
+
+            if (dbSpan) {
+                dbSpan->recordException(e);
+                dbSpan->setAttribute("error.type", "DatabaseError");
+                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+                dbSpan->setError(errorMessage);
+            }
+
             return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InvalidData, errorMessage)};
         }
         catch(const mongocxx::exception &e) {
             std::string errorMessage = fmt::format("MongoDB Exception while loading animation: {}", e.what());
             critical(errorMessage);
+
+            if (dbSpan) {
+                dbSpan->recordException(e);
+                dbSpan->setAttribute("error.type", "DatabaseError");
+                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+                dbSpan->setError(errorMessage);
+            }
+
             return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InternalError, errorMessage)};
         }
         catch(const bsoncxx::exception &e) {
             std::string errorMessage = fmt::format("BSON error while attempting to load animations: {}", e.what());
             critical(errorMessage);
+
+            if (dbSpan) {
+                dbSpan->recordException(e);
+                dbSpan->setAttribute("error.type", "DatabaseError");
+                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+                dbSpan->setError(errorMessage);
+            }
+
             return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InternalError, errorMessage)};
         }
 
@@ -110,10 +149,22 @@ namespace creatures {
         if(animations.empty()) {
             std::string errorMessage = fmt::format("No animations found");
             warn(errorMessage);
+
+            if (dbSpan) {
+                dbSpan->setError(errorMessage);
+                dbSpan->setAttribute("error.type", "NotFound");
+                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
+            }
+
             return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
         info("done loading the animation list");
+        if (dbSpan) {
+            dbSpan->setSuccess();
+            dbSpan->setAttribute("animations.count", static_cast<int64_t>(animations.size()));
+        }
+
         return Result<std::vector<creatures::AnimationMetadata>>{animations};
     }
 }

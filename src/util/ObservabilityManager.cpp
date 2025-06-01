@@ -14,6 +14,8 @@
 #include <opentelemetry/sdk/resource/semantic_conventions.h>
 #include <opentelemetry/context/runtime_context.h>
 
+#include "server/namespace-stuffs.h"
+
 namespace otlp = opentelemetry::exporter::otlp;
 namespace trace_api = opentelemetry::trace;
 namespace trace_sdk = opentelemetry::sdk::trace;
@@ -91,7 +93,7 @@ std::unique_ptr<RequestSpan> ObservabilityManager::createRequestSpan(
 
 std::unique_ptr<OperationSpan> ObservabilityManager::createOperationSpan(
     const std::string& operationName,
-    const RequestSpan* parentSpan) {
+    std::unique_ptr<RequestSpan> parentSpan) {
 
     if (!initialized_) {
         return nullptr;
@@ -100,6 +102,9 @@ std::unique_ptr<OperationSpan> ObservabilityManager::createOperationSpan(
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span;
 
     if (parentSpan) {
+
+        debug("creating child operation span for parent span with operation name: {}", operationName);
+
         // Create child span - simple approach using span context
         auto spanContext = parentSpan->getSpan()->GetContext();
         auto options = opentelemetry::trace::StartSpanOptions{};
@@ -107,6 +112,7 @@ std::unique_ptr<OperationSpan> ObservabilityManager::createOperationSpan(
         span = tracer_->StartSpan(operationName, options);
     } else {
         // Create root span
+        debug("creating root operation span: {}", operationName);
         span = tracer_->StartSpan(operationName);
     }
 
@@ -115,14 +121,14 @@ std::unique_ptr<OperationSpan> ObservabilityManager::createOperationSpan(
 
 std::unique_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(
     const std::string& operationName,
-    const OperationSpan* parentSpan) {
+    std::unique_ptr<OperationSpan> parentSpan) {
 
     if (!initialized_ || !parentSpan) {
         return nullptr;
     }
 
     // Create child span using parent's span context
-    auto spanContext = parentSpan->span_->GetContext();
+    auto spanContext = parentSpan->getSpan()->GetContext();
     auto options = opentelemetry::trace::StartSpanOptions{};
     options.parent = spanContext;
     auto span = tracer_->StartSpan(operationName, options);

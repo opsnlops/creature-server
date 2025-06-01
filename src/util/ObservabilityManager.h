@@ -61,7 +61,7 @@ public:
      * @return A unique pointer to the span
      */
     std::unique_ptr<OperationSpan> createOperationSpan(const std::string& operationName,
-                                                       const RequestSpan* parentSpan = nullptr);
+                                                       std::unique_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Create a child operation span from another operation span
@@ -71,7 +71,7 @@ public:
      * @return A unique pointer to the span
      */
     std::unique_ptr<OperationSpan> createChildOperationSpan(const std::string& operationName,
-                                                            const OperationSpan* parentSpan);
+                                                            std::unique_ptr<OperationSpan> parentSpan = nullptr);
 
 private:
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer_;
@@ -114,12 +114,12 @@ public:
     /**
      * Get the underlying span for creating child spans
      */
-    opentelemetry::trace::Span* getSpan() const { return span_.get(); }
+    [[nodiscard]] opentelemetry::trace::Span* getSpan() const { return span_.get(); }
 
     /**
      * Get the span context for parent-child relationships
      */
-    opentelemetry::context::Context getContext() const { return context_; }
+    [[nodiscard]] opentelemetry::context::Context getContext() const { return context_; }
 
     // Make span_ accessible to ObservabilityManager for parent-child relationships
     friend class ObservabilityManager;
@@ -135,7 +135,7 @@ private:
  */
 class OperationSpan {
 public:
-    OperationSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span);
+    explicit OperationSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span);
     ~OperationSpan();
 
     // No copy, move only
@@ -169,7 +169,12 @@ public:
     /**
      * Get the span context for parent-child relationships
      */
-    opentelemetry::context::Context getContext() const { return context_; }
+    [[nodiscard]] opentelemetry::context::Context getContext() const { return context_; }
+
+    /**
+     * Get the underlying span for creating child spans
+     */
+    [[nodiscard]] opentelemetry::trace::Span* getSpan() const { return span_.get(); }
 
 private:
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span_;

@@ -25,20 +25,22 @@ namespace creatures :: ws {
 
     using oatpp::web::protocol::http::Status;
 
-    oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> AnimationService::listAllAnimations() {
+    oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> AnimationService::listAllAnimations(std::unique_ptr<RequestSpan> parentSpan) {
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
-        appLogger->debug("AnimationService::listAllAnimations()");
-
-
-
+        if (!parentSpan) {
+            warn("no parent span provided for AnimationService.listAllAnimations, creating a root span");
+        }
 
         // 🐰 Create a trace span for this request
-        auto span = creatures::observability->createRequestSpan(
-            "GET /api/v1/animation", "GET", "api/v1/animation"
-        );
+        auto span = creatures::observability->createOperationSpan("AnimationService.getAnimation",
+            std::move(parentSpan));
+
+        appLogger->debug("AnimationService::listAllAnimations()");
+
         if (span) {
+            trace("adding attributes to the span for AnimationService.listAllAnimations");
             span->setAttribute("endpoint", "listAllAnimations");
             span->setAttribute("ws_service", "AnimationService");
         }
@@ -48,7 +50,7 @@ namespace creatures :: ws {
         oatpp::String errorMessage;
         Status status = Status::CODE_200;
 
-        auto result = db->listAnimations(creatures::SortBy::name);
+        auto result = db->listAnimations(creatures::SortBy::name, std::move(span));
         if(!result.isSuccess()) {
 
             // If we get an error, let's set it up right
@@ -68,8 +70,7 @@ namespace creatures :: ws {
             appLogger->warn(std::string(result.getError()->getMessage()));
 
             // Update the span with the error
-            span->setAttribute("error", errorMessage);
-            span->setHttpStatus(status.code);
+            span->setError(std::string(errorMessage));
 
             error = true;
         }
@@ -91,7 +92,7 @@ namespace creatures :: ws {
         // Record success metrics in the span
         if (span) {
             span->setAttribute("animations.count", static_cast<int64_t>(page->count));
-            span->setHttpStatus(200);
+            span->setSuccess();
         }
 
         return page;
@@ -99,7 +100,7 @@ namespace creatures :: ws {
     }
 
 
-    oatpp::Object<creatures::AnimationDto> AnimationService::getAnimation(const oatpp::String &inAnimationId) {
+    oatpp::Object<creatures::AnimationDto> AnimationService::getAnimation(const oatpp::String &inAnimationId, std::unique_ptr<RequestSpan> parentSpan) {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
         // Convert the oatpp string to a std::string
@@ -107,7 +108,7 @@ namespace creatures :: ws {
 
         appLogger->debug("AnimationService::getAnimation({})", animationId);
 
-        auto span = creatures::observability->createOperationSpan("AnimationService.getAnimation");
+        auto span = creatures::observability->createOperationSpan("AnimationService.getAnimation", std::move(parentSpan));
 
         if (span) {
             span->setAttribute("service", "AnimationService");
