@@ -98,7 +98,7 @@ namespace creatures :: ws {
             }
 
             // The service call will create its own OperationSpan
-            auto result = m_animationService.getAnimation(animationId, std::move(span));
+            auto result = m_animationService.getAnimation(animationId, span);
 
             if (span) {
                 // HTTP handler just cares about HTTP success

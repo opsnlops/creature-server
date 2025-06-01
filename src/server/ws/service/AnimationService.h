@@ -21,8 +21,8 @@ namespace creatures :: ws {
 
     public:
 
-        oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> listAllAnimations(std::unique_ptr<RequestSpan> parentSpan = nullptr);
-        oatpp::Object<creatures::AnimationDto> getAnimation(const oatpp::String& animationId, std::unique_ptr<RequestSpan> parentSpan = nullptr);
+        oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> listAllAnimations(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+        oatpp::Object<creatures::AnimationDto> getAnimation(const oatpp::String& animationId, std::shared_ptr<RequestSpan> parentSpan = nullptr);
         oatpp::Object<creatures::AnimationDto> upsertAnimation(const std::string& animationJson);
 
 

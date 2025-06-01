@@ -33,7 +33,7 @@ namespace creatures {
      * @param animation the `creatures::Animation` to save
      * @return a status message to return to the client
      */
-     Result<creatures::Animation> Database::upsertAnimation(const std::string& animationJson, std::unique_ptr<OperationSpan> parentSpan) {
+     Result<creatures::Animation> Database::upsertAnimation(const std::string& animationJson, std::shared_ptr<OperationSpan> parentSpan) {
 
         debug("upserting an animation in the database");
 

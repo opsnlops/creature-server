@@ -25,12 +25,12 @@ namespace creatures {
     extern std::shared_ptr<ObservabilityManager> observability;
 
 
-    Result<json> Database::getAnimationJson(animationId_t animationId, std::unique_ptr<OperationSpan> parentSpan) {
+    Result<json> Database::getAnimationJson(animationId_t animationId, std::shared_ptr<OperationSpan> parentSpan) {
 
         debug("attempting to get the JSON for an animation by ID: {}", animationId);
 
         auto dbSpan = creatures::observability->createChildOperationSpan("Database.getAnimationJson",
-                                    std::move(parentSpan));
+                                    parentSpan);
 
         if ( !parentSpan ) {
             warn("no parent span provided for Database.getAnimationJson, creating a root span");
@@ -128,14 +128,14 @@ namespace creatures {
     }
 
 
-    Result<creatures::Animation> Database::getAnimation(const animationId_t& animationId, std::unique_ptr<OperationSpan> parentSpan) {
+    Result<creatures::Animation> Database::getAnimation(const animationId_t& animationId, std::shared_ptr<OperationSpan> parentSpan) {
 
         if ( !parentSpan ) {
             warn("no parent span provided for Database.getAnimation, creating a root span");
         }
 
         auto dbSpan = creatures::observability->createChildOperationSpan("Database.getAnimation",
-                            std::move(parentSpan));
+                            parentSpan);
         if (dbSpan) {
             dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
             dbSpan->setAttribute("animation.id", animationId);
@@ -156,7 +156,7 @@ namespace creatures {
 
 
         // Go to the database and get the animation's raw JSON
-        auto animationJson = getAnimationJson(animationId, std::move(dbSpan));
+        auto animationJson = getAnimationJson(animationId, dbSpan);
         if (!animationJson.isSuccess()) {
             auto error = animationJson.getError().value();
             std::string errorMessage = fmt::format("unable to get an animation by ID: {}",

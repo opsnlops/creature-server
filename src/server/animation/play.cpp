@@ -30,7 +30,7 @@ namespace creatures {
      * @param universe which universe to play the animation on
      * @return a status message
      */
-    Result<std::string> Database::playStoredAnimation(animationId_t animationId, universe_t universe, std::unique_ptr<OperationSpan> parentSpan) {
+    Result<std::string> Database::playStoredAnimation(animationId_t animationId, universe_t universe, std::shared_ptr<OperationSpan> parentSpan) {
 
         debug("Playing a stored animation {} on universe {}", animationId, universe);
 

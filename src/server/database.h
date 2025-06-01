@@ -107,11 +107,11 @@ namespace creatures {
          */
 
         // Animation stuff
-        Result<json> getAnimationJson(animationId_t animationId, std::unique_ptr<OperationSpan> parentSpan = nullptr);
-        Result<creatures::Animation> getAnimation(const animationId_t& animationId, std::unique_ptr<OperationSpan> parentSpan = nullptr);
-        Result<std::vector<creatures::AnimationMetadata>> listAnimations(creatures::SortBy sortBy, std::unique_ptr<OperationSpan> parentSpan = nullptr);
-        Result<creatures::Animation> upsertAnimation(const std::string& animationJson, std::unique_ptr<OperationSpan> parentSpan = nullptr);
-        Result<std::string> playStoredAnimation(animationId_t animationId, universe_t universe, std::unique_ptr<OperationSpan> parentSpan = nullptr);
+        Result<json> getAnimationJson(animationId_t animationId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+        Result<creatures::Animation> getAnimation(const animationId_t& animationId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+        Result<std::vector<creatures::AnimationMetadata>> listAnimations(creatures::SortBy sortBy, const std::shared_ptr<OperationSpan>& parentSpan = nullptr);
+        Result<creatures::Animation> upsertAnimation(const std::string& animationJson, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+        Result<std::string> playStoredAnimation(animationId_t animationId, universe_t universe, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
 
 

@@ -33,11 +33,11 @@ namespace creatures {
      * @param parentSpan The parent span for tracing, if any
      * @return the status of this request
      */
-    Result<std::vector<creatures::AnimationMetadata>> Database::listAnimations(creatures::SortBy sortBy, std::unique_ptr<OperationSpan> parentSpan) {
+    Result<std::vector<creatures::AnimationMetadata>> Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<OperationSpan>& parentSpan) {
 
         debug("attempting to list all of the animations");
         auto dbSpan = creatures::observability->createChildOperationSpan("Database.listAnimations",
-                    std::move(parentSpan));
+                    parentSpan);
 
         if (dbSpan) {
             dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);

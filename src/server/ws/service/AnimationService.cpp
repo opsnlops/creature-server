@@ -25,7 +25,7 @@ namespace creatures :: ws {
 
     using oatpp::web::protocol::http::Status;
 
-    oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> AnimationService::listAllAnimations(std::unique_ptr<RequestSpan> parentSpan) {
+    oatpp::Object<ListDto<oatpp::Object<creatures::AnimationMetadataDto>>> AnimationService::listAllAnimations(std::shared_ptr<RequestSpan> parentSpan) {
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
@@ -34,7 +34,7 @@ namespace creatures :: ws {
         }
 
         // 🐰 Create a trace span for this request
-        auto span = creatures::observability->createOperationSpan("AnimationService.getAnimation",
+        auto span = creatures::observability->createOperationSpan("AnimationService.listAllAnimations",
             std::move(parentSpan));
 
         appLogger->debug("AnimationService::listAllAnimations()");
@@ -50,7 +50,7 @@ namespace creatures :: ws {
         oatpp::String errorMessage;
         Status status = Status::CODE_200;
 
-        auto result = db->listAnimations(creatures::SortBy::name, std::move(span));
+        auto result = db->listAnimations(creatures::SortBy::name, span);
         if(!result.isSuccess()) {
 
             // If we get an error, let's set it up right
@@ -100,7 +100,7 @@ namespace creatures :: ws {
     }
 
 
-    oatpp::Object<creatures::AnimationDto> AnimationService::getAnimation(const oatpp::String &inAnimationId, std::unique_ptr<RequestSpan> parentSpan) {
+    oatpp::Object<creatures::AnimationDto> AnimationService::getAnimation(const oatpp::String &inAnimationId, std::shared_ptr<RequestSpan> parentSpan) {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
         // Convert the oatpp string to a std::string
@@ -108,7 +108,7 @@ namespace creatures :: ws {
 
         appLogger->debug("AnimationService::getAnimation({})", animationId);
 
-        auto span = creatures::observability->createOperationSpan("AnimationService.getAnimation", std::move(parentSpan));
+        auto span = creatures::observability->createOperationSpan("AnimationService.getAnimation", parentSpan);
 
         if (span) {
             span->setAttribute("service", "AnimationService");
@@ -126,7 +126,7 @@ namespace creatures :: ws {
         oatpp::String errorMessage;
         Status status = Status::CODE_200;
 
-        auto result = db->getAnimation(animationId);
+        auto result = db->getAnimation(animationId, span);
         if(!result.isSuccess()) {
 
             auto errorCode = result.getError().value().getCode();

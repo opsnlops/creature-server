@@ -78,7 +78,7 @@ void ObservabilityManager::initialize(const std::string& serviceName,
     initialized_ = true;
 }
 
-std::unique_ptr<RequestSpan> ObservabilityManager::createRequestSpan(
+std::shared_ptr<RequestSpan> ObservabilityManager::createRequestSpan(
     const std::string& operationName,
     const std::string& httpMethod,
     const std::string& httpUrl) {
@@ -91,9 +91,9 @@ std::unique_ptr<RequestSpan> ObservabilityManager::createRequestSpan(
     return std::make_unique<RequestSpan>(span, httpMethod, httpUrl);
 }
 
-std::unique_ptr<OperationSpan> ObservabilityManager::createOperationSpan(
+std::shared_ptr<OperationSpan> ObservabilityManager::createOperationSpan(
     const std::string& operationName,
-    std::unique_ptr<RequestSpan> parentSpan) {
+    std::shared_ptr<RequestSpan> parentSpan) {
 
     if (!initialized_) {
         return nullptr;
@@ -119,9 +119,9 @@ std::unique_ptr<OperationSpan> ObservabilityManager::createOperationSpan(
     return std::make_unique<OperationSpan>(span);
 }
 
-std::unique_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(
+std::shared_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(
     const std::string& operationName,
-    std::unique_ptr<OperationSpan> parentSpan) {
+    std::shared_ptr<OperationSpan> parentSpan) {
 
     if (!initialized_ || !parentSpan) {
         return nullptr;

@@ -49,7 +49,7 @@ public:
      * @param httpUrl The full URL path
      * @return A unique pointer to the span (RAII cleanup)
      */
-    std::unique_ptr<RequestSpan> createRequestSpan(const std::string& operationName,
+    std::shared_ptr<RequestSpan> createRequestSpan(const std::string& operationName,
                                                   const std::string& httpMethod,
                                                   const std::string& httpUrl);
 
@@ -60,8 +60,8 @@ public:
      * @param parentSpan The parent span (optional)
      * @return A unique pointer to the span
      */
-    std::unique_ptr<OperationSpan> createOperationSpan(const std::string& operationName,
-                                                       std::unique_ptr<RequestSpan> parentSpan = nullptr);
+    std::shared_ptr<OperationSpan> createOperationSpan(const std::string& operationName,
+                                                       std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Create a child operation span from another operation span
@@ -70,8 +70,8 @@ public:
      * @param parentSpan The parent operation span
      * @return A unique pointer to the span
      */
-    std::unique_ptr<OperationSpan> createChildOperationSpan(const std::string& operationName,
-                                                            std::unique_ptr<OperationSpan> parentSpan = nullptr);
+    std::shared_ptr<OperationSpan> createChildOperationSpan(const std::string& operationName,
+                                                            std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
 private:
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer_;
