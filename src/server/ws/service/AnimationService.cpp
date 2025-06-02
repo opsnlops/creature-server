@@ -1,5 +1,3 @@
-
-
 #include <string>
 
 #include "exception/exception.h"
@@ -178,15 +176,24 @@ namespace creatures :: ws {
     oatpp::Object<creatures::AnimationDto> AnimationService::upsertAnimation(const std::string& jsonAnimation, std::shared_ptr<RequestSpan> parentSpan) {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
+        auto serviceSpan = creatures::observability->createOperationSpan("AnimationService.upsertAnimation", parentSpan);
 
         appLogger->info("attempting to upsert an animation");
 
+        if (serviceSpan) {
+            serviceSpan->setAttribute("service", "AnimationService");
+            serviceSpan->setAttribute("operation", "upsertAnimation");
+            serviceSpan->setAttribute("json.size", static_cast<int64_t>(jsonAnimation.length()));
+        }
         appLogger->debug("JSON: {}", jsonAnimation);
 
 
         bool error = false;
         oatpp::String errorMessage;
         Status status = Status::CODE_200;
+
+        // ✨ Create a span for the validation step in the service
+        auto validationSpan = creatures::observability->createChildOperationSpan("AnimationService.validateJson", serviceSpan);
 
         try {
 
@@ -197,10 +204,14 @@ namespace creatures :: ws {
              */
             auto jsonObject = nlohmann::json::parse(jsonAnimation);
             auto result = db->validateAnimationJson(jsonObject);
+            if (validationSpan) validationSpan->setAttribute("validator", "validateAnimationJson");
+
             if(!result.isSuccess()) {
                 errorMessage = result.getError()->getMessage();
                 appLogger->warn(std::string(result.getError()->getMessage()));
                 status = Status::CODE_400;
+                if(validationSpan) validationSpan->setError(std::string(errorMessage));
+                if(serviceSpan) serviceSpan->setError(std::string(errorMessage));
                 error = true;
             }
         }
@@ -208,15 +219,18 @@ namespace creatures :: ws {
             errorMessage = e.what();
             appLogger->warn(std::string(e.what()));
             status = Status::CODE_400;
+            if(validationSpan) validationSpan->recordException(e);
+            if(serviceSpan) serviceSpan->recordException(e);
             error = true;
         }
+        if(validationSpan && !error) validationSpan->setSuccess();
         OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
 
 
 
         appLogger->debug("passing the upsert request off to the database");
-        auto result = db->upsertAnimation(jsonAnimation);
+        auto result = db->upsertAnimation(jsonAnimation, serviceSpan);
 
         // If there's an error, let the client know
         if(!result.isSuccess()) {
@@ -224,6 +238,7 @@ namespace creatures :: ws {
             errorMessage = result.getError()->getMessage();
             appLogger->warn(std::string(result.getError()->getMessage()));
             status = Status::CODE_500;
+            if(serviceSpan) serviceSpan->setError(std::string(errorMessage));
             error = true;
         }
         OATPP_ASSERT_HTTP(!error, status, errorMessage)
@@ -232,6 +247,7 @@ namespace creatures :: ws {
         if(!result.getValue().has_value()) {
             errorMessage = "DB didn't return a value after upserting an animation. This is a bug. Please report it.";
             appLogger->error(std::string(errorMessage));
+            if(serviceSpan) serviceSpan->setError(std::string(errorMessage));
             OATPP_ASSERT_HTTP(true, Status::CODE_500, errorMessage);
         }
 
@@ -239,6 +255,10 @@ namespace creatures :: ws {
         auto animation = result.getValue().value();
         info("Updated animation '{}' in the database (id: {})",
              animation.metadata.title, animation.id);
+        if(serviceSpan) {
+            serviceSpan->setAttribute("animation.id", animation.id);
+            serviceSpan->setSuccess();
+        }
         return convertToDto(animation);
     }
 

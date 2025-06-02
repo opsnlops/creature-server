@@ -15,8 +15,7 @@
 #include "util/websocketUtils.h"
 
 namespace creatures {
-    extern std::shared_ptr<SystemCounters> metrics;
-    extern std::shared_ptr<ObservabilityManager> observability; // Add this global
+    extern std::shared_ptr<ObservabilityManager> observability;
 }
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
@@ -25,7 +24,7 @@ namespace creatures :: ws {
 
     class AnimationController : public oatpp::web::server::api::ApiController {
     public:
-        AnimationController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper)):
+        explicit AnimationController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper)):
             oatpp::web::server::api::ApiController(objectMapper) {}
     private:
         AnimationService m_animationService;
@@ -47,7 +46,7 @@ namespace creatures :: ws {
         }
         ENDPOINT("GET", "api/v1/animation", listAllAnimations)
         {
-            // 🐰 Create a trace span for this request
+            // Create a trace span for this request
             auto span = creatures::observability->createRequestSpan(
                 "GET /api/v1/animation", "GET", "api/v1/animation"
             );
@@ -82,7 +81,7 @@ namespace creatures :: ws {
         ENDPOINT("GET", "api/v1/animation/{animationId}", getAnimation,
                  PATH(String, animationId))
         {
-            // 🥕 RequestSpan only handles HTTP-level concerns
+            // RequestSpan only handles HTTP-level concerns
             auto span = creatures::observability->createRequestSpan(
                 "GET /api/v1/animation/{animationId}", "GET",
                 "api/v1/animation/" + std::string(animationId)
@@ -118,7 +117,7 @@ namespace creatures :: ws {
         ENDPOINT("POST", "api/v1/animation", upsertAnimation,
                  REQUEST(std::shared_ptr<IncomingRequest>, request))
         {
-            // 🌟 Span for the upsert operation
+            // Span for the upsert operation
             auto span = creatures::observability->createRequestSpan(
                 "POST /api/v1/animation", "POST", "api/v1/animation"
             );
@@ -136,7 +135,7 @@ namespace creatures :: ws {
                     span->setAttribute("request.body_size", static_cast<int64_t>(requestAsString.length()));
                 }
 
-                auto result = m_animationService.upsertAnimation(requestAsString);
+                auto result = m_animationService.upsertAnimation(requestAsString, span);
 
                 if (span) {
                     span->setAttribute("animation.id", std::string(result->id));
@@ -169,7 +168,7 @@ namespace creatures :: ws {
         ENDPOINT("POST", "api/v1/animation/play", playStoredAnimation,
                  BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody))
         {
-            // 🎭 The most exciting span - playing an animation!
+            // The most exciting span - playing an animation!
             auto span = creatures::observability->createRequestSpan(
                 "POST /api/v1/animation/play", "POST", "api/v1/animation/play"
             );

@@ -1,4 +1,3 @@
-
 #include "server/config.h"
 
 #include "spdlog/spdlog.h"
@@ -37,11 +36,11 @@ namespace creatures {
 
         debug("attempting to list all of the animations");
         auto dbSpan = creatures::observability->createChildOperationSpan("Database.listAnimations",
-                    parentSpan);
+                                                                         parentSpan);
 
         if (dbSpan) {
             dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
-            dbSpan->setAttribute("database.operation", "findOne");
+            dbSpan->setAttribute("database.operation", "find");
             dbSpan->setAttribute("animation.sort_by", static_cast<int64_t>(sortBy));
         }
 
@@ -63,12 +62,22 @@ namespace creatures {
             findOptions.projection(projection_doc.view());
             findOptions.sort(sort_doc.view());
 
+            // 🐰 Span for getting the MongoDB collection
+            auto collectionSpan = creatures::observability->createChildOperationSpan("Database.getCollection", dbSpan);
+            if (collectionSpan) {
+                collectionSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
+                collectionSpan->setAttribute("operation", "get_collection");
+            }
+
             auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
             if(!collectionResult.isSuccess()) {
                 auto error = collectionResult.getError().value();
                 std::string errorMessage = fmt::format("database error while listing all of the animations: {}", error.getMessage());
                 warn(errorMessage);
 
+                if(collectionSpan) {
+                    collectionSpan->setError(errorMessage);
+                }
                 if (dbSpan) {
                     dbSpan->setError(errorMessage);
                     dbSpan->setAttribute("error.type", "DatabaseError");
@@ -78,31 +87,96 @@ namespace creatures {
                 return Result<std::vector<creatures::AnimationMetadata>>{error};
             }
             auto collection = collectionResult.getValue().value();
+            if(collectionSpan) {
+                collectionSpan->setSuccess();
+            }
+
+            // 🌟 The main MongoDB query span
+            auto querySpan = creatures::observability->createChildOperationSpan("MongoDB.find", dbSpan);
+            if (querySpan) {
+                querySpan->setAttribute("db.system", "mongodb");
+                querySpan->setAttribute("db.name", DB_NAME);
+                querySpan->setAttribute("db.collection.name", ANIMATIONS_COLLECTION);
+                querySpan->setAttribute("db.operation", "find");
+                querySpan->setAttribute("db.query.projection", bsoncxx::to_json(projection_doc.view()));
+                querySpan->setAttribute("db.query.sort", bsoncxx::to_json(sort_doc.view()));
+            }
 
             mongocxx::cursor cursor = collection.find(query_doc.view(), findOptions);
+            if(querySpan) {
+                querySpan->setSuccess(); // Query was submitted successfully
+            }
+
+
+            // 🎉 Span for processing all the results from the cursor
+            auto processingSpan = creatures::observability->createChildOperationSpan("Database.processCursor", dbSpan);
+            uint32_t documentsProcessed = 0;
+            uint32_t documentsFailed = 0;
 
             // Go Mongo, go! 🎉
             for (auto &&doc: cursor) {
+                documentsProcessed++;
+                auto docSpan = creatures::observability->createChildOperationSpan("Database.processDocument", processingSpan);
 
+                try {
+                    // Convert BSON to JSON
+                    auto conversionSpan = creatures::observability->createChildOperationSpan("BSON.toJson", docSpan);
+                    std::string json_str = bsoncxx::to_json(doc);
+                    if (conversionSpan) {
+                        conversionSpan->setAttribute("bson.size_bytes", static_cast<int64_t>(doc.length()));
+                        conversionSpan->setAttribute("json_string.size_bytes", static_cast<int64_t>(json_str.length()));
+                        conversionSpan->setSuccess();
+                    }
 
-                std::string json_str = bsoncxx::to_json(doc);
-                trace("Document JSON out of Mongo: {}", json_str);
+                    // Parse JSON string
+                    auto parseSpan = creatures::observability->createChildOperationSpan("JSON.parse", docSpan);
+                    nlohmann::json json_doc = nlohmann::json::parse(json_str);
+                    if (parseSpan) {
+                        parseSpan->setSuccess();
+                    }
 
-                // Parse JSON string to nlohmann::json
-                nlohmann::json json_doc = nlohmann::json::parse(json_str);
+                    // Create AnimationMetadata from JSON
+                    auto metadataSpan = creatures::observability->createChildOperationSpan("Animation.metadataFromJson", docSpan);
+                    auto animationResult = animationMetadataFromJson(json_doc["metadata"]);
 
-                // Create the animation from JSON
-                auto animationResult = animationMetadataFromJson(json_doc["metadata"]);
-                if (!animationResult.isSuccess()) {
-                    std::string errorMessage = fmt::format("Unable to parse the JSON in the database to an AnimationMetadata: {}",
-                                                           animationResult.getError()->getMessage());
+                    if (!animationResult.isSuccess()) {
+                        documentsFailed++;
+                        std::string errorMessage = fmt::format("Unable to parse JSON to AnimationMetadata: {}", animationResult.getError()->getMessage());
+                        warn(errorMessage);
+
+                        if(metadataSpan) metadataSpan->setError(errorMessage);
+                        if(docSpan) docSpan->setError(errorMessage);
+
+                        // Continue to the next document instead of failing the whole request
+                        continue;
+                    }
+
+                    auto animationMetadata = animationResult.getValue().value();
+                    animations.push_back(animationMetadata);
+
+                    if(metadataSpan) {
+                        metadataSpan->setAttribute("animation.title", animationMetadata.title);
+                        metadataSpan->setSuccess();
+                    }
+                    if(docSpan) {
+                        docSpan->setAttribute("animation.title", animationMetadata.title);
+                        docSpan->setSuccess();
+                    }
+                } catch (const nlohmann::json::exception& e) {
+                    documentsFailed++;
+                    std::string errorMessage = fmt::format("JSON processing error for a document: {}", e.what());
                     warn(errorMessage);
-                    Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InvalidData, errorMessage)};
+                    if(docSpan) {
+                        docSpan->recordException(e);
+                        docSpan->setError(errorMessage);
+                    }
                 }
+            } // End of cursor loop
 
-                auto animationMetadata = animationResult.getValue().value();
-                animations.push_back(animationMetadata);
-                debug("found {}", animationMetadata.title);
+            if(processingSpan) {
+                processingSpan->setAttribute("documents.processed", static_cast<int64_t>(documentsProcessed));
+                processingSpan->setAttribute("documents.failed", static_cast<int64_t>(documentsFailed));
+                processingSpan->setSuccess();
             }
         }
         catch(const DataFormatException& e) {
