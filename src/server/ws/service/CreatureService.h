@@ -20,9 +20,9 @@ namespace creatures :: ws {
 
     public:
 
-        static oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>> getAllCreatures();
+        static oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>> getAllCreatures(std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
-        static oatpp::Object<creatures::CreatureDto> getCreature(const oatpp::String& inCreatureId);
+        static oatpp::Object<creatures::CreatureDto> getCreature(const oatpp::String& inCreatureId, std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
         /**
          * Upsert (create or update) a creature
@@ -31,7 +31,7 @@ namespace creatures :: ws {
          *                     required fields must me present.
          * @return the creature that was created or updated in the standard form
          */
-        static oatpp::Object<creatures::CreatureDto> upsertCreature(const std::string& jsonCreature);
+        static oatpp::Object<creatures::CreatureDto> upsertCreature(const std::string& jsonCreature, std::shared_ptr<RequestSpan> parentSpan = nullptr);
     };
 
 

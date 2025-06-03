@@ -11,14 +11,18 @@
 #include "server/creature-server.h"
 #include "util/cache.h"
 #include "util/helpers.h"
+#include "util/ObservabilityManager.h" // Include for ObservabilityManager
 
 #include "spdlog/spdlog.h"
 #include <fmt/format.h>
 
 #include <mongocxx/client.hpp>
 #include <mongocxx/cursor.hpp>
+#include <mongocxx/options/find.hpp> // Required for mongocxx::options::find
+
 
 #include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/json.hpp> // Required for bsoncxx::to_json
 
 #include "server/namespace-stuffs.h"
 
@@ -30,9 +34,21 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
     extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
+    extern std::shared_ptr<ObservabilityManager> observability; // Declare observability
 
 
-    Result<std::vector<creatures::Creature>> Database::getAllCreatures(creatures::SortBy sortBy, bool ascending) {
+    Result<std::vector<creatures::Creature>> Database::getAllCreatures(creatures::SortBy sortBy, bool ascending, const std::shared_ptr<OperationSpan>& parentSpan) { // Pass by const ref
+
+        auto dbSpan = creatures::observability->createChildOperationSpan("Database.getAllCreatures", parentSpan); // Create span
+
+        if (dbSpan) {
+            dbSpan->setAttribute("database.collection", CREATURES_COLLECTION);
+            dbSpan->setAttribute("database.operation", "find");
+            dbSpan->setAttribute("database.system", "mongodb");
+            dbSpan->setAttribute("database.name", DB_NAME);
+            dbSpan->setAttribute("creatures.sort_by", static_cast<int64_t>(sortBy));
+            dbSpan->setAttribute("creatures.sort_ascending", ascending);
+        }
 
         (void) ascending;
 
@@ -42,7 +58,6 @@ namespace creatures {
 
         // Start an exception frame
         try {
-
             document query_doc{};
             document sort_doc{};
 
@@ -57,76 +72,118 @@ namespace creatures {
                     debug("sorting by name");
                     break;
 
-                    // Default is by name
-                default:
-                    sort_doc << "name" << 1;
-                    debug("sorting by name (as default)");
+                default: // Default to sorting by number
+                    sort_doc << "number" << 1;
+                    debug("defaulting to sorting by number");
                     break;
             }
 
-            mongocxx::options::find opts{};
-            opts.sort(sort_doc.view());
-
+            // Connect to the database
             auto collectionResult = getCollection(CREATURES_COLLECTION);
             if(!collectionResult.isSuccess()) {
                 auto error = collectionResult.getError().value();
-                std::string errorMessage = fmt::format("database error while listing all of the creatures: {}", error.getMessage());
-                warn(errorMessage);
+                std::string errorMessage = fmt::format("unable to get the creature collection: {}", error.getMessage());
+                critical(errorMessage);
+                if (dbSpan) {
+                    dbSpan->setError(errorMessage);
+                    dbSpan->setAttribute("error.type", "DatabaseError");
+                    dbSpan->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
+                } else {
+                    warn("Database span was not created, cannot set error attributes");
+                }
                 return Result<std::vector<creatures::Creature>>{error};
             }
             auto collection = collectionResult.getValue().value();
+
+
+            // Query the database with sort options
+            auto mongoSpan = creatures::observability->createChildOperationSpan("getAllCreatures::mongo-query", dbSpan);
+            mongocxx::options::find opts;
+            opts.sort(sort_doc.view());
             mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
 
-            for (auto &&doc: cursor) {
-
-                std::string json_str = bsoncxx::to_json(doc);
-                debug("Document JSON: {}", json_str);
-
-                // Parse JSON string to nlohmann::json
-                nlohmann::json json_doc = nlohmann::json::parse(json_str);
-
-                // Create creature from JSON
-                auto creatureResult = creatureFromJson(json_doc);
-                if (!creatureResult.isSuccess()) {
-                    std::string errorMessage = fmt::format("Unable to parse the JSON in the database to a Creature: {}", creatureResult.getError()->getMessage());
-                    warn(errorMessage);
-                    continue;
+            for (auto doc : cursor) {
+                auto creatureSpan = creatures::observability->createChildOperationSpan("getAllCreatures::create-creature", mongoSpan);
+                json j = json::parse(bsoncxx::to_json(doc));
+                auto result = creatureFromJson(j, creatureSpan);
+                if(!result.isSuccess()) {
+                    auto error = result.getError().value();
+                    std::string errorMessage = fmt::format("Data format error while trying to get all of the creatures: {}", error.getMessage());
+                    critical(errorMessage);
+                    if (creatureSpan) {
+                        creatureSpan->setError(errorMessage);
+                        creatureSpan->setAttribute("error.type", "DataFormatException");
+                        creatureSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+                    } else {
+                        warn("Creature span was not created, cannot set error attributes");
+                    }
+                    return Result<std::vector<creatures::Creature>>{error};
                 }
+                creatureList.push_back(result.getValue().value());
 
-                auto creature = creatureResult.getValue().value();
-                creatureList.push_back(creature);
+                // Update the cache as we go
+                creatureCache->put(result.getValue().value().id, result.getValue().value());
 
-                // Update the cache since we went all the way to the DB to get it
-                creatureCache->put(creature.id, creature);
+                creatureSpan->setAttribute("creature.id", result.getValue().value().id);
+                creatureSpan->setAttribute("creature.name", result.getValue().value().name);
+                creatureSpan->setSuccess();
             }
+            mongoSpan->setAttribute("creatures.count", static_cast<int64_t>(creatureList.size()));
+            mongoSpan->setSuccess();
 
             debug("found {} creatures", creatureList.size());
+            if (dbSpan) {
+                dbSpan->setAttribute("creatures.count", static_cast<int64_t>(creatureList.size()));
+                dbSpan->setSuccess();
+            } else {
+                warn("Database span was not created, cannot set success attributes");
+            }
             return Result<std::vector<creatures::Creature>>{creatureList};
 
         } catch (const DataFormatException& e) {
-
             // Log the error
             std::string errorMessage = fmt::format("Data format error while trying to get all of the creatures: {}",
                                                    e.what());
             error(errorMessage);
+            if (dbSpan) {
+                dbSpan->recordException(e);
+                dbSpan->setAttribute("error.type", "DataFormatException");
+                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+                dbSpan->setError(errorMessage);
+            }
             return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
         }
         catch (const DatabaseError& e) {
             std::string errorMessage = fmt::format("A database error happened while getting all of the creatures: {}", e.what());
             error(errorMessage);
+            if (dbSpan) {
+                dbSpan->recordException(e);
+                dbSpan->setAttribute("error.type", "DatabaseError");
+                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+                dbSpan->setError(errorMessage);
+            }
             return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
 
         } catch (const std::exception& e) {
             std::string errorMessage = fmt::format("Failed to get all creatures: {}", e.what());
             error(errorMessage);
+            if (dbSpan) {
+                dbSpan->recordException(e);
+                dbSpan->setAttribute("error.type", "std::exception");
+                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+                dbSpan->setError(errorMessage);
+            }
             return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
         }
         catch (...) {
             std::string errorMessage = "Failed to get all creatures: unknown error";
             error(errorMessage);
+            if (dbSpan) {
+                dbSpan->setError(errorMessage);
+                dbSpan->setAttribute("error.type", "UnknownError");
+                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+            }
             return Result<std::vector<creatures::Creature>>{ServerError(ServerError::InternalError, errorMessage)};
         }
-
     }
-
 }

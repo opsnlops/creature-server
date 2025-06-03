@@ -37,7 +37,7 @@ namespace creatures {
      *
      * @return a `Result<creatures::Creature>` the creature that we can return to the client
      */
-    Result<creatures::Creature> Database::upsertCreature(const std::string& creatureJson) {
+    Result<creatures::Creature> Database::upsertCreature(const std::string& creatureJson, const std::shared_ptr<OperationSpan>& parentSpan) {
 
         info("attempting to upsert a creature in the database");
 

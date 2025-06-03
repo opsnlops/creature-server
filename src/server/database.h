@@ -44,9 +44,9 @@ namespace creatures {
         explicit Database(const std::string& mongoURI);
 
         // Creature stuff
-        Result<creatures::Creature> getCreature(const creatureId_t& creatureId);
-        Result<std::vector<creatures::Creature>> getAllCreatures(creatures::SortBy sortBy, bool ascending);
-        Result<json> getCreatureJson(creatureId_t creatureId);
+        Result<creatures::Creature> getCreature(const creatureId_t& creatureId, const std::shared_ptr<OperationSpan>& parentSpan = nullptr);
+        Result<std::vector<creatures::Creature>> getAllCreatures(creatures::SortBy sortBy, bool ascending, const std::shared_ptr<OperationSpan>& parentSpan = nullptr);
+        Result<json> getCreatureJson(creatureId_t creatureId, const std::shared_ptr<OperationSpan>& parentSpan = nullptr);
 
 
         /**
@@ -58,7 +58,7 @@ namespace creatures {
          *
          * @return a `Result<creatures::Creature>` with the encoded creature that we can return to the client
          */
-        Result<creatures::Creature> upsertCreature(const std::string& creatureJson);
+        Result<creatures::Creature> upsertCreature(const std::string& creatureJson, const std::shared_ptr<OperationSpan>& parentSpan = nullptr);
 
 
         /**
@@ -152,8 +152,7 @@ namespace creatures {
 
         Result<mongocxx::collection> getCollection(const std::string &collectionName);
 
-
-        static Result<creatures::Creature> creatureFromJson(json creatureJson);
+        static Result<creatures::Creature> creatureFromJson(json creatureJson, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
 
         static Result<creatures::Animation> animationFromJson(json animationJson);

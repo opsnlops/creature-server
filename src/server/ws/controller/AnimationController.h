@@ -4,6 +4,7 @@
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
+#include <oatpp/web/protocol/http/incoming/Request.hpp>
 
 #include "model/AnimationMetadata.h"
 #include "server/config.h"
@@ -37,6 +38,36 @@ namespace creatures :: ws {
             return std::make_shared<AnimationController>(objectMapper);
         }
 
+        // Helper function to add common HTTP attributes to a span
+        void addHttpRequestAttributes(
+            const std::shared_ptr<creatures::RequestSpan>& span,
+            const std::shared_ptr<oatpp::web::protocol::http::incoming::Request>& request)
+        {
+            if (span && request) {
+                span->setAttribute("http.method", std::string(request->getStartingLine().method.toString()));
+                span->setAttribute("http.target", std::string(request->getStartingLine().path.toString()));
+
+                // Add User-Agent if present (getHeader works directly)
+                auto userAgent = request->getHeader("User-Agent");
+                if (userAgent) {
+                    span->setAttribute("http.user_agent", std::string(userAgent));
+                }
+
+                // Add Content-Length if present
+                auto contentLength = request->getHeader("Content-Length");
+                if (contentLength) {
+                    span->setAttribute("http.request_content_length", std::string(contentLength));
+                }
+
+                // Add Host if present
+                auto host = request->getHeader("Host");
+                if (host) {
+                    span->setAttribute("http.host", std::string(host));
+                }
+                span->setAttribute("http.flavor", "1.1"); // Assuming HTTP/1.1 for oatpp
+            }
+        }
+
         ENDPOINT_INFO(listAllAnimations) {
             info->summary = "List all of the animations";
             info->addResponse<Object<AnimationsListDto>>(Status::CODE_200, "application/json; charset=utf-8");
@@ -44,12 +75,14 @@ namespace creatures :: ws {
             info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
             info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
         }
-        ENDPOINT("GET", "api/v1/animation", listAllAnimations)
+        ENDPOINT("GET", "api/v1/animation", listAllAnimations,
+                 REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request))
         {
             // Create a trace span for this request
             auto span = creatures::observability->createRequestSpan(
                 "GET /api/v1/animation", "GET", "api/v1/animation"
             );
+            addHttpRequestAttributes(span, request); // Add HTTP attributes
 
             debug("REST call to listAllAnimations");
             creatures::metrics->incrementRestRequestsProcessed();
@@ -79,13 +112,15 @@ namespace creatures :: ws {
             info->pathParams["animationId"].description = "Animation ID in the form of a MongoDB OID";
         }
         ENDPOINT("GET", "api/v1/animation/{animationId}", getAnimation,
-                 PATH(String, animationId))
+                 PATH(String, animationId),
+                 REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request))
         {
             // RequestSpan only handles HTTP-level concerns
             auto span = creatures::observability->createRequestSpan(
                 "GET /api/v1/animation/{animationId}", "GET",
                 "api/v1/animation/" + std::string(animationId)
             );
+            addHttpRequestAttributes(span, request); // Add HTTP attributes
 
             debug("get animation by ID via REST API: {}", std::string(animationId));
             creatures::metrics->incrementRestRequestsProcessed();
@@ -115,12 +150,13 @@ namespace creatures :: ws {
             info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
         }
         ENDPOINT("POST", "api/v1/animation", upsertAnimation,
-                 REQUEST(std::shared_ptr<IncomingRequest>, request))
+                 REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request))
         {
             // Span for the upsert operation
             auto span = creatures::observability->createRequestSpan(
                 "POST /api/v1/animation", "POST", "api/v1/animation"
             );
+            addHttpRequestAttributes(span, request); // Add HTTP attributes
 
             debug("new animation uploaded via REST API");
             creatures::metrics->incrementRestRequestsProcessed();
@@ -166,12 +202,14 @@ namespace creatures :: ws {
             info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
         }
         ENDPOINT("POST", "api/v1/animation/play", playStoredAnimation,
-                 BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody))
+                 BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody),
+                 REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request))
         {
             // The most exciting span - playing an animation!
             auto span = creatures::observability->createRequestSpan(
                 "POST /api/v1/animation/play", "POST", "api/v1/animation/play"
             );
+            addHttpRequestAttributes(span, request); // Add HTTP attributes
 
             creatures::metrics->incrementRestRequestsProcessed();
 
@@ -206,6 +244,6 @@ namespace creatures :: ws {
             }
         }
     };
-}
+} // namespace creatures :: ws
 
 #include OATPP_CODEGEN_END(ApiController)

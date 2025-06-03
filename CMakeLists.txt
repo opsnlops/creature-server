@@ -17,7 +17,6 @@ add_compile_options(-Wpedantic)
 
 set(PACKAGE_AUTHOR "April White")
 
-
 find_package(PkgConfig REQUIRED)
 
 set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
@@ -29,6 +28,48 @@ configure_file(src/server/Version.h.in Version.h)
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
 
+# Configure MongoDB drivers for static linking BEFORE fetching
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
+set(ENABLE_STATIC ON CACHE BOOL "Build static mongoc" FORCE)
+set(ENABLE_SHARED OFF CACHE BOOL "Don't build shared mongoc" FORCE)
+set(ENABLE_TESTS OFF CACHE BOOL "Don't build mongoc tests" FORCE)
+set(ENABLE_EXAMPLES OFF CACHE BOOL "Don't build mongoc examples" FORCE)
+set(ENABLE_AUTOMATIC_INIT_AND_CLEANUP OFF CACHE BOOL "Disable automatic init" FORCE)
+set(ENABLE_UNINSTALL OFF CACHE BOOL "Don't generate uninstaller" FORCE)
+set(MONGOCXX_ENABLE_SHARED OFF CACHE BOOL "Don't build shared mongocxx" FORCE)
+set(MONGOCXX_ENABLE_STATIC ON CACHE BOOL "Build static mongocxx" FORCE)
+set(BSONCXX_POLY_USE_BOOST OFF CACHE BOOL "Don't use boost" FORCE)
+set(BSONCXX_POLY_USE_MNMLSTC OFF CACHE BOOL "Don't use mnmlstc" FORCE)
+
+# Fetch MongoDB C driver
+FetchContent_Declare(
+  mongo-c-driver
+  GIT_REPOSITORY https://github.com/mongodb/mongo-c-driver.git
+  GIT_TAG        1.30.4
+  GIT_SHALLOW    TRUE
+)
+
+# Fetch MongoDB C++ driver
+FetchContent_Declare(
+  mongo-cxx-driver
+  GIT_REPOSITORY https://github.com/mongodb/mongo-cxx-driver.git
+  GIT_TAG        r3.11.0
+  GIT_SHALLOW    TRUE
+)
+
+# Build both drivers
+FetchContent_MakeAvailable(mongo-c-driver)
+FetchContent_MakeAvailable(mongo-cxx-driver)
+
+# Create aliases that match your existing code
+if(TARGET mongocxx_static)
+  add_library(mongocxx::mongocxx ALIAS mongocxx_static)
+endif()
+
+if(TARGET bsoncxx_static)
+  add_library(bsoncxx::bsoncxx ALIAS bsoncxx_static)
+endif()
+
 # This project uses threads
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -37,8 +78,6 @@ find_package(Threads REQUIRED)
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     pkg_search_module(UUID REQUIRED uuid)
 endif()
-
-
 
 # fmt
 message(STATUS "fmt")
@@ -51,7 +90,6 @@ FetchContent_MakeAvailable(fmt)
 set(FMT_HEADER_ONLY ON)
 set(FMT_LOCALE ON)
 
-
 # spdlog
 FetchContent_Declare(
         spdlog
@@ -59,7 +97,6 @@ FetchContent_Declare(
         GIT_TAG v1.11.0
 )
 FetchContent_MakeAvailable(spdlog)
-
 
 # argparse
 FetchContent_Declare(
@@ -87,6 +124,7 @@ set(WITH_EXAMPLES OFF CACHE BOOL "Disable examples" FORCE)
 set(WITH_BENCHMARK OFF CACHE BOOL "Disable benchmarks" FORCE)
 set(WITH_FUNC_TESTS OFF CACHE BOOL "Disable functional tests" FORCE)
 set(OPENTELEMETRY_INSTALL OFF CACHE BOOL "Disable install" FORCE)
+set(WITH_GTEST OFF CACHE BOOL "Disable gtest in OpenTelemetry" FORCE)
 
 # Enable only what we need
 set(WITH_OTLP_HTTP ON CACHE BOOL "Enable OTLP HTTP exporter" FORCE)
@@ -99,7 +137,6 @@ set(WITH_PROMETHEUS OFF CACHE BOOL "Disable Prometheus" FORCE)
 set(WITH_METRICS_PREVIEW OFF CACHE BOOL "Disable metrics preview" FORCE)
 set(WITH_LOGS_PREVIEW OFF CACHE BOOL "Disable logs preview" FORCE)
 
-
 # OpenTelemetry
 FetchContent_Declare(
         opentelemetry-cpp
@@ -109,34 +146,32 @@ FetchContent_Declare(
 )
 
 # After FetchContent_Declare but before FetchContent_MakeAvailable
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
 set(OPENTELEMETRY_BUILD_SHARED_LIBS OFF CACHE BOOL "Build OpenTelemetry as static" FORCE)
 
 FetchContent_MakeAvailable(opentelemetry-cpp)
-
 
 # Use the oatpp that we've already made
 find_package(oatpp           REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
 find_package(oatpp-swagger   REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
 find_package(oatpp-websocket REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-websocket-1.3.0)
 
+set(oatpp_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/externals/install/include/oatpp-1.3.0/")
+message(STATUS "oatpp_INCLUDE_DIRS: ${oatpp_INCLUDE_DIRS}")
+
 add_definitions(
         ## define path to swagger-ui static resources folder
         -DOATPP_SWAGGER_RES_PATH="${oatpp-swagger_INCLUDE_DIRS}/../bin/oatpp-swagger/res"
 )
 
-
 # ...and our own libraries
 add_subdirectory(lib/e131_service)
 add_subdirectory(lib/CreatureVoicesLib)
-
 
 # Set up a base64 encoder/decoder
 set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
 
 # Set up a concurrent queue
 set(MOODYCAMEL_DIR "${CMAKE_SOURCE_DIR}/lib/concurrentqueue")
-
 
 #
 # If we're on macOS, use the local copy of the Swagger UI. On Linux, use the one from the
@@ -148,21 +183,12 @@ else()
     add_definitions(-DSWAGGER_UI_PATH="/usr/share/creature-server/swagger-ui/")
 endif()
 
-
-# MongoDB (built by us on Linux, but the macOS/brew version is fine)
-find_package(mongocxx REQUIRED)
-find_package(bsoncxx REQUIRED)
-
-
 # SDL
 find_package(SDL2 REQUIRED)
 find_package(SDL2_mixer REQUIRED)
 
-
-
 # Leave a message
 message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
-
 
 # Our source files
 file(GLOB serverFiles
@@ -187,7 +213,6 @@ file(GLOB clientFiles
         src/exception/*
         src/util/*
 )
-
 
 file(GLOB logReaderFiles
         src/client/*.h
@@ -248,7 +273,6 @@ add_executable(creature-server
         src/model/VirtualStatusLights.cpp
         src/model/VirtualStatusLights.h
 
-
         src/util/loggingUtils.cpp
         src/util/loggingUtils.h
         src/util/Result.cpp
@@ -256,11 +280,9 @@ add_executable(creature-server
         src/util/websocketUtils.h
         src/util/websocketUtils.cpp
 
-
         src/server/ws/AppComponent.h
         src/server/ws/App.h
         src/server/ws/App.cpp
-
 
         src/server/ws/dto/ListDto.h
         src/server/ws/dto/PlayAnimationRequestDto.h
@@ -287,7 +309,6 @@ add_executable(creature-server
         src/server/ws/dto/websocket/StreamFrameMessage.h
         src/server/ws/dto/websocket/VirtualStatusLightsMessage.h
         src/server/ws/dto/websocket/WebSocketMessageDto.h
-
 
         src/server/ws/messaging/BasicCommandDto.h
         src/server/ws/messaging/IMessageHandler.h
@@ -321,12 +342,16 @@ add_executable(creature-server
         src/server/ws/messaging/SensorReportHandler.cpp
         src/util/ObservabilityManager.h
         src/util/ObservabilityManager.cpp
-
-
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
 
+# System libraries needed for MongoDB static linking
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    set(MONGO_SYSTEM_LIBS resolv)
+else()
+    set(MONGO_SYSTEM_LIBS resolv)
+endif()
 
 target_link_libraries(creature-server
         PRIVATE ${UUID_LIBRARIES}
@@ -338,8 +363,8 @@ target_link_libraries(creature-server
         oatpp::oatpp-swagger
         oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
-        PRIVATE mongo::mongocxx_shared
-        PRIVATE mongo::bsoncxx_shared
+        mongocxx::mongocxx
+        bsoncxx::bsoncxx
         opentelemetry_trace
         opentelemetry_exporter_otlp_http
         opentelemetry_resources
@@ -348,8 +373,9 @@ target_link_libraries(creature-server
         argparse
         e131_service
         CreatureVoicesLib
+        Threads::Threads
+        ${MONGO_SYSTEM_LIBS}
 )
-
 
 install(TARGETS creature-server
         COMPONENT creature-server
@@ -357,15 +383,6 @@ install(TARGETS creature-server
         LIBRARY DESTINATION "/lib"
         DESTINATION "/bin"
 )
-
-# Include the MongoDB C++ driver
-install(DIRECTORY /usr/local/lib
-        DESTINATION /usr
-        COMPONENT creature-server
-        PATTERN "python" EXCLUDE
-)
-
-
 
 #
 # Set up testing
@@ -392,13 +409,15 @@ target_link_libraries(creature-server-test
         oatpp::oatpp-swagger
         oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
-        PRIVATE mongo::mongocxx_shared
-        PRIVATE mongo::bsoncxx_shared
+        mongocxx::mongocxx
+        bsoncxx::bsoncxx
         argparse
         e131_service
         CreatureVoicesLib
         gtest_main
         gmock_main
+        Threads::Threads
+        ${MONGO_SYSTEM_LIBS}
 )
 
 # This is to include Google Test and Google Mock headers
@@ -414,8 +433,6 @@ set_property(TARGET creature-server-test PROPERTY FOLDER "tests")
 # Register the test with CTest
 include(GoogleTest)
 gtest_discover_tests(creature-server-test)
-
-
 
 # where to find our CMake modules
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")

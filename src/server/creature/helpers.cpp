@@ -19,6 +19,7 @@
 #include "server/database.h"
 #include "exception/exception.h"
 #include "util/helpers.h"
+#include "util/ObservabilityManager.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -38,8 +39,16 @@ namespace creatures {
     extern std::vector<std::string> playlist_required_fields;
     extern std::vector<std::string> playlistitems_required_fields;
 
+    extern std::shared_ptr<ObservabilityManager> observability;
 
-    Result<creatures::Creature> Database::creatureFromJson(json creatureJson) {
+
+    Result<creatures::Creature> Database::creatureFromJson(json creatureJson, std::shared_ptr<OperationSpan> parentSpan) {
+
+        if(!parentSpan) {
+            warn("no parent span provided for Database.creatureFromJson, creating a root span");
+        }
+
+        auto span = creatures::observability->createChildOperationSpan("Database.creatureFromJson", parentSpan);
 
         debug("attempting to create a creature from JSON via creatureFromJson()");
 
@@ -61,12 +70,18 @@ namespace creatures {
             if(creature.id.empty()) {
                 std::string errorMessage = "Creature ID is empty";
                 warn(errorMessage);
+                span->setError(errorMessage);
+                span->setAttribute("error.type", "InvalidData");
+                span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
                 return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
             }
 
             if(creature.name.empty()) {
                 std::string errorMessage = "Creature name is empty";
                 warn(errorMessage);
+                span->setError(errorMessage);
+                span->setAttribute("error.type", "InvalidData");
+                span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
                 return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
             }
 
@@ -74,6 +89,9 @@ namespace creatures {
             // Check and parse inputs
             if (creatureJson.contains("inputs")) {
                 for (const auto& inputJson : creatureJson["inputs"]) {
+
+                    auto inputSpan = creatures::observability->createChildOperationSpan("creatureFromJson::parseInputs", span);
+
                     auto input = Input();
                     input.slot = inputJson.value("slot", std::numeric_limits<uint16_t>::max());
                     input.width = inputJson.value("width", std::numeric_limits<uint8_t>::max());
@@ -84,30 +102,50 @@ namespace creatures {
                     if (input.slot == std::numeric_limits<uint16_t>::max()) {
                         std::string errorMessage = "Input slot is missing or invalid";
                         warn(errorMessage);
+                        inputSpan->setError(errorMessage);
+                        inputSpan->setAttribute("error.type", "InvalidData");
+                        inputSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
                         return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
                     }
 
                     if (input.width == std::numeric_limits<uint8_t>::max()) {
                         std::string errorMessage = "Input width is missing or invalid";
                         warn(errorMessage);
+                        inputSpan->setError(errorMessage);
+                        inputSpan->setAttribute("error.type", "InvalidData");
+                        inputSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
                         return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
                     }
 
                     if (input.name.empty() || input.name == "-?-") {
                         std::string errorMessage = "Input name is missing";
                         warn(errorMessage);
+                        inputSpan->setError(errorMessage);
+                        inputSpan->setAttribute("error.type", "InvalidData");
+                        inputSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
                         return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
                     }
 
                     if (input.joystick_axis == std::numeric_limits<uint8_t>::max()) {
                         std::string errorMessage = "Input joystick_axis is missing or invalid";
                         warn(errorMessage);
+                        inputSpan->setError(errorMessage);
+                        inputSpan->setAttribute("error.type", "InvalidData");
+                        inputSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
                         return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
                     }
 
                     debug("adding input: {}, slot: {}, width: {}, axis: {}",
                           input.name, input.slot, input.width, input.joystick_axis);
                     creature.inputs.emplace_back(input);
+
+                    if (inputSpan) {
+                        inputSpan->setSuccess();
+                        inputSpan->setAttribute("input.slot", static_cast<int64_t>(input.slot));
+                        inputSpan->setAttribute("input.width", static_cast<int64_t>(input.width));
+                        inputSpan->setAttribute("input.name", input.name);
+                        inputSpan->setAttribute("input.joystick_axis", static_cast<int64_t>(input.joystick_axis));
+                    }
                 }
             } else {
                 warn("No inputs for {} found in JSON", creature.name);
@@ -116,11 +154,18 @@ namespace creatures {
 
 
             debug("✅ Looks good, I was able to build a creature from JSON");
+            span->setSuccess();
+            span->setAttribute("creature.id", creature.id);
+            span->setAttribute("creature.name", creature.name);
             return Result<creatures::Creature>{creature};
 
         } catch ( const nlohmann::json::exception& e ) {
             std::string errorMessage = fmt::format("Error while converting JSON to Creature: {}", e.what());
             warn(errorMessage);
+            span->recordException(e);
+            span->setAttribute("error.type", "JsonParsingException");
+            span->setAttribute("error.message", e.what());
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
             return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
         }
     }

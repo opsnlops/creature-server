@@ -1,5 +1,5 @@
 
-FROM debian:bookworm as build
+FROM debian:bookworm AS build
 
 RUN apt update && apt upgrade -y
 
@@ -8,29 +8,6 @@ RUN apt install -y cmake libssl-dev libsasl2-dev gcc git file \
     libsystemd-dev ninja-build libsdl2-mixer-dev dpkg-dev uuid-dev \
     util-linux libpipewire-0.3-dev libuv1-dev libcurl4-openssl-dev libprotobuf-dev protobuf-compiler
 
-
-# Install the latest Mongo driver
-RUN mkdir -p /build/mongo
-ADD https://github.com/mongodb/mongo-c-driver/archive/refs/tags/1.27.5.tar.gz /build/mongo/c-driver.tar.gz
-ADD https://github.com/mongodb/mongo-cxx-driver/releases/download/r3.10.2/mongo-cxx-driver-r3.10.2.tar.gz /build/mongo/cxx-driver.tar.gz
-RUN cd /build/mongo && tar -xzvf c-driver.tar.gz && tar -xzvf cxx-driver.tar.gz
-
-RUN cd /build/mongo/mongo-c-driver-1.27.5/build && \
-    cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=/usr/local \
-          -DBUILD_SHARED_AND_STATIC_LIBS=ON \
-          -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
-    ninja && \
-    ninja install
-
-RUN cd /build/mongo/mongo-cxx-driver-r3.10.2/build && \
-    cmake -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=/usr/local \
-          -DBUILD_SHARED_AND_STATIC_LIBS=ON \
-          -DCMAKE_MAKE_PROGRAM=ninja -G Ninja .. && \
-    ninja && \
-    ninja install
 
 
 # Build our stuff
@@ -60,7 +37,7 @@ RUN cd /build/creature-server/build && ninja
 
 
 # Now build a small runtime
-FROM debian:bookworm-slim as runtime
+FROM debian:bookworm-slim AS runtime
 
 # Some of our libs need runtime bits
 RUN apt update && apt upgrade -y && \
@@ -79,7 +56,7 @@ CMD ["/app/creature-server"]
 
 
 # Small build for creating a deb package
-FROM build as package
+FROM build AS package
 
 # Make a package
 RUN mkdir -p /package

@@ -55,7 +55,7 @@ namespace creatures {
        for( const auto& track : animation.tracks) {
            creatureId_t creatureId = track.creature_id;
 
-           auto creatureResult = db->getCreature(creatureId);
+           auto creatureResult = db->getCreature(creatureId, nullptr);
            if(!creatureResult.isSuccess()) {
                auto error = creatureResult.getError().value();
                std::string errorMessage = fmt::format("Not able to play animation because creatureId {} doesn't exist",
