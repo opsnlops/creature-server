@@ -61,7 +61,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(mongo-c-driver)
 FetchContent_MakeAvailable(mongo-cxx-driver)
 
-# Create aliases that match your existing code
+# Create aliases that match the existing code
 if(TARGET mongocxx_static)
   add_library(mongocxx::mongocxx ALIAS mongocxx_static)
 endif()
