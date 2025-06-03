@@ -34,12 +34,12 @@ namespace creatures {
 
     extern std::shared_ptr<Database> db;
     extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
-    extern std::shared_ptr<ObservabilityManager> observability; // Declare observability
+    extern std::shared_ptr<ObservabilityManager> observability;
 
 
     Result<std::vector<creatures::Creature>> Database::getAllCreatures(creatures::SortBy sortBy, bool ascending, const std::shared_ptr<OperationSpan>& parentSpan) { // Pass by const ref
 
-        auto dbSpan = creatures::observability->createChildOperationSpan("Database.getAllCreatures", parentSpan); // Create span
+        auto dbSpan = creatures::observability->createChildOperationSpan("Database.getAllCreatures", parentSpan);
 
         if (dbSpan) {
             dbSpan->setAttribute("database.collection", CREATURES_COLLECTION);
