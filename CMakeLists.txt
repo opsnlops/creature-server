@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.3.5"
+        VERSION "2.3.6"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -126,9 +126,14 @@ set(WITH_FUNC_TESTS OFF CACHE BOOL "Disable functional tests" FORCE)
 set(OPENTELEMETRY_INSTALL OFF CACHE BOOL "Disable install" FORCE)
 set(WITH_GTEST OFF CACHE BOOL "Disable gtest in OpenTelemetry" FORCE)
 
-# Enable only what we need
+# Enable what we need for traces AND metrics! 🐰
 set(WITH_OTLP_HTTP ON CACHE BOOL "Enable OTLP HTTP exporter" FORCE)
 set(WITH_OTLP_GRPC OFF CACHE BOOL "Disable OTLP gRPC exporter" FORCE)
+
+# Enable metrics support
+set(WITH_METRICS_API ON CACHE BOOL "Enable metrics API" FORCE)
+set(WITH_METRICS_SDK ON CACHE BOOL "Enable metrics SDK" FORCE)
+set(WITH_OTLP_HTTP_METRIC_EXPORT ON CACHE BOOL "Enable OTLP HTTP metric exporter" FORCE)
 
 # Disable everything else to avoid dependencies
 set(WITH_ZIPKIN OFF CACHE BOOL "Disable Zipkin" FORCE)
@@ -365,11 +370,15 @@ target_link_libraries(creature-server
         nlohmann_json::nlohmann_json
         mongocxx::mongocxx
         bsoncxx::bsoncxx
+        # OpenTelemetry libraries for traces
         opentelemetry_trace
         opentelemetry_exporter_otlp_http
         opentelemetry_resources
         opentelemetry_common
         opentelemetry_http_client_curl  # Needed for HTTP exporter
+        # OpenTelemetry libraries for metrics - the missing hoppy pieces! 🐰
+        opentelemetry_metrics
+        opentelemetry_exporter_otlp_http_metric
         argparse
         e131_service
         CreatureVoicesLib

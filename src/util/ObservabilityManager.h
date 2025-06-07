@@ -11,6 +11,11 @@
 #include <opentelemetry/nostd/shared_ptr.h>
 #include <opentelemetry/nostd/unique_ptr.h>
 
+// Metrics headers for v1.21.0
+#include <opentelemetry/metrics/provider.h>
+#include <opentelemetry/metrics/meter.h>
+#include <opentelemetry/metrics/sync_instruments.h>
+
 namespace creatures {
 
 // Forward declarations
@@ -20,8 +25,9 @@ class OperationSpan;
 /**
  * A wrapper around OpenTelemetry for the Creature Server
  *
- * This class provides a clean interface for creating traces and spans
- * without tightly coupling the rest of the codebase to OTel APIs.
+ * This class provides a clean interface for creating traces and spans,
+ * and also handles metrics export through the existing event loop system.
+ * No need to reinvent the wheel - we'll hop right into your existing pattern! 🐰
  */
 class ObservabilityManager {
 public:
@@ -73,9 +79,53 @@ public:
     std::shared_ptr<OperationSpan> createChildOperationSpan(const std::string& operationName,
                                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
+    /**
+     * Export all metrics from the SystemCounters to OTel
+     * This is designed to be called from your existing counter-send event!
+     *
+     * @param metrics The SystemCounters instance containing all current metric values
+     */
+    void exportMetrics(const std::shared_ptr<class SystemCounters>& metrics);
+
+    /**
+     * Check if the manager is initialized and ready to hop! 🐰
+     */
+    [[nodiscard]] bool isInitialized() const { return initialized_; }
+
 private:
+    // Tracing members
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer_;
+
+    // Metrics members
+    opentelemetry::nostd::shared_ptr<opentelemetry::metrics::Meter> meter_;
+
+    // Individual counter instruments - we'll create these once and reuse them
+    // This avoids the overhead of looking them up every time we export
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> totalFramesCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> eventsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> framesStreamedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> dmxEventsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> animationsPlayedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> soundsPlayedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistsStartedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistsStoppedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistsEventsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistStatusRequestsCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> restRequestsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> soundFilesServedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketConnectionsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketMessagesReceivedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketMessagesSentCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketPingsSentCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketPongsReceivedCounter_;
+
     bool initialized_;
+
+    /**
+     * Initialize all the metric instruments
+     * Called once during initialize() to set up all the counters
+     */
+    void initializeMetricInstruments();
 };
 
 /**
