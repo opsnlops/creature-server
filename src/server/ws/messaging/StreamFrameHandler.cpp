@@ -14,6 +14,7 @@
 #include "server/metrics/counters.h"
 #include "util/cache.h"
 #include "util/helpers.h"
+#include "util/ObservabilityManager.h"
 
 
 #include "StreamFrameCommandDTO.h"
@@ -31,19 +32,20 @@
  */
 
 
-
-
-
 namespace creatures {
     extern std::shared_ptr<SystemCounters> metrics;
     extern std::shared_ptr<Database> db;
     extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
     extern std::shared_ptr<EventLoop> eventLoop;
+    extern std::shared_ptr<ObservabilityManager> observability;
 }
 
 namespace creatures ::ws {
 
     void StreamFrameHandler::processMessage(const oatpp::String &message) {
+
+        // Create a span for this operation
+        auto messageSpan = creatures::observability->createOperationSpan("StreamFrameHandler.processMessage");
 
         try {
 
@@ -53,27 +55,45 @@ namespace creatures ::ws {
 
             auto dto = apiObjectMapper->readFromString<oatpp::Object<creatures::ws::StreamFrameCommandDTO>>(message);
             if (dto) {
-                StreamFrame frame = convertFromDto(dto->payload.getPtr());
-                stream(frame);
+                StreamFrame frame = convertFromDto(dto->payload.getPtr() /*, messageSpan */); // This is super fast, no span
+                stream(frame, messageSpan);
+                messageSpan->setSuccess();
             } else {
                 appLogger->warn("unable to cast an incoming message to 'Notice'");
             }
 
         } catch (const std::bad_cast &e) {
-            appLogger->warn("Error (std::bad_cast) while processing '{}' into a StreamFrame message: {} ",
-                            std::string(message), e.what());
+            auto errorMessage = fmt::format("Error (std::bad_cast) while processing '{}' into a StreamFrame message: {} ",
+                                       std::string(message), e.what());
+            appLogger->warn(errorMessage);
+            messageSpan->recordException(e);
+            messageSpan->setAttribute("error.type", "std::bad_cast");
+            messageSpan->setAttribute("error.message", errorMessage);
+            messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
         } catch (const std::exception &e) {
-            appLogger->warn("Error (std::exception) while processing '{}' into a StreamFrame message: {}",
-                            std::string(message), e.what());
+            auto errorMessage = fmt::format("Error (std::exception) while processing '{}' into a StreamFrame message: {}",
+                                       std::string(message), e.what());
+            appLogger->warn(errorMessage);
+            messageSpan->recordException(e);
+            messageSpan->setAttribute("error.type", "std::exception");
+            messageSpan->setAttribute("error.message", errorMessage);
+            messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
         } catch (...) {
-            appLogger->warn("An unknown error happened while processing '{}' into a StreamFrame message",
-                            std::string(message));
+            auto errorMessage = fmt::format("An unknown error happened while processing '{}' into a StreamFrame message",
+                                       std::string(message));
+            appLogger->warn(errorMessage);
+            messageSpan->setError(errorMessage);
+            messageSpan->setAttribute("error.type", "std::bad_cast");
+            messageSpan->setAttribute("error.message", errorMessage);
+            messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
         }
 
     }
 
 
-    void StreamFrameHandler::stream(creatures::StreamFrame frame) {
+    void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<OperationSpan> parentSpan) {
+
+        auto span = creatures::observability->createChildOperationSpan("StreamFrameHandler.stream", parentSpan);
 
         appLogger->trace("Entered StreamFrameHandler::stream()");
 
@@ -81,21 +101,33 @@ namespace creatures ::ws {
         std::shared_ptr<Creature> creature;
         try {
             creature = creatureCache->get(frame.creature_id);
+            span->setAttribute("creature_cache.hit", true);
         } catch (const std::out_of_range &e) {
+            span->setAttribute("creature_cache.hit", false);
             appLogger->debug(" 🛜  creature {} was not found in the cache. Going to the DB...", frame.creature_id);
 
             auto result = db->getCreature(frame.creature_id);
             if(!result.isSuccess()) {
-                appLogger->warn("Dropping stream frame to {} because it can't be found", frame.creature_id);
+                auto errorMessage = fmt::format("Dropping stream frame to {} because it can't be found: {}", frame.creature_id, result.getError().value().getMessage());
+                appLogger->warn(errorMessage);
+                span->setError(errorMessage);
+                span->setAttribute("error.type", "NotFound");
+                span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
                 return;
             }
             creature = std::make_shared<Creature>(result.getValue().value());
             appLogger->debug("creature is now: name: {}, channel_offset: {}", creature->name, creature->channel_offset);
+            span->setSuccess();
+            span->setAttribute("creature.name", creature->name);
         }
 
         // Make sure it's valid before we go on
         if(!creature) {
-            appLogger->warn("Dropping stream frame to {} because it can't be found", frame.creature_id);
+            auto errorMessage = fmt::format("Creature {} was not found in the cache or the database", frame.creature_id);
+            appLogger->warn(errorMessage);
+            span->setError(errorMessage);
+            span->setAttribute("error.type", "NotFound");
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
             return;
         }
 
@@ -123,9 +155,9 @@ namespace creatures ::ws {
             event->data.push_back(byte);
         }
 
-
-
         eventLoop->scheduleEvent(event);
+
+        // Update the global metrics
         metrics->incrementFramesStreamed();
 
         // Keep some metrics internally
@@ -133,6 +165,8 @@ namespace creatures ::ws {
         if(framesStreamed % 500 == 0) {
             debug("streamed {} frames", framesStreamed);
         }
+
+        span->setSuccess();
     }
 
 }

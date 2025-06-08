@@ -333,7 +333,7 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters>& 
     uint64_t deltaWebsocketPongsReceived = currentWebsocketPongsReceived - lastWebsocketPongsReceived.exchange(currentWebsocketPongsReceived);
     if (deltaWebsocketPongsReceived > 0) websocketPongsReceivedCounter_->Add(deltaWebsocketPongsReceived);
 
-    debug("Metrics exported to OTel - all set for some hoppy observability! 🐰");
+    debug("Metrics exported to OTel");
 }
 
 std::shared_ptr<RequestSpan> ObservabilityManager::createRequestSpan(

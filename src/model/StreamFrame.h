@@ -8,6 +8,7 @@
 #include <oatpp/core/macro/codegen.hpp>
 
 #include "server/namespace-stuffs.h"
+#include "util/ObservabilityManager.h"
 
 namespace creatures {
 
@@ -62,9 +63,11 @@ class StreamFrameDto : public oatpp::DTO {
 #include OATPP_CODEGEN_END(DTO)
 
 
-    oatpp::Object<StreamFrameDto> convertToDto(const StreamFrame &streamFrame);
+    oatpp::Object<StreamFrameDto> convertToDto(const StreamFrame &streamFrame,
+                                               std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
-    StreamFrame convertFromDto(const std::shared_ptr<StreamFrameDto> &streamFrameDto);
+    StreamFrame convertFromDto(const std::shared_ptr<StreamFrameDto> &streamFrameDto,
+                               std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
 
 }

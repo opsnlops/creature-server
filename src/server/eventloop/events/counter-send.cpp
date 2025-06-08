@@ -46,7 +46,7 @@ namespace creatures {
 
         // Now export metrics to OTel if observability is enabled
         if (observability && observability->isInitialized()) {
-            trace("exporting metrics to OTel - some hoppy telemetry coming right up! 🐰");
+            trace("exporting metrics to OTel");
             observability->exportMetrics(metrics);
         } else {
             trace("observability manager not initialized, skipping OTel metrics export");

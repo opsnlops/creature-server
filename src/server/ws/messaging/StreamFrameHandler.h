@@ -7,6 +7,7 @@
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
 #include "model/StreamFrame.h"
+#include "util/ObservabilityManager.h"
 
 #include "IMessageHandler.h"
 
@@ -25,7 +26,7 @@ namespace creatures::ws {
          *
          * @param frame the frame to stream
          */
-        void stream(StreamFrame frame);
+        void stream(StreamFrame frame, std::shared_ptr<OperationSpan> parentSpan);
 
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
         OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
