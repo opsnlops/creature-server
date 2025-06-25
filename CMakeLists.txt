@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.3.7"
+        VERSION "2.4.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -110,6 +110,14 @@ FetchContent_Declare(
         json
         URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
 FetchContent_MakeAvailable(json)
+
+# uvgRTP
+FetchContent_Declare(
+  uvgrtp
+  GIT_REPOSITORY https://github.com/ultravideo/uvgRTP.git
+  GIT_TAG        v3.1.6
+)
+FetchContent_MakeAvailable(uvgrtp)
 
 # Google Test
 FetchContent_Declare(
@@ -347,6 +355,8 @@ add_executable(creature-server
         src/server/ws/messaging/SensorReportHandler.cpp
         src/util/ObservabilityManager.h
         src/util/ObservabilityManager.cpp
+        src/server/rtp/RtpServer.cpp
+        src/server/rtp/RtpServer.h
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
@@ -383,6 +393,7 @@ target_link_libraries(creature-server
         e131_service
         CreatureVoicesLib
         Threads::Threads
+        uvgrtp
         ${MONGO_SYSTEM_LIBS}
 )
 

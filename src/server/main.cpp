@@ -20,6 +20,9 @@
 // MoodyCamel
 #include "blockingconcurrentqueue.h"
 
+// uvgrtp
+#include "uvgrtp/version.hh"
+
 // Our stuff
 #include "model/PlaylistStatus.h"
 #include "server/config.h"
@@ -31,6 +34,7 @@
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/StatusLights.h"
+#include "server/rtp/RtpServer.h"
 #include "Version.h"
 #include "util/cache.h"
 #include "util/loggingUtils.h"
@@ -79,6 +83,9 @@ namespace creatures {
 
     // Observability manager for tracing and metrics
     std::shared_ptr<ObservabilityManager> observability;
+
+    // RTP server for handling real-time protocol streaming
+    std::shared_ptr<rtp::RtpServer> rtpServer;
 }
 
 
@@ -140,6 +147,7 @@ int main(const int argc, char **argv) {
     debug("fmt version {}", FMT_VERSION);
     debug("SDL version {}.{}.{}", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
     debug("Sound file location: {}", creatures::config->getSoundFileLocation());
+    debug("uvgrtp version {}", uvgrtp::get_version());
 
     // Create the observability manager
     creatures::observability = std::make_shared<creatures::ObservabilityManager>();
@@ -199,6 +207,11 @@ int main(const int argc, char **argv) {
     // Signal that we're online
     creatures::gpioPins->serverOnline(true);
 
+    // Start the RtpServer
+    creatures::rtpServer = std::make_shared<creatures::rtp::RtpServer>();
+    creatures::rtpServer->start();
+
+
     // Bring the E131Server online
     creatures::e131Server = std::make_shared<creatures::e131::E131Server>();
     creatures::e131Server->init(creatures::config->getNetworkDevice(), version);
@@ -248,6 +261,9 @@ int main(const int argc, char **argv) {
 
     // Stop the websocket server
     webServer->shutdown();
+
+    // Stop the RTP server
+    creatures::rtpServer->stop();
 
     creatures::gpioPins->serverOnline(false);
     creatures::statusLights->shutdown();
