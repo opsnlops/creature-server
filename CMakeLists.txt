@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.4.0"
+        VERSION "2.4.1"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -357,6 +357,10 @@ add_executable(creature-server
         src/util/ObservabilityManager.cpp
         src/server/rtp/RtpServer.cpp
         src/server/rtp/RtpServer.h
+        src/server/rtp/AudioStreamBuffer.cpp
+        src/server/rtp/AudioStreamBuffer.h
+        src/server/rtp/MultiChannelAudioHeader.h
+        src/server/rtp/AudioChunk.h
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)

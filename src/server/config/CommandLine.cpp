@@ -1,5 +1,3 @@
-
-
 #include <arpa/inet.h>
 #include <cstdio>
 #include <ifaddrs.h>
@@ -88,6 +86,11 @@ namespace creatures {
                 .default_value(environmentToString(HONEYCOMB_API_KEY_ENV, DEFAULT_HONEYCOMB_API_KEY))
                 .nargs(1);
 
+        program.add_argument("--rtp-fragment")
+                .help("enable RTP packet fragmentation for standard MTU networks (WiFi, etc.)")
+                .default_value(environmentToInt(RTP_FRAGMENT_PACKETS_ENV, DEFAULT_RTP_FRAGMENT_PACKETS) == 1)
+                .implicit_value(true);
+
         auto &oneShots = program.add_mutually_exclusive_group();
         oneShots.add_argument("--list-sound-devices")
                 .help("list available sound devices and exit")
@@ -96,6 +99,20 @@ namespace creatures {
 
         oneShots.add_argument("--list-network-devices")
                 .help("list available network devices and exit")
+                .default_value(false)
+                .implicit_value(true);
+
+        /*
+         * We can only use one of these two audio modes at a time, so we use a mutually exclusive group.
+         */
+        auto &audioMode = program.add_mutually_exclusive_group();
+        audioMode.add_argument("--local-audio")
+                .help("use local audio playback (default)")
+                .default_value(true)
+                .implicit_value(true);
+
+        audioMode.add_argument("--rtp-audio")
+                .help("use RTP audio streaming")
                 .default_value(false)
                 .implicit_value(true);
 
@@ -132,6 +149,23 @@ namespace creatures {
             std::exit(0);
         }
 
+
+        // What audio mode are we using?
+         if(program.get<bool>("--rtp-audio")) {
+            config->setAudioMode(Configuration::AudioMode::RTP);
+            debug("using RTP audio streaming");
+        }
+        else {
+           config->setAudioMode(Configuration::AudioMode::Local);
+            debug("using local audio playback");
+        }
+
+        // RTP fragmentation setting
+        auto rtpFragment = program.get<bool>("--rtp-fragment");
+        config->setRtpFragmentPackets(rtpFragment);
+        debug("RTP packet fragmentation: {}", rtpFragment ? "enabled" : "disabled");
+
+        // Set the GPIO usage
         auto useGPIO = program.get<bool>("-g");
         debug("read use GPIO {} from command line", useGPIO);
         if(useGPIO) {
@@ -146,11 +180,14 @@ namespace creatures {
             debug("set our mongo URI to {}", mongoURI);
         }
 
-        auto soundDevice = program.get<int>("-s");
-        debug("read sound device {} from command line", soundDevice);
-        if(soundDevice >= 0) {
-            config->setSoundDevice(soundDevice);
-            debug("set our sound device to {}", soundDevice);
+        if(config->getAudioMode() == Configuration::AudioMode::Local) {
+            debug("Local audio mode selected, setting local audio playback device");
+            auto soundDevice = program.get<int>("-s");
+            debug("read sound device {} from command line", soundDevice);
+            if(soundDevice >= 0) {
+                config->setSoundDevice(soundDevice);
+                debug("set our sound device to {}", soundDevice);
+            }
         }
 
         auto soundChannels = program.get<int>("-c");
@@ -202,9 +239,6 @@ namespace creatures {
             std::cerr << "Error: " << e.what() << std::endl;
             std::exit(1);
         }
-
-
-
 
         return config;
     }

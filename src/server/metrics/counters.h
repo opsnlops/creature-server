@@ -78,6 +78,11 @@ namespace creatures {
         }
         DTO_FIELD(UInt64, restRequestsProcessed);
 
+        DTO_FIELD_INFO(rtpEventsProcessed) {
+            info->description = "Number of RTP events that have been processed";
+        }
+        DTO_FIELD(UInt64, rtpEventsProcessed);
+
         DTO_FIELD_INFO(soundFilesServed) {
             info->description = "Number of sound files that have been served";
         }
@@ -130,6 +135,7 @@ namespace creatures {
         void incrementPlaylistsStopped();
         void incrementPlaylistsEventsProcessed();
         void incrementPlaylistStatusRequests();
+        void incrementRtpEventsProcessed();
         void incrementRestRequestsProcessed();
         void incrementSoundFilesServed();
         void incrementWebsocketConnectionsProcessed();
@@ -151,6 +157,7 @@ namespace creatures {
         uint64_t getPlaylistsEventsProcessed();
         uint64_t getPlaylistStatusRequests();
         uint64_t getRestRequestsProcessed();
+        uint64_t getRtpEventsProcessed();
         uint64_t getSoundFilesServed();
         uint64_t getWebsocketConnectionsProcessed();
         uint64_t getWebsocketMessagesReceived();
@@ -176,6 +183,7 @@ namespace creatures {
         std::atomic<uint64_t> playlistStatusRequests;
         std::atomic<uint64_t> restRequestsProcessed;
         std::atomic<uint64_t> soundFilesServed;
+        std::atomic<uint64_t> rtpEventsProcessed;
         std::atomic<uint64_t> websocketConnectionsProcessed;
         std::atomic<uint64_t> websocketMessagesReceived;
         std::atomic<uint64_t> websocketMessagesSent;

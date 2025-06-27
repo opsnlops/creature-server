@@ -112,6 +112,7 @@ private:
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistsEventsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistStatusRequestsCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> restRequestsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpEventsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> soundFilesServedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketConnectionsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketMessagesReceivedCounter_;
@@ -209,6 +210,11 @@ public:
      */
     void setAttribute(const std::string& key, const std::string& value);
     void setAttribute(const std::string& key, int64_t value);
+    void setAttribute(const std::string& key, double value);
+    void setAttribute(const std::string& key, int value);
+    void setAttribute(const std::string& key, uint8_t value);
+    void setAttribute(const std::string& key, uint16_t value);
+    void setAttribute(const std::string& key, uint32_t value);
     void setAttribute(const std::string& key, bool value);
 
     /**

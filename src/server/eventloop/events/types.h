@@ -9,6 +9,8 @@
 #include "server/config.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/event.h"
+#include "server/rtp/AudioChunk.h"
+#include "server/rtp/AudioStreamBuffer.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -18,6 +20,7 @@ namespace creatures {
     class TickEvent : public EventBase<TickEvent> {
     public:
         using EventBase::EventBase;
+
         void executeImpl();
 
         virtual ~TickEvent() = default;
@@ -26,6 +29,7 @@ namespace creatures {
     class CounterSendEvent : public EventBase<CounterSendEvent> {
     public:
         using EventBase::EventBase;
+
         void executeImpl();
 
         virtual ~CounterSendEvent() = default;
@@ -34,7 +38,9 @@ namespace creatures {
     class DMXEvent : public EventBase<DMXEvent> {
     public:
         using EventBase::EventBase;
+
         virtual ~DMXEvent() = default;
+
         void executeImpl();
 
         universe_t universe;
@@ -47,29 +53,51 @@ namespace creatures {
     class MusicEvent : public EventBase<MusicEvent> {
     public:
         using EventBase::EventBase;
+
         MusicEvent(framenum_t frameNumber, std::string filePath);
+
         virtual ~MusicEvent() = default;
+
         void executeImpl();
 
         static int initSDL();
+
         static int locateAudioDevice();
+
         static void listAudioDevices();
 
     private:
         std::string filePath;
         std::mutex sdl_mutex;
+
+        /**
+         * Play audio locally through SDL (traditional mode)
+         * @param parentSpan Optional observability span for tracing
+         */
+        void playLocalAudio(std::shared_ptr<class OperationSpan> parentSpan = nullptr);
+
+        /**
+         * Schedule RTP audio chunks in the event loop (new streaming mode)
+         * @param parentSpan Optional observability span for tracing
+         */
+        void scheduleRtpAudio(std::shared_ptr<class OperationSpan> parentSpan = nullptr);
     };
 
     class PlaylistEvent : public EventBase<PlaylistEvent> {
     public:
         using EventBase::EventBase;
+
         PlaylistEvent(framenum_t frameNumber, universe_t universe);
+
         virtual ~PlaylistEvent() = default;
+
         void executeImpl();
 
     private:
         universe_t activeUniverse;
+
         static void sendEmptyPlaylistUpdate(universe_t universe);
+
         static void sendPlaylistUpdate(const PlaylistStatus &playlistStatus);
     };
 
@@ -86,8 +114,11 @@ namespace creatures {
     class StatusLightEvent : public EventBase<StatusLightEvent> {
     public:
         using EventBase::EventBase;
+
         StatusLightEvent(framenum_t frameNumber, StatusLight light, bool on);
+
         virtual ~StatusLightEvent() = default;
+
         void executeImpl();
 
     private:
@@ -99,12 +130,43 @@ namespace creatures {
     class CacheInvalidateEvent : public EventBase<CacheInvalidateEvent> {
     public:
         using EventBase::EventBase;
+
         CacheInvalidateEvent(framenum_t frameNumber, CacheType cacheType);
+
         virtual ~CacheInvalidateEvent() = default;
+
         void executeImpl();
 
     private:
         CacheType cacheType;
+    };
+
+    /**
+     * Event for sending a single RTP audio chunk containing ALL channels
+     */
+    class RtpAudioChunkEvent : public EventBase<RtpAudioChunkEvent> {
+    public:
+        RtpAudioChunkEvent(framenum_t frameNumber);
+
+        virtual ~RtpAudioChunkEvent() = default;
+
+        void executeImpl();
+
+        /**
+         * Set the audio payload for this chunk event
+         * @param payload The multi-channel audio data with header
+         */
+        void setAudioPayload(std::vector<uint8_t> payload) {
+            audioPayload = std::move(payload);
+        }
+
+        /**
+         * Get the size of the audio payload
+         */
+        size_t getPayloadSize() const { return audioPayload.size(); }
+
+    private:
+        std::vector<uint8_t> audioPayload;
     };
 
 }

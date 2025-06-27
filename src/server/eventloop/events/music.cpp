@@ -3,7 +3,6 @@
 #include <fstream>
 #include <string>
 #include <thread>
-#include <vector>
 
 #include <SDL.h>
 #include <SDL_mixer.h>
@@ -13,9 +12,10 @@
 #include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/eventloop/events/types.h"
+#include "server/eventloop/eventloop.h"
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
-#include "util/environment.h"
+#include "server/rtp/AudioStreamBuffer.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -23,13 +23,16 @@
 namespace creatures {
 
     extern const char* audioDevice;
-    extern SDL_AudioSpec audioSpec;
+    extern SDL_AudioSpec localAudioDeviceAudioSpec;
     extern std::shared_ptr<Configuration> config;
     extern std::shared_ptr<GPIO> gpioPins;
     extern std::shared_ptr<SystemCounters> metrics;
+    extern std::shared_ptr<EventLoop> eventLoop;
+    extern std::shared_ptr<ObservabilityManager> observability;
 
     /**
-     * This event type plays a sound file on a thread in the background
+     * This event type plays a sound file, either locally via SDL or over RTP
+     * depending on the configured audio mode
      */
     MusicEvent::MusicEvent(framenum_t frameNumber, std::string filePath)
             : EventBase(frameNumber), filePath(std::move(filePath)) {}
@@ -62,8 +65,38 @@ namespace creatures {
             return;
         }
 
-        // Looks good, start the thread
-        std::thread([filePath = this->filePath] {
+        // Create observability span for this music event
+        auto span = observability->createOperationSpan("music_event.execute");
+        span->setAttribute("file_path", filePath);
+
+        // Handle different audio modes
+        Configuration::AudioMode audioMode = config->getAudioMode();
+
+        if (audioMode == Configuration::AudioMode::Local) {
+            debug("Using local audio playback mode");
+            span->setAttribute("audio_mode", "local");
+            playLocalAudio(span);
+        } else if (audioMode == Configuration::AudioMode::RTP) {
+            debug("Using RTP streaming mode");
+            span->setAttribute("audio_mode", "rtp");
+            scheduleRtpAudio(span);
+        }
+
+        span->setSuccess();
+    }
+
+    void MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> parentSpan) {
+
+        if(!parentSpan) {
+            warn("No parent span provided for MusicEvent.playLocalAudio, creating a root span");
+            parentSpan = observability->createOperationSpan("music_event.play_local_audio");
+        }
+
+        auto span = observability->createChildOperationSpan("music_event.play_local", parentSpan);
+        span->setAttribute("file_path", filePath);
+
+        // This is your existing SDL-based audio playback in a thread
+        std::thread([filePath = this->filePath, span] {
 
             info("music playing thread running for file {}", filePath);
             Mix_Music *music;
@@ -71,12 +104,16 @@ namespace creatures {
             // Signal that we're playing music
             gpioPins->playingSound(true);
 
-            // Only one file can be playing at once...
-            //std::lock_guard<std::mutex> lock(sdl_mutex);
-
-            // Initialize SDL_mixer for stereo sound (set channels to 6 for 5.1)
-            if (Mix_OpenAudioDevice(audioSpec.freq, audioSpec.format, audioSpec.channels, SOUND_BUFFER_SIZE, audioDevice, 1) < 0) {
-                error("Failed to initialize SDL_mixer: {}", Mix_GetError());
+            // Initialize SDL_mixer for local audio device
+            if (Mix_OpenAudioDevice(localAudioDeviceAudioSpec.freq,
+                                    localAudioDeviceAudioSpec.format,
+                                    localAudioDeviceAudioSpec.channels,
+                                    SOUND_BUFFER_SIZE,
+                                    audioDevice,
+                                    1) < 0) {
+                std::string errorMessage = fmt::format("Failed to open audio device: {}", Mix_GetError());
+                error(errorMessage);
+                span->setError(errorMessage);
                 goto end;
             }
 
@@ -86,16 +123,21 @@ namespace creatures {
             // Load the file
             music = Mix_LoadMUS(filePath.c_str());
             if (!music) {
-                error("Failed to load music: {}", Mix_GetError());
+                std::string errorMessage = fmt::format("Failed to load music file {}: {}", filePath, Mix_GetError());
+                error(errorMessage);
+                span->setError(errorMessage);
                 goto end;
             }
 
             // Log the expected length
             debug("file is {0:.3f} seconds long", Mix_MusicDuration(music));
+            span->setAttribute("duration_seconds", Mix_MusicDuration(music));
 
             // Play the music.
             if (Mix_PlayMusic(music, 1) == -1) {
-                error("Failed to play music: {}", Mix_GetError());
+                std::string errorMessage = fmt::format("Failed to play music: {}", Mix_GetError());
+                error(errorMessage);
+                span->setError(errorMessage);
                 goto end;
             }
 
@@ -106,14 +148,79 @@ namespace creatures {
 
             // Clean up!
             Mix_FreeMusic(music);
-
             metrics->incrementSoundsPlayed();
+            span->setSuccess();
 
             end:
             info("goodbye from the music thread! 👋🏻");
             gpioPins->playingSound(false);
 
         }).detach();
+    }
+
+    void MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> parentSpan) {
+
+        if(!parentSpan) {
+            warn("No parent span provided for MusicEvent.scheduleRtpAudio, creating a root span");
+            parentSpan = observability->createOperationSpan("music_event.schedule_rtp_audio");
+        }
+
+        auto span = observability->createChildOperationSpan("music_event.schedule_rtp", parentSpan);
+        span->setAttribute("file_path", filePath);
+
+        info("Loading audio file for RTP streaming: {}", filePath);
+
+        // Load the audio file and prepare for RTP streaming
+        auto audioBuffer = std::make_unique<rtp::AudioStreamBuffer>();
+        if (!audioBuffer->loadFile(filePath, span)) {
+            error("Failed to load audio file for RTP streaming: {}", filePath);
+            span->setError("Failed to load audio file");
+            return;
+        }
+
+        size_t chunkCount = audioBuffer->getChunkCount();
+        uint32_t duration = audioBuffer->getDurationMs();
+
+        span->setAttribute("chunk_count", static_cast<int64_t>(chunkCount));
+        span->setAttribute("duration_ms", duration);
+        span->setAttribute("chunk_size_ms", RTP_FRAME_MS);
+
+        info("Scheduling {} RTP audio chunks over {}ms ({}ms per chunk)",
+             chunkCount, duration, RTP_FRAME_MS);
+
+        // Calculate frame interval for chunks (convert ms to frames)
+        framenum_t framesPerChunk = RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;  // 5ms / 1ms = 5 frames
+        framenum_t currentFrame = frameNumber + 10;  // Small delay to ensure proper ordering
+
+        // Schedule all chunks in the event loop - this is the magic! 🐰
+        for (size_t chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex) {
+            const auto* chunk = audioBuffer->getChunk(chunkIndex);
+            if (!chunk) {
+                warn("Failed to get chunk {} for RTP scheduling", chunkIndex);
+                continue;
+            }
+
+            // Create the multi-channel payload for this chunk
+            auto payload = rtp::AudioStreamBuffer::createMultiChannelPayload(
+                chunk, currentFrame, span);
+
+            // Create an RTP event for this chunk
+            auto rtpEvent = std::make_shared<RtpAudioChunkEvent>(currentFrame);
+            rtpEvent->setAudioPayload(std::move(payload));
+
+            // Schedule it in the event loop
+            eventLoop->scheduleEvent(rtpEvent);
+
+            // Advance to the next chunk time
+            currentFrame += framesPerChunk;
+        }
+
+        span->setAttribute("frames_scheduled", static_cast<int64_t>(chunkCount));
+        span->setAttribute("total_duration_frames", static_cast<int64_t>(currentFrame - frameNumber));
+        span->setSuccess();
+
+        info("Successfully scheduled {} RTP audio chunks for streaming", chunkCount);
+        metrics->incrementSoundsPlayed();  // Count RTP sounds too
     }
 
 
@@ -139,13 +246,13 @@ namespace creatures {
 
         debug("opening the audio device");
 
-        audioSpec = SDL_AudioSpec();
-        audioSpec.freq = (int)config->getSoundFrequency();
-        audioSpec.channels = config->getSoundChannels();
-        audioSpec.format = AUDIO_F32SYS;
-        audioSpec.samples = SOUND_BUFFER_SIZE;
-        audioSpec.callback = nullptr;
-        audioSpec.userdata = nullptr;
+        localAudioDeviceAudioSpec = SDL_AudioSpec();
+        localAudioDeviceAudioSpec.freq = (int)config->getSoundFrequency();
+        localAudioDeviceAudioSpec.channels = config->getSoundChannels();
+        localAudioDeviceAudioSpec.format = AUDIO_F32SYS;
+        localAudioDeviceAudioSpec.samples = SOUND_BUFFER_SIZE;
+        localAudioDeviceAudioSpec.callback = nullptr;
+        localAudioDeviceAudioSpec.userdata = nullptr;
 
         // Get the name of the default
         audioDevice = SDL_GetAudioDeviceName(config->getSoundDevice(), 0);

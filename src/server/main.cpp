@@ -75,7 +75,7 @@ namespace creatures {
     std::shared_ptr<SystemCounters> metrics;
     std::shared_ptr<StatusLights> statusLights;
     const char* audioDevice;
-    SDL_AudioSpec audioSpec;
+    SDL_AudioSpec localAudioDeviceAudioSpec;
     std::atomic serverShouldRun{true};
 
     // MoodyCamel queue for outgoing websocket messages
@@ -208,8 +208,10 @@ int main(const int argc, char **argv) {
     creatures::gpioPins->serverOnline(true);
 
     // Start the RtpServer
-    creatures::rtpServer = std::make_shared<creatures::rtp::RtpServer>();
-    creatures::rtpServer->start();
+    if(creatures::config->getAudioMode() == creatures::Configuration::AudioMode::RTP) {
+        creatures::rtpServer = std::make_shared<creatures::rtp::RtpServer>();
+        creatures::rtpServer->start();
+    }
 
 
     // Bring the E131Server online
@@ -263,7 +265,9 @@ int main(const int argc, char **argv) {
     webServer->shutdown();
 
     // Stop the RTP server
-    creatures::rtpServer->stop();
+    if(creatures::rtpServer) {
+        creatures::rtpServer->stop();
+    }
 
     creatures::gpioPins->serverOnline(false);
     creatures::statusLights->shutdown();

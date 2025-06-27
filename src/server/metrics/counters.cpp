@@ -16,6 +16,7 @@ namespace creatures {
         playlistsEventsProcessed = 0;
         playlistStatusRequests = 0;
         restRequestsProcessed = 0;
+        rtpEventsProcessed = 0;
         soundFilesServed = 0;
         websocketConnectionsProcessed = 0;
         websocketMessagesReceived = 0;
@@ -66,6 +67,10 @@ namespace creatures {
 
     void SystemCounters::incrementRestRequestsProcessed() {
         restRequestsProcessed++;
+    }
+
+    void SystemCounters::incrementRtpEventsProcessed() {
+        rtpEventsProcessed++;
     }
 
     void SystemCounters::incrementSoundFilesServed() {
@@ -139,6 +144,10 @@ namespace creatures {
 
     uint64_t SystemCounters::getRestRequestsProcessed() {
         return restRequestsProcessed.load();
+    }
+
+    uint64_t SystemCounters::getRtpEventsProcessed() {
+        return rtpEventsProcessed.load();
     }
 
     uint64_t SystemCounters::getSoundFilesServed() {

@@ -198,6 +198,12 @@ void ObservabilityManager::initializeMetricInstruments() {
         "requests"
     );
 
+    rtpEventsProcessedCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_rtp_events_processed",
+        "Total number of RTP audio chunk events processed",
+        "events"
+    );
+
     soundFilesServedCounter_ = meter_->CreateUInt64Counter(
         "creature_server_sound_files_served",
         "Total number of sound files served",
@@ -257,6 +263,7 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters>& 
     static std::atomic<uint64_t> lastPlaylistsEventsProcessed{0};
     static std::atomic<uint64_t> lastPlaylistStatusRequests{0};
     static std::atomic<uint64_t> lastRestRequestsProcessed{0};
+    static std::atomic<uint64_t> lastRtpEventsProcessed{0};
     static std::atomic<uint64_t> lastSoundFilesServed{0};
     static std::atomic<uint64_t> lastWebsocketConnectionsProcessed{0};
     static std::atomic<uint64_t> lastWebsocketMessagesReceived{0};
@@ -308,6 +315,10 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters>& 
     uint64_t currentRestRequestsProcessed = metrics->getRestRequestsProcessed();
     uint64_t deltaRestRequestsProcessed = currentRestRequestsProcessed - lastRestRequestsProcessed.exchange(currentRestRequestsProcessed);
     if (deltaRestRequestsProcessed > 0) restRequestsProcessedCounter_->Add(deltaRestRequestsProcessed);
+
+    uint64_t currentRtpEventsProcessed = metrics->getRtpEventsProcessed();
+    uint64_t deltaRtpEventsProcessed = currentRtpEventsProcessed - lastRtpEventsProcessed.exchange(currentRtpEventsProcessed);
+    if (deltaRtpEventsProcessed > 0) rtpEventsProcessedCounter_->Add(deltaRtpEventsProcessed);
 
     uint64_t currentSoundFilesServed = metrics->getSoundFilesServed();
     uint64_t deltaSoundFilesServed = currentSoundFilesServed - lastSoundFilesServed.exchange(currentSoundFilesServed);
@@ -483,6 +494,26 @@ void OperationSpan::setAttribute(const std::string& key, const std::string& valu
 }
 
 void OperationSpan::setAttribute(const std::string& key, int64_t value) {
+    if (span_) span_->SetAttribute(key, value);
+}
+
+void OperationSpan::setAttribute(const std::string& key, int value) {
+    if (span_) span_->SetAttribute(key, value);
+}
+
+void OperationSpan::setAttribute(const std::string& key, double value) {
+    if (span_) span_->SetAttribute(key, value);
+}
+
+void OperationSpan::setAttribute(const std::string& key, uint8_t value) {
+    if (span_) span_->SetAttribute(key, value);
+}
+
+void OperationSpan::setAttribute(const std::string& key, uint16_t value) {
+    if (span_) span_->SetAttribute(key, value);
+}
+
+void OperationSpan::setAttribute(const std::string& key, uint32_t value) {
     if (span_) span_->SetAttribute(key, value);
 }
 
