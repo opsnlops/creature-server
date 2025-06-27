@@ -359,8 +359,8 @@ add_executable(creature-server
         src/server/rtp/AudioStreamBuffer.h
         src/server/rtp/MultiChannelAudioHeader.h
         src/server/rtp/AudioChunk.h
-        src/server/rtp/RtspServer.cpp
-        src/server/rtp/RtspServer.h
+        src/server/rtp/RtpServer.cpp
+        src/server/rtp/RtpServer.h
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)

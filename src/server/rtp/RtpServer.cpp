@@ -1,5 +1,5 @@
 //
-// RtspServer.cpp
+// RtpServer.cpp
 //
 
 #include <uvgrtp/lib.hh>
@@ -9,7 +9,7 @@
 #include "server/config/Configuration.h"
 #include "server/namespace-stuffs.h"
 
-#include "RtspServer.h"
+#include "RtpServer.h"
 
 namespace creatures {
     extern std::shared_ptr<Configuration> config;
@@ -17,13 +17,13 @@ namespace creatures {
 
 namespace creatures :: rtp {
 
-    void RtspServer::start() {
-        info("🐰 Starting RTSP server for multi-channel audio streaming");
+    void RtpServer::start() {
+        info("Starting RTP server for 17-channel audio streaming");
 
         // Create session using multicast for the RTP stream
         session = ctx.create_session(RTP_MULTICAST_GROUP);
         if (!session) {
-            error("Failed to create RTSP session");
+            error("Failed to create RTP session");
             return;
         }
 
@@ -36,9 +36,9 @@ namespace creatures :: rtp {
             info("RTP packet fragmentation disabled (assuming jumbo frame support)");
         }
 
-        // Create RTP stream for audio
+        // Create RTP stream for audio - provide destination port for SEND_ONLY mode
         rtpStream = session->create_stream(
-            RTP_PORT, RTP_PORT + 1,  // RTP port, RTCP port
+            RTP_PORT, RTP_PORT,  // RTP port for both local and destination
             RTP_FORMAT_GENERIC,
             sendFlags
         );
@@ -61,12 +61,12 @@ namespace creatures :: rtp {
             rtpStream->configure_ctx(RCC_MTU_SIZE, 9000);  // Jumbo frame MTU
         }
 
-        info("🎵 RTSP server configured successfully!");
-        info("  • Multicast RTP: {}:{} (RTCP: {})", RTP_MULTICAST_GROUP, RTP_PORT, RTP_PORT + 1);
+        info("🎵 RTP server configured successfully!");
+        info("  • Multicast RTP: {}:{}", RTP_MULTICAST_GROUP, RTP_PORT);
         info("  • Format: L16 {} channels at {}Hz", RTP_STREAMING_CHANNELS, RTP_SRATE);
         info("  • Chunk size: {}ms ({} samples)", RTP_FRAME_MS, RTP_SAMPLES);
         info("  • Payload type: 97 (L16 dynamic)");
-        info("  • RTSP URL: {}", getRtspUrl());
+        info("  • Stream URL: {}", getMulticastUrl());
 
         // Log the SDP for easy access
         info("📄 SDP Description (save as creatures-audio.sdp):");
@@ -80,11 +80,11 @@ namespace creatures :: rtp {
         }
         info("---");
 
-        debug("RTSP server ready - time to hop into action! 🐰");
+        debug("RTP server ready - time to hop into action! 🐰");
     }
 
-    void RtspServer::stop() {
-        info("Stopping RTSP server - hopping away! 🐰");
+    void RtpServer::stop() {
+        info("Stopping RTP server - hopping away! 🐰");
 
         if (rtpStream && session) {
             session->destroy_stream(rtpStream);
@@ -96,12 +96,12 @@ namespace creatures :: rtp {
             session = nullptr;
         }
 
-        info("RTSP server stopped");
+        info("RTP server stopped");
     }
 
-    rtp_error_t RtspServer::sendMultiChannelAudio(const uint8_t* data, size_t size) {
+    rtp_error_t RtpServer::sendMultiChannelAudio(const uint8_t* data, size_t size) {
         if (!rtpStream) {
-            warn("Cannot send audio - RTSP/RTP stream not initialized");
+            warn("Cannot send audio - RTP stream not initialized");
             return RTP_INVALID_VALUE;
         }
 
@@ -130,25 +130,23 @@ namespace creatures :: rtp {
         rtp_error_t result = rtpStream->push_frame(const_cast<uint8_t*>(data), size, RTP_NO_FLAGS);
 
         if (result != RTP_OK) {
-            warn("Failed to send RTSP/RTP audio packet: error {}", static_cast<int>(result));
+            warn("Failed to send RTP audio packet: error {}", static_cast<int>(result));
         } else {
-            trace("Successfully sent L16 audio via RTSP - pure carrot-quality audio! 🥕");
+            trace("Successfully sent L16 audio via RTP - pure carrot-quality audio! 🥕");
         }
 
         return result;
     }
 
-    std::string RtspServer::getRtspUrl() const {
-        // For multicast, the URL would typically point to an RTSP server
-        // Since we're doing direct multicast RTP, provide the multicast URL
-        return fmt::format("rtsp://{}:{}/creatures-audio", RTP_MULTICAST_GROUP, RTP_PORT);
+    std::string RtpServer::getMulticastUrl() const {
+        return fmt::format("rtp://{}:{}", RTP_MULTICAST_GROUP, RTP_PORT);
     }
 
-    std::string RtspServer::getSdpDescription() const {
+    std::string RtpServer::getSdpDescription() const {
         return generateSdp();
     }
 
-    std::string RtspServer::generateSdp() const {
+    std::string RtpServer::generateSdp() const {
         // Generate RFC 4566 compliant SDP for our 17-channel L16 audio stream
         std::string sdp = fmt::format(
             "v=0\r\n"                                                    // Version
@@ -158,11 +156,11 @@ namespace creatures :: rtp {
             "c=IN IP4 {}/255\r\n"                                      // Connection (multicast)
             "t=0 0\r\n"                                                 // Time (permanent session)
             "a=tool:creatures-server\r\n"                              // Tool
+            "a=type:broadcast\r\n"                                     // Session type
             "m=audio {} RTP/AVP 97\r\n"                               // Media (audio, port, protocol, payload type)
             "a=rtpmap:97 L16/{}/{}\r\n"                               // RTP map (payload type, encoding, sample rate, channels)
             "a=fmtp:97 channel-order=FL,FR,FC,LFE,BL,BR,FLC,FRC,BC,SL,SR,TC,TFL,TFC,TFR,TBL,TBR\r\n"  // Channel layout
-            "a=control:trackID=1\r\n"
-            "a=sendonly\r\n",
+            "a=sendonly\r\n",                                         // Direction
             RTP_MULTICAST_GROUP,                                       // Origin IP
             RTP_MULTICAST_GROUP,                                       // Multicast IP
             RTP_PORT,                                                  // Port

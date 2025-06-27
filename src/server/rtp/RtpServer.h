@@ -1,5 +1,5 @@
 //
-// RtspServer.h
+// RtpServer.h
 //
 
 #pragma once
@@ -9,17 +9,28 @@
 
 namespace creatures :: rtp {
 
-    class RtspServer {
+    /**
+     * Simple RTP server for multicast audio streaming
+     * No RTSP overhead - just pure RTP goodness! 🐰
+     */
+    class RtpServer {
 
     public:
-        RtspServer() = default;
-        ~RtspServer() = default;
+        RtpServer() = default;
+        ~RtpServer() = default;
 
+        /**
+         * Start the RTP multicast stream
+         */
         void start();
+
+        /**
+         * Stop the RTP stream
+         */
         void stop();
 
         /**
-         * Send multi-channel audio data over RTP (via RTSP session)
+         * Send multi-channel audio data over RTP
          *
          * @param data Raw 16-bit interleaved PCM audio payload
          * @param size Size of the payload in bytes
@@ -28,20 +39,21 @@ namespace creatures :: rtp {
         rtp_error_t sendMultiChannelAudio(const uint8_t* data, size_t size);
 
         /**
-         * Check if the RTSP/RTP stream is ready for sending
+         * Check if the RTP stream is ready for sending
          */
         bool isReady() const { return rtpStream != nullptr; }
 
         /**
          * Get the SDP description for this audio stream
-         * This can be saved to a .sdp file or served via HTTP
+         * Clients can use this to configure their receivers
          */
         std::string getSdpDescription() const;
 
         /**
-         * Get the RTSP URL for this stream
+         * Get the multicast URL for this stream
+         * Format: rtp://multicast_ip:port
          */
-        std::string getRtspUrl() const;
+        std::string getMulticastUrl() const;
 
     private:
         uvgrtp::context         ctx;

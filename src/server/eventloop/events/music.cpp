@@ -16,6 +16,7 @@
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
 #include "server/rtp/AudioStreamBuffer.h"
+#include "server/rtp/RtpServer.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -29,9 +30,10 @@ namespace creatures {
     extern std::shared_ptr<SystemCounters> metrics;
     extern std::shared_ptr<EventLoop> eventLoop;
     extern std::shared_ptr<ObservabilityManager> observability;
+    extern std::shared_ptr<rtp::RtpServer> rtpServer;
 
     /**
-     * This event type plays a sound file, either locally via SDL or over RTSP/RTP
+     * This event type plays a sound file, either locally via SDL or over RTP
      * depending on the configured audio mode
      */
     MusicEvent::MusicEvent(framenum_t frameNumber, std::string filePath)
@@ -77,9 +79,9 @@ namespace creatures {
             span->setAttribute("audio_mode", "local");
             playLocalAudio(span);
         } else if (audioMode == Configuration::AudioMode::RTP) {
-            debug("Using RTSP/RTP streaming mode");
-            span->setAttribute("audio_mode", "rtsp_rtp");
-            scheduleRtspAudio(span);
+            debug("Using RTP streaming mode");
+            span->setAttribute("audio_mode", "rtp");
+            scheduleRtpAudio(span);
         }
 
         span->setSuccess();
@@ -158,22 +160,22 @@ namespace creatures {
         }).detach();
     }
 
-    void MusicEvent::scheduleRtspAudio(std::shared_ptr<OperationSpan> parentSpan) {
+    void MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> parentSpan) {
 
         if(!parentSpan) {
-            warn("No parent span provided for MusicEvent.scheduleRtspAudio, creating a root span");
-            parentSpan = observability->createOperationSpan("music_event.schedule_rtsp_audio");
+            warn("No parent span provided for MusicEvent.scheduleRtpAudio, creating a root span");
+            parentSpan = observability->createOperationSpan("music_event.schedule_rtp_audio");
         }
 
-        auto span = observability->createChildOperationSpan("music_event.schedule_rtsp", parentSpan);
+        auto span = observability->createChildOperationSpan("music_event.schedule_rtp", parentSpan);
         span->setAttribute("file_path", filePath);
 
-        info("Loading audio file for RTSP/RTP streaming: {}", filePath);
+        info("Loading audio file for RTP streaming: {}", filePath);
 
-        // Load the audio file and prepare for RTSP/RTP streaming
+        // Load the audio file and prepare for RTP streaming
         auto audioBuffer = std::make_unique<rtp::AudioStreamBuffer>();
         if (!audioBuffer->loadFile(filePath, span)) {
-            error("Failed to load audio file for RTSP/RTP streaming: {}", filePath);
+            error("Failed to load audio file for RTP streaming: {}", filePath);
             span->setError("Failed to load audio file");
             return;
         }
@@ -185,7 +187,7 @@ namespace creatures {
         span->setAttribute("duration_ms", duration);
         span->setAttribute("chunk_size_ms", RTP_FRAME_MS);
 
-        info("Scheduling {} RTSP/RTP audio chunks over {}ms ({}ms per chunk)",
+        info("Scheduling {} RTP audio chunks over {}ms ({}ms per chunk)",
              chunkCount, duration, RTP_FRAME_MS);
 
         // Calculate frame interval for chunks (convert ms to frames)
@@ -196,7 +198,7 @@ namespace creatures {
         for (size_t chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex) {
             const auto* chunk = audioBuffer->getChunk(chunkIndex);
             if (!chunk) {
-                warn("Failed to get chunk {} for RTSP/RTP scheduling", chunkIndex);
+                warn("Failed to get chunk {} for RTP scheduling", chunkIndex);
                 continue;
             }
 
@@ -204,12 +206,12 @@ namespace creatures {
             auto payload = rtp::AudioStreamBuffer::createMultiChannelPayload(
                 chunk, currentFrame, span);
 
-            // Create an RTSP/RTP event for this chunk
-            auto rtspEvent = std::make_shared<RtspAudioChunkEvent>(currentFrame);
-            rtspEvent->setAudioPayload(std::move(payload));
+            // Create an RTP event for this chunk
+            auto rtpEvent = std::make_shared<RtpAudioChunkEvent>(currentFrame);
+            rtpEvent->setAudioPayload(std::move(payload));
 
             // Schedule it in the event loop
-            eventLoop->scheduleEvent(rtspEvent);
+            eventLoop->scheduleEvent(rtpEvent);
 
             // Advance to the next chunk time
             currentFrame += framesPerChunk;
@@ -219,8 +221,8 @@ namespace creatures {
         span->setAttribute("total_duration_frames", static_cast<int64_t>(currentFrame - frameNumber));
         span->setSuccess();
 
-        info("Successfully scheduled {} RTSP/RTP audio chunks for streaming", chunkCount);
-        metrics->incrementSoundsPlayed();  // Count RTSP sounds too
+        info("Successfully scheduled {} RTP audio chunks for streaming", chunkCount);
+        metrics->incrementSoundsPlayed();  // Count RTP sounds too
     }
 
 
