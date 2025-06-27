@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <cstdlib>
@@ -77,10 +76,10 @@ namespace creatures {
         void playLocalAudio(std::shared_ptr<class OperationSpan> parentSpan = nullptr);
 
         /**
-         * Schedule RTP audio chunks in the event loop (new streaming mode)
+         * Schedule RTSP/RTP audio chunks in the event loop (new streaming mode)
          * @param parentSpan Optional observability span for tracing
          */
-        void scheduleRtpAudio(std::shared_ptr<class OperationSpan> parentSpan = nullptr);
+        void scheduleRtspAudio(std::shared_ptr<class OperationSpan> parentSpan = nullptr);
     };
 
     class PlaylistEvent : public EventBase<PlaylistEvent> {
@@ -141,32 +140,34 @@ namespace creatures {
         CacheType cacheType;
     };
 
-    /**
-     * Event for sending a single RTP audio chunk containing ALL channels
-     */
-    class RtpAudioChunkEvent : public EventBase<RtpAudioChunkEvent> {
-    public:
-        RtpAudioChunkEvent(framenum_t frameNumber);
 
-        virtual ~RtpAudioChunkEvent() = default;
+    /**
+     * Event for sending a single RTSP/RTP audio chunk containing ALL channels
+     * Uses proper L16 format with SDP support for better tool compatibility
+     */
+    class RtspAudioChunkEvent : public EventBase<RtspAudioChunkEvent> {
+    public:
+        RtspAudioChunkEvent(framenum_t frameNumber);
+
+        virtual ~RtspAudioChunkEvent() = default;
 
         void executeImpl();
 
         /**
-         * Set the audio payload for this chunk event
-         * @param payload The multi-channel audio data with header
+         * Set the L16 audio payload for this chunk event
+         * @param payload The pure 16-bit interleaved PCM audio data (no custom headers)
          */
         void setAudioPayload(std::vector<uint8_t> payload) {
             audioPayload = std::move(payload);
         }
 
         /**
-         * Get the size of the audio payload
+         * Get the size of the L16 audio payload
          */
         size_t getPayloadSize() const { return audioPayload.size(); }
 
     private:
-        std::vector<uint8_t> audioPayload;
+        std::vector<uint8_t> audioPayload;  // Pure L16 PCM data for RTSP/RTP
     };
 
 }

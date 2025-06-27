@@ -9,7 +9,6 @@
 
 #include "AudioChunk.h"
 #include "AudioStreamBuffer.h"
-#include "MultiChannelAudioHeader.h"
 
 #include "server/config.h"
 #include "util/ObservabilityManager.h"
@@ -186,39 +185,23 @@ namespace creatures :: rtp {
         }
         auto span = observability->createChildOperationSpan("audio_stream_buffer.create_multi_channel_payload", parentSpan);
 
-        std::vector<uint8_t> payload;
+        // For pure RTP streaming, we just return the raw 16-bit interleaved PCM data
+        // No custom headers! uvgRTP will add the proper RTP headers automatically 🐰
+        std::vector<uint8_t> payload(chunk->getSizeInBytes());
 
-        // Calculate total payload size
-        size_t headerSize = sizeof(MultiChannelAudioHeader);
-        size_t audioDataSize = chunk->getSizeInBytes();  // Already in bytes!
+        // Copy the raw 16-bit interleaved audio data directly
+        std::memcpy(payload.data(), chunk->getRawData(), chunk->getSizeInBytes());
 
-        payload.resize(headerSize + audioDataSize);
+        span->setAttribute("payload_size", static_cast<int64_t>(payload.size()));
+        span->setAttribute("audio_format", "16-bit_pcm_interleaved");
+        span->setAttribute("frame_number", static_cast<int64_t>(frameNumber));
+        span->setAttribute("sample_count", chunk->sampleCount);
+        span->setAttribute("channels", chunk->channels);
 
-        span->setAttribute("header_size", static_cast<int64_t>(headerSize));
-        span->setAttribute("audio_data_size", static_cast<int64_t>(audioDataSize));
-        span->setAttribute("total_payload_size", static_cast<int64_t>(payload.size()));
-        span->setAttribute("audio_format", "16-bit_pcm_native");
-
-        // Fill in header
-        MultiChannelAudioHeader* header = reinterpret_cast<MultiChannelAudioHeader*>(payload.data());
-        header->timestamp = static_cast<uint32_t>(frameNumber);
-        header->sampleCount = chunk->sampleCount;
-        header->sampleRate = chunk->sampleRate;
-        header->channelCount = chunk->channels;
-        header->reserved[0] = 0;
-        header->reserved[1] = 0;
-        header->reserved[2] = 0;
-
-        // Copy 16-bit interleaved audio data directly after header (no conversion!)
-        std::memcpy(payload.data() + headerSize,
-                    chunk->getRawData(),
-                    audioDataSize);
-
-        debug("Created RTP payload: {} header + {}KB 16-bit audio = {}KB total",
-              headerSize, audioDataSize / 1024, payload.size() / 1024);
+        trace("Created pure RTP payload: {}KB of 16-bit interleaved PCM audio ({} samples × {} channels)",
+              payload.size() / 1024, chunk->sampleCount, chunk->channels);
 
         span->setSuccess();
-
         return payload;
     }
 

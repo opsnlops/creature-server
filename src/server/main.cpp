@@ -34,7 +34,7 @@
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/StatusLights.h"
-#include "server/rtp/RtpServer.h"
+#include "server/rtp/RtspServer.h"
 #include "Version.h"
 #include "util/cache.h"
 #include "util/loggingUtils.h"
@@ -85,7 +85,7 @@ namespace creatures {
     std::shared_ptr<ObservabilityManager> observability;
 
     // RTP server for handling real-time protocol streaming
-    std::shared_ptr<rtp::RtpServer> rtpServer;
+    std::shared_ptr<rtp::RtspServer> rtspServer;
 }
 
 
@@ -209,8 +209,8 @@ int main(const int argc, char **argv) {
 
     // Start the RtpServer
     if(creatures::config->getAudioMode() == creatures::Configuration::AudioMode::RTP) {
-        creatures::rtpServer = std::make_shared<creatures::rtp::RtpServer>();
-        creatures::rtpServer->start();
+        creatures::rtspServer = std::make_shared<creatures::rtp::RtspServer>();
+        creatures::rtspServer->start();
     }
 
 
@@ -265,8 +265,8 @@ int main(const int argc, char **argv) {
     webServer->shutdown();
 
     // Stop the RTP server
-    if(creatures::rtpServer) {
-        creatures::rtpServer->stop();
+    if(creatures::rtspServer) {
+        creatures::rtspServer->stop();
     }
 
     creatures::gpioPins->serverOnline(false);

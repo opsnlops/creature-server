@@ -90,12 +90,12 @@
 
 // RTP (Real-time Transport Protocol) settings
 //
-// I'm debating using constant expressions here instead of macros.
+// Using standard RTP port range for better compatibility with tools like Wireshark and VLC
 //
 
 // TODO: Would it be better to use the active universe for the last octet?
 static constexpr char       RTP_MULTICAST_GROUP[] = "239.19.63.1";
-static constexpr uint16_t   RTP_PORT        = 5004;
+static constexpr uint16_t   RTP_PORT        = 5004;  // Standard RTP port
 static constexpr int        RTP_SRATE       = 48000;
 static constexpr int        RTP_STREAMING_CHANNELS = 17; // 16 creatures + 1 BGM
 static constexpr int        RTP_FRAME_MS    = 5;     // 5ms to keep the buffer into what fits in one ethernet frame

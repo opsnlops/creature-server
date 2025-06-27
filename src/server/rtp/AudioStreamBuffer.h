@@ -58,8 +58,13 @@ namespace creatures :: rtp {
         uint8_t getChannels() const { return channels; }
 
          /**
-         * Pack all of the channels into a single packet payload
-         * Optimized for 16-bit PCM data (no conversion needed)
+         * Create a pure RTP payload with just the raw 16-bit interleaved PCM audio data
+         * No custom headers - uvgRTP will add proper RTP headers automatically! 🐰
+         *
+         * @param chunk Audio chunk to convert to payload
+         * @param frameNumber Frame number for observability (not included in payload)
+         * @param parentSpan Optional parent span for tracing
+         * @return Raw 16-bit interleaved PCM data ready for RTP transmission
          */
         static std::vector<uint8_t> createMultiChannelPayload(const rtp::AudioChunk* chunk,
                                                               framenum_t frameNumber,
