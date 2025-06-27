@@ -161,14 +161,13 @@ namespace creatures :: rtp {
             "m=audio {} RTP/AVP 97\r\n"                               // Media (audio, port, protocol, payload type)
             "a=rtpmap:97 L16/{}/{}\r\n"                               // RTP map (payload type, encoding, sample rate, channels)
             "a=fmtp:97 channel-order=FL,FR,FC,LFE,BL,BR,FLC,FRC,BC,SL,SR,TC,TFL,TFC,TFR,TBL,TBR\r\n"  // Channel layout
-            "a=recvonly\r\n"                                          // Direction
-            "a=framerate:{}\r\n",                                     // Custom frame rate info
+            "a=control:trackID=1\r\n"
+            "a=sendonly\r\n",
             RTP_MULTICAST_GROUP,                                       // Origin IP
             RTP_MULTICAST_GROUP,                                       // Multicast IP
             RTP_PORT,                                                  // Port
             RTP_SRATE,                                                 // Sample rate
-            RTP_STREAMING_CHANNELS,                                    // Channel count
-            1000 / RTP_FRAME_MS                                        // Frames per second
+            RTP_STREAMING_CHANNELS                                     // Channel count
         );
 
         return sdp;
