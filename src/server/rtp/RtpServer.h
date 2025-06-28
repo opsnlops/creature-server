@@ -4,8 +4,9 @@
 
 #pragma once
 
-#include <uvgrtp/lib.hh>
 #include <string>
+
+#include <uvgrtp/lib.hh>
 
 namespace creatures :: rtp {
 
@@ -41,19 +42,19 @@ namespace creatures :: rtp {
         /**
          * Check if the RTP stream is ready for sending
          */
-        bool isReady() const { return rtpStream != nullptr; }
+        [[nodiscard]] bool isReady() const { return rtpStream != nullptr; }
 
         /**
          * Get the SDP description for this audio stream
          * Clients can use this to configure their receivers
          */
-        std::string getSdpDescription() const;
+        [[nodiscard]] std::string getSdpDescription() const;
 
         /**
          * Get the multicast URL for this stream
          * Format: rtp://multicast_ip:port
          */
-        std::string getMulticastUrl() const;
+        static std::string getMulticastUrl() ;
 
     private:
         uvgrtp::context         ctx;
@@ -63,7 +64,7 @@ namespace creatures :: rtp {
         /**
          * Generate SDP description for our 17-channel L16 audio stream
          */
-        std::string generateSdp() const;
+        static std::string generateSdp() ;
     };
 
 } // creatures :: rtp

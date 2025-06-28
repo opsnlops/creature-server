@@ -21,13 +21,13 @@ namespace creatures :: rtp {
         uint32_t sampleRate;        // Sample rate (e.g., 48000 Hz)
 
         // Get data for a specific channel (0-based)
-        std::vector<int16_t> getChannelData(uint8_t channel) const;
+        [[nodiscard]] std::vector<int16_t> getChannelData(uint8_t channel) const;
 
         // Get the raw data pointer for RTP transmission (no conversion needed!)
-        const int16_t* getRawData() const { return data.data(); }
+        [[nodiscard]] const int16_t* getRawData() const { return data.data(); }
 
         // Get size in bytes for network transmission
-        size_t getSizeInBytes() const { return data.size() * sizeof(int16_t); }
+        [[nodiscard]] size_t getSizeInBytes() const { return data.size() * sizeof(int16_t); }
     };
 
 } // namespace creatures :: rtp

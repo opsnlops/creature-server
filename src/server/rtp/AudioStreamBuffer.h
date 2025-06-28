@@ -8,9 +8,8 @@
 
 #include <SDL2/SDL.h>
 
-#include "util/ObservabilityManager.h"
-
 #include "server/rtp/AudioChunk.h"
+#include "util/ObservabilityManager.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -36,26 +35,26 @@ namespace creatures :: rtp {
          * Get the total number of chunks in this audio file
          * @return Number of chunks
          */
-        size_t getChunkCount() const { return chunks.size(); }
+        [[nodiscard]] size_t getChunkCount() const { return chunks.size(); }
 
         /**
          * Get a specific chunk
          * @param index Chunk index (0-based)
          * @return Pointer to chunk, or nullptr if index is invalid
          */
-        const AudioChunk* getChunk(size_t index) const;
+        [[nodiscard]] const AudioChunk* getChunk(size_t index) const;
 
         /**
          * Get the duration of the audio file in milliseconds
          * @return Duration in ms
          */
-        uint32_t getDurationMs() const;
+        [[nodiscard]] uint32_t getDurationMs() const;
 
         /**
          * Get audio format information
          */
-        uint32_t getSampleRate() const { return sampleRate; }
-        uint8_t getChannels() const { return channels; }
+        [[nodiscard]] uint32_t getSampleRate() const { return sampleRate; }
+        [[nodiscard]] uint8_t getChannels() const { return channels; }
 
          /**
          * Create a pure RTP payload with just the raw 16-bit interleaved PCM audio data

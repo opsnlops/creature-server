@@ -135,7 +135,6 @@ namespace creatures :: rtp {
 
         // Process the audio data in 5ms chunks for RTP streaming
         size_t currentSample = 0;
-        size_t chunkIndex = 0;
         while (currentSample < totalSamples) {
             auto chunk = std::make_unique<AudioChunk>();
             chunk->channels = channels;
@@ -160,7 +159,6 @@ namespace creatures :: rtp {
 
             // Use the stored value instead of accessing the moved chunk
             currentSample += currentChunkSampleCount;
-            chunkIndex++;
         }
 
         span->setAttribute("chunks_created", static_cast<int64_t>(chunks.size()));

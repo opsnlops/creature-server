@@ -18,7 +18,7 @@ namespace creatures {
 namespace creatures :: rtp {
 
     void RtpServer::start() {
-        info("Starting RTP server for 17-channel audio streaming");
+        info("Starting RTP server for audio streaming");
 
         // Create session using multicast for the RTP stream
         session = ctx.create_session(RTP_MULTICAST_GROUP);
@@ -120,7 +120,7 @@ namespace creatures :: rtp {
             trace("Sending {}KB L16 audio packet (will be fragmented)", size / 1024);
         } else {
             if (size > RTP_STANDARD_MTU_PAYLOAD) {
-                debug("Large audio chunk ({} bytes) - ensure jumbo frames are enabled", size);
+                trace("Large audio chunk ({} bytes) - ensure jumbo frames are enabled", size);
             }
             trace("Sending {}KB L16 audio packet (single frame)", size / 1024);
         }
@@ -132,13 +132,13 @@ namespace creatures :: rtp {
         if (result != RTP_OK) {
             warn("Failed to send RTP audio packet: error {}", static_cast<int>(result));
         } else {
-            trace("Successfully sent L16 audio via RTP - pure carrot-quality audio! 🥕");
+            trace("Successfully sent L16 audio via RTP - {} bytes", size);
         }
 
         return result;
     }
 
-    std::string RtpServer::getMulticastUrl() const {
+    std::string RtpServer::getMulticastUrl() {
         return fmt::format("rtp://{}:{}", RTP_MULTICAST_GROUP, RTP_PORT);
     }
 
@@ -146,13 +146,13 @@ namespace creatures :: rtp {
         return generateSdp();
     }
 
-    std::string RtpServer::generateSdp() const {
+    std::string RtpServer::generateSdp() {
         // Generate RFC 4566 compliant SDP for our 17-channel L16 audio stream
         std::string sdp = fmt::format(
             "v=0\r\n"                                                    // Version
             "o=creatures 0 0 IN IP4 {}\r\n"                            // Origin
             "s=Creatures Workshop Multi-Channel Audio\r\n"              // Session name
-            "i=17-channel audio stream for creature control\r\n"        // Session description
+            "i=Audio stream for Creatures\r\n"        // Session description
             "c=IN IP4 {}/255\r\n"                                      // Connection (multicast)
             "t=0 0\r\n"                                                 // Time (permanent session)
             "a=tool:creatures-server\r\n"                              // Tool
