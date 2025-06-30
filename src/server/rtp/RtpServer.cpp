@@ -49,7 +49,7 @@ namespace creatures :: rtp {
             return;
         }
 
-        // Configure the RTP stream for L16 audio
+        // Configure the RTP stream for L16 audio (16-bit linear PCM, network byte order)
         rtpStream->configure_ctx(RCC_DYN_PAYLOAD_TYPE, 97);  // Dynamic payload type for L16
         rtpStream->configure_ctx(RCC_CLOCK_RATE, RTP_SRATE); // 48000 Hz sample rate
         rtpStream->configure_ctx(RCC_MULTICAST_TTL, 16);     // Allow multicast routing
@@ -61,11 +61,18 @@ namespace creatures :: rtp {
             rtpStream->configure_ctx(RCC_MTU_SIZE, 9000);  // Jumbo frame MTU
         }
 
+        // Note: uvgRTP handles sequence numbering automatically
+        // We'll monitor for any send errors in the sendMultiChannelAudio method
+
+        // L16 is always big-endian (network byte order) according to RFC 3551
+        debug("Configuring RTP for L16 format (16-bit linear PCM, network byte order)");
+
         info("🎵 RTP server configured successfully!");
         info("  • Multicast RTP: {}:{}", RTP_MULTICAST_GROUP, RTP_PORT);
-        info("  • Format: L16 {} channels at {}Hz", RTP_STREAMING_CHANNELS, RTP_SRATE);
+        info("  • Format: L16 {} channels at {}Hz (network byte order)", RTP_STREAMING_CHANNELS, RTP_SRATE);
         info("  • Chunk size: {}ms ({} samples)", RTP_FRAME_MS, RTP_SAMPLES);
         info("  • Payload type: 97 (L16 dynamic)");
+        info("  • Fragmentation: {}", config->getRtpFragmentPackets() ? "enabled" : "disabled");
         info("  • Stream URL: {}", getMulticastUrl());
 
         // Log the SDP for easy access
@@ -110,6 +117,14 @@ namespace creatures :: rtp {
             return RTP_INVALID_VALUE;
         }
 
+        // Calculate expected size for validation
+        size_t expectedSize = RTP_SAMPLES * RTP_STREAMING_CHANNELS * sizeof(int16_t);
+        if (size != expectedSize) {
+            warn("Audio chunk size mismatch: got {} bytes, expected {} bytes", size, expectedSize);
+            warn("  Expected: {} samples × {} channels × 2 bytes = {} bytes",
+                 RTP_SAMPLES, RTP_STREAMING_CHANNELS, expectedSize);
+        }
+
         // Size validation based on configuration
         if (config->getRtpFragmentPackets()) {
             if (size > RTP_MAX_JUMBO_FRAME_SIZE) {
@@ -117,7 +132,7 @@ namespace creatures :: rtp {
                      size, RTP_MAX_JUMBO_FRAME_SIZE);
                 return RTP_INVALID_VALUE;
             }
-            trace("Sending {}KB L16 audio packet (will be fragmented)", size / 1024);
+            trace("Sending {}KB L16 audio packet (will be fragmented if needed)", size / 1024);
         } else {
             if (size > RTP_STANDARD_MTU_PAYLOAD) {
                 trace("Large audio chunk ({} bytes) - ensure jumbo frames are enabled", size);
@@ -125,12 +140,14 @@ namespace creatures :: rtp {
             trace("Sending {}KB L16 audio packet (single frame)", size / 1024);
         }
 
-        // Send the raw 16-bit interleaved PCM data
+        debug("Sending RTP packet: {} bytes ({} samples per channel)", size, size / (RTP_STREAMING_CHANNELS * 2));
+
+        // Send the raw 16-bit interleaved PCM data in network byte order
         // uvgRTP will add proper RTP headers with L16 payload type 97
         rtp_error_t result = rtpStream->push_frame(const_cast<uint8_t*>(data), size, RTP_NO_FLAGS);
 
         if (result != RTP_OK) {
-            warn("Failed to send RTP audio packet: error {}", static_cast<int>(result));
+            error("RTP send failed with error: {}", static_cast<int>(result));
         } else {
             trace("Successfully sent L16 audio via RTP - {} bytes", size);
         }
@@ -148,24 +165,27 @@ namespace creatures :: rtp {
 
     std::string RtpServer::generateSdp() {
         // Generate RFC 4566 compliant SDP for our 17-channel L16 audio stream
+        // L16 is defined in RFC 3551 as 16-bit linear PCM in network byte order
         std::string sdp = fmt::format(
             "v=0\r\n"                                                    // Version
             "o=creatures 0 0 IN IP4 {}\r\n"                            // Origin
             "s=Creatures Workshop Multi-Channel Audio\r\n"              // Session name
-            "i=Audio stream for Creatures\r\n"        // Session description
+            "i=17-channel L16 audio stream for Creatures Workshop\r\n"  // Session description
             "c=IN IP4 {}/255\r\n"                                      // Connection (multicast)
             "t=0 0\r\n"                                                 // Time (permanent session)
             "a=tool:creatures-server\r\n"                              // Tool
             "a=type:broadcast\r\n"                                     // Session type
             "m=audio {} RTP/AVP 97\r\n"                               // Media (audio, port, protocol, payload type)
             "a=rtpmap:97 L16/{}/{}\r\n"                               // RTP map (payload type, encoding, sample rate, channels)
+            "a=ptime:{}\r\n"                                          // Packet time in milliseconds
             "a=fmtp:97 channel-order=FL,FR,FC,LFE,BL,BR,FLC,FRC,BC,SL,SR,TC,TFL,TFC,TFR,TBL,TBR\r\n"  // Channel layout
             "a=sendonly\r\n",                                         // Direction
             RTP_MULTICAST_GROUP,                                       // Origin IP
             RTP_MULTICAST_GROUP,                                       // Multicast IP
             RTP_PORT,                                                  // Port
             RTP_SRATE,                                                 // Sample rate
-            RTP_STREAMING_CHANNELS                                     // Channel count
+            RTP_STREAMING_CHANNELS,                                    // Channel count
+            RTP_FRAME_MS                                               // Packet time
         );
 
         return sdp;

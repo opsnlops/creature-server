@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <filesystem>
+#include <arpa/inet.h>  // For htons/ntohs
 
 #include <SDL2/SDL.h>
 
@@ -15,6 +16,19 @@
 
 namespace creatures {
     extern std::shared_ptr<ObservabilityManager> observability;
+}
+
+namespace {
+    // Utility functions for byte order conversion
+    int16_t hostToNetworkInt16(int16_t hostValue) {
+        // Convert to network byte order (big-endian)
+        return static_cast<int16_t>(htons(static_cast<uint16_t>(hostValue)));
+    }
+
+    int16_t networkToHostInt16(int16_t networkValue) {
+        // Convert from network byte order
+        return static_cast<int16_t>(ntohs(static_cast<uint16_t>(networkValue)));
+    }
 }
 
 namespace creatures :: rtp {
@@ -63,6 +77,23 @@ namespace creatures :: rtp {
         }
         loadSpan->setSuccess();
 
+        // === ENDIANNESS AND FORMAT DEBUGGING ===
+        debug("=== ENDIANNESS DEBUG ===");
+        debug("System byte order: {}", (SDL_BYTEORDER == SDL_LIL_ENDIAN) ? "Little Endian" : "Big Endian");
+        debug("Audio format from file: 0x{:04X}", audioSpec.format);
+        debug("SDL AUDIO_S16LSB: 0x{:04X}", AUDIO_S16LSB);
+        debug("SDL AUDIO_S16MSB: 0x{:04X}", AUDIO_S16MSB);
+        debug("SDL AUDIO_S16SYS: 0x{:04X}", AUDIO_S16SYS);
+
+        // Check first few samples for sanity
+        const int16_t* samples = reinterpret_cast<const int16_t*>(audioBuffer);
+        debug("First 3 samples from file (each sample = {} channels):", audioSpec.channels);
+        for (int i = 0; i < 3; i++) {
+            debug("  Sample {} - Raw: 0x{:04X}, Value: {}", i,
+                  static_cast<uint16_t>(samples[i]), samples[i]);
+        }
+        debug("========================");
+
         // Verify we got what we expected for RTP streaming
         if (audioSpec.channels != RTP_STREAMING_CHANNELS) {
             std::string errorMessage = fmt::format("Channel count mismatch: expected {} for RTP streaming, got {} in file {}",
@@ -93,6 +124,7 @@ namespace creatures :: rtp {
         span->setAttribute("channels", channels);
         span->setAttribute("total_samples", static_cast<int64_t>(sampleCount));
         span->setAttribute("audio_length_bytes", static_cast<int64_t>(audioLength));
+        span->setAttribute("audio_format_detected", audioSpec.format);
 
         debug("Loaded 16-bit audio for RTP streaming: {} samples, {} channels, {} Hz", sampleCount, channels, sampleRate);
 
@@ -183,20 +215,63 @@ namespace creatures :: rtp {
         }
         auto span = observability->createChildOperationSpan("audio_stream_buffer.create_multi_channel_payload", parentSpan);
 
-        // For pure RTP streaming, we just return the raw 16-bit interleaved PCM data
-        // No custom headers! uvgRTP will add the proper RTP headers automatically 🐰
+        // Validate chunk integrity first
+        size_t expectedSamples = RTP_SAMPLES;
+        if (chunk->sampleCount != expectedSamples) {
+            warn("Chunk sample count mismatch: got {}, expected {}", chunk->sampleCount, expectedSamples);
+        }
+
+        if (chunk->channels != RTP_STREAMING_CHANNELS) {
+            warn("Chunk channel count mismatch: got {}, expected {}", chunk->channels, RTP_STREAMING_CHANNELS);
+        }
+
+        // Calculate expected size for validation
+        size_t expectedSize = RTP_SAMPLES * RTP_STREAMING_CHANNELS * sizeof(int16_t);
+        if (chunk->getSizeInBytes() != expectedSize) {
+            warn("Audio chunk size mismatch: got {} bytes, expected {} bytes", chunk->getSizeInBytes(), expectedSize);
+            warn("  Expected: {} samples × {} channels × 2 bytes = {} bytes",
+                 RTP_SAMPLES, RTP_STREAMING_CHANNELS, expectedSize);
+        }
+
+        // Create payload with explicit byte order handling for L16 (network byte order)
         std::vector<uint8_t> payload(chunk->getSizeInBytes());
 
-        // Copy the raw 16-bit interleaved audio data directly
-        std::memcpy(payload.data(), chunk->getRawData(), chunk->getSizeInBytes());
+        const int16_t* sourceData = chunk->getRawData();
+        int16_t* destData = reinterpret_cast<int16_t*>(payload.data());
+
+        // Convert to network byte order (L16 format requirement)
+        size_t totalSamples = chunk->sampleCount * chunk->channels;
+        for (size_t i = 0; i < totalSamples; i++) {
+            destData[i] = hostToNetworkInt16(sourceData[i]);
+        }
+
+        // Debug logging every 5 seconds (1000 frames at 5ms = 5 seconds)
+        if (frameNumber % 1000 == 0) {
+            debug("=== PAYLOAD DEBUG (Frame {}) ===", frameNumber);
+            debug("Chunk: {} samples, {} channels", chunk->sampleCount, chunk->channels);
+            debug("Byte order conversion sample:");
+            debug("  Original sample 0: 0x{:04X} ({}) -> Network: 0x{:04X} ({})",
+                  static_cast<uint16_t>(sourceData[0]), sourceData[0],
+                  static_cast<uint16_t>(destData[0]), destData[0]);
+            debug("  Original sample 1: 0x{:04X} ({}) -> Network: 0x{:04X} ({})",
+                  static_cast<uint16_t>(sourceData[1]), sourceData[1],
+                  static_cast<uint16_t>(destData[1]), destData[1]);
+            debug("Sample integrity check - first 2 samples of chunk:");
+            for (int i = 0; i < 2 && i < chunk->sampleCount; i++) {
+                debug("  Sample {}: ch0={} ch1={} ch2={}", i,
+                      destData[i*17], destData[i*17+1], destData[i*17+2]);
+            }
+            debug("================================");
+        }
 
         span->setAttribute("payload_size", static_cast<int64_t>(payload.size()));
-        span->setAttribute("audio_format", "16-bit_pcm_interleaved");
+        span->setAttribute("audio_format", "16-bit_pcm_interleaved_network_order");
         span->setAttribute("frame_number", static_cast<int64_t>(frameNumber));
         span->setAttribute("sample_count", chunk->sampleCount);
         span->setAttribute("channels", chunk->channels);
+        span->setAttribute("byte_order_conversion", "host_to_network");
 
-        trace("Created pure RTP payload: {}KB of 16-bit interleaved PCM audio ({} samples × {} channels)",
+        trace("Created RTP payload with network byte order: {}KB of 16-bit interleaved PCM audio ({} samples × {} channels)",
               payload.size() / 1024, chunk->sampleCount, chunk->channels);
 
         span->setSuccess();
