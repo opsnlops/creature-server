@@ -64,12 +64,13 @@ namespace creatures :: rtp {
         // Note: uvgRTP handles sequence numbering automatically
         // We'll monitor for any send errors in the sendMultiChannelAudio method
 
-        // L16 is always big-endian (network byte order) according to RFC 3551
-        debug("Configuring RTP for L16 format (16-bit linear PCM, network byte order)");
+        // L16 format note: While RFC 3551 specifies network byte order,
+        // many implementations expect host byte order for direct audio processing
+        debug("Configuring RTP for L16 format (16-bit linear PCM, host byte order for compatibility)");
 
         info("🎵 RTP server configured successfully!");
         info("  • Multicast RTP: {}:{}", RTP_MULTICAST_GROUP, RTP_PORT);
-        info("  • Format: L16 {} channels at {}Hz (network byte order)", RTP_STREAMING_CHANNELS, RTP_SRATE);
+        info("  • Format: L16 {} channels at {}Hz (host byte order)", RTP_STREAMING_CHANNELS, RTP_SRATE);
         info("  • Chunk size: {}ms ({} samples)", RTP_FRAME_MS, RTP_SAMPLES);
         info("  • Payload type: 97 (L16 dynamic)");
         info("  • Fragmentation: {}", config->getRtpFragmentPackets() ? "enabled" : "disabled");
@@ -117,12 +118,17 @@ namespace creatures :: rtp {
             return RTP_INVALID_VALUE;
         }
 
-        // Calculate expected size for validation
+        // Calculate expected size for typical chunks (allow variable size for last chunk)
         size_t expectedSize = RTP_SAMPLES * RTP_STREAMING_CHANNELS * sizeof(int16_t);
         if (size != expectedSize) {
-            warn("Audio chunk size mismatch: got {} bytes, expected {} bytes", size, expectedSize);
-            warn("  Expected: {} samples × {} channels × 2 bytes = {} bytes",
-                 RTP_SAMPLES, RTP_STREAMING_CHANNELS, expectedSize);
+            // Only warn if significantly different (not just the last chunk)
+            if (size > expectedSize || size < (expectedSize / 2)) {
+                warn("Audio chunk size unusual: got {} bytes, typical {} bytes", size, expectedSize);
+                debug("  Calculated from: {} samples × {} channels × 2 bytes",
+                     size / (RTP_STREAMING_CHANNELS * 2), RTP_STREAMING_CHANNELS);
+            } else {
+                debug("Variable chunk size (likely last chunk): {} bytes vs typical {} bytes", size, expectedSize);
+            }
         }
 
         // Size validation based on configuration
@@ -142,8 +148,8 @@ namespace creatures :: rtp {
 
         debug("Sending RTP packet: {} bytes ({} samples per channel)", size, size / (RTP_STREAMING_CHANNELS * 2));
 
-        // Send the raw 16-bit interleaved PCM data in network byte order
-        // uvgRTP will add proper RTP headers with L16 payload type 97
+        // Send the raw 16-bit interleaved PCM data in host byte order
+        // This matches what the client expects for direct audio processing
         rtp_error_t result = rtpStream->push_frame(const_cast<uint8_t*>(data), size, RTP_NO_FLAGS);
 
         if (result != RTP_OK) {
