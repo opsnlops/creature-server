@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 
@@ -94,19 +95,25 @@
 //
 
 // TODO: Would it be better to use the active universe for the last octet?
-static constexpr char       RTP_MULTICAST_GROUP[] = "239.19.63.1";
+//static constexpr char       RTP_MULTICAST_GROUP[] = "239.19.63.1";
 static constexpr uint16_t   RTP_PORT        = 5004;  // Standard RTP port
 static constexpr int        RTP_SRATE       = 48000;
 static constexpr int        RTP_STREAMING_CHANNELS = 17; // 16 creatures + 1 BGM
-static constexpr int        RTP_FRAME_MS    = 5;     // 5ms to keep the buffer into what fits in one ethernet frame
-static constexpr int        RTP_SAMPLES     = RTP_SRATE * RTP_FRAME_MS / 1000;          // 480
+static constexpr int        RTP_FRAME_MS         = 10;        // 10 ms frames
+static constexpr int        RTP_SAMPLES          = RTP_SRATE * RTP_FRAME_MS / 1000; // 480
 static constexpr int        RTP_PCM_BYTES   = RTP_SAMPLES * sizeof(int16_t) * RTP_STREAMING_CHANNELS; // 240×2×17=8160
 static constexpr int        RTP_MAX_JUMBO_FRAME_SIZE = 9100; // Safe jumbo frame size for your switches (9216 - margin)
 static constexpr int        RTP_STANDARD_MTU_PAYLOAD = 1452; // Standard ethernet MTU minus IP/UDP/RTP headers
+static constexpr int        RTP_OPUS_PAYLOAD_PT  = 96;        // dynamic PT we’ll advertise
 
-// Compile-time safety check for jumbo frames
-static_assert(RTP_PCM_BYTES + 100 < RTP_MAX_JUMBO_FRAME_SIZE,
-               "Audio chunk size too large for jumbo frames - reduce RTP_FRAME_MS");
+// One multicast group per channel: 239.19.63.[1-17]
+inline constexpr std::array<const char*, RTP_STREAMING_CHANNELS> RTP_GROUPS = {
+    "239.19.63.1",  "239.19.63.2",  "239.19.63.3",  "239.19.63.4",
+    "239.19.63.5",  "239.19.63.6",  "239.19.63.7",  "239.19.63.8",
+    "239.19.63.9",  "239.19.63.10", "239.19.63.11", "239.19.63.12",
+    "239.19.63.13", "239.19.63.14", "239.19.63.15", "239.19.63.16",
+    "239.19.63.17"   // BGM
+};
 
 // Warning check for standard MTU (this will trigger on WiFi without fragmentation)
 static_assert(RTP_PCM_BYTES > RTP_STANDARD_MTU_PAYLOAD,

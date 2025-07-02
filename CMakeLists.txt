@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.4.5"
+        VERSION "2.4.6"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -118,6 +118,25 @@ FetchContent_Declare(
   GIT_TAG        v3.1.6
 )
 FetchContent_MakeAvailable(uvgrtp)
+
+# Opus
+# Force Opus' own CMake options *before* the project is configured
+set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_STATIC         ON  CACHE BOOL "" FORCE)
+set(OPUS_BUILD_PROGRAMS       OFF CACHE BOOL "" FORCE)   # cli tools
+set(OPUS_BUILD_TESTING        OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+        opus
+        GIT_REPOSITORY  https://github.com/xiph/opus.git
+        GIT_TAG         v1.5.2
+)
+FetchContent_MakeAvailable(opus)
+# Optimise Opus even when the rest of the build is Debug
+target_compile_options(opus PRIVATE
+        $<$<CONFIG:Debug>:-O3>
+)
+
 
 # Google Test
 FetchContent_Declare(
@@ -358,8 +377,10 @@ add_executable(creature-server
         src/server/rtp/AudioStreamBuffer.cpp
         src/server/rtp/AudioStreamBuffer.h
         src/server/rtp/AudioChunk.h
-        src/server/rtp/RtpServer.cpp
-        src/server/rtp/RtpServer.h
+        src/server/rtp/opus/OpusEncoderWrapper.cpp
+        src/server/rtp/opus/OpusEncoderWrapper.h
+        src/server/rtp/MultiOpusRtpServer.cpp
+        src/server/rtp/MultiOpusRtpServer.h
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
@@ -397,6 +418,7 @@ target_link_libraries(creature-server
         CreatureVoicesLib
         Threads::Threads
         uvgrtp
+        opus
         ${MONGO_SYSTEM_LIBS}
 )
 

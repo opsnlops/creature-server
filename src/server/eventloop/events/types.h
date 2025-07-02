@@ -1,3 +1,7 @@
+//
+// types.h
+//
+
 #pragma once
 
 #include <cstdlib>
@@ -139,29 +143,5 @@ namespace creatures {
     private:
         CacheType cacheType;
     };
-
-
-    /**
-     * Event for sending a single RTP audio chunk containing ALL channels
-     * Uses pure RTP multicast with L16 format.
-     */
-    class RtpAudioChunkEvent : public EventBase<RtpAudioChunkEvent> {
-        public:
-            using EventBase::EventBase;
-            RtpAudioChunkEvent(framenum_t frameNumber);
-            virtual ~RtpAudioChunkEvent() = default;
-            void executeImpl();
-
-            /**
-             * Set the audio payload for this chunk event
-             * @param payload Raw 16-bit interleaved PCM data ready for RTP transmission
-             */
-            void setAudioPayload(std::vector<uint8_t> payload) {
-                audioPayload = std::move(payload);
-            }
-
-        private:
-            std::vector<uint8_t> audioPayload;  // Pre-prepared L16 audio data
-        };
 
 }

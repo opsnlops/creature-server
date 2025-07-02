@@ -1,87 +1,45 @@
 //
 // AudioStreamBuffer.h
 //
-
 #pragma once
 
+#include <array>
+#include <memory>
+#include <string>
 #include <vector>
 
-#include <SDL2/SDL.h>
-
-#include "server/rtp/AudioChunk.h"
+#include "server/config.h"
+#include "server/rtp/opus/OpusEncoderWrapper.h"
 #include "util/ObservabilityManager.h"
 
-#include "server/namespace-stuffs.h"
+namespace creatures::rtp {
 
-namespace creatures :: rtp {
-
-    /**
-     * Loads and manages streaming 16-bit PCM audio data from WAV files
-     * Optimized for direct RTP transmission without float conversion
-     */
     class AudioStreamBuffer {
     public:
-        AudioStreamBuffer() = default;
-        ~AudioStreamBuffer();
+        /// Factory: load a 48 kHz / 17-channel WAV and build Opus frames
+        static std::shared_ptr<AudioStreamBuffer>
+        loadFromWav(const std::string& filePath,
+                    std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
-        /**
-         * Load a 16-bit PCM WAV file and prepare it for streaming
-         * @param filePath Path to the multi-channel WAV file (must be 16-bit PCM)
-         * @return true if successful, false on error
-         */
-        bool loadFile(const std::string& filePath, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+        /// Number of 10 ms frames available (same for every channel)
+        [[nodiscard]] std::size_t frameCount() const { return framesPerChannel_; }
 
-        /**
-         * Get the total number of chunks in this audio file
-         * @return Number of chunks
-         */
-        [[nodiscard]] size_t getChunkCount() const { return chunks.size(); }
-
-        /**
-         * Get a specific chunk
-         * @param index Chunk index (0-based)
-         * @return Pointer to chunk, or nullptr if index is invalid
-         */
-        [[nodiscard]] const AudioChunk* getChunk(size_t index) const;
-
-        /**
-         * Get the duration of the audio file in milliseconds
-         * @return Duration in ms
-         */
-        [[nodiscard]] uint32_t getDurationMs() const;
-
-        /**
-         * Get audio format information
-         */
-        [[nodiscard]] uint32_t getSampleRate() const { return sampleRate; }
-        [[nodiscard]] uint8_t getChannels() const { return channels; }
-
-         /**
-         * Create a pure RTP payload with proper byte order for network transmission
-         * Handles endianness conversion for L16 format (network byte order)
-         *
-         * @param chunk Audio chunk to convert to payload
-         * @param frameNumber Frame number for observability (not included in payload)
-         * @param parentSpan Optional parent span for tracing
-         * @return Raw 16-bit interleaved PCM data in network byte order for RTP transmission
-         */
-        static std::vector<uint8_t> createMultiChannelPayload(const rtp::AudioChunk* chunk,
-                                                              framenum_t frameNumber,
-                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
+        /// Encoded Opus payload for `channel` (0-16) at `frame` index
+        [[nodiscard]] const std::vector<uint8_t>&
+        frame(uint8_t channel, std::size_t frame) const {
+            return encodedFrames_[channel][frame];
+        }
 
     private:
-        std::vector<std::unique_ptr<AudioChunk>> chunks;
-        uint32_t sampleRate = 0;
-        uint8_t channels = 0;
-        SDL_AudioSpec audioSpec{};
+        AudioStreamBuffer() = default;
+        bool loadWave(const std::string& filePath,
+                      std::shared_ptr<OperationSpan> parentSpan);
 
-        /**
-         * Slice the loaded 16-bit audio data into configurable chunks
-         * @param audioData Raw 16-bit PCM data (no conversion needed!)
-         * @param sampleCount Number of samples (per channel)
-         * @param parentSpan Optional parent span for tracing
-         */
-        void createChunks(const int16_t* audioData, size_t sampleCount, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+        std::size_t framesPerChannel_{0};
+
+        // Layout: encodedFrames_[channel][frame] -> bytes
+        std::array<std::vector<std::vector<uint8_t>>, RTP_STREAMING_CHANNELS>
+            encodedFrames_;
     };
 
-} // namespace creatures :: rtp
+} // namespace creatures::rtp
