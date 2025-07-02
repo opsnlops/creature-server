@@ -12,10 +12,10 @@ namespace creatures::rtp::opus {
     class Encoder {
     public:
         Encoder(int sampleRate      = 48000,
-                int channels        = 1,
-                int frameSamples    = RTP_SAMPLES,
-                int bitrate         = 64000,        // tweak later
-                bool enableFec      = true);
+        int channels        = 1,
+        int frameSamples    = RTP_SAMPLES,
+        int bitrate         = 128000,      // default now “transparent” dialog
+        bool enableFec      = true);
 
         ~Encoder();
 

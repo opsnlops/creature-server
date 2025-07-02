@@ -2,6 +2,7 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 #include <uvgrtp/lib.hh>
+#include <uvgrtp/media_stream.hh>
 #include <uvgrtp/util.hh>
 
 #include "server/config.h"
