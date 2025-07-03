@@ -141,7 +141,7 @@ void MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> parentSpan)
     parentSpan->setAttribute("original_frame_number", startingFrame);
 
 #if defined(__cpp_lib_jthread)
-    std::jthread worker([parentSpan, localPath, startFrame](std::stop_token st) {
+    std::jthread worker([parentSpan, localPath, startingFrame](std::stop_token st) {
 #else
     std::thread  worker([parentSpan, localPath, startingFrame]() {
 #endif
