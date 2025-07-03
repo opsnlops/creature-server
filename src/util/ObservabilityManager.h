@@ -16,6 +16,8 @@
 #include <opentelemetry/metrics/meter.h>
 #include <opentelemetry/metrics/sync_instruments.h>
 
+#include "server/namespace-stuffs.h"
+
 namespace creatures {
 
 // Forward declarations
@@ -216,6 +218,7 @@ public:
     void setAttribute(const std::string& key, uint16_t value);
     void setAttribute(const std::string& key, uint32_t value);
     void setAttribute(const std::string& key, bool value);
+    void setAttribute(const std::string& key, framenum_t value);
 
     /**
      * Record an exception

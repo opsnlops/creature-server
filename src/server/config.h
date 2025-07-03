@@ -94,17 +94,15 @@
 // Using standard RTP port range for better compatibility with tools like Wireshark and VLC
 //
 
-// TODO: Would it be better to use the active universe for the last octet?
-//static constexpr char       RTP_MULTICAST_GROUP[] = "239.19.63.1";
 static constexpr uint16_t   RTP_PORT        = 5004;  // Standard RTP port
-static constexpr int        RTP_SRATE       = 48000;
+static constexpr int        RTP_SRATE       = 48000;  // "Full" Opus rate (48 kHz)
 static constexpr int        RTP_STREAMING_CHANNELS = 17; // 16 creatures + 1 BGM
-static constexpr int        RTP_FRAME_MS         = 10;        // 10 ms frames
+static constexpr int        RTP_FRAME_MS         = 20;        // 20 ms frames
 static constexpr int        RTP_SAMPLES          = RTP_SRATE * RTP_FRAME_MS / 1000; // 480
-static constexpr int        RTP_PCM_BYTES   = RTP_SAMPLES * sizeof(int16_t) * RTP_STREAMING_CHANNELS; // 240×2×17=8160
-static constexpr int        RTP_MAX_JUMBO_FRAME_SIZE = 9100; // Safe jumbo frame size for your switches (9216 - margin)
+static constexpr int        RTP_PCM_BYTES   = RTP_SAMPLES * sizeof(int16_t) * RTP_STREAMING_CHANNELS;
 static constexpr int        RTP_STANDARD_MTU_PAYLOAD = 1452; // Standard ethernet MTU minus IP/UDP/RTP headers
 static constexpr int        RTP_OPUS_PAYLOAD_PT  = 96;        // dynamic PT we’ll advertise
+static constexpr int        RTP_BITRATE  = 256000; // 128 kbps for Opus (good quality)
 
 // One multicast group per channel: 239.19.63.[1-17]
 inline constexpr std::array<const char*, RTP_STREAMING_CHANNELS> RTP_GROUPS = {

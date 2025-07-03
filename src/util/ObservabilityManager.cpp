@@ -516,6 +516,9 @@ void OperationSpan::setAttribute(const std::string& key, uint16_t value) {
 void OperationSpan::setAttribute(const std::string& key, uint32_t value) {
     if (span_) span_->SetAttribute(key, value);
 }
+    void OperationSpan::setAttribute(const std::string& key, framenum_t value) {
+        if (span_) span_->SetAttribute(key, value);
+    }
 
 void OperationSpan::setAttribute(const std::string& key, bool value) {
     if (span_) span_->SetAttribute(key, value);

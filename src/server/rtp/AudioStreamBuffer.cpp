@@ -31,13 +31,13 @@ AudioStreamBuffer::loadFromWav(const std::string& filePath,
 bool AudioStreamBuffer::loadWave(const std::string& path,
                                  std::shared_ptr<OperationSpan> parentSpan)
 {
-    auto span = observability->createChildOperationSpan(
+    const auto span = observability->createChildOperationSpan(
         "AudioStreamBuffer.loadWave", parentSpan);
     span->setAttribute("file_path", path);
 
     if (!std::filesystem::exists(path)) {
         span->setError("file not found");
-        spdlog::error("WAV file not found: {}", path);
+        error("WAV file not found: {}", path);
         return false;
     }
 
@@ -45,18 +45,21 @@ bool AudioStreamBuffer::loadWave(const std::string& path,
     Uint8*   raw  = nullptr;
     Uint32   len  = 0;
 
+    debug("Loading WAV file {}", path);
     if (!SDL_LoadWAV(path.c_str(), &spec, &raw, &len)) {
-        span->setError("SDL_LoadWAV failed");
-        spdlog::error("SDL_LoadWAV failed: {}", SDL_GetError());
+        const auto errorMessage = fmt::format("Failed to load WAV file: {}", path);
+        span->setError(errorMessage);
+        error(errorMessage);
         return false;
     }
 
     if (spec.freq != RTP_SRATE || spec.format != AUDIO_S16 ||
         spec.channels != RTP_STREAMING_CHANNELS)
     {
-        span->setError("bad WAV format");
-        spdlog::error("Bad WAV: {} Hz / {} ch / fmt 0x{:X} (need 48000/17/16-bit)",
-                      spec.freq, spec.channels, spec.format);
+        const auto errorMessage = fmt::format("WAV file format not supported: {}, {} Hz, {} ch, format 0x{:X} (expected {} Hz, {} ch, format 0x{:X})",
+            path, spec.freq, spec.channels, spec.format, RTP_SRATE, RTP_STREAMING_CHANNELS, AUDIO_S16);
+        error(errorMessage);
+        span->setError(errorMessage);
         SDL_FreeWAV(raw);
         return false;
     }
@@ -65,30 +68,45 @@ bool AudioStreamBuffer::loadWave(const std::string& path,
     framesPerChannel_ = totalSamples /
                         (RTP_STREAMING_CHANNELS * RTP_SAMPLES);    // 10 ms frames
     if (!framesPerChannel_) {
-        span->setError("audio too short");
+        const auto errorMessage = fmt::format("WAV file too short: {} ({} samples)",
+            path, totalSamples);
+        error(errorMessage);
+        span->setError(errorMessage);
         SDL_FreeWAV(raw);
         return false;
     }
 
     // Prepare encoder wrappers (one per channel)
-    std::array<opus::Encoder, RTP_STREAMING_CHANNELS> encoders;
-    for (auto& vec : encodedFrames_)
-        vec.resize(framesPerChannel_);
+    debug("encoding {} to opus...", path);
+    try {
+        std::array<opus::Encoder, RTP_STREAMING_CHANNELS> encoders;
+        for (auto& vec : encodedFrames_)
+            vec.resize(framesPerChannel_);
 
-    const int16_t* pcm = reinterpret_cast<int16_t*>(raw);
+        const int16_t* pcm = reinterpret_cast<int16_t*>(raw);
 
-    for (std::size_t f = 0; f < framesPerChannel_; ++f) {
-        const int16_t* frameBase =
-            pcm + f * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
+        for (std::size_t f = 0; f < framesPerChannel_; ++f) {
+            const int16_t* frameBase =
+                pcm + f * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
 
-        for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
-            std::array<int16_t, RTP_SAMPLES> mono{};
-            for (std::size_t s = 0; s < RTP_SAMPLES; ++s)
-                mono[s] = frameBase[s * RTP_STREAMING_CHANNELS + ch];
+            for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
+                std::array<int16_t, RTP_SAMPLES> mono{};
+                for (std::size_t s = 0; s < RTP_SAMPLES; ++s)
+                    mono[s] = frameBase[s * RTP_STREAMING_CHANNELS + ch];
 
-            encodedFrames_[ch][f] = encoders[ch].encode(mono.data());
+                encodedFrames_[ch][f] = encoders[ch].encode(mono.data());
+            }
         }
     }
+    catch (const std::exception& e) {
+        auto errorMessage = e.what();
+        error("Error while encoding WAV to Opus: {}", errorMessage);
+        span->setError(errorMessage);
+        SDL_FreeWAV(raw);
+        return false;
+    }
+    debug("encoding done");
+    info("Loaded {} frames per channel from WAV file: {}", framesPerChannel_, path);
 
     SDL_FreeWAV(raw);
     span->setSuccess();

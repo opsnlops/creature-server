@@ -62,11 +62,8 @@ namespace creatures {
         virtual ~MusicEvent() = default;
 
         void executeImpl();
-
         static int initSDL();
-
         static int locateAudioDevice();
-
         static void listAudioDevices();
 
     private:

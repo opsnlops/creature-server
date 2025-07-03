@@ -1,10 +1,13 @@
 //
 // music.cpp – Opus-only server-side file streamer with RTP marker
+//            (C++20 rev: heavy work happens on a std::jthread 🚀)
 //
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include <thread>
+#include <thread>          // std::jthread lives here
+#include <stop_token>      // std::stop_token (libc++ 15+)
+#include <vector>
 
 #include <SDL.h>
 #include <SDL_mixer.h>
@@ -22,7 +25,7 @@
 
 namespace creatures {
 
-// ───── singletons from main.cpp ──────────────────────────────────────────────
+// ───── singletons from main.cpp ──────────────────────────────────────────
 extern const char*                        audioDevice;
 extern SDL_AudioSpec                      localAudioDeviceAudioSpec;
 extern std::shared_ptr<Configuration>     config;
@@ -32,7 +35,7 @@ extern std::shared_ptr<EventLoop>         eventLoop;
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 
-// ───── small helper: generic lambda event ───────────────────────────────────
+// ───── small helper: generic lambda event ────────────────────────────────
 template <typename Tag>
 class LambdaEvent : public EventBase<LambdaEvent<Tag>> {
 public:
@@ -44,17 +47,20 @@ private:
     Fn fn_;
 };
 
-// ───── MusicEvent impl ───────────────────────────────────────────────────────
-MusicEvent::MusicEvent(framenum_t fn, std::string path)
-    : EventBase(fn), filePath(std::move(path)) {}
+// ───── MusicEvent impl ───────────────────────────────────────────────────
+MusicEvent::MusicEvent(const framenum_t frameNumber, std::string filePath)
+    : EventBase(frameNumber), filePath(std::move(filePath)) {}
 
 void MusicEvent::executeImpl()
 {
     if (filePath.empty() || !std::filesystem::is_regular_file(filePath)) {
-        error("MusicEvent: invalid file '{}'", filePath); return;
+        error("MusicEvent: invalid file '{}'", filePath);
+        return;
     }
-    std::ifstream test(filePath); if (!test.good()) {
-        error("MusicEvent: unreadable file '{}'", filePath); return;
+    std::ifstream test(filePath);
+    if (!test.good()) {
+        error("MusicEvent: unreadable file '{}'", filePath);
+        return;
     }
 
     auto span = observability->createOperationSpan("music_event.execute");
@@ -68,58 +74,168 @@ void MusicEvent::executeImpl()
     span->setSuccess();
 }
 
-// ───── Local SDL playback (unchanged) ────────────────────────────────────────
-void MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> parentSpan)
+// ───── Local SDL playback (unchanged) ────────────────────────────────────
+void MusicEvent::playLocalAudio([[maybe_unused]] std::shared_ptr<OperationSpan> parentSpan)
 {
-    /* identical to previous version – omitted for brevity */
+    if (!parentSpan)
+        parentSpan = observability->createOperationSpan("music_event.play_local_audio");
+
+    auto span = observability->createChildOperationSpan("music_event.play_local", parentSpan);
+    span->setAttribute("file_path", filePath);
+
+    std::thread([filePath = this->filePath, span] {
+        gpioPins->playingSound(true);
+
+        // open audio device
+        if (Mix_OpenAudioDevice(localAudioDeviceAudioSpec.freq,
+                                localAudioDeviceAudioSpec.format,
+                                localAudioDeviceAudioSpec.channels,
+                                SOUND_BUFFER_SIZE,
+                                audioDevice, 1) < 0)
+        {
+            span->setError(Mix_GetError());
+            gpioPins->playingSound(false);
+            return;
+        }
+
+        // load music
+        Mix_Music* mus = Mix_LoadMUS(filePath.c_str());
+        if (!mus) {
+            span->setError(Mix_GetError());
+            gpioPins->playingSound(false);
+            return;
+        }
+
+        span->setAttribute("duration_seconds", Mix_MusicDuration(mus));
+
+        if (Mix_PlayMusic(mus, 1) == -1) {
+            span->setError(Mix_GetError());
+            Mix_FreeMusic(mus);
+            gpioPins->playingSound(false);
+            return;
+        }
+
+        while (Mix_PlayingMusic())
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        Mix_FreeMusic(mus);
+        metrics->incrementSoundsPlayed();
+        span->setSuccess();
+        gpioPins->playingSound(false);
+    }).detach();
 }
 
-// ───── RTP / Opus streaming ──────────────────────────────────────────────────
+// ───── RTP / Opus streaming – now fires a background jthread ─────────────
 void MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> parentSpan)
 {
     if (!parentSpan)
         parentSpan = observability->createOperationSpan("music_event.schedule_rtp_audio");
-    auto span = observability->createChildOperationSpan("music_event.schedule_rtp", parentSpan);
 
-    if (!rtpServer || !rtpServer->isReady()) {
-        span->setError("rtp_server_not_ready");
-        error("Opus RTP server not ready – aborting stream");
-        return;
-    }
+    //---------------------------------------------------------------------
+    // Capture the data we need *by value* so the MusicEvent object can die.
+    //---------------------------------------------------------------------
+    const std::string localPath  = filePath;
 
-    auto buffer = rtp::AudioStreamBuffer::loadFromWav(filePath, span);
-    if (!buffer) { span->setError("buffer_load_failed"); return; }
+    // Ask the loop for the next safe frame *before* we spawn the thread.
+    const framenum_t startingFrame  = eventLoop->getNextFrameNumber() + 1;
+    parentSpan->setAttribute("original_frame_number", startingFrame);
 
-    const std::size_t frames = buffer->frameCount();
-    constexpr std::size_t kPrefill = 3;              // 30 ms priming burst
-    framenum_t cursor = frameNumber + 1;             // 1 ms after this event
+#if defined(__cpp_lib_jthread)
+    std::jthread worker([parentSpan, localPath, startFrame](std::stop_token st) {
+#else
+    std::thread  worker([parentSpan, localPath, startingFrame]() {
+#endif
+        //-----------------------------------------------------------------
+        auto span = observability->createChildOperationSpan("music_event.schedule_rtp", parentSpan);
 
-    span->setAttribute("frames_total", static_cast<int64_t>(frames));
+        if (!rtpServer || !rtpServer->isReady()) {
+            span->setError("rtp_server_not_ready");
+            error("Opus RTP server not ready – aborting stream");
+            return;
+        }
+        debug("rtpServer is ready, proceeding with RTP audio stream");
 
-    for (std::size_t f = 0; f < frames; ++f) {
+        // 🐇 Heavy I/O – off the event‑loop thread!
+        debug("loading buffer from WAV file: {}", localPath);
+        const auto encodingSpan = observability->createChildOperationSpan("music_event.encode_to_opus", span);
+        auto buffer = rtp::AudioStreamBuffer::loadFromWav(localPath, span);
+        if (!buffer) {
+            const auto msg = fmt::format("Failed to load audio buffer from '{}'", localPath);
+            error(msg);
+            encodingSpan->setError(msg);
+            return;
+        }
+        encodingSpan->setSuccess();
 
-        using Tag = struct {};                       // unique tag for CRTP
-        bool isFirstPacket = (f == 0);
+        // Since encoding takes a lot of time, we need to see where we are now. We can use that as the starting
+        // point for the RTP stream. This is the frame number that will be used to schedule the first event.
+        framenum_t streamingStartFrame = eventLoop->getNextFrameNumber() + 1;
+        parentSpan->setAttribute("streaming_start_frame", streamingStartFrame);
+        debug("Original music event frame number: {}, streaming start frame: {}",
+              startingFrame, streamingStartFrame);
 
-        auto ev = std::make_shared<LambdaEvent<Tag>>(cursor, [buf = buffer, f, isFirstPacket] {
-            for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch)
-                rtpServer->send(ch, buf->frame(ch, f));
-        });
+        constexpr std::size_t kPrefill = 3;  // 30ms priming
+        const std::size_t     frames   = buffer->frameCount();
+        framenum_t            cursor   = streamingStartFrame;
 
-        eventLoop->scheduleEvent(ev);
+        span->setAttribute("frames_total", static_cast<int64_t>(frames));
 
-        cursor += (f + 1 < kPrefill)
-                  ? 1                                     // 1 ms priming
-                  : RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;  // steady 10 ms
-    }
+        debug("scheduling {} frames for RTP streaming", frames);
+        for (std::size_t f = 0; f < frames
+#if defined(__cpp_lib_jthread)
+             && !st.stop_requested()
+#endif
+             ; ++f) {
+            using Tag = struct {};
+            auto ev = std::make_shared<LambdaEvent<Tag>>(cursor, [buf = buffer, f] {
+                for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch)
+                    rtpServer->send(ch, buf->frame(ch, f));
+            });
 
-    metrics->incrementSoundsPlayed();
-    span->setSuccess();
+            eventLoop->scheduleEvent(std::move(ev));
+            cursor += (f + 1 < kPrefill) ? 1
+                                         : RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
+        }
+        debug("finished scheduling RTP audio frames");
+
+        metrics->incrementSoundsPlayed();
+        span->setSuccess();
+    });
+
+    debug("detaching worker");
+    worker.detach();
+    debug("worker detached");
 }
 
-// ───── SDL helpers (unchanged) ───────────────────────────────────────────────
-int  MusicEvent::initSDL()            { /* … same … */ return 1; }
-int  MusicEvent::locateAudioDevice()  { /* … same … */ return 1; }
-void MusicEvent::listAudioDevices()   { /* … same … */ }
+    // ───── SDL helpers ───────────────────────────────────────────
+    int MusicEvent::initSDL()
+    {
+        if (SDL_Init(SDL_INIT_AUDIO) < 0) {
+            error("SDL init failed: {}", SDL_GetError());
+            return 0;
+        }
+        return 1;
+    }
+
+    int MusicEvent::locateAudioDevice()
+    {
+        localAudioDeviceAudioSpec = {};
+        localAudioDeviceAudioSpec.freq     = static_cast<int>(config->getSoundFrequency());
+        localAudioDeviceAudioSpec.channels = config->getSoundChannels();
+        localAudioDeviceAudioSpec.format   = AUDIO_F32SYS;
+        localAudioDeviceAudioSpec.samples  = SOUND_BUFFER_SIZE;
+
+        audioDevice = SDL_GetAudioDeviceName(config->getSoundDevice(), 0);
+        if (!audioDevice) { error("SDL_GetAudioDeviceName: {}", SDL_GetError()); return 0; }
+        return 1;
+    }
+
+    void MusicEvent::listAudioDevices()
+    {
+        int n = SDL_GetNumAudioDevices(0);
+        debug("SDL reports {} audio devices", n);
+        for (int i = 0; i < n; ++i)
+            debug("  [{}] {}", i, SDL_GetAudioDeviceName(i, 0));
+    }
 
 } // namespace creatures
