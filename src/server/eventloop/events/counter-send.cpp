@@ -26,7 +26,7 @@ namespace creatures {
     extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
     extern std::shared_ptr<ObservabilityManager> observability;
 
-    void CounterSendEvent::executeImpl() {
+    Result<framenum_t> CounterSendEvent::executeImpl() {
 
         auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
 
@@ -57,6 +57,8 @@ namespace creatures {
         eventLoop->scheduleEvent(nextTick);
 
         trace("next counter send event scheduled for frame {}", this->frameNumber + SEND_COUNTERS_FRAMES);
+
+        return Result<framenum_t>{this->frameNumber};
     }
 
 }

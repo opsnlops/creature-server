@@ -24,7 +24,7 @@ namespace creatures {
     public:
         using EventBase::EventBase;
 
-        void executeImpl();
+        Result<framenum_t> executeImpl();
 
         virtual ~TickEvent() = default;
     };
@@ -33,7 +33,7 @@ namespace creatures {
     public:
         using EventBase::EventBase;
 
-        void executeImpl();
+        Result<framenum_t> executeImpl();
 
         virtual ~CounterSendEvent() = default;
     };
@@ -44,7 +44,7 @@ namespace creatures {
 
         virtual ~DMXEvent() = default;
 
-        void executeImpl();
+        Result<framenum_t> executeImpl();
 
         universe_t universe;
         uint32_t channelOffset;
@@ -61,7 +61,7 @@ namespace creatures {
 
         virtual ~MusicEvent() = default;
 
-        void executeImpl();
+        Result<framenum_t> executeImpl();
         static int initSDL();
         static int locateAudioDevice();
         static void listAudioDevices();
@@ -74,13 +74,13 @@ namespace creatures {
          * Play audio locally through SDL (traditional mode)
          * @param parentSpan Optional observability span for tracing
          */
-        void playLocalAudio(std::shared_ptr<class OperationSpan> parentSpan = nullptr);
+        Result<framenum_t> playLocalAudio(std::shared_ptr<class OperationSpan> parentSpan = nullptr);
 
         /**
          * Schedule RTP audio chunks in the event loop (streaming mode)
          * @param parentSpan Optional observability span for tracing
          */
-        void scheduleRtpAudio(std::shared_ptr<class OperationSpan> parentSpan = nullptr);
+        Result<framenum_t> scheduleRtpAudio(std::shared_ptr<class OperationSpan> parentSpan = nullptr);
     };
 
     class PlaylistEvent : public EventBase<PlaylistEvent> {
@@ -91,7 +91,7 @@ namespace creatures {
 
         virtual ~PlaylistEvent() = default;
 
-        void executeImpl();
+        Result<framenum_t> executeImpl();
 
     private:
         universe_t activeUniverse;
@@ -119,7 +119,7 @@ namespace creatures {
 
         virtual ~StatusLightEvent() = default;
 
-        void executeImpl();
+        Result<framenum_t> executeImpl();
 
     private:
         StatusLight light;
@@ -135,7 +135,7 @@ namespace creatures {
 
         virtual ~CacheInvalidateEvent() = default;
 
-        void executeImpl();
+        Result<framenum_t> executeImpl();
 
     private:
         CacheType cacheType;

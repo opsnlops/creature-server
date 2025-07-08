@@ -11,6 +11,7 @@
 #include "server/config.h"
 #include "server/rtp/opus/OpusEncoderWrapper.h"
 #include "util/ObservabilityManager.h"
+#include "util/Result.h"
 
 namespace creatures::rtp {
 
@@ -32,7 +33,7 @@ namespace creatures::rtp {
 
     private:
         AudioStreamBuffer() = default;
-        bool loadWave(const std::string& filePath,
+        Result<size_t> loadWave(const std::string& filePath,
                       std::shared_ptr<OperationSpan> parentSpan);
 
         std::size_t framesPerChannel_{0};

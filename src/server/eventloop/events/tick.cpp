@@ -14,7 +14,7 @@ namespace creatures {
     extern std::shared_ptr<EventLoop> eventLoop;
     extern std::shared_ptr<SystemCounters> metrics;
 
-    void TickEvent::executeImpl() {
+    Result<framenum_t> TickEvent::executeImpl() {
 
         // Just go tick!
         debug("⌚️ Hello from frame {:L}! Event queue length: {}, events: {:L}, frames streamed: {:L}, animations played: {:L}, DMX events sent: {:L}, sounds played: {:L}, playlists started: {:L}, playlists stopped: {:L}, playlists events processed: {:L}, web api requests: {:L}",
@@ -34,6 +34,8 @@ namespace creatures {
         // Make another event
         auto nextTick = std::make_shared<TickEvent>(this->frameNumber + TICK_TIME_FRAMES);
         eventLoop->scheduleEvent(nextTick);
+
+        return Result<framenum_t>{this->frameNumber + TICK_TIME_FRAMES};
     }
 
 }

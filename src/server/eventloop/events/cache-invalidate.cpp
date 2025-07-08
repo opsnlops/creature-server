@@ -7,6 +7,8 @@
 #include "server/namespace-stuffs.h"
 #include "util/websocketUtils.h"
 
+extern std::shared_ptr<creatures::EventLoop> eventLoop;
+
 namespace creatures {
 
 
@@ -16,9 +18,12 @@ namespace creatures {
     /**
      * Tells the clients to invalidate a certain cache type
      */
-    void CacheInvalidateEvent::executeImpl() {
+    Result<framenum_t> CacheInvalidateEvent::executeImpl() {
         debug("cache invalidate event for {}", toString(cacheType));
         broadcastCacheInvalidationToAllClients(cacheType);
+
+        return Result{this->frameNumber};
     }
+
 
 }

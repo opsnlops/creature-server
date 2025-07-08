@@ -116,10 +116,10 @@ namespace creatures {
 
 
         // Playlist stuff
-        Result<json> getPlaylistJson(playlistId_t playlistId);
-        Result<std::vector<creatures::Playlist>> getAllPlaylists();
-        Result<creatures::Playlist> getPlaylist(const playlistId_t& playlistId);
-        Result<creatures::Playlist> upsertPlaylist(const std::string& playlistJson);
+        Result<json> getPlaylistJson(playlistId_t playlistId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+        Result<std::vector<creatures::Playlist>> getAllPlaylists(std::shared_ptr<OperationSpan> parentSpan = nullptr);
+        Result<creatures::Playlist> getPlaylist(const playlistId_t& playlistId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+        Result<creatures::Playlist> upsertPlaylist(const std::string& playlistJson, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
         /**
          * Request that the database perform a health check
@@ -162,8 +162,8 @@ namespace creatures {
         /*
          * Playlists
          */
-        static Result<creatures::Playlist> playlistFromJson(json playlistJson);
-        static Result<creatures::PlaylistItem> playlistItemFromJson(json playlistItemJson);
+        static Result<creatures::Playlist> playlistFromJson(json playlistJson, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+        static Result<creatures::PlaylistItem> playlistItemFromJson(json playlistItemJson, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
         // Start out thinking that the server is pingable
         std::atomic<bool> serverPingable{true};

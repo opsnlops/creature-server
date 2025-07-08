@@ -10,15 +10,18 @@
 #include "server/eventloop/events/types.h"
 #include "server/metrics/counters.h"
 #include "util/helpers.h"
+#include "util/Result.h"
 
 #include "server/namespace-stuffs.h"
+
+extern std::shared_ptr<creatures::EventLoop> eventLoop;
 
 namespace creatures {
 
     extern std::shared_ptr <creatures::e131::E131Server> e131Server;
     extern std::shared_ptr<SystemCounters> metrics;
 
-    void DMXEvent::executeImpl() {
+    Result<framenum_t> DMXEvent::executeImpl() {
 
         // Send the DMX data
         e131Server->setValues(universe, channelOffset, data);
@@ -29,6 +32,8 @@ namespace creatures {
 #if DEBUG_EVENT_DMX
         debug("DMX data: Offset: {}, data: {}", channelOffset, vectorToHexString(data));
 #endif
+
+        return Result{this->frameNumber};
 
     }
 

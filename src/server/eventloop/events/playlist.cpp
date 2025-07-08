@@ -17,6 +17,8 @@
 #include "server/namespace-stuffs.h"
 
 #include "util/cache.h"
+#include "util/ObservabilityManager.h"
+#include "util/Result.h"
 #include "util/websocketUtils.h"
 
 namespace creatures {
@@ -24,12 +26,16 @@ namespace creatures {
     extern std::shared_ptr<Database> db;
     extern std::shared_ptr<EventLoop> eventLoop;
     extern std::shared_ptr<SystemCounters> metrics;
+    extern std::shared_ptr<ObservabilityManager> observability;
     extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 
     PlaylistEvent::PlaylistEvent(framenum_t frameNumber, universe_t universe)
             : EventBase(frameNumber), activeUniverse(universe) {}
 
-    void PlaylistEvent::executeImpl() {
+    Result<framenum_t> PlaylistEvent::executeImpl() {
+
+        auto span = observability->createOperationSpan("playlist_event.execute");
+        span->setAttribute("active_universe", activeUniverse);
 
         debug("hello from a playlist event for universe {}", activeUniverse);
         metrics->incrementPlaylistsEventsProcessed();
@@ -37,10 +43,12 @@ namespace creatures {
 
         // Is there a playlist for this universe?
         if(!runningPlaylists->contains(activeUniverse)) {
-            info("No active playlist for universe {}. Assuming we've been stopped.", activeUniverse);
+            std::string errorMessage = fmt::format("No active playlist for universe {}. Assuming we've been stopped.", activeUniverse);
+            info(errorMessage);
             runningPlaylists->remove(activeUniverse);
             sendEmptyPlaylistUpdate(activeUniverse);
-            return;
+            span->setError(errorMessage);
+            return Result<framenum_t>{ServerError(ServerError::InvalidData, errorMessage)};
         }
 
 
@@ -50,15 +58,19 @@ namespace creatures {
 
 
         // Go look this one up
+        auto dbSpan = observability->createChildOperationSpan("music_event.db_lookup", span);
         auto playListResult = db->getPlaylist(activePlaylistStatus->playlist);
         if(!playListResult.isSuccess()) {
-            warn("Playlist ID {} not found while in a playlist event. halting playback.", activePlaylistStatus->playlist);
+            std::string errorMessage = fmt::format("Playlist ID {} not found while in a playlist event. halting playback.", activePlaylistStatus->playlist);
+            warn(errorMessage);
             runningPlaylists->remove(activeUniverse);
             sendEmptyPlaylistUpdate(activeUniverse);
-            return;
+            dbSpan->setError(errorMessage);
+            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
         }
         auto playlist = playListResult.getValue().value();
         debug("playlist found. name: {}", playlist.name);
+        dbSpan->setSuccess();
 
 
         /*
@@ -87,24 +99,27 @@ namespace creatures {
 
         auto chosenAnimation = choices[theChosenOne];
         debug("...and the chosen one is {}", chosenAnimation);
+        span->setAttribute("chosen_animation", chosenAnimation);
 
         // Go get this animation
         Result<Animation> animationResult = db->getAnimation(chosenAnimation);
         if(!animationResult.isSuccess()) {
-            warn("Animation ID {} not found while in a playlist event. halting playback.", chosenAnimation);
+            std::string errorMessage = fmt::format("Animation ID {} not found while in a playlist event. halting playback.", chosenAnimation);
+            warn(errorMessage);
             runningPlaylists->remove(activeUniverse);
             sendEmptyPlaylistUpdate(activeUniverse);
-            return;
+            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
         }
         auto animation = animationResult.getValue().value();
 
         // Schedule this animation
         auto scheduleResult = scheduleAnimation(eventLoop->getNextFrameNumber(), animation, activeUniverse);
         if(!scheduleResult.isSuccess()) {
-            warn("Unable to schedule animation: {}. Halting playback.", scheduleResult.getError().value().getMessage());
+            std::string errorMessage = fmt::format("Unable to schedule animation: {}. Halting playback.", scheduleResult.getError().value().getMessage());
+            warn(errorMessage);
             runningPlaylists->remove(activeUniverse);
             sendEmptyPlaylistUpdate(activeUniverse);
-            return;
+            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
         }
         auto lastFrame = scheduleResult.getValue().value();
 
@@ -125,6 +140,7 @@ namespace creatures {
         sendPlaylistUpdate(*activePlaylistStatus);
 
         debug("scheduled next event for frame {}. later!", lastFrame+1);
+        return Result<framenum_t>{lastFrame};
     }
 
     /**

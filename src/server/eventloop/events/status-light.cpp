@@ -24,7 +24,7 @@ namespace creatures {
     StatusLightEvent::StatusLightEvent(framenum_t frameNumber, StatusLight light, bool on)
             : EventBase(frameNumber), light(light), on(on) {}
 
-    void StatusLightEvent::executeImpl() {
+    Result<framenum_t> StatusLightEvent::executeImpl() {
 
         std::string lightName;
 
@@ -37,12 +37,12 @@ namespace creatures {
 
             default:
                 warn("Unhandled light in StatusLightEvent: {}", static_cast<int>(light));
-                return;
+                return Result<framenum_t>{this->frameNumber};
 
         }
 
         debug("Turning status light {} {}", lightName, on ? "on" : "off");
-
+        return Result<framenum_t>{this->frameNumber};
     }
 
 }

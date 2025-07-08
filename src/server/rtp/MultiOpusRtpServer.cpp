@@ -28,13 +28,13 @@ MultiOpusRtpServer::MultiOpusRtpServer()
             // 3.  Override the dynamic PT so VLC/Wireshark see 96
             streams_[i]->configure_ctx(RCC_DYN_PAYLOAD_TYPE, RTP_OPUS_PAYLOAD_PT);
 
-            // (Optional) 4.  Tell uvgrtp the real clock rate (48 kHz)
+            // 4.  Tell uvgrtp the real clock rate (48 kHz)
             streams_[i]->configure_ctx(RCC_CLOCK_RATE, RTP_SRATE);
         }
         ready_ = true;
     }
     catch (const std::exception& e) {
-        spdlog::error("🐇 MultiOpusRtpServer init failed: {}", e.what());
+        spdlog::error("MultiOpusRtpServer init failed: {}", e.what());
     }
 }
 
