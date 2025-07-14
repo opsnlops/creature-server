@@ -17,6 +17,7 @@ namespace creatures {
         playlistStatusRequests = 0;
         restRequestsProcessed = 0;
         rtpEventsProcessed = 0;
+        rtpEncoderResets = 0;
         soundFilesServed = 0;
         websocketConnectionsProcessed = 0;
         websocketMessagesReceived = 0;
@@ -98,7 +99,9 @@ namespace creatures {
     }
 
 
-
+    void SystemCounters::incrementRtpEncoderResets() {
+        rtpEncoderResets++;
+    }
 
 
 
@@ -150,6 +153,10 @@ namespace creatures {
         return rtpEventsProcessed.load();
     }
 
+    uint64_t SystemCounters::getRtpEncoderResets() {
+        return rtpEncoderResets.load();
+    }
+
     uint64_t SystemCounters::getSoundFilesServed() {
         return soundFilesServed.load();
     }
@@ -194,6 +201,8 @@ namespace creatures {
         dto->playlistsEventsProcessed = playlistsEventsProcessed.load();
         dto->playlistStatusRequests = playlistStatusRequests.load();
         dto->restRequestsProcessed = restRequestsProcessed.load();
+        dto->rtpEventsProcessed = rtpEventsProcessed.load();
+        dto->rtpEncoderResets = rtpEncoderResets.load();
         dto->websocketConnectionsProcessed = websocketConnectionsProcessed.load();
         dto->websocketMessagesReceived = websocketMessagesReceived.load();
         dto->websocketMessagesSent = websocketMessagesSent.load();

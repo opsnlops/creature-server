@@ -1,6 +1,4 @@
-
 // src/server/rtp/opus/OpusEncoderWrapper.cpp
-
 
 #include <stdexcept>
 
@@ -45,13 +43,21 @@ Encoder::~Encoder() { opus_encoder_destroy(enc_); }
 
 std::vector<uint8_t> Encoder::encode(const int16_t* pcm)
 {
-    int bytes = opus_encode(enc_,
-                            pcm,                // 10 ms mono samples
-                            frameSamples_,      // = 480
-                            scratch_.data(),
-                            static_cast<opus_int32>(scratch_.size()));
+    const int bytes = opus_encode(enc_,
+                                  pcm,                // 10 ms mono samples
+                                  frameSamples_,      // = 480
+                                  scratch_.data(),
+                                  static_cast<opus_int32>(scratch_.size()));
     if (bytes < 0)
         throw std::runtime_error("opus_encode failed");
 
     return {scratch_.data(), scratch_.data() + bytes};
+}
+
+void Encoder::reset()
+{
+    if (enc_) {
+        opus_encoder_ctl(enc_, OPUS_RESET_STATE);
+        debug("Opus encoder state reset");
+    }
 }

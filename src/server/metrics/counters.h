@@ -113,6 +113,11 @@ namespace creatures {
         }
         DTO_FIELD(UInt64, websocketPongsReceived);
 
+        DTO_FIELD_INFO(rtpEncoderResets) {
+            info->description = "Number of RTP encoder resets (SSRC rotations) that have been performed";
+        }
+        DTO_FIELD(UInt64, rtpEncoderResets);
+
     };
 
 #include OATPP_CODEGEN_END(DTO)
@@ -136,6 +141,7 @@ namespace creatures {
         void incrementPlaylistsEventsProcessed();
         void incrementPlaylistStatusRequests();
         void incrementRtpEventsProcessed();
+        void incrementRtpEncoderResets();
         void incrementRestRequestsProcessed();
         void incrementSoundFilesServed();
         void incrementWebsocketConnectionsProcessed();
@@ -158,6 +164,7 @@ namespace creatures {
         uint64_t getPlaylistStatusRequests();
         uint64_t getRestRequestsProcessed();
         uint64_t getRtpEventsProcessed();
+        uint64_t getRtpEncoderResets();
         uint64_t getSoundFilesServed();
         uint64_t getWebsocketConnectionsProcessed();
         uint64_t getWebsocketMessagesReceived();
@@ -184,6 +191,7 @@ namespace creatures {
         std::atomic<uint64_t> restRequestsProcessed;
         std::atomic<uint64_t> soundFilesServed;
         std::atomic<uint64_t> rtpEventsProcessed;
+        std::atomic<uint64_t> rtpEncoderResets;
         std::atomic<uint64_t> websocketConnectionsProcessed;
         std::atomic<uint64_t> websocketMessagesReceived;
         std::atomic<uint64_t> websocketMessagesSent;

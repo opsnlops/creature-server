@@ -141,4 +141,19 @@ namespace creatures {
         CacheType cacheType;
     };
 
+    class RtpEncoderResetEvent : public EventBase<RtpEncoderResetEvent> {
+    public:
+        using EventBase::EventBase;
+
+        // Constructor with silent frame count parameter
+        RtpEncoderResetEvent(framenum_t frameNumber, uint8_t silentFrameCount = 4);
+
+        virtual ~RtpEncoderResetEvent() = default;
+
+        Result<framenum_t> executeImpl();
+
+    private:
+        uint8_t silentFrameCount_{4};  // Default to 4 silent frames (80ms of priming)
+    };
+
 }

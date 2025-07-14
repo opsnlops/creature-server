@@ -22,6 +22,12 @@ namespace creatures::rtp::opus {
         // Encodes one PCM frame (int16) → returns encoded bytes
         std::vector<uint8_t> encode(const int16_t* pcm);
 
+        // Reset encoder state - like giving our bunny a fresh start! 🐰
+        void reset();
+
+        // Get handle for direct opus_encoder_ctl calls if needed
+        OpusEncoder* handle() { return enc_; }
+
     private:
         OpusEncoder* enc_{nullptr};
         const int    frameSamples_;

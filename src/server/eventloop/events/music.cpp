@@ -33,11 +33,10 @@ namespace creatures {
     extern std::shared_ptr<GPIO>              gpioPins;
     extern std::shared_ptr<SystemCounters>    metrics;
     extern std::shared_ptr<EventLoop>         eventLoop;
-    extern std::shared_ptr<ObservabilityManager> observability;  // ← Fixed: declared properly
+    extern std::shared_ptr<ObservabilityManager> observability;
     extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 
-    // Use constants from config.h - 17 channels for 16 creatures + BGM! 🐰
-    // (These are already defined in config.h, just referencing them here for clarity)
+    // Use constants from config.h - 17 channels for 16 creatures + BGM
 
     // ───── Fixed SimpleLambdaEvent (use this one!) ───────────────────────────
     template <typename Tag>
@@ -75,7 +74,7 @@ namespace creatures {
 
     Result<framenum_t> MusicEvent::executeImpl()
     {
-        // Create observability span if observability is available
+        // Create an observability span if observability is available
         std::shared_ptr<OperationSpan> span;
         if (observability) {
             span = observability->createOperationSpan("music_event.execute");
@@ -84,7 +83,7 @@ namespace creatures {
 
         // Make sure the file exists and is readable
         if (filePath.empty()) {
-            std::string errorMessage = "MusicEvent: empty file path - that bunny won't hop! 🐰";
+            std::string errorMessage = "MusicEvent: empty file path provided";
             error(errorMessage);
             if (span) span->setError(errorMessage);
             return Result<framenum_t>{ServerError(ServerError::InvalidData, errorMessage)};
@@ -105,8 +104,7 @@ namespace creatures {
         }
 
         // Test readability
-        std::ifstream test(filePath);
-        if (!test.good()) {
+        if (std::ifstream test(filePath); !test.good()) {
             std::string errorMessage = fmt::format("MusicEvent: unreadable file '{}'", filePath);
             error(errorMessage);
             if (span) span->setError(errorMessage);
@@ -114,7 +112,7 @@ namespace creatures {
         }
 
         // Dispatch based on audio mode
-        Result<framenum_t> result = {this->frameNumber};  // Default to current frame number
+        Result result = {this->frameNumber};  // Default to current frame number
         if (config->getAudioMode() == Configuration::AudioMode::RTP) {
             result = scheduleRtpAudio(span);
         } else {
@@ -146,7 +144,7 @@ namespace creatures {
 
         debug("Starting local audio playback for: {}", filePath);
 
-        // Spawn the audio thread (same logic as before, but in a thread)
+        // Spawn the audio thread
         std::thread([filePath = this->filePath, span] {
             gpioPins->playingSound(true);
 
@@ -157,7 +155,7 @@ namespace creatures {
                                     SOUND_BUFFER_SIZE,
                                     audioDevice, 1) < 0)
             {
-                std::string errorMsg = fmt::format("Failed to open audio device: {}", Mix_GetError());
+                const std::string errorMsg = fmt::format("Failed to open audio device: {}", Mix_GetError());
                 error(errorMsg);
                 if (span) span->setError(errorMsg);
                 gpioPins->playingSound(false);
@@ -167,7 +165,7 @@ namespace creatures {
             // load music
             Mix_Music* mus = Mix_LoadMUS(filePath.c_str());
             if (!mus) {
-                std::string errorMsg = fmt::format("Failed to load music: {}", Mix_GetError());
+                const std::string errorMsg = fmt::format("Failed to load music: {}", Mix_GetError());
                 error(errorMsg);
                 if (span) span->setError(errorMsg);
                 gpioPins->playingSound(false);
@@ -178,7 +176,7 @@ namespace creatures {
             debug("Music duration: {:.2f} seconds", Mix_MusicDuration(mus));
 
             if (Mix_PlayMusic(mus, 1) == -1) {
-                std::string errorMsg = fmt::format("Failed to play music: {}", Mix_GetError());
+                const std::string errorMsg = fmt::format("Failed to play music: {}", Mix_GetError());
                 error(errorMsg);
                 if (span) span->setError(errorMsg);
                 Mix_FreeMusic(mus);
@@ -201,12 +199,12 @@ namespace creatures {
         }).detach();
 
         // Return immediately - the music plays in the background
-        return Result<framenum_t>{this->frameNumber};
+        return Result{this->frameNumber};
     }
 
 // ───── RTP / Opus streaming with proper Result handling ──────────────────
     Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> parentSpan)
-    {
+{
         std::shared_ptr<OperationSpan> span;
         if (observability) {
             if (!parentSpan) {
@@ -255,9 +253,15 @@ namespace creatures {
             if (encodingSpan) encodingSpan->setSuccess();
 
             // Get current frame for scheduling (encoding took time!)
-            framenum_t streamingStartFrame = eventLoop->getNextFrameNumber() + 1;
+            framenum_t streamingStartFrame = eventLoop->getNextFrameNumber() + 2; // +2 to allow for reset event
             if (span) span->setAttribute("streaming_start_frame", streamingStartFrame);
             debug("Original frame: {}, streaming start frame: {}", startingFrame, streamingStartFrame);
+
+            // *** NEW: Schedule encoder reset event one frame before streaming starts ***
+            framenum_t resetFrame = streamingStartFrame - 1;
+            auto resetEvent = std::make_shared<RtpEncoderResetEvent>(resetFrame, 4); // 4 silent frames
+            eventLoop->scheduleEvent(resetEvent);
+            debug("Scheduled RtpEncoderResetEvent for frame {} (one frame before streaming)", resetFrame);
 
             constexpr std::size_t kPrefill = 3;  // 30ms priming
             const std::size_t frames = buffer->frameCount();
@@ -289,7 +293,7 @@ namespace creatures {
                 cursor += (f + 1 < kPrefill) ? 1 : RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
             }
 
-            debug("Finished scheduling {} RTP audio frames - that's a lot of hops! 🐰", frames);
+            debug("Finished scheduling {} RTP audio frames", frames);
             metrics->incrementSoundsPlayed();
             if (span) span->setSuccess();
         });
