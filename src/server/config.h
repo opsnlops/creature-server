@@ -102,7 +102,7 @@ static constexpr int        RTP_SAMPLES          = RTP_SRATE * RTP_FRAME_MS / 10
 static constexpr int        RTP_PCM_BYTES   = RTP_SAMPLES * sizeof(int16_t) * RTP_STREAMING_CHANNELS;
 static constexpr int        RTP_STANDARD_MTU_PAYLOAD = 1452; // Standard ethernet MTU minus IP/UDP/RTP headers
 static constexpr int        RTP_OPUS_PAYLOAD_PT  = 96;        // dynamic PT we’ll advertise
-static constexpr int        RTP_BITRATE  = 128000; // 128 kbps for Opus (good quality)
+static constexpr int        RTP_BITRATE  = 256000; // 256 kbps for Opus (super quality)
 
 // One multicast group per channel: 239.19.63.[1-17]
 inline constexpr std::array<const char*, RTP_STREAMING_CHANNELS> RTP_GROUPS = {

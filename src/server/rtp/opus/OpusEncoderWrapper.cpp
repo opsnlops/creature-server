@@ -11,7 +11,7 @@
 using namespace creatures::rtp::opus;
 
 Encoder::Encoder(int sr, int ch, int fs, int br, bool fec)
-    : frameSamples_(fs), scratch_(4000) // 4000 is enough for 20 ms mono @128k
+    : frameSamples_(fs), scratch_(8000) // 8000 is enough for 20 ms mono @256k
 {
     try {
         int err = 0;
@@ -23,7 +23,7 @@ Encoder::Encoder(int sr, int ch, int fs, int br, bool fec)
         }
 
         /* --- CBR configuration for consistent packet timing --- */
-        opus_encoder_ctl(enc_, OPUS_SET_BITRATE(br));          // Set target bitrate (96k/128k)
+        opus_encoder_ctl(enc_, OPUS_SET_BITRATE(br));          // Set target bitrate (96k/128k/256k)
         opus_encoder_ctl(enc_, OPUS_SET_VBR(0));               // Disable VBR - use CBR for consistent timing
         opus_encoder_ctl(enc_, OPUS_SET_COMPLEXITY(10));       // Maximum quality psychoacoustic model
         opus_encoder_ctl(enc_, OPUS_SET_SIGNAL(OPUS_SIGNAL_MUSIC));
