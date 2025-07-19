@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.4.12"
+        VERSION "2.4.13"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -74,10 +74,19 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-# Why are UUIDs so hard in 2024
+# Why are UUIDs so hard in 2025?
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     pkg_search_module(UUID REQUIRED uuid)
 endif()
+
+# Force O3 optimization for Release builds
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+        set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
+    endif()
+endif()
+
 
 # fmt
 message(STATUS "fmt")
@@ -410,7 +419,6 @@ target_link_libraries(creature-server
         opentelemetry_resources
         opentelemetry_common
         opentelemetry_http_client_curl  # Needed for HTTP exporter
-        # OpenTelemetry libraries for metrics - the missing hoppy pieces! 🐰
         opentelemetry_metrics
         opentelemetry_exporter_otlp_http_metric
         argparse
