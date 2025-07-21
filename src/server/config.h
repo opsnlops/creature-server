@@ -97,7 +97,7 @@
 static constexpr uint16_t   RTP_PORT        = 5004;  // Standard RTP port
 static constexpr int        RTP_SRATE       = 48000;  // "Full" Opus rate (48 kHz)
 static constexpr int        RTP_STREAMING_CHANNELS = 17; // 16 creatures + 1 BGM
-static constexpr int        RTP_FRAME_MS         = 20;        // 20 ms frames
+static constexpr int        RTP_FRAME_MS         = 10;        // 10 ms frames
 static constexpr int        RTP_SAMPLES          = RTP_SRATE * RTP_FRAME_MS / 1000; // 480
 static constexpr int        RTP_PCM_BYTES   = RTP_SAMPLES * sizeof(int16_t) * RTP_STREAMING_CHANNELS;
 static constexpr int        RTP_STANDARD_MTU_PAYLOAD = 1452; // Standard ethernet MTU minus IP/UDP/RTP headers
