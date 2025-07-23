@@ -17,7 +17,7 @@
 // SDL
 #include <SDL2/SDL.h>
 
-// E131Sever
+// E131Server
 #include <E131Server.h>
 
 // MoodyCamel
