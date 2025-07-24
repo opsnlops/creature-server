@@ -16,7 +16,7 @@ namespace creatures {
  */
 class Configuration {
 
-public:
+  public:
     Configuration() = default;
     ~Configuration() = default;
 
@@ -25,8 +25,8 @@ public:
      * @brief Denotes whether audio is played locally or streamed via RTP
      */
     enum class AudioMode {
-        Local,  ///< Play audio on the local sound device
-        RTP     ///< Stream audio via RTP multicast
+        Local, ///< Play audio on the local sound device
+        RTP    ///< Stream audio via RTP multicast
     };
 
     /** CommandLine class is allowed to modify configuration settings */
@@ -67,7 +67,7 @@ public:
     /** @return API key for Honeycomb observability service */
     std::string getHoneycombApiKey() const;
 
-protected:
+  protected:
     // Setters used by CommandLine to configure values from command line arguments
 
     /** @param _useGPIO Whether to use GPIO pins */
@@ -103,7 +103,7 @@ protected:
     /** @param _fragmentPackets Whether to enable RTP packet fragmentation */
     void setRtpFragmentPackets(bool _fragmentPackets);
 
-private:
+  private:
     // Hardware configuration
 
     /** Whether to use GPIO pins (only applicable on Raspberry Pi) */
@@ -129,7 +129,7 @@ private:
     std::string soundFileLocation = DEFAULT_SOUND_FILE_LOCATION;
 
     /** Audio mode for playback */
-    AudioMode audioMode = AudioMode::Local;  ///< Default to local playback
+    AudioMode audioMode = AudioMode::Local; ///< Default to local playback
 
     /** Whether to fragment RTP packets for standard MTU networks (WiFi, etc.) */
     bool rtpFragmentPackets = DEFAULT_RTP_FRAGMENT_PACKETS;

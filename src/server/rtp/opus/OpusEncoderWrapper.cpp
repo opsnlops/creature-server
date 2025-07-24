@@ -23,9 +23,9 @@ Encoder::Encoder(int sr, int ch, int fs, int br, bool fec)
         }
 
         /* --- CBR configuration for consistent packet timing --- */
-        opus_encoder_ctl(enc_, OPUS_SET_BITRATE(br));          // Set target bitrate (96k/128k/256k)
-        opus_encoder_ctl(enc_, OPUS_SET_VBR(0));               // Disable VBR - use CBR for consistent timing
-        opus_encoder_ctl(enc_, OPUS_SET_COMPLEXITY(10));       // Maximum quality psychoacoustic model
+        opus_encoder_ctl(enc_, OPUS_SET_BITRATE(br));    // Set target bitrate (96k/128k/256k)
+        opus_encoder_ctl(enc_, OPUS_SET_VBR(0));         // Disable VBR - use CBR for consistent timing
+        opus_encoder_ctl(enc_, OPUS_SET_COMPLEXITY(10)); // Maximum quality psychoacoustic model
         opus_encoder_ctl(enc_, OPUS_SET_SIGNAL(OPUS_SIGNAL_MUSIC));
 
         if (fec) {
@@ -35,7 +35,7 @@ Encoder::Encoder(int sr, int ch, int fs, int br, bool fec)
 
         debug("Opus encoder configured for CBR mode at {} bps", br);
 
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         auto errorMessage = fmt::format("Error while creating opus encoder: {}", e.what());
         error(errorMessage);
         throw std::runtime_error(errorMessage);
@@ -44,13 +44,11 @@ Encoder::Encoder(int sr, int ch, int fs, int br, bool fec)
 
 Encoder::~Encoder() { opus_encoder_destroy(enc_); }
 
-std::vector<uint8_t> Encoder::encode(const int16_t* pcm)
-{
+std::vector<uint8_t> Encoder::encode(const int16_t *pcm) {
     const int bytes = opus_encode(enc_,
-                                  pcm,                // 20 ms mono samples
-                                  frameSamples_,      // = 960 for 20ms at 48kHz
-                                  scratch_.data(),
-                                  static_cast<opus_int32>(scratch_.size()));
+                                  pcm,           // 20 ms mono samples
+                                  frameSamples_, // = 960 for 20ms at 48kHz
+                                  scratch_.data(), static_cast<opus_int32>(scratch_.size()));
     if (bytes < 0) {
         const auto errorMessage = fmt::format("opus_encode failed: {}", errorCodeToString(bytes));
         error(errorMessage);
@@ -60,8 +58,7 @@ std::vector<uint8_t> Encoder::encode(const int16_t* pcm)
     return {scratch_.data(), scratch_.data() + bytes};
 }
 
-void Encoder::reset()
-{
+void Encoder::reset() {
     if (enc_) {
         opus_encoder_ctl(enc_, OPUS_RESET_STATE);
         debug("Opus encoder state reset to initial configuration");

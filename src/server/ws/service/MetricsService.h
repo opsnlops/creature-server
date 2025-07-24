@@ -3,24 +3,21 @@
 
 #include "spdlog/spdlog.h"
 
-#include <oatpp/web/protocol/http/Http.hpp>
 #include <oatpp/core/macro/component.hpp>
+#include <oatpp/web/protocol/http/Http.hpp>
 
 #include "server/metrics/counters.h"
 #include "server/ws/dto/StatusDto.h"
 
-namespace creatures :: ws {
+namespace creatures ::ws {
 
-    class MetricsService {
+class MetricsService {
 
-    private:
-        typedef oatpp::web::protocol::http::Status Status;
+  private:
+    typedef oatpp::web::protocol::http::Status Status;
 
-    public:
+  public:
+    oatpp::Object<creatures::SystemCountersDto> getCounters();
+};
 
-        oatpp::Object<creatures::SystemCountersDto> getCounters();
-
-    };
-
-
-} // creatures :: ws
+} // namespace creatures::ws

@@ -7,4 +7,4 @@
 #endif
 
 // Allow threads to be named
-void setThreadName(const std::string& name);
+void setThreadName(const std::string &name);

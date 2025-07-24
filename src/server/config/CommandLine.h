@@ -4,19 +4,19 @@
 
 namespace creatures {
 
-    class CommandLine {
+class CommandLine {
 
-    public:
-        CommandLine() = default;
-        ~CommandLine() = default;
+  public:
+    CommandLine() = default;
+    ~CommandLine() = default;
 
-        static std::shared_ptr<Configuration> parseCommandLine(int argc, char **argv);
+    static std::shared_ptr<Configuration> parseCommandLine(int argc, char **argv);
 
-    private:
-        static void listSoundDevices();
-        static void listNetworkDevices();
-        static uint8_t getInterfaceIndex(const std::string& interfaceName);
-        static std::string getVersion();
-    };
+  private:
+    static void listSoundDevices();
+    static void listNetworkDevices();
+    static uint8_t getInterfaceIndex(const std::string &interfaceName);
+    static std::string getVersion();
+};
 
-}
+} // namespace creatures

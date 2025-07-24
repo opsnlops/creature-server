@@ -5,14 +5,8 @@
 
 namespace creatures {
 
-    enum class SortBy {
-        name = 0,
-        number = 1
-    };
+enum class SortBy { name = 0, number = 1 };
 
-    NLOHMANN_JSON_SERIALIZE_ENUM( SortBy, {
-        {SortBy::name, "name"},
-        {SortBy::number, "number"}
-    })
+NLOHMANN_JSON_SERIALIZE_ENUM(SortBy, {{SortBy::name, "name"}, {SortBy::number, "number"}})
 
 } // namespace creatures

@@ -6,28 +6,26 @@
 #include "spdlog/spdlog.h"
 
 #include "exception/exception.h"
-#include "server/database.h"
 #include "server/creature-server.h"
-
+#include "server/database.h"
 
 #include <bsoncxx/json.hpp>
 #include <mongocxx/client.hpp>
-
-
 
 #include <bsoncxx/builder/stream/document.hpp>
 
 #include "server/namespace-stuffs.h"
 
-using bsoncxx::builder::stream::document;
-using bsoncxx::builder::basic::make_document;
 using bsoncxx::builder::basic::kvp;
+using bsoncxx::builder::basic::make_document;
+using bsoncxx::builder::stream::document;
 
 namespace creatures {
 
-    extern std::shared_ptr<Database> db;
+extern std::shared_ptr<Database> db;
 
-//    Status CreatureServerImpl::SearchCreatures(ServerContext *context, const CreatureName *request, server::Creature *reply) {
+//    Status CreatureServerImpl::SearchCreatures(ServerContext *context, const CreatureName *request, server::Creature
+//    *reply) {
 //        debug("calling searching for a creature");
 //
 //        grpc::Status status;
@@ -46,9 +44,8 @@ namespace creatures {
 //
 //        }
 //        catch (const creatures::DataFormatException &e) {
-//            std::string errorMessage = fmt::format("Data format exception while looking for a creature: {}", e.what());
-//            critical(errorMessage);
-//            return {grpc::StatusCode::INTERNAL, e.what(), errorMessage};
+//            std::string errorMessage = fmt::format("Data format exception while looking for a creature: {}",
+//            e.what()); critical(errorMessage); return {grpc::StatusCode::INTERNAL, e.what(), errorMessage};
 //
 //        }
 //        catch (const creatures::InvalidArgumentException &e) {
@@ -78,7 +75,8 @@ namespace creatures {
 //
 //        try {
 //            // Create a filter BSON document to match the target document
-//            auto filter = bsoncxx::builder::stream::document{} << "name" << name << bsoncxx::builder::stream::finalize;
+//            auto filter = bsoncxx::builder::stream::document{} << "name" << name <<
+//            bsoncxx::builder::stream::finalize;
 //
 //            // Find the document with the matching _id field
 //            bsoncxx::stdx::optional<bsoncxx::document::value> result = collection.find_one(filter.view());
@@ -102,5 +100,4 @@ namespace creatures {
 //        }
 //    }
 
-
-}
+} // namespace creatures

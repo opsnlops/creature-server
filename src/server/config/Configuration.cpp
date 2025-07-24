@@ -10,102 +10,62 @@
 
 namespace creatures {
 
-    // GPIO Configuration
+// GPIO Configuration
 
-    bool Configuration::getUseGPIO() const {
-        return this->useGPIO;
-    }
+bool Configuration::getUseGPIO() const { return this->useGPIO; }
 
-    void Configuration::setUseGPIO(const bool _useGPIO) {
-        this->useGPIO = _useGPIO;
-    }
+void Configuration::setUseGPIO(const bool _useGPIO) { this->useGPIO = _useGPIO; }
 
-    // Database Configuration
+// Database Configuration
 
-    std::string Configuration::getMongoURI() const {
-        return this->mongoURI;
-    }
+std::string Configuration::getMongoURI() const { return this->mongoURI; }
 
-    void Configuration::setMongoURI(std::string _mongoURI) {
-        this->mongoURI = std::move(_mongoURI);
-    }
+void Configuration::setMongoURI(std::string _mongoURI) { this->mongoURI = std::move(_mongoURI); }
 
-    // Audio Configuration
+// Audio Configuration
 
-    uint8_t Configuration::getSoundDevice() const {
-        return this->soundDevice;
-    }
+uint8_t Configuration::getSoundDevice() const { return this->soundDevice; }
 
-    void Configuration::setSoundDevice(const uint8_t _soundDevice) {
-        this->soundDevice = _soundDevice;
-    }
+void Configuration::setSoundDevice(const uint8_t _soundDevice) { this->soundDevice = _soundDevice; }
 
-    uint32_t Configuration::getSoundFrequency() const {
-        return this->soundFrequency;
-    }
+uint32_t Configuration::getSoundFrequency() const { return this->soundFrequency; }
 
-    void Configuration::setSoundFrequency(const uint32_t _soundFrequency) {
-        this->soundFrequency = _soundFrequency;
-    }
+void Configuration::setSoundFrequency(const uint32_t _soundFrequency) { this->soundFrequency = _soundFrequency; }
 
-    uint8_t Configuration::getSoundChannels() const {
-        return this->soundChannels;
-    }
+uint8_t Configuration::getSoundChannels() const { return this->soundChannels; }
 
-    void Configuration::setSoundChannels(const uint8_t _soundChannels) {
-        this->soundChannels = _soundChannels;
-    }
+void Configuration::setSoundChannels(const uint8_t _soundChannels) { this->soundChannels = _soundChannels; }
 
-    std::string Configuration::getSoundFileLocation() const {
-        return this->soundFileLocation;
-    }
+std::string Configuration::getSoundFileLocation() const { return this->soundFileLocation; }
 
-    void Configuration::setSoundFileLocation(std::string _soundFileLocation) {
-        this->soundFileLocation = std::move(_soundFileLocation);
-    }
+void Configuration::setSoundFileLocation(std::string _soundFileLocation) {
+    this->soundFileLocation = std::move(_soundFileLocation);
+}
 
-    Configuration::AudioMode Configuration::getAudioMode() const {
-        return this->audioMode;
-    }
+Configuration::AudioMode Configuration::getAudioMode() const { return this->audioMode; }
 
-    void Configuration::setAudioMode(const Configuration::AudioMode _mode) {
-        this->audioMode = _mode;
-    }
+void Configuration::setAudioMode(const Configuration::AudioMode _mode) { this->audioMode = _mode; }
 
-    bool Configuration::getRtpFragmentPackets() const {
-        return this->rtpFragmentPackets;
-    }
+bool Configuration::getRtpFragmentPackets() const { return this->rtpFragmentPackets; }
 
-    void Configuration::setRtpFragmentPackets(const bool _fragmentPackets) {
-        this->rtpFragmentPackets = _fragmentPackets;
-    }
+void Configuration::setRtpFragmentPackets(const bool _fragmentPackets) { this->rtpFragmentPackets = _fragmentPackets; }
 
-    // Network Configuration
+// Network Configuration
 
-    uint16_t Configuration::getNetworkDevice() const {
-        return this->networkDevice;
-    }
+uint16_t Configuration::getNetworkDevice() const { return this->networkDevice; }
 
-    void Configuration::setNetworkDevice(const uint16_t _networkDevice) {
-        this->networkDevice = _networkDevice;
-    }
+void Configuration::setNetworkDevice(const uint16_t _networkDevice) { this->networkDevice = _networkDevice; }
 
-    // External API Configuration
+// External API Configuration
 
-    std::string Configuration::getVoiceApiKey() const {
-        return this->voiceApiKey;
-    }
+std::string Configuration::getVoiceApiKey() const { return this->voiceApiKey; }
 
-    void Configuration::setVoiceApiKey(std::string _voiceApiKey) {
-        this->voiceApiKey = std::move(_voiceApiKey);
-    }
+void Configuration::setVoiceApiKey(std::string _voiceApiKey) { this->voiceApiKey = std::move(_voiceApiKey); }
 
-    std::string Configuration::getHoneycombApiKey() const {
-        return this->honeycombApiKey;
-    }
+std::string Configuration::getHoneycombApiKey() const { return this->honeycombApiKey; }
 
-    void Configuration::setHoneycombApiKey(std::string _honeycombApiKey) {
-        this->honeycombApiKey = std::move(_honeycombApiKey);
-    }
+void Configuration::setHoneycombApiKey(std::string _honeycombApiKey) {
+    this->honeycombApiKey = std::move(_honeycombApiKey);
+}
 
 } // namespace creatures

@@ -4,24 +4,22 @@
 
 #include <filesystem>
 
-#include <spdlog/spdlog.h>
 #include <SDL2/SDL.h>
+#include <spdlog/spdlog.h>
 
+#include "AudioStreamBuffer.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
-#include "AudioStreamBuffer.h"
 
 namespace creatures {
-    extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<ObservabilityManager> observability;
 }
 
 using namespace creatures;
 using namespace creatures::rtp;
 
-std::shared_ptr<AudioStreamBuffer>
-AudioStreamBuffer::loadFromWav(const std::string& filePath,
-                               std::shared_ptr<OperationSpan> parentSpan)
-{
+std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWav(const std::string &filePath,
+                                                                  std::shared_ptr<OperationSpan> parentSpan) {
     auto buf = std::shared_ptr<AudioStreamBuffer>(new AudioStreamBuffer());
 
     // Now we properly check the Result!
@@ -31,17 +29,13 @@ AudioStreamBuffer::loadFromWav(const std::string& filePath,
               loadResult.getValue().value_or(0));
         return buf;
     } else {
-        error("Failed to load WAV file '{}': {}", filePath,
-              loadResult.getError()->getMessage());
+        error("Failed to load WAV file '{}': {}", filePath, loadResult.getError()->getMessage());
         return nullptr;
     }
 }
 
-Result<size_t> AudioStreamBuffer::loadWave(const std::string& path,
-                                         std::shared_ptr<OperationSpan> parentSpan)
-{
-    const auto span = observability->createChildOperationSpan(
-        "AudioStreamBuffer.loadWave", parentSpan);
+Result<size_t> AudioStreamBuffer::loadWave(const std::string &path, std::shared_ptr<OperationSpan> parentSpan) {
+    const auto span = observability->createChildOperationSpan("AudioStreamBuffer.loadWave", parentSpan);
     span->setAttribute("file_path", path);
 
     // Early validation - let's make sure this bunny can hop! 🐰
@@ -67,15 +61,14 @@ Result<size_t> AudioStreamBuffer::loadWave(const std::string& path,
     }
 
     SDL_AudioSpec spec{};
-    Uint8* raw = nullptr;
+    Uint8 *raw = nullptr;
     Uint32 len = 0;
 
     debug("Loading WAV file: {}", path);
 
     // SDL_LoadWAV returns nullptr on failure
     if (!SDL_LoadWAV(path.c_str(), &spec, &raw, &len)) {
-        const auto errorMsg = fmt::format("SDL failed to load WAV file '{}': {}",
-                                        path, SDL_GetError());
+        const auto errorMsg = fmt::format("SDL failed to load WAV file '{}': {}", path, SDL_GetError());
         span->setError(errorMsg);
         error(errorMsg);
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
@@ -83,39 +76,37 @@ Result<size_t> AudioStreamBuffer::loadWave(const std::string& path,
 
     // RAII wrapper to ensure SDL memory gets freed
     struct SDLWavGuard {
-        Uint8* data;
-        ~SDLWavGuard() { if (data) SDL_FreeWAV(data); }
+        Uint8 *data;
+        ~SDLWavGuard() {
+            if (data)
+                SDL_FreeWAV(data);
+        }
     } guard{raw};
 
     // Validate audio format
-    if (spec.freq != RTP_SRATE || spec.format != AUDIO_S16 ||
-        spec.channels != RTP_STREAMING_CHANNELS)
-    {
-        const auto errorMsg = fmt::format(
-            "WAV file format not supported: {}, {} Hz, {} ch, format 0x{:X} "
-            "(expected {} Hz, {} ch, format 0x{:X})",
-            path, spec.freq, spec.channels, spec.format,
-            RTP_SRATE, RTP_STREAMING_CHANNELS, AUDIO_S16);
+    if (spec.freq != RTP_SRATE || spec.format != AUDIO_S16 || spec.channels != RTP_STREAMING_CHANNELS) {
+        const auto errorMsg =
+            fmt::format("WAV file format not supported: {}, {} Hz, {} ch, format 0x{:X} "
+                        "(expected {} Hz, {} ch, format 0x{:X})",
+                        path, spec.freq, spec.channels, spec.format, RTP_SRATE, RTP_STREAMING_CHANNELS, AUDIO_S16);
         error(errorMsg);
         span->setError(errorMsg);
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
     // Calculate frame counts
-    const auto totalSamples = len / sizeof(int16_t);  // interleaved samples
-    framesPerChannel_ = totalSamples / (RTP_STREAMING_CHANNELS * RTP_SAMPLES);  // 20ms frames
+    const auto totalSamples = len / sizeof(int16_t);                           // interleaved samples
+    framesPerChannel_ = totalSamples / (RTP_STREAMING_CHANNELS * RTP_SAMPLES); // 20ms frames
 
     if (framesPerChannel_ == 0) {
-        const auto errorMsg = fmt::format(
-            "WAV file too short: {} ({} samples, need at least {} for one frame)",
-            path, totalSamples, RTP_STREAMING_CHANNELS * RTP_SAMPLES);
+        const auto errorMsg = fmt::format("WAV file too short: {} ({} samples, need at least {} for one frame)", path,
+                                          totalSamples, RTP_STREAMING_CHANNELS * RTP_SAMPLES);
         error(errorMsg);
         span->setError(errorMsg);
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
-    debug("WAV file loaded: {} total samples, {} frames per channel",
-          totalSamples, framesPerChannel_);
+    debug("WAV file loaded: {} total samples, {} frames per channel", totalSamples, framesPerChannel_);
 
     // Prepare for Opus encoding
     debug("Encoding {} frames to Opus - this bunny is about to work hard! 🐰", framesPerChannel_);
@@ -125,15 +116,15 @@ Result<size_t> AudioStreamBuffer::loadWave(const std::string& path,
         std::array<opus::Encoder, RTP_STREAMING_CHANNELS> encoders;
 
         // Resize storage for all encoded frames
-        for (auto& vec : encodedFrames_) {
+        for (auto &vec : encodedFrames_) {
             vec.resize(framesPerChannel_);
         }
 
-        const int16_t* pcm = reinterpret_cast<const int16_t*>(raw);
+        const int16_t *pcm = reinterpret_cast<const int16_t *>(raw);
 
         // Encode frame by frame
         for (std::size_t f = 0; f < framesPerChannel_; ++f) {
-            const int16_t* frameBase = pcm + f * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
+            const int16_t *frameBase = pcm + f * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
 
             // Process each channel separately
             for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
@@ -153,9 +144,10 @@ Result<size_t> AudioStreamBuffer::loadWave(const std::string& path,
             }
         }
 
-        debug("Encoding completed successfully - that bunny worked hard! 🐰");
+        debug("Encoding completed successfully - {} frames per channel encoded to Opus",
+              framesPerChannel_);
 
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         const auto errorMsg = fmt::format("Error while encoding WAV to Opus: {}", e.what());
         error(errorMsg);
         span->setError(errorMsg);
@@ -167,8 +159,7 @@ Result<size_t> AudioStreamBuffer::loadWave(const std::string& path,
         return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
     }
 
-    info("Successfully loaded and encoded {} frames per channel from WAV file: {}",
-         framesPerChannel_, path);
+    info("Successfully loaded and encoded {} frames per channel from WAV file: {}", framesPerChannel_, path);
 
     span->setSuccess();
     span->setAttribute("frames_per_channel", static_cast<int64_t>(framesPerChannel_));

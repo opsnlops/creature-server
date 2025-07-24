@@ -16,7 +16,7 @@
  *
  * @param name the name to assign to a thread
  */
-void setThreadName(const std::string& name) {
+void setThreadName(const std::string &name) {
 #if defined(__linux__)
     // Linux implementation
     pthread_setname_np(pthread_self(), name.c_str());
@@ -26,5 +26,4 @@ void setThreadName(const std::string& name) {
 #elif
 #warning "Threads won't be named, I don't know what platform this is"
 #endif
-
 }

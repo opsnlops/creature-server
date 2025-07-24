@@ -1,7 +1,6 @@
 
 #pragma once
 
-
 #include <memory>
 #include <oatpp/core/Types.hpp>
 
@@ -9,13 +8,12 @@
 
 #include "IMessageHandler.h"
 
-
 namespace creatures::ws {
 
-    class NoticeMessageHandler : public IMessageHandler {
+class NoticeMessageHandler : public IMessageHandler {
 
-    public:
-        void processMessage(const oatpp::String &payload) override;
-    };
+  public:
+    void processMessage(const oatpp::String &payload) override;
+};
 
-} //  creatures: ws
+} // namespace creatures::ws

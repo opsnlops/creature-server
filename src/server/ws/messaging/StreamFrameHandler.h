@@ -1,7 +1,6 @@
 
 #pragma once
 
-
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
@@ -11,27 +10,25 @@
 
 #include "IMessageHandler.h"
 
-
 namespace creatures::ws {
 
-    class StreamFrameHandler : public IMessageHandler {
+class StreamFrameHandler : public IMessageHandler {
 
-    public:
-        void processMessage(const oatpp::String &payload) override;
+  public:
+    void processMessage(const oatpp::String &payload) override;
 
-    private:
+  private:
+    /**
+     * Does the actual work of streaming a frame
+     *
+     * @param frame the frame to stream
+     */
+    void stream(StreamFrame frame, std::shared_ptr<OperationSpan> parentSpan);
 
-        /**
-         * Does the actual work of streaming a frame
-         *
-         * @param frame the frame to stream
-         */
-        void stream(StreamFrame frame, std::shared_ptr<OperationSpan> parentSpan);
+    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
 
-        OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-        OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
+    framenum_t framesStreamed = 0;
+};
 
-        framenum_t framesStreamed = 0;
-    };
-
-} //  creatures: ws
+} // namespace creatures::ws

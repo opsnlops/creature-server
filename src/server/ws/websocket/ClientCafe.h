@@ -1,11 +1,9 @@
 
 #pragma once
 
-
 #include <atomic>
 #include <mutex>
 #include <vector>
-
 
 #include <oatpp-websocket/ConnectionHandler.hpp>
 #include <oatpp-websocket/WebSocket.hpp>
@@ -14,82 +12,75 @@
 
 #include "server/ws/websocket/ClientConnection.h"
 
-namespace creatures :: ws {
+namespace creatures ::ws {
 
+class ClientConnection; // Forward declaration
 
-    class ClientConnection; // Forward declaration
+/**
+ * This is where the client connections hang out
+ *
+ * It's just a place for them to hang out for and me to keep track of who is currently connected.
+ */
+class ClientCafe : public oatpp::websocket::ConnectionHandler::SocketInstanceListener,
+                   public std::enable_shared_from_this<ClientCafe> {
+
+  public:
+    ClientCafe() : clientIdCounter(0) {}
+    virtual ~ClientCafe() {};
 
     /**
-     * This is where the client connections hang out
-     *
-     * It's just a place for them to hang out for and me to keep track of who is currently connected.
+     * Broadcast a message to all connected clients
      */
-    class ClientCafe : public oatpp::websocket::ConnectionHandler::SocketInstanceListener,
-                       public std::enable_shared_from_this<ClientCafe> {
+    void broadcastMessage(const std::string &message);
 
-    public:
+    /**
+     * Gets the next client ID
+     * @return the next available client ID
+     */
+    v_int64 getNextClientId();
 
-        ClientCafe() : clientIdCounter(0) {}
-        virtual ~ClientCafe() {};
+    /**
+     *  Called when socket is created
+     */
+    void onAfterCreate(const oatpp::websocket::WebSocket &socket,
+                       const std::shared_ptr<const ParameterMap> &params) override;
 
-        /**
-         * Broadcast a message to all connected clients
-         */
-        void broadcastMessage(const std::string& message);
+    /**
+     *  Called before socket instance is destroyed.
+     */
+    void onBeforeDestroy(const oatpp::websocket::WebSocket &socket) override;
 
+    /**
+     * Run the ping loop
+     *
+     * @param interval how long to wait between pings (default 30 seconds)
+     */
+    [[noreturn]] void
+    runPingLoop(const std::chrono::duration<v_int64, std::micro> &interval = std::chrono::seconds(30));
 
-        /**
-         * Gets the next client ID
-         * @return the next available client ID
-         */
-        v_int64 getNextClientId();
+    /**
+     * Run the message loop
+     */
+    [[noreturn]] void runMessageLoop();
 
-        /**
-         *  Called when socket is created
-         */
-        void onAfterCreate(const oatpp::websocket::WebSocket& socket, const std::shared_ptr<const ParameterMap>& params) override;
+  private:
+    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
-        /**
-         *  Called before socket instance is destroyed.
-         */
-        void onBeforeDestroy(const oatpp::websocket::WebSocket& socket) override;
+    /**
+     * Counter for connected clients
+     */
+    static std::atomic<v_int32> clientsConnected;
 
-        /**
-         * Run the ping loop
-         *
-         * @param interval how long to wait between pings (default 30 seconds)
-         */
-        [[noreturn]] void runPingLoop(const std::chrono::duration<v_int64, std::micro>& interval = std::chrono::seconds(30));
+    /**
+     * Counter for client IDs
+     */
+    std::atomic<v_int64> clientIdCounter;
 
-        /**
-         * Run the message loop
-         */
-        [[noreturn]] void runMessageLoop();
+    /**
+     * Map of client connections (and a mutex to protect it)
+     */
+    std::unordered_map<v_int64, std::shared_ptr<ClientConnection>> clientConnectionMap;
+    std::mutex clientConnectionMapMutex;
+};
 
-    private:
-
-        OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-
-        /**
-         * Counter for connected clients
-         */
-        static std::atomic<v_int32> clientsConnected;
-
-        /**
-         * Counter for client IDs
-         */
-        std::atomic<v_int64> clientIdCounter;
-
-        /**
-         * Map of client connections (and a mutex to protect it)
-         */
-        std::unordered_map<v_int64, std::shared_ptr<ClientConnection>> clientConnectionMap;
-        std::mutex clientConnectionMapMutex;
-    };
-
-
-
-
-
-
-}
+} // namespace creatures::ws

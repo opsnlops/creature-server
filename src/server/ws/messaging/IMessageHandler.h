@@ -6,11 +6,11 @@
 
 namespace creatures ::ws {
 
-    class IMessageHandler {
-    public:
-        virtual ~IMessageHandler() = default;
+class IMessageHandler {
+  public:
+    virtual ~IMessageHandler() = default;
 
-        virtual void processMessage(const oatpp::String &message) = 0;
-    };
+    virtual void processMessage(const oatpp::String &message) = 0;
+};
 
-} // creatures :: ws
+} // namespace creatures::ws

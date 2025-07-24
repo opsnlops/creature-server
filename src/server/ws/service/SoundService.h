@@ -3,40 +3,37 @@
 
 #include "spdlog/spdlog.h"
 
-#include <oatpp/web/protocol/http/Http.hpp>
 #include <oatpp/core/macro/component.hpp>
+#include <oatpp/web/protocol/http/Http.hpp>
 
 #include "model/Sound.h"
 
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 
-namespace creatures :: ws {
+namespace creatures ::ws {
 
-    class SoundService {
+class SoundService {
 
-    private:
-        typedef oatpp::web::protocol::http::Status Status;
+  private:
+    typedef oatpp::web::protocol::http::Status Status;
 
-    public:
+  public:
+    SoundService() = default;
+    virtual ~SoundService() = default;
 
-        SoundService() = default;
-        virtual ~SoundService() = default;
+    /**
+     * Play a sound file for testing
+     *
+     * @param soundFile
+     * @return
+     */
+    oatpp::Object<creatures::ws::StatusDto> playSound(const oatpp::String &soundFile);
 
-        /**
-         * Play a sound file for testing
-         *
-         * @param soundFile
-         * @return
-         */
-        oatpp::Object<creatures::ws::StatusDto> playSound(const oatpp::String& soundFile);
+    /**
+     * Get all of the sound files
+     */
+    oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> getAllSounds();
+};
 
-        /**
-         * Get all of the sound files
-         */
-        oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> getAllSounds();
-
-    };
-
-
-} // creatures :: ws
+} // namespace creatures::ws

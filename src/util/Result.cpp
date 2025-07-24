@@ -1,5 +1,3 @@
 #include "Result.h"
 
-namespace creatures {
-
-}
+namespace creatures {}
