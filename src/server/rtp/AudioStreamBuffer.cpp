@@ -18,12 +18,18 @@ extern std::shared_ptr<ObservabilityManager> observability;
 using namespace creatures;
 using namespace creatures::rtp;
 
+// Static cache instance
+std::shared_ptr<util::AudioCache> AudioStreamBuffer::audioCache_ = nullptr;
+
 std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWav(const std::string &filePath,
                                                                   std::shared_ptr<OperationSpan> parentSpan) {
     auto buf = std::shared_ptr<AudioStreamBuffer>(new AudioStreamBuffer());
 
-    // Now we properly check the Result!
-    auto loadResult = buf->loadWave(filePath, std::move(parentSpan));
+    // Try cache-enabled loading first if cache is available
+    Result<size_t> loadResult = audioCache_ 
+        ? buf->loadWithCache(filePath, parentSpan)
+        : (debug("No audio cache available, loading directly from WAV"), buf->loadWave(filePath, parentSpan));
+    
     if (loadResult.isSuccess()) {
         debug("Successfully loaded audio buffer with {} frames - that's one hoppy bunny! 🐰",
               loadResult.getValue().value_or(0));
@@ -31,6 +37,15 @@ std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWav(const std::str
     } else {
         error("Failed to load WAV file '{}': {}", filePath, loadResult.getError()->getMessage());
         return nullptr;
+    }
+}
+
+void AudioStreamBuffer::setAudioCache(std::shared_ptr<util::AudioCache> cache) {
+    audioCache_ = cache;
+    if (cache) {
+        info("Audio cache enabled for AudioStreamBuffer");
+    } else {
+        info("Audio cache disabled for AudioStreamBuffer");
     }
 }
 
@@ -167,4 +182,59 @@ Result<size_t> AudioStreamBuffer::loadWave(const std::string &path, std::shared_
 
     // Return the number of frames we successfully loaded
     return Result<size_t>{framesPerChannel_};
+}
+
+Result<size_t> AudioStreamBuffer::loadWithCache(const std::string &filePath, std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = observability->createChildOperationSpan("AudioStreamBuffer.loadWithCache", parentSpan);
+    span->setAttribute("file_path", filePath);
+    
+    // Fast path: try to load from cache
+    auto cacheSpan = observability->createChildOperationSpan("AudioStreamBuffer.tryCache", span);
+    auto cachedData = audioCache_->tryLoadFromCache(filePath, cacheSpan);
+    
+    if (cachedData) {
+        // Cache hit! Load the data directly
+        debug("Cache hit for {}, loading {} frames from cache", filePath, cachedData->framesPerChannel);
+        loadFromCachedData(*cachedData);
+        
+        span->setAttribute("cache_result", "hit");
+        span->setAttribute("frames_loaded", static_cast<int64_t>(framesPerChannel_));
+        span->setSuccess();
+        
+        return Result<size_t>{framesPerChannel_};
+    }
+    
+    // Cache miss: load from WAV and cache the result
+    debug("Cache miss for {}, loading from WAV and caching", filePath);
+    span->setAttribute("cache_result", "miss");
+    
+    auto loadResult = loadWave(filePath, span);
+    if (!loadResult.isSuccess()) {
+        span->setError(loadResult.getError()->getMessage());
+        return loadResult;
+    }
+    
+    // Save to cache for next time
+    util::AudioCache::CachedAudioData dataToCache;
+    dataToCache.framesPerChannel = framesPerChannel_;
+    dataToCache.encodedFrames = encodedFrames_;
+    
+    auto cacheResult = audioCache_->saveToCache(filePath, dataToCache, span);
+    if (cacheResult.isSuccess()) {
+        debug("Successfully cached {} frames for {}", framesPerChannel_, filePath);
+        span->setAttribute("cached_frames", static_cast<int64_t>(framesPerChannel_));
+    } else {
+        warn("Failed to cache audio data for {}: {}", filePath, cacheResult.getError()->getMessage());
+        // Don't fail the overall operation if caching fails
+    }
+    
+    span->setSuccess();
+    return loadResult;
+}
+
+void AudioStreamBuffer::loadFromCachedData(const util::AudioCache::CachedAudioData& cachedData) {
+    framesPerChannel_ = cachedData.framesPerChannel;
+    encodedFrames_ = cachedData.encodedFrames;
+    
+    debug("Loaded {} frames per channel from cached data", framesPerChannel_);
 }

@@ -40,8 +40,10 @@
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
 #include "server/metrics/StatusLights.h"
+#include "server/rtp/AudioStreamBuffer.h"
 #include "server/rtp/MultiOpusRtpServer.h"
 #include "Version.h"
+#include "util/AudioCache.h"
 #include "util/cache.h"
 #include "util/loggingUtils.h"
 #include "util/ObservabilityManager.h"
@@ -92,6 +94,9 @@ namespace creatures {
 
     // RTP server for handling real-time protocol streaming
     std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
+
+    // Audio cache for pre-encoded Opus files
+    std::shared_ptr<util::AudioCache> audioCache;
 }
 
 
@@ -218,6 +223,23 @@ int main(const int argc, char **argv) {
     if(creatures::config->getAudioMode() == creatures::Configuration::AudioMode::RTP) {
         info("RTP audio mode enabled, starting RTP server");
         creatures::rtpServer = std::make_shared<creatures::rtp::MultiOpusRtpServer>();
+    }
+
+    // Initialize audio cache for faster Opus encoding
+    try {
+        creatures::audioCache = std::make_shared<creatures::util::AudioCache>(
+            creatures::config->getSoundFileLocation());
+        creatures::rtp::AudioStreamBuffer::setAudioCache(creatures::audioCache);
+        info("Audio cache initialized for faster Opus encoding");
+        
+        auto stats = creatures::audioCache->getStats();
+        debug("Audio cache stats: {} cached files, {} hits, {} misses", 
+              stats.totalCachedFiles, stats.cacheHits, stats.cacheMisses);
+    } catch (const std::exception& e) {
+        error("Failed to initialize audio cache: {}", e.what());
+        warn("Audio will be encoded without caching (slower performance)");
+        creatures::audioCache = nullptr;
+        creatures::rtp::AudioStreamBuffer::setAudioCache(nullptr);
     }
 
 

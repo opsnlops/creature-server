@@ -96,4 +96,35 @@ template <typename T> std::optional<ServerError> Result<T>::getError() const {
     return std::nullopt;
 }
 
+// Specialization for Result<void>
+template <>
+class Result<void> {
+  public:
+    // Constructors for success and error
+    Result(); // Success constructor for void
+    Result(const ServerError &error);
+
+    // Check if the result is a success
+    [[nodiscard]] bool isSuccess() const;
+
+    // Get the error (if failure)
+    [[nodiscard]] std::optional<ServerError> getError() const;
+
+  private:
+    std::optional<ServerError> m_error;
+};
+
+// Implement Result<void> methods
+inline Result<void>::Result() : m_error(std::nullopt) {}
+
+inline Result<void>::Result(const ServerError &error) : m_error(error) {}
+
+inline bool Result<void>::isSuccess() const {
+    return !m_error.has_value();
+}
+
+inline std::optional<ServerError> Result<void>::getError() const {
+    return m_error;
+}
+
 } // namespace creatures

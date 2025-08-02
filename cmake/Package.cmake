@@ -33,7 +33,7 @@ set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 
 # We can't have the (very out of date) Mongo drivers from Debian on the host
 set(CPACK_DEBIAN_PACKAGE_CONFLICTS "libmongoclient0, libmongoc-dev, libmongoc-1.0-0, libmongoclient-dev, libbson-1.0-0, libbson-dev")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsasl2-2, libicu72, pipewire, libsdl2-mixer-2.0-0, libutf8proc2, flac, locales-all, libuuid1, libcurl4, libprotobuf32")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsasl2-2, libicu72, pipewire, libsdl2-mixer-2.0-0, libutf8proc2, flac, locales-all, libuuid1, libcurl4, libprotobuf32, libssl3, libcrypto3")
 
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/externals/build/oatpp-swagger-prefix/src/oatpp-swagger/res/
         DESTINATION /usr/share/creature-server/swagger-ui
