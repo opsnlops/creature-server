@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.4.17"
+        VERSION "2.4.18"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -9,11 +9,13 @@ project(creature-server
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
-# Overshadowed declarations keep biting me in the butt 😅
-add_compile_options(-Wshadow)
-add_compile_options(-Wall)
-add_compile_options(-Wextra)
-add_compile_options(-Wpedantic)
+# Store warning flags to apply to our targets only (not dependencies)
+set(CREATURE_SERVER_WARNING_FLAGS
+    -Wshadow
+    -Wall
+    -Wextra
+    -Wpedantic
+)
 
 set(PACKAGE_AUTHOR "April White")
 
@@ -397,6 +399,9 @@ add_executable(creature-server
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
 
+# Apply strict warning flags to our main executable only
+target_compile_options(creature-server PRIVATE ${CREATURE_SERVER_WARNING_FLAGS})
+
 # System libraries needed for MongoDB static linking
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(MONGO_SYSTEM_LIBS resolv)
@@ -479,6 +484,9 @@ target_link_libraries(creature-server-test
         OpenSSL::Crypto
         ${MONGO_SYSTEM_LIBS}
 )
+
+# Apply strict warning flags to our test executable too
+target_compile_options(creature-server-test PRIVATE ${CREATURE_SERVER_WARNING_FLAGS})
 
 # This is to include Google Test and Google Mock headers
 target_include_directories(creature-server-test PRIVATE
