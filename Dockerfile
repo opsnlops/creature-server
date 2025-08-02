@@ -3,10 +3,28 @@ FROM debian:bookworm AS build
 
 RUN apt update && apt upgrade -y
 
-RUN apt install -y cmake libssl-dev libsasl2-dev gcc git file \
-    pkgconf libbson-dev libpthreadpool-dev libutf8proc-dev \
-    libsystemd-dev ninja-build libsdl2-mixer-dev dpkg-dev uuid-dev \
-    util-linux libpipewire-0.3-dev libuv1-dev libcurl4-openssl-dev libprotobuf-dev protobuf-compiler
+RUN apt install -y \
+        cmake \
+        dpkg-dev \
+        file \
+        gcc \
+        git \
+        libbson-dev \
+        libcurl4-openssl-dev \
+        libpipewire-0.3-dev \
+        libprotobuf-dev \
+        libpthreadpool-dev \
+        libsasl2-dev \
+        libsdl2-mixer-dev \
+        libssl-dev \
+        libsystemd-dev \
+        libutf8proc-dev \
+        libuv1-dev \
+        ninja-build \
+        pkgconf \
+        protobuf-compiler \
+        util-linux \
+        uuid-dev
 
 
 
@@ -41,15 +59,27 @@ FROM debian:bookworm-slim AS runtime
 
 # Some of our libs need runtime bits
 RUN apt update && apt upgrade -y && \
-    apt install -y libsasl2-2 libicu72 libsdl2-mixer-2.0-0 flac locales-all libutf8proc2 \
-                   libuuid1 util-linux pipewire libuv1 libcurl4 libprotobuf32 && \
+    apt install -y \
+        flac \
+        libcurl4 \
+        libicu72 \
+        libprotobuf32 \
+        libsasl2-2 \
+        libsdl2-mixer-2.0-0 \
+        libssl3 \
+        libuuid1 \
+        libutf8proc2 \
+        libuv1 \
+        locales-all \
+        pipewire \
+        util-linux && \
     rm -rf /var/lib/apt/lists
 
 RUN mkdir /app
 COPY --from=build /build/creature-server/build/creature-server /app/creature-server
 COPY --from=build /usr/local/lib /usr/local/lib
 
-EXPOSE 6666
+EXPOSE 8000
 
 CMD ["/app/creature-server"]
 
