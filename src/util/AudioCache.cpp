@@ -19,6 +19,7 @@
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
+#include <nlohmann/json.hpp>
 
 #include "AudioCache.h"
 #include "server/namespace-stuffs.h"
@@ -394,10 +395,28 @@ AudioCache::loadOggOpusWithMetadata(const std::string& oggFilePath) const {
                 ServerError(ServerError::InvalidData, "Failed to read metadata")};
         }
         
-        // Parse metadata (simplified - in production use proper JSON parser)
+        // Parse metadata from JSON
         SourceFileInfo sourceInfo;
-        // For now, just store essential info in a simple format
-        // In a real implementation, you'd parse JSON here
+        try {
+            auto jsonData = nlohmann::json::parse(metadataJson);
+            sourceInfo.filePath = jsonData["path"];
+            sourceInfo.fileSize = jsonData["size"];
+            sourceInfo.checksum = jsonData["checksum"];
+            
+            // Get current modification time for the cached file path
+            // (we don't store modTime in JSON since it's not easily serializable)
+            if (std::filesystem::exists(sourceInfo.filePath)) {
+                sourceInfo.modTime = std::filesystem::last_write_time(sourceInfo.filePath);
+            } else {
+                return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                    ServerError(ServerError::NotFound, 
+                               fmt::format("Cached source file no longer exists: {}", sourceInfo.filePath))};
+            }
+        } catch (const std::exception& e) {
+            return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                ServerError(ServerError::InvalidData, 
+                           fmt::format("Failed to parse cache metadata JSON: {}", e.what()))};
+        }
         
         uint32_t frameCount;
         file.read(reinterpret_cast<char*>(&frameCount), sizeof(frameCount));
