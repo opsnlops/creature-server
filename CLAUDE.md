@@ -134,8 +134,8 @@ The server includes an intelligent caching mechanism for pre-encoded Opus files 
 ## Platform Notes
 
 - **macOS**: Uses system SDL2 and resolv libraries
-- **Linux**: Additional UUID library dependency via pkg-config
-- **Raspberry Pi**: Specialized build scripts (`pi4_build.sh`)
+- **Debian Linux**: Additional UUID library dependency via pkg-config; OpenSSL 3.x (libssl3) required for audio cache hashing
+- **Raspberry Pi**: Specialized build scripts (`pi4_build.sh`); runs on Raspberry Pi OS (Debian-based)
 
 ## Deployment
 
