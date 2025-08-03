@@ -67,6 +67,9 @@ class Configuration {
     /** @return API key for Honeycomb observability service */
     std::string getHoneycombApiKey() const;
 
+    /** @return Sampling rate for event loop tracing (0.0 to 1.0) */
+    double getEventLoopTraceSampling() const;
+
   protected:
     // Setters used by CommandLine to configure values from command line arguments
 
@@ -96,6 +99,9 @@ class Configuration {
 
     /** @param _honeycombApiKey API key for Honeycomb observability service */
     void setHoneycombApiKey(std::string _honeycombApiKey);
+
+    /** @param _eventLoopTraceSampling Sampling rate for event loop tracing (0.0 to 1.0) */
+    void setEventLoopTraceSampling(double _eventLoopTraceSampling);
 
     /** @param _mode Audio mode to use (local playback or RTP streaming) */
     void setAudioMode(AudioMode _mode);
@@ -146,6 +152,11 @@ class Configuration {
 
     /** API key for Honeycomb observability service */
     std::string honeycombApiKey = DEFAULT_HONEYCOMB_API_KEY;
+
+    // Observability configuration
+
+    /** Sampling rate for event loop tracing (0.0 to 1.0) */
+    double eventLoopTraceSampling = DEFAULT_EVENT_LOOP_TRACE_SAMPLING;
 };
 
 } // namespace creatures

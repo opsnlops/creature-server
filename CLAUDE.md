@@ -89,6 +89,8 @@ The project enforces strict compiler warnings:
 - `-Wshadow` (overshadowed declarations)
 - `-Wall -Wextra -Wpedantic`
 
+**Code Formatting**: Always run `clang-format` on modified files. The project includes a `.clang-format` configuration file in the root directory that defines the required formatting style.
+
 ### Observability
 
 Built-in OpenTelemetry integration for traces and metrics. The `ObservabilityManager` handles telemetry configuration and export.
@@ -130,6 +132,39 @@ The server includes an intelligent caching mechanism for pre-encoded Opus files 
 - **Raspberry Pi 5**: Encoding time reduced from 30+ seconds to milliseconds
 - **Cache Hit Rate**: High for repeated audio file usage in shows/playlists
 - **Memory Usage**: Minimal - cache files stored on disk, loaded on demand
+
+## Event Loop System
+
+### Critical Timing Requirements
+
+**⚠️ CRITICAL: The event loop MUST run every 1ms exactly.** This precise timing is fundamental to the entire system's operation and cannot be compromised. Any modifications to event loop code must preserve this exact 1ms interval.
+
+### Event Loop Tracing System
+
+The server implements intelligent selective tracing for the high-frequency event loop to provide error visibility while controlling observability costs:
+
+### Key Features
+- **Selective Sampling**: Configurable sampling rate for normal event loop frames (default: 0.1% = 1 in 1000)
+- **Error-First Export**: All errors and exceptions are always traced regardless of sampling rate
+- **Smart Export Logic**: Only exports traces when errors occur or random sampling criteria met
+- **Rich Telemetry**: Frame numbers, events processed, queue sizes, timing data
+
+### Configuration
+- **Environment Variable**: `EVENT_LOOP_TRACE_SAMPLING` (0.0 to 1.0)
+- **Command Line**: `--event-loop-trace-sampling 0.01` (for 1% sampling)
+- **Default**: 0.001 (0.1% sampling rate)
+
+### Implementation Details
+- **Class**: `SamplingSpan` provides conditional export logic
+- **Integration**: Event loop creates sampling spans for each frame iteration
+- **Export Control**: Spans marked with sampling metadata for filtering in Honeycomb
+- **Error Detection**: Automatic promotion to always-export on exceptions
+
+### Cost Benefits
+- **Volume Reduction**: 99.9% reduction in normal trace volume
+- **Error Coverage**: 100% of errors and exceptions captured
+- **Performance**: Minimal overhead (~1μs per frame for sampling decision)
+- **Honeycomb Cost**: Dramatic reduction in trace ingestion costs
 
 ## Platform Notes
 

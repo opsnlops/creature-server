@@ -83,6 +83,12 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .default_value(environmentToString(HONEYCOMB_API_KEY_ENV, DEFAULT_HONEYCOMB_API_KEY))
         .nargs(1);
 
+    program.add_argument("--event-loop-trace-sampling")
+        .help("sampling rate for event loop tracing (0.0 to 1.0)")
+        .default_value(environmentToDouble(EVENT_LOOP_TRACE_SAMPLING_ENV, DEFAULT_EVENT_LOOP_TRACE_SAMPLING))
+        .scan<'g', double>()
+        .nargs(1);
+
     program.add_argument("--rtp-fragment")
         .help("enable RTP packet fragmentation for standard MTU networks (WiFi, etc.)")
         .default_value(environmentToInt(RTP_FRAGMENT_PACKETS_ENV, DEFAULT_RTP_FRAGMENT_PACKETS) == 1)
@@ -110,7 +116,7 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     audioMode.add_argument("--rtp-audio").help("use RTP audio streaming").default_value(false).implicit_value(true);
 
-    program.add_description("Creature Server for April's Creature Workshop! 🐰\n\n"
+    program.add_description("Creature Server for April's Creature Workshop\n\n"
                             "This application is the heart of my creature magic. It contains a websocket-based\n"
                             "server as well as the event loop that schedules events to happen in real time.");
     program.add_epilog("There are environment variables, too, if you'd rather configure in a Docker-friendly\n"
@@ -216,6 +222,11 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         config->setHoneycombApiKey(honeycombApiKey);
         debug("set our honeycomb API key to {}", honeycombApiKey);
     }
+
+    auto eventLoopTraceSampling = program.get<double>("--event-loop-trace-sampling");
+    debug("read event loop trace sampling rate {} from command line", eventLoopTraceSampling);
+    config->setEventLoopTraceSampling(eventLoopTraceSampling);
+    debug("set event loop trace sampling rate to {}", eventLoopTraceSampling);
 
     auto networkDeviceName = program.get<std::string>("-n");
     debug("read network device name {} from command line", networkDeviceName);

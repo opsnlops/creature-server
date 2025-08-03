@@ -14,13 +14,17 @@
 #include "spdlog/spdlog.h"
 
 #include "server/config.h"
+#include "server/config/Configuration.h"
 #include "server/eventloop/eventloop.h"
 #include "server/metrics/counters.h"
+#include "util/ObservabilityManager.h"
 #include "util/threadName.h"
 
 namespace creatures {
 
 extern std::shared_ptr<SystemCounters> metrics;
+extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<Configuration> config;
 
 EventLoop::EventLoop() : eventScheduler(std::make_unique<EventScheduler>()) { debug("event loop created"); }
 
@@ -44,11 +48,24 @@ void EventLoop::run() {
 
     while (!stop_requested.load()) {
 
+        // Create a sampling span for this event loop iteration
+        // Use configured sampling rate (default 0.1% = 1 in 1000 frames)
+        auto samplingRate = config ? config->getEventLoopTraceSampling() : DEFAULT_EVENT_LOOP_TRACE_SAMPLING;
+        auto frameSpan = observability ? observability->createSamplingSpan("eventloop.frame", samplingRate) : nullptr;
+
+        if (frameSpan) {
+            frameSpan->setAttribute("frame.number", static_cast<int64_t>(frameCount + 1));
+        }
+
         // Increment the frame counter for this pass
         frameCount++;
         metrics->incrementTotalFrames();
 
         // Process the events for this frame, if any, keeping the queue locked as short as possible.
+        uint32_t eventsProcessedThisFrame = 0;
+        std::string eventErrorMessage;
+        bool frameHadError = false;
+
         while (true) {
             std::shared_ptr<Event> event;
 
@@ -70,15 +87,41 @@ void EventLoop::run() {
                 if (event) {
                     event->execute();
                     metrics->incrementEventsProcessed();
+                    eventsProcessedThisFrame++;
                 }
 
             } catch (const std::runtime_error &e) {
+                frameHadError = true;
+                eventErrorMessage = e.what();
                 critical("An unhandled runtime error occurred on event {}: {}", metrics->getEventsProcessed(),
                          e.what());
+                if (frameSpan)
+                    frameSpan->recordException(e);
             } catch (const std::exception &e) {
+                frameHadError = true;
+                eventErrorMessage = e.what();
                 critical("An unhandled exception was thrown on event {}: {}", metrics->getEventsProcessed(), e.what());
+                if (frameSpan)
+                    frameSpan->recordException(e);
             } catch (...) {
+                frameHadError = true;
+                eventErrorMessage = "Unknown error";
                 critical("An unknown error occurred on event {}!", metrics->getEventsProcessed());
+                if (frameSpan) {
+                    frameSpan->setError("Unknown exception occurred during event processing");
+                }
+            }
+        }
+
+        // Add frame summary to span
+        if (frameSpan) {
+            frameSpan->setAttribute("events.processed", static_cast<int64_t>(eventsProcessedThisFrame));
+            frameSpan->setAttribute("queue.size", static_cast<int64_t>(getQueueSize()));
+
+            if (frameHadError) {
+                frameSpan->setError("Event processing error: " + eventErrorMessage);
+            } else {
+                frameSpan->setSuccess();
             }
         }
 

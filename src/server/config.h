@@ -61,6 +61,12 @@
 #define HONEYCOMB_API_KEY_ENV          "HONEYCOMB_API_KEY"
 #define DEFAULT_HONEYCOMB_API_KEY      ""
 
+// Event loop tracing sampling rate (0.0 to 1.0)
+// This controls what percentage of normal event loop frames get traced
+// Errors and exceptions are always traced regardless of this setting
+#define EVENT_LOOP_TRACE_SAMPLING_ENV  "EVENT_LOOP_TRACE_SAMPLING"
+#define DEFAULT_EVENT_LOOP_TRACE_SAMPLING  0.001  // 0.1% = 1 in 1000 frames
+
 // RTP Fragmentation - useful for WiFi and networks without jumbo frame support
 #define RTP_FRAGMENT_PACKETS_ENV        "RTP_FRAGMENT_PACKETS"
 #define DEFAULT_RTP_FRAGMENT_PACKETS    0  // Disabled by default (assume jumbo frames)

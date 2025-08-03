@@ -51,4 +51,31 @@ std::string environmentToString(const char *variable,
     }
 }
 
+double environmentToDouble(const char *variable, double defaultValue) {
+    trace("converting {} to a double from the environment (default is {})",
+          variable, defaultValue);
+
+    double value;
+    const char *valueString = std::getenv(variable);
+    if (valueString != nullptr) {
+
+        try {
+
+            value = std::stod(std::string(valueString));
+            trace("environment var {} is {}", variable, value);
+            return value;
+
+        } catch (std::invalid_argument &e) {
+            error("{} is not a double?", variable);
+            return defaultValue;
+        } catch (std::out_of_range &e) {
+            error("{} is out of range", variable);
+            return defaultValue;
+        }
+    } else {
+        trace("using the default of {}", defaultValue);
+        return defaultValue;
+    }
+}
+
 } // namespace creatures

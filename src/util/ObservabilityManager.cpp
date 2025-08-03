@@ -19,6 +19,7 @@
 #include <opentelemetry/sdk/trace/simple_processor_factory.h>
 #include <opentelemetry/sdk/trace/tracer_provider_factory.h>
 #include <opentelemetry/trace/provider.h>
+#include <random>
 
 #include "server/metrics/counters.h"
 #include "server/namespace-stuffs.h"
@@ -34,15 +35,13 @@ namespace creatures {
 
 ObservabilityManager::ObservabilityManager() : initialized_(false) {}
 
-void ObservabilityManager::initialize(const std::string &serviceName,
-                                      const std::string &serviceVersion,
-                                      const std::string &honeycombApiKey,
-                                      const std::string &honeycombDataset) {
+void ObservabilityManager::initialize(const std::string &serviceName, const std::string &serviceVersion,
+                                      const std::string &honeycombApiKey, const std::string &honeycombDataset) {
 
     // Create resource attributes using semantic conventions
-    auto resource_attributes = resource::ResourceAttributes{
-        {resource::SemanticConventions::kServiceName, serviceName},
-        {resource::SemanticConventions::kServiceVersion, serviceVersion}};
+    auto resource_attributes =
+        resource::ResourceAttributes{{resource::SemanticConventions::kServiceName, serviceName},
+                                     {resource::SemanticConventions::kServiceVersion, serviceVersion}};
     auto resource = resource::Resource::Create(resource_attributes);
 
     // ============= TRACING SETUP =============
@@ -51,30 +50,22 @@ void ObservabilityManager::initialize(const std::string &serviceName,
     otlp::OtlpHttpExporterOptions trace_exporter_options;
     if (!honeycombApiKey.empty()) {
         trace_exporter_options.url = "https://api.honeycomb.io/v1/traces";
-        trace_exporter_options.http_headers.insert(
-            {"x-honeycomb-team", honeycombApiKey});
-        trace_exporter_options.http_headers.insert(
-            {"x-honeycomb-dataset", honeycombDataset});
+        trace_exporter_options.http_headers.insert({"x-honeycomb-team", honeycombApiKey});
+        trace_exporter_options.http_headers.insert({"x-honeycomb-dataset", honeycombDataset});
     } else {
         trace_exporter_options.url = "http://localhost:4318/v1/traces";
     }
 
-    auto trace_exporter =
-        otlp::OtlpHttpExporterFactory::Create(trace_exporter_options);
-    auto trace_processor = trace_sdk::BatchSpanProcessorFactory::Create(
-        std::move(trace_exporter), trace_sdk::BatchSpanProcessorOptions{});
+    auto trace_exporter = otlp::OtlpHttpExporterFactory::Create(trace_exporter_options);
+    auto trace_processor =
+        trace_sdk::BatchSpanProcessorFactory::Create(std::move(trace_exporter), trace_sdk::BatchSpanProcessorOptions{});
 
-    auto trace_provider_unique = trace_sdk::TracerProviderFactory::Create(
-        std::move(trace_processor), resource);
-    std::shared_ptr<trace_api::TracerProvider> trace_provider_std =
-        std::move(trace_provider_unique);
-    auto trace_provider_shared =
-        opentelemetry::nostd::shared_ptr<trace_api::TracerProvider>(
-            trace_provider_std);
+    auto trace_provider_unique = trace_sdk::TracerProviderFactory::Create(std::move(trace_processor), resource);
+    std::shared_ptr<trace_api::TracerProvider> trace_provider_std = std::move(trace_provider_unique);
+    auto trace_provider_shared = opentelemetry::nostd::shared_ptr<trace_api::TracerProvider>(trace_provider_std);
 
     trace_api::Provider::SetTracerProvider(trace_provider_shared);
-    tracer_ = trace_api::Provider::GetTracerProvider()->GetTracer(
-        serviceName, serviceVersion);
+    tracer_ = trace_api::Provider::GetTracerProvider()->GetTracer(serviceName, serviceVersion);
 
     // ============= METRICS SETUP =============
 
@@ -82,59 +73,45 @@ void ObservabilityManager::initialize(const std::string &serviceName,
     otlp::OtlpHttpMetricExporterOptions metric_exporter_options;
     if (!honeycombApiKey.empty()) {
         metric_exporter_options.url = "https://api.honeycomb.io/v1/metrics";
-        metric_exporter_options.http_headers.insert(
-            {"x-honeycomb-team", honeycombApiKey});
+        metric_exporter_options.http_headers.insert({"x-honeycomb-team", honeycombApiKey});
         // Append -metrics to the dataset name for metrics data
-        metric_exporter_options.http_headers.insert(
-            {"x-honeycomb-dataset", honeycombDataset + "-metrics"});
+        metric_exporter_options.http_headers.insert({"x-honeycomb-dataset", honeycombDataset + "-metrics"});
     } else {
         metric_exporter_options.url = "http://localhost:4318/v1/metrics";
     }
 
-    auto metric_exporter =
-        otlp::OtlpHttpMetricExporterFactory::Create(metric_exporter_options);
+    auto metric_exporter = otlp::OtlpHttpMetricExporterFactory::Create(metric_exporter_options);
 
-    // We don't need a periodic reader since we'll export manually from the
-    // event loop! This is much better for your 1ms timing requirements 🐰
-    auto metric_reader =
-        metrics_sdk::PeriodicExportingMetricReaderFactory::Create(
-            std::move(metric_exporter),
-            metrics_sdk::PeriodicExportingMetricReaderOptions{
-                // Set export interval to something long since we'll trigger
-                // manually
-                .export_interval_millis =
-                    std::chrono::milliseconds(60000), // 1 minute fallback
-                .export_timeout_millis =
-                    std::chrono::milliseconds(30000) // 30 second timeout
-            });
+    // Use periodic reader with manual export from event loop for optimal timing
+    auto metric_reader = metrics_sdk::PeriodicExportingMetricReaderFactory::Create(
+        std::move(metric_exporter), metrics_sdk::PeriodicExportingMetricReaderOptions{
+                                        // Set export interval to something long since we'll trigger
+                                        // manually
+                                        .export_interval_millis = std::chrono::milliseconds(60000), // 1 minute fallback
+                                        .export_timeout_millis = std::chrono::milliseconds(30000)   // 30 second timeout
+                                    });
 
     // Create MeterProvider with proper API for v1.21.0
     auto view_registry = std::make_unique<metrics_sdk::ViewRegistry>();
-    auto metric_provider = metrics_sdk::MeterProviderFactory::Create(
-        std::move(view_registry), resource);
+    auto metric_provider = metrics_sdk::MeterProviderFactory::Create(std::move(view_registry), resource);
 
     // Add the reader to the provider
-    auto *provider_ptr =
-        static_cast<metrics_sdk::MeterProvider *>(metric_provider.get());
+    auto *provider_ptr = static_cast<metrics_sdk::MeterProvider *>(metric_provider.get());
     provider_ptr->AddMetricReader(std::move(metric_reader));
 
     // Convert std::unique_ptr to opentelemetry::nostd::shared_ptr
-    std::shared_ptr<metrics_api::MeterProvider> provider_std =
-        std::move(metric_provider);
-    auto provider_shared =
-        opentelemetry::nostd::shared_ptr<metrics_api::MeterProvider>(
-            provider_std);
+    std::shared_ptr<metrics_api::MeterProvider> provider_std = std::move(metric_provider);
+    auto provider_shared = opentelemetry::nostd::shared_ptr<metrics_api::MeterProvider>(provider_std);
 
     metrics_api::Provider::SetMeterProvider(provider_shared);
-    meter_ = metrics_api::Provider::GetMeterProvider()->GetMeter(
-        serviceName, serviceVersion);
+    meter_ = metrics_api::Provider::GetMeterProvider()->GetMeter(serviceName, serviceVersion);
 
     // Initialize all metric instruments
     initializeMetricInstruments();
 
     initialized_ = true;
 
-    info("ObservabilityManager initialized - ready to hop into action! 🐰");
+    info("ObservabilityManager initialized successfully");
 }
 
 void ObservabilityManager::initializeMetricInstruments() {
@@ -145,89 +122,70 @@ void ObservabilityManager::initializeMetricInstruments() {
 
     // Create all the counter instruments
     // Using Counter since these are monotonic increasing values
-    totalFramesCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_total_frames",
-        "Total number of frames processed by the event loop", "frames");
+    totalFramesCounter_ = meter_->CreateUInt64Counter("creature_server_total_frames",
+                                                      "Total number of frames processed by the event loop", "frames");
 
     eventsProcessedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_events_processed",
-        "Total number of events processed by the event loop", "events");
+        "creature_server_events_processed", "Total number of events processed by the event loop", "events");
 
-    framesStreamedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_frames_streamed",
-        "Total number of frames streamed from clients", "frames");
+    framesStreamedCounter_ = meter_->CreateUInt64Counter("creature_server_frames_streamed",
+                                                         "Total number of frames streamed from clients", "frames");
 
-    dmxEventsProcessedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_dmx_events_processed",
-        "Total number of DMX events processed", "events");
+    dmxEventsProcessedCounter_ = meter_->CreateUInt64Counter("creature_server_dmx_events_processed",
+                                                             "Total number of DMX events processed", "events");
 
-    animationsPlayedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_animations_played",
-        "Total number of animations played", "animations");
+    animationsPlayedCounter_ = meter_->CreateUInt64Counter("creature_server_animations_played",
+                                                           "Total number of animations played", "animations");
 
     soundsPlayedCounter_ =
-        meter_->CreateUInt64Counter("creature_server_sounds_played",
-                                    "Total number of sounds played", "sounds");
+        meter_->CreateUInt64Counter("creature_server_sounds_played", "Total number of sounds played", "sounds");
 
-    playlistsStartedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_playlists_started",
-        "Total number of playlists started", "playlists");
+    playlistsStartedCounter_ = meter_->CreateUInt64Counter("creature_server_playlists_started",
+                                                           "Total number of playlists started", "playlists");
 
-    playlistsStoppedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_playlists_stopped",
-        "Total number of playlists stopped", "playlists");
+    playlistsStoppedCounter_ = meter_->CreateUInt64Counter("creature_server_playlists_stopped",
+                                                           "Total number of playlists stopped", "playlists");
 
     playlistsEventsProcessedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_playlist_events_processed",
-        "Total number of playlist events processed", "events");
+        "creature_server_playlist_events_processed", "Total number of playlist events processed", "events");
 
     playlistStatusRequestsCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_playlist_status_requests",
-        "Total number of playlist status requests", "requests");
+        "creature_server_playlist_status_requests", "Total number of playlist status requests", "requests");
 
-    restRequestsProcessedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_rest_requests_processed",
-        "Total number of REST requests processed", "requests");
+    restRequestsProcessedCounter_ = meter_->CreateUInt64Counter("creature_server_rest_requests_processed",
+                                                                "Total number of REST requests processed", "requests");
 
     rtpEventsProcessedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_rtp_events_processed",
-        "Total number of RTP audio chunk events processed", "events");
+        "creature_server_rtp_events_processed", "Total number of RTP audio chunk events processed", "events");
 
-    soundFilesServedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_sound_files_served",
-        "Total number of sound files served", "files");
+    soundFilesServedCounter_ = meter_->CreateUInt64Counter("creature_server_sound_files_served",
+                                                           "Total number of sound files served", "files");
 
-    websocketConnectionsProcessedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_websocket_connections_processed",
-        "Total number of WebSocket connections processed", "connections");
+    websocketConnectionsProcessedCounter_ =
+        meter_->CreateUInt64Counter("creature_server_websocket_connections_processed",
+                                    "Total number of WebSocket connections processed", "connections");
 
     websocketMessagesReceivedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_websocket_messages_received",
-        "Total number of WebSocket messages received", "messages");
+        "creature_server_websocket_messages_received", "Total number of WebSocket messages received", "messages");
 
-    websocketMessagesSentCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_websocket_messages_sent",
-        "Total number of WebSocket messages sent", "messages");
+    websocketMessagesSentCounter_ = meter_->CreateUInt64Counter("creature_server_websocket_messages_sent",
+                                                                "Total number of WebSocket messages sent", "messages");
 
-    websocketPingsSentCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_websocket_pings_sent",
-        "Total number of WebSocket pings sent", "pings");
+    websocketPingsSentCounter_ = meter_->CreateUInt64Counter("creature_server_websocket_pings_sent",
+                                                             "Total number of WebSocket pings sent", "pings");
 
-    websocketPongsReceivedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_websocket_pongs_received",
-        "Total number of WebSocket pongs received", "pongs");
+    websocketPongsReceivedCounter_ = meter_->CreateUInt64Counter("creature_server_websocket_pongs_received",
+                                                                 "Total number of WebSocket pongs received", "pongs");
 
-    debug(
-        "All metric instruments initialized - ready to count like a bunny! 🐰");
+    debug("All metric instruments initialized successfully");
 }
 
-void ObservabilityManager::exportMetrics(
-    const std::shared_ptr<SystemCounters> &metrics) {
+void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &metrics) {
     if (!initialized_ || !metrics) {
         return;
     }
 
-    trace("Exporting metrics to OTel - hop to it! 🐰");
+    trace("Exporting metrics to OTel");
 
     // Since these are cumulative counters and OTel expects delta values,
     // we need to track the previous values and only send the difference
@@ -252,144 +210,112 @@ void ObservabilityManager::exportMetrics(
 
     // Calculate deltas and send them
     uint64_t currentTotalFrames = metrics->getTotalFrames();
-    uint64_t deltaTotalFrames =
-        currentTotalFrames - lastTotalFrames.exchange(currentTotalFrames);
+    uint64_t deltaTotalFrames = currentTotalFrames - lastTotalFrames.exchange(currentTotalFrames);
     if (deltaTotalFrames > 0)
         totalFramesCounter_->Add(deltaTotalFrames);
 
     uint64_t currentEventsProcessed = metrics->getEventsProcessed();
-    uint64_t deltaEventsProcessed =
-        currentEventsProcessed -
-        lastEventsProcessed.exchange(currentEventsProcessed);
+    uint64_t deltaEventsProcessed = currentEventsProcessed - lastEventsProcessed.exchange(currentEventsProcessed);
     if (deltaEventsProcessed > 0)
         eventsProcessedCounter_->Add(deltaEventsProcessed);
 
     uint64_t currentFramesStreamed = metrics->getFramesStreamed();
-    uint64_t deltaFramesStreamed =
-        currentFramesStreamed -
-        lastFramesStreamed.exchange(currentFramesStreamed);
+    uint64_t deltaFramesStreamed = currentFramesStreamed - lastFramesStreamed.exchange(currentFramesStreamed);
     if (deltaFramesStreamed > 0)
         framesStreamedCounter_->Add(deltaFramesStreamed);
 
     uint64_t currentDmxEventsProcessed = metrics->getDMXEventsProcessed();
     uint64_t deltaDmxEventsProcessed =
-        currentDmxEventsProcessed -
-        lastDmxEventsProcessed.exchange(currentDmxEventsProcessed);
+        currentDmxEventsProcessed - lastDmxEventsProcessed.exchange(currentDmxEventsProcessed);
     if (deltaDmxEventsProcessed > 0)
         dmxEventsProcessedCounter_->Add(deltaDmxEventsProcessed);
 
     uint64_t currentAnimationsPlayed = metrics->getAnimationsPlayed();
-    uint64_t deltaAnimationsPlayed =
-        currentAnimationsPlayed -
-        lastAnimationsPlayed.exchange(currentAnimationsPlayed);
+    uint64_t deltaAnimationsPlayed = currentAnimationsPlayed - lastAnimationsPlayed.exchange(currentAnimationsPlayed);
     if (deltaAnimationsPlayed > 0)
         animationsPlayedCounter_->Add(deltaAnimationsPlayed);
 
     uint64_t currentSoundsPlayed = metrics->getSoundsPlayed();
-    uint64_t deltaSoundsPlayed =
-        currentSoundsPlayed - lastSoundsPlayed.exchange(currentSoundsPlayed);
+    uint64_t deltaSoundsPlayed = currentSoundsPlayed - lastSoundsPlayed.exchange(currentSoundsPlayed);
     if (deltaSoundsPlayed > 0)
         soundsPlayedCounter_->Add(deltaSoundsPlayed);
 
     uint64_t currentPlaylistsStarted = metrics->getPlaylistsStarted();
-    uint64_t deltaPlaylistsStarted =
-        currentPlaylistsStarted -
-        lastPlaylistsStarted.exchange(currentPlaylistsStarted);
+    uint64_t deltaPlaylistsStarted = currentPlaylistsStarted - lastPlaylistsStarted.exchange(currentPlaylistsStarted);
     if (deltaPlaylistsStarted > 0)
         playlistsStartedCounter_->Add(deltaPlaylistsStarted);
 
     uint64_t currentPlaylistsStopped = metrics->getPlaylistsStopped();
-    uint64_t deltaPlaylistsStopped =
-        currentPlaylistsStopped -
-        lastPlaylistsStopped.exchange(currentPlaylistsStopped);
+    uint64_t deltaPlaylistsStopped = currentPlaylistsStopped - lastPlaylistsStopped.exchange(currentPlaylistsStopped);
     if (deltaPlaylistsStopped > 0)
         playlistsStoppedCounter_->Add(deltaPlaylistsStopped);
 
-    uint64_t currentPlaylistsEventsProcessed =
-        metrics->getPlaylistsEventsProcessed();
+    uint64_t currentPlaylistsEventsProcessed = metrics->getPlaylistsEventsProcessed();
     uint64_t deltaPlaylistsEventsProcessed =
-        currentPlaylistsEventsProcessed -
-        lastPlaylistsEventsProcessed.exchange(currentPlaylistsEventsProcessed);
+        currentPlaylistsEventsProcessed - lastPlaylistsEventsProcessed.exchange(currentPlaylistsEventsProcessed);
     if (deltaPlaylistsEventsProcessed > 0)
         playlistsEventsProcessedCounter_->Add(deltaPlaylistsEventsProcessed);
 
-    uint64_t currentPlaylistStatusRequests =
-        metrics->getPlaylistStatusRequests();
+    uint64_t currentPlaylistStatusRequests = metrics->getPlaylistStatusRequests();
     uint64_t deltaPlaylistStatusRequests =
-        currentPlaylistStatusRequests -
-        lastPlaylistStatusRequests.exchange(currentPlaylistStatusRequests);
+        currentPlaylistStatusRequests - lastPlaylistStatusRequests.exchange(currentPlaylistStatusRequests);
     if (deltaPlaylistStatusRequests > 0)
         playlistStatusRequestsCounter_->Add(deltaPlaylistStatusRequests);
 
     uint64_t currentRestRequestsProcessed = metrics->getRestRequestsProcessed();
     uint64_t deltaRestRequestsProcessed =
-        currentRestRequestsProcessed -
-        lastRestRequestsProcessed.exchange(currentRestRequestsProcessed);
+        currentRestRequestsProcessed - lastRestRequestsProcessed.exchange(currentRestRequestsProcessed);
     if (deltaRestRequestsProcessed > 0)
         restRequestsProcessedCounter_->Add(deltaRestRequestsProcessed);
 
     uint64_t currentRtpEventsProcessed = metrics->getRtpEventsProcessed();
     uint64_t deltaRtpEventsProcessed =
-        currentRtpEventsProcessed -
-        lastRtpEventsProcessed.exchange(currentRtpEventsProcessed);
+        currentRtpEventsProcessed - lastRtpEventsProcessed.exchange(currentRtpEventsProcessed);
     if (deltaRtpEventsProcessed > 0)
         rtpEventsProcessedCounter_->Add(deltaRtpEventsProcessed);
 
     uint64_t currentSoundFilesServed = metrics->getSoundFilesServed();
-    uint64_t deltaSoundFilesServed =
-        currentSoundFilesServed -
-        lastSoundFilesServed.exchange(currentSoundFilesServed);
+    uint64_t deltaSoundFilesServed = currentSoundFilesServed - lastSoundFilesServed.exchange(currentSoundFilesServed);
     if (deltaSoundFilesServed > 0)
         soundFilesServedCounter_->Add(deltaSoundFilesServed);
 
-    uint64_t currentWebsocketConnectionsProcessed =
-        metrics->getWebsocketConnectionsProcessed();
+    uint64_t currentWebsocketConnectionsProcessed = metrics->getWebsocketConnectionsProcessed();
     uint64_t deltaWebsocketConnectionsProcessed =
         currentWebsocketConnectionsProcessed -
-        lastWebsocketConnectionsProcessed.exchange(
-            currentWebsocketConnectionsProcessed);
+        lastWebsocketConnectionsProcessed.exchange(currentWebsocketConnectionsProcessed);
     if (deltaWebsocketConnectionsProcessed > 0)
-        websocketConnectionsProcessedCounter_->Add(
-            deltaWebsocketConnectionsProcessed);
+        websocketConnectionsProcessedCounter_->Add(deltaWebsocketConnectionsProcessed);
 
-    uint64_t currentWebsocketMessagesReceived =
-        metrics->getWebsocketMessagesReceived();
+    uint64_t currentWebsocketMessagesReceived = metrics->getWebsocketMessagesReceived();
     uint64_t deltaWebsocketMessagesReceived =
-        currentWebsocketMessagesReceived -
-        lastWebsocketMessagesReceived.exchange(
-            currentWebsocketMessagesReceived);
+        currentWebsocketMessagesReceived - lastWebsocketMessagesReceived.exchange(currentWebsocketMessagesReceived);
     if (deltaWebsocketMessagesReceived > 0)
         websocketMessagesReceivedCounter_->Add(deltaWebsocketMessagesReceived);
 
     uint64_t currentWebsocketMessagesSent = metrics->getWebsocketMessagesSent();
     uint64_t deltaWebsocketMessagesSent =
-        currentWebsocketMessagesSent -
-        lastWebsocketMessagesSent.exchange(currentWebsocketMessagesSent);
+        currentWebsocketMessagesSent - lastWebsocketMessagesSent.exchange(currentWebsocketMessagesSent);
     if (deltaWebsocketMessagesSent > 0)
         websocketMessagesSentCounter_->Add(deltaWebsocketMessagesSent);
 
     uint64_t currentWebsocketPingsSent = metrics->getWebsocketPingsSent();
     uint64_t deltaWebsocketPingsSent =
-        currentWebsocketPingsSent -
-        lastWebsocketPingsSent.exchange(currentWebsocketPingsSent);
+        currentWebsocketPingsSent - lastWebsocketPingsSent.exchange(currentWebsocketPingsSent);
     if (deltaWebsocketPingsSent > 0)
         websocketPingsSentCounter_->Add(deltaWebsocketPingsSent);
 
-    uint64_t currentWebsocketPongsReceived =
-        metrics->getWebsocketPongsReceived();
+    uint64_t currentWebsocketPongsReceived = metrics->getWebsocketPongsReceived();
     uint64_t deltaWebsocketPongsReceived =
-        currentWebsocketPongsReceived -
-        lastWebsocketPongsReceived.exchange(currentWebsocketPongsReceived);
+        currentWebsocketPongsReceived - lastWebsocketPongsReceived.exchange(currentWebsocketPongsReceived);
     if (deltaWebsocketPongsReceived > 0)
         websocketPongsReceivedCounter_->Add(deltaWebsocketPongsReceived);
 
     debug("Metrics exported to OTel");
 }
 
-std::shared_ptr<RequestSpan>
-ObservabilityManager::createRequestSpan(const std::string &operationName,
-                                        const std::string &httpMethod,
-                                        const std::string &httpUrl) {
+std::shared_ptr<RequestSpan> ObservabilityManager::createRequestSpan(const std::string &operationName,
+                                                                     const std::string &httpMethod,
+                                                                     const std::string &httpUrl) {
 
     if (!initialized_) {
         return nullptr;
@@ -399,8 +325,8 @@ ObservabilityManager::createRequestSpan(const std::string &operationName,
     return std::make_shared<RequestSpan>(span, httpMethod, httpUrl);
 }
 
-std::shared_ptr<OperationSpan> ObservabilityManager::createOperationSpan(
-    const std::string &operationName, std::shared_ptr<RequestSpan> parentSpan) {
+std::shared_ptr<OperationSpan> ObservabilityManager::createOperationSpan(const std::string &operationName,
+                                                                         std::shared_ptr<RequestSpan> parentSpan) {
 
     if (!initialized_) {
         return nullptr;
@@ -424,9 +350,9 @@ std::shared_ptr<OperationSpan> ObservabilityManager::createOperationSpan(
     return std::make_shared<OperationSpan>(span);
 }
 
-std::shared_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(
-    const std::string &operationName,
-    std::shared_ptr<OperationSpan> parentSpan) {
+std::shared_ptr<OperationSpan>
+ObservabilityManager::createChildOperationSpan(const std::string &operationName,
+                                               std::shared_ptr<OperationSpan> parentSpan) {
 
     if (!initialized_ || !parentSpan) {
         return nullptr;
@@ -441,9 +367,8 @@ std::shared_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(
 }
 
 // RequestSpan implementation (unchanged from your original)
-RequestSpan::RequestSpan(
-    opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span,
-    const std::string &httpMethod, const std::string &httpUrl)
+RequestSpan::RequestSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span,
+                         const std::string &httpMethod, const std::string &httpUrl)
     : span_(span), statusSet_(false) {
 
     context_ = opentelemetry::context::RuntimeContext::GetCurrent();
@@ -478,8 +403,7 @@ void RequestSpan::setHttpStatus(int statusCode) {
     statusSet_ = true;
 }
 
-void RequestSpan::setAttribute(const std::string &key,
-                               const std::string &value) {
+void RequestSpan::setAttribute(const std::string &key, const std::string &value) {
     if (span_)
         span_->SetAttribute(key, value);
 }
@@ -496,16 +420,14 @@ void RequestSpan::setAttribute(const std::string &key, bool value) {
 
 void RequestSpan::recordException(const std::exception &ex) {
     if (span_) {
-        span_->AddEvent("exception", {{"exception.type", typeid(ex).name()},
-                                      {"exception.message", ex.what()}});
+        span_->AddEvent("exception", {{"exception.type", typeid(ex).name()}, {"exception.message", ex.what()}});
         span_->SetStatus(trace_api::StatusCode::kError, ex.what());
         statusSet_ = true;
     }
 }
 
 // OperationSpan implementation (unchanged from your original)
-OperationSpan::OperationSpan(
-    opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span)
+OperationSpan::OperationSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span)
     : span_(span), statusSet_(false) {
     context_ = opentelemetry::context::RuntimeContext::GetCurrent();
 }
@@ -533,8 +455,7 @@ void OperationSpan::setError(const std::string &errorMessage) {
     }
 }
 
-void OperationSpan::setAttribute(const std::string &key,
-                                 const std::string &value) {
+void OperationSpan::setAttribute(const std::string &key, const std::string &value) {
     if (span_)
         span_->SetAttribute(key, value);
 }
@@ -580,11 +501,133 @@ void OperationSpan::setAttribute(const std::string &key, bool value) {
 
 void OperationSpan::recordException(const std::exception &ex) {
     if (span_) {
-        span_->AddEvent("exception", {{"exception.type", typeid(ex).name()},
-                                      {"exception.message", ex.what()}});
+        span_->AddEvent("exception", {{"exception.type", typeid(ex).name()}, {"exception.message", ex.what()}});
         span_->SetStatus(trace_api::StatusCode::kError, ex.what());
         statusSet_ = true;
     }
+}
+
+// ====================== SamplingSpan Implementation ======================
+
+std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std::string &operationName,
+                                                                       double samplingRate) {
+
+    if (!initialized_) {
+        return nullptr;
+    }
+
+    auto span = tracer_->StartSpan(operationName);
+    return std::make_shared<SamplingSpan>(span, samplingRate);
+}
+
+SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate)
+    : span_(span), samplingRate_(samplingRate), shouldExport_(false), statusSet_(false) {
+
+    context_ = opentelemetry::context::RuntimeContext::GetCurrent();
+
+    // Set basic attributes
+    span_->SetAttribute("component", "creature-server");
+    span_->SetAttribute("sampling.rate", samplingRate_);
+
+    // Determine if we should export based on sampling
+    shouldExport_ = determineShouldExport();
+    span_->SetAttribute("sampling.will_export", shouldExport_);
+}
+
+SamplingSpan::~SamplingSpan() {
+    if (span_ && !statusSet_) {
+        setSuccess();
+    }
+
+    if (span_) {
+        if (shouldExport_) {
+            // This span will be exported normally
+            span_->SetAttribute("sampling.exported", true);
+        } else {
+            // Suppress this span by marking it as not sampled
+            // Note: In OpenTelemetry, we can't truly suppress spans after creation,
+            // but we can mark them with attributes to filter later
+            span_->SetAttribute("sampling.exported", false);
+            span_->SetAttribute("sampling.suppressed", true);
+        }
+        span_->End();
+    }
+}
+
+void SamplingSpan::setSuccess() {
+    if (span_) {
+        span_->SetStatus(trace_api::StatusCode::kOk);
+        statusSet_ = true;
+    }
+    // Note: Success doesn't change shouldExport_ - it was determined at construction
+}
+
+void SamplingSpan::setError(const std::string &errorMessage) {
+    if (span_) {
+        span_->SetStatus(trace_api::StatusCode::kError, errorMessage);
+        span_->SetAttribute("error.message", errorMessage);
+        statusSet_ = true;
+
+        // Errors always export regardless of sampling
+        shouldExport_ = true;
+        span_->SetAttribute("sampling.will_export", true);
+        span_->SetAttribute("sampling.force_export_reason", "error");
+    }
+}
+
+void SamplingSpan::forceExport() {
+    shouldExport_ = true;
+    if (span_) {
+        span_->SetAttribute("sampling.will_export", true);
+        span_->SetAttribute("sampling.force_export_reason", "manual");
+    }
+}
+
+void SamplingSpan::setAttribute(const std::string &key, const std::string &value) {
+    if (span_)
+        span_->SetAttribute(key, value);
+}
+
+void SamplingSpan::setAttribute(const std::string &key, int64_t value) {
+    if (span_)
+        span_->SetAttribute(key, value);
+}
+
+void SamplingSpan::setAttribute(const std::string &key, double value) {
+    if (span_)
+        span_->SetAttribute(key, value);
+}
+
+void SamplingSpan::setAttribute(const std::string &key, bool value) {
+    if (span_)
+        span_->SetAttribute(key, value);
+}
+
+void SamplingSpan::setAttribute(const std::string &key, framenum_t value) {
+    if (span_)
+        span_->SetAttribute(key, static_cast<int64_t>(value));
+}
+
+void SamplingSpan::recordException(const std::exception &ex) {
+    if (span_) {
+        span_->AddEvent("exception", {{"exception.type", typeid(ex).name()}, {"exception.message", ex.what()}});
+        span_->SetStatus(trace_api::StatusCode::kError, ex.what());
+        statusSet_ = true;
+
+        // Exceptions always export regardless of sampling
+        shouldExport_ = true;
+        span_->SetAttribute("sampling.will_export", true);
+        span_->SetAttribute("sampling.force_export_reason", "exception");
+    }
+}
+
+bool SamplingSpan::determineShouldExport() {
+    // Generate a random number between 0.0 and 1.0
+    static thread_local std::random_device rd;
+    static thread_local std::mt19937 gen(rd());
+    static thread_local std::uniform_real_distribution<double> dis(0.0, 1.0);
+
+    return dis(gen) < samplingRate_;
 }
 
 } // namespace creatures

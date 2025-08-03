@@ -23,14 +23,14 @@ namespace creatures {
 // Forward declarations
 class RequestSpan;
 class OperationSpan;
+class SamplingSpan;
 
 /**
  * A wrapper around OpenTelemetry for the Creature Server
  *
  * This class provides a clean interface for creating traces and spans,
  * and also handles metrics export through the existing event loop system.
- * No need to reinvent the wheel - we'll hop right into your existing pattern!
- * 🐰
+ * Integrates with existing patterns and infrastructure.
  */
 class ObservabilityManager {
   public:
@@ -45,10 +45,8 @@ class ObservabilityManager {
      * @param honeycombApiKey Your Honeycomb API key
      * @param honeycombDataset The Honeycomb dataset name
      */
-    void initialize(const std::string &serviceName,
-                    const std::string &serviceVersion,
-                    const std::string &honeycombApiKey = "",
-                    const std::string &honeycombDataset = "creature-server");
+    void initialize(const std::string &serviceName, const std::string &serviceVersion,
+                    const std::string &honeycombApiKey = "", const std::string &honeycombDataset = "creature-server");
 
     /**
      * Create a new span for an HTTP request
@@ -59,10 +57,8 @@ class ObservabilityManager {
      * @param httpUrl The full URL path
      * @return A unique pointer to the span (RAII cleanup)
      */
-    std::shared_ptr<RequestSpan>
-    createRequestSpan(const std::string &operationName,
-                      const std::string &httpMethod,
-                      const std::string &httpUrl);
+    std::shared_ptr<RequestSpan> createRequestSpan(const std::string &operationName, const std::string &httpMethod,
+                                                   const std::string &httpUrl);
 
     /**
      * Create a child span for database operations, service calls, etc.
@@ -71,9 +67,8 @@ class ObservabilityManager {
      * @param parentSpan The parent span (optional)
      * @return A unique pointer to the span
      */
-    std::shared_ptr<OperationSpan>
-    createOperationSpan(const std::string &operationName,
-                        std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    std::shared_ptr<OperationSpan> createOperationSpan(const std::string &operationName,
+                                                       std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Create a child operation span from another operation span
@@ -82,9 +77,17 @@ class ObservabilityManager {
      * @param parentSpan The parent operation span
      * @return A unique pointer to the span
      */
-    std::shared_ptr<OperationSpan> createChildOperationSpan(
-        const std::string &operationName,
-        std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    std::shared_ptr<OperationSpan> createChildOperationSpan(const std::string &operationName,
+                                                            std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * Create a sampling span that only exports traces under certain conditions
+     *
+     * @param operationName The name of the operation (e.g., "eventloop.frame")
+     * @param samplingRate The percentage (0.0-1.0) of normal spans to export
+     * @return A unique pointer to the sampling span
+     */
+    std::shared_ptr<SamplingSpan> createSamplingSpan(const std::string &operationName, double samplingRate = 0.001);
 
     /**
      * Export all metrics from the SystemCounters to OTel
@@ -96,7 +99,7 @@ class ObservabilityManager {
     void exportMetrics(const std::shared_ptr<class SystemCounters> &metrics);
 
     /**
-     * Check if the manager is initialized and ready to hop! 🐰
+     * Check if the manager is initialized and ready for use.
      */
     [[nodiscard]] bool isInitialized() const { return initialized_; }
 
@@ -109,42 +112,24 @@ class ObservabilityManager {
 
     // Individual counter instruments - we'll create these once and reuse them
     // This avoids the overhead of looking them up every time we export
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        totalFramesCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        eventsProcessedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        framesStreamedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        dmxEventsProcessedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        animationsPlayedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        soundsPlayedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        playlistsStartedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        playlistsStoppedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        playlistsEventsProcessedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        playlistStatusRequestsCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        restRequestsProcessedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        rtpEventsProcessedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        soundFilesServedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        websocketConnectionsProcessedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        websocketMessagesReceivedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        websocketMessagesSentCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        websocketPingsSentCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>>
-        websocketPongsReceivedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> totalFramesCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> eventsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> framesStreamedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> dmxEventsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> animationsPlayedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> soundsPlayedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistsStartedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistsStoppedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistsEventsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistStatusRequestsCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> restRequestsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpEventsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> soundFilesServedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketConnectionsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketMessagesReceivedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketMessagesSentCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketPingsSentCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketPongsReceivedCounter_;
 
     bool initialized_;
 
@@ -160,9 +145,8 @@ class ObservabilityManager {
  */
 class RequestSpan {
   public:
-    RequestSpan(
-        opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span,
-        const std::string &httpMethod, const std::string &httpUrl);
+    RequestSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, const std::string &httpMethod,
+                const std::string &httpUrl);
     ~RequestSpan();
 
     // No copy, move only
@@ -191,16 +175,12 @@ class RequestSpan {
     /**
      * Get the underlying span for creating child spans
      */
-    [[nodiscard]] opentelemetry::trace::Span *getSpan() const {
-        return span_.get();
-    }
+    [[nodiscard]] opentelemetry::trace::Span *getSpan() const { return span_.get(); }
 
     /**
      * Get the span context for parent-child relationships
      */
-    [[nodiscard]] opentelemetry::context::Context getContext() const {
-        return context_;
-    }
+    [[nodiscard]] opentelemetry::context::Context getContext() const { return context_; }
 
     // Make span_ accessible to ObservabilityManager for parent-child
     // relationships
@@ -217,8 +197,7 @@ class RequestSpan {
  */
 class OperationSpan {
   public:
-    explicit OperationSpan(
-        opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span);
+    explicit OperationSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span);
     ~OperationSpan();
 
     // No copy, move only
@@ -258,16 +237,12 @@ class OperationSpan {
     /**
      * Get the span context for parent-child relationships
      */
-    [[nodiscard]] opentelemetry::context::Context getContext() const {
-        return context_;
-    }
+    [[nodiscard]] opentelemetry::context::Context getContext() const { return context_; }
 
     /**
      * Get the underlying span for creating child spans
      */
-    [[nodiscard]] opentelemetry::trace::Span *getSpan() const {
-        return span_.get();
-    }
+    [[nodiscard]] opentelemetry::trace::Span *getSpan() const { return span_.get(); }
 
   private:
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span_;
@@ -275,9 +250,70 @@ class OperationSpan {
     bool statusSet_;
 };
 
+/**
+ * RAII wrapper for sampling spans that conditionally export traces
+ *
+ * This span type is designed for high-frequency operations like event loops.
+ * It only exports traces when:
+ * 1. An error occurs (always exported)
+ * 2. Random sampling criteria is met (configurable percentage)
+ * 3. Explicitly forced to export
+ */
+class SamplingSpan {
+  public:
+    SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate);
+    ~SamplingSpan();
+
+    // No copy, move only
+    SamplingSpan(const SamplingSpan &) = delete;
+    SamplingSpan &operator=(const SamplingSpan &) = delete;
+    SamplingSpan(SamplingSpan &&) = default;
+    SamplingSpan &operator=(SamplingSpan &&) = default;
+
+    /**
+     * Mark the operation as successful (may or may not export based on sampling)
+     */
+    void setSuccess();
+
+    /**
+     * Mark the operation as failed (always exports)
+     */
+    void setError(const std::string &errorMessage);
+
+    /**
+     * Force this span to be exported regardless of sampling
+     */
+    void forceExport();
+
+    /**
+     * Add attributes to the span
+     */
+    void setAttribute(const std::string &key, const std::string &value);
+    void setAttribute(const std::string &key, int64_t value);
+    void setAttribute(const std::string &key, double value);
+    void setAttribute(const std::string &key, bool value);
+    void setAttribute(const std::string &key, framenum_t value);
+
+    /**
+     * Record an exception (always exports)
+     */
+    void recordException(const std::exception &ex);
+
+  private:
+    opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span_;
+    opentelemetry::context::Context context_;
+    double samplingRate_;
+    bool shouldExport_;
+    bool statusSet_;
+
+    /**
+     * Determine if this span should be exported based on sampling logic
+     */
+    bool determineShouldExport();
+};
+
 // Convenience macro for creating request spans
-#define CREATE_REQUEST_SPAN(observability_manager, method, url)                \
-    auto span = observability_manager->createRequestSpan(method + " " + url,   \
-                                                         method, url)
+#define CREATE_REQUEST_SPAN(observability_manager, method, url)                                                        \
+    auto span = observability_manager->createRequestSpan(method + " " + url, method, url)
 
 } // namespace creatures

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.4.18"
+        VERSION "2.4.19"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -164,7 +164,7 @@ set(WITH_FUNC_TESTS OFF CACHE BOOL "Disable functional tests" FORCE)
 set(OPENTELEMETRY_INSTALL OFF CACHE BOOL "Disable install" FORCE)
 set(WITH_GTEST OFF CACHE BOOL "Disable gtest in OpenTelemetry" FORCE)
 
-# Enable what we need for traces AND metrics! 🐰
+# Enable what we need for traces AND metrics
 set(WITH_OTLP_HTTP ON CACHE BOOL "Enable OTLP HTTP exporter" FORCE)
 set(WITH_OTLP_GRPC OFF CACHE BOOL "Disable OTLP gRPC exporter" FORCE)
 

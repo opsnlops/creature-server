@@ -68,4 +68,12 @@ void Configuration::setHoneycombApiKey(std::string _honeycombApiKey) {
     this->honeycombApiKey = std::move(_honeycombApiKey);
 }
 
+// Observability Configuration
+
+double Configuration::getEventLoopTraceSampling() const { return this->eventLoopTraceSampling; }
+
+void Configuration::setEventLoopTraceSampling(const double _eventLoopTraceSampling) {
+    this->eventLoopTraceSampling = _eventLoopTraceSampling;
+}
+
 } // namespace creatures
