@@ -516,22 +516,35 @@ std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std
         return nullptr;
     }
 
-    auto span = tracer_->StartSpan(operationName);
-    return std::make_shared<SamplingSpan>(span, samplingRate);
+    // Make sampling decision before creating span
+    static thread_local std::random_device rd;
+    static thread_local std::mt19937 gen(rd());
+    static thread_local std::uniform_real_distribution<double> dis(0.0, 1.0);
+
+    bool shouldSample = dis(gen) < samplingRate;
+
+    if (shouldSample) {
+        auto span = tracer_->StartSpan(operationName);
+        return std::make_shared<SamplingSpan>(span, samplingRate, true, tracer_);
+    } else {
+        // Return a SamplingSpan with no actual OpenTelemetry span
+        opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> nullSpan;
+        return std::make_shared<SamplingSpan>(nullSpan, samplingRate, false, tracer_);
+    }
 }
 
-SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate)
-    : span_(span), samplingRate_(samplingRate), shouldExport_(false), statusSet_(false) {
+SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate,
+                           bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer)
+    : span_(span), samplingRate_(samplingRate), shouldExport_(shouldExport), statusSet_(false), tracer_(tracer) {
 
     context_ = opentelemetry::context::RuntimeContext::GetCurrent();
 
-    // Set basic attributes
-    span_->SetAttribute("component", "creature-server");
-    span_->SetAttribute("sampling.rate", samplingRate_);
-
-    // Determine if we should export based on sampling
-    shouldExport_ = determineShouldExport();
-    span_->SetAttribute("sampling.will_export", shouldExport_);
+    // Set basic attributes only if we have a span
+    if (span_) {
+        span_->SetAttribute("component", "creature-server");
+        span_->SetAttribute("sampling.rate", samplingRate_);
+        span_->SetAttribute("sampling.will_export", shouldExport_);
+    }
 }
 
 SamplingSpan::~SamplingSpan() {
@@ -560,6 +573,16 @@ void SamplingSpan::setSuccess() {
 }
 
 void SamplingSpan::setError(const std::string &errorMessage) {
+    // If we don't have a span but need to report an error, create one now
+    if (!span_ && !shouldExport_ && tracer_) {
+        span_ = tracer_->StartSpan("eventloop.frame");
+        if (span_) {
+            span_->SetAttribute("component", "creature-server");
+            span_->SetAttribute("sampling.rate", samplingRate_);
+            span_->SetAttribute("sampling.force_export_reason", "error");
+        }
+    }
+
     if (span_) {
         span_->SetStatus(trace_api::StatusCode::kError, errorMessage);
         span_->SetAttribute("error.message", errorMessage);
@@ -573,6 +596,15 @@ void SamplingSpan::setError(const std::string &errorMessage) {
 }
 
 void SamplingSpan::forceExport() {
+    // If we don't have a span but are forced to export, create one now
+    if (!span_ && tracer_) {
+        span_ = tracer_->StartSpan("eventloop.frame");
+        if (span_) {
+            span_->SetAttribute("component", "creature-server");
+            span_->SetAttribute("sampling.rate", samplingRate_);
+        }
+    }
+
     shouldExport_ = true;
     if (span_) {
         span_->SetAttribute("sampling.will_export", true);
@@ -606,6 +638,15 @@ void SamplingSpan::setAttribute(const std::string &key, framenum_t value) {
 }
 
 void SamplingSpan::recordException(const std::exception &ex) {
+    // If we don't have a span but need to report an exception, create one now
+    if (!span_ && tracer_) {
+        span_ = tracer_->StartSpan("eventloop.frame");
+        if (span_) {
+            span_->SetAttribute("component", "creature-server");
+            span_->SetAttribute("sampling.rate", samplingRate_);
+        }
+    }
+
     if (span_) {
         span_->AddEvent("exception", {{"exception.type", typeid(ex).name()}, {"exception.message", ex.what()}});
         span_->SetStatus(trace_api::StatusCode::kError, ex.what());
@@ -616,15 +657,6 @@ void SamplingSpan::recordException(const std::exception &ex) {
         span_->SetAttribute("sampling.will_export", true);
         span_->SetAttribute("sampling.force_export_reason", "exception");
     }
-}
-
-bool SamplingSpan::determineShouldExport() {
-    // Generate a random number between 0.0 and 1.0
-    static thread_local std::random_device rd;
-    static thread_local std::mt19937 gen(rd());
-    static thread_local std::uniform_real_distribution<double> dis(0.0, 1.0);
-
-    return dis(gen) < samplingRate_;
 }
 
 } // namespace creatures

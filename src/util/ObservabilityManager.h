@@ -261,7 +261,8 @@ class OperationSpan {
  */
 class SamplingSpan {
   public:
-    SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate);
+    SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate,
+                 bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer = nullptr);
     ~SamplingSpan();
 
     // No copy, move only
@@ -305,11 +306,10 @@ class SamplingSpan {
     double samplingRate_;
     bool shouldExport_;
     bool statusSet_;
+    opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer_;
 
-    /**
-     * Determine if this span should be exported based on sampling logic
-     */
-    bool determineShouldExport();
+    // Allow access to ObservabilityManager for creating error spans
+    friend class ObservabilityManager;
 };
 
 // Convenience macro for creating request spans
