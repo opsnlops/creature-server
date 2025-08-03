@@ -354,6 +354,9 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
         attributes["creature.id"] = creatureId;
         attributes["creature.name"] = sensorData.creatureName;
 
+        debug("Processing sensor data: creatureId='{}' (len={}), creatureName='{}' (len={})", creatureId,
+              creatureId.length(), sensorData.creatureName, sensorData.creatureName.length());
+
         // Export board temperature with creature identification
         if (boardTemperatureGauge_) {
             debug("Exporting temperature metric: creature.id={}, creature.name={}, temperature={:.2f}F", creatureId,

@@ -6,13 +6,17 @@
 
 #include "SensorReportCommandDTO.h"
 #include "SensorReportHandler.h"
+#include "server/database.h"
 #include "server/sensors/SensorDataCache.h"
+#include "util/cache.h"
 #include "util/ObservabilityManager.h"
 
 namespace creatures {
 extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 extern std::shared_ptr<SensorDataCache> sensorDataCache;
 extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
+extern std::shared_ptr<Database> db;
 } // namespace creatures
 
 namespace creatures ::ws {
@@ -36,9 +40,40 @@ void SensorReportHandler::processMessage(const oatpp::String &message) {
 
             // Extract creature info
             auto creatureId = dto->payload->creatureId ? std::string(dto->payload->creatureId) : "";
-            auto creatureName = dto->payload->creatureName ? std::string(dto->payload->creatureName) : "";
             auto boardTemperature =
                 dto->payload->board_temperature ? static_cast<double>(dto->payload->board_temperature) : 0.0;
+
+            // Look up creature name from cache (with database fallback) if we have a valid creature ID
+            std::string creatureName;
+            if (!creatureId.empty() && creatures::creatureCache) {
+                try {
+                    auto creature = creatures::creatureCache->get(creatureId);
+                    creatureName = creature->name;
+                    messageSpan->setAttribute("creature_cache.hit", true);
+                    appLogger->debug("Looked up creature name from cache: {} for ID: {}", creatureName, creatureId);
+                } catch (const std::out_of_range &e) {
+                    messageSpan->setAttribute("creature_cache.hit", false);
+                    appLogger->debug("Creature {} not found in cache, trying database...", creatureId);
+
+                    if (creatures::db) {
+                        auto creatureResult = creatures::db->getCreature(creatureId);
+                        if (creatureResult.isSuccess()) {
+                            creatureName = creatureResult.getValue().value().name;
+                            appLogger->debug("Looked up creature name from database: {} for ID: {}", creatureName,
+                                             creatureId);
+                        } else {
+                            appLogger->warn("Failed to look up creature name for ID: {} - {}", creatureId,
+                                            creatureResult.getError().value().getMessage());
+                            creatureName = "Unknown Creature";
+                        }
+                    } else {
+                        creatureName = "Unknown Creature";
+                    }
+                }
+            } else {
+                creatureName =
+                    dto->payload->creatureName ? std::string(dto->payload->creatureName) : "Unknown Creature";
+            }
 
             // Convert power readings
             std::vector<PowerSensorReading> powerReadings;
