@@ -33,7 +33,7 @@ class BoardSensorReportPayloadDTO : public oatpp::DTO {
     DTO_INIT(BoardSensorReportPayloadDTO, DTO)
 
     DTO_FIELD_INFO(creatureId) { info->description = "ID of the creature reporting sensor data"; }
-    DTO_FIELD(String, creatureId);
+    DTO_FIELD(String, creatureId, "creature_id");
 
     DTO_FIELD_INFO(creatureName) { info->description = "Name of the creature reporting sensor data"; }
     DTO_FIELD(String, creatureName);
