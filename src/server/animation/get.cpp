@@ -68,7 +68,7 @@ Result<json> Database::getAnimationJson(animationId_t animationId, std::shared_p
             filterSpan->setAttribute("filter.bson_size", static_cast<int64_t>(filter_doc.length()));
         }
 
-        // 🐰 Span for getting the MongoDB collection
+        // Create span for getting the MongoDB collection
         auto collectionSpan = creatures::observability->createChildOperationSpan("Database.getCollection", dbSpan);
         if (collectionSpan) {
             collectionSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);

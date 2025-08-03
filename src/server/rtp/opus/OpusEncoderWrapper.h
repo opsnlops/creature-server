@@ -1,4 +1,10 @@
-// src/server/rtp/opus/OpusEncoderWrapper.h
+/**
+ * @file OpusEncoderWrapper.h
+ * @brief Wrapper class for Opus audio encoding functionality
+ *
+ * This file provides a C++ wrapper around the libopus encoder with
+ * optimized settings for real-time audio streaming over RTP.
+ */
 
 #pragma once
 
@@ -12,26 +18,26 @@ namespace creatures::rtp::opus {
 class Encoder {
   public:
     Encoder(int sampleRate = RTP_SRATE, int channels = 1, int frameSamples = RTP_SAMPLES, int bitrate = RTP_BITRATE,
-            bool enableFec = true);
+            bool enableForwardErrorCorrection = true);
 
     ~Encoder();
 
-    // Encodes one PCM frame (int16) → returns encoded bytes
-    std::vector<uint8_t> encode(const int16_t *pcm);
+    // Encodes one PCM frame (int16) and returns encoded bytes
+    std::vector<uint8_t> encode(const int16_t *pcmData);
 
-    // Reset encoder state - like giving our bunny a fresh start! 🐰
+    // Reset encoder state
     void reset();
 
     // Get handle for direct opus_encoder_ctl calls if needed
-    OpusEncoder *handle() { return enc_; }
+    OpusEncoder *getEncoderHandle() { return opusEncoder_; }
 
   private:
-    OpusEncoder *enc_{nullptr};
-    const int frameSamples_;
-    std::vector<uint8_t> scratch_;
+    OpusEncoder *opusEncoder_{nullptr};
+    const int samplesPerFrame_;
+    std::vector<uint8_t> encodingBuffer_;
 
-    static std::string errorCodeToString(const int err) {
-        switch (err) {
+    static std::string errorCodeToString(const int errorCode) {
+        switch (errorCode) {
         case OPUS_BAD_ARG:
             return "OPUS_BAD_ARG";
         case OPUS_UNIMPLEMENTED:

@@ -64,7 +64,7 @@ class StaticController : public oatpp::web::server::api::ApiController {
 
         auto response = StatusDto::createShared();
         response->status = "OK";
-        response->message = "HOP! I'm hopping!";
+        response->message = "Server is operational";
         response->code = 200;
 
         creatures::metrics->incrementRestRequestsProcessed();

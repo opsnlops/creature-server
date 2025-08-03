@@ -26,11 +26,11 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
         span->setAttribute("silent_frame_count", static_cast<int64_t>(silentFrameCount_));
     }
 
-    debug("🐰 RtpEncoderResetEvent hopping into action on frame {}!", frameNumber);
+    debug("RtpEncoderResetEvent executing on frame {}", frameNumber);
 
     try {
         if (!rtpServer || !rtpServer->isReady()) {
-            const auto errorMsg = "RTP server not available for encoder reset - bunny can't hop! 🐰";
+            const auto errorMsg = "RTP server not available for encoder reset";
             error(errorMsg);
             if (span)
                 span->setError(errorMsg);
@@ -42,11 +42,11 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
         rtpServer->rotateSSRC();
         const auto newSSRC = rtpServer->getCurrentSSRC();
 
-        debug("🐰 SSRC rotated from {} to {} - fresh identity for all channels!", oldSSRC, newSSRC);
+        debug("SSRC rotated from {} to {} - fresh identity for all channels", oldSSRC, newSSRC);
 
         // Step 2: Reset all Opus encoders
         rtpServer->resetEncoders();
-        debug("🐰 All encoders reset - clean slate for encoding!");
+        debug("All encoders reset - clean slate for encoding");
 
         // Step 3: Send silent frames to prime decoders
         if (silentFrameCount_ > 0) {

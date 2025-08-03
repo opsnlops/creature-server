@@ -1,4 +1,11 @@
-// src/server/rtp/MultiOpusRtpServer.cpp
+/**
+ * @file MultiOpusRtpServer.cpp
+ * @brief Implementation of the multi-channel Opus RTP streaming server
+ *
+ * This file contains the implementation of the MultiOpusRtpServer class
+ * which manages multiple RTP streams for Opus-encoded audio channels.
+ */
+
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 #include <uvgrtp/lib.hh>
@@ -11,103 +18,110 @@
 using namespace creatures::rtp;
 
 MultiOpusRtpServer::MultiOpusRtpServer()
-    : silent_frame_(RTP_SAMPLES, 0) // Pre-allocate silent frame (all zeros)
+    : silentFrameBuffer_(RTP_SAMPLES, 0) // Pre-allocate silent frame (all zeros)
 {
     try {
-        for (size_t i = 0; i < RTP_STREAMING_CHANNELS; ++i) {
-            // 1. Create session with multicast address
-            sess_[i] = ctx_.create_session(RTP_GROUPS[i]);
+        for (size_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+            // Create session with multicast address
+            rtpSessions_[channelIndex] = rtpContext_.create_session(RTP_GROUPS[channelIndex]);
 
-            // 2. Create stream: localPort, remotePort, flags, format
-            streams_[i] = sess_[i]->create_stream(RTP_PORT,        /* src */
-                                                  RTP_PORT,        /* dst */
-                                                  RTP_FORMAT_OPUS, /* fmt  */
-                                                  RCE_SEND_ONLY);  /* flags */
+            // Create media stream with local port, remote port, format, and flags
+            mediaStreams_[channelIndex] = rtpSessions_[channelIndex]->create_stream(RTP_PORT,        // source port
+                                                                                    RTP_PORT,        // destination port
+                                                                                    RTP_FORMAT_OPUS, // format
+                                                                                    RCE_SEND_ONLY);  // flags
 
-            // 3. Override the dynamic PT so VLC/Wireshark see 96
-            streams_[i]->configure_ctx(RCC_DYN_PAYLOAD_TYPE, RTP_OPUS_PAYLOAD_PT);
+            // Override the dynamic payload type so VLC/Wireshark recognize Opus (payload type 96)
+            mediaStreams_[channelIndex]->configure_ctx(RCC_DYN_PAYLOAD_TYPE, RTP_OPUS_PAYLOAD_PT);
 
-            // 4. Tell uvgrtp the real clock rate (48 kHz)
-            streams_[i]->configure_ctx(RCC_CLOCK_RATE, RTP_SRATE);
+            // Configure the clock rate for accurate timing (48 kHz)
+            mediaStreams_[channelIndex]->configure_ctx(RCC_CLOCK_RATE, RTP_SRATE);
 
-            // 5. Create Opus encoder for this channel
-            encoders_[i] = std::make_unique<opus::Encoder>();
+            // Create Opus encoder for this channel
+            opusEncoders_[channelIndex] = std::make_unique<opus::Encoder>();
         }
 
         // Set initial SSRC values - each channel gets its own sequential SSRC
-        rotateSSRC();
-        ready_ = true;
+        rotateSynchronizationSourceIdentifiers();
+        isServerReady_ = true;
 
-        spdlog::info("MultiOpusRtpServer initialized with {} channels, starting SSRC: {}", RTP_STREAMING_CHANNELS,
-                     current_ssrc_);
-    } catch (const std::exception &e) {
-        spdlog::error("MultiOpusRtpServer init failed: {}", e.what());
+        info("MultiOpusRtpServer initialized with {} channels, starting SSRC: {}", RTP_STREAMING_CHANNELS,
+             currentSynchronizationSourceIdentifier_);
+    } catch (const std::exception &exception) {
+        error("MultiOpusRtpServer initialization failed: {}", exception.what());
     }
 }
 
 MultiOpusRtpServer::~MultiOpusRtpServer() {
-    for (size_t i = 0; i < RTP_STREAMING_CHANNELS; ++i) {
-        if (sess_[i] && streams_[i])
-            sess_[i]->destroy_stream(streams_[i]);
-        if (sess_[i])
-            ctx_.destroy_session(sess_[i]);
+    for (size_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+        if (rtpSessions_[channelIndex] && mediaStreams_[channelIndex]) {
+            rtpSessions_[channelIndex]->destroy_stream(mediaStreams_[channelIndex]);
+        }
+        if (rtpSessions_[channelIndex]) {
+            rtpContext_.destroy_session(rtpSessions_[channelIndex]);
+        }
     }
 }
 
-rtp_error_t MultiOpusRtpServer::send(uint8_t chan, const std::vector<uint8_t> &frame) {
-    if (chan >= RTP_STREAMING_CHANNELS || !streams_[chan])
+rtp_error_t MultiOpusRtpServer::send(uint8_t channelIndex, const std::vector<uint8_t> &opusEncodedFrame) {
+    if (channelIndex >= RTP_STREAMING_CHANNELS || !mediaStreams_[channelIndex]) {
         return RTP_INVALID_VALUE;
+    }
 
-    return streams_[chan]->push_frame(const_cast<uint8_t *>(frame.data()), // uvgRTP needs non-const
-                                      frame.size(), RTP_NO_FLAGS);
+    return mediaStreams_[channelIndex]->push_frame(
+        const_cast<uint8_t *>(opusEncodedFrame.data()), // uvgRTP requires non-const pointer
+        opusEncodedFrame.size(), RTP_NO_FLAGS);
 }
 
-void MultiOpusRtpServer::rotateSSRC() {
-    current_ssrc_ = next_ssrc_;
+void MultiOpusRtpServer::rotateSynchronizationSourceIdentifiers() {
+    currentSynchronizationSourceIdentifier_ = nextSynchronizationSourceIdentifier_;
 
-    for (size_t i = 0; i < RTP_STREAMING_CHANNELS; ++i) {
-        if (streams_[i]) {
+    for (size_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+        if (mediaStreams_[channelIndex]) {
             // Assign fresh SSRC, then increment for next channel
-            streams_[i]->configure_ctx(RCC_SSRC, next_ssrc_++);
+            mediaStreams_[channelIndex]->configure_ctx(RCC_SSRC, nextSynchronizationSourceIdentifier_++);
         }
     }
 
-    spdlog::debug("SSRC rotated! New range: {} to {}", current_ssrc_, next_ssrc_ - 1);
+    debug("SSRC rotated! New range: {} to {}", currentSynchronizationSourceIdentifier_,
+          nextSynchronizationSourceIdentifier_ - 1);
 }
 
-void MultiOpusRtpServer::resetEncoders() {
-    for (size_t i = 0; i < RTP_STREAMING_CHANNELS; ++i) {
-        if (encoders_[i]) {
-            encoders_[i]->reset();
+void MultiOpusRtpServer::resetAllEncoders() {
+    for (size_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+        if (opusEncoders_[channelIndex]) {
+            opusEncoders_[channelIndex]->reset();
         }
     }
-    spdlog::debug("All Opus encoders reset");
+    debug("All Opus encoders reset to initial state");
 }
 
-void MultiOpusRtpServer::sendSilentFrames(uint8_t numFrames) {
-    spdlog::debug("Sending {} silent frames to prime decoders", numFrames);
+void MultiOpusRtpServer::sendSilentFrames(uint8_t numberOfFrames) {
+    debug("Sending {} silent frames to prime decoders", numberOfFrames);
 
-    for (uint8_t frame = 0; frame < numFrames; ++frame) {
-        for (uint8_t chan = 0; chan < RTP_STREAMING_CHANNELS; ++chan) {
-            if (encoders_[chan]) {
+    for (uint8_t frameIndex = 0; frameIndex < numberOfFrames; ++frameIndex) {
+        for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+            if (opusEncoders_[channelIndex]) {
                 try {
                     // Encode silent frame
-                    auto encodedFrame = encoders_[chan]->encode(silent_frame_.data());
+                    auto encodedSilentFrame = opusEncoders_[channelIndex]->encode(silentFrameBuffer_.data());
 
-                    // Send it
-                    auto result = send(chan, encodedFrame);
-                    if (result != RTP_OK) {
-                        spdlog::warn("Failed to send silent frame {} on channel {}: error {}", frame, chan, result);
+                    // Send the encoded silent frame
+                    auto transmissionResult = send(channelIndex, encodedSilentFrame);
+                    if (transmissionResult != RTP_OK) {
+                        warn("Failed to send silent frame {} on channel {}: error {}", frameIndex, channelIndex,
+                             transmissionResult);
                     }
-                } catch (const std::exception &e) {
-                    spdlog::error("Error encoding/sending silent frame {} on channel {}: {}", frame, chan, e.what());
+                } catch (const std::exception &exception) {
+                    error("Error encoding/sending silent frame {} on channel {}: {}", frameIndex, channelIndex,
+                          exception.what());
                 }
             }
         }
 
-        // Small delay between frames (not strictly necessary but nice for debugging)
+        // Small delay between frames (not strictly necessary but helps with debugging)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    spdlog::debug("Silent frame priming complete - decoders should be warmed up!");
+    debug("Silent frame priming complete - decoders should be warmed up");
 }

@@ -59,7 +59,7 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
         findOptions.projection(projection_doc.view());
         findOptions.sort(sort_doc.view());
 
-        // 🐰 Span for getting the MongoDB collection
+        // Create span for getting the MongoDB collection
         auto collectionSpan = creatures::observability->createChildOperationSpan("Database.getCollection", dbSpan);
         if (collectionSpan) {
             collectionSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);

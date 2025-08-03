@@ -19,14 +19,14 @@ template <typename T> class MessageQueue {
     void push(T message) {
         std::lock_guard<std::mutex> lock(mtx);
         queue.push_back(std::move(message));
-        cond.notify_one(); // Hop, hop! A new message is here!
+        cond.notify_one(); // Notify waiting thread
     }
 
     T pop() {
         std::unique_lock<std::mutex> lock(mtx);
         cond.wait(lock, [this] {
             return !queue.empty();
-        }); // Wait patiently like a bunny in a burrow
+        }); // Wait for messages to be available
         T msg = std::move(queue.front());
         queue.pop_front();
         return msg;

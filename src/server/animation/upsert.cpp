@@ -73,7 +73,7 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         }
 
         // Now go save it in Mongo
-        // 🐰 Span for getting the MongoDB collection
+        // Create span for getting the MongoDB collection
         auto collectionSpan = creatures::observability->createChildOperationSpan("Database.getCollection", dbSpan);
         auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
         if (!collectionResult.isSuccess()) {

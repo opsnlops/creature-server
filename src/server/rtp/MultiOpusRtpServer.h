@@ -1,4 +1,10 @@
-// src/server/rtp/MultiOpusRtpServer.h
+/**
+ * @file MultiOpusRtpServer.h
+ * @brief Multi-channel Opus RTP streaming server
+ *
+ * This file provides a server that can stream multiple channels of Opus-encoded
+ * audio over RTP multicast streams with independent SSRC management.
+ */
 
 #pragma once
 
@@ -14,36 +20,38 @@ class MultiOpusRtpServer {
     MultiOpusRtpServer();
     ~MultiOpusRtpServer();
 
-    // Send one 10 ms *mono* frame for a given channel [0-16]
-    rtp_error_t send(uint8_t chan, const std::vector<uint8_t> &opusFrame);
+    // Send one 10ms mono Opus frame for a given channel [0-16]
+    rtp_error_t send(uint8_t channelIndex, const std::vector<uint8_t> &opusEncodedFrame);
 
-    // Rotate SSRC for all channels and reset encoders - fresh start! 🐰
-    void rotateSSRC();
+    // Rotate SSRC for all channels and reset encoders for a fresh start
+    void rotateSynchronizationSourceIdentifiers();
 
     // Reset all Opus encoders to clean state
-    void resetEncoders();
+    void resetAllEncoders();
 
-    // Send silent frames to prime the decoders - like warming up before a hop! 🐰
-    void sendSilentFrames(uint8_t numFrames = 4);
+    // Send silent frames to prime the decoders
+    void sendSilentFrames(uint8_t numberOfFrames = 4);
 
-    [[nodiscard]] bool isReady() const { return ready_; }
+    [[nodiscard]] bool isReady() const { return isServerReady_; }
 
     // Get current SSRC (useful for debugging)
-    [[nodiscard]] uint32_t getCurrentSSRC() const { return current_ssrc_; }
+    [[nodiscard]] uint32_t getCurrentSynchronizationSourceIdentifier() const {
+        return currentSynchronizationSourceIdentifier_;
+    }
 
   private:
-    bool ready_{false};
-    uint32_t next_ssrc_{1000}; // Start from a nice round number for easy debugging
-    uint32_t current_ssrc_{0}; // Track current SSRC for logging
+    bool isServerReady_{false};
+    uint32_t nextSynchronizationSourceIdentifier_{1000}; // Start from a round number for easy debugging
+    uint32_t currentSynchronizationSourceIdentifier_{0}; // Track current SSRC for logging
 
-    uvgrtp::context ctx_;
-    std::array<uvgrtp::session *, RTP_STREAMING_CHANNELS> sess_{};
-    std::array<uvgrtp::media_stream *, RTP_STREAMING_CHANNELS> streams_{};
+    uvgrtp::context rtpContext_;
+    std::array<uvgrtp::session *, RTP_STREAMING_CHANNELS> rtpSessions_{};
+    std::array<uvgrtp::media_stream *, RTP_STREAMING_CHANNELS> mediaStreams_{};
 
     // Store encoders for reset capability
-    std::array<std::unique_ptr<opus::Encoder>, RTP_STREAMING_CHANNELS> encoders_;
+    std::array<std::unique_ptr<opus::Encoder>, RTP_STREAMING_CHANNELS> opusEncoders_;
 
-    // Pre-allocated silent frame for priming
-    std::vector<int16_t> silent_frame_;
+    // Pre-allocated silent frame for priming decoders
+    std::vector<int16_t> silentFrameBuffer_;
 };
 } // namespace creatures::rtp

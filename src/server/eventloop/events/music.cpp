@@ -120,7 +120,7 @@ Result<framenum_t> MusicEvent::executeImpl() {
     if (result.isSuccess()) {
         if (span)
             span->setSuccess();
-        debug("MusicEvent hopped successfully! 🐰🎵");
+        debug("MusicEvent completed successfully");
     } else {
         if (span)
             span->setError(result.getError()->getMessage());
@@ -195,7 +195,7 @@ Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> par
             span->setSuccess();
         gpioPins->playingSound(false);
 
-        debug("Local audio playback completed successfully! 🐰🎵");
+        debug("Local audio playback completed successfully");
     }).detach();
 
     // Return immediately - the music plays in the background
@@ -214,7 +214,7 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
 
     // Validate RTP server availability
     if (!rtpServer || !rtpServer->isReady()) {
-        std::string errorMsg = "RTP server not ready - can't hop the audio stream! 🐰";
+        std::string errorMsg = "RTP server not ready - cannot stream audio";
         error(errorMsg);
         if (span)
             span->setError(errorMsg);
@@ -234,7 +234,7 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
 #else
     std::thread worker([span, localPath, startingFrame]() {
 #endif
-        debug("RTP worker thread hopping into action! 🐰");
+        debug("RTP worker thread starting");
 
         // Heavy I/O – off the event‑loop thread!
         debug("Loading audio buffer from WAV file: {}", localPath);
@@ -287,7 +287,7 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
             // Use SimpleLambdaEvent for the RTP send operations
             using Tag = struct RtpSendTag {};
             auto ev = std::make_shared<SimpleLambdaEvent<Tag>>(cursor, [buffer, f] {
-                // Send to all 17 RTP channels (16 creatures + 1 BGM) 🐰
+                // Send to all 17 RTP channels (16 creatures + 1 BGM)
                 for (int ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
                     rtpServer->send(static_cast<uint8_t>(ch), buffer->frame(static_cast<uint8_t>(ch), f));
                 }
@@ -315,7 +315,7 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
 
 // ───── SDL helpers (unchanged) ────────────────────────────────────────────
 int MusicEvent::initSDL() {
-    debug("Initializing SDL for audio - getting ready to hop! 🐰");
+    debug("Initializing SDL for audio");
     if (SDL_Init(SDL_INIT_AUDIO) < 0) {
         error("SDL init failed: {}", SDL_GetError());
         return 0;
