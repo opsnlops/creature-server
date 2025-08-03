@@ -19,6 +19,7 @@
 #include "exception/exception.h"
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
 
 #include "server/namespace-stuffs.h"
@@ -40,7 +41,13 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
 
     try {
         auto jsonSpan = observability->createChildOperationSpan("upsert_playlist.json", span);
-        auto jsonObject = nlohmann::json::parse(playlistJson);
+        auto jsonResult = JsonParser::parseJsonString(playlistJson, "playlist upsert", jsonSpan);
+        if (!jsonResult.isSuccess()) {
+            auto error = jsonResult.getError().value();
+            span->setError(error.getMessage());
+            return Result<creatures::Playlist>{error};
+        }
+        auto jsonObject = jsonResult.getValue().value();
 
         auto playlistResult = playlistFromJson(jsonObject, span);
         if (!playlistResult.isSuccess()) {
@@ -68,7 +75,14 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         trace("collection obtained");
 
         // Convert the JSON string into BSON
-        auto bsonDoc = bsoncxx::from_json(playlistJson);
+        auto bsonSpan = observability->createChildOperationSpan("upsert_playlist.bson", span);
+        auto bsonResult = JsonParser::jsonStringToBson(playlistJson, fmt::format("playlist {}", playlist.id), bsonSpan);
+        if (!bsonResult.isSuccess()) {
+            auto error = bsonResult.getError().value();
+            span->setError(error.getMessage());
+            return Result<creatures::Playlist>{error};
+        }
+        auto bsonDoc = bsonResult.getValue().value();
 
         bsoncxx::builder::stream::document filter_builder;
         filter_builder << "id" << playlist.id;

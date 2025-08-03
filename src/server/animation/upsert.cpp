@@ -9,6 +9,7 @@
 #include "exception/exception.h"
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "util/JsonParser.h"
 #include "util/helpers.h"
 
 #include "model/Animation.h"
@@ -44,9 +45,14 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         auto parseSpan = creatures::observability->createChildOperationSpan("JSON.parse", dbSpan);
         if (parseSpan)
             parseSpan->setAttribute("input.size_bytes", static_cast<int64_t>(animationJson.length()));
-        auto jsonObject = nlohmann::json::parse(animationJson);
-        if (parseSpan)
-            parseSpan->setSuccess();
+        auto jsonResult = JsonParser::parseJsonString(animationJson, "animation upsert", parseSpan);
+        if (!jsonResult.isSuccess()) {
+            auto error = jsonResult.getError().value();
+            if (dbSpan)
+                dbSpan->setError(error.getMessage());
+            return Result<creatures::Animation>{error};
+        }
+        auto jsonObject = jsonResult.getValue().value();
 
         // ✨ Convert from JSON to our internal Animation object for validation
         auto validationSpan = creatures::observability->createChildOperationSpan("Animation.fromJson", dbSpan);
@@ -94,12 +100,15 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
 
         // 🌟 BSON conversion span
         auto bsonConversionSpan = creatures::observability->createChildOperationSpan("BSON.fromJson", dbSpan);
-        auto bsonDoc = bsoncxx::from_json(animationJson);
-        if (bsonConversionSpan) {
-            bsonConversionSpan->setAttribute("json.size_bytes", static_cast<int64_t>(animationJson.length()));
-            bsonConversionSpan->setAttribute("bson.size_bytes", static_cast<int64_t>(bsonDoc.view().length()));
-            bsonConversionSpan->setSuccess();
+        auto bsonResult =
+            JsonParser::jsonStringToBson(animationJson, fmt::format("animation {}", animation.id), bsonConversionSpan);
+        if (!bsonResult.isSuccess()) {
+            auto error = bsonResult.getError().value();
+            if (dbSpan)
+                dbSpan->setError(error.getMessage());
+            return Result<creatures::Animation>{error};
         }
+        auto bsonDoc = bsonResult.getValue().value();
 
         // 🥕 Span for building the query filter
         auto filterSpan = creatures::observability->createChildOperationSpan("Database.buildFilter", dbSpan);

@@ -8,6 +8,7 @@
 #include "model/Creature.h"
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "util/JsonParser.h"
 #include "util/ObservabilityManager.h" // Include for ObservabilityManager
 #include "util/cache.h"
 #include "util/helpers.h"
@@ -103,7 +104,14 @@ Database::getAllCreatures(creatures::SortBy sortBy, bool ascending,
         for (auto doc : cursor) {
             auto creatureSpan =
                 creatures::observability->createChildOperationSpan("getAllCreatures::create-creature", mongoSpan);
-            json j = json::parse(bsoncxx::to_json(doc));
+
+            // Use utility to parse JSON safely
+            auto jsonResult = JsonParser::bsonToJson(doc, "creature document", creatureSpan);
+            if (!jsonResult.isSuccess()) {
+                continue; // Skip this document and continue with next
+            }
+            json j = jsonResult.getValue().value();
+
             auto result = creatureFromJson(j, creatureSpan);
             if (!result.isSuccess()) {
                 auto error = result.getError().value();

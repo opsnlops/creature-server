@@ -11,6 +11,7 @@
 #include "exception/exception.h"
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
 
 #include "server/namespace-stuffs.h"
@@ -58,9 +59,17 @@ Result<json> Database::getPlaylistJson(playlistId_t playlistId, std::shared_ptr<
 
         // Check if the document was found
         if (maybe_result) {
-            // Convert BSON document to JSON using nlohmann::json
+            // Convert BSON document to JSON using utility
             bsoncxx::document::view view = maybe_result->view();
-            nlohmann::json json_result = nlohmann::json::parse(bsoncxx::to_json(view));
+
+            auto jsonResult = JsonParser::bsonToJson(view, fmt::format("playlist {}", playlistId), dbSpan);
+            if (!jsonResult.isSuccess()) {
+                auto error = jsonResult.getError().value();
+                span->setError(error.getMessage());
+                return jsonResult;
+            }
+            nlohmann::json json_result = jsonResult.getValue().value();
+
             dbSpan->setSuccess();
             span->setSuccess();
             return Result<json>{json_result};

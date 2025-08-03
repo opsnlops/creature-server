@@ -10,6 +10,7 @@
 #include "exception/exception.h"
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "util/JsonParser.h"
 #include "util/helpers.h"
 
 #include "server/namespace-stuffs.h"
@@ -138,26 +139,26 @@ Result<json> Database::getAnimationJson(animationId_t animationId, std::shared_p
                 conversionSpan->setAttribute("conversion.to", "json");
             }
 
-            // Convert BSON document to JSON using nlohmann::json
+            // Convert BSON document to JSON using utility
             bsoncxx::document::view view = maybe_result->view();
-            auto bson_json_string = bsoncxx::to_json(view);
 
             if (conversionSpan) {
                 conversionSpan->setAttribute("bson.size_bytes", static_cast<int64_t>(view.length()));
-                conversionSpan->setAttribute("json_string.size_bytes", static_cast<int64_t>(bson_json_string.length()));
             }
 
             // 🥕 JSON parsing span - another potentially expensive operation
             auto parseSpan = creatures::observability->createChildOperationSpan("JSON.parse", dbSpan);
             if (parseSpan) {
                 parseSpan->setAttribute("parser", "nlohmann_json");
-                parseSpan->setAttribute("input.size_bytes", static_cast<int64_t>(bson_json_string.length()));
             }
 
-            nlohmann::json json_result = nlohmann::json::parse(bson_json_string);
+            auto jsonResult = JsonParser::bsonToJson(view, fmt::format("animation {}", animationId), parseSpan);
+            if (!jsonResult.isSuccess()) {
+                return jsonResult;
+            }
+            nlohmann::json json_result = jsonResult.getValue().value();
 
             if (parseSpan) {
-                parseSpan->setSuccess();
                 parseSpan->setAttribute("json.type", json_result.type_name());
                 parseSpan->setAttribute("json.size", static_cast<int64_t>(json_result.size()));
                 // Count nested objects/arrays for complexity
@@ -185,7 +186,6 @@ Result<json> Database::getAnimationJson(animationId_t animationId, std::shared_p
                 dbSpan->setSuccess();
                 dbSpan->setAttribute("json_size", static_cast<int64_t>(json_result.size()));
                 dbSpan->setAttribute("bson_size", static_cast<int64_t>(view.length()));
-                dbSpan->setAttribute("json_string_size", static_cast<int64_t>(bson_json_string.length()));
                 // Add some animation-specific metadata
                 if (json_result.contains("metadata") && json_result["metadata"].contains("title")) {
                     dbSpan->setAttribute("animation.title", json_result["metadata"]["title"].get<std::string>());

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "2.4.26"
+        VERSION "2.4.27"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -392,6 +392,8 @@ add_executable(creature-server
         src/server/sensors/SensorDataCache.cpp
         src/util/ObservabilityManager.h
         src/util/ObservabilityManager.cpp
+        src/util/JsonParser.h
+        src/util/JsonParser.cpp
         src/server/rtp/AudioStreamBuffer.cpp
         src/server/rtp/AudioStreamBuffer.h
         src/server/rtp/AudioChunk.h

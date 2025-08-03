@@ -15,6 +15,7 @@
 #include "model/Creature.h"
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "util/JsonParser.h"
 #include "util/Result.cpp"
 #include "util/cache.h"
 #include "util/helpers.h"
@@ -55,8 +56,13 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
 
         auto parseJsonSpan =
             creatures::observability->createChildOperationSpan("upsertCreature::parse-json", upsertSpan);
-        auto jsonObject = nlohmann::json::parse(creatureJson);
-        parseJsonSpan->setSuccess();
+        auto jsonResult = JsonParser::parseJsonString(creatureJson, fmt::format("creature upsert"), parseJsonSpan);
+        if (!jsonResult.isSuccess()) {
+            auto error = jsonResult.getError().value();
+            upsertSpan->setError(error.getMessage());
+            return Result<creatures::Creature>{error};
+        }
+        auto jsonObject = jsonResult.getValue().value();
 
         // Create the Creature object while we're here
         auto result = creatureFromJson(jsonObject, upsertSpan);
@@ -122,30 +128,14 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
         validateSpan->setSuccess();
 
         // Convert the JSON string into BSON
-        auto createBsonDoc = [&]() -> std::optional<document::value> {
-            auto bsonSpan =
-                creatures::observability->createChildOperationSpan("upsertCreature::json-to-bson", upsertSpan);
-            try {
-                auto doc = bsoncxx::from_json(creatureJson);
-                bsonSpan->setAttribute("json.size_bytes", static_cast<int64_t>(creatureJson.length()));
-                bsonSpan->setSuccess();
-                return doc;
-            } catch (const std::exception &e) {
-                bsonSpan->recordException(e);
-                warn("Error while converting JSON to BSON: {}", e.what());
-                return std::nullopt;
-            }
-        };
-
-        auto bsonDocOpt = createBsonDoc();
-        if (!bsonDocOpt) {
-            std::string errorMessage = "Failed to convert JSON to BSON";
-            upsertSpan->setError(errorMessage);
-            upsertSpan->setAttribute("error.type", "InvalidData");
-            upsertSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+        auto bsonSpan = creatures::observability->createChildOperationSpan("upsertCreature::json-to-bson", upsertSpan);
+        auto bsonResult = JsonParser::jsonStringToBson(creatureJson, fmt::format("creature {}", creature.id), bsonSpan);
+        if (!bsonResult.isSuccess()) {
+            auto error = bsonResult.getError().value();
+            upsertSpan->setError(error.getMessage());
+            return Result<creatures::Creature>{error};
         }
-        auto bsonDoc = bsonDocOpt.value();
+        auto bsonDoc = bsonResult.getValue().value();
 
         auto collectionSpan =
             creatures::observability->createChildOperationSpan("upsertCreature::get-collection", upsertSpan);

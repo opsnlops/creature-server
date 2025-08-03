@@ -17,6 +17,7 @@
 #include "model/Creature.h"
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "util/JsonParser.h"
 #include "util/ObservabilityManager.h" // Include for ObservabilityManager
 #include "util/Result.h"
 #include "util/cache.h"
@@ -111,14 +112,18 @@ Result<json> Database::getCreatureJson(creatureId_t creatureId,
             return Result<json>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
-        // Convert the result to JSON
+        // Convert the result to JSON using utility
         auto convertToJsonSpan =
             creatures::observability->createChildOperationSpan("getCreatureJson.json::parse", dbSpan);
-        json j = json::parse(bsoncxx::to_json(maybe_result->view()));
-        if (convertToJsonSpan) {
-            convertToJsonSpan->setSuccess();
-            convertToJsonSpan->setAttribute("json.size_bytes", static_cast<int64_t>(j.dump().length()));
-        } else {
+
+        auto jsonResult =
+            JsonParser::bsonToJson(maybe_result->view(), fmt::format("creature {}", creatureId), convertToJsonSpan);
+        if (!jsonResult.isSuccess()) {
+            return jsonResult;
+        }
+        json j = jsonResult.getValue().value();
+
+        if (!convertToJsonSpan) {
             warn("JSON conversion span was not created, cannot set success attributes");
         }
 
