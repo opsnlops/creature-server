@@ -45,6 +45,9 @@ void SensorReportHandler::processMessage(const oatpp::String &message) {
 
             // Look up creature name from cache (with database fallback) if we have a valid creature ID
             std::string creatureName;
+            appLogger->debug("Creature lookup: creatureId='{}' (len={}), creatureCache={}", 
+                           creatureId, creatureId.length(), creatures::creatureCache ? "available" : "null");
+            
             if (!creatureId.empty() && creatures::creatureCache) {
                 try {
                     auto creature = creatures::creatureCache->get(creatureId);
@@ -99,6 +102,8 @@ void SensorReportHandler::processMessage(const oatpp::String &message) {
 
             // Store in sensor data cache for metrics export
             if (creatures::sensorDataCache) {
+                appLogger->debug("About to update sensor cache: creatureId='{}' (len={}), creatureName='{}' (len={})", 
+                               creatureId, creatureId.length(), creatureName, creatureName.length());
                 creatures::sensorDataCache->updateSensorData(creatureId, creatureName, boardTemperature, powerReadings);
                 appLogger->debug("Updated sensor cache for creature {} ({}): temp={:.2f}F, {} power readings",
                                  creatureName, creatureId, boardTemperature, powerReadings.size());
