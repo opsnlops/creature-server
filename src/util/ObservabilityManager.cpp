@@ -342,15 +342,32 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
     // Get all current sensor data
     auto allSensorData = sensorDataCache->getAllSensorData();
 
+    // Static storage for previous values to implement true gauge behavior
+    static std::unordered_map<std::string, double> lastTemperatureValues;
+    static std::unordered_map<std::string, double> lastVoltageValues;
+    static std::unordered_map<std::string, double> lastCurrentValues;
+    static std::unordered_map<std::string, double> lastPowerValues;
+
     for (const auto &[creatureId, sensorData] : allSensorData) {
         // Create attributes map for this creature
         std::unordered_map<std::string, std::string> attributes;
         attributes["creature.id"] = creatureId;
         attributes["creature.name"] = sensorData.creatureName;
 
-        // Export board temperature
+        // Export board temperature with creature identification
         if (boardTemperatureGauge_) {
-            boardTemperatureGauge_->Add(sensorData.boardTemperature, attributes);
+            debug("Exporting temperature metric: creature.id={}, creature.name={}, temperature={:.2f}F", creatureId,
+                  sensorData.creatureName, sensorData.boardTemperature);
+
+            // Calculate delta from previous value for true gauge behavior
+            std::string tempKey = creatureId;
+            double lastTemp = lastTemperatureValues[tempKey];
+            double tempDelta = sensorData.boardTemperature - lastTemp;
+
+            if (tempDelta != 0.0) {
+                boardTemperatureGauge_->Add(tempDelta, attributes);
+                lastTemperatureValues[tempKey] = sensorData.boardTemperature;
+            }
         }
 
         // Export power sensor readings
@@ -359,16 +376,34 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
             std::unordered_map<std::string, std::string> sensorAttributes = attributes;
             sensorAttributes["sensor.name"] = powerReading.name;
 
+            // Create unique keys for tracking previous values
+            std::string sensorKey = creatureId + ":" + powerReading.name;
+
             if (sensorVoltageGauge_) {
-                sensorVoltageGauge_->Add(powerReading.voltage, sensorAttributes);
+                double lastVoltage = lastVoltageValues[sensorKey];
+                double voltageDelta = powerReading.voltage - lastVoltage;
+                if (voltageDelta != 0.0) {
+                    sensorVoltageGauge_->Add(voltageDelta, sensorAttributes);
+                    lastVoltageValues[sensorKey] = powerReading.voltage;
+                }
             }
 
             if (sensorCurrentGauge_) {
-                sensorCurrentGauge_->Add(powerReading.current, sensorAttributes);
+                double lastCurrent = lastCurrentValues[sensorKey];
+                double currentDelta = powerReading.current - lastCurrent;
+                if (currentDelta != 0.0) {
+                    sensorCurrentGauge_->Add(currentDelta, sensorAttributes);
+                    lastCurrentValues[sensorKey] = powerReading.current;
+                }
             }
 
             if (sensorPowerGauge_) {
-                sensorPowerGauge_->Add(powerReading.power, sensorAttributes);
+                double lastPower = lastPowerValues[sensorKey];
+                double powerDelta = powerReading.power - lastPower;
+                if (powerDelta != 0.0) {
+                    sensorPowerGauge_->Add(powerDelta, sensorAttributes);
+                    lastPowerValues[sensorKey] = powerReading.power;
+                }
             }
         }
     }
