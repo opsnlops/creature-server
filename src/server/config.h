@@ -65,7 +65,7 @@
 // This controls what percentage of normal event loop frames get traced
 // Errors and exceptions are always traced regardless of this setting
 #define EVENT_LOOP_TRACE_SAMPLING_ENV  "EVENT_LOOP_TRACE_SAMPLING"
-#define DEFAULT_EVENT_LOOP_TRACE_SAMPLING  0.001  // 0.1% = 1 in 1000 frames
+#define DEFAULT_EVENT_LOOP_TRACE_SAMPLING  0.0001  // 0.01% = 1 in 10000 frames
 
 // RTP Fragmentation - useful for WiFi and networks without jumbo frame support
 #define RTP_FRAGMENT_PACKETS_ENV        "RTP_FRAGMENT_PACKETS"

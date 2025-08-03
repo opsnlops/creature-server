@@ -543,14 +543,11 @@ SamplingSpan::~SamplingSpan() {
         if (shouldExport_) {
             // This span will be exported normally
             span_->SetAttribute("sampling.exported", true);
+            span_->End();
         } else {
-            // Suppress this span by marking it as not sampled
-            // Note: In OpenTelemetry, we can't truly suppress spans after creation,
-            // but we can mark them with attributes to filter later
-            span_->SetAttribute("sampling.exported", false);
-            span_->SetAttribute("sampling.suppressed", true);
+            // Suppress this span by NOT calling End() - this prevents export
+            // The span will be dropped without being sent to the telemetry backend
         }
-        span_->End();
     }
 }
 
