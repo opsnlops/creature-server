@@ -3,12 +3,18 @@
 
 #include "spdlog/spdlog.h"
 
+// Disable shadow warnings for MongoDB C++ driver headers (third-party code)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/exception/exception.hpp>
 #include <bsoncxx/json.hpp>
 
 #include <mongocxx/client.hpp>
 #include <mongocxx/exception/bulk_write_exception.hpp>
+
+#pragma GCC diagnostic pop
 
 #include "exception/exception.h"
 #include "server/creature-server.h"

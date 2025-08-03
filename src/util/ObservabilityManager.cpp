@@ -4,6 +4,10 @@
 
 #include "ObservabilityManager.h"
 
+// Disable shadow warnings for OpenTelemetry headers (third-party code)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
 #include <opentelemetry/context/runtime_context.h>
 #include <opentelemetry/exporters/otlp/otlp_http_exporter_factory.h>
 #include <opentelemetry/exporters/otlp/otlp_http_exporter_options.h>
@@ -19,6 +23,9 @@
 #include <opentelemetry/sdk/trace/simple_processor_factory.h>
 #include <opentelemetry/sdk/trace/tracer_provider_factory.h>
 #include <opentelemetry/trace/provider.h>
+
+#pragma GCC diagnostic pop
+
 #include <random>
 
 #include "server/metrics/counters.h"

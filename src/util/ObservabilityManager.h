@@ -4,6 +4,10 @@
 #include <string>
 #include <unordered_map>
 
+// Disable shadow warnings for OpenTelemetry headers (third-party code)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
 #include <opentelemetry/context/context.h>
 #include <opentelemetry/nostd/shared_ptr.h>
 #include <opentelemetry/nostd/unique_ptr.h>
@@ -15,6 +19,8 @@
 #include <opentelemetry/metrics/meter.h>
 #include <opentelemetry/metrics/provider.h>
 #include <opentelemetry/metrics/sync_instruments.h>
+
+#pragma GCC diagnostic pop
 
 #include "server/namespace-stuffs.h"
 

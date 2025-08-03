@@ -8,11 +8,17 @@
 #include <sstream>
 #include <string>
 
+// Disable shadow warnings for MongoDB C++ driver headers (third-party code)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/exception/exception.hpp>
 #include <bsoncxx/json.hpp>
 #include <bsoncxx/oid.hpp>
 #include <bsoncxx/types.hpp>
+
+#pragma GCC diagnostic pop
 
 #include "model/Animation.h"
 
@@ -54,8 +60,7 @@ std::string oidToString(const bsoncxx::oid &oid);
  * @param vector
  * @return
  */
-bsoncxx::document::value
-stringVectorToBson(const std::vector<std::string> &vector);
+bsoncxx::document::value stringVectorToBson(const std::vector<std::string> &vector);
 
 /**
  * Convert a BSON array to a vector of strings
@@ -63,8 +68,7 @@ stringVectorToBson(const std::vector<std::string> &vector);
  * @param doc
  * @return
  */
-std::vector<std::string>
-stringVectorFromBson(const bsoncxx::document::view &doc);
+std::vector<std::string> stringVectorFromBson(const bsoncxx::document::view &doc);
 
 /*
  * Animations
