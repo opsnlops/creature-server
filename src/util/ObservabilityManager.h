@@ -262,7 +262,7 @@ class OperationSpan {
 class SamplingSpan {
   public:
     SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate,
-                 bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer = nullptr);
+                 bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer = {});
     ~SamplingSpan();
 
     // No copy, move only

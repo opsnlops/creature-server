@@ -10,15 +10,9 @@ namespace creatures {
 // Define the ServerError struct
 class ServerError {
   public:
-    enum Code {
-        NotFound,
-        Forbidden,
-        InternalError,
-        InvalidData,
-        DatabaseError
-    };
+    enum Code { NotFound, Forbidden, InternalError, InvalidData, DatabaseError };
 
-    ServerError(Code code, const std::string &message);
+    ServerError(Code errorCode, const std::string &errorMessage);
     Code getCode() const;
     std::string getMessage() const;
 
@@ -51,8 +45,8 @@ template <typename T> class Result {
 };
 
 // Implement ServerError methods
-inline ServerError::ServerError(Code code, const std::string &message)
-    : code(code), message(message) {}
+inline ServerError::ServerError(Code errorCode, const std::string &errorMessage)
+    : code(errorCode), message(errorMessage) {}
 
 inline ServerError::Code ServerError::getCode() const { return code; }
 
@@ -75,12 +69,9 @@ inline int serverErrorToStatusCode(ServerError::Code code) {
 // Implement Result methods
 template <typename T> Result<T>::Result(const T &value) : m_result(value) {}
 
-template <typename T>
-Result<T>::Result(const ServerError &error) : m_result(error) {}
+template <typename T> Result<T>::Result(const ServerError &error) : m_result(error) {}
 
-template <typename T> bool Result<T>::isSuccess() const {
-    return std::holds_alternative<T>(m_result);
-}
+template <typename T> bool Result<T>::isSuccess() const { return std::holds_alternative<T>(m_result); }
 
 template <typename T> std::optional<T> Result<T>::getValue() const {
     if (isSuccess()) {
@@ -97,8 +88,7 @@ template <typename T> std::optional<ServerError> Result<T>::getError() const {
 }
 
 // Specialization for Result<void>
-template <>
-class Result<void> {
+template <> class Result<void> {
   public:
     // Constructors for success and error
     Result(); // Success constructor for void
@@ -119,12 +109,8 @@ inline Result<void>::Result() : m_error(std::nullopt) {}
 
 inline Result<void>::Result(const ServerError &error) : m_error(error) {}
 
-inline bool Result<void>::isSuccess() const {
-    return !m_error.has_value();
-}
+inline bool Result<void>::isSuccess() const { return !m_error.has_value(); }
 
-inline std::optional<ServerError> Result<void>::getError() const {
-    return m_error;
-}
+inline std::optional<ServerError> Result<void>::getError() const { return m_error; }
 
 } // namespace creatures
