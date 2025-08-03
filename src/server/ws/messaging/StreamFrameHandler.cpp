@@ -38,8 +38,8 @@ namespace creatures ::ws {
 
 void StreamFrameHandler::processMessage(const oatpp::String &message) {
 
-    // Create a span for this operation
-    auto messageSpan = creatures::observability->createOperationSpan("StreamFrameHandler.processMessage");
+    // Create a sampling span for this high-frequency operation (uses default 0.01% sampling rate)
+    auto messageSpan = creatures::observability->createSamplingSpan("StreamFrameHandler.processMessage");
 
     try {
 
@@ -49,7 +49,9 @@ void StreamFrameHandler::processMessage(const oatpp::String &message) {
 
         auto dto = apiObjectMapper->readFromString<oatpp::Object<creatures::ws::StreamFrameCommandDTO>>(message);
         if (dto) {
+            messageSpan->setAttribute("phase", "processing");
             StreamFrame frame = convertFromDto(dto->payload.getPtr() /*, messageSpan */); // This is super fast, no span
+            messageSpan->setAttribute("phase", "streaming");
             stream(frame, messageSpan);
             messageSpan->setSuccess();
         } else {
@@ -83,9 +85,10 @@ void StreamFrameHandler::processMessage(const oatpp::String &message) {
     }
 }
 
-void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<OperationSpan> parentSpan) {
+void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan) {
 
-    auto span = creatures::observability->createChildOperationSpan("StreamFrameHandler.stream", parentSpan);
+    // Use the parent sampling span instead of creating a child span for this high-frequency operation
+    auto span = parentSpan;
 
     appLogger->trace("Entered StreamFrameHandler::stream()");
 
