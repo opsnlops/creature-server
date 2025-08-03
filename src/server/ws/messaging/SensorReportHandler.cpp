@@ -56,22 +56,8 @@ void SensorReportHandler::processMessage(const oatpp::String &message) {
                     appLogger->debug("Looked up creature name from cache: {} for ID: {}", creatureName, creatureId);
                 } catch (const std::out_of_range &e) {
                     messageSpan->setAttribute("creature_cache.hit", false);
-                    appLogger->debug("Creature {} not found in cache, trying database...", creatureId);
-
-                    if (creatures::db) {
-                        auto creatureResult = creatures::db->getCreature(creatureId);
-                        if (creatureResult.isSuccess()) {
-                            creatureName = creatureResult.getValue().value().name;
-                            appLogger->debug("Looked up creature name from database: {} for ID: {}", creatureName,
-                                             creatureId);
-                        } else {
-                            appLogger->warn("Failed to look up creature name for ID: {} - {}", creatureId,
-                                            creatureResult.getError().value().getMessage());
-                            creatureName = "Unknown Creature";
-                        }
-                    } else {
-                        creatureName = "Unknown Creature";
-                    }
+                    appLogger->debug("Creature {} not found in cache, using Unknown Creature", creatureId);
+                    creatureName = "Unknown Creature";
                 }
             } else {
                 creatureName =
