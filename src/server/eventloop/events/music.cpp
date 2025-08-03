@@ -243,7 +243,7 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
             encodingSpan = observability->createChildOperationSpan("music_event.encode_to_opus", span);
         }
 
-        auto buffer = rtp::AudioStreamBuffer::loadFromWav(localPath, span);
+        auto buffer = rtp::AudioStreamBuffer::loadFromWavFile(localPath, span);
         if (!buffer) {
             const auto msg = fmt::format("Failed to load audio buffer from '{}'", localPath);
             error(msg);
@@ -269,7 +269,7 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
         debug("Scheduled RtpEncoderResetEvent for frame {} (one frame before streaming)", resetFrame);
 
         constexpr std::size_t kPrefill = 3; // 30ms priming
-        const std::size_t frames = buffer->frameCount();
+        const std::size_t frames = buffer->getFrameCount();
         framenum_t cursor = streamingStartFrame;
 
         if (span)
@@ -289,7 +289,7 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
             auto ev = std::make_shared<SimpleLambdaEvent<Tag>>(cursor, [buffer, f] {
                 // Send to all 17 RTP channels (16 creatures + 1 BGM)
                 for (int ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
-                    rtpServer->send(static_cast<uint8_t>(ch), buffer->frame(static_cast<uint8_t>(ch), f));
+                    rtpServer->send(static_cast<uint8_t>(ch), buffer->getEncodedFrame(static_cast<uint8_t>(ch), f));
                 }
                 // Note: SimpleLambdaEvent will automatically wrap this in a successful Result
             });

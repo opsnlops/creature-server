@@ -229,7 +229,7 @@ int main(const int argc, char **argv) {
     try {
         creatures::audioCache = std::make_shared<creatures::util::AudioCache>(
             creatures::config->getSoundFileLocation());
-        creatures::rtp::AudioStreamBuffer::setAudioCache(creatures::audioCache);
+        creatures::rtp::AudioStreamBuffer::setAudioCacheInstance(creatures::audioCache);
         info("Audio cache initialized for faster Opus encoding");
         
         auto stats = creatures::audioCache->getStats();
@@ -239,7 +239,7 @@ int main(const int argc, char **argv) {
         error("Failed to initialize audio cache: {}", e.what());
         warn("Audio will be encoded without caching (slower performance)");
         creatures::audioCache = nullptr;
-        creatures::rtp::AudioStreamBuffer::setAudioCache(nullptr);
+        creatures::rtp::AudioStreamBuffer::setAudioCacheInstance(nullptr);
     }
 
 

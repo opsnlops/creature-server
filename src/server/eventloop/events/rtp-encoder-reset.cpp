@@ -38,14 +38,14 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
         }
 
         // Step 1: Rotate SSRC for all channels
-        const auto oldSSRC = rtpServer->getCurrentSSRC();
-        rtpServer->rotateSSRC();
-        const auto newSSRC = rtpServer->getCurrentSSRC();
+        const auto oldSSRC = rtpServer->getCurrentSynchronizationSourceIdentifier();
+        rtpServer->rotateSynchronizationSourceIdentifiers();
+        const auto newSSRC = rtpServer->getCurrentSynchronizationSourceIdentifier();
 
         debug("SSRC rotated from {} to {} - fresh identity for all channels", oldSSRC, newSSRC);
 
         // Step 2: Reset all Opus encoders
-        rtpServer->resetEncoders();
+        rtpServer->resetAllEncoders();
         debug("All encoders reset - clean slate for encoding");
 
         // Step 3: Send silent frames to prime decoders

@@ -14,6 +14,7 @@
 
 #include "MultiOpusRtpServer.h"
 #include "server/config.h"
+#include "server/namespace-stuffs.h"
 
 using namespace creatures::rtp;
 
