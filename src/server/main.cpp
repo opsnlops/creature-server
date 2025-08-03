@@ -9,10 +9,9 @@
 #include <string>
 #include <thread>
 
-
 // spdlog
-#include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
+#include "spdlog/spdlog.h"
 
 // SDL
 #include <SDL2/SDL.h>
@@ -30,6 +29,7 @@
 #include <opus/opus.h>
 
 // Our stuff
+#include "Version.h"
 #include "model/PlaylistStatus.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
@@ -38,15 +38,15 @@
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
-#include "server/metrics/counters.h"
 #include "server/metrics/StatusLights.h"
+#include "server/metrics/counters.h"
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/rtp/MultiOpusRtpServer.h"
-#include "Version.h"
+#include "server/sensors/SensorDataCache.h"
 #include "util/AudioCache.h"
+#include "util/ObservabilityManager.h"
 #include "util/cache.h"
 #include "util/loggingUtils.h"
-#include "util/ObservabilityManager.h"
 #include "util/threadName.h"
 #include "util/websocketUtils.h"
 #include "watchdog/Watchdog.h"
@@ -57,67 +57,66 @@ using creatures::Database;
 using creatures::EventLoop;
 using creatures::MusicEvent;
 
-
 namespace creatures {
-    std::shared_ptr<Configuration> config{};
-    std::shared_ptr<Database> db{};
-    std::shared_ptr<e131::E131Server> e131Server;
-    std::shared_ptr<EventLoop> eventLoop;
+std::shared_ptr<Configuration> config{};
+std::shared_ptr<Database> db{};
+std::shared_ptr<e131::E131Server> e131Server;
+std::shared_ptr<EventLoop> eventLoop;
 
-    /**
-     * Only one playlist can be running on a universe at a time. This is because animation can
-     * involve any creature in a universe, so it doesn't make sense to have more than one playing
-     * at any one time.
-     */
-    std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
+/**
+ * Only one playlist can be running on a universe at a time. This is because animation can
+ * involve any creature in a universe, so it doesn't make sense to have more than one playing
+ * at any one time.
+ */
+std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 
-    /**
-     * Maintain a cache of the creatures. While going to the DB is very quick, there's some operations
-     * that require looking them up over and over again, like streaming frames. Rather than going back
-     * to the database each time, let's keep a cache of them on hand.
-     */
-    std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
+/**
+ * Maintain a cache of the creatures. While going to the DB is very quick, there's some operations
+ * that require looking them up over and over again, like streaming frames. Rather than going back
+ * to the database each time, let's keep a cache of them on hand.
+ */
+std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 
+std::shared_ptr<GPIO> gpioPins;
+std::shared_ptr<SystemCounters> metrics;
+std::shared_ptr<StatusLights> statusLights;
+const char *audioDevice;
+SDL_AudioSpec localAudioDeviceAudioSpec;
+std::atomic serverShouldRun{true};
 
-    std::shared_ptr<GPIO> gpioPins;
-    std::shared_ptr<SystemCounters> metrics;
-    std::shared_ptr<StatusLights> statusLights;
-    const char* audioDevice;
-    SDL_AudioSpec localAudioDeviceAudioSpec;
-    std::atomic serverShouldRun{true};
+// MoodyCamel queue for outgoing websocket messages
+std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 
-    // MoodyCamel queue for outgoing websocket messages
-    std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
+// Observability manager for tracing and metrics
+std::shared_ptr<ObservabilityManager> observability;
 
-    // Observability manager for tracing and metrics
-    std::shared_ptr<ObservabilityManager> observability;
+// RTP server for handling real-time protocol streaming
+std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 
-    // RTP server for handling real-time protocol streaming
-    std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
+// Audio cache for pre-encoded Opus files
+std::shared_ptr<util::AudioCache> audioCache;
 
-    // Audio cache for pre-encoded Opus files
-    std::shared_ptr<util::AudioCache> audioCache;
-}
-
+// Sensor data cache for storing current sensor readings from creatures
+std::shared_ptr<SensorDataCache> sensorDataCache;
+} // namespace creatures
 
 // Signal handler to stop the event loop
 void signal_handler(int signal) {
 
     switch (signal) {
-        case SIGINT:
-            info("SIGINT! signalling that we should stop the server");
-            creatures::serverShouldRun.store(false);
-            break;
-        case SIGTERM:
-            info("SIGTERM! signalling that we should stop the server");
-            creatures::serverShouldRun.store(false);
-            break;
-        default:
-            info("signal {} received, ignoring", signal);
-            break;
+    case SIGINT:
+        info("SIGINT! signalling that we should stop the server");
+        creatures::serverShouldRun.store(false);
+        break;
+    case SIGTERM:
+        info("SIGTERM! signalling that we should stop the server");
+        creatures::serverShouldRun.store(false);
+        break;
+    default:
+        info("signal {} received, ignoring", signal);
+        break;
     }
 }
-
 
 int main(const int argc, char **argv) {
 
@@ -129,7 +128,8 @@ int main(const int argc, char **argv) {
     std::locale::global(std::locale("en_US.UTF-8"));
 
     // Get the version
-    std::string version = fmt::format("{}.{}.{}", CREATURE_SERVER_VERSION_MAJOR, CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH);
+    std::string version = fmt::format("{}.{}.{}", CREATURE_SERVER_VERSION_MAJOR, CREATURE_SERVER_VERSION_MINOR,
+                                      CREATURE_SERVER_VERSION_PATCH);
 
     // Set up our thread name
     setThreadName(fmt::format("creature-server::main version {}", version));
@@ -146,11 +146,9 @@ int main(const int argc, char **argv) {
     // Take over the default logger with our new one
     spdlog::set_default_logger(logger);
 
-
     // Parse out the command line options
     const auto commandLine = std::make_unique<creatures::CommandLine>();
     creatures::config = commandLine->parseCommandLine(argc, argv);
-
 
     // Leave some version info to be found
     info("Creature Server version {}", version);
@@ -164,10 +162,10 @@ int main(const int argc, char **argv) {
     // Create the observability manager
     creatures::observability = std::make_shared<creatures::ObservabilityManager>();
     creatures::observability->initialize(
-        "creature-server",                          // service name
-        version,                                       // service version
-        creatures::config->getHoneycombApiKey(),       // Honeycomb API key (empty = use local collector)
-        "creature-server"                           // Honeycomb dataset name
+        "creature-server",                       // service name
+        version,                                 // service version
+        creatures::config->getHoneycombApiKey(), // Honeycomb API key (empty = use local collector)
+        "creature-server"                        // Honeycomb dataset name
     );
     debug("Observability manager initialized");
 
@@ -181,12 +179,12 @@ int main(const int argc, char **argv) {
     debug("MongoDB connection created");
 
     // Fire up SDL
-    if(!MusicEvent::initSDL()) {
+    if (!MusicEvent::initSDL()) {
         error("Unable to start up SDL");
     }
     debug("SDL started");
     MusicEvent::listAudioDevices();
-    if(!MusicEvent::locateAudioDevice()) {
+    if (!MusicEvent::locateAudioDevice()) {
         error("unable to open audio device; halting");
         std::exit(EXIT_FAILURE);
     }
@@ -208,6 +206,10 @@ int main(const int argc, char **argv) {
     creatures::creatureCache = std::make_shared<creatures::ObjectCache<creatureId_t, creatures::Creature>>();
     debug("Created the creature cache");
 
+    // Create the sensor data cache
+    creatures::sensorDataCache = std::make_shared<creatures::SensorDataCache>();
+    debug("Created the sensor data cache");
+
     // Start up the event loop
     creatures::eventLoop = std::make_shared<EventLoop>();
     creatures::eventLoop->start();
@@ -220,28 +222,27 @@ int main(const int argc, char **argv) {
     creatures::gpioPins->serverOnline(true);
 
     // Start the RtpServer
-    if(creatures::config->getAudioMode() == creatures::Configuration::AudioMode::RTP) {
+    if (creatures::config->getAudioMode() == creatures::Configuration::AudioMode::RTP) {
         info("RTP audio mode enabled, starting RTP server");
         creatures::rtpServer = std::make_shared<creatures::rtp::MultiOpusRtpServer>();
     }
 
     // Initialize audio cache for faster Opus encoding
     try {
-        creatures::audioCache = std::make_shared<creatures::util::AudioCache>(
-            creatures::config->getSoundFileLocation());
+        creatures::audioCache =
+            std::make_shared<creatures::util::AudioCache>(creatures::config->getSoundFileLocation());
         creatures::rtp::AudioStreamBuffer::setAudioCacheInstance(creatures::audioCache);
         info("Audio cache initialized for faster Opus encoding");
-        
+
         auto stats = creatures::audioCache->getStats();
-        debug("Audio cache stats: {} cached files, {} hits, {} misses", 
-              stats.totalCachedFiles, stats.cacheHits, stats.cacheMisses);
-    } catch (const std::exception& e) {
+        debug("Audio cache stats: {} cached files, {} hits, {} misses", stats.totalCachedFiles, stats.cacheHits,
+              stats.cacheMisses);
+    } catch (const std::exception &e) {
         error("Failed to initialize audio cache: {}", e.what());
         warn("Audio will be encoded without caching (slower performance)");
         creatures::audioCache = nullptr;
         creatures::rtp::AudioStreamBuffer::setAudioCacheInstance(nullptr);
     }
-
 
     // Bring the E131Server online
     creatures::e131Server = std::make_shared<creatures::e131::E131Server>();
@@ -249,12 +250,11 @@ int main(const int argc, char **argv) {
     creatures::e131Server->start();
 
     // TODO: Remove this, this is just for debugging. Universe 1000 is "production."
-    //creatures::e131Server->createUniverse(1000);
+    // creatures::e131Server->createUniverse(1000);
 
     // Fire up the watchdog
     const auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);
     watchdog->start();
-
 
     // Start the web server
     const auto webServer = std::make_shared<creatures::ws::App>();
@@ -263,7 +263,6 @@ int main(const int argc, char **argv) {
     // Seed the metric send task
     const auto metricSendEvent = std::make_shared<creatures::CounterSendEvent>(SEND_COUNTERS_FRAMES);
     creatures::eventLoop->scheduleEvent(metricSendEvent);
-
 
     // Wait for the signal handler to know when to stop
     while (creatures::serverShouldRun.load()) {
@@ -294,7 +293,7 @@ int main(const int argc, char **argv) {
     webServer->shutdown();
 
     // Cleanup the RTP server
-    creatures::rtpServer.reset();   // implicit cleanup
+    creatures::rtpServer.reset(); // implicit cleanup
 
     creatures::gpioPins->serverOnline(false);
     creatures::statusLights->shutdown();

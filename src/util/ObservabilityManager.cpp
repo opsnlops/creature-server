@@ -23,6 +23,7 @@
 
 #include "server/metrics/counters.h"
 #include "server/namespace-stuffs.h"
+#include "server/sensors/SensorDataCache.h"
 
 namespace otlp = opentelemetry::exporter::otlp;
 namespace trace_api = opentelemetry::trace;
@@ -177,6 +178,19 @@ void ObservabilityManager::initializeMetricInstruments() {
     websocketPongsReceivedCounter_ = meter_->CreateUInt64Counter("creature_server_websocket_pongs_received",
                                                                  "Total number of WebSocket pongs received", "pongs");
 
+    // Initialize sensor metric instruments (gauges for current readings)
+    boardTemperatureGauge_ = meter_->CreateDoubleUpDownCounter(
+        "creature_server_board_temperature", "Current board temperature for each creature", "fahrenheit");
+
+    sensorVoltageGauge_ = meter_->CreateDoubleUpDownCounter("creature_server_sensor_voltage",
+                                                            "Current voltage reading for each power sensor", "volts");
+
+    sensorCurrentGauge_ = meter_->CreateDoubleUpDownCounter(
+        "creature_server_sensor_current", "Current amperage reading for each power sensor", "amperes");
+
+    sensorPowerGauge_ = meter_->CreateDoubleUpDownCounter("creature_server_sensor_power",
+                                                          "Current power reading for each power sensor", "watts");
+
     debug("All metric instruments initialized successfully");
 }
 
@@ -311,6 +325,50 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
         websocketPongsReceivedCounter_->Add(deltaWebsocketPongsReceived);
 
     debug("Metrics exported to OTel");
+}
+
+void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataCache> &sensorDataCache) {
+    if (!initialized_ || !sensorDataCache) {
+        return;
+    }
+
+    // Get all current sensor data
+    auto allSensorData = sensorDataCache->getAllSensorData();
+
+    for (const auto &[creatureId, sensorData] : allSensorData) {
+        // Create attributes map for this creature
+        std::unordered_map<std::string, std::string> attributes;
+        attributes["creature.id"] = creatureId;
+        attributes["creature.name"] = sensorData.creatureName;
+
+        // Export board temperature
+        if (boardTemperatureGauge_) {
+            boardTemperatureGauge_->Add(sensorData.boardTemperature, attributes);
+        }
+
+        // Export power sensor readings
+        for (const auto &powerReading : sensorData.powerReadings) {
+            // Create attributes map for this specific sensor
+            std::unordered_map<std::string, std::string> sensorAttributes = attributes;
+            sensorAttributes["sensor.name"] = powerReading.name;
+
+            if (sensorVoltageGauge_) {
+                sensorVoltageGauge_->Add(powerReading.voltage, sensorAttributes);
+            }
+
+            if (sensorCurrentGauge_) {
+                sensorCurrentGauge_->Add(powerReading.current, sensorAttributes);
+            }
+
+            if (sensorPowerGauge_) {
+                sensorPowerGauge_->Add(powerReading.power, sensorAttributes);
+            }
+        }
+    }
+
+    if (!allSensorData.empty()) {
+        debug("Exported sensor metrics for {} creatures to OTel", allSensorData.size());
+    }
 }
 
 std::shared_ptr<RequestSpan> ObservabilityManager::createRequestSpan(const std::string &operationName,

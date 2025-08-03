@@ -17,6 +17,7 @@
 #include "server/ws/dto/websocket/ServerCountersMessage.h"
 
 // Include the ObservabilityManager for metrics export
+#include "server/sensors/SensorDataCache.h"
 #include "util/ObservabilityManager.h"
 
 namespace creatures {
@@ -25,6 +26,7 @@ extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<SensorDataCache> sensorDataCache;
 
 Result<framenum_t> CounterSendEvent::executeImpl() {
 
@@ -48,6 +50,13 @@ Result<framenum_t> CounterSendEvent::executeImpl() {
     if (observability && observability->isInitialized()) {
         trace("exporting metrics to OTel");
         observability->exportMetrics(metrics);
+
+        // Also export sensor metrics if available
+        if (sensorDataCache) {
+            observability->exportSensorMetrics(sensorDataCache);
+            // Clean up stale sensor data (older than 30 seconds)
+            sensorDataCache->removeStaleData(30);
+        }
     } else {
         trace("observability manager not initialized, skipping OTel metrics export");
     }

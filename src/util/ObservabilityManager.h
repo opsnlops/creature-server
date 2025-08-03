@@ -99,6 +99,14 @@ class ObservabilityManager {
     void exportMetrics(const std::shared_ptr<class SystemCounters> &metrics);
 
     /**
+     * Export current sensor data from all creatures to OTel as gauge metrics
+     * This includes temperature and power readings with creature-specific attributes
+     *
+     * @param sensorDataCache The SensorDataCache instance containing current readings
+     */
+    void exportSensorMetrics(const std::shared_ptr<class SensorDataCache> &sensorDataCache);
+
+    /**
      * Check if the manager is initialized and ready for use.
      */
     [[nodiscard]] bool isInitialized() const { return initialized_; }
@@ -130,6 +138,12 @@ class ObservabilityManager {
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketMessagesSentCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketPingsSentCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketPongsReceivedCounter_;
+
+    // Sensor metric instruments - gauges for current readings
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> boardTemperatureGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> sensorVoltageGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> sensorCurrentGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> sensorPowerGauge_;
 
     bool initialized_;
 
