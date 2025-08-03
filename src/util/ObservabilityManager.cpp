@@ -361,11 +361,20 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
 
             // Calculate delta from previous value for true gauge behavior
             std::string tempKey = creatureId;
-            double lastTemp = lastTemperatureValues[tempKey];
+            bool isFirstReading = lastTemperatureValues.find(tempKey) == lastTemperatureValues.end();
+            double lastTemp = isFirstReading ? 0.0 : lastTemperatureValues[tempKey];
             double tempDelta = sensorData.boardTemperature - lastTemp;
 
-            if (tempDelta != 0.0) {
-                boardTemperatureGauge_->Add(tempDelta, attributes);
+            debug("Temperature delta calculation: creature={}, lastTemp={:.2f}, currentTemp={:.2f}, delta={:.2f}, "
+                  "isFirst={}",
+                  creatureId, lastTemp, sensorData.boardTemperature, tempDelta, isFirstReading);
+
+            if (tempDelta != 0.0 || isFirstReading) {
+                debug("Sending temperature metric with {} attributes", attributes.size());
+                for (const auto &[key, value] : attributes) {
+                    debug("  attribute: {}={}", key, value);
+                }
+                boardTemperatureGauge_->Add(isFirstReading ? sensorData.boardTemperature : tempDelta, attributes);
                 lastTemperatureValues[tempKey] = sensorData.boardTemperature;
             }
         }
