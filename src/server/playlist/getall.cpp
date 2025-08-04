@@ -11,6 +11,7 @@
 #include "exception/exception.h"
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
 
 #include "server/namespace-stuffs.h"
@@ -64,11 +65,14 @@ Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(std::shared_p
         // Go Mongo, go! 🎉
         for (auto &&doc : cursor) {
 
-            std::string json_str = bsoncxx::to_json(doc);
-            debug("Playlist JSON out of Mongo: {}", json_str);
-
-            // Parse JSON string to nlohmann::json
-            nlohmann::json json_doc = nlohmann::json::parse(json_str);
+            // Safe JSON conversion using JsonParser utility
+            auto jsonResult = JsonParser::bsonToJson(doc, "playlist document", dbSpan);
+            if (!jsonResult.isSuccess()) {
+                warn("Skipping playlist document due to JSON conversion error");
+                continue; // Skip this document and continue with next
+            }
+            nlohmann::json json_doc = jsonResult.getValue().value();
+            debug("Playlist JSON converted successfully");
 
             // Create the playlist from JSON
             auto playlistResult = playlistFromJson(json_doc, dbSpan);

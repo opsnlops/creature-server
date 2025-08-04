@@ -10,6 +10,7 @@
 #include "exception/exception.h"
 #include "server/creature-server.h"
 #include "server/database.h"
+#include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
 #include "util/helpers.h"
 
@@ -96,8 +97,15 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
             querySpan->setAttribute("db.name", DB_NAME);
             querySpan->setAttribute("db.collection.name", ANIMATIONS_COLLECTION);
             querySpan->setAttribute("db.operation", "find");
-            querySpan->setAttribute("db.query.projection", bsoncxx::to_json(projection_doc.view()));
-            querySpan->setAttribute("db.query.sort", bsoncxx::to_json(sort_doc.view()));
+            // Safe BSON to JSON conversion for span attributes
+            auto projectionResult = JsonParser::bsonToJson(projection_doc.view(), "projection document");
+            if (projectionResult.isSuccess()) {
+                querySpan->setAttribute("db.query.projection", projectionResult.getValue().value().dump());
+            }
+            auto sortResult = JsonParser::bsonToJson(sort_doc.view(), "sort document");
+            if (sortResult.isSuccess()) {
+                querySpan->setAttribute("db.query.sort", sortResult.getValue().value().dump());
+            }
         }
 
         mongocxx::cursor cursor = collection.find(query_doc.view(), findOptions);
@@ -117,21 +125,14 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
                 creatures::observability->createChildOperationSpan("Database.processDocument", processingSpan);
 
             try {
-                // Convert BSON to JSON
+                // Safe BSON to JSON conversion
                 auto conversionSpan = creatures::observability->createChildOperationSpan("BSON.toJson", docSpan);
-                std::string json_str = bsoncxx::to_json(doc);
-                if (conversionSpan) {
-                    conversionSpan->setAttribute("bson.size_bytes", static_cast<int64_t>(doc.length()));
-                    conversionSpan->setAttribute("json_string.size_bytes", static_cast<int64_t>(json_str.length()));
-                    conversionSpan->setSuccess();
+                auto jsonResult = JsonParser::bsonToJson(doc, "animation document", conversionSpan);
+                if (!jsonResult.isSuccess()) {
+                    warn("Skipping animation document due to JSON conversion error");
+                    continue; // Skip this document and continue with next
                 }
-
-                // Parse JSON string
-                auto parseSpan = creatures::observability->createChildOperationSpan("JSON.parse", docSpan);
-                nlohmann::json json_doc = nlohmann::json::parse(json_str);
-                if (parseSpan) {
-                    parseSpan->setSuccess();
-                }
+                nlohmann::json json_doc = jsonResult.getValue().value();
 
                 // Create AnimationMetadata from JSON
                 auto metadataSpan =

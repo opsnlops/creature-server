@@ -8,6 +8,7 @@
 #include "server/eventloop/events/types.h"
 #include "server/metrics/counters.h"
 #include "server/ws/dto/ListDto.h"
+#include "util/JsonParser.h"
 #include "util/cache.h"
 
 #include "PlaylistService.h"
@@ -141,7 +142,16 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
          * this one is based on). I want to be able to store the raw JSON in the database, but I also want
          * to validate it to make sure it has what data the front end needs.
          */
-        auto jsonObject = nlohmann::json::parse(playlistJson);
+        auto jsonResult = JsonParser::parseJsonString(playlistJson, "playlist upsert validation");
+        if (!jsonResult.isSuccess()) {
+            auto parseError = jsonResult.getError().value();
+            errorMessage = parseError.getMessage();
+            appLogger->warn(std::string(errorMessage));
+            status = Status::CODE_400;
+            error = true;
+        }
+        OATPP_ASSERT_HTTP(!error, status, errorMessage)
+        auto jsonObject = jsonResult.getValue().value();
         auto result = db->validatePlaylistJson(jsonObject);
         if (!result.isSuccess()) {
             errorMessage = result.getError()->getMessage();

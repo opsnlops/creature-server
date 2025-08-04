@@ -128,8 +128,7 @@ Result<json> Database::getCreatureJson(creatureId_t creatureId,
         }
 
         if (dbSpan) { // Success for span
-            dbSpan->setAttribute("db.response_size_bytes",
-                                 static_cast<int64_t>(bsoncxx::to_json(maybe_result->view()).length()));
+            dbSpan->setAttribute("db.response_size_bytes", static_cast<int64_t>(j.dump().length()));
             dbSpan->setSuccess();
         }
         return Result<json>{j};

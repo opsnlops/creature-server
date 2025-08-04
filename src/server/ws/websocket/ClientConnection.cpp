@@ -79,7 +79,7 @@ void ClientConnection::readMessage(const WebSocket &socket, v_uint8 opcode, p_ch
             auto basicDto = permissiveJsonMapper->readFromString<oatpp::Object<BasicCommandDto>>(wholeMessage);
             if (basicDto) {
 
-                appLogger->debug("request decoded, command: {}", std::string(basicDto->command));
+                appLogger->trace("request decoded, command: {}", std::string(basicDto->command));
 
                 auto command = basicDto->command;
                 messageProcessor->processIncomingMessage(command, wholeMessage);

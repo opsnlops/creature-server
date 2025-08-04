@@ -8,6 +8,7 @@
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 
+#include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
 
 #include "AnimationService.h"
@@ -203,7 +204,16 @@ oatpp::Object<creatures::AnimationDto> AnimationService::upsertAnimation(const s
          * this one is based on). I want to be able to store the raw JSON in the database, but I also want
          * to validate it to make sure it has what data the front end needs.
          */
-        auto jsonObject = nlohmann::json::parse(jsonAnimation);
+        auto jsonResult = JsonParser::parseJsonString(jsonAnimation, "animation upsert validation");
+        if (!jsonResult.isSuccess()) {
+            auto parseError = jsonResult.getError().value();
+            errorMessage = parseError.getMessage();
+            appLogger->warn(std::string(errorMessage));
+            status = Status::CODE_400;
+            error = true;
+        }
+        OATPP_ASSERT_HTTP(!error, status, errorMessage)
+        auto jsonObject = jsonResult.getValue().value();
         auto result = db->validateAnimationJson(jsonObject);
         if (validationSpan)
             validationSpan->setAttribute("validator", "validateAnimationJson");
