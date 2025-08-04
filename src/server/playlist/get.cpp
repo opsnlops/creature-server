@@ -60,16 +60,22 @@ Result<json> Database::getPlaylistJson(playlistId_t playlistId, std::shared_ptr<
         // Check if the document was found
         if (maybe_result) {
             // Convert BSON document to JSON using utility
+            debug("Found playlist document, starting BSON to JSON conversion for playlist {}", playlistId);
             bsoncxx::document::view view = maybe_result->view();
 
+            debug("Getting BSON document view for playlist {}", playlistId);
             auto jsonResult = JsonParser::bsonToJson(view, fmt::format("playlist {}", playlistId), dbSpan);
             if (!jsonResult.isSuccess()) {
                 auto error = jsonResult.getError().value();
+                warn("Failed to convert BSON to JSON for playlist {}: {}", playlistId, error.getMessage());
                 span->setError(error.getMessage());
                 return jsonResult;
             }
+            debug("BSON document converted to JSON string for playlist {} (length: {})", playlistId,
+                  jsonResult.getValue().value().dump().length());
             nlohmann::json json_result = jsonResult.getValue().value();
 
+            debug("JSON parsing successful for playlist {}", playlistId);
             dbSpan->setSuccess();
             span->setSuccess();
             return Result<json>{json_result};
@@ -120,6 +126,7 @@ Result<creatures::Playlist> Database::getPlaylist(const playlistId_t &playlistId
     }
 
     // Covert it to an Playlist object (if possible)
+    debug("Starting playlist JSON to object conversion for playlist {}", playlistId);
     auto result = playlistFromJson(playlistJson.getValue().value(), span);
     if (!result.isSuccess()) {
         auto error = result.getError().value();
@@ -128,6 +135,7 @@ Result<creatures::Playlist> Database::getPlaylist(const playlistId_t &playlistId
         span->setError(errorMessage);
         return Result<creatures::Playlist>{error};
     }
+    debug("Successfully converted playlist JSON to object for playlist {}", playlistId);
 
     // Create the playlist
     auto playlist = result.getValue().value();

@@ -26,7 +26,9 @@ Result<creatures::Playlist> Database::playlistFromJson(json playlistJson, std::s
     }
     auto span = observability->createChildOperationSpan("get_playlist_from_json", parentSpan);
 
-    debug("attempting to create a playlist from JSON via playlistFromJson(): {}", playlistJson.dump(4));
+    debug("attempting to create a playlist from JSON via playlistFromJson()");
+    debug("JSON size: {} bytes, dump preview: {}", playlistJson.dump().length(),
+          playlistJson.dump().substr(0, std::min(200UL, playlistJson.dump().length())));
 
     // Keep track of what we're working on so we can make a good error message
     std::string working_on;
@@ -35,6 +37,7 @@ Result<creatures::Playlist> Database::playlistFromJson(json playlistJson, std::s
 
         auto playlist = Playlist();
         working_on = "id";
+        debug("Validating '{}' field in playlist JSON", working_on);
         if (!playlistJson.contains(working_on) || playlistJson[working_on].is_null()) {
             std::string errorMessage = fmt::format("Missing or null field '{}' in playlist JSON", working_on);
             warn(errorMessage);
@@ -42,9 +45,10 @@ Result<creatures::Playlist> Database::playlistFromJson(json playlistJson, std::s
             return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
         }
         playlist.id = playlistJson[working_on];
-        debug("id: {}", playlist.id);
+        debug("Successfully parsed playlist id: '{}'", playlist.id);
 
         working_on = "name";
+        debug("Validating '{}' field in playlist JSON", working_on);
         if (!playlistJson.contains(working_on) || playlistJson[working_on].is_null()) {
             std::string errorMessage = fmt::format("Missing or null field '{}' in playlist JSON", working_on);
             warn(errorMessage);
@@ -52,9 +56,10 @@ Result<creatures::Playlist> Database::playlistFromJson(json playlistJson, std::s
             return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
         }
         playlist.name = playlistJson[working_on];
-        debug("name: {}", playlist.name);
+        debug("Successfully parsed playlist name: '{}'", playlist.name);
 
         working_on = "number_of_items";
+        debug("Validating '{}' field in playlist JSON", working_on);
         if (!playlistJson.contains(working_on) || playlistJson[working_on].is_null()) {
             std::string errorMessage = fmt::format("Missing or null field '{}' in playlist JSON", working_on);
             warn(errorMessage);
@@ -62,10 +67,11 @@ Result<creatures::Playlist> Database::playlistFromJson(json playlistJson, std::s
             return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
         }
         playlist.number_of_items = playlistJson[working_on];
-        debug("number_of_items: {}", playlist.number_of_items);
+        debug("Successfully parsed playlist number_of_items: {}", playlist.number_of_items);
 
         // Add all the items
         working_on = "items";
+        debug("Validating '{}' field in playlist JSON (should be array)", working_on);
         if (!playlistJson.contains(working_on) || !playlistJson[working_on].is_array()) {
             std::string errorMessage =
                 fmt::format("Missing or invalid field '{}' in playlist JSON (expected array)", working_on);
@@ -73,8 +79,12 @@ Result<creatures::Playlist> Database::playlistFromJson(json playlistJson, std::s
             span->setError(errorMessage);
             return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
         }
+        debug("Processing {} playlist items", playlistJson[working_on].size());
         std::vector<json> itemsJson = playlistJson[working_on];
-        for (const auto &itemJson : itemsJson) {
+        debug("Starting to process {} playlist items from JSON array", itemsJson.size());
+        for (size_t i = 0; i < itemsJson.size(); ++i) {
+            debug("Processing playlist item {} of {}", i + 1, itemsJson.size());
+            const auto &itemJson = itemsJson[i];
             auto itemResult = playlistItemFromJson(itemJson, span);
             if (!itemResult.isSuccess()) {
                 auto error = itemResult.getError();
@@ -82,8 +92,13 @@ Result<creatures::Playlist> Database::playlistFromJson(json playlistJson, std::s
                 return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, error->getMessage())};
             }
             playlist.items.push_back(itemResult.getValue().value());
+            debug("Successfully processed playlist item {} (animation_id: {})", i + 1,
+                  itemResult.getValue().value().animation_id);
         }
+        debug("Finished processing all {} playlist items", itemsJson.size());
 
+        debug("✅ Successfully created playlist from JSON: id='{}', name='{}', items_count={}", playlist.id,
+              playlist.name, playlist.items.size());
         span->setSuccess();
         return Result<creatures::Playlist>{playlist};
     } catch (const nlohmann::json::exception &e) {
@@ -105,6 +120,8 @@ Result<creatures::PlaylistItem> Database::playlistItemFromJson(json playlistItem
     auto span = observability->createChildOperationSpan("get_playlist_item_from_json", parentSpan);
 
     debug("attempting to create a playlistItem from JSON via playlistItemFromJson()");
+    debug("PlaylistItem JSON size: {} bytes, preview: {}", playlistItemJson.dump().length(),
+          playlistItemJson.dump().substr(0, std::min(100UL, playlistItemJson.dump().length())));
 
     // Keep track of the element we're working on so we can have good error messages
     std::string working_on;

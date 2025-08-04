@@ -59,17 +59,25 @@ void SensorReportHandler::processMessage(const oatpp::String &message) {
                     appLogger->debug("Creature {} not found in cache, trying database...", creatureId);
 
                     if (creatures::db) {
+                        appLogger->debug("Starting database creature lookup for ID: {}", creatureId);
                         auto creatureResult = creatures::db->getCreature(creatureId);
+                        appLogger->debug("Database creature lookup completed for ID: {}, success: {}", creatureId,
+                                         creatureResult.isSuccess());
+
                         if (creatureResult.isSuccess()) {
-                            creatureName = creatureResult.getValue().value().name;
-                            appLogger->debug("Looked up creature name from database: {} for ID: {}", creatureName,
-                                             creatureId);
+                            auto creature = creatureResult.getValue().value();
+                            creatureName = creature.name;
+                            appLogger->debug("Successfully looked up creature from database: '{}' (ID: {}, "
+                                             "audio_channel: {}, channel_offset: {})",
+                                             creatureName, creature.id, creature.audio_channel,
+                                             creature.channel_offset);
                         } else {
                             appLogger->warn("Failed to look up creature name for ID: {} - {}", creatureId,
                                             creatureResult.getError().value().getMessage());
                             creatureName = "Unknown Creature";
                         }
                     } else {
+                        appLogger->warn("Database connection not available, cannot lookup creature ID: {}", creatureId);
                         creatureName = "Unknown Creature";
                     }
                 }

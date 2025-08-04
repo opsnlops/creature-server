@@ -50,21 +50,53 @@ Result<creatures::Creature> Database::creatureFromJson(json creatureJson, std::s
     auto span = creatures::observability->createChildOperationSpan("Database.creatureFromJson", parentSpan);
 
     debug("attempting to create a creature from JSON via creatureFromJson()");
+    debug("JSON size: {} bytes, dump preview: {}", creatureJson.dump().length(),
+          creatureJson.dump().substr(0, std::min(200UL, creatureJson.dump().length())));
 
     try {
 
         auto creature = Creature();
+
+        // Safe JSON field access with validation
+        debug("Validating 'id' field in creature JSON");
+        if (!creatureJson.contains("id") || creatureJson["id"].is_null()) {
+            std::string errorMessage = "Missing or null field 'id' in creature JSON";
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
         creature.id = creatureJson["id"];
-        debug("id: {}", creature.id);
+        debug("Successfully parsed creature id: '{}'", creature.id);
 
+        debug("Validating 'name' field in creature JSON");
+        if (!creatureJson.contains("name") || creatureJson["name"].is_null()) {
+            std::string errorMessage = "Missing or null field 'name' in creature JSON";
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
         creature.name = creatureJson["name"];
-        debug("name: {}", creature.name);
+        debug("Successfully parsed creature name: '{}'", creature.name);
 
+        debug("Validating 'audio_channel' field in creature JSON");
+        if (!creatureJson.contains("audio_channel") || creatureJson["audio_channel"].is_null()) {
+            std::string errorMessage = "Missing or null field 'audio_channel' in creature JSON";
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
         creature.audio_channel = creatureJson["audio_channel"];
-        debug("audio_channel: {}", creature.audio_channel);
+        debug("Successfully parsed creature audio_channel: {}", creature.audio_channel);
 
+        debug("Validating 'channel_offset' field in creature JSON");
+        if (!creatureJson.contains("channel_offset") || creatureJson["channel_offset"].is_null()) {
+            std::string errorMessage = "Missing or null field 'channel_offset' in creature JSON";
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
         creature.channel_offset = creatureJson["channel_offset"];
-        debug("channel_offset: {}", creature.channel_offset);
+        debug("Successfully parsed creature channel_offset: {}", creature.channel_offset);
 
         if (creature.id.empty()) {
             std::string errorMessage = "Creature ID is empty";
@@ -151,10 +183,15 @@ Result<creatures::Creature> Database::creatureFromJson(json creatureJson, std::s
             // Don't fail, this isn't fatal
         }
 
-        debug("✅ Looks good, I was able to build a creature from JSON");
+        debug("✅ Successfully created creature from JSON: id='{}', name='{}', audio_channel={}, channel_offset={}, "
+              "inputs_count={}",
+              creature.id, creature.name, creature.audio_channel, creature.channel_offset, creature.inputs.size());
         span->setSuccess();
         span->setAttribute("creature.id", creature.id);
         span->setAttribute("creature.name", creature.name);
+        span->setAttribute("creature.audio_channel", creature.audio_channel);
+        span->setAttribute("creature.channel_offset", creature.channel_offset);
+        span->setAttribute("creature.inputs_count", static_cast<uint32_t>(creature.inputs.size()));
         return Result<creatures::Creature>{creature};
 
     } catch (const nlohmann::json::exception &e) {

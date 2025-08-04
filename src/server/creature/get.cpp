@@ -119,15 +119,20 @@ Result<json> Database::getCreatureJson(creatureId_t creatureId,
         }
 
         // Convert the result to JSON using utility
+        debug("Converting BSON document to JSON for creature ID: {}", creatureId);
         auto convertToJsonSpan =
             creatures::observability->createChildOperationSpan("getCreatureJson.json::parse", dbSpan);
 
         auto jsonResult =
             JsonParser::bsonToJson(maybe_result->view(), fmt::format("creature {}", creatureId), convertToJsonSpan);
         if (!jsonResult.isSuccess()) {
+            warn("Failed to convert BSON to JSON for creature ID: {} - {}", creatureId,
+                 jsonResult.getError().value().getMessage());
             return jsonResult;
         }
         json j = jsonResult.getValue().value();
+        debug("Successfully converted BSON to JSON for creature ID: {}, JSON size: {} bytes", creatureId,
+              j.dump().length());
 
         if (!convertToJsonSpan) {
             warn("JSON conversion span was not created, cannot set success attributes");
