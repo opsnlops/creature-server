@@ -95,9 +95,15 @@ Result<json> Database::getCreatureJson(creatureId_t creatureId,
         debug("query executed for creature ID: {}", creatureId);
 
         mongoSpan->setSuccess();
-        mongoSpan->setAttribute(
-            "db.response_size_bytes",
-            static_cast<int64_t>(maybe_result ? bsoncxx::to_json(maybe_result->view()).length() : 0));
+        if (maybe_result) {
+            auto jsonResult = JsonParser::bsonToJson(maybe_result->view(), "creature response size calculation");
+            if (jsonResult.isSuccess()) {
+                mongoSpan->setAttribute("db.response_size_bytes",
+                                        static_cast<int64_t>(jsonResult.getValue().value().dump().length()));
+            }
+        } else {
+            mongoSpan->setAttribute("db.response_size_bytes", static_cast<int64_t>(0));
+        }
 
         if (!maybe_result) {
             std::string errorMessage = fmt::format("Creature not found: {}", creatureId);

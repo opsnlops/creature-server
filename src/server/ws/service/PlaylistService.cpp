@@ -9,6 +9,7 @@
 #include "server/metrics/counters.h"
 #include "server/ws/dto/ListDto.h"
 #include "util/JsonParser.h"
+#include "util/ObservabilityManager.h"
 #include "util/cache.h"
 
 #include "PlaylistService.h"
@@ -17,6 +18,7 @@ namespace creatures {
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
+extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 } // namespace creatures
 
@@ -200,7 +202,17 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
     // Convert the oatpp string to a std::string
     std::string playlistId = std::string(inPlaylistId);
 
+    // 🐰 Create a trace span for this request
+    auto span = creatures::observability->createOperationSpan("PlaylistService.startPlaylist");
+
     appLogger->debug("PlaylistService::startPlaylist({}, {})", universe, std::string(playlistId));
+
+    if (span) {
+        span->setAttribute("service", "PlaylistService");
+        span->setAttribute("operation", "startPlaylist");
+        span->setAttribute("universe", universe);
+        span->setAttribute("playlist.id", playlistId);
+    }
 
     bool error = false;
     oatpp::String errorMessage;
@@ -212,11 +224,17 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
         appLogger->warn(std::string(errorMessage));
         status = Status::CODE_400;
         error = true;
+
+        if (span) {
+            span->setError(std::string(errorMessage));
+            span->setAttribute("error.type", "InvalidData");
+            span->setAttribute("error.code", 400);
+        }
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
     // Now go see if that playlist exists
-    auto playlistResult = db->getPlaylist(playlistId);
+    auto playlistResult = db->getPlaylist(playlistId, span);
     if (!playlistResult.isSuccess()) {
         auto errorCode = playlistResult.getError().value().getCode();
         switch (errorCode) {
@@ -233,6 +251,23 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
         errorMessage = playlistResult.getError().value().getMessage();
         appLogger->warn(std::string(errorMessage));
         error = true;
+
+        if (span) {
+            span->setError(std::string(errorMessage));
+            span->setAttribute("error.type", [errorCode]() {
+                switch (errorCode) {
+                case ServerError::NotFound:
+                    return "NotFound";
+                case ServerError::InvalidData:
+                    return "InvalidData";
+                case ServerError::DatabaseError:
+                    return "DatabaseError";
+                default:
+                    return "InternalError";
+                }
+            }());
+            span->setAttribute("error.code", static_cast<int>(errorCode));
+        }
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
@@ -240,9 +275,28 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
     auto playlist = playlistResult.getValue().value();
     debug("confirmed that playlist '{}' exists ({})", playlist.id, playlist.name);
 
+    if (span) {
+        span->setAttribute("playlist.name", playlist.name);
+        span->setAttribute("playlist.items", playlist.number_of_items);
+    }
+
     // Now let's go start it
 
     // Set the playlist in the cache
+    if (!runningPlaylists) {
+        errorMessage = "Running playlists cache is not initialized";
+        appLogger->error(std::string(errorMessage));
+        status = Status::CODE_500;
+        error = true;
+
+        if (span) {
+            span->setError(std::string(errorMessage));
+            span->setAttribute("error.type", "InternalError");
+            span->setAttribute("error.code", 500);
+        }
+    }
+    OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
     PlaylistStatus playlistStatus;
     playlistStatus.universe = universe;
     playlistStatus.playlist = playlistId;
@@ -250,18 +304,43 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
     playlistStatus.current_animation = ""; // Will get filled in on the next frame
     runningPlaylists->put(universe, playlistStatus);
 
+    if (!eventLoop) {
+        errorMessage = "EventLoop is not initialized";
+        appLogger->error(std::string(errorMessage));
+        status = Status::CODE_500;
+        error = true;
+
+        if (span) {
+            span->setError(std::string(errorMessage));
+            span->setAttribute("error.type", "InternalError");
+            span->setAttribute("error.code", 500);
+        }
+    }
+    OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
     auto playEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
     eventLoop->scheduleEvent(playEvent);
 
     std::string okayMessage = fmt::format("🎵 Started playing playlist {} on universe {}", playlist.name, universe);
     info(okayMessage);
 
-    metrics->incrementPlaylistsStarted();
+    if (metrics) {
+        metrics->incrementPlaylistsStarted();
+    } else {
+        warn("Metrics system not initialized, skipping playlist started counter");
+    }
 
     auto response = StatusDto::createShared();
     response->code = 200;
     response->message = "Started playback";
     response->status = "OK";
+
+    // Record success metrics in the span
+    if (span) {
+        span->setAttribute("response.code", 200);
+        span->setAttribute("response.status", "OK");
+        span->setSuccess();
+    }
 
     debug("returning a 200");
     return response;

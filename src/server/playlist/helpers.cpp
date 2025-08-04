@@ -35,19 +35,45 @@ Result<creatures::Playlist> Database::playlistFromJson(json playlistJson, std::s
 
         auto playlist = Playlist();
         working_on = "id";
+        if (!playlistJson.contains(working_on) || playlistJson[working_on].is_null()) {
+            std::string errorMessage = fmt::format("Missing or null field '{}' in playlist JSON", working_on);
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
         playlist.id = playlistJson[working_on];
         debug("id: {}", playlist.id);
 
         working_on = "name";
+        if (!playlistJson.contains(working_on) || playlistJson[working_on].is_null()) {
+            std::string errorMessage = fmt::format("Missing or null field '{}' in playlist JSON", working_on);
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
         playlist.name = playlistJson[working_on];
         debug("name: {}", playlist.name);
 
         working_on = "number_of_items";
+        if (!playlistJson.contains(working_on) || playlistJson[working_on].is_null()) {
+            std::string errorMessage = fmt::format("Missing or null field '{}' in playlist JSON", working_on);
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
         playlist.number_of_items = playlistJson[working_on];
         debug("number_of_items: {}", playlist.number_of_items);
 
         // Add all the items
-        std::vector<json> itemsJson = playlistJson["items"];
+        working_on = "items";
+        if (!playlistJson.contains(working_on) || !playlistJson[working_on].is_array()) {
+            std::string errorMessage =
+                fmt::format("Missing or invalid field '{}' in playlist JSON (expected array)", working_on);
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
+        std::vector<json> itemsJson = playlistJson[working_on];
         for (const auto &itemJson : itemsJson) {
             auto itemResult = playlistItemFromJson(itemJson, span);
             if (!itemResult.isSuccess()) {
@@ -87,11 +113,23 @@ Result<creatures::PlaylistItem> Database::playlistItemFromJson(json playlistItem
 
         auto playlistItem = PlaylistItem();
         working_on = "animation_id";
+        if (!playlistItemJson.contains(working_on) || playlistItemJson[working_on].is_null()) {
+            std::string errorMessage = fmt::format("Missing or null field '{}' in playlist item JSON", working_on);
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::PlaylistItem>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
         playlistItem.animation_id = playlistItemJson[working_on];
         debug("animation_id: {}", playlistItem.animation_id);
         span->setAttribute("animation_id", playlistItem.animation_id);
 
         working_on = "weight";
+        if (!playlistItemJson.contains(working_on) || playlistItemJson[working_on].is_null()) {
+            std::string errorMessage = fmt::format("Missing or null field '{}' in playlist item JSON", working_on);
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::PlaylistItem>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
         playlistItem.weight = playlistItemJson[working_on];
         debug("weight: {}", playlistItem.weight);
         span->setAttribute("weight", playlistItem.weight);
