@@ -95,15 +95,7 @@ Result<json> Database::getCreatureJson(creatureId_t creatureId,
         debug("query executed for creature ID: {}", creatureId);
 
         mongoSpan->setSuccess();
-        if (maybe_result) {
-            auto jsonResult = JsonParser::bsonToJson(maybe_result->view(), "creature response size calculation");
-            if (jsonResult.isSuccess()) {
-                mongoSpan->setAttribute("db.response_size_bytes",
-                                        static_cast<int64_t>(jsonResult.getValue().value().dump().length()));
-            }
-        } else {
-            mongoSpan->setAttribute("db.response_size_bytes", static_cast<int64_t>(0));
-        }
+        // Note: Response size will be calculated after successful JSON conversion
 
         if (!maybe_result) {
             std::string errorMessage = fmt::format("Creature not found: {}", creatureId);
