@@ -60,7 +60,7 @@ void SensorReportHandler::processMessage(const oatpp::String &message) {
 
                     if (creatures::db) {
                         appLogger->debug("Starting database creature lookup for ID: {}", creatureId);
-                        auto creatureResult = creatures::db->getCreature(creatureId);
+                        auto creatureResult = creatures::db->getCreature(creatureId, messageSpan);
                         appLogger->debug("Database creature lookup completed for ID: {}, success: {}", creatureId,
                                          creatureResult.isSuccess());
 

@@ -94,9 +94,12 @@ Result<json> Database::getCreatureJson(creatureId_t creatureId,
         maybe_result = collection.find_one(query.view());
         debug("query executed for creature ID: {}", creatureId);
 
+        debug("Setting mongoSpan success for creature ID: {}", creatureId);
         mongoSpan->setSuccess();
+        debug("mongoSpan success set for creature ID: {}", creatureId);
         // Note: Response size will be calculated after successful JSON conversion
 
+        debug("Checking if result exists for creature ID: {}", creatureId);
         if (!maybe_result) {
             std::string errorMessage = fmt::format("Creature not found: {}", creatureId);
             warn(errorMessage);
