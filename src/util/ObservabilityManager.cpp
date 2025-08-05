@@ -470,7 +470,16 @@ ObservabilityManager::createChildOperationSpan(const std::string &operationName,
         return nullptr;
     }
 
-    auto spanContext = parentSpan->getSpan()->GetContext();
+    // Check if parent span has a null underlying span (e.g., from SamplingSpan with shouldExport=false)
+    auto parentSpanPtr = parentSpan->getSpan();
+    if (!parentSpanPtr) {
+        // Parent has no actual span, create a root span instead
+        debug("Parent span is null, creating root operation span: {}", operationName);
+        auto span = tracer_->StartSpan(operationName);
+        return std::make_shared<OperationSpan>(span);
+    }
+
+    auto spanContext = parentSpanPtr->GetContext();
     auto options = opentelemetry::trace::StartSpanOptions{};
     options.parent = spanContext;
     auto span = tracer_->StartSpan(operationName, options);
