@@ -32,11 +32,14 @@ oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistDto>>> PlaylistService::g
 
     appLogger->debug("PlaylistService::getAllPlaylists()");
 
+    // Create a span for this operation
+    auto span = creatures::observability->createOperationSpan("PlaylistService.getAllPlaylists");
+
     bool error = false;
     std::string errorMessage;
     Status status = Status::CODE_200;
 
-    auto result = db->getAllPlaylists();
+    auto result = db->getAllPlaylists(span);
     if (!result.isSuccess()) {
 
         debug("getAllPlaylists() was not a success 😫");
@@ -61,6 +64,9 @@ oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistDto>>> PlaylistService::g
         }
         errorMessage = fmt::format("getAllPlaylists() error {}: {}", errorValue, result.getError()->getMessage());
         appLogger->warn(errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+        }
         error = true;
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
@@ -73,7 +79,15 @@ oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistDto>>> PlaylistService::g
     if (playlists.empty()) {
         errorMessage = "No playlists found";
         appLogger->warn(errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+        }
         OATPP_ASSERT_HTTP(false, Status::CODE_404, errorMessage)
+    }
+
+    if (span) {
+        span->setAttribute("playlists.count", static_cast<int64_t>(playlists.size()));
+        span->setSuccess();
     }
 
     for (const auto &playlist : playlists) {
@@ -97,11 +111,17 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::getPlaylist(const oatpp::
 
     appLogger->debug("PlaylistService::getPlaylist({})", playlistId);
 
+    // Create a span for this operation
+    auto span = creatures::observability->createOperationSpan("PlaylistService.getPlaylist");
+    if (span) {
+        span->setAttribute("playlist.id", playlistId);
+    }
+
     bool error = false;
     oatpp::String errorMessage;
     Status status = Status::CODE_200;
 
-    auto result = db->getPlaylist(playlistId);
+    auto result = db->getPlaylist(playlistId, span);
     if (!result.isSuccess()) {
 
         auto errorCode = result.getError().value().getCode();
@@ -118,11 +138,18 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::getPlaylist(const oatpp::
         }
         errorMessage = result.getError().value().getMessage();
         appLogger->warn(std::string(errorMessage));
+        if (span) {
+            span->setError(std::string(errorMessage));
+        }
         error = true;
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
     auto playlist = result.getValue().value();
+    if (span) {
+        span->setAttribute("playlist.name", playlist.name);
+        span->setSuccess();
+    }
     return creatures::convertToDto(playlist);
 }
 
@@ -132,6 +159,9 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
     appLogger->info("attempting to upsert a playlist");
 
     appLogger->debug("JSON: {}", playlistJson);
+
+    // Create a span for this operation
+    auto span = creatures::observability->createOperationSpan("PlaylistService.upsertPlaylist");
 
     bool error = false;
     oatpp::String errorMessage;
@@ -149,6 +179,9 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
             auto parseError = jsonResult.getError().value();
             errorMessage = parseError.getMessage();
             appLogger->warn(std::string(errorMessage));
+            if (span) {
+                span->setError(std::string(errorMessage));
+            }
             status = Status::CODE_400;
             error = true;
         }
@@ -158,25 +191,35 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
         if (!result.isSuccess()) {
             errorMessage = result.getError()->getMessage();
             appLogger->warn(std::string(result.getError()->getMessage()));
+            if (span) {
+                span->setError(std::string(errorMessage));
+            }
             status = Status::CODE_400;
             error = true;
         }
     } catch (const nlohmann::json::parse_error &e) {
         errorMessage = e.what();
         appLogger->warn(std::string(e.what()));
+        if (span) {
+            span->recordException(e);
+            span->setError(std::string(errorMessage));
+        }
         status = Status::CODE_400;
         error = true;
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
     appLogger->debug("passing the upsert request off to the database");
-    auto result = db->upsertPlaylist(playlistJson);
+    auto result = db->upsertPlaylist(playlistJson, span);
 
     // If there's an error, let the client know
     if (!result.isSuccess()) {
 
         errorMessage = result.getError()->getMessage();
         appLogger->warn(std::string(result.getError()->getMessage()));
+        if (span) {
+            span->setError(std::string(errorMessage));
+        }
         status = Status::CODE_500;
         error = true;
     }
@@ -186,12 +229,20 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
     if (!result.getValue().has_value()) {
         errorMessage = "DB didn't return a value after upserting a playlist. This is a bug. Please report it.";
         appLogger->error(std::string(errorMessage));
+        if (span) {
+            span->setError(std::string(errorMessage));
+        }
         OATPP_ASSERT_HTTP(true, Status::CODE_500, errorMessage);
     }
 
     // Yay! All good! Send it along
     auto playlist = result.getValue().value();
     info("Updated playlist '{}' in the database (id: {})", playlist.name, playlist.id);
+    if (span) {
+        span->setAttribute("playlist.id", playlist.id);
+        span->setAttribute("playlist.name", playlist.name);
+        span->setSuccess();
+    }
     return convertToDto(playlist);
 }
 

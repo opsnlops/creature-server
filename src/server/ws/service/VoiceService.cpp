@@ -119,12 +119,20 @@ VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto
 
     appLogger->debug("Incoming request for speech generation");
 
+    // Create a parent span for the entire speech generation operation
+    auto speechSpan = creatures::observability->createOperationSpan("VoiceService.generateCreatureSpeech");
+    if (speechSpan) {
+        speechSpan->setAttribute("creature.id", std::string(soundFileRequest->creature_id));
+        speechSpan->setAttribute("request.text", std::string(soundFileRequest->text));
+    }
+
     bool error = false;
     oatpp::String errorMessage;
     Status status = Status::CODE_200;
 
     // Go look up the creature we're using in the database
-    auto creatureLookupSpan = creatures::observability->createOperationSpan("VoiceService.lookupCreature");
+    auto creatureLookupSpan =
+        creatures::observability->createChildOperationSpan("VoiceService.lookupCreature", speechSpan);
     if (creatureLookupSpan) {
         creatureLookupSpan->setAttribute("creature.id", std::string(soundFileRequest->creature_id));
     }
@@ -135,6 +143,9 @@ VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto
         errorMessage = creatureJsonResult.getError()->getMessage();
         if (creatureLookupSpan) {
             creatureLookupSpan->setError(std::string(errorMessage));
+        }
+        if (speechSpan) {
+            speechSpan->setError(std::string(errorMessage));
         }
         switch (creatureJsonResult.getError()->getCode()) {
         case creatures::ServerError::NotFound:
@@ -162,6 +173,9 @@ VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto
         error = true;
         errorMessage = "No voice configuration found for creature";
         status = Status::CODE_400;
+        if (speechSpan) {
+            speechSpan->setError(std::string(errorMessage));
+        }
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
@@ -206,6 +220,11 @@ VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
     appLogger->debug("Generated speech successfully");
+
+    if (speechSpan) {
+        speechSpan->setSuccess();
+    }
+
     return convertToDto(speechResponse.getValue().value());
 }
 

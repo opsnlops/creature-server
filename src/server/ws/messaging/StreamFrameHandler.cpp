@@ -101,13 +101,22 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
         span->setAttribute("creature_cache.hit", false);
         appLogger->debug(" 🛜  creature {} was not found in the cache. Going to the DB...", frame.creature_id);
 
-        // Convert SamplingSpan to OperationSpan for database call
-        std::shared_ptr<OperationSpan> operationSpan = std::static_pointer_cast<OperationSpan>(span);
-        auto result = db->getCreature(frame.creature_id, operationSpan);
+        // Create a child span specifically for the database fallback operation
+        auto dbFallbackSpan = creatures::observability->createChildOperationSpan(
+            "StreamFrameHandler.creatureCacheMiss", std::static_pointer_cast<OperationSpan>(span));
+        if (dbFallbackSpan) {
+            dbFallbackSpan->setAttribute("creature.id", frame.creature_id);
+            dbFallbackSpan->setAttribute("cache_miss", true);
+        }
+
+        auto result = db->getCreature(frame.creature_id, dbFallbackSpan);
         if (!result.isSuccess()) {
             auto errorMessage = fmt::format("Dropping stream frame to {} because it can't be found: {}",
                                             frame.creature_id, result.getError().value().getMessage());
             appLogger->warn(errorMessage);
+            if (dbFallbackSpan) {
+                dbFallbackSpan->setError(errorMessage);
+            }
             span->setError(errorMessage);
             span->setAttribute("error.type", "NotFound");
             span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
@@ -115,7 +124,11 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
         }
         creature = std::make_shared<Creature>(result.getValue().value());
         appLogger->debug("creature is now: name: {}, channel_offset: {}", creature->name, creature->channel_offset);
-        span->setSuccess();
+
+        if (dbFallbackSpan) {
+            dbFallbackSpan->setAttribute("creature.name", creature->name);
+            dbFallbackSpan->setSuccess();
+        }
         span->setAttribute("creature.name", creature->name);
     }
 

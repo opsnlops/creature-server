@@ -57,7 +57,10 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
 
     // Go look this one up
     auto dbSpan = observability->createChildOperationSpan("music_event.db_lookup", span);
-    auto playListResult = db->getPlaylist(activePlaylistStatus->playlist);
+    if (dbSpan) {
+        dbSpan->setAttribute("playlist.id", activePlaylistStatus->playlist);
+    }
+    auto playListResult = db->getPlaylist(activePlaylistStatus->playlist, dbSpan);
     if (!playListResult.isSuccess()) {
         std::string errorMessage = fmt::format("Playlist ID {} not found while in a playlist event. halting playback.",
                                                activePlaylistStatus->playlist);
@@ -100,16 +103,29 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
     span->setAttribute("chosen_animation", chosenAnimation);
 
     // Go get this animation
-    Result<Animation> animationResult = db->getAnimation(chosenAnimation);
+    auto animationSpan = observability->createChildOperationSpan("music_event.animation_lookup", span);
+    if (animationSpan) {
+        animationSpan->setAttribute("animation.id", chosenAnimation);
+    }
+
+    Result<Animation> animationResult = db->getAnimation(chosenAnimation, animationSpan);
     if (!animationResult.isSuccess()) {
         std::string errorMessage =
             fmt::format("Animation ID {} not found while in a playlist event. halting playback.", chosenAnimation);
         warn(errorMessage);
+        if (animationSpan) {
+            animationSpan->setError(errorMessage);
+        }
         runningPlaylists->remove(activeUniverse);
         sendEmptyPlaylistUpdate(activeUniverse);
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
     auto animation = animationResult.getValue().value();
+
+    if (animationSpan) {
+        animationSpan->setAttribute("animation.title", animation.metadata.title);
+        animationSpan->setSuccess();
+    }
 
     // Schedule this animation
     auto scheduleResult = scheduleAnimation(eventLoop->getNextFrameNumber(), animation, activeUniverse);

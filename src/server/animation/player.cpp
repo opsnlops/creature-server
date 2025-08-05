@@ -40,6 +40,18 @@ extern std::shared_ptr<ObservabilityManager> observability;
 Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::Animation &animation,
                                      universe_t universe) {
 
+    // Create a parent span for the entire animation scheduling operation
+    auto scheduleSpan = observability->createOperationSpan("Animation.scheduleAnimation");
+    if (scheduleSpan) {
+        scheduleSpan->setAttribute("animation.id", animation.id);
+        scheduleSpan->setAttribute("animation.title", animation.metadata.title);
+        scheduleSpan->setAttribute("animation.universe", static_cast<int64_t>(universe));
+        scheduleSpan->setAttribute("animation.startFrame", static_cast<int64_t>(startingFrame));
+        scheduleSpan->setAttribute("animation.tracksCount", static_cast<int64_t>(animation.tracks.size()));
+        scheduleSpan->setAttribute("animation.msPerFrame",
+                                   static_cast<int64_t>(animation.metadata.milliseconds_per_frame));
+    }
+
     debug("scheduling animation {} ({}) on universe {} for frame {}", animation.metadata.title, animation.id, universe,
           startingFrame);
 
@@ -52,8 +64,9 @@ Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::
     for (const auto &track : animation.tracks) {
         creatureId_t creatureId = track.creature_id;
 
-        // Create a span for this creature validation
-        auto validationSpan = observability->createOperationSpan("scheduleAnimation.validateCreature");
+        // Create a child span for this creature validation
+        auto validationSpan =
+            observability->createChildOperationSpan("scheduleAnimation.validateCreature", scheduleSpan);
         if (validationSpan) {
             validationSpan->setAttribute("creature.id", creatureId);
             validationSpan->setAttribute("animation.id", animation.id);
@@ -67,6 +80,9 @@ Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::
             warn(errorMessage);
             if (validationSpan) {
                 validationSpan->setError(errorMessage);
+            }
+            if (scheduleSpan) {
+                scheduleSpan->setError(errorMessage);
             }
             return Result<framenum_t>{ServerError(ServerError::NotFound, errorMessage)};
         }
@@ -167,6 +183,13 @@ Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::
         fmt::format("✅ Scheduled animation {} for frame {} to {}", animation.metadata.title, startingFrame, lastFrame);
     info(okayMessage);
     metrics->incrementAnimationsPlayed();
+
+    // Mark the overall scheduling as successful
+    if (scheduleSpan) {
+        scheduleSpan->setAttribute("animation.lastFrame", static_cast<int64_t>(lastFrame));
+        scheduleSpan->setAttribute("animation.totalFramesScheduled", static_cast<int64_t>(lastFrame - startingFrame));
+        scheduleSpan->setSuccess();
+    }
 
     // Let the caller know all is well
     return Result<framenum_t>{lastFrame};
