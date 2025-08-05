@@ -675,9 +675,9 @@ SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace
     // 🚨 INHERITANCE CHECK: Verify SamplingSpan -> OperationSpan works 🚨
     // ======================================================================
     if (!span && !shouldExport) {
-        debug("✅ SamplingSpan created with NULL span (shouldExport=false) - this is normal for sampling");
+        trace("✅ SamplingSpan created with NULL span (shouldExport=false) - this is normal for sampling");
     } else if (span && shouldExport) {
-        debug("✅ SamplingSpan created with real span (shouldExport=true) - this span will be traced");
+        trace("✅ SamplingSpan created with real span (shouldExport=true) - this span will be traced");
     } else {
         warn("🚨 UNUSUAL: SamplingSpan created with span={} shouldExport={} - this is unexpected!",
              span ? "valid" : "null", shouldExport);
@@ -688,7 +688,7 @@ SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace
         span_->SetAttribute("component", "creature-server");
         span_->SetAttribute("sampling.rate", samplingRate_);
         span_->SetAttribute("sampling.will_export", shouldExport_);
-        debug("✅ SamplingSpan attributes set successfully");
+        trace("✅ SamplingSpan attributes set successfully");
     }
 }
 
