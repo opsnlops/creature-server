@@ -647,9 +647,7 @@ std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std
 
 SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate,
                            bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer)
-    : span_(span), samplingRate_(samplingRate), shouldExport_(shouldExport), statusSet_(false), tracer_(tracer) {
-
-    context_ = opentelemetry::context::RuntimeContext::GetCurrent();
+    : OperationSpan(span), samplingRate_(samplingRate), shouldExport_(shouldExport), tracer_(tracer) {
 
     // Set basic attributes only if we have a span
     if (span_) {

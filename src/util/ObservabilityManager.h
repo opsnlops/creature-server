@@ -264,7 +264,7 @@ class OperationSpan {
      */
     [[nodiscard]] opentelemetry::trace::Span *getSpan() const { return span_.get(); }
 
-  private:
+  protected:
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span_;
     opentelemetry::context::Context context_;
     bool statusSet_;
@@ -279,7 +279,7 @@ class OperationSpan {
  * 2. Random sampling criteria is met (configurable percentage)
  * 3. Explicitly forced to export
  */
-class SamplingSpan {
+class SamplingSpan : public OperationSpan {
   public:
     SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate,
                  bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer = {});
@@ -321,11 +321,8 @@ class SamplingSpan {
     void recordException(const std::exception &ex);
 
   private:
-    opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span_;
-    opentelemetry::context::Context context_;
     double samplingRate_;
     bool shouldExport_;
-    bool statusSet_;
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer_;
 
     // Allow access to ObservabilityManager for creating error spans
