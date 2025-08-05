@@ -27,13 +27,29 @@ namespace creatures ::ws {
 
 void ClientConnection::sendTextMessage(const std::string &message) {
     // appLogger->trace("Sending message to client {}", clientId);
-    ourSocket.sendOneFrameText(message);
-    creatures::metrics->incrementWebsocketMessagesSent();
+    try {
+        ourSocket.sendOneFrameText(message);
+        creatures::metrics->incrementWebsocketMessagesSent();
+    } catch (const std::runtime_error &e) {
+        appLogger->warn("Failed to send message to client {}: {} (likely disconnected)", clientId, e.what());
+    } catch (const std::exception &e) {
+        appLogger->warn("Exception sending message to client {}: {}", clientId, e.what());
+    } catch (...) {
+        appLogger->warn("Unknown exception sending message to client {}", clientId);
+    }
 }
 
 void ClientConnection::sendPing() {
     appLogger->debug("Sending ping to client {}", clientId);
-    ourSocket.sendPing("ping"); // We should be reference counting here
+    try {
+        ourSocket.sendPing("ping"); // We should be reference counting here
+    } catch (const std::runtime_error &e) {
+        appLogger->warn("Failed to send ping to client {}: {} (likely disconnected)", clientId, e.what());
+    } catch (const std::exception &e) {
+        appLogger->warn("Exception sending ping to client {}: {}", clientId, e.what());
+    } catch (...) {
+        appLogger->warn("Unknown exception sending ping to client {}", clientId);
+    }
 }
 
 void ClientConnection::onPing(const WebSocket &socket, const oatpp::String &message) {
@@ -115,7 +131,15 @@ void ClientConnection::readMessage(const WebSocket &socket, v_uint8 opcode, p_ch
 
                 // Switch back to the real JSON parser to send things
                 std::string messageAsString = apiObjectMapper->writeToString(message);
-                socket.sendOneFrameText(messageAsString);
+                try {
+                    socket.sendOneFrameText(messageAsString);
+                } catch (const std::runtime_error &e) {
+                    appLogger->warn("Failed to send notice to client {}: {} (likely disconnected)", clientId, e.what());
+                } catch (const std::exception &e) {
+                    appLogger->warn("Exception sending notice to client {}: {}", clientId, e.what());
+                } catch (...) {
+                    appLogger->warn("Unknown exception sending notice to client {}", clientId);
+                }
             } catch (...) {
                 appLogger->warn("Unable to send a message to a client that sent us junk?!");
             }
