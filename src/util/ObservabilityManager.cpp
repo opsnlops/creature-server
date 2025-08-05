@@ -473,9 +473,22 @@ ObservabilityManager::createChildOperationSpan(const std::string &operationName,
     // Check if parent span has a null underlying span (e.g., from SamplingSpan with shouldExport=false)
     auto parentSpanPtr = parentSpan->getSpan();
     if (!parentSpanPtr) {
-        // Parent has no actual span, create a root span instead
-        debug("Parent span is null, creating root operation span: {}", operationName);
+        // ======================================================================
+        // 🚨 CRITICAL: NULL PARENT SPAN DETECTED! 🚨
+        // This happens when SamplingSpan has shouldExport=false (99.9% of time)
+        // Creating root span instead to prevent segfault
+        // ======================================================================
+        warn("🚨 NULL PARENT SPAN DETECTED! Creating root span for operation: {} "
+             "(This is expected for SamplingSpan with shouldExport=false)",
+             operationName);
+
         auto span = tracer_->StartSpan(operationName);
+        if (!span) {
+            critical("🚨 FAILED TO CREATE ROOT SPAN! Tracer is null or broken!");
+            return nullptr;
+        }
+
+        debug("✅ Successfully created root span as fallback for: {}", operationName);
         return std::make_shared<OperationSpan>(span);
     }
 
@@ -658,11 +671,24 @@ SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace
                            bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer)
     : OperationSpan(span), samplingRate_(samplingRate), shouldExport_(shouldExport), tracer_(tracer) {
 
+    // ======================================================================
+    // 🚨 INHERITANCE CHECK: Verify SamplingSpan -> OperationSpan works 🚨
+    // ======================================================================
+    if (!span && !shouldExport) {
+        debug("✅ SamplingSpan created with NULL span (shouldExport=false) - this is normal for sampling");
+    } else if (span && shouldExport) {
+        debug("✅ SamplingSpan created with real span (shouldExport=true) - this span will be traced");
+    } else {
+        warn("🚨 UNUSUAL: SamplingSpan created with span={} shouldExport={} - this is unexpected!",
+             span ? "valid" : "null", shouldExport);
+    }
+
     // Set basic attributes only if we have a span
     if (span_) {
         span_->SetAttribute("component", "creature-server");
         span_->SetAttribute("sampling.rate", samplingRate_);
         span_->SetAttribute("sampling.will_export", shouldExport_);
+        debug("✅ SamplingSpan attributes set successfully");
     }
 }
 

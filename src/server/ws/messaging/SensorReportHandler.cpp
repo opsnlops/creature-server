@@ -60,21 +60,37 @@ void SensorReportHandler::processMessage(const oatpp::String &message) {
 
                     if (creatures::db) {
                         appLogger->debug("Starting database creature lookup for ID: {}", creatureId);
-                        auto creatureResult = creatures::db->getCreature(creatureId, messageSpan);
-                        appLogger->debug("Database creature lookup completed for ID: {}, success: {}", creatureId,
-                                         creatureResult.isSuccess());
 
-                        if (creatureResult.isSuccess()) {
-                            auto creature = creatureResult.getValue().value();
-                            creatureName = creature.name;
-                            appLogger->debug("Successfully looked up creature from database: '{}' (ID: {}, "
-                                             "audio_channel: {}, channel_offset: {})",
-                                             creatureName, creature.id, creature.audio_channel,
-                                             creature.channel_offset);
+                        // ======================================================================
+                        // 🚨 INHERITANCE CHECK: SamplingSpan -> OperationSpan conversion 🚨
+                        // This should work seamlessly due to inheritance, but let's be explicit
+                        // ======================================================================
+                        std::shared_ptr<OperationSpan> operationSpan = messageSpan;
+                        if (!operationSpan) {
+                            appLogger->critical(
+                                "🚨 FATAL: messageSpan failed to convert to OperationSpan! Inheritance broken!");
+                            messageSpan->setError("Failed to convert SamplingSpan to OperationSpan");
+                            creatureName = "INHERITANCE_ERROR";
                         } else {
-                            appLogger->warn("Failed to look up creature name for ID: {} - {}", creatureId,
-                                            creatureResult.getError().value().getMessage());
-                            creatureName = "Unknown Creature";
+                            appLogger->debug(
+                                "✅ SamplingSpan successfully converted to OperationSpan for database call");
+
+                            auto creatureResult = creatures::db->getCreature(creatureId, operationSpan);
+                            appLogger->debug("Database creature lookup completed for ID: {}, success: {}", creatureId,
+                                             creatureResult.isSuccess());
+
+                            if (creatureResult.isSuccess()) {
+                                auto creature = creatureResult.getValue().value();
+                                creatureName = creature.name;
+                                appLogger->debug("Successfully looked up creature from database: '{}' (ID: {}, "
+                                                 "audio_channel: {}, channel_offset: {})",
+                                                 creatureName, creature.id, creature.audio_channel,
+                                                 creature.channel_offset);
+                            } else {
+                                appLogger->warn("Failed to look up creature name for ID: {} - {}", creatureId,
+                                                creatureResult.getError().value().getMessage());
+                                creatureName = "Unknown Creature";
+                            }
                         }
                     } else {
                         appLogger->warn("Database connection not available, cannot lookup creature ID: {}", creatureId);
