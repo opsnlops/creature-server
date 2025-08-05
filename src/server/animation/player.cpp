@@ -15,6 +15,7 @@
 #include "server/metrics/counters.h"
 
 #include "server/namespace-stuffs.h"
+#include "util/ObservabilityManager.h"
 #include "util/cache.h"
 #include "util/helpers.h"
 
@@ -25,6 +26,7 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
+extern std::shared_ptr<ObservabilityManager> observability;
 
 /**
  * Schedules an animation on a given creature
@@ -50,13 +52,28 @@ Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::
     for (const auto &track : animation.tracks) {
         creatureId_t creatureId = track.creature_id;
 
-        auto creatureResult = db->getCreature(creatureId, nullptr);
+        // Create a span for this creature validation
+        auto validationSpan = observability->createOperationSpan("scheduleAnimation.validateCreature");
+        if (validationSpan) {
+            validationSpan->setAttribute("creature.id", creatureId);
+            validationSpan->setAttribute("animation.id", animation.id);
+        }
+
+        auto creatureResult = db->getCreature(creatureId, validationSpan);
         if (!creatureResult.isSuccess()) {
             auto error = creatureResult.getError().value();
             std::string errorMessage = fmt::format("Not able to play animation because creatureId {} doesn't exist",
                                                    creatureResult.getError()->getMessage());
             warn(errorMessage);
+            if (validationSpan) {
+                validationSpan->setError(errorMessage);
+            }
             return Result<framenum_t>{ServerError(ServerError::NotFound, errorMessage)};
+        }
+
+        if (validationSpan) {
+            validationSpan->setAttribute("creature.name", creatureResult.getValue().value().name);
+            validationSpan->setSuccess();
         }
         debug("validated that creatureId {} exists! (It's {})", creatureId, creatureResult.getValue().value().name);
     }

@@ -466,8 +466,24 @@ std::shared_ptr<OperationSpan>
 ObservabilityManager::createChildOperationSpan(const std::string &operationName,
                                                std::shared_ptr<OperationSpan> parentSpan) {
 
-    if (!initialized_ || !parentSpan) {
+    if (!initialized_) {
         return nullptr;
+    }
+
+    // If parentSpan is nullptr, create a root span
+    if (!parentSpan) {
+        warn("🚨 NULL PARENT SPAN provided! Creating root span for operation: {} "
+             "(Consider passing a valid parent span for better tracing)",
+             operationName);
+
+        auto span = tracer_->StartSpan(operationName);
+        if (!span) {
+            critical("🚨 FAILED TO CREATE ROOT SPAN! Tracer is null or broken!");
+            return nullptr;
+        }
+
+        trace("✅ Successfully created root span for null parent: {}", operationName);
+        return std::make_shared<OperationSpan>(span);
     }
 
     // Check if parent span has a null underlying span (e.g., from SamplingSpan with shouldExport=false)

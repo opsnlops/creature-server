@@ -101,7 +101,9 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
         span->setAttribute("creature_cache.hit", false);
         appLogger->debug(" 🛜  creature {} was not found in the cache. Going to the DB...", frame.creature_id);
 
-        auto result = db->getCreature(frame.creature_id);
+        // Convert SamplingSpan to OperationSpan for database call
+        std::shared_ptr<OperationSpan> operationSpan = std::static_pointer_cast<OperationSpan>(span);
+        auto result = db->getCreature(frame.creature_id, operationSpan);
         if (!result.isSuccess()) {
             auto errorMessage = fmt::format("Dropping stream frame to {} because it can't be found: {}",
                                             frame.creature_id, result.getError().value().getMessage());

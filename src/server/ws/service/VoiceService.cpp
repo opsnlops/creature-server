@@ -14,6 +14,7 @@
 #include "server/database.h"
 
 #include "server/config/Configuration.h"
+#include "util/ObservabilityManager.h"
 
 #include "VoiceService.h"
 #include "server/ws/dto/ListDto.h"
@@ -23,6 +24,7 @@
 namespace creatures {
 extern std::shared_ptr<creatures::Configuration> config;
 extern std::shared_ptr<Database> db;
+extern std::shared_ptr<ObservabilityManager> observability;
 } // namespace creatures
 
 namespace creatures ::ws {
@@ -122,10 +124,18 @@ VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto
     Status status = Status::CODE_200;
 
     // Go look up the creature we're using in the database
-    auto creatureJsonResult = db->getCreatureJson(soundFileRequest->creature_id);
+    auto creatureLookupSpan = creatures::observability->createOperationSpan("VoiceService.lookupCreature");
+    if (creatureLookupSpan) {
+        creatureLookupSpan->setAttribute("creature.id", std::string(soundFileRequest->creature_id));
+    }
+
+    auto creatureJsonResult = db->getCreatureJson(soundFileRequest->creature_id, creatureLookupSpan);
     if (!creatureJsonResult.isSuccess()) {
         error = true;
         errorMessage = creatureJsonResult.getError()->getMessage();
+        if (creatureLookupSpan) {
+            creatureLookupSpan->setError(std::string(errorMessage));
+        }
         switch (creatureJsonResult.getError()->getCode()) {
         case creatures::ServerError::NotFound:
             status = Status::CODE_404;
@@ -139,6 +149,10 @@ VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto
         }
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
+    if (creatureLookupSpan) {
+        creatureLookupSpan->setSuccess();
+    }
 
     // Fetch the creature's voice config from the JSON
     auto creatureJson = creatureJsonResult.getValue().value();
