@@ -97,7 +97,7 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
     ENDPOINT_INFO(startPlaylist) {
         info->summary = "Start a playlist";
 
-        info->addResponse<Object<PlaylistStatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
@@ -111,7 +111,7 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
     ENDPOINT_INFO(stopPlaylist) {
         info->summary = "Stop a playlist";
 
-        info->addResponse<Object<PlaylistStatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }

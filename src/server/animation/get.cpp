@@ -159,7 +159,7 @@ Result<json> Database::getAnimationJson(animationId_t animationId, std::shared_p
             nlohmann::json json_result = jsonResult.getValue().value();
 
             if (parseSpan) {
-                parseSpan->setAttribute("json.type", json_result.type_name());
+                parseSpan->setAttribute("json.type", std::string(json_result.type_name()));
                 parseSpan->setAttribute("json.size", static_cast<int64_t>(json_result.size()));
                 // Count nested objects/arrays for complexity
                 if (json_result.contains("tracks") && json_result["tracks"].is_array()) {

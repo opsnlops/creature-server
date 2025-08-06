@@ -44,7 +44,6 @@ class StatusLights : public StoppableThread {
     bool streamingLightOn;
 
     bool lastAnimationLightOn;
-    bool lastSoundLightOn;
 };
 
 } // namespace creatures
