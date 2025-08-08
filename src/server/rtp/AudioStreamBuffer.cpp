@@ -116,13 +116,58 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
-    // Calculate frame counts
-    const auto totalSamples = len / sizeof(int16_t);                                   // interleaved samples
-    numberOfFramesPerChannel_ = totalSamples / (RTP_STREAMING_CHANNELS * RTP_SAMPLES); // 20ms frames
+    // Calculate frame counts with overflow protection
+    if (len == 0) {
+        const auto errorMsg = fmt::format("WAV file has zero length: {}", audioFilePath);
+        error(errorMsg);
+        span->setError(errorMsg);
+        return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
+
+    // Check for potential overflow in division
+    if (len > SIZE_MAX / 2) {
+        const auto errorMsg =
+            fmt::format("WAV file too large: {} bytes (maximum supported: {} bytes)", len, SIZE_MAX / 2);
+        error(errorMsg);
+        span->setError(errorMsg);
+        return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
+
+    const auto totalSamples = len / sizeof(int16_t);
+
+    // Validate divisor to prevent division by zero
+    const auto samplesPerFrame = static_cast<uint64_t>(RTP_STREAMING_CHANNELS) * RTP_SAMPLES;
+    if (samplesPerFrame == 0) {
+        const auto errorMsg = "Invalid audio configuration: samplesPerFrame is zero";
+        error(errorMsg);
+        span->setError(errorMsg);
+        return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    // Safe division with range checking
+    if (totalSamples > SIZE_MAX / samplesPerFrame) {
+        const auto errorMsg = fmt::format("WAV file calculation overflow: {} total samples with {} samples per frame",
+                                          totalSamples, samplesPerFrame);
+        error(errorMsg);
+        span->setError(errorMsg);
+        return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
+
+    numberOfFramesPerChannel_ = totalSamples / samplesPerFrame;
 
     if (numberOfFramesPerChannel_ == 0) {
         const auto errorMsg = fmt::format("WAV file too short: {} ({} samples, need at least {} for one frame)",
-                                          audioFilePath, totalSamples, RTP_STREAMING_CHANNELS * RTP_SAMPLES);
+                                          audioFilePath, totalSamples, samplesPerFrame);
+        error(errorMsg);
+        span->setError(errorMsg);
+        return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
+
+    // Additional safety check for maximum supported frames
+    constexpr size_t MAX_FRAMES_PER_CHANNEL = 1000000; // ~5.5 hours at 48kHz/20ms frames
+    if (numberOfFramesPerChannel_ > MAX_FRAMES_PER_CHANNEL) {
+        const auto errorMsg = fmt::format("WAV file too long: {} frames per channel (maximum supported: {})",
+                                          numberOfFramesPerChannel_, MAX_FRAMES_PER_CHANNEL);
         error(errorMsg);
         span->setError(errorMsg);
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
@@ -150,11 +195,37 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
 
             // Process each channel separately
             for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
-                // De-interleave the audio data for this channel
+                // De-interleave the audio data for this channel with bounds checking
                 std::array<int16_t, RTP_SAMPLES> monoChannelData{};
+
                 for (std::size_t sampleIndex = 0; sampleIndex < RTP_SAMPLES; ++sampleIndex) {
-                    monoChannelData[sampleIndex] =
-                        frameBasePointer[sampleIndex * RTP_STREAMING_CHANNELS + channelIndex];
+                    // Calculate the interleaved index with bounds checking
+                    const std::size_t interleavedIndex = sampleIndex * RTP_STREAMING_CHANNELS + channelIndex;
+                    const std::size_t maxSampleOffset =
+                        (numberOfFramesPerChannel_ - frameIndex) * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
+
+                    // Bounds check: ensure we don't read beyond the allocated buffer
+                    if (interleavedIndex >= maxSampleOffset) {
+                        const auto errorMsg =
+                            fmt::format("Buffer overflow prevented: interleavedIndex {} >= maxOffset {} "
+                                        "(frame {}/{}, sample {}/{}, channel {})",
+                                        interleavedIndex, maxSampleOffset, frameIndex, numberOfFramesPerChannel_,
+                                        sampleIndex, RTP_SAMPLES, channelIndex);
+                        error(errorMsg);
+                        span->setError(errorMsg);
+                        return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
+                    }
+
+                    monoChannelData[sampleIndex] = frameBasePointer[interleavedIndex];
+                }
+
+                // Validate channel index before accessing encoders array
+                if (channelIndex >= encoders.size()) {
+                    const auto errorMsg =
+                        fmt::format("Channel index {} exceeds encoder array size {}", channelIndex, encoders.size());
+                    error(errorMsg);
+                    span->setError(errorMsg);
+                    return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
                 }
 
                 // Encode this frame for this channel

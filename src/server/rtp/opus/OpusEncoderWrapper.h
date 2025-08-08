@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <mutex>
 #include <opus/opus.h>
 #include <vector>
 
@@ -22,16 +23,26 @@ class Encoder {
 
     ~Encoder();
 
-    // Encodes one PCM frame (int16) and returns encoded bytes
+    // Copy constructor and assignment operator are deleted to prevent sharing
+    Encoder(const Encoder &) = delete;
+    Encoder &operator=(const Encoder &) = delete;
+
+    // Move constructor and assignment are allowed
+    Encoder(Encoder &&other) noexcept;
+    Encoder &operator=(Encoder &&other) noexcept;
+
+    // Encodes one PCM frame (int16) and returns encoded bytes - thread safe
     std::vector<uint8_t> encode(const int16_t *pcmData);
 
-    // Reset encoder state
+    // Reset encoder state - thread safe
     void reset();
 
-    // Get handle for direct opus_encoder_ctl calls if needed
+    // Get handle for direct opus_encoder_ctl calls if needed - NOT thread safe
+    // Caller must ensure external synchronization when using this
     OpusEncoder *getEncoderHandle() { return opusEncoder_; }
 
   private:
+    mutable std::mutex encoderMutex_; // Protects all encoder operations
     OpusEncoder *opusEncoder_{nullptr};
     const int samplesPerFrame_;
     std::vector<uint8_t> encodingBuffer_;

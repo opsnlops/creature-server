@@ -143,59 +143,119 @@ Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> par
 
     debug("Starting local audio playback for: {}", filePath);
 
-    // Spawn the audio thread
+    // Spawn the audio thread with proper RAII and error handling
     std::thread([filePath = this->filePath, span] {
-        gpioPins->playingSound(true);
+        // RAII wrapper for SDL Mixer resources
+        struct SDLMixerGuard {
+            Mix_Music *music = nullptr;
+            bool audioDeviceOpen = false;
 
-        // open audio device
-        if (Mix_OpenAudioDevice(localAudioDeviceAudioSpec.freq, localAudioDeviceAudioSpec.format,
-                                localAudioDeviceAudioSpec.channels, SOUND_BUFFER_SIZE, audioDevice, 1) < 0) {
-            const std::string errorMsg = fmt::format("Failed to open audio device: {}", Mix_GetError());
+            ~SDLMixerGuard() { cleanup(); }
+
+            void cleanup() {
+                if (music) {
+                    Mix_FreeMusic(music);
+                    music = nullptr;
+                }
+                if (audioDeviceOpen) {
+                    Mix_CloseAudio();
+                    audioDeviceOpen = false;
+                }
+            }
+        };
+
+        SDLMixerGuard guard;
+        bool success = false;
+
+        try {
+            gpioPins->playingSound(true);
+
+            // Open audio device with error checking
+            if (Mix_OpenAudioDevice(localAudioDeviceAudioSpec.freq, localAudioDeviceAudioSpec.format,
+                                    localAudioDeviceAudioSpec.channels, SOUND_BUFFER_SIZE, audioDevice, 1) < 0) {
+                const std::string errorMsg = fmt::format("Failed to open audio device: {}", Mix_GetError());
+                error(errorMsg);
+                if (span)
+                    span->setError(errorMsg);
+                return;
+            }
+            guard.audioDeviceOpen = true;
+
+            // Load music file with validation
+            guard.music = Mix_LoadMUS(filePath.c_str());
+            if (!guard.music) {
+                const std::string errorMsg =
+                    fmt::format("Failed to load music file '{}': {}", filePath, Mix_GetError());
+                error(errorMsg);
+                if (span)
+                    span->setError(errorMsg);
+                return;
+            }
+
+            // Get duration safely
+            double duration = Mix_MusicDuration(guard.music);
+            if (duration > 0.0) {
+                if (span)
+                    span->setAttribute("duration_seconds", duration);
+                debug("Music duration: {:.2f} seconds", duration);
+            } else {
+                warn("Could not determine music duration for: {}", filePath);
+            }
+
+            // Validate duration is reasonable (prevent infinite loops)
+            constexpr double MAX_DURATION_SECONDS = 3600.0; // 1 hour max
+            if (duration > MAX_DURATION_SECONDS) {
+                const std::string errorMsg =
+                    fmt::format("Music file too long: {:.2f}s (max: {:.2f}s)", duration, MAX_DURATION_SECONDS);
+                error(errorMsg);
+                if (span)
+                    span->setError(errorMsg);
+                return;
+            }
+
+            // Start playback
+            if (Mix_PlayMusic(guard.music, 1) == -1) {
+                const std::string errorMsg = fmt::format("Failed to start music playback: {}", Mix_GetError());
+                error(errorMsg);
+                if (span)
+                    span->setError(errorMsg);
+                return;
+            }
+
+            // Wait for playback to finish with timeout protection
+            constexpr int TIMEOUT_MS = static_cast<int>(MAX_DURATION_SECONDS * 1000) + 10000; // Duration + 10s buffer
+            int elapsed = 0;
+
+            while (Mix_PlayingMusic() && elapsed < TIMEOUT_MS) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                elapsed += 100;
+            }
+
+            if (elapsed >= TIMEOUT_MS) {
+                warn("Audio playback timed out after {} seconds, stopping", TIMEOUT_MS / 1000);
+                Mix_HaltMusic();
+            }
+
+            success = true;
+            metrics->incrementSoundsPlayed();
+            if (span)
+                span->setSuccess();
+            debug("Local audio playback completed successfully");
+
+        } catch (const std::exception &e) {
+            const std::string errorMsg = fmt::format("Exception in audio playback thread: {}", e.what());
             error(errorMsg);
             if (span)
                 span->setError(errorMsg);
-            gpioPins->playingSound(false);
-            return;
-        }
-
-        // load music
-        Mix_Music *mus = Mix_LoadMUS(filePath.c_str());
-        if (!mus) {
-            const std::string errorMsg = fmt::format("Failed to load music: {}", Mix_GetError());
+        } catch (...) {
+            const std::string errorMsg = "Unknown exception in audio playback thread";
             error(errorMsg);
             if (span)
                 span->setError(errorMsg);
-            gpioPins->playingSound(false);
-            return;
         }
 
-        if (span)
-            span->setAttribute("duration_seconds", Mix_MusicDuration(mus));
-        debug("Music duration: {:.2f} seconds", Mix_MusicDuration(mus));
-
-        if (Mix_PlayMusic(mus, 1) == -1) {
-            const std::string errorMsg = fmt::format("Failed to play music: {}", Mix_GetError());
-            error(errorMsg);
-            if (span)
-                span->setError(errorMsg);
-            Mix_FreeMusic(mus);
-            gpioPins->playingSound(false);
-            return;
-        }
-
-        // Wait for playback to finish
-        while (Mix_PlayingMusic()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-
-        // Cleanup
-        Mix_FreeMusic(mus);
-        metrics->incrementSoundsPlayed();
-        if (span)
-            span->setSuccess();
+        // Cleanup happens automatically via RAII guard
         gpioPins->playingSound(false);
-
-        debug("Local audio playback completed successfully");
     }).detach();
 
     // Return immediately - the music plays in the background

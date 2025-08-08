@@ -270,9 +270,59 @@ std::string AudioCache::getCacheFilePath(const std::string &sourceFilePath, uint
 }
 
 std::string AudioCache::getCacheDirectoryPath(const std::string &sourceFilePath) const {
-    auto sourcePath = std::filesystem::path(sourceFilePath);
-    auto stem = sourcePath.stem().string(); // filename without extension
-    return (std::filesystem::path(cacheDirectory_) / stem).string();
+    try {
+        // Canonicalize the source path to resolve any .. or . components
+        auto canonicalSourcePath = std::filesystem::canonical(sourceFilePath);
+
+        // Ensure the canonical source path is within the sound directory
+        auto canonicalSoundDir = std::filesystem::canonical(soundDirectory_);
+        auto relativePath = std::filesystem::relative(canonicalSourcePath, canonicalSoundDir);
+
+        // Check if the relative path starts with ".." which would indicate path traversal
+        auto relativePathStr = relativePath.string();
+        if (relativePath.empty() || (relativePathStr.size() >= 2 && relativePathStr.substr(0, 2) == "..")) {
+            error("🚨 PATH TRAVERSAL ATTEMPT: Source file {} is outside sound directory {}", sourceFilePath,
+                  soundDirectory_);
+            throw std::invalid_argument("Source file path outside allowed directory");
+        }
+
+        // Use only the filename (stem) to prevent directory traversal in cache
+        auto filename = canonicalSourcePath.stem().string();
+
+        // Sanitize filename to remove any dangerous characters
+        std::string sanitized;
+        sanitized.reserve(filename.size());
+
+        for (char c : filename) {
+            // Allow alphanumeric, dash, underscore, and dot
+            if (std::isalnum(c) || c == '-' || c == '_' || c == '.') {
+                sanitized += c;
+            } else {
+                sanitized += '_'; // Replace dangerous characters with underscore
+            }
+        }
+
+        // Ensure sanitized name isn't empty and doesn't start with dot
+        if (sanitized.empty() || sanitized[0] == '.') {
+            sanitized = "file_" + std::to_string(std::hash<std::string>{}(filename));
+        }
+
+        // Limit filename length to prevent filesystem issues
+        constexpr size_t MAX_FILENAME_LENGTH = 200;
+        if (sanitized.length() > MAX_FILENAME_LENGTH) {
+            auto hash = std::to_string(std::hash<std::string>{}(sanitized));
+            sanitized = sanitized.substr(0, MAX_FILENAME_LENGTH - hash.length() - 1) + "_" + hash;
+        }
+
+        return (std::filesystem::path(cacheDirectory_) / sanitized).string();
+
+    } catch (const std::filesystem::filesystem_error &e) {
+        error("Filesystem error processing cache path for {}: {}", sourceFilePath, e.what());
+        throw std::invalid_argument("Invalid file path for caching");
+    } catch (const std::exception &e) {
+        error("Error processing cache path for {}: {}", sourceFilePath, e.what());
+        throw;
+    }
 }
 
 Result<AudioCache::SourceFileInfo> AudioCache::getSourceFileInfo(const std::string &filePath) const {
@@ -308,6 +358,22 @@ Result<AudioCache::SourceFileInfo> AudioCache::getSourceFileInfo(const std::stri
 }
 
 Result<std::string> AudioCache::calculateFileChecksum(const std::string &filePath) const {
+    // RAII wrapper for EVP_MD_CTX to ensure cleanup
+    struct EVPContextGuard {
+        EVP_MD_CTX *ctx;
+
+        EVPContextGuard() : ctx(EVP_MD_CTX_new()) {}
+
+        ~EVPContextGuard() {
+            if (ctx) {
+                EVP_MD_CTX_free(ctx);
+            }
+        }
+
+        EVP_MD_CTX *get() const { return ctx; }
+        operator bool() const { return ctx != nullptr; }
+    };
+
     try {
         std::ifstream file(filePath, std::ios::binary);
         if (!file.is_open()) {
@@ -315,41 +381,52 @@ Result<std::string> AudioCache::calculateFileChecksum(const std::string &filePat
                 ServerError(ServerError::Forbidden, fmt::format("Cannot open file for checksum: {}", filePath))};
         }
 
-        EVP_MD_CTX *context = EVP_MD_CTX_new();
+        EVPContextGuard context;
         if (!context) {
             return Result<std::string>{ServerError(ServerError::InternalError, "Failed to create hash context")};
         }
 
-        if (EVP_DigestInit_ex(context, EVP_sha256(), nullptr) != 1) {
-            EVP_MD_CTX_free(context);
+        if (EVP_DigestInit_ex(context.get(), EVP_sha256(), nullptr) != 1) {
             return Result<std::string>{ServerError(ServerError::InternalError, "Failed to initialize hash")};
         }
 
-        char buffer[8192];
-        while (file.read(buffer, sizeof(buffer)) || file.gcount() > 0) {
-            if (EVP_DigestUpdate(context, buffer, file.gcount()) != 1) {
-                EVP_MD_CTX_free(context);
+        constexpr size_t BUFFER_SIZE = 8192;
+        char buffer[BUFFER_SIZE];
+        while (file.read(buffer, BUFFER_SIZE) || file.gcount() > 0) {
+            const auto bytesRead = file.gcount();
+            if (bytesRead <= 0)
+                break;
+
+            if (EVP_DigestUpdate(context.get(), buffer, static_cast<size_t>(bytesRead)) != 1) {
                 return Result<std::string>{ServerError(ServerError::InternalError, "Failed to update hash")};
             }
         }
 
+        // Check for file read errors
+        if (file.bad()) {
+            return Result<std::string>{ServerError(ServerError::InternalError,
+                                                   fmt::format("Error reading file during checksum: {}", filePath))};
+        }
+
         unsigned char hash[EVP_MAX_MD_SIZE];
-        unsigned int hashLen;
-        if (EVP_DigestFinal_ex(context, hash, &hashLen) != 1) {
-            EVP_MD_CTX_free(context);
+        unsigned int hashLen = 0;
+        if (EVP_DigestFinal_ex(context.get(), hash, &hashLen) != 1 || hashLen == 0) {
             return Result<std::string>{ServerError(ServerError::InternalError, "Failed to finalize hash")};
         }
 
-        EVP_MD_CTX_free(context);
-
-        // Convert to hex string
+        // Convert to hex string with bounds checking
         std::ostringstream ss;
         ss << std::hex << std::setfill('0');
-        for (unsigned int i = 0; i < hashLen; ++i) {
+        for (unsigned int i = 0; i < hashLen && i < EVP_MAX_MD_SIZE; ++i) {
             ss << std::setw(2) << static_cast<unsigned>(hash[i]);
         }
 
-        return Result<std::string>{ss.str()};
+        std::string result = ss.str();
+        if (result.empty()) {
+            return Result<std::string>{ServerError(ServerError::InternalError, "Generated empty hash")};
+        }
+
+        return Result<std::string>{result};
 
     } catch (const std::exception &e) {
         return Result<std::string>{ServerError(ServerError::InternalError,
@@ -383,11 +460,32 @@ AudioCache::loadOggOpusWithMetadata(const std::string &oggFilePath) const {
                 ServerError(ServerError::InvalidData, "Failed to read metadata size")};
         }
 
-        std::string metadataJson(metadataSize, '\0');
-        file.read(metadataJson.data(), metadataSize);
-        if (!file.good()) {
+        // Validate metadata size to prevent memory exhaustion
+        constexpr uint32_t MAX_METADATA_SIZE = 64 * 1024; // 64KB should be more than enough
+        if (metadataSize == 0) {
             return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
-                ServerError(ServerError::InvalidData, "Failed to read metadata")};
+                ServerError(ServerError::InvalidData, "Metadata size is zero")};
+        }
+        if (metadataSize > MAX_METADATA_SIZE) {
+            return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                ServerError(ServerError::InvalidData,
+                            fmt::format("Metadata size {} exceeds maximum {} bytes", metadataSize, MAX_METADATA_SIZE))};
+        }
+
+        std::string metadataJson;
+        try {
+            metadataJson.resize(metadataSize);
+        } catch (const std::bad_alloc &e) {
+            return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                ServerError(ServerError::InternalError,
+                            fmt::format("Failed to allocate {} bytes for metadata: {}", metadataSize, e.what()))};
+        }
+
+        file.read(metadataJson.data(), metadataSize);
+        if (!file.good() || static_cast<uint32_t>(file.gcount()) != metadataSize) {
+            return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                ServerError(ServerError::InvalidData, fmt::format("Failed to read metadata: expected {} bytes, got {}",
+                                                                  metadataSize, file.gcount()))};
         }
 
         // Parse metadata from JSON safely
@@ -425,20 +523,88 @@ AudioCache::loadOggOpusWithMetadata(const std::string &oggFilePath) const {
                 ServerError(ServerError::InvalidData, "Failed to read frame count")};
         }
 
-        std::vector<uint32_t> frameSizes(frameCount);
-        file.read(reinterpret_cast<char *>(frameSizes.data()), frameCount * sizeof(uint32_t));
-        if (!file.good()) {
+        // Validate frame count to prevent memory exhaustion attacks
+        constexpr uint32_t MAX_FRAME_COUNT = 2000000; // ~5.5 hours at 48kHz/20ms frames
+        if (frameCount == 0) {
             return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
-                ServerError(ServerError::InvalidData, "Failed to read frame sizes")};
+                ServerError(ServerError::InvalidData, "Frame count is zero")};
+        }
+        if (frameCount > MAX_FRAME_COUNT) {
+            return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                ServerError(ServerError::InvalidData,
+                            fmt::format("Frame count {} exceeds maximum {} frames", frameCount, MAX_FRAME_COUNT))};
         }
 
-        std::vector<std::vector<uint8_t>> frames(frameCount);
-        for (uint32_t i = 0; i < frameCount; ++i) {
-            frames[i].resize(frameSizes[i]);
-            file.read(reinterpret_cast<char *>(frames[i].data()), frameSizes[i]);
-            if (!file.good()) {
+        // Check for potential overflow in allocation size (only if SIZE_MAX allows it)
+        if constexpr (SIZE_MAX / sizeof(uint32_t) / 2 < UINT32_MAX) {
+            constexpr size_t MAX_ALLOCATION_SIZE = SIZE_MAX / sizeof(uint32_t) / 2;
+            if (frameCount > MAX_ALLOCATION_SIZE) {
                 return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
-                    ServerError(ServerError::InvalidData, fmt::format("Failed to read frame {} data", i))};
+                    ServerError(ServerError::InvalidData,
+                                fmt::format("Frame count {} would cause allocation overflow", frameCount))};
+            }
+        }
+
+        std::vector<uint32_t> frameSizes;
+        try {
+            frameSizes.resize(frameCount);
+        } catch (const std::bad_alloc &e) {
+            return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                ServerError(ServerError::InternalError,
+                            fmt::format("Failed to allocate memory for {} frame sizes: {}", frameCount, e.what()))};
+        }
+
+        const size_t bytesToRead = frameCount * sizeof(uint32_t);
+        file.read(reinterpret_cast<char *>(frameSizes.data()), bytesToRead);
+        if (!file.good() || static_cast<size_t>(file.gcount()) != bytesToRead) {
+            return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{ServerError(
+                ServerError::InvalidData,
+                fmt::format("Failed to read frame sizes: expected {} bytes, got {}", bytesToRead, file.gcount()))};
+        }
+
+        std::vector<std::vector<uint8_t>> frames;
+        try {
+            frames.resize(frameCount);
+        } catch (const std::bad_alloc &e) {
+            return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                ServerError(ServerError::InternalError,
+                            fmt::format("Failed to allocate memory for {} frames: {}", frameCount, e.what()))};
+        }
+
+        // Validate and load individual frame data with size limits
+        constexpr uint32_t MAX_FRAME_SIZE = 8192; // 8KB per frame should be more than enough for Opus
+        size_t totalDataSize = 0;
+        constexpr size_t MAX_TOTAL_DATA_SIZE = 512 * 1024 * 1024; // 512MB total data limit
+
+        for (uint32_t i = 0; i < frameCount; ++i) {
+            // Validate individual frame size
+            if (frameSizes[i] > MAX_FRAME_SIZE) {
+                return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                    ServerError(ServerError::InvalidData, fmt::format("Frame {} size {} exceeds maximum {} bytes", i,
+                                                                      frameSizes[i], MAX_FRAME_SIZE))};
+            }
+
+            // Track total data size to prevent memory exhaustion
+            totalDataSize += frameSizes[i];
+            if (totalDataSize > MAX_TOTAL_DATA_SIZE) {
+                return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{ServerError(
+                    ServerError::InvalidData, fmt::format("Total frame data size {} exceeds maximum {} bytes",
+                                                          totalDataSize, MAX_TOTAL_DATA_SIZE))};
+            }
+
+            try {
+                frames[i].resize(frameSizes[i]);
+            } catch (const std::bad_alloc &e) {
+                return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                    ServerError(ServerError::InternalError, fmt::format("Failed to allocate {} bytes for frame {}: {}",
+                                                                        frameSizes[i], i, e.what()))};
+            }
+
+            file.read(reinterpret_cast<char *>(frames[i].data()), frameSizes[i]);
+            if (!file.good() || static_cast<uint32_t>(file.gcount()) != frameSizes[i]) {
+                return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{ServerError(
+                    ServerError::InvalidData, fmt::format("Failed to read frame {} data: expected {} bytes, got {}", i,
+                                                          frameSizes[i], file.gcount()))};
             }
         }
 

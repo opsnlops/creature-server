@@ -26,6 +26,8 @@
 
 #pragma GCC diagnostic pop
 
+#include <chrono>
+#include <mutex>
 #include <random>
 
 #include "server/metrics/counters.h"
@@ -343,10 +345,14 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
     auto allSensorData = sensorDataCache->getAllSensorData();
 
     // Static storage for previous values to implement true gauge behavior
+    // Thread-safe access using static mutex
+    static std::mutex sensorMetricsMutex;
     static std::unordered_map<std::string, double> lastTemperatureValues;
     static std::unordered_map<std::string, double> lastVoltageValues;
     static std::unordered_map<std::string, double> lastCurrentValues;
     static std::unordered_map<std::string, double> lastPowerValues;
+
+    std::lock_guard<std::mutex> lock(sensorMetricsMutex);
 
     for (const auto &[creatureId, sensorData] : allSensorData) {
         // Create attributes map for this creature
@@ -433,7 +439,17 @@ std::shared_ptr<RequestSpan> ObservabilityManager::createRequestSpan(const std::
         return nullptr;
     }
 
+    if (!tracer_) {
+        critical("🚨 TRACER IS NULL! Cannot create request span for operation: {}", operationName);
+        return nullptr;
+    }
+
     auto span = tracer_->StartSpan(operationName);
+    if (!span) {
+        critical("🚨 FAILED TO CREATE REQUEST SPAN! Tracer returned null span for operation: {}", operationName);
+        return nullptr;
+    }
+
     return std::make_shared<RequestSpan>(span, httpMethod, httpUrl);
 }
 
@@ -444,19 +460,39 @@ std::shared_ptr<OperationSpan> ObservabilityManager::createOperationSpan(const s
         return nullptr;
     }
 
+    if (!tracer_) {
+        critical("🚨 TRACER IS NULL! Cannot create operation span for: {}", operationName);
+        return nullptr;
+    }
+
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span;
 
     if (parentSpan) {
-        debug("creating child operation span for parent span with operation "
-              "name: {}",
-              operationName);
-        auto spanContext = parentSpan->getSpan()->GetContext();
-        auto options = opentelemetry::trace::StartSpanOptions{};
-        options.parent = spanContext;
-        span = tracer_->StartSpan(operationName, options);
+        debug("creating child operation span for parent span with operation name: {}", operationName);
+
+        auto parentSpanPtr = parentSpan->getSpan();
+        if (!parentSpanPtr) {
+            warn("Parent span has null underlying span, creating root span instead for: {}", operationName);
+            span = tracer_->StartSpan(operationName);
+        } else {
+            try {
+                auto spanContext = parentSpanPtr->GetContext();
+                auto options = opentelemetry::trace::StartSpanOptions{};
+                options.parent = spanContext;
+                span = tracer_->StartSpan(operationName, options);
+            } catch (const std::exception &e) {
+                critical("🚨 EXCEPTION getting span context: {} - Creating root span instead", e.what());
+                span = tracer_->StartSpan(operationName);
+            }
+        }
     } else {
         debug("creating root operation span: {}", operationName);
         span = tracer_->StartSpan(operationName);
+    }
+
+    if (!span) {
+        critical("🚨 FAILED TO CREATE OPERATION SPAN! Tracer returned null span for: {}", operationName);
+        return nullptr;
     }
 
     return std::make_shared<OperationSpan>(span);
@@ -498,9 +534,14 @@ ObservabilityManager::createChildOperationSpan(const std::string &operationName,
              "(This is expected for SamplingSpan with shouldExport=false)",
              operationName);
 
+        if (!tracer_) {
+            critical("🚨 TRACER IS NULL! Cannot create span for operation: {}", operationName);
+            return nullptr;
+        }
+
         auto span = tracer_->StartSpan(operationName);
         if (!span) {
-            critical("🚨 FAILED TO CREATE ROOT SPAN! Tracer is null or broken!");
+            critical("🚨 FAILED TO CREATE ROOT SPAN! Tracer returned null span for operation: {}", operationName);
             return nullptr;
         }
 
@@ -508,9 +549,27 @@ ObservabilityManager::createChildOperationSpan(const std::string &operationName,
         return std::make_shared<OperationSpan>(span);
     }
 
-    auto spanContext = parentSpanPtr->GetContext();
+    // Safely get span context - parentSpanPtr is now guaranteed to be non-null
+    opentelemetry::trace::SpanContext spanContext(false, false); // Initialize with default invalid context
+    try {
+        spanContext = parentSpanPtr->GetContext();
+    } catch (const std::exception &e) {
+        critical("🚨 EXCEPTION getting span context from parent: {} - Creating root span instead", e.what());
+        if (!tracer_) {
+            return nullptr;
+        }
+        auto span = tracer_->StartSpan(operationName);
+        return span ? std::make_shared<OperationSpan>(span) : nullptr;
+    }
+
     auto options = opentelemetry::trace::StartSpanOptions{};
     options.parent = spanContext;
+
+    if (!tracer_) {
+        critical("🚨 TRACER IS NULL! Cannot create child span for operation: {}", operationName);
+        return nullptr;
+    }
+
     auto span = tracer_->StartSpan(operationName, options);
 
     return std::make_shared<OperationSpan>(span);
@@ -667,14 +726,37 @@ std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std
     }
 
     // Make sampling decision before creating span
-    static thread_local std::random_device rd;
-    static thread_local std::mt19937 gen(rd());
+    // Use safer initialization pattern for thread-local random generation
+    static thread_local bool initialized = false;
+    static thread_local std::mt19937 gen;
     static thread_local std::uniform_real_distribution<double> dis(0.0, 1.0);
+
+    if (!initialized) {
+        try {
+            std::random_device rd;
+            gen.seed(rd());
+            initialized = true;
+        } catch (const std::exception &e) {
+            // Fallback to time-based seeding if random_device fails
+            critical("🚨 Random device initialization failed: {} - Using time-based fallback", e.what());
+            gen.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
+            initialized = true;
+        }
+    }
 
     bool shouldSample = dis(gen) < samplingRate;
 
+    if (!tracer_) {
+        critical("🚨 TRACER IS NULL! Cannot create sampling span for: {}", operationName);
+        return nullptr;
+    }
+
     if (shouldSample) {
         auto span = tracer_->StartSpan(operationName);
+        if (!span) {
+            critical("🚨 FAILED TO CREATE SAMPLING SPAN! Tracer returned null span for: {}", operationName);
+            return nullptr;
+        }
         return std::make_shared<SamplingSpan>(span, samplingRate, true, tracer_);
     } else {
         // Return a SamplingSpan with no actual OpenTelemetry span

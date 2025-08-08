@@ -12,56 +12,53 @@
 #include "Universe.h"
 
 extern "C" {
-    #include <e131.h>
+#include <e131.h>
 }
 
-
-#define E131_FRAME_TIME_MS  20
-#define SOURCE_NAME_LENGTH  63  // The e1.31 spec says that the source name should be 64 bytes (63 + null terminator)
+#define E131_FRAME_TIME_MS 20
+#define SOURCE_NAME_LENGTH 63 // The e1.31 spec says that the source name should be 64 bytes (63 + null terminator)
 
 namespace creatures::e131 {
 
-    class E131Server {
+class E131Server {
 
-    public:
+  public:
+    E131Server() = default;
+    ~E131Server() = default;
 
-        E131Server() = default;
-        ~E131Server() = default;
+    void init(uint16_t _networkDevice, std::string _version);
+    void start();
+    void shutdown();
 
-        void init(uint16_t _networkDevice, std::string _version);
-        void start();
-        void shutdown();
+    // Add a new universe
+    void createUniverse(uint16_t universeNumber);
 
-        // Add a new universe
-        void createUniverse(uint16_t universeNumber);
+    // Remove an existing universe
+    void destroyUniverse(uint16_t universeNumber);
 
-        // Remove an existing universe
-        void destroyUniverse(uint16_t universeNumber);
+    void setValues(uint16_t universeNumber, uint16_t firstSlot, std::vector<uint8_t> &values);
 
-        void setValues(uint16_t universeNumber, uint16_t firstSlot, std::vector<uint8_t> &values);
+  private:
+    std::shared_ptr<spdlog::logger> logger;
 
-    private:
-        std::shared_ptr<spdlog::logger> logger;
+    // All of our universes
+    std::unordered_map<uint16_t, std::shared_ptr<Universe>> galaxy = {};
 
-        // All of our universes
-        std::unordered_map<uint16_t, std::shared_ptr<Universe>> galaxy = {};
+    std::thread worker;
 
-        std::thread worker;
+    void workerTask();
 
-        void workerTask();
+    uuid_t cid;
+    int socket = -1;
 
-        uuid_t cid;
-        int socket;
+    uint16_t networkDevice;
 
-        uint16_t networkDevice;
+    uint64_t frameCounter = 0;
 
-        uint64_t frameCounter = 0;
+    std::string version;
+    uint8_t sourceName[SOURCE_NAME_LENGTH] = {0};
 
-        std::string version;
-        uint8_t sourceName[SOURCE_NAME_LENGTH] = { 0 };
+    std::atomic<bool> stopRequested = false;
+};
 
-        std::atomic<bool> stopRequested = false;
-    };
-
-} // creatures::e131
-
+} // namespace creatures::e131

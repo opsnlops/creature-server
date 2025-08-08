@@ -49,12 +49,55 @@ Encoder::Encoder(int sampleRate, int channels, int samplesPerFrame, int bitrate,
 }
 
 Encoder::~Encoder() {
+    std::lock_guard<std::mutex> lock(encoderMutex_);
     if (opusEncoder_) {
         opus_encoder_destroy(opusEncoder_);
+        opusEncoder_ = nullptr;
     }
 }
 
+Encoder::Encoder(Encoder &&other) noexcept : samplesPerFrame_(other.samplesPerFrame_) {
+    std::lock_guard<std::mutex> lock(other.encoderMutex_);
+    opusEncoder_ = other.opusEncoder_;
+    encodingBuffer_ = std::move(other.encodingBuffer_);
+    other.opusEncoder_ = nullptr;
+}
+
+Encoder &Encoder::operator=(Encoder &&other) noexcept {
+    if (this != &other) {
+        // Lock both mutexes in consistent order to prevent deadlock
+        std::lock(encoderMutex_, other.encoderMutex_);
+        std::lock_guard<std::mutex> lock1(encoderMutex_, std::adopt_lock);
+        std::lock_guard<std::mutex> lock2(other.encoderMutex_, std::adopt_lock);
+
+        // Clean up current encoder
+        if (opusEncoder_) {
+            opus_encoder_destroy(opusEncoder_);
+        }
+
+        // Move from other
+        opusEncoder_ = other.opusEncoder_;
+        encodingBuffer_ = std::move(other.encodingBuffer_);
+        other.opusEncoder_ = nullptr;
+    }
+    return *this;
+}
+
 std::vector<uint8_t> Encoder::encode(const int16_t *pcmData) {
+    std::lock_guard<std::mutex> lock(encoderMutex_);
+
+    if (!opusEncoder_) {
+        const auto errorMessage = "Cannot encode: Opus encoder is null";
+        error(errorMessage);
+        throw std::runtime_error(errorMessage);
+    }
+
+    if (!pcmData) {
+        const auto errorMessage = "Cannot encode: PCM data is null";
+        error(errorMessage);
+        throw std::runtime_error(errorMessage);
+    }
+
     const int encodedBytes = opus_encode(opusEncoder_,
                                          pcmData,          // 20ms mono samples
                                          samplesPerFrame_, // 960 samples for 20ms at 48kHz
@@ -69,8 +112,15 @@ std::vector<uint8_t> Encoder::encode(const int16_t *pcmData) {
 }
 
 void Encoder::reset() {
+    std::lock_guard<std::mutex> lock(encoderMutex_);
     if (opusEncoder_) {
-        opus_encoder_ctl(opusEncoder_, OPUS_RESET_STATE);
-        debug("Opus encoder state reset to initial configuration");
+        const int result = opus_encoder_ctl(opusEncoder_, OPUS_RESET_STATE);
+        if (result != OPUS_OK) {
+            warn("Failed to reset Opus encoder state: {}", errorCodeToString(result));
+        } else {
+            debug("Opus encoder state reset to initial configuration");
+        }
+    } else {
+        warn("Cannot reset: Opus encoder is null");
     }
 }

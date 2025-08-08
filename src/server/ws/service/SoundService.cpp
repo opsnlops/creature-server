@@ -56,7 +56,23 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
                     std::string extension = filepath.extension().string();
                     if (acceptableExtensions.find(extension) != acceptableExtensions.end()) {
                         auto filename = filepath.filename().string(); // Get the filename
-                        auto size = fs::file_size(filepath);          // Get the file size
+
+                        // Get file size with error handling
+                        uintmax_t size = 0;
+                        try {
+                            size = fs::file_size(filepath);
+                        } catch (const fs::filesystem_error &e) {
+                            appLogger->warn("Failed to get file size for {}: {}", filename, e.what());
+                            continue; // Skip this file
+                        }
+
+                        // Validate file size is reasonable (prevent display of huge files)
+                        constexpr uintmax_t MAX_SOUND_FILE_SIZE = 1024 * 1024 * 1024; // 1GB max
+                        if (size > MAX_SOUND_FILE_SIZE) {
+                            appLogger->warn("Skipping oversized sound file: {} ({} bytes)", filename, size);
+                            continue;
+                        }
+
                         std::string transcript;
 
                         // Create a non-const copy of filepath to modify the extension
