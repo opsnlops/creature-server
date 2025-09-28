@@ -1,0 +1,50 @@
+Animation Scheduler Refactor Plan
+=================================
+
+Goal
+----
+Provide a single cooperative playback pipeline for DMX frames and audio that allows instant cancellation and interactive overrides without flooding the event loop queue.
+
+Key Concepts
+------------
+1. PlaybackSession
+   - Holds decoded DMX frame buffers, audio timeline/chunks, universe/playlist metadata, and observability/metrics handles.
+   - Tracks per-track frame indices and next execution times for both DMX and audio.
+   - Exposes `cancel()` and lifetime hooks (onStart/onFinish) so controllers can halt playback and clean up hardware.
+
+2. PlaybackRunnerEvent
+   - Event loop task that represents "current slice" of playback.
+   - On each `executeImpl()` it checks `session->cancelled`; if true, performs teardown (DMX blackout, status light off, stop audio) and returns without rescheduling.
+   - Otherwise, emits the DMX payloads required for this frame, dispatches any audio chunk whose timestamp has arrived, advances cursors, and schedules the next runner event for the smallest upcoming timestamp.
+   - Keeps the queue shallow—only the runner plus the immediate DMX/audio events needed right now.
+
+3. Audio Transport Integration
+   - Replace one-shot `MusicEvent` enqueuing with an `AudioTransport` interface owned by the session.
+   - RTP path reuses existing encoding logic but feeds chunks to the runner instead of pre-scheduling each frame.
+   - Local SDL path uses a small feeder that the runner can pump without blocking the event loop thread.
+
+4. Playlist Coordination
+   - `PlaylistEvent` builds a `PlaybackSession` from the chosen animation (decode base64 frames, precompute audio timeline), stores it in `runningPlaylists`, and schedules the first `PlaybackRunnerEvent`.
+   - When a session finishes naturally, it notifies the playlist controller to enqueue the next `PlaylistEvent`.
+   - Cancelling a session (interactive command, playlist stop) flips the session flag, waits for the runner to finish teardown, clears `runningPlaylists`, and sends an empty playlist status update.
+
+Migration Steps
+---------------
+1. Extract existing bulk scheduling into a `LegacyAnimationScheduler` helper to serve as a reference implementation.
+2. Implement `PlaybackSession`, `AudioTimelineBuilder`, and `AudioTransport` abstractions; provide adapters for current RTP/local audio behavior.
+3. Implement `PlaybackRunnerEvent` using the new session objects and ensure DMX/status light/audio behavior matches existing logging.
+4. Refactor `scheduleAnimation` (and callers) to create sessions and enqueue the runner instead of mass-scheduling events.
+5. Update playlist services to store session handles, manage cancellation, and re-arm playback when sessions complete.
+6. Clean up legacy scheduling paths once tests confirm parity.
+
+Testing Strategy
+----------------
+- Rehabilitate the unit-test target with fakes for the event loop and audio transport so we can compare runner traces against the legacy scheduler.
+- Add regression tests for normal playback, staggered track lengths, audio + DMX timing alignment, and mid-stream cancellation to ensure the new runner produces identical outputs.
+- Consider goldens or deterministic traces for long-term confidence.
+
+Open Questions / TODOs
+----------------------
+- Decide whether DMX blackout happens automatically on cancel or is left to the controller.
+- Determine best way to surface runner completion to callers (promise, callback, condition variable).
+- Evaluate whether to keep a short-term option for bulk scheduling behind a feature flag during rollout.
