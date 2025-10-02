@@ -1,5 +1,5 @@
 
-FROM debian:bookworm AS build
+FROM debian:trixie AS build
 
 RUN apt update && apt upgrade -y
 
@@ -7,7 +7,7 @@ RUN apt install -y \
         cmake \
         dpkg-dev \
         file \
-        gcc \
+        clang-19 \
         git \
         libbson-dev \
         libcurl4-openssl-dev \
@@ -38,6 +38,9 @@ COPY externals/ /build/creature-server/externals
 COPY LICENSE README.md CMakeLists.txt build_oatpp.sh /build/creature-server/
 RUN ls -lart /build/creature-server/
 
+# Clone missing git submodule (base64)
+RUN git clone https://github.com/tobiaslocker/base64.git /build/creature-server/lib/base64
+
 # Install the externals
 RUN cd /build/creature-server/ && ./build_oatpp.sh
 
@@ -55,7 +58,7 @@ RUN cd /build/creature-server/build && ninja
 
 
 # Now build a small runtime
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 
 # Some of our libs need runtime bits
 RUN apt update && apt upgrade -y && \
