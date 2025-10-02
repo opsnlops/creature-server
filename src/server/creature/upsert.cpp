@@ -99,23 +99,7 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
             return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
         }
 
-        if (creature.audio_channel < 0) {
-            std::string errorMessage = "Creature audio_channel is less than 0";
-            validateSpan->setError(errorMessage);
-            validateSpan->setAttribute("error.type", "InvalidData");
-            validateSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-            warn(errorMessage);
-            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
-        }
-
-        if (creature.channel_offset < 0) {
-            std::string errorMessage = "Creature channel_offset is less than 0";
-            validateSpan->setError(errorMessage);
-            validateSpan->setAttribute("error.type", "InvalidData");
-            validateSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-            warn(errorMessage);
-            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
-        }
+        // Note: audio_channel and channel_offset are uint16_t, so they cannot be < 0
 
         if (creature.channel_offset > 511) {
             std::string errorMessage = "Creature channel_offset is greater than 511";

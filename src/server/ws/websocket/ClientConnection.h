@@ -24,9 +24,9 @@ class ClientCafe; // Forward declaration
 class ClientConnection : public oatpp::websocket::WebSocket::Listener {
 
   public:
-    ClientConnection(const oatpp::websocket::WebSocket &socket, v_int64 clientId, std::shared_ptr<ClientCafe> cafe)
-        : clientId(clientId), ourSocket(socket), cafe(cafe) {
-        appLogger->debug("Client {} checking in!", clientId);
+    ClientConnection(const oatpp::websocket::WebSocket &socket, v_int64 clientId_, std::shared_ptr<ClientCafe> cafe_)
+        : clientId(clientId_), ourSocket(socket), cafe(cafe_) {
+        appLogger->debug("Client {} checking in!", clientId_);
     }
     /**
      * Called on "ping" frame.

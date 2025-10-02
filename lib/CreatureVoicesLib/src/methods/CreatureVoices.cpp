@@ -9,17 +9,14 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
-
-#include "model/HttpMethod.h"
-#include "VoiceResult.h"
 #include "CreatureVoices.h"
+#include "VoiceResult.h"
+#include "model/HttpMethod.h"
 
 using json = nlohmann::json;
 
 namespace creatures::voice {
 
+CreatureVoices::CreatureVoices(std::string apiKey_) : apiKey(std::move(apiKey_)) {}
 
-    CreatureVoices::CreatureVoices(std::string apiKey) : apiKey(std::move(apiKey)) {}
-
-
-}
+} // namespace creatures::voice

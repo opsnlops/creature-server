@@ -41,7 +41,7 @@ namespace creatures {
 class Database {
 
   public:
-    explicit Database(const std::string &mongoURI);
+    explicit Database(const std::string &mongoURI_);
 
     // Creature stuff
     Result<creatures::Creature> getCreature(const creatureId_t &creatureId,

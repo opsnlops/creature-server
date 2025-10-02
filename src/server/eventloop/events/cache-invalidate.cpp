@@ -11,8 +11,8 @@ extern std::shared_ptr<creatures::EventLoop> eventLoop;
 
 namespace creatures {
 
-CacheInvalidateEvent::CacheInvalidateEvent(framenum_t frameNumber, CacheType _cacheType)
-    : EventBase(frameNumber), cacheType(_cacheType) {}
+CacheInvalidateEvent::CacheInvalidateEvent(framenum_t frameNumber_, CacheType cacheType_)
+    : EventBase(frameNumber_), cacheType(cacheType_) {}
 
 /**
  * Tells the clients to invalidate a certain cache type

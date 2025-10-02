@@ -56,7 +56,7 @@ class MusicEvent : public EventBase<MusicEvent> {
   public:
     using EventBase::EventBase;
 
-    MusicEvent(framenum_t frameNumber, std::string filePath);
+    MusicEvent(framenum_t frameNumber_, std::string filePath_);
 
     virtual ~MusicEvent() = default;
 
@@ -86,7 +86,7 @@ class PlaylistEvent : public EventBase<PlaylistEvent> {
   public:
     using EventBase::EventBase;
 
-    PlaylistEvent(framenum_t frameNumber, universe_t universe);
+    PlaylistEvent(framenum_t frameNumber_, universe_t universe_);
 
     virtual ~PlaylistEvent() = default;
 
@@ -113,7 +113,7 @@ class StatusLightEvent : public EventBase<StatusLightEvent> {
   public:
     using EventBase::EventBase;
 
-    StatusLightEvent(framenum_t frameNumber, StatusLight light, bool on);
+    StatusLightEvent(framenum_t frameNumber_, StatusLight light_, bool on_);
 
     virtual ~StatusLightEvent() = default;
 
@@ -128,7 +128,7 @@ class CacheInvalidateEvent : public EventBase<CacheInvalidateEvent> {
   public:
     using EventBase::EventBase;
 
-    CacheInvalidateEvent(framenum_t frameNumber, CacheType cacheType);
+    CacheInvalidateEvent(framenum_t frameNumber_, CacheType cacheType_);
 
     virtual ~CacheInvalidateEvent() = default;
 
@@ -143,7 +143,7 @@ class RtpEncoderResetEvent : public EventBase<RtpEncoderResetEvent> {
     using EventBase::EventBase;
 
     // Constructor with silent frame count parameter
-    RtpEncoderResetEvent(framenum_t frameNumber, uint8_t silentFrameCount = 4);
+    RtpEncoderResetEvent(framenum_t frameNumber_, uint8_t silentFrameCount_ = 4);
 
     virtual ~RtpEncoderResetEvent() = default;
 

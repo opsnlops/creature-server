@@ -64,8 +64,8 @@ template <typename Tag> class SimpleLambdaEvent : public EventBase<SimpleLambdaE
 };
 
 // ───── MusicEvent impl ───────────────────────────────────────────────────
-MusicEvent::MusicEvent(const framenum_t frameNumber, std::string filePath)
-    : EventBase(frameNumber), filePath(std::move(filePath)) {}
+MusicEvent::MusicEvent(const framenum_t frameNumber_, std::string filePath_)
+    : EventBase(frameNumber_), filePath(std::move(filePath_)) {}
 
 Result<framenum_t> MusicEvent::executeImpl() {
     // Create an observability span if observability is available
@@ -165,7 +165,6 @@ Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> par
         };
 
         SDLMixerGuard guard;
-        bool success = false;
 
         try {
             gpioPins->playingSound(true);
@@ -236,7 +235,6 @@ Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> par
                 Mix_HaltMusic();
             }
 
-            success = true;
             metrics->incrementSoundsPlayed();
             if (span)
                 span->setSuccess();

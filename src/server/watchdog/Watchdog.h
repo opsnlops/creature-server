@@ -17,7 +17,7 @@ namespace creatures {
 class Watchdog final : public StoppableThread {
 
   public:
-    explicit Watchdog(const std::shared_ptr<Database> &db);
+    explicit Watchdog(const std::shared_ptr<Database> &db_);
 
     ~Watchdog() override { logger->info("Watchdog destroyed"); }
 

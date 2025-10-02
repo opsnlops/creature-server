@@ -20,8 +20,8 @@ extern std::shared_ptr<StatusLights> statusLights;
  * @param light An enum from StatusLight
  * @param on Should the light be on?
  */
-StatusLightEvent::StatusLightEvent(framenum_t frameNumber, StatusLight light, bool on)
-    : EventBase(frameNumber), light(light), on(on) {}
+StatusLightEvent::StatusLightEvent(framenum_t frameNumber_, StatusLight light_, bool on_)
+    : EventBase(frameNumber_), light(light_), on(on_) {}
 
 Result<framenum_t> StatusLightEvent::executeImpl() {
 

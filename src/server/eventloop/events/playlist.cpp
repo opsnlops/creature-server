@@ -29,8 +29,8 @@ extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 
-PlaylistEvent::PlaylistEvent(framenum_t frameNumber, universe_t universe)
-    : EventBase(frameNumber), activeUniverse(universe) {}
+PlaylistEvent::PlaylistEvent(framenum_t frameNumber_, universe_t universe_)
+    : EventBase(frameNumber_), activeUniverse(universe_) {}
 
 Result<framenum_t> PlaylistEvent::executeImpl() {
 

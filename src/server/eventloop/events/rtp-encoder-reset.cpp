@@ -15,8 +15,8 @@ extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 
-RtpEncoderResetEvent::RtpEncoderResetEvent(framenum_t frameNumber, uint8_t silentFrameCount)
-    : EventBase(frameNumber), silentFrameCount_(silentFrameCount) {}
+RtpEncoderResetEvent::RtpEncoderResetEvent(framenum_t frameNumber_, uint8_t silentFrameCount_)
+    : EventBase(frameNumber_), silentFrameCount_(silentFrameCount_) {}
 
 Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
     std::shared_ptr<OperationSpan> span;
