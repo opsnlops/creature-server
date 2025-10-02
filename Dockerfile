@@ -60,22 +60,19 @@ RUN cd /build/creature-server/build && ninja
 # Now build a small runtime
 FROM debian:trixie-slim AS runtime
 
-# Some of our libs need runtime bits
+# Runtime dependencies
+# Note: List only top-level packages; apt pulls in their dependencies automatically
 RUN apt update && apt upgrade -y && \
     apt install -y \
-        flac \
         libcurl4 \
-        libicu72 \
         libprotobuf32 \
         libsasl2-2 \
         libsdl2-mixer-2.0-0 \
         libssl3 \
         libuuid1 \
-        libutf8proc2 \
-        libuv1 \
+        libzstd1 \
         locales-all \
-        pipewire \
-        util-linux && \
+        pipewire && \
     rm -rf /var/lib/apt/lists
 
 RUN mkdir /app
