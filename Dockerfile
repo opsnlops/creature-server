@@ -38,8 +38,10 @@ COPY externals/ /build/creature-server/externals
 COPY LICENSE README.md CMakeLists.txt build_oatpp.sh /build/creature-server/
 RUN ls -lart /build/creature-server/
 
-# Clone missing git submodule (base64)
-RUN git clone https://github.com/tobiaslocker/base64.git /build/creature-server/lib/base64
+# Clone missing git submodule (base64) if not already present
+RUN if [ ! -f /build/creature-server/lib/base64/include/base64.hpp ]; then \
+        git clone https://github.com/tobiaslocker/base64.git /build/creature-server/lib/base64; \
+    fi
 
 # Install the externals
 RUN cd /build/creature-server/ && ./build_oatpp.sh
