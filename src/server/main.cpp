@@ -31,6 +31,7 @@
 // Our stuff
 #include "Version.h"
 #include "model/PlaylistStatus.h"
+#include "server/animation/SessionManager.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
@@ -98,6 +99,9 @@ std::shared_ptr<util::AudioCache> audioCache;
 
 // Sensor data cache for storing current sensor readings from creatures
 std::shared_ptr<SensorDataCache> sensorDataCache;
+
+// Session manager for tracking active playback and handling interrupts
+std::shared_ptr<class SessionManager> sessionManager;
 } // namespace creatures
 
 // Signal handler to stop the event loop
@@ -209,6 +213,10 @@ int main(const int argc, char **argv) {
     // Create the sensor data cache
     creatures::sensorDataCache = std::make_shared<creatures::SensorDataCache>();
     debug("Created the sensor data cache");
+
+    // Create the session manager for interrupt handling
+    creatures::sessionManager = std::make_shared<creatures::SessionManager>();
+    debug("Created the session manager");
 
     // Start up the event loop
     creatures::eventLoop = std::make_shared<EventLoop>();

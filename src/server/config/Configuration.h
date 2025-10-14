@@ -29,6 +29,15 @@ class Configuration {
         RTP    ///< Stream audio via RTP multicast
     };
 
+    /**
+     * @enum AnimationSchedulerType
+     * @brief Denotes which animation scheduler implementation to use
+     */
+    enum class AnimationSchedulerType {
+        Legacy,     ///< Bulk event scheduling (original implementation)
+        Cooperative ///< Cooperative frame-by-frame scheduling (new implementation)
+    };
+
     /** CommandLine class is allowed to modify configuration settings */
     friend class CommandLine;
 
@@ -70,6 +79,9 @@ class Configuration {
     /** @return Sampling rate for event loop tracing (0.0 to 1.0) */
     double getEventLoopTraceSampling() const;
 
+    /** @return Animation scheduler type to use */
+    AnimationSchedulerType getAnimationSchedulerType() const;
+
   protected:
     // Setters used by CommandLine to configure values from command line arguments
 
@@ -108,6 +120,9 @@ class Configuration {
 
     /** @param _fragmentPackets Whether to enable RTP packet fragmentation */
     void setRtpFragmentPackets(bool _fragmentPackets);
+
+    /** @param _schedulerType Animation scheduler type to use */
+    void setAnimationSchedulerType(AnimationSchedulerType _schedulerType);
 
   private:
     // Hardware configuration
@@ -157,6 +172,11 @@ class Configuration {
 
     /** Sampling rate for event loop tracing (0.0 to 1.0) */
     double eventLoopTraceSampling = DEFAULT_EVENT_LOOP_TRACE_SAMPLING;
+
+    // Animation scheduler configuration
+
+    /** Animation scheduler type */
+    AnimationSchedulerType animationSchedulerType = AnimationSchedulerType::Legacy; ///< Default to legacy for safety
 };
 
 } // namespace creatures

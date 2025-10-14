@@ -76,4 +76,14 @@ void Configuration::setEventLoopTraceSampling(const double _eventLoopTraceSampli
     this->eventLoopTraceSampling = _eventLoopTraceSampling;
 }
 
+// Animation Scheduler Configuration
+
+Configuration::AnimationSchedulerType Configuration::getAnimationSchedulerType() const {
+    return this->animationSchedulerType;
+}
+
+void Configuration::setAnimationSchedulerType(const Configuration::AnimationSchedulerType _schedulerType) {
+    this->animationSchedulerType = _schedulerType;
+}
+
 } // namespace creatures

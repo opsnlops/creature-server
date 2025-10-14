@@ -23,6 +23,12 @@ class PlayAnimationRequestDto : public oatpp::DTO {
         info->required = true;
     }
     DTO_FIELD(UInt32, universe);
+
+    DTO_FIELD_INFO(resumePlaylist) {
+        info->description = "Whether to resume the playlist after the interrupt animation completes";
+        info->required = false;
+    }
+    DTO_FIELD(Boolean, resumePlaylist) = false;
 };
 } // namespace creatures::ws
 #include OATPP_CODEGEN_END(DTO)

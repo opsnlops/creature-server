@@ -7,7 +7,9 @@
 #include <oatpp/web/server/api/ApiController.hpp>
 
 #include "model/AnimationMetadata.h"
+#include "server/animation/SessionManager.h"
 #include "server/config.h"
+#include "server/config/Configuration.h"
 #include "server/database.h"
 #include "server/metrics/counters.h"
 #include "server/ws/dto/PlayAnimationRequestDto.h"
@@ -17,7 +19,9 @@
 
 namespace creatures {
 extern std::shared_ptr<ObservabilityManager> observability;
-}
+extern std::shared_ptr<SessionManager> sessionManager;
+extern std::shared_ptr<Configuration> config;
+} // namespace creatures
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
 
@@ -223,6 +227,109 @@ class AnimationController : public oatpp::web::server::api::ApiController {
             }
 
             error("Exception in playStoredAnimation: {}", ex.what());
+            throw;
+        }
+    }
+
+    ENDPOINT_INFO(interruptAnimation) {
+        info->summary = "Interrupt current playback with a new animation (for interactive Zoom meetings!)";
+        info->description =
+            "Requires cooperative scheduler (--scheduler cooperative). Returns 400 if legacy scheduler is active.";
+        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/animation/interrupt", interruptAnimation,
+             BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody),
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation/interrupt", "POST",
+                                                                "api/v1/animation/interrupt");
+        addHttpRequestAttributes(span, request);
+
+        creatures::metrics->incrementRestRequestsProcessed();
+
+        // Check if cooperative scheduler is enabled
+        if (creatures::config->getAnimationSchedulerType() !=
+            creatures::Configuration::AnimationSchedulerType::Cooperative) {
+            auto result = creatures::ws::StatusDto::createShared();
+            result->status = "error";
+            result->code = 400;
+            result->message =
+                "Animation interrupts require the cooperative scheduler. Start server with --scheduler cooperative";
+
+            if (span) {
+                span->setAttribute("error.type", "scheduler_not_supported");
+                span->setAttribute("error.message", std::string(result->message));
+                span->setAttribute("scheduler_type", "legacy");
+                span->setHttpStatus(400);
+            }
+
+            error("Interrupt API called with legacy scheduler enabled");
+            return createDtoResponse(Status::CODE_400, result);
+        }
+
+        try {
+            if (span) {
+                span->setAttribute("endpoint", "interruptAnimation");
+                span->setAttribute("controller", "AnimationController");
+                span->setAttribute("animation.id", std::string(requestBody->animation_id));
+                span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
+                span->setAttribute("resume_playlist", static_cast<bool>(requestBody->resumePlaylist));
+            }
+
+            bool shouldResume = requestBody->resumePlaylist ? true : false;
+            info("REST API: interrupting universe {} with animation {} (resume: {})", requestBody->universe,
+                 std::string(requestBody->animation_id), shouldResume);
+
+            // Get the animation from the database
+            auto animationDto = m_animationService.getAnimation(requestBody->animation_id, span);
+
+            // Convert from oatpp DTO to internal model
+            std::shared_ptr<AnimationDto> animationDtoPtr(animationDto.get(),
+                                                          [](AnimationDto *) {}); // Non-owning shared_ptr
+            auto animation = convertFromDto(animationDtoPtr);
+
+            // Use SessionManager to interrupt
+            auto sessionResult = creatures::sessionManager->interrupt(requestBody->universe, animation, shouldResume);
+
+            if (!sessionResult.isSuccess()) {
+                auto errorMsg = sessionResult.getError()->getMessage();
+                error("Failed to interrupt animation: {}", errorMsg);
+
+                if (span) {
+                    span->setAttribute("error.message", errorMsg);
+                    span->setHttpStatus(500);
+                }
+
+                auto result = creatures::ws::StatusDto::createShared();
+                result->status = "error";
+                result->code = 500;
+                result->message = errorMsg.c_str();
+
+                return createDtoResponse(Status::CODE_500, result);
+            }
+
+            // Success!
+            if (span) {
+                span->setAttribute("result.success", true);
+                span->setHttpStatus(200);
+            }
+
+            auto result = creatures::ws::StatusDto::createShared();
+            result->status = "success";
+            result->code = 200;
+            result->message = "Animation interrupt scheduled successfully";
+
+            return createDtoResponse(Status::CODE_200, result);
+
+        } catch (const std::exception &ex) {
+            if (span) {
+                span->recordException(ex);
+                span->setHttpStatus(500);
+            }
+
+            error("Exception in interruptAnimation: {}", ex.what());
             throw;
         }
     }

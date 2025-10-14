@@ -19,6 +19,9 @@
 
 namespace creatures {
 
+// Forward declaration for PlaybackSession
+class PlaybackSession;
+
 class TickEvent : public EventBase<TickEvent> {
   public:
     using EventBase::EventBase;
@@ -151,6 +154,76 @@ class RtpEncoderResetEvent : public EventBase<RtpEncoderResetEvent> {
 
   private:
     uint8_t silentFrameCount_{4}; // Default to 4 silent frames (80ms of priming)
+};
+
+/**
+ * PlaybackRunnerEvent - Cooperative playback event that executes one "slice" of animation
+ *
+ * This event replaces the legacy bulk-scheduling approach where thousands of DMXEvent
+ * and audio events were scheduled upfront. Instead, the PlaybackRunnerEvent:
+ *
+ * 1. Checks if the session has been cancelled
+ * 2. If cancelled: performs teardown (DMX blackout, status light off) and exits
+ * 3. If not cancelled:
+ *    - Emits DMX payloads for the current frame
+ *    - Dispatches audio chunks whose timestamp has arrived
+ *    - Advances playback cursors
+ *    - Schedules the next runner event for the smallest upcoming timestamp
+ *
+ * This keeps the event queue shallow - only the runner plus immediate DMX/audio events.
+ * Allows instant cancellation by simply setting the session's cancelled flag.
+ */
+class PlaybackRunnerEvent : public EventBase<PlaybackRunnerEvent> {
+  public:
+    /**
+     * Create a new playback runner event
+     *
+     * @param frameNumber Frame when this runner should execute
+     * @param session The playback session to manage
+     */
+    PlaybackRunnerEvent(framenum_t frameNumber, std::shared_ptr<PlaybackSession> session);
+
+    virtual ~PlaybackRunnerEvent() = default;
+
+    /**
+     * Execute one slice of the animation playback
+     *
+     * Checks cancellation, emits current frame's DMX/audio, schedules next runner.
+     *
+     * @return Last frame number processed, or error
+     */
+    Result<framenum_t> executeImpl();
+
+  private:
+    std::shared_ptr<PlaybackSession> session_;
+
+    /**
+     * Perform cleanup when playback ends (cancellation or natural completion)
+     *
+     * Sends DMX blackout, turns off status light, stops audio
+     */
+    void performTeardown();
+
+    /**
+     * Emit DMX frames for all tracks at the current frame
+     *
+     * @return Success or error
+     */
+    Result<framenum_t> emitDmxFrames();
+
+    /**
+     * Check if all animation tracks have finished
+     *
+     * @return true if all tracks complete
+     */
+    [[nodiscard]] bool areAllTracksFinished() const;
+
+    /**
+     * Calculate the next frame number when runner should execute
+     *
+     * @return Next frame number
+     */
+    [[nodiscard]] framenum_t calculateNextFrameNumber() const;
 };
 
 } // namespace creatures

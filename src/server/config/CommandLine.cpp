@@ -116,6 +116,11 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     audioMode.add_argument("--rtp-audio").help("use RTP audio streaming").default_value(false).implicit_value(true);
 
+    program.add_argument("--scheduler")
+        .help("animation scheduler to use: 'legacy' (default, safer) or 'cooperative' (experimental)")
+        .default_value(std::string("legacy"))
+        .nargs(1);
+
     program.add_description("Creature Server for April's Creature Workshop\n\n"
                             "This application is the heart of my creature magic. It contains a websocket-based\n"
                             "server as well as the event loop that schedules events to happen in real time.");
@@ -162,6 +167,20 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     auto rtpFragment = program.get<bool>("--rtp-fragment");
     config->setRtpFragmentPackets(rtpFragment);
     debug("RTP packet fragmentation: {}", rtpFragment ? "enabled" : "disabled");
+
+    // What scheduler are we using?
+    auto schedulerStr = program.get<std::string>("--scheduler");
+    if (schedulerStr == "cooperative") {
+        config->setAnimationSchedulerType(Configuration::AnimationSchedulerType::Cooperative);
+        debug("using cooperative animation scheduler (experimental)");
+    } else if (schedulerStr == "legacy") {
+        config->setAnimationSchedulerType(Configuration::AnimationSchedulerType::Legacy);
+        debug("using legacy animation scheduler (safe default)");
+    } else {
+        std::cerr << "Error: Invalid scheduler type '" << schedulerStr << "'. Must be 'legacy' or 'cooperative'."
+                  << std::endl;
+        std::exit(1);
+    }
 
     // Set the GPIO usage
     auto useGPIO = program.get<bool>("-g");
