@@ -3,6 +3,7 @@
 #include <string>
 
 #include "model/Playlist.h"
+#include "server/animation/SessionManager.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
@@ -20,6 +21,7 @@ extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
+extern std::shared_ptr<SessionManager> sessionManager;
 } // namespace creatures
 
 namespace creatures ::ws {
@@ -333,6 +335,13 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
 
     // Now let's go start it
 
+    // Cancel any existing playback on this universe first
+    auto existingSession = creatures::sessionManager->getCurrentSession(universe);
+    if (existingSession && !existingSession->isCancelled()) {
+        appLogger->info("Cancelling existing session on universe {} before starting playlist", universe);
+        existingSession->cancel();
+    }
+
     // Set the playlist in the cache
     if (!runningPlaylists) {
         errorMessage = "Running playlists cache is not initialized";
@@ -354,6 +363,9 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
     playlistStatus.playing = true;
     playlistStatus.current_animation = ""; // Will get filled in on the next frame
     runningPlaylists->put(universe, playlistStatus);
+
+    // Register playlist with SessionManager so getPlaylistState() works
+    creatures::sessionManager->startPlaylist(universe, std::string(playlistId));
 
     if (!eventLoop) {
         errorMessage = "EventLoop is not initialized";
@@ -400,6 +412,9 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
 oatpp::Object<creatures::ws::StatusDto> PlaylistService::stopPlaylist(universe_t universe) {
 
     info("stopping playlist on universe {}", universe);
+
+    // Cancel any current session and mark playlist as stopped in SessionManager
+    creatures::sessionManager->stopPlaylist(universe);
 
     // Remove the playlist from the cache
     runningPlaylists->remove(universe);

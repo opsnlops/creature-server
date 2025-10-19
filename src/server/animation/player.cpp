@@ -7,6 +7,7 @@
 
 #include "CooperativeAnimationScheduler.h"
 #include "LegacyAnimationScheduler.h"
+#include "SessionManager.h"
 #include "exception/exception.h"
 #include "model/Animation.h"
 #include "server/config/Configuration.h"
@@ -27,6 +28,7 @@ extern std::shared_ptr<Configuration> config;
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 extern std::shared_ptr<EventLoop> eventLoop;
+extern std::shared_ptr<SessionManager> sessionManager;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 
@@ -59,10 +61,20 @@ Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::
             return Result<framenum_t>{sessionResult.getError().value()};
         }
 
-        // For now, return the starting frame as the "last frame"
-        // The cooperative scheduler doesn't pre-calculate the end frame
-        // This maintains API compatibility while enabling new features
-        return Result<framenum_t>{startingFrame};
+        // Get the session and register it with SessionManager so it can be cancelled later
+        auto session = sessionResult.getValue().value();
+        sessionManager->registerSession(universe, session, false); // false = not a playlist
+
+        // Calculate the last frame of the animation
+        // Each animation frame takes (milliseconds_per_frame / EVENT_LOOP_PERIOD_MS) event loop frames
+        framenum_t framesPerAnimFrame = animation.metadata.milliseconds_per_frame / EVENT_LOOP_PERIOD_MS;
+        framenum_t lastFrame = startingFrame + framesPerAnimFrame * (animation.metadata.number_of_frames - 1);
+
+        debug("Cooperative scheduler: animation '{}' will run from frame {} to {} ({} animation frames at {}ms each)",
+              animation.metadata.title, startingFrame, lastFrame, animation.metadata.number_of_frames,
+              animation.metadata.milliseconds_per_frame);
+
+        return Result<framenum_t>{lastFrame};
 
     } else {
         // Use the legacy bulk scheduler

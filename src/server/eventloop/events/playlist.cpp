@@ -7,6 +7,7 @@
 #include "spdlog/spdlog.h"
 
 #include "model/PlaylistStatus.h"
+#include "server/animation/SessionManager.h"
 #include "server/animation/player.h"
 #include "server/database.h"
 #include "server/eventloop/event.h"
@@ -28,6 +29,7 @@ extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
+extern std::shared_ptr<SessionManager> sessionManager;
 
 PlaylistEvent::PlaylistEvent(framenum_t frameNumber_, universe_t universe_)
     : EventBase(frameNumber_), activeUniverse(universe_) {}
@@ -40,15 +42,46 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
     debug("hello from a playlist event for universe {}", activeUniverse);
     metrics->incrementPlaylistsEventsProcessed();
 
-    // Is there a playlist for this universe?
-    if (!runningPlaylists->contains(activeUniverse)) {
+    // Single source of truth: Check playlist state via SessionManager
+    auto playlistState = sessionManager->getPlaylistState(activeUniverse);
+    span->setAttribute("playlist_state", static_cast<int>(playlistState));
+
+    switch (playlistState) {
+    case PlaylistState::None:
+    case PlaylistState::Stopped: {
+        // Playlist was stopped (either never existed or explicitly stopped via regular play)
         std::string errorMessage =
-            fmt::format("No active playlist for universe {}. Assuming we've been stopped.", activeUniverse);
+            fmt::format("Playlist on universe {} is stopped or doesn't exist. Cleaning up.", activeUniverse);
         info(errorMessage);
         runningPlaylists->remove(activeUniverse);
         sendEmptyPlaylistUpdate(activeUniverse);
-        span->setError(errorMessage);
-        return Result<framenum_t>{ServerError(ServerError::InvalidData, errorMessage)};
+        span->setAttribute("reason", "stopped_or_none");
+        span->setSuccess(); // Not an error, just cleanup
+        return Result<framenum_t>{this->frameNumber};
+    }
+
+    case PlaylistState::Interrupted: {
+        // Playlist is temporarily interrupted (will resume after interrupt animation finishes)
+        info("Playlist on universe {} is interrupted, skipping scheduled event", activeUniverse);
+        span->setAttribute("reason", "interrupted");
+        span->setSuccess();
+        return Result<framenum_t>{this->frameNumber};
+    }
+
+    case PlaylistState::Active:
+        // Playlist is active, continue with normal scheduling logic below
+        debug("Playlist on universe {} is active, continuing", activeUniverse);
+        break;
+    }
+
+    // Additional check: Don't schedule if there's ANY animation currently playing
+    // This prevents old queued PlaylistEvents from scheduling concurrent animations
+    if (sessionManager->isPlaying(activeUniverse)) {
+        info("Playlist on universe {} has active session, skipping this scheduled event (likely old queued event)",
+             activeUniverse);
+        span->setAttribute("reason", "active_session_present");
+        span->setSuccess();
+        return Result<framenum_t>{this->frameNumber};
     }
 
     // Go fetch the active playlist

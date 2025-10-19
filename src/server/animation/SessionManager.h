@@ -14,6 +14,16 @@
 namespace creatures {
 
 /**
+ * Represents the current state of a playlist on a universe
+ */
+enum class PlaylistState {
+    None,        // No playlist registered on this universe
+    Active,      // Playlist is currently playing normally
+    Interrupted, // Playlist is temporarily paused (will resume after interrupt)
+    Stopped      // Playlist was explicitly stopped (will not resume)
+};
+
+/**
  * SessionManager - Manages active playback sessions and handles interrupts
  *
  * This class provides a central registry for tracking active animation playback,
@@ -103,11 +113,51 @@ class SessionManager {
      */
     bool hasInterruptedPlaylist(universe_t universe) const;
 
+    /**
+     * Get the current playlist state for a universe
+     *
+     * This is the single source of truth for whether a playlist should continue.
+     * Use this instead of checking multiple conditions.
+     *
+     * @param universe The universe to check
+     * @return The playlist state (None, Active, Interrupted, or Stopped)
+     */
+    PlaylistState getPlaylistState(universe_t universe) const;
+
+    /**
+     * Mark a playlist as stopped (will not resume)
+     *
+     * @param universe The universe to stop
+     */
+    void stopPlaylist(universe_t universe);
+
+    /**
+     * Register that a playlist has started on a universe
+     *
+     * This is called by PlaylistService when a playlist begins.
+     * It creates the SessionManager state so getPlaylistState() works correctly.
+     *
+     * @param universe The universe the playlist is on
+     * @param playlistId The ID of the playlist
+     */
+    void startPlaylist(universe_t universe, const std::string &playlistId);
+
+    /**
+     * Clear the current session pointer (called when session finishes)
+     *
+     * This prevents registerSession() from trying to cancel stale sessions.
+     * Preserves playlist state (isPlaylist, isInterrupted, etc.)
+     *
+     * @param universe The universe to clear
+     */
+    void clearCurrentSession(universe_t universe);
+
   private:
     struct UniverseState {
         std::shared_ptr<PlaybackSession> currentSession;
         bool isPlaylist{false};
         bool isInterrupted{false};
+        bool isStopped{false}; // Explicitly stopped, will not resume
         bool shouldResumePlaylist{false};
 
         // Playlist state for resumption

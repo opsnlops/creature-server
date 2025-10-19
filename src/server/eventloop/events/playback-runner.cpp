@@ -162,11 +162,24 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
         }
 
         // Get the creature for this track
-        auto creature = creatureCache->get(trackState.creatureId);
-        if (!creature) {
-            std::string errorMsg = fmt::format("Creature {} not found in cache during playback", trackState.creatureId);
-            error(errorMsg);
-            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+        std::shared_ptr<Creature> creature;
+
+        // First check if it's in the cache
+        if (creatureCache->contains(trackState.creatureId)) {
+            creature = creatureCache->get(trackState.creatureId);
+        } else {
+            // Not in cache - fetch from database and cache it
+            debug("Creature {} not in cache, fetching from database", trackState.creatureId);
+            auto creatureResult = db->getCreature(trackState.creatureId, nullptr);
+            if (!creatureResult.isSuccess()) {
+                std::string errorMsg =
+                    fmt::format("Creature {} not found in database during playback", trackState.creatureId);
+                error(errorMsg);
+                return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+            }
+            creature = std::make_shared<Creature>(creatureResult.getValue().value());
+            creatureCache->put(trackState.creatureId, creature);
+            debug("Cached creature {} for playback", trackState.creatureId);
         }
 
         // Create DMX event for this frame

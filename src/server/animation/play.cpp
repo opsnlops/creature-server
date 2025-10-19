@@ -3,20 +3,28 @@
 
 #include "spdlog/spdlog.h"
 
+#include "model/PlaylistStatus.h"
+#include "server/animation/SessionManager.h"
 #include "server/animation/player.h"
+#include "server/config/Configuration.h"
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/metrics/counters.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
+#include "util/cache.h"
+#include "util/websocketUtils.h"
 
 #include "server/namespace-stuffs.h"
 
 namespace creatures {
 
+extern std::shared_ptr<Configuration> config;
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<EventLoop> eventLoop;
+extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
+extern std::shared_ptr<SessionManager> sessionManager;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 
@@ -57,6 +65,44 @@ Result<std::string> Database::playStoredAnimation(animationId_t animationId, uni
 
     auto animation = animationResult.getValue().value();
     info("Playing animation {} on universe {}", animation.metadata.title, universe);
+
+    // If using cooperative scheduler, cancel any existing playback on this universe first
+    // This prevents concurrent animations from running and conflicting with each other
+    if (config->getAnimationSchedulerType() == Configuration::AnimationSchedulerType::Cooperative) {
+        auto existingSession = sessionManager->getCurrentSession(universe);
+        if (existingSession && !existingSession->isCancelled()) {
+            info("Cooperative scheduler: cancelling existing playback on universe {} before starting new animation",
+                 universe);
+            existingSession->cancel();
+            if (playSpan) {
+                playSpan->setAttribute("cancelled_existing_session", true);
+            }
+        }
+
+        // Stop any running playlist on this universe using the single source of truth
+        // This marks the playlist as stopped in SessionManager, making future PlaylistEvents exit cleanly
+        auto playlistState = sessionManager->getPlaylistState(universe);
+        if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
+            info("Stopping playlist on universe {} to play single animation", universe);
+            sessionManager->stopPlaylist(universe);
+            runningPlaylists->remove(universe);
+
+            // Notify clients that playlist has stopped
+            PlaylistStatus emptyStatus{};
+            emptyStatus.universe = universe;
+            emptyStatus.playlist = "";
+            emptyStatus.playing = false;
+            emptyStatus.current_animation = "";
+            auto broadcastResult = broadcastPlaylistStatusToAllClients(emptyStatus);
+            if (!broadcastResult.isSuccess()) {
+                warn("Failed to broadcast playlist stop: {}", broadcastResult.getError()->getMessage());
+            }
+
+            if (playSpan) {
+                playSpan->setAttribute("stopped_playlist", true);
+            }
+        }
+    }
 
     auto playResult = scheduleAnimation(startingFrame, animation, universe);
     if (!playResult.isSuccess()) {

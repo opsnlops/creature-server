@@ -10,6 +10,8 @@
 #include "spdlog/spdlog.h"
 
 #include "PlaybackSession.h"
+#include "SessionManager.h"
+#include "model/PlaylistStatus.h"
 #include "server/audio/AudioTransport.h"
 #include "server/audio/LocalSdlAudioTransport.h"
 #include "server/audio/RtpAudioTransport.h"
@@ -22,6 +24,7 @@
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/rtp/MultiOpusRtpServer.h"
 #include "util/ObservabilityManager.h"
+#include "util/cache.h"
 
 namespace creatures {
 
@@ -30,7 +33,9 @@ extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<GPIO> gpioPins;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
+extern std::shared_ptr<SessionManager> sessionManager;
 
 Result<std::shared_ptr<PlaybackSession>> CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame,
                                                                                           const Animation &animation,
@@ -165,13 +170,48 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
         }
     });
 
-    // OnFinish callback: turn off status light
-    session->setOnFinishCallback([universe]() {
+    // OnFinish callback: turn off status light and resume interrupted playlists
+    session->setOnFinishCallback([universe, weakSession]() {
         debug("PlaybackSession finishing for universe {}", universe);
 
+        // Check if this session was cancelled vs finished naturally
+        bool wasCancelled = false;
+        if (auto session = weakSession.lock()) {
+            wasCancelled = session->isCancelled();
+        }
+
+        if (wasCancelled) {
+            // This animation was cancelled (interrupted), don't resume playlists
+            // The interrupt animation that replaced this one will handle resume when IT finishes
+            debug("PlaybackSession was cancelled, skipping resume logic");
+            sessionManager->clearCurrentSession(universe);
+            return;
+        }
+
+        // Animation finished naturally (not cancelled)
         auto statusLightOff =
             std::make_shared<StatusLightEvent>(eventLoop->getNextFrameNumber(), StatusLight::Animation, false);
         eventLoop->scheduleEvent(statusLightOff);
+
+        // Clear the session pointer so registerSession() doesn't try to cancel stale sessions
+        sessionManager->clearCurrentSession(universe);
+
+        // Check if there's an interrupted playlist that should resume
+        if (sessionManager->hasInterruptedPlaylist(universe)) {
+            info("Animation finished on universe {} - resuming interrupted playlist", universe);
+
+            // Clear the interrupted state
+            sessionManager->resumePlaylist(universe);
+
+            // Schedule a new PlaylistEvent to continue the playlist
+            if (runningPlaylists->contains(universe)) {
+                auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
+                eventLoop->scheduleEvent(nextPlaylistEvent);
+                info("Scheduled PlaylistEvent to resume playlist on universe {}", universe);
+            } else {
+                warn("Interrupted playlist state inconsistent - playlist no longer in cache for universe {}", universe);
+            }
+        }
     });
 }
 
