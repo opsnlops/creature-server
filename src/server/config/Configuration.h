@@ -76,6 +76,9 @@ class Configuration {
     /** @return API key for Honeycomb observability service */
     std::string getHoneycombApiKey() const;
 
+    /** @return Path to the Rhubarb Lip Sync binary */
+    std::string getRhubarbBinaryPath() const;
+
     /** @return Sampling rate for event loop tracing (0.0 to 1.0) */
     double getEventLoopTraceSampling() const;
 
@@ -111,6 +114,9 @@ class Configuration {
 
     /** @param _honeycombApiKey API key for Honeycomb observability service */
     void setHoneycombApiKey(std::string _honeycombApiKey);
+
+    /** @param _rhubarbBinaryPath Path to the Rhubarb Lip Sync binary */
+    void setRhubarbBinaryPath(std::string _rhubarbBinaryPath);
 
     /** @param _eventLoopTraceSampling Sampling rate for event loop tracing (0.0 to 1.0) */
     void setEventLoopTraceSampling(double _eventLoopTraceSampling);
@@ -167,6 +173,11 @@ class Configuration {
 
     /** API key for Honeycomb observability service */
     std::string honeycombApiKey = DEFAULT_HONEYCOMB_API_KEY;
+
+    // External tools configuration
+
+    /** Path to the Rhubarb Lip Sync binary */
+    std::string rhubarbBinaryPath = DEFAULT_RHUBARB_BINARY_PATH;
 
     // Observability configuration
 

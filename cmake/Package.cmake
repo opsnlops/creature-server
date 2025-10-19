@@ -37,7 +37,7 @@ set(CPACK_DEBIAN_PACKAGE_CONFLICTS "libmongoclient0, libmongoc-dev, libmongoc-1.
 # Only list runtime-only dependencies here (not direct library links).
 # - pipewire: Audio server (runtime, not a library dependency)
 # - locales-all: For proper locale support
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "pipewire, locales-all")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "pipewire, locales-all, rhubarb-lip-sync")
 
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/externals/build/oatpp-swagger-prefix/src/oatpp-swagger/res/
         DESTINATION /usr/share/creature-server/swagger-ui

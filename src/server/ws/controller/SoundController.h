@@ -13,16 +13,19 @@
 
 #include "server/database.h"
 
+#include "server/ws/dto/GenerateLipSyncRequestDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/PlaySoundRequestDTO.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/SoundService.h"
 
 #include "server/metrics/counters.h"
+#include "util/ObservabilityManager.h"
 
 namespace creatures {
 extern std::shared_ptr<creatures::Configuration> config;
 extern std::shared_ptr<SystemCounters> metrics;
+extern std::shared_ptr<ObservabilityManager> observability;
 } // namespace creatures
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
@@ -199,6 +202,76 @@ class SoundController : public oatpp::web::server::api::ApiController {
         response->putHeader("Content-Type", mimeType.c_str());
         // content-length is automatically added by oatpp
         return response;
+    }
+
+    ENDPOINT_INFO(generateLipSync) {
+        info->summary = "Generate lip sync data for a sound file using Rhubarb Lip Sync";
+
+        info->addResponse<String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/sound/generate-lipsync", generateLipSync,
+             BODY_DTO(Object<creatures::ws::GenerateLipSyncRequestDto>, requestBody),
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+
+        // Create a trace span for this request
+        auto span = creatures::observability->createRequestSpan("POST /api/v1/sound/generate-lipsync", "POST",
+                                                                "api/v1/sound/generate-lipsync");
+
+        debug("REST call to generateLipSync");
+        creatures::metrics->incrementRestRequestsProcessed();
+
+        if (span) {
+            span->setAttribute("endpoint", "generateLipSync");
+            span->setAttribute("controller", "SoundController");
+            span->setAttribute("http.method", "POST");
+            span->setAttribute("http.target", "api/v1/sound/generate-lipsync");
+
+            // Add User-Agent if present
+            auto userAgent = request->getHeader("User-Agent");
+            if (userAgent) {
+                span->setAttribute("http.user_agent", std::string(userAgent));
+            }
+
+            // Add request details
+            span->setAttribute("sound.file", std::string(requestBody->sound_file));
+            bool allowOverwrite =
+                requestBody->allow_overwrite ? static_cast<bool>(requestBody->allow_overwrite) : false;
+            span->setAttribute("allow_overwrite", allowOverwrite);
+        }
+
+        // Extract allow_overwrite with explicit conversion to avoid ambiguity
+        bool allowOverwrite = requestBody->allow_overwrite ? static_cast<bool>(requestBody->allow_overwrite) : false;
+        auto result = m_soundService.generateLipSync(requestBody->sound_file, allowOverwrite, span);
+
+        if (span) {
+            span->setHttpStatus(static_cast<int>(result->code));
+            if (result->code == 200) {
+                span->setAttribute("success", true);
+                span->setAttribute("json.size", static_cast<int64_t>(std::string(result->message).size()));
+            }
+        }
+
+        // If successful, return the JSON content directly
+        if (result->code == 200) {
+            auto response = ResponseFactory::createResponse(Status::CODE_200, result->message);
+            response->putHeader("Content-Type", "application/json; charset=utf-8");
+            return response;
+        }
+
+        // For errors, return StatusDto
+        Status responseStatus = Status::CODE_500;
+        if (result->code == 404) {
+            responseStatus = Status::CODE_404;
+        } else if (result->code == 422) {
+            responseStatus = Status::CODE_422;
+        } else if (result->code == 500) {
+            responseStatus = Status::CODE_500;
+        }
+
+        return createDtoResponse(responseStatus, result);
     }
 };
 

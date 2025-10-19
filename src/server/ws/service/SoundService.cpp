@@ -1,8 +1,12 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <unordered_set>
+
+#include <nlohmann/json.hpp>
 
 #include "exception/exception.h"
 
@@ -15,6 +19,7 @@
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 
+#include "util/ObservabilityManager.h"
 #include "util/helpers.h"
 
 #include "SoundService.h"
@@ -22,6 +27,7 @@
 namespace creatures {
 extern std::shared_ptr<creatures::Configuration> config;
 extern std::shared_ptr<EventLoop> eventLoop;
+extern std::shared_ptr<ObservabilityManager> observability;
 } // namespace creatures
 
 namespace fs = std::filesystem;
@@ -185,6 +191,304 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
 
     debug("returning a 200");
     return response;
+}
+
+/**
+ * Generate lip sync data for a sound file using Rhubarb Lip Sync
+ *
+ * @param inSoundFile The name of the sound file to process
+ * @param allowOverwrite Whether to allow overwriting an existing JSON file
+ * @param parentSpan Optional parent span for tracing
+ * @return StatusDto with the result or error details
+ */
+oatpp::Object<creatures::ws::StatusDto> SoundService::generateLipSync(const oatpp::String &inSoundFile,
+                                                                      bool allowOverwrite,
+                                                                      std::shared_ptr<RequestSpan> parentSpan) {
+
+    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+
+    std::string soundFile = std::string(inSoundFile);
+    debug("generateLipSync() called for file: {}, allowOverwrite: {}", soundFile, allowOverwrite);
+
+    if (!parentSpan) {
+        warn("no parent span provided for SoundService.generateLipSync, creating a root span");
+    }
+
+    // Create operation span - connects to parent RequestSpan if provided
+    auto span = creatures::observability->createOperationSpan("SoundService.generateLipSync", std::move(parentSpan));
+
+    if (span) {
+        span->setAttribute("sound.file", soundFile);
+        span->setAttribute("allow_overwrite", allowOverwrite);
+        debug("Created observability span for processSound");
+    }
+
+    auto response = StatusDto::createShared();
+
+    // Get the sounds directory from config
+    std::string soundsDir = config->getSoundFileLocation();
+    debug("Sounds directory from config: {}", soundsDir);
+
+    fs::path soundFilePath = fs::path(soundsDir) / soundFile;
+    debug("Full sound file path: {}", soundFilePath.string());
+
+    if (span) {
+        span->setAttribute("sound.path", soundFilePath.string());
+        span->setAttribute("sound.directory", soundsDir);
+    }
+
+    // 1. Check if the sound file exists
+    debug("Checking if sound file exists: {}", soundFilePath.string());
+    if (!fs::exists(soundFilePath)) {
+        std::string errorMsg = fmt::format("Sound file '{}' not found in sounds directory '{}'", soundFile, soundsDir);
+        warn(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        response->code = 404;
+        response->status = "Not Found";
+        response->message = errorMsg;
+        return response;
+    }
+    debug("Sound file exists");
+
+    // 2. Validate it's a WAV file
+    debug("Checking file extension: {}", soundFilePath.extension().string());
+    if (soundFilePath.extension() != ".wav") {
+        std::string errorMsg = fmt::format("Sound file '{}' must be a WAV file (has extension '{}')", soundFile,
+                                           soundFilePath.extension().string());
+        warn(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        response->code = 422;
+        response->status = "Unprocessable Entity";
+        response->message = errorMsg;
+        return response;
+    }
+    debug("File is a valid WAV file");
+
+    // 3. Check for transcript file
+    fs::path transcriptPath = soundFilePath;
+    transcriptPath.replace_extension(".txt");
+    debug("Checking for transcript file: {}", transcriptPath.string());
+    bool hasTranscript = fs::exists(transcriptPath);
+
+    if (span) {
+        span->setAttribute("has_transcript", hasTranscript);
+    }
+
+    if (hasTranscript) {
+        info("Found transcript file: {}", transcriptPath.filename().string());
+    } else {
+        debug("No transcript file found for {}", soundFile);
+    }
+
+    // 4. Check if JSON file already exists
+    fs::path jsonOutputPath = soundFilePath;
+    jsonOutputPath.replace_extension(".json");
+    debug("Output JSON path will be: {}", jsonOutputPath.string());
+
+    if (fs::exists(jsonOutputPath)) {
+        debug("JSON file already exists: {}", jsonOutputPath.string());
+        if (!allowOverwrite) {
+            std::string errorMsg =
+                fmt::format("JSON file '{}' already exists. Set 'allow_overwrite' to true to overwrite it.",
+                            jsonOutputPath.filename().string());
+            warn(errorMsg);
+            if (span) {
+                span->setError(errorMsg);
+            }
+            response->code = 422;
+            response->status = "Unprocessable Entity";
+            response->message = errorMsg;
+            return response;
+        }
+        debug("Overwrite is allowed, will replace existing JSON file");
+    } else {
+        debug("JSON file does not exist, will create new file");
+    }
+
+    // 5. Build the Rhubarb command
+    std::string rhubarbBinary = config->getRhubarbBinaryPath();
+    debug("Rhubarb binary path from config: {}", rhubarbBinary);
+
+    if (span) {
+        span->setAttribute("rhubarb.binary", rhubarbBinary);
+    }
+
+    std::string command = fmt::format("{} -f json -o \"{}\"", rhubarbBinary, jsonOutputPath.string());
+    debug("Building Rhubarb command...");
+
+    // Add transcript if available
+    if (hasTranscript) {
+        command += fmt::format(" --dialogFile \"{}\"", transcriptPath.string());
+        debug("Added transcript file to command");
+    }
+
+    // Add the input WAV file
+    command += fmt::format(" \"{}\"", soundFilePath.string());
+
+    // Redirect stderr to stdout to capture all output
+    command += " 2>&1";
+
+    info("Executing Rhubarb command: {}", command);
+
+    // 6. Execute Rhubarb
+    std::string commandOutput;
+    int exitCode = 0;
+
+    try {
+        debug("Opening pipe to execute Rhubarb...");
+        FILE *pipe = popen(command.c_str(), "r");
+        if (!pipe) {
+            std::string errorMsg =
+                fmt::format("Failed to execute Rhubarb binary at '{}'. "
+                            "Is it installed and accessible? "
+                            "Check the server configuration (--rhubarb-binary-path or RHUBARB_BINARY_PATH environment "
+                            "variable). errno: {}",
+                            rhubarbBinary, errno);
+            error(errorMsg);
+            if (span) {
+                span->setError(errorMsg);
+            }
+            response->code = 500;
+            response->status = "Internal Server Error";
+            response->message = errorMsg;
+            return response;
+        }
+        debug("Pipe opened successfully, reading output...");
+
+        // Read command output
+        char buffer[256];
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            commandOutput += buffer;
+        }
+        debug("Command output captured ({} bytes)", commandOutput.length());
+
+        exitCode = pclose(pipe);
+        debug("Rhubarb process exited with code: {}", exitCode);
+
+        if (span) {
+            span->setAttribute("rhubarb.exit_code", static_cast<int64_t>(exitCode));
+            span->setAttribute("rhubarb.output_length", static_cast<int64_t>(commandOutput.length()));
+        }
+
+        // Check if command succeeded
+        if (exitCode != 0) {
+            std::string errorMsg =
+                fmt::format("Rhubarb processing failed with exit code {}.\n\nCommand: {}\n\nOutput:\n{}", exitCode,
+                            command, commandOutput);
+            error(errorMsg);
+            if (span) {
+                span->setError(errorMsg);
+            }
+            response->code = 422;
+            response->status = "Unprocessable Entity";
+            response->message = errorMsg;
+            return response;
+        }
+
+        info("Rhubarb processing completed successfully (exit code 0)");
+
+    } catch (const std::exception &e) {
+        std::string errorMsg = fmt::format("Exception during Rhubarb execution: {}\n\nCommand: {}\n\nOutput:\n{}",
+                                           e.what(), command, commandOutput);
+        error(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        response->code = 422;
+        response->status = "Unprocessable Entity";
+        response->message = errorMsg;
+        return response;
+    }
+
+    // 7. Verify JSON file was created
+    debug("Verifying JSON file was created: {}", jsonOutputPath.string());
+    if (!fs::exists(jsonOutputPath)) {
+        std::string errorMsg = fmt::format(
+            "Rhubarb completed but did not create the expected JSON file '{}'.\n\nCommand: {}\n\nOutput:\n{}",
+            jsonOutputPath.filename().string(), command, commandOutput);
+        error(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        response->code = 422;
+        response->status = "Unprocessable Entity";
+        response->message = errorMsg;
+        return response;
+    }
+    debug("JSON file created successfully");
+
+    // 8. Read the JSON file, modify it to remove full path, and return its contents
+    try {
+        debug("Opening JSON file for reading: {}", jsonOutputPath.string());
+        std::ifstream jsonFile(jsonOutputPath);
+        if (!jsonFile.is_open()) {
+            std::string errorMsg = fmt::format("Generated JSON file could not be read: {}", jsonOutputPath.string());
+            error(errorMsg);
+            if (span) {
+                span->setError(errorMsg);
+            }
+            response->code = 500;
+            response->status = "Internal Server Error";
+            response->message = errorMsg;
+            return response;
+        }
+
+        debug("Reading and parsing JSON file contents...");
+        nlohmann::json rhubarbJson;
+        try {
+            jsonFile >> rhubarbJson;
+        } catch (const nlohmann::json::exception &e) {
+            std::string errorMsg = fmt::format("Failed to parse Rhubarb JSON output: {}", e.what());
+            error(errorMsg);
+            if (span) {
+                span->setError(errorMsg);
+            }
+            response->code = 500;
+            response->status = "Internal Server Error";
+            response->message = errorMsg;
+            return response;
+        }
+
+        // Strip the full path from soundFile, leave only the filename
+        if (rhubarbJson.contains("metadata") && rhubarbJson["metadata"].contains("soundFile")) {
+            rhubarbJson["metadata"]["soundFile"] = soundFile;
+            debug("Stripped path from soundFile, now: {}", soundFile);
+        }
+
+        // Convert back to string
+        std::string jsonContent = rhubarbJson.dump(2); // Pretty print with 2-space indent
+        debug("JSON file processed successfully ({} bytes)", jsonContent.size());
+
+        info("Successfully processed {} with Rhubarb, generated {} ({} bytes)", soundFile,
+             jsonOutputPath.filename().string(), jsonContent.size());
+
+        if (span) {
+            span->setAttribute("json.output_file", jsonOutputPath.filename().string());
+            span->setAttribute("json.output_size", static_cast<int64_t>(jsonContent.size()));
+            span->setSuccess();
+        }
+
+        response->code = 200;
+        response->status = "OK";
+        response->message = jsonContent;
+        debug("Returning success response with JSON content");
+        return response;
+
+    } catch (const std::exception &e) {
+        std::string errorMsg = fmt::format("Error reading generated JSON file: {}", e.what());
+        error(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        response->code = 500;
+        response->status = "Internal Server Error";
+        response->message = errorMsg;
+        return response;
+    }
 }
 
 } // namespace creatures::ws

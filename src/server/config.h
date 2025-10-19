@@ -58,6 +58,9 @@
 #define VOICE_API_KEY_ENV               "VOICE_API_KEY"
 #define DEFAULT_VOICE_API_KEY           ""
 
+#define RHUBARB_BINARY_PATH_ENV         "RHUBARB_BINARY_PATH"
+#define DEFAULT_RHUBARB_BINARY_PATH     "/usr/bin/rhubarb"
+
 #define HONEYCOMB_API_KEY_ENV          "HONEYCOMB_API_KEY"
 #define DEFAULT_HONEYCOMB_API_KEY      ""
 

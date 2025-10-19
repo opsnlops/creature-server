@@ -78,6 +78,11 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .default_value(environmentToString(VOICE_API_KEY_ENV, DEFAULT_VOICE_API_KEY))
         .nargs(1);
 
+    program.add_argument("-r", "--rhubarb-binary-path")
+        .help("path to the Rhubarb Lip Sync binary")
+        .default_value(environmentToString(RHUBARB_BINARY_PATH_ENV, DEFAULT_RHUBARB_BINARY_PATH))
+        .nargs(1);
+
     program.add_argument("-h", "--honeycomb-api-key")
         .help("Honeycomb API key")
         .default_value(environmentToString(HONEYCOMB_API_KEY_ENV, DEFAULT_HONEYCOMB_API_KEY))
@@ -233,6 +238,13 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     if (!voiceApiKey.empty()) {
         config->setVoiceApiKey(voiceApiKey);
         debug("set our voice API key to {}", voiceApiKey);
+    }
+
+    auto rhubarbBinaryPath = program.get<std::string>("-r");
+    debug("read rhubarb binary path {} from command line", rhubarbBinaryPath);
+    if (!rhubarbBinaryPath.empty()) {
+        config->setRhubarbBinaryPath(rhubarbBinaryPath);
+        debug("set our rhubarb binary path to {}", rhubarbBinaryPath);
     }
 
     auto honeycombApiKey = program.get<std::string>("-h");
