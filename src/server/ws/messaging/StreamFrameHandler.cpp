@@ -5,6 +5,7 @@
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
 #include "model/StreamFrame.h"
+#include "server/animation/SessionManager.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
@@ -32,6 +33,7 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<SessionManager> sessionManager;
 } // namespace creatures
 
 namespace creatures ::ws {
@@ -91,6 +93,22 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     auto span = parentSpan;
 
     appLogger->trace("Entered StreamFrameHandler::stream()");
+
+    // Cancel any active playback on this universe (live streaming takes priority)
+    // Check if there's an active session and cancel it
+    auto existingSession = creatures::sessionManager->getCurrentSession(frame.universe);
+    if (existingSession && !existingSession->isCancelled()) {
+        appLogger->info("Cancelling active session on universe {} for live streaming", frame.universe);
+        existingSession->cancel();
+        span->setAttribute("cancelled_session_for_streaming", true);
+
+        // Also stop any playlist state
+        auto playlistState = creatures::sessionManager->getPlaylistState(frame.universe);
+        if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
+            appLogger->info("Stopping playlist on universe {} for live streaming", frame.universe);
+            creatures::sessionManager->stopPlaylist(frame.universe);
+        }
+    }
 
     // Make sure this creature is in the cache
     std::shared_ptr<Creature> creature;

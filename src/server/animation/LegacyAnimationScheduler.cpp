@@ -136,14 +136,23 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
     for (const auto &track : animation.tracks) {
         creatureId_t creatureId = track.creature_id;
 
-        auto creature = creatureCache->get(creatureId);
-        if (!creature) {
-            // Oh shit. This should never happen!
-            auto errorMessage =
-                fmt::format("Can't find creatureId {} in the creature cache after we verified that it's there earlier!",
-                            creatureId);
-            critical(errorMessage);
-            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+        // Get the creature for this track - check cache first, then DB
+        std::shared_ptr<Creature> creature;
+        if (creatureCache->contains(creatureId)) {
+            creature = creatureCache->get(creatureId);
+        } else {
+            // Not in cache - fetch from database and cache it
+            debug("Creature {} not in cache, fetching from database", creatureId);
+            auto creatureResult = db->getCreature(creatureId, nullptr);
+            if (!creatureResult.isSuccess()) {
+                std::string errorMsg =
+                    fmt::format("Creature {} not found in database during legacy playback", creatureId);
+                error(errorMsg);
+                return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+            }
+            creature = std::make_shared<Creature>(creatureResult.getValue().value());
+            creatureCache->put(creatureId, creature);
+            debug("Cached creature {} for playback", creatureId);
         }
 
         uint32_t numberOfFrames = 0;

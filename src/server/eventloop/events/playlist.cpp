@@ -84,7 +84,19 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
         return Result<framenum_t>{this->frameNumber};
     }
 
-    // Go fetch the active playlist
+    // Go fetch the active playlist - check cache first
+    if (!runningPlaylists->contains(activeUniverse)) {
+        std::string errorMessage = fmt::format(
+            "Playlist state is Active but runningPlaylists cache doesn't have entry for universe {}. Cleaning up.",
+            activeUniverse);
+        warn(errorMessage);
+        sessionManager->stopPlaylist(activeUniverse);
+        sendEmptyPlaylistUpdate(activeUniverse);
+        span->setAttribute("reason", "cache_missing");
+        span->setSuccess();
+        return Result<framenum_t>{this->frameNumber};
+    }
+
     auto activePlaylistStatus = runningPlaylists->get(activeUniverse);
     debug("the active playlistStatus out of the cache is {}", activePlaylistStatus->playlist);
 
