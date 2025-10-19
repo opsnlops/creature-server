@@ -55,13 +55,17 @@ class ClientCafe : public oatpp::websocket::ConnectionHandler::SocketInstanceLis
      *
      * @param interval how long to wait between pings (default 30 seconds)
      */
-    [[noreturn]] void
-    runPingLoop(const std::chrono::duration<v_int64, std::micro> &interval = std::chrono::seconds(30));
+    void runPingLoop(const std::chrono::duration<v_int64, std::micro> &interval = std::chrono::seconds(30));
 
     /**
      * Run the message loop
      */
-    [[noreturn]] void runMessageLoop();
+    void runMessageLoop();
+
+    /**
+     * Signal the loops to stop
+     */
+    void requestShutdown();
 
   private:
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
@@ -75,6 +79,11 @@ class ClientCafe : public oatpp::websocket::ConnectionHandler::SocketInstanceLis
      * Counter for client IDs
      */
     std::atomic<v_int64> clientIdCounter;
+
+    /**
+     * Shutdown flag for graceful termination of loops
+     */
+    std::atomic<bool> shutdownRequested{false};
 
     /**
      * Map of client connections (and a mutex to protect it)

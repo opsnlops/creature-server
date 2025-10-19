@@ -79,40 +79,50 @@ void ClientCafe::onBeforeDestroy(const oatpp::websocket::WebSocket &socket) {
     }
 }
 
-[[noreturn]] void ClientCafe::runMessageLoop() {
+void ClientCafe::runMessageLoop() {
 
     // Make sure this shows up in the debugger correctly
     setThreadName("ClientCafe::runMessageLoop");
 
     std::string message;
-    while (true) {
-        creatures::websocketOutgoingMessages->wait_dequeue(message);
-        broadcastMessage(message);
+    while (!shutdownRequested.load()) {
+        // Use wait_dequeue_timed instead of wait_dequeue to allow checking shutdown flag
+        if (creatures::websocketOutgoingMessages->wait_dequeue_timed(message, std::chrono::milliseconds(100))) {
+            if (!shutdownRequested.load()) {
+                broadcastMessage(message);
+            }
+        }
     }
+    appLogger->info("Message loop exiting gracefully");
 }
 
-[[noreturn]] void ClientCafe::runPingLoop(const std::chrono::duration<v_int64, std::micro> &interval) {
+void ClientCafe::runPingLoop(const std::chrono::duration<v_int64, std::micro> &interval) {
 
     // Make sure this shows up in the debugger correctly
     setThreadName("ClientCafe::runPingLoop");
 
     appLogger->info("Starting the ping loop");
 
-    while (true) {
+    while (!shutdownRequested.load()) {
 
         std::chrono::duration<v_int64, std::micro> elapsed = std::chrono::microseconds(0);
         auto startTime = std::chrono::system_clock::now();
 
         appLogger->debug("pinging all websocket clients");
 
+        // Sleep in smaller chunks to allow checking shutdown flag
         do {
-            std::this_thread::sleep_for(interval - elapsed);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             elapsed =
                 std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - startTime);
+            if (shutdownRequested.load()) {
+                break;
+            }
         } while (elapsed < interval);
 
-        // Keep the scope tight on this lock
-        {
+        // Only send pings if not shutting down
+        if (!shutdownRequested.load()) {
+            // Keep the scope tight on this lock
             std::lock_guard<std::mutex> lock(clientConnectionMapMutex);
             for (const auto &client : clientConnectionMap) {
                 client.second->sendPing();
@@ -120,6 +130,12 @@ void ClientCafe::onBeforeDestroy(const oatpp::websocket::WebSocket &socket) {
             }
         }
     }
+    appLogger->info("Ping loop exiting gracefully");
+}
+
+void ClientCafe::requestShutdown() {
+    appLogger->info("Shutdown requested for ClientCafe");
+    shutdownRequested.store(true);
 }
 
 } // namespace creatures::ws

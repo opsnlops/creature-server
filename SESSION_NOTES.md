@@ -2,12 +2,17 @@
 
 ## Testing & Bug Fixes Session
 
-**Date:** 2025-10-18
+**Date:** 2025-10-18 (Initial Testing) + Follow-up Session
 **Status:** ✅ Fully Tested & Working
+**Context Continuation:** This session continued from a previous conversation after running out of context
+
+### Summary
+
+The cooperative animation scheduler with interrupt capabilities was thoroughly tested and debugged across two sessions. We discovered and fixed **10 critical bugs** including race conditions, cache safety issues, and shutdown crashes. The system now successfully handles the primary use case: interrupting a looping playlist with button-triggered animations during Zoom meetings, with automatic playlist resumption.
 
 ### Bugs Found and Fixed
 
-During testing with the cooperative scheduler, we discovered and fixed three critical bugs:
+During testing with the cooperative scheduler, we discovered and fixed 10 critical bugs:
 
 #### Bug #1: Playlist Loop - Infinite Animation Scheduling
 **Problem:** Playlist was scheduling new animations every frame instead of waiting for the current animation to complete.
@@ -295,6 +300,210 @@ session->setOnFinishCallback([universe, weakSession]() {
 
 ---
 
+#### Bug #10: Old Queued PlaylistEvents Firing During Interrupts
+
+**Problem:** Even after fixing the race condition, "Kenny Stress Test" revealed both animations still played concurrently occasionally.
+
+**Root Cause:** Different race than Bug #9. Old `PlaylistEvent` instances that were scheduled BEFORE the interrupt still existed in the event queue. When they fired, they would schedule new animations even though the playlist was interrupted or there was already an active session playing.
+
+**Timeline:**
+```
+Frame 1000:  Playlist schedules PlaylistEvent for frame 5000
+Frame 3000:  Interrupt called, schedules interrupt animation
+Frame 5000:  OLD PlaylistEvent fires (was scheduled at frame 1000)
+            → Checks playlist state → Active (not interrupted, different race)
+            → Schedules new playlist animation
+Result:      Interrupt animation + playlist animation running concurrently!
+```
+
+**Fix:** Added `isPlaying()` check in PlaylistEvent before scheduling:
+```cpp
+// src/server/eventloop/events/playlist.cpp:79-85
+// Additional check: Don't schedule if there's ANY animation currently playing
+// This prevents old queued PlaylistEvents from scheduling concurrent animations
+if (sessionManager->isPlaying(activeUniverse)) {
+    info("Playlist on universe {} has active session, skipping this scheduled event (likely old queued event)",
+         activeUniverse);
+    span->setAttribute("reason", "active_session_present");
+    span->setSuccess();
+    return Result<framenum_t>{this->frameNumber};
+}
+```
+
+**Impact:**
+- Old queued PlaylistEvents become no-ops if any animation is currently playing
+- Prevents concurrent playback from stale event queue entries
+- Works in conjunction with interrupted state check (defense in depth)
+
+**User Feedback:** "I think we've finally got it"
+
+---
+
+#### Integration: Live Streaming and Recording Modes
+
+**Feature:** Extended SessionManager integration to all motion control paths, not just scheduled animations.
+
+**Paths Integrated:**
+
+1. **Live Streaming Mode** (`src/server/ws/messaging/StreamFrameHandler.cpp:98-111`)
+   - Used by CreatureDetail UI for real-time creature control
+   - Cancels active sessions when first stream frame arrives
+   - Stops any active playlists
+   - Live streaming takes priority over all scheduled playback
+
+```cpp
+// Cancel any active playback on this universe (live streaming takes priority)
+auto existingSession = creatures::sessionManager->getCurrentSession(frame.universe);
+if (existingSession && !existingSession->isCancelled()) {
+    appLogger->info("Cancelling active session on universe {} for live streaming", frame.universe);
+    existingSession->cancel();
+
+    // Also stop any playlist state
+    auto playlistState = creatures::sessionManager->getPlaylistState(frame.universe);
+    if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
+        appLogger->info("Stopping playlist on universe {} for live streaming", frame.universe);
+        creatures::sessionManager->stopPlaylist(frame.universe);
+    }
+}
+```
+
+2. **Recording Mode** (RecordTrack)
+   - Same integration as live streaming
+   - Cancels active playback when recording starts
+   - Recording frames take priority like live streaming
+
+**User Feedback:** "Very good, those work!"
+
+---
+
+#### Code Audit: Creature Cache Safety
+
+**Motivation:** After discovering Bug #8 (creature cache empty), audited entire codebase for unsafe `creatureCache->get()` calls that could throw `std::out_of_range`.
+
+**Findings and Fixes:**
+
+1. **LegacyAnimationScheduler.cpp** (lines 141-156)
+   - **Problem:** Assumed creatures would be in cache from earlier validation
+   - **Fix:** Added `contains()` check before `get()`, fetch from DB if missing
+   - **Impact:** Legacy scheduler now works when creatures not sending health events
+
+```cpp
+// Get the creature for this track - check cache first, then DB
+std::shared_ptr<Creature> creature;
+if (creatureCache->contains(creatureId)) {
+    creature = creatureCache->get(creatureId);
+} else {
+    // Not in cache - fetch from database and cache it
+    debug("Creature {} not in cache, fetching from database", creatureId);
+    auto creatureResult = db->getCreature(creatureId, nullptr);
+    if (!creatureResult.isSuccess()) {
+        std::string errorMsg = fmt::format("Creature {} not found in database during legacy playback", creatureId);
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+    creature = std::make_shared<Creature>(creatureResult.getValue().value());
+    creatureCache->put(creatureId, creature);
+    debug("Cached creature {} for playback", creatureId);
+}
+```
+
+2. **playlist.cpp** (lines 88-98)
+   - **Problem:** `runningPlaylists->get()` could throw if cache entry removed
+   - **Fix:** Added `contains()` check before `get()`, graceful cleanup if missing
+   - **Impact:** Prevents crashes from race conditions between SessionManager state and cache
+
+```cpp
+// Go fetch the active playlist - check cache first
+if (!runningPlaylists->contains(activeUniverse)) {
+    std::string errorMessage = fmt::format(
+        "Playlist state is Active but runningPlaylists cache doesn't have entry for universe {}. Cleaning up.",
+        activeUniverse);
+    warn(errorMessage);
+    sessionManager->stopPlaylist(activeUniverse);
+    sendEmptyPlaylistUpdate(activeUniverse);
+    span->setAttribute("reason", "cache_missing");
+    return Result<framenum_t>{this->frameNumber};
+}
+```
+
+**Audit Results:**
+- All `creatureCache->get()` calls now protected with `contains()` checks
+- All `runningPlaylists->get()` calls now protected
+- On-demand database fetching when cache misses occur
+- Graceful degradation instead of exceptions
+
+---
+
+#### WebSocket Shutdown Improvements
+
+**Problem:** Server crashed during shutdown when WebSocket clients were connected, due to threads still accessing `websocketOutgoingMessages` queue during global destructors.
+
+**Solution:** Made ClientCafe worker threads exit gracefully instead of running forever.
+
+**Changes:**
+
+1. **ClientCafe.h** (lines 58, 63, 68, 86)
+   - Removed `[[noreturn]]` attribute from `runPingLoop()` and `runMessageLoop()`
+   - Added `requestShutdown()` method
+   - Added `std::atomic<bool> shutdownRequested{false}` flag
+
+2. **ClientCafe.cpp**
+
+   **Message Loop** (lines 82-97):
+   ```cpp
+   void ClientCafe::runMessageLoop() {
+       setThreadName("ClientCafe::runMessageLoop");
+       std::string message;
+
+       while (!shutdownRequested.load()) {
+           // Use wait_dequeue_timed instead of wait_dequeue to allow checking shutdown flag
+           if (creatures::websocketOutgoingMessages->wait_dequeue_timed(message, std::chrono::milliseconds(100))) {
+               if (!shutdownRequested.load()) {
+                   broadcastMessage(message);
+               }
+           }
+       }
+       appLogger->info("Message loop exiting gracefully");
+   }
+   ```
+
+   **Ping Loop** (lines 99-134):
+   ```cpp
+   void ClientCafe::runPingLoop(...) {
+       while (!shutdownRequested.load()) {
+           // Sleep in smaller chunks to allow checking shutdown flag
+           do {
+               std::this_thread::sleep_for(std::chrono::milliseconds(100));
+               if (shutdownRequested.load()) {
+                   break;
+               }
+           } while (elapsed < interval);
+
+           // Only send pings if not shutting down
+           if (!shutdownRequested.load()) {
+               // Send pings...
+           }
+       }
+       appLogger->info("Ping loop exiting gracefully");
+   }
+   ```
+
+3. **App.h/cpp** - Thread management
+   - Stored `pingThread` and `messageLoopThread` as member variables
+   - `shutdown()` calls `cafe->requestShutdown()` then joins threads
+   - Destructor ensures threads are joined before destruction
+
+**Impact:**
+- Ping and message loop threads exit cleanly when shutdown requested
+- Threads joined before global destructors run
+- Eliminates most WebSocket-related shutdown crashes
+
+**Known Limitation:**
+- Server may still crash during `std::exit()` in some cases (harmless, already quitting)
+- User decided this is acceptable: "Let's just let it crash. It's harmless."
+
+---
+
 ### Files Modified (Bug Fixes)
 
 1. **src/server/animation/player.cpp**
@@ -338,6 +547,38 @@ session->setOnFinishCallback([universe, weakSession]() {
    - Uses `contains()` check before `get()` to avoid exceptions
    - Caches fetched creatures for future frames
    - Enables playback even when creatures aren't sending health events
+
+9. **src/server/ws/messaging/StreamFrameHandler.cpp**
+   - Added SessionManager integration for live streaming mode
+   - Cancels active sessions when streaming starts
+   - Stops active playlists when streaming starts
+   - Live streaming takes priority over all scheduled playback
+
+10. **src/server/animation/LegacyAnimationScheduler.cpp**
+    - Added on-demand creature fetching from database (same as cooperative scheduler)
+    - Uses `contains()` check before `get()` to avoid exceptions
+    - Enables legacy scheduler to work when creatures not sending health events
+
+11. **src/server/ws/websocket/ClientCafe.h**
+    - Removed `[[noreturn]]` attribute from loop methods
+    - Added `requestShutdown()` method
+    - Added `shutdownRequested` atomic flag for graceful shutdown
+
+12. **src/server/ws/websocket/ClientCafe.cpp**
+    - Modified `runMessageLoop()` to use timed wait and check shutdown flag
+    - Modified `runPingLoop()` to sleep in chunks and check shutdown flag
+    - Implemented `requestShutdown()` method
+    - Added graceful exit logging
+
+13. **src/server/ws/App.h**
+    - Added `pingThread` and `messageLoopThread` member variables
+    - Added destructor declaration
+    - Added `shutdown()` method declaration
+
+14. **src/server/ws/App.cpp**
+    - Stored worker threads as member variables
+    - Implemented `shutdown()` to signal and join worker threads
+    - Implemented destructor to ensure threads joined before destruction
 
 ---
 
@@ -383,8 +624,12 @@ POST /api/v1/animation/interrupt {
 6. ✅ Playback works when creatures not sending health events (on-demand DB fetch)
 7. ✅ DRY refactoring: Single source of truth for playlist state
 8. ✅ State preservation across interrupt animations
+9. ✅ Old queued PlaylistEvents handled (Kenny Stress Test)
+10. ✅ Live streaming cancels active sessions and playlists
+11. ✅ Recording mode integration (same as live streaming)
+12. ✅ WebSocket threads shut down gracefully (mostly)
 
-**Bugs Fixed During Testing:** 9 critical bugs identified and resolved
+**Bugs Fixed During Testing:** 10 critical bugs identified and resolved
 - Frame calculation errors
 - Concurrent playback conflicts
 - Interrupted playlist resumption timing
@@ -392,10 +637,19 @@ POST /api/v1/animation/interrupt {
 - State management issues
 - Session lifecycle bugs
 - Creature cache dependency
-- Race condition: concurrent animations on interrupt
+- Race condition: concurrent animations on interrupt (2 different races!)
+- Old queued events firing during interrupts
+- WebSocket thread shutdown crashes
+
+**Additional Improvements:**
+- Complete creature cache audit - all `get()` calls protected with `contains()`
+- On-demand database fetching when cache misses
+- Integration with all motion control paths (scheduled, streaming, recording)
+- Graceful WebSocket worker thread shutdown
 
 **Known Limitations:**
 - Playlist resumes from the beginning (not mid-animation) - **Acceptable per user**
+- Server may crash during `std::exit()` in some cases - **Harmless, user accepted**
 - No playlist queue/priority system - future enhancement if needed
 
 ---
@@ -642,9 +896,25 @@ POST /api/v1/animation/interrupt
 
 ---
 
+## Session Timeline
+
+### Initial Testing Session (2025-10-18)
+- Fixed Bugs #1-9 (playlist loop, concurrent playback, race conditions, cache issues)
+- Implemented DRY refactoring with PlaylistState enum
+- Added SessionManager integration throughout the codebase
+- Fixed all creature cache safety issues
+
+### Follow-up Session (Context Continuation)
+- Fixed Bug #10 (old queued PlaylistEvents)
+- Integrated with live streaming and recording modes
+- Completed creature cache audit (LegacyAnimationScheduler, playlist.cpp)
+- Fixed WebSocket thread shutdown crashes
+- Decided to accept harmless shutdown crashes on exit
+
+---
+
 **Build Status:** ✅ Clean build, no warnings (except E131 lib warnings)
 **Code Format:** ✅ clang-format applied
 **Documentation:** ✅ Complete with Mermaid diagrams
 **Testing Tools:** ✅ Ready to use
-
-Good luck testing! 🦜
+**Production Status:** ✅ Ready for Zoom meetings!

@@ -261,11 +261,11 @@ int main(const int argc, char **argv) {
     // creatures::e131Server->createUniverse(1000);
 
     // Fire up the watchdog
-    const auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);
+    auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);
     watchdog->start();
 
     // Start the web server
-    const auto webServer = std::make_shared<creatures::ws::App>();
+    auto webServer = std::make_shared<creatures::ws::App>();
     webServer->start();
 
     // Seed the metric send task
@@ -294,11 +294,12 @@ int main(const int argc, char **argv) {
     // Tell the watchdog to stop
     watchdog->shutdown();
 
+    // Stop the websocket server FIRST (before event loop)
+    // This prevents web server threads from trying to use the event loop after it's destroyed
+    webServer->shutdown();
+
     // Halt the event loop
     creatures::eventLoop->shutdown();
-
-    // Stop the websocket server
-    webServer->shutdown();
 
     // Cleanup the RTP server
     creatures::rtpServer.reset(); // implicit cleanup

@@ -85,13 +85,13 @@ void App::run() {
     OATPP_COMPONENT(std::shared_ptr<oatpp::network::ServerConnectionProvider>, connectionProvider);
 
     // Run the ping loop
-    std::thread pingThread([] {
+    pingThread = std::thread([] {
         OATPP_COMPONENT(std::shared_ptr<ClientCafe>, cafe);
         cafe->runPingLoop(std::chrono::seconds(30));
     });
 
     // Run the message processing loop
-    std::thread queueWorkerThread([] {
+    messageLoopThread = std::thread([] {
         OATPP_COMPONENT(std::shared_ptr<ClientCafe>, cafe);
         cafe->runMessageLoop();
     });
@@ -101,6 +101,44 @@ void App::run() {
 
     appLogger->info("Running on port {}", connectionProvider->getProperty("port").toString()->c_str());
     server.run();
+}
+
+void App::shutdown() {
+    internalLogger->info("Shutting down web server");
+
+    // Signal the ClientCafe loops to stop
+    {
+        OATPP_COMPONENT(std::shared_ptr<ClientCafe>, cafe);
+        cafe->requestShutdown();
+    }
+
+    // Call the base class shutdown
+    StoppableThread::shutdown();
+
+    // Join the worker threads
+    if (pingThread.joinable()) {
+        internalLogger->info("Waiting for ping thread to finish");
+        pingThread.join();
+        internalLogger->info("Ping thread finished");
+    }
+
+    if (messageLoopThread.joinable()) {
+        internalLogger->info("Waiting for message loop thread to finish");
+        messageLoopThread.join();
+        internalLogger->info("Message loop thread finished");
+    }
+}
+
+App::~App() {
+    internalLogger->info("Destroying web server");
+
+    // Ensure threads are joined before destruction
+    if (pingThread.joinable()) {
+        pingThread.join();
+    }
+    if (messageLoopThread.joinable()) {
+        messageLoopThread.join();
+    }
 }
 
 } // namespace creatures::ws

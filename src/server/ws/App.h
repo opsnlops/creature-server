@@ -19,15 +19,18 @@ namespace creatures ::ws {
 class App : public StoppableThread {
   public:
     App();
-    ~App() = default;
+    ~App();
 
     void start() override;
+    void shutdown();
 
   protected:
     void run() override;
 
   private:
     std::shared_ptr<spdlog::logger> internalLogger;
+    std::thread pingThread;
+    std::thread messageLoopThread;
 };
 
 } // namespace creatures::ws
