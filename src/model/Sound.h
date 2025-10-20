@@ -13,6 +13,7 @@ struct Sound {
     std::string fileName;
     uint32_t size = 0;
     std::string transcript;
+    std::string lipsync;
 };
 
 #include OATPP_CODEGEN_BEGIN(DTO)
@@ -38,6 +39,12 @@ class SoundDto : public oatpp::DTO {
         info->required = false;
     }
     DTO_FIELD(String, transcript);
+
+    DTO_FIELD_INFO(lipsync) {
+        info->description = "The file name of the sound file's lipsync data, if it has one";
+        info->required = false;
+    }
+    DTO_FIELD(String, lipsync);
 };
 
 #include OATPP_CODEGEN_END(DTO)

@@ -79,6 +79,9 @@ class Configuration {
     /** @return Path to the Rhubarb Lip Sync binary */
     std::string getRhubarbBinaryPath() const;
 
+    /** @return Path to the ffmpeg binary */
+    std::string getFfmpegBinaryPath() const;
+
     /** @return Sampling rate for event loop tracing (0.0 to 1.0) */
     double getEventLoopTraceSampling() const;
 
@@ -117,6 +120,9 @@ class Configuration {
 
     /** @param _rhubarbBinaryPath Path to the Rhubarb Lip Sync binary */
     void setRhubarbBinaryPath(std::string _rhubarbBinaryPath);
+
+    /** @param _ffmpegBinaryPath Path to the ffmpeg binary */
+    void setFfmpegBinaryPath(std::string _ffmpegBinaryPath);
 
     /** @param _eventLoopTraceSampling Sampling rate for event loop tracing (0.0 to 1.0) */
     void setEventLoopTraceSampling(double _eventLoopTraceSampling);
@@ -178,6 +184,9 @@ class Configuration {
 
     /** Path to the Rhubarb Lip Sync binary */
     std::string rhubarbBinaryPath = DEFAULT_RHUBARB_BINARY_PATH;
+
+    /** Path to the ffmpeg binary */
+    std::string ffmpegBinaryPath = DEFAULT_FFMPEG_BINARY_PATH;
 
     // Observability configuration
 

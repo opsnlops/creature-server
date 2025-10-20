@@ -61,6 +61,9 @@
 #define RHUBARB_BINARY_PATH_ENV         "RHUBARB_BINARY_PATH"
 #define DEFAULT_RHUBARB_BINARY_PATH     "/usr/bin/rhubarb"
 
+#define FFMPEG_BINARY_PATH_ENV          "FFMPEG_BINARY_PATH"
+#define DEFAULT_FFMPEG_BINARY_PATH      "/usr/bin/ffmpeg"
+
 #define HONEYCOMB_API_KEY_ENV          "HONEYCOMB_API_KEY"
 #define DEFAULT_HONEYCOMB_API_KEY      ""
 

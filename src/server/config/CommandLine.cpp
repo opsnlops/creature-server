@@ -83,6 +83,11 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .default_value(environmentToString(RHUBARB_BINARY_PATH_ENV, DEFAULT_RHUBARB_BINARY_PATH))
         .nargs(1);
 
+    program.add_argument("--ffmpeg-binary-path")
+        .help("path to the ffmpeg binary")
+        .default_value(environmentToString(FFMPEG_BINARY_PATH_ENV, DEFAULT_FFMPEG_BINARY_PATH))
+        .nargs(1);
+
     program.add_argument("-h", "--honeycomb-api-key")
         .help("Honeycomb API key")
         .default_value(environmentToString(HONEYCOMB_API_KEY_ENV, DEFAULT_HONEYCOMB_API_KEY))
@@ -245,6 +250,13 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     if (!rhubarbBinaryPath.empty()) {
         config->setRhubarbBinaryPath(rhubarbBinaryPath);
         debug("set our rhubarb binary path to {}", rhubarbBinaryPath);
+    }
+
+    auto ffmpegBinaryPath = program.get<std::string>("--ffmpeg-binary-path");
+    debug("read ffmpeg binary path {} from command line", ffmpegBinaryPath);
+    if (!ffmpegBinaryPath.empty()) {
+        config->setFfmpegBinaryPath(ffmpegBinaryPath);
+        debug("set our ffmpeg binary path to {}", ffmpegBinaryPath);
     }
 
     auto honeycombApiKey = program.get<std::string>("-h");

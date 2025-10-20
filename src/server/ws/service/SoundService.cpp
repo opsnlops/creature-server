@@ -88,7 +88,16 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
                             transcript = transcriptPath.filename().string();
                         }
 
-                        Sound sound{filename, (uint32_t)size, transcript};
+                        std::string lipsync;
+
+                        // Check for lipsync JSON file
+                        auto lipsyncPath = filepath;
+                        lipsyncPath.replace_extension(".json");
+                        if (fs::exists(lipsyncPath)) {
+                            lipsync = lipsyncPath.filename().string();
+                        }
+
+                        Sound sound{filename, (uint32_t)size, transcript, lipsync};
 
                         appLogger->debug("Adding sound file: {} ({})", sound.fileName, sound.size);
                         soundList->emplace_back(creatures::convertSoundToDto(sound));

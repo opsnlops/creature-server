@@ -17,6 +17,7 @@
 #include "util/ObservabilityManager.h"
 
 #include "VoiceService.h"
+#include "server/voice/AudioConverter.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/MakeSoundFileRequestDto.h"
 #include "server/ws/dto/StatusDto.h"
@@ -165,7 +166,7 @@ VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto
         creatureLookupSpan->setSuccess();
     }
 
-    // Fetch the creature's voice config from the JSON
+    // Fetch the creature's voice config and audio channel from the JSON
     auto creatureJson = creatureJsonResult.getValue().value();
 
     auto voiceConfig = creatureJson["voice"];
@@ -178,6 +179,19 @@ VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto
         }
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
+    // Get the creature's audio channel for multi-channel WAV conversion
+    uint16_t audioChannel = 1; // Default to channel 1 if not specified
+    try {
+        if (!creatureJson["audio_channel"].is_null()) {
+            audioChannel = creatureJson["audio_channel"].get<uint16_t>();
+            appLogger->debug("Creature audio channel: {}", audioChannel);
+        } else {
+            appLogger->warn("No audio_channel specified for creature, using default channel 1");
+        }
+    } catch (const std::exception &e) {
+        appLogger->warn("Failed to parse audio_channel, using default channel 1: {}", e.what());
+    }
 
     auto speechRequest = creatures::voice::CreatureSpeechRequest();
     try {
@@ -199,13 +213,14 @@ VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto
 
     appLogger->debug("Request is using voice_id: {}", speechRequest.voice_id);
 
-    auto speechResponse =
+    // Generate the MP3 file from ElevenLabs
+    auto mp3Response =
         creatureVoices->generateCreatureSpeech(std::filesystem::path(config->getSoundFileLocation()), speechRequest);
-    if (!speechResponse.isSuccess()) {
+    if (!mp3Response.isSuccess()) {
         error = true;
-        errorMessage = std::string(speechResponse.getError()->getMessage());
+        errorMessage = std::string(mp3Response.getError()->getMessage());
         appLogger->error("Failed to generate speech: {}", std::string(errorMessage));
-        switch (speechResponse.getError()->getCode()) {
+        switch (mp3Response.getError()->getCode()) {
         case creatures::voice::VoiceError::InvalidApiKey:
             status = Status::CODE_401;
             break;
@@ -219,13 +234,50 @@ VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-    appLogger->debug("Generated speech successfully");
+    appLogger->debug("Generated MP3 successfully, now converting to WAV");
+
+    // Convert MP3 to 17-channel WAV with audio on the creature's specific channel
+    auto convertSpan = creatures::observability->createChildOperationSpan("VoiceService.convertToWav", speechSpan);
+    if (convertSpan) {
+        convertSpan->setAttribute("audio_channel", audioChannel);
+    }
+
+    auto mp3Data = mp3Response.getValue().value();
+    std::filesystem::path mp3Path = std::filesystem::path(config->getSoundFileLocation()) / mp3Data.sound_file_name;
+    std::filesystem::path wavPath = mp3Path;
+    wavPath.replace_extension(".wav");
+
+    auto conversionResult = creatures::voice::AudioConverter::convertMp3ToWav(
+        mp3Path, wavPath, config->getFfmpegBinaryPath(), audioChannel, 48000, convertSpan);
+
+    if (!conversionResult.isSuccess()) {
+        error = true;
+        errorMessage = std::string(conversionResult.getError()->getMessage());
+        appLogger->error("Failed to convert MP3 to WAV: {}", std::string(errorMessage));
+        status = Status::CODE_500;
+        if (convertSpan) {
+            convertSpan->setError(std::string(errorMessage));
+        }
+        if (speechSpan) {
+            speechSpan->setError(std::string(errorMessage));
+        }
+    }
+    OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
+    appLogger->debug("Converted to WAV successfully");
+
+    // Update the response to reflect the WAV file instead of MP3
+    creatures::voice::CreatureSpeechResponse wavResponse;
+    wavResponse.sound_file_name = wavPath.filename().string();
+    wavResponse.transcript_file_name = mp3Data.transcript_file_name;
+    wavResponse.sound_file_size = conversionResult.getValue().value();
+    wavResponse.success = true;
 
     if (speechSpan) {
         speechSpan->setSuccess();
     }
 
-    return convertToDto(speechResponse.getValue().value());
+    return convertToDto(wavResponse);
 }
 
 } // namespace creatures::ws

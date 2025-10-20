@@ -94,7 +94,8 @@ namespace creatures::voice {
         transcriptFile.close();
 
 
-        // If we've made it this far, we're good to go. Let's generate the sound file.
+        // If we've made it this far, we're good to go. Let's generate the MP3 sound file.
+        // Note: Caller (VoiceService) is responsible for converting to WAV if needed.
         auto soundFilePath = fileSavePath / fmt::format("{}.mp3", fileBaseName);
         debug("Generating speech for creature: {} to file {}", speechRequest.creature_name, soundFilePath.string());
 

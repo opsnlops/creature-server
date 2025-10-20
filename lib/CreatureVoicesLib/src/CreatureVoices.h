@@ -29,9 +29,12 @@ class CreatureVoices : public CurlBase {
     /**
      * Create a new sound file for a creature based on the text given
      *
-     * @param fileSavePath the location to save the file
+     * Downloads an MP3 file from ElevenLabs API. The caller is responsible for
+     * converting to WAV format if needed (see AudioConverter in server/voice/).
+     *
+     * @param fileSavePath the location to save the MP3 file
      * @param speechRequest the request to generate the speech
-     * @return A VoiceResult with information about what happened
+     * @return A VoiceResult with information about what happened (returns MP3 filename)
      */
     VoiceResult<CreatureSpeechResponse> generateCreatureSpeech(const std::filesystem::path &fileSavePath,
                                                                const CreatureSpeechRequest &speechRequest);
