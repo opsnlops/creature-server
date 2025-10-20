@@ -11,6 +11,7 @@
 #include <oatpp/web/protocol/http/outgoing/ResponseFactory.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "server/config.h"
 #include "server/database.h"
 
 #include "server/ws/dto/GenerateLipSyncRequestDto.h"
@@ -21,6 +22,7 @@
 
 #include "server/metrics/counters.h"
 #include "util/ObservabilityManager.h"
+#include "util/websocketUtils.h"
 
 namespace creatures {
 extern std::shared_ptr<creatures::Configuration> config;
@@ -256,6 +258,9 @@ class SoundController : public oatpp::web::server::api::ApiController {
 
         // If successful, return the JSON content directly
         if (result->code == 200) {
+            // Schedule an event to invalidate the sound list cache on the clients
+            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
+
             auto response = ResponseFactory::createResponse(Status::CODE_200, result->message);
             response->putHeader("Content-Type", "application/json; charset=utf-8");
             return response;
