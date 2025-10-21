@@ -1,177 +1,196 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+**For general project architecture, build instructions, and data models, see [AGENTS.md](AGENTS.md).**
 
-## Project Overview
+This file provides Claude Code-specific guidance and workflow tips for this repository.
 
-Creature Server is a C++ server application for managing April's animatronic creatures. It provides a REST API and WebSocket interface for controlling animations, sounds, playlists, and hardware interactions via DMX/E1.31 lighting protocols.
+## Quick Start for Claude Code
 
-## Build System
+1. **Read AGENTS.md first** - Contains all architectural decisions and project structure
+2. **Build command**: `./local_build.sh` (from project root)
+3. **Test command**: `cd build && ./creature-server-test`
+4. **Code format**: Always run `clang-format` on modified C++ files
 
-This project uses CMake with Ninja as the build generator and requires C++20. Dependencies are managed via FetchContent for most libraries.
+## Tool Usage Guidelines
 
-### Key Build Commands
+### When to Use the Task Tool with Explore Agent
 
-```bash
-# Build oatpp dependencies first (required before main build)
-./build_oatpp.sh
+Use the Explore agent for open-ended codebase exploration:
+- ❌ **DON'T use for**: "Find the file that defines class Creature" (use Glob instead)
+- ✅ **DO use for**: "How do errors from the client get handled?" (conceptual understanding)
+- ✅ **DO use for**: "What is the codebase structure?" (broad exploration)
+- ✅ **DO use for**: "Where are universe assignments tracked?" (multi-file reasoning)
 
-# Local debug build
-./local_build.sh
+Set thoroughness level appropriately:
+- `"quick"` - Basic searches
+- `"medium"` - Most tasks
+- `"very thorough"` - Complex multi-location analysis
 
-# Manual build process
-mkdir -p build/
-cd build/
-cmake -DCMAKE_BUILD_TYPE=Debug -G Ninja ..
-ninja
+### File Operations
 
-# Release build
-cmake -DCMAKE_BUILD_TYPE=Release -G Ninja ..
-ninja
+- **Reading files**: Use `Read` tool, not `cat` bash command
+- **Editing files**: Use `Edit` tool, not `sed`/`awk`
+- **Writing new files**: Use `Write` tool, not bash redirects
+- **Finding files**: Use `Glob` tool for patterns, not `find`
+- **Searching code**: Use `Grep` tool, not bash `grep`
 
-# Run tests
-cd build/
-./creature-server-test
-# Or via CTest
-ctest
+### Parallel Tool Execution
+
+Always run independent operations in parallel for efficiency:
+```
+# Good: Multiple file reads in one message
+Read(file1) + Read(file2) + Read(file3)
+
+# Bad: Sequential reads across multiple messages
+Read(file1) → wait → Read(file2) → wait → Read(file3)
 ```
 
-### Dependencies
+## Code Quality Reminders
 
-External dependencies are fetched automatically via FetchContent:
-- MongoDB C/C++ drivers (static linking)
-- oatpp web framework (pre-built in externals/)
-- spdlog for logging
-- OpenTelemetry for observability
-- SDL2 for audio
-- Opus for audio encoding
-- uvgRTP for RTP streaming
-- nlohmann/json for JSON handling
-- Google Test for unit testing
+### Always Use clang-format
 
-## Architecture
+This project has strict formatting requirements. Before making any commits or considering work complete:
+```bash
+clang-format -i src/path/to/modified/file.cpp
+```
 
-### Core Components
+The `.clang-format` file in the project root defines the style.
 
-- **WebSocket Server** (`src/server/ws/`): oatpp-based REST API and WebSocket interface
-- **Event Loop** (`src/server/eventloop/`): Main application event processing system
-- **Database Layer** (`src/server/database.cpp`): MongoDB integration for data persistence
-- **Animation System** (`src/server/animation/`): Animation playback and management
-- **Audio/RTP** (`src/server/rtp/`): Real-time audio streaming via RTP/Opus with intelligent caching system
-- **GPIO/Hardware** (`src/server/gpio/`): Hardware control interface
-- **Metrics** (`src/server/metrics/`): Performance counters and status monitoring
+### Compiler Warnings Are Errors
 
-### Data Models
+The build uses `-Wshadow -Wall -Wextra -Wpedantic`. Don't ignore warnings - fix them.
 
-Core entities in `src/model/`:
-- **Creature**: Represents an animatronic creature with capabilities
-- **Animation**: Motion sequences for creatures
-- **Sound**: Audio files and playback metadata
-- **Playlist**: Collections of animations/sounds for choreographed shows
-- **Track**: Individual timeline elements within playlists
+Common `-Wshadow` issues:
+```cpp
+// BAD - variable shadows parameter
+void processCreature(const Creature& creature) {
+    for (const auto& creature : creatures) { // ❌ Shadows parameter
+        // ...
+    }
+}
 
-### Services Architecture
+// GOOD - different variable name
+void processCreature(const Creature& creature) {
+    for (const auto& c : creatures) { // ✅ No shadow
+        // ...
+    }
+}
+```
 
-The application follows a service-oriented architecture:
-- **Controllers** (`src/server/ws/controller/`): HTTP/WebSocket endpoints
-- **Services** (`src/server/ws/service/`): Business logic layer
-- **DTOs** (`src/server/ws/dto/`): Data transfer objects for API communication
+## Project-Specific Patterns
 
-## Development Workflow
+### Defensive Coding for DTOs
 
-### Testing
+Always check for null DTOs after service calls:
+```cpp
+auto creatureDto = upsertCreature(jsonCreature, parentSpan);
 
-Unit tests are located in `tests/` and use Google Test framework. The test executable is `creature-server-test`.
+// Defensive check
+if (!creatureDto) {
+    std::string errorMessage = "Invalid creature configuration provided";
+    warn(errorMessage);
+    OATPP_ASSERT_HTTP(false, Status::CODE_400, errorMessage.c_str());
+}
+```
 
-### Linting and Code Quality
+### Span Handling
 
-The project enforces strict compiler warnings:
-- `-Wshadow` (overshadowed declarations)
-- `-Wall -Wextra -Wpedantic`
+Always check if parent span is provided:
+```cpp
+if (!parentSpan) {
+    warn("no parent span provided for Service.method, creating a root span");
+}
+auto span = creatures::observability->createOperationSpan("Service.method", parentSpan);
+```
 
-**Code Formatting**: Always run `clang-format` on modified files. The project includes a `.clang-format` configuration file in the root directory that defines the required formatting style.
+### Error Status Codes
 
-### Observability
+- **400 Bad Request** - Client provided invalid data
+- **404 Not Found** - Resource doesn't exist
+- **500 Internal Server Error** - Server bug or unexpected condition
 
-Built-in OpenTelemetry integration for traces and metrics. The `ObservabilityManager` handles telemetry configuration and export.
+```cpp
+// Client's fault (bad JSON, missing fields, etc.)
+OATPP_ASSERT_HTTP(false, Status::CODE_400, "Invalid creature configuration");
 
-## Key Libraries and Conventions
+// Server's fault (null pointer we didn't expect, internal error)
+OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database returned null");
+```
 
-### Custom Libraries
+## Build Workflow
 
-- **CreatureVoicesLib** (`lib/CreatureVoicesLib/`): Voice synthesis integration
-- **e131_service** (`lib/e131_service/`): DMX/E1.31 lighting protocol support
-- **libe131** (`lib/libe131/`): Core E1.31 implementation
+### Standard Build Process
+```bash
+# From project root
+./local_build.sh
 
-### Threading and Concurrency
+# Or manually:
+cd build
+cmake -DCMAKE_BUILD_TYPE=Debug -G Ninja ..
+ninja
+```
 
-Uses `moodycamel::ConcurrentQueue` for thread-safe message passing between components. The event loop pattern centralizes most application logic.
+### After Making Changes
 
-### Configuration
+1. **Build**: `cd build && ninja`
+2. **Format**: `clang-format -i` on modified files
+3. **Test**: `./creature-server-test` (if relevant)
+4. **Verify**: Check for compiler warnings
 
-Command-line arguments handled via argparse. Database connection and server configuration managed through environment variables and config classes.
+### Common Build Issues
 
-## Audio Cache System
+- **oatpp errors**: Run `./build_oatpp.sh` first
+- **Missing dependencies**: CMake FetchContent will download them automatically
+- **Linker warnings about duplicates**: Safe to ignore (known issue with how dependencies are linked)
 
-The server includes an intelligent caching mechanism for pre-encoded Opus files to dramatically improve performance:
+## Session Continuity Notes
 
-### Key Features
-- **Performance**: Reduces Opus encoding time from dozens of seconds to <20ms for cache hits
-- **Smart Invalidation**: Uses SHA-256 checksums, file modification times, and file sizes for cache validation
-- **Storage Format**: Binary format with embedded metadata for fast validation
-- **Location**: Stored in `.opus_cache/<hostname>/` subdirectory within the configured sounds directory
-- **Multi-Machine Safe**: Each machine gets its own cache directory based on hostname to prevent conflicts on shared storage
+### Context for Next Session
 
-### Implementation Details
-- **Class**: `util::AudioCache` provides the caching interface
-- **Integration**: `AudioStreamBuffer` automatically uses cache when available
-- **File Format**: Custom binary format (17 channels × N frames) with metadata header
-- **Error Handling**: Graceful fallback to direct encoding if cache unavailable or corrupt
+**Recent Major Changes (October 2025):**
+- Added `mouth_slot` (uint8_t) as required field in Creature model
+- Separated universe assignment (runtime state) from creature config (persistent)
+- Created `/api/v1/creature/register` endpoint for controller registration
+- Removed old `/api/v1/creature` upload endpoint (replaced by register)
+- Added `creatureUniverseMap` runtime cache for universe tracking
 
-### Performance Impact
-- **Raspberry Pi 5**: Encoding time reduced from 30+ seconds to milliseconds
-- **Cache Hit Rate**: High for repeated audio file usage in shows/playlists
-- **Memory Usage**: Minimal - cache files stored on disk, loaded on demand
+**Important Files Recently Modified:**
+- `src/model/Creature.h` - Added mouth_slot field
+- `src/model/Creature.cpp` - Updated conversions and validation
+- `src/server/creature/helpers.cpp` - Added mouth_slot validation
+- `src/server/ws/controller/CreatureController.h` - New register endpoint
+- `src/server/ws/service/CreatureService.cpp` - Registration logic
+- `src/server/main.cpp` - Added creatureUniverseMap initialization
 
-## Event Loop System
+**Key Architectural Principle:**
+Controller's JSON file = source of truth for creature config. Database is just a cache. Universe is runtime-only state, not persisted.
 
-### Critical Timing Requirements
+## Common Tasks
 
-**⚠️ CRITICAL: The event loop MUST run every 1ms exactly.** This precise timing is fundamental to the entire system's operation and cannot be compromised. Any modifications to event loop code must preserve this exact 1ms interval.
+### Adding a New DTO
 
-### Event Loop Tracing System
+1. Create file in `src/server/ws/dto/`
+2. Use oatpp macros: `DTO_INIT`, `DTO_FIELD`, `DTO_FIELD_INFO`
+3. Remember `#include OATPP_CODEGEN_BEGIN(DTO)` and `END`
+4. Add to controller as `BODY_DTO(Object<YourDto>, request)`
 
-The server implements intelligent selective tracing for the high-frequency event loop to provide error visibility while controlling observability costs:
+### Adding a New Endpoint
 
-### Key Features
-- **Selective Sampling**: Configurable sampling rate for normal event loop frames (default: 0.1% = 1 in 1000)
-- **Error-First Export**: All errors and exceptions are always traced regardless of sampling rate
-- **Smart Export Logic**: Only exports traces when errors occur or random sampling criteria met
-- **Rich Telemetry**: Frame numbers, events processed, queue sizes, timing data
+1. Add to appropriate controller in `src/server/ws/controller/`
+2. Use `ENDPOINT_INFO` for API documentation
+3. Use `ENDPOINT` macro with HTTP method and path
+4. Create request span for observability
+5. Add HTTP attributes to span
+6. Call service layer method
+7. Handle exceptions with proper status codes
+8. Schedule cache invalidation if needed
 
-### Configuration
-- **Environment Variable**: `EVENT_LOOP_TRACE_SAMPLING` (0.0 to 1.0)
-- **Command Line**: `--event-loop-trace-sampling 0.01` (for 1% sampling)
-- **Default**: 0.001 (0.1% sampling rate)
+### Modifying Data Models
 
-### Implementation Details
-- **Class**: `SamplingSpan` provides conditional export logic
-- **Integration**: Event loop creates sampling spans for each frame iteration
-- **Export Control**: Spans marked with sampling metadata for filtering in Honeycomb
-- **Error Detection**: Automatic promotion to always-export on exceptions
-
-### Cost Benefits
-- **Volume Reduction**: 99.9% reduction in normal trace volume
-- **Error Coverage**: 100% of errors and exceptions captured
-- **Performance**: Minimal overhead (~1μs per frame for sampling decision)
-- **Honeycomb Cost**: Dramatic reduction in trace ingestion costs
-
-## Platform Notes
-
-- **macOS**: Uses system SDL2 and resolv libraries
-- **Debian Linux**: Additional UUID library dependency via pkg-config; OpenSSL 3.x (libssl3) required for audio cache hashing
-- **Raspberry Pi**: Specialized build scripts (`pi4_build.sh`); runs on Raspberry Pi OS (Debian-based)
-
-## Deployment
-
-Docker-based deployment with multi-architecture support (AMD64/ARM64). GitHub Actions handle automated builds and container publishing.
+1. Update struct in `src/model/`
+2. Update DTO in same file
+3. Update `convertToDto()` and `convertFromDto()`
+4. Update JSON parsing in `src/server/creature/helpers.cpp`
+5. Update validation (required fields list)
+6. Add to database queries if needed
+7. Test with actual JSON payloads

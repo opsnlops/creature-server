@@ -78,6 +78,13 @@ std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
  */
 std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 
+/**
+ * Maps creature IDs to their currently assigned universe. This is runtime-only state that tracks
+ * which universe a creature is operating on when its controller registers. This is NOT persisted
+ * to the database - the creature config file on the controller is the source of truth.
+ */
+std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMap;
+
 std::shared_ptr<GPIO> gpioPins;
 std::shared_ptr<SystemCounters> metrics;
 std::shared_ptr<StatusLights> statusLights;
@@ -209,6 +216,10 @@ int main(const int argc, char **argv) {
     // Create the Creature cache
     creatures::creatureCache = std::make_shared<creatures::ObjectCache<creatureId_t, creatures::Creature>>();
     debug("Created the creature cache");
+
+    // Create the creature-to-universe mapping cache
+    creatures::creatureUniverseMap = std::make_shared<creatures::ObjectCache<creatureId_t, universe_t>>();
+    debug("Created the creature-to-universe mapping cache");
 
     // Create the sensor data cache
     creatures::sensorDataCache = std::make_shared<creatures::SensorDataCache>();

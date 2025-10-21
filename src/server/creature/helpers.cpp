@@ -98,6 +98,16 @@ Result<creatures::Creature> Database::creatureFromJson(json creatureJson, std::s
         creature.channel_offset = creatureJson["channel_offset"];
         debug("Successfully parsed creature channel_offset: {}", creature.channel_offset);
 
+        debug("Validating 'mouth_slot' field in creature JSON");
+        if (!creatureJson.contains("mouth_slot") || creatureJson["mouth_slot"].is_null()) {
+            std::string errorMessage = "Missing or null field 'mouth_slot' in creature JSON";
+            warn(errorMessage);
+            span->setError(errorMessage);
+            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
+        creature.mouth_slot = creatureJson["mouth_slot"];
+        debug("Successfully parsed creature mouth_slot: {}", static_cast<int>(creature.mouth_slot));
+
         if (creature.id.empty()) {
             std::string errorMessage = "Creature ID is empty";
             warn(errorMessage);
@@ -184,13 +194,15 @@ Result<creatures::Creature> Database::creatureFromJson(json creatureJson, std::s
         }
 
         debug("✅ Successfully created creature from JSON: id='{}', name='{}', audio_channel={}, channel_offset={}, "
-              "inputs_count={}",
-              creature.id, creature.name, creature.audio_channel, creature.channel_offset, creature.inputs.size());
+              "mouth_slot={}, inputs_count={}",
+              creature.id, creature.name, creature.audio_channel, creature.channel_offset,
+              static_cast<int>(creature.mouth_slot), creature.inputs.size());
         span->setSuccess();
         span->setAttribute("creature.id", creature.id);
         span->setAttribute("creature.name", creature.name);
         span->setAttribute("creature.audio_channel", creature.audio_channel);
         span->setAttribute("creature.channel_offset", creature.channel_offset);
+        span->setAttribute("creature.mouth_slot", static_cast<int64_t>(creature.mouth_slot));
         span->setAttribute("creature.inputs_count", static_cast<uint32_t>(creature.inputs.size()));
         return Result<creatures::Creature>{creature};
 

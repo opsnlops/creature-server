@@ -34,6 +34,19 @@ class CreatureService {
      */
     static oatpp::Object<creatures::CreatureDto> upsertCreature(const std::string &jsonCreature,
                                                                 std::shared_ptr<RequestSpan> parentSpan = nullptr);
+
+    /**
+     * Register a creature with its universe assignment
+     *
+     * Called by controllers when they start up. This upserts the creature config to the database
+     * and stores the creature-to-universe mapping in runtime memory.
+     *
+     * @param jsonCreature a JSON representation of the creature configuration from the controller
+     * @param universe the universe this creature is currently assigned to
+     * @return the creature that was registered
+     */
+    static oatpp::Object<creatures::CreatureDto> registerCreature(const std::string &jsonCreature, universe_t universe,
+                                                                  std::shared_ptr<RequestSpan> parentSpan = nullptr);
 };
 
 } // namespace creatures::ws

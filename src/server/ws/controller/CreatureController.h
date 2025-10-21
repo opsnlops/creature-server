@@ -20,6 +20,7 @@ using json = nlohmann::json;
 
 #include "server/metrics/counters.h"
 #include "server/ws/service/CreatureService.h"
+#include "server/ws/dto/RegisterCreatureRequestDto.h"
 #include "util/ObservabilityManager.h"
 
 namespace creatures {
@@ -135,36 +136,40 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         return createDtoResponse(Status::CODE_200, result);
     }
 
-    ENDPOINT_INFO(upsertCreature) {
-        info->summary = "Update or insert a creature";
+    ENDPOINT_INFO(registerCreature) {
+        info->summary = "Register a creature with its universe assignment";
+        info->description =
+            "Called by controllers when they start up to register a creature and its current universe. "
+            "The creature config from the controller's JSON file is the source of truth and will be upserted "
+            "to the database. The universe assignment is stored in runtime memory only.";
 
         info->addResponse<Object<creatures::CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/creature", upsertCreature, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        // Span for the upsert operation
-        auto span = creatures::observability->createRequestSpan("POST /api/v1/creature", "POST", "api/v1/creature");
-        addHttpRequestAttributes(span, request);
+    ENDPOINT("POST", "api/v1/creature/register", registerCreature,
+             BODY_DTO(Object<RegisterCreatureRequestDto>, request)) {
+        auto span = creatures::observability->createRequestSpan("POST /api/v1/creature/register", "POST",
+                                                                "api/v1/creature/register");
 
-        debug("new creature configuration uploaded via REST API");
+        debug("Controller registering creature with universe assignment");
         creatures::metrics->incrementRestRequestsProcessed();
 
         try {
-            auto requestAsString = std::string(request->readBodyToString());
-            trace("request was: {}", requestAsString);
+            std::string creatureConfig = std::string(request->creature_config);
 
             if (span) {
-                span->setAttribute("endpoint", "upsertCreature");
+                span->setAttribute("endpoint", "registerCreature");
                 span->setAttribute("controller", "CreatureController");
-                span->setAttribute("request.body_size", static_cast<int64_t>(requestAsString.length()));
+                span->setAttribute("universe", static_cast<int64_t>(request->universe));
+                span->setAttribute("request.body_size", static_cast<int64_t>(creatureConfig.length()));
             }
 
-            auto result = m_creatureService.upsertCreature(requestAsString, span);
+            auto result = m_creatureService.registerCreature(creatureConfig, request->universe, span);
 
             if (span) {
                 span->setAttribute("creature.id", std::string(result->id));
-                span->setAttribute("creature.name", std::string(result->name)); // Assuming creatures have a 'name'
+                span->setAttribute("creature.name", std::string(result->name));
                 span->setHttpStatus(200);
             }
 
@@ -179,7 +184,7 @@ class CreatureController : public oatpp::web::server::api::ApiController {
                 span->setHttpStatus(500);
             }
 
-            error("Exception in upsertCreature: {}", ex.what());
+            error("Exception in registerCreature: {}", ex.what());
             throw;
         }
     }

@@ -5,6 +5,7 @@
 #include "model/Creature.h"
 #include "server/database.h"
 #include "util/Result.h"
+#include "util/cache.h"
 
 #include "server/ws/dto/ListDto.h"
 #include "util/JsonParser.h"
@@ -15,6 +16,7 @@
 namespace creatures {
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability; // Declare observability extern
+extern std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMap;
 } // namespace creatures
 
 namespace creatures ::ws {
@@ -288,6 +290,55 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
         serviceSpan->setSuccess();
     }
     return convertToDto(creature);
+}
+
+oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const std::string &jsonCreature,
+                                                                        universe_t universe,
+                                                                        std::shared_ptr<RequestSpan> parentSpan) {
+    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+
+    if (!parentSpan) {
+        warn("no parent span provided for CreatureService.registerCreature, creating a root span");
+    }
+
+    auto serviceSpan = creatures::observability->createOperationSpan("CreatureService.registerCreature", parentSpan);
+
+    appLogger->info("Controller registering creature with universe {}", universe);
+
+    if (serviceSpan) {
+        serviceSpan->setAttribute("service", "CreatureService");
+        serviceSpan->setAttribute("operation", "registerCreature");
+        serviceSpan->setAttribute("universe", static_cast<int64_t>(universe));
+        serviceSpan->setAttribute("json.size", static_cast<int64_t>(jsonCreature.length()));
+    }
+
+    // First, upsert the creature to the database (this handles validation)
+    auto creatureDto = upsertCreature(jsonCreature, parentSpan);
+
+    // Defensive check: ensure we got a valid creature DTO back
+    if (!creatureDto) {
+        std::string errorMessage = "Invalid creature configuration provided";
+        warn(errorMessage);
+        if (serviceSpan) {
+            serviceSpan->setError(errorMessage);
+        }
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, errorMessage.c_str());
+    }
+
+    // Now store the creature-to-universe mapping in runtime memory
+    std::string creatureId = std::string(creatureDto->id);
+    creatures::creatureUniverseMap->put(creatureId, universe);
+
+    appLogger->info("Registered creature '{}' (id: {}) on universe {}", std::string(creatureDto->name), creatureId,
+                    universe);
+
+    if (serviceSpan) {
+        serviceSpan->setAttribute("creature.id", creatureId);
+        serviceSpan->setAttribute("creature.name", std::string(creatureDto->name));
+        serviceSpan->setSuccess();
+    }
+
+    return creatureDto;
 }
 
 } // namespace creatures::ws

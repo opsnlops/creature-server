@@ -44,6 +44,13 @@ struct Creature {
     uint16_t audio_channel;
 
     /**
+     * The slot in the motion array that corresponds to the creature's mouth.
+     * This is used by the Rhubarb Lip Sync system to automatically generate
+     * mouth movements during animation.
+     */
+    uint8_t mouth_slot;
+
+    /**
      * The inputs for this creature
      */
     std::vector<Input> inputs;
@@ -68,6 +75,12 @@ class CreatureDto : public oatpp::DTO {
 
     DTO_FIELD_INFO(audio_channel) { info->description = "The audio channel for this creature"; }
     DTO_FIELD(UInt16, audio_channel);
+
+    DTO_FIELD_INFO(mouth_slot) {
+        info->description = "The slot in the motion array that corresponds to the creature's mouth";
+        info->required = true;
+    }
+    DTO_FIELD(UInt8, mouth_slot);
 
     DTO_FIELD_INFO(inputs) { info->description = "The input map for this creature"; }
     DTO_FIELD(List<Object<InputDto>>, inputs);

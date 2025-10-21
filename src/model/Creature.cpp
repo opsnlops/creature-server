@@ -12,7 +12,8 @@
 namespace creatures {
 
 // List of required fields
-std::vector<std::string> creature_required_top_level_fields = {"id", "name", "audio_channel", "channel_offset"};
+std::vector<std::string> creature_required_top_level_fields = {"id", "name", "audio_channel", "channel_offset",
+                                                                "mouth_slot"};
 
 std::vector<std::string> creature_required_input_fields = {"name", "slot", "width", "joystick_axis"};
 
@@ -33,6 +34,9 @@ Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto) {
 
     creature.audio_channel = creatureDto->audio_channel;
     debug("audio_channel: {}", creature.audio_channel);
+
+    creature.mouth_slot = creatureDto->mouth_slot;
+    debug("mouth_slot: {}", static_cast<int>(creature.mouth_slot));
 
     // Make sure we're not about to read a null pointer
     if (creatureDto->inputs) {
@@ -56,6 +60,7 @@ oatpp::Object<CreatureDto> convertToDto(const Creature &creature) {
     creatureDto->name = creature.name;
     creatureDto->channel_offset = creature.channel_offset;
     creatureDto->audio_channel = creature.audio_channel;
+    creatureDto->mouth_slot = creature.mouth_slot;
     creatureDto->inputs = oatpp::List<oatpp::Object<InputDto>>::createShared();
 
     for (const auto &[name, slot, width, joystick_axis] : creature.inputs) {
