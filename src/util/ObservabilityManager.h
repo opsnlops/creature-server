@@ -94,6 +94,9 @@ class ObservabilityManager {
      * @return A unique pointer to the sampling span
      */
     std::shared_ptr<SamplingSpan> createSamplingSpan(const std::string &operationName, double samplingRate = 0.001);
+    std::shared_ptr<SamplingSpan> createSamplingSpan(const std::string &operationName,
+                                                     std::shared_ptr<OperationSpan> parentSpan,
+                                                     double samplingRate = 0.001);
 
     /**
      * Export all metrics from the SystemCounters to OTel

@@ -24,6 +24,10 @@
 
 namespace creatures {
 
+namespace {
+constexpr double PLAYBACK_RUNNER_TRACE_SAMPLING = 0.0005; // 0.05% sampling rate
+}
+
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<GPIO> gpioPins;
@@ -34,10 +38,16 @@ PlaybackRunnerEvent::PlaybackRunnerEvent(framenum_t frameNumber, std::shared_ptr
     : EventBase(frameNumber), session_(session) {}
 
 Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
-    // Create a child span for this runner execution
-    auto runnerSpan = session_->getSpan()
-                          ? observability->createChildOperationSpan("playback_runner.execute", session_->getSpan())
-                          : observability->createOperationSpan("playback_runner.execute");
+    std::shared_ptr<SamplingSpan> runnerSpan = nullptr;
+    if (observability) {
+        auto parentSpan = session_->getSpan();
+        if (parentSpan) {
+            runnerSpan = observability->createSamplingSpan("playback_runner.execute", parentSpan,
+                                                           PLAYBACK_RUNNER_TRACE_SAMPLING);
+        } else {
+            runnerSpan = observability->createSamplingSpan("playback_runner.execute", PLAYBACK_RUNNER_TRACE_SAMPLING);
+        }
+    }
 
     if (runnerSpan) {
         runnerSpan->setAttribute("runner.frame", static_cast<int64_t>(this->frameNumber));

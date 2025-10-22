@@ -765,6 +765,74 @@ std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std
     }
 }
 
+std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std::string &operationName,
+                                                                       std::shared_ptr<OperationSpan> parentSpan,
+                                                                       double samplingRate) {
+
+    if (!initialized_) {
+        return nullptr;
+    }
+
+    static thread_local bool rngInitialized = false;
+    static thread_local std::mt19937 rng;
+    static thread_local std::uniform_real_distribution<double> distribution(0.0, 1.0);
+
+    if (!rngInitialized) {
+        try {
+            std::random_device rd;
+            rng.seed(rd());
+            rngInitialized = true;
+        } catch (const std::exception &e) {
+            critical("🚨 Random device initialization failed: {} - Using time-based fallback", e.what());
+            rng.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
+            rngInitialized = true;
+        }
+    }
+
+    bool shouldSample = distribution(rng) < samplingRate;
+
+    if (!tracer_) {
+        critical("🚨 TRACER IS NULL! Cannot create sampling span for: {}", operationName);
+        return nullptr;
+    }
+
+    if (shouldSample) {
+        opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span;
+
+        if (parentSpan) {
+            auto *parentSpanPtr = parentSpan->getSpan();
+            if (!parentSpanPtr) {
+                warn("🚨 NULL PARENT SPAN DETECTED! Creating root sampling span for operation: {} "
+                     "(This is expected when parent sampling span opted not to export)",
+                     operationName);
+                span = tracer_->StartSpan(operationName);
+            } else {
+                try {
+                    auto options = opentelemetry::trace::StartSpanOptions{};
+                    options.parent = parentSpanPtr->GetContext();
+                    span = tracer_->StartSpan(operationName, options);
+                } catch (const std::exception &e) {
+                    critical("🚨 EXCEPTION getting parent span context: {} - Creating root sampling span instead",
+                             e.what());
+                    span = tracer_->StartSpan(operationName);
+                }
+            }
+        } else {
+            span = tracer_->StartSpan(operationName);
+        }
+
+        if (!span) {
+            critical("🚨 FAILED TO CREATE SAMPLING SPAN! Tracer returned null span for: {}", operationName);
+            return nullptr;
+        }
+
+        return std::make_shared<SamplingSpan>(span, samplingRate, true, tracer_);
+    }
+
+    opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> nullSpan;
+    return std::make_shared<SamplingSpan>(nullSpan, samplingRate, false, tracer_);
+}
+
 SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate,
                            bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer)
     : OperationSpan(span), samplingRate_(samplingRate), shouldExport_(shouldExport), tracer_(tracer) {
