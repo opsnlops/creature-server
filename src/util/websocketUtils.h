@@ -5,6 +5,7 @@
 
 #include "model/CacheInvalidation.h"
 #include "model/PlaylistStatus.h"
+#include "server/jobs/JobState.h"
 #include "util/Result.h"
 
 #include "server/namespace-stuffs.h"
@@ -53,5 +54,21 @@ void scheduleCacheInvalidationEvent(framenum_t frameOffset, CacheType type);
  */
 Result<bool>
 broadcastPlaylistStatusToAllClients(const PlaylistStatus &playlistStatus);
+
+/**
+ * Broadcast job progress update to all connected WebSocket clients
+ *
+ * @param jobState The current job state
+ * @return true if successful
+ */
+Result<bool> broadcastJobProgressToAllClients(const jobs::JobState &jobState);
+
+/**
+ * Broadcast job completion to all connected WebSocket clients
+ *
+ * @param jobState The completed job state
+ * @return true if successful
+ */
+Result<bool> broadcastJobCompleteToAllClients(const jobs::JobState &jobState);
 
 } // namespace creatures

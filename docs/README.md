@@ -6,6 +6,7 @@ Welcome to the Creature Server documentation!
 
 ### Architecture & Features
 
+- **[Async Job System](architecture/job-system.md)** - Background job processing with WebSocket progress updates for long-running operations
 - **[Cooperative Animation Scheduler](cooperative-scheduler.md)** - Frame-by-frame animation scheduling with real-time interrupts and interactive control
 
 ## Quick Links

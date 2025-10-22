@@ -10,7 +10,11 @@
 #include "server/config.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
+#include "server/ws/dto/JobCompleteDto.h"
+#include "server/ws/dto/JobProgressDto.h"
 #include "server/ws/dto/websocket/CacheInvalidationMessage.h"
+#include "server/ws/dto/websocket/JobCompleteMessage.h"
+#include "server/ws/dto/websocket/JobProgressMessage.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
 #include "server/ws/dto/websocket/NoticeMessage.h"
 #include "server/ws/dto/websocket/PlaylistStatusMessage.h"
@@ -163,4 +167,75 @@ broadcastPlaylistStatusToAllClients(const PlaylistStatus &playlistStatus) {
                                         "caught an unknown exception")};
     }
 }
+
+Result<bool> broadcastJobProgressToAllClients(const jobs::JobState &jobState) {
+
+    debug("broadcasting job progress to all clients: job_id={}, progress={:.1f}%", jobState.jobId,
+          jobState.progress * 100.0f);
+
+    try {
+        // Create the DTO
+        auto progressDto = oatpp::Object<ws::JobProgressDto>::createShared();
+        progressDto->job_id = jobState.jobId;
+        progressDto->job_type = jobs::toString(jobState.jobType);
+        progressDto->status = jobs::toString(jobState.status);
+        progressDto->progress = jobState.progress;
+        progressDto->details = jobState.details;
+
+        // Create the message to send with the command and payload
+        auto progressMessage = oatpp::Object<ws::JobProgressMessage>::createShared();
+        progressMessage->command = toString(ws::MessageType::JobProgress);
+        progressMessage->payload = progressDto;
+
+        // Make a JSON mapper
+        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+
+        std::string outgoingMessage = jsonMapper->writeToString(progressMessage);
+        debug("Outgoing job progress for clients: {}", outgoingMessage);
+
+        websocketOutgoingMessages->enqueue(outgoingMessage);
+        return Result<bool>{true};
+    } catch (const std::exception &e) {
+        return Result<bool>{ServerError(ServerError::InternalError, e.what())};
+    } catch (...) {
+        return Result<bool>{
+            ServerError(ServerError::InternalError, "broadcastJobProgressToAllClients() caught an unknown exception")};
+    }
+}
+
+Result<bool> broadcastJobCompleteToAllClients(const jobs::JobState &jobState) {
+
+    info("broadcasting job completion to all clients: job_id={}, status={}", jobState.jobId,
+         jobs::toString(jobState.status));
+
+    try {
+        // Create the DTO
+        auto completeDto = oatpp::Object<ws::JobCompleteDto>::createShared();
+        completeDto->job_id = jobState.jobId;
+        completeDto->job_type = jobs::toString(jobState.jobType);
+        completeDto->status = jobs::toString(jobState.status);
+        completeDto->result = jobState.result;
+        completeDto->details = jobState.details;
+
+        // Create the message to send with the command and payload
+        auto completeMessage = oatpp::Object<ws::JobCompleteMessage>::createShared();
+        completeMessage->command = toString(ws::MessageType::JobComplete);
+        completeMessage->payload = completeDto;
+
+        // Make a JSON mapper
+        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+
+        std::string outgoingMessage = jsonMapper->writeToString(completeMessage);
+        debug("Outgoing job completion for clients: {}", outgoingMessage);
+
+        websocketOutgoingMessages->enqueue(outgoingMessage);
+        return Result<bool>{true};
+    } catch (const std::exception &e) {
+        return Result<bool>{ServerError(ServerError::InternalError, e.what())};
+    } catch (...) {
+        return Result<bool>{
+            ServerError(ServerError::InternalError, "broadcastJobCompleteToAllClients() caught an unknown exception")};
+    }
+}
+
 } // namespace creatures

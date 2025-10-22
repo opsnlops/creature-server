@@ -39,6 +39,8 @@
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
+#include "server/jobs/JobManager.h"
+#include "server/jobs/JobWorker.h"
 #include "server/metrics/StatusLights.h"
 #include "server/metrics/counters.h"
 #include "server/rtp/AudioStreamBuffer.h"
@@ -109,6 +111,10 @@ std::shared_ptr<SensorDataCache> sensorDataCache;
 
 // Session manager for tracking active playback and handling interrupts
 std::shared_ptr<class SessionManager> sessionManager;
+
+// Job management for async background tasks
+std::shared_ptr<jobs::JobManager> jobManager;
+std::shared_ptr<jobs::JobWorker> jobWorker;
 } // namespace creatures
 
 // Signal handler to stop the event loop
@@ -229,6 +235,14 @@ int main(const int argc, char **argv) {
     creatures::sessionManager = std::make_shared<creatures::SessionManager>();
     debug("Created the session manager");
 
+    // Create the job manager and worker for background tasks
+    creatures::jobManager = std::make_shared<creatures::jobs::JobManager>();
+    debug("Created the job manager");
+
+    creatures::jobWorker = std::make_shared<creatures::jobs::JobWorker>(creatures::jobManager);
+    creatures::jobWorker->start();
+    info("JobWorker thread started");
+
     // Start up the event loop
     creatures::eventLoop = std::make_shared<EventLoop>();
     creatures::eventLoop->start();
@@ -308,6 +322,11 @@ int main(const int argc, char **argv) {
     // Stop the websocket server FIRST (before event loop)
     // This prevents web server threads from trying to use the event loop after it's destroyed
     webServer->shutdown();
+
+    // Stop the job worker
+    info("Stopping job worker...");
+    creatures::jobWorker->shutdown();
+    debug("JobWorker stopped");
 
     // Halt the event loop
     creatures::eventLoop->shutdown();

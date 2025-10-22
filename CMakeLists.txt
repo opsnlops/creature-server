@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "3.2.0"
+        VERSION "3.2.1"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -247,6 +247,7 @@ file(GLOB serverFiles
         src/server/creature/*
         src/server/eventloop/*
         src/server/eventloop/events/*
+        src/server/jobs/*
         src/server/gpio/*
         src/server/logging/*
         src/server/metrics/*
@@ -325,6 +326,8 @@ add_executable(creature-server
         src/util/loggingUtils.h
         src/util/Result.cpp
         src/util/Result.h
+        src/util/uuidUtils.cpp
+        src/util/uuidUtils.h
         src/util/websocketUtils.h
         src/util/websocketUtils.cpp
 

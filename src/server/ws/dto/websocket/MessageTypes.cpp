@@ -30,6 +30,10 @@ std::string toString(MessageType type) {
         return "cache-invalidation";
     case MessageType::PlaylistStatus:
         return "playlist-status";
+    case MessageType::JobProgress:
+        return "job-progress";
+    case MessageType::JobComplete:
+        return "job-complete";
 
     default:
         return "unknown";

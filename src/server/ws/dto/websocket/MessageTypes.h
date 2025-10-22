@@ -17,6 +17,8 @@ enum class MessageType {
     MotorSensorReport,
     CacheInvalidation,
     PlaylistStatus,
+    JobProgress,
+    JobComplete,
 };
 
 // Don't forget to update the toString function in MessageTypes.cpp
