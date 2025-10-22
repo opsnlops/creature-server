@@ -51,8 +51,9 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
         return error;
     }
 
+    // Initial progress: validation complete
     if (progressCallback) {
-        progressCallback(0.1f);
+        progressCallback(0.05f);
     }
 
     // Check for transcript file
@@ -68,10 +69,6 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
         info("Found transcript file: {}", transcriptPath.filename().string());
     } else {
         debug("No transcript file found for {}", soundFile);
-    }
-
-    if (progressCallback) {
-        progressCallback(0.15f);
     }
 
     // Check if JSON file already exists
@@ -96,8 +93,9 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
         debug("JSON file does not exist, will create new file");
     }
 
+    // Pre-execution progress: ready to start Rhubarb
     if (progressCallback) {
-        progressCallback(0.2f);
+        progressCallback(0.10f);
     }
 
     // Build the Rhubarb command
@@ -107,7 +105,7 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
         span->setAttribute("rhubarb.binary", rhubarbBinaryPath);
     }
 
-    std::string command = fmt::format("{} -f json -o \"{}\"", rhubarbBinaryPath, jsonOutputPath.string());
+    std::string command = fmt::format("{} -f json --machineReadable -o \"{}\"", rhubarbBinaryPath, jsonOutputPath.string());
     debug("Building Rhubarb command...");
 
     // Add transcript if available
@@ -119,17 +117,13 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
     // Add the input WAV file
     command += fmt::format(" \"{}\"", soundFilePath.string());
 
-    // Redirect stderr to stdout to capture all output
+    // Redirect stderr to stdout to capture all output (machine-readable JSON goes to stderr)
     command += " 2>&1";
 
     info("Executing Rhubarb command: {}", command);
 
-    if (progressCallback) {
-        progressCallback(0.25f);
-    }
-
-    // Execute Rhubarb
-    auto executionResult = executeRhubarb(command, rhubarbBinaryPath, span);
+    // Execute Rhubarb with real-time progress parsing
+    auto executionResult = executeRhubarb(command, rhubarbBinaryPath, span, progressCallback);
     if (!executionResult.isSuccess()) {
         auto error = executionResult.getError().value();
         if (span) {
@@ -140,8 +134,9 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
 
     info("Rhubarb processing completed successfully (exit code 0)");
 
+    // Rhubarb complete, now reading output
     if (progressCallback) {
-        progressCallback(0.8f);
+        progressCallback(0.96f);
     }
 
     // Verify JSON file was created
@@ -159,11 +154,11 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
     }
     debug("JSON file created successfully");
 
+    // Read and process the JSON file
     if (progressCallback) {
-        progressCallback(0.9f);
+        progressCallback(0.98f);
     }
 
-    // Read and process the JSON file
     auto jsonResult = readAndProcessJson(jsonOutputPath, soundFile, span);
     if (!jsonResult.isSuccess()) {
         auto error = jsonResult.getError().value();
@@ -183,6 +178,7 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
         span->setSuccess();
     }
 
+    // Final progress: complete
     if (progressCallback) {
         progressCallback(1.0f);
     }
@@ -231,11 +227,13 @@ Result<bool> LipSyncProcessor::validateSoundFile(const std::filesystem::path &so
 }
 
 Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &command, const std::string &rhubarbBinaryPath,
-                                                      std::shared_ptr<OperationSpan> parentSpan) {
+                                                      std::shared_ptr<OperationSpan> parentSpan,
+                                                      ProgressCallback progressCallback) {
 
     auto span = observability->createChildOperationSpan("LipSyncProcessor.executeRhubarb", parentSpan);
     if (span) {
         span->setAttribute("rhubarb.command", command);
+        span->setAttribute("rhubarb.machine_readable", true);
     }
 
     std::string commandOutput;
@@ -258,11 +256,41 @@ Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &command,
         }
         debug("Pipe opened successfully, reading output...");
 
-        // Read command output
-        // TODO: Parse machine-readable output for progress updates
-        char buffer[256];
+        // Read and parse machine-readable JSON output line by line
+        char buffer[1024];
         while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
             commandOutput += buffer;
+
+            // Try to parse this line as JSON for progress updates
+            if (progressCallback) {
+                try {
+                    std::string line(buffer);
+                    // Remove trailing newline
+                    if (!line.empty() && line.back() == '\n') {
+                        line.pop_back();
+                    }
+
+                    // Parse JSON line
+                    auto json = nlohmann::json::parse(line);
+
+                    // Check if this is a progress message
+                    if (json.contains("type") && json["type"] == "progress" && json.contains("value")) {
+                        float progress = json["value"].get<float>();
+
+                        // Scale progress to 0.25-0.95 range (leave room for our other steps)
+                        float scaledProgress = 0.25f + (progress * 0.70f);
+
+                        debug("Rhubarb progress: {:.1f}% (scaled to {:.1f}%)", progress * 100.0f, scaledProgress * 100.0f);
+                        progressCallback(scaledProgress);
+
+                        if (span) {
+                            span->setAttribute("rhubarb.progress", static_cast<double>(progress));
+                        }
+                    }
+                } catch (const nlohmann::json::exception &) {
+                    // Not valid JSON or doesn't have expected fields, skip
+                }
+            }
         }
         debug("Command output captured ({} bytes)", commandOutput.length());
 

@@ -64,10 +64,12 @@ class LipSyncProcessor {
      * @param command The command to execute
      * @param rhubarbBinaryPath Path to the binary (for error messages)
      * @param parentSpan Optional parent span for observability
+     * @param progressCallback Optional callback for real-time progress updates
      * @return Result containing the command output on success
      */
     static Result<std::string> executeRhubarb(const std::string &command, const std::string &rhubarbBinaryPath,
-                                               std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                               std::shared_ptr<OperationSpan> parentSpan = nullptr,
+                                               ProgressCallback progressCallback = nullptr);
 
     /**
      * Read and process the generated JSON file

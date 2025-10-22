@@ -5,6 +5,8 @@
 #include <fstream>
 #include <regex>
 
+#include <nlohmann/json.hpp>
+
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
@@ -246,10 +248,17 @@ class SoundController : public oatpp::web::server::api::ApiController {
         }
 
         std::string soundFile = std::string(requestBody->sound_file);
+        bool allowOverwrite = requestBody->allow_overwrite ? static_cast<bool>(requestBody->allow_overwrite) : false;
 
         // Create a job for the lip sync processing
-        debug("Creating lip sync job for sound file: {}", soundFile);
-        std::string jobId = creatures::jobManager->createJob(creatures::jobs::JobType::LipSync, soundFile);
+        // Encode details as JSON to include both filename and allow_overwrite flag
+        nlohmann::json jobDetails;
+        jobDetails["sound_file"] = soundFile;
+        jobDetails["allow_overwrite"] = allowOverwrite;
+        std::string jobDetailsStr = jobDetails.dump();
+
+        debug("Creating lip sync job for sound file: {}, allow_overwrite: {}", soundFile, allowOverwrite);
+        std::string jobId = creatures::jobManager->createJob(creatures::jobs::JobType::LipSync, jobDetailsStr);
         info("Created lip sync job with ID: {}", jobId);
 
         if (span) {

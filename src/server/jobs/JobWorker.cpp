@@ -3,6 +3,8 @@
 
 #include <chrono>
 
+#include <nlohmann/json.hpp>
+
 #include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/namespace-stuffs.h"
@@ -87,8 +89,22 @@ void JobWorker::processJob(const std::string &jobId) {
 }
 
 void JobWorker::handleLipSyncJob(JobState &jobState) {
-    std::string soundFile = jobState.details;
-    info("handleLipSyncJob() called for job {} with sound file: {}", jobState.jobId, soundFile);
+    // Parse job details JSON
+    std::string soundFile;
+    bool allowOverwrite = false;
+
+    try {
+        auto detailsJson = nlohmann::json::parse(jobState.details);
+        soundFile = detailsJson["sound_file"].get<std::string>();
+        allowOverwrite = detailsJson.value("allow_overwrite", false);
+    } catch (const nlohmann::json::exception &e) {
+        error("Failed to parse job details JSON for job {}: {}", jobState.jobId, e.what());
+        jobManager_->failJob(jobState.jobId, fmt::format("Invalid job details: {}", e.what()));
+        return;
+    }
+
+    info("handleLipSyncJob() called for job {} with sound file: {}, allow_overwrite: {}", jobState.jobId, soundFile,
+         allowOverwrite);
 
     // Get configuration
     std::string soundsDir = config->getSoundFileLocation();
@@ -119,7 +135,7 @@ void JobWorker::handleLipSyncJob(JobState &jobState) {
     // Call the LipSyncProcessor to do the actual work
     // The job's span is passed as the parent, so all LipSyncProcessor spans will be children
     auto result = voice::LipSyncProcessor::generateLipSync(soundFile, soundsDir, rhubarbBinaryPath,
-                                                            true, // allowOverwrite - jobs always overwrite
+                                                            allowOverwrite, // Use the allow_overwrite from the request
                                                             progressCallback, jobState.span);
 
     debug("LipSyncProcessor::generateLipSync returned for job {}", jobState.jobId);

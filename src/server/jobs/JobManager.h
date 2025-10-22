@@ -7,7 +7,6 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <uuid/uuid.h>
 
 #include "JobState.h"
 
@@ -91,13 +90,6 @@ class JobManager {
     void cleanupOldJobs(std::chrono::seconds olderThan = std::chrono::hours(1));
 
   private:
-    /**
-     * Generate a new UUID string
-     *
-     * @return A new UUID in string format
-     */
-    std::string generateUUID();
-
     std::mutex mutex_;                        // Protects access to jobs map
     std::map<std::string, JobState> jobs_;    // Map of job ID to job state
 };
