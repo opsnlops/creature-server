@@ -105,6 +105,14 @@ class PlaybackSession {
     [[nodiscard]] framenum_t getStartingFrame() const { return startingFrame_; }
 
     /**
+     * Set the starting frame number
+     *
+     * Used when adjusting the start time after audio loading completes
+     * Also updates all track states to dispatch at the new starting frame
+     */
+    void setStartingFrame(framenum_t frame);
+
+    /**
      * Get the milliseconds per frame for this animation
      */
     [[nodiscard]] uint32_t getMsPerFrame() const { return animation_.metadata.milliseconds_per_frame; }

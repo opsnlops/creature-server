@@ -97,4 +97,16 @@ void PlaybackSession::cancel() {
     }
 }
 
+void PlaybackSession::setStartingFrame(framenum_t frame) {
+    startingFrame_ = frame;
+
+    // Update all track states to dispatch at the new starting frame
+    for (auto &trackState : trackStates_) {
+        trackState.nextDispatchFrame = frame;
+    }
+
+    debug("Updated starting frame to {} for animation '{}' on universe {}", frame, animation_.metadata.title,
+          universe_);
+}
+
 } // namespace creatures

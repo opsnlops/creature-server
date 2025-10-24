@@ -70,6 +70,22 @@ Result<std::shared_ptr<PlaybackSession>> CooperativeAnimationScheduler::schedule
         // Create audio transport
         auto audioTransport = createAudioTransport(session);
         session->setAudioTransport(audioTransport);
+
+        // Audio loading is synchronous and heavy I/O - recalculate starting frame
+        // This matches the pattern in MusicEvent::scheduleRtpAudio()
+        startingFrame = eventLoop->getNextFrameNumber() + 2; // +2 to allow for reset event
+        session->setStartingFrame(startingFrame);
+
+        debug("Audio loaded, adjusted starting frame to {}", startingFrame);
+
+        // If using RTP audio, schedule encoder reset event before playback starts
+        // This rotates SSRC values so controllers can detect the new audio stream
+        if (config->getAudioMode() == Configuration::AudioMode::RTP) {
+            framenum_t resetFrame = startingFrame - 1;
+            auto resetEvent = std::make_shared<RtpEncoderResetEvent>(resetFrame, 4); // 4 silent frames
+            eventLoop->scheduleEvent(resetEvent);
+            debug("Scheduled RtpEncoderResetEvent for frame {} (one frame before animation starts)", resetFrame);
+        }
     }
 
     // Set up lifecycle callbacks
