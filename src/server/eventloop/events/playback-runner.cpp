@@ -74,11 +74,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
     }
 
     // Invoke onStart callback on first execution
-    static thread_local bool hasStarted = false;
-    if (!hasStarted) {
-        session_->invokeOnStart();
-        hasStarted = true;
-    }
+    session_->invokeOnStart();
 
     // Emit DMX frames for all tracks at current frame
     auto dmxResult = emitDmxFrames();

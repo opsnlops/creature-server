@@ -158,11 +158,18 @@ class PlaybackSession {
 
     /**
      * Invoke the start callback (called by PlaybackRunnerEvent on first execution)
+     *
+     * Returns true if the callback was invoked, false if it was already called
      */
-    void invokeOnStart() {
+    bool invokeOnStart() {
+        if (hasStarted_) {
+            return false;
+        }
+        hasStarted_ = true;
         if (onStart_) {
             onStart_();
         }
+        return true;
     }
 
     /**
@@ -201,6 +208,9 @@ class PlaybackSession {
 
     // Cancellation flag (atomic for thread-safety)
     std::atomic<bool> cancelled_{false};
+
+    // Lifecycle state
+    bool hasStarted_{false};
 
     // Lifecycle callbacks
     std::function<void()> onStart_;

@@ -65,21 +65,24 @@ Result<framenum_t> RtpAudioTransport::dispatchNextChunk(framenum_t currentFrame)
         return Result<framenum_t>{ServerError(ServerError::InternalError, "Audio buffer disappeared")};
     }
 
-    // Send this frame to all 17 RTP channels (16 creatures + 1 BGM)
-    for (int ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
-        rtpServer_->send(static_cast<uint8_t>(ch),
-                         audioBuffer->getEncodedFrame(static_cast<uint8_t>(ch), currentFrameIndex_));
-    }
+    // Dispatch all audio frames that are due (might be multiple if PlaybackRunnerEvent runs infrequently)
+    while (currentFrame >= nextDispatchFrame_ && currentFrameIndex_ < totalFrames_ && !stopped_) {
+        // Send this frame to all 17 RTP channels (16 creatures + 1 BGM)
+        for (int ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
+            rtpServer_->send(static_cast<uint8_t>(ch),
+                             audioBuffer->getEncodedFrame(static_cast<uint8_t>(ch), currentFrameIndex_));
+        }
 
-    // Advance to next frame
-    currentFrameIndex_++;
+        // Advance to next frame
+        currentFrameIndex_++;
 
-    // Calculate next dispatch time
-    // First few frames are prefill (1ms apart), then normal pacing (20ms apart)
-    if (currentFrameIndex_ < kPrefillFrames) {
-        nextDispatchFrame_ = currentFrame + 1; // 1ms later
-    } else {
-        nextDispatchFrame_ = currentFrame + (RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS); // 20ms later
+        // Calculate next dispatch time
+        // First few frames are prefill (1ms apart), then normal pacing (20ms apart)
+        if (currentFrameIndex_ < kPrefillFrames) {
+            nextDispatchFrame_ = nextDispatchFrame_ + 1; // 1ms later
+        } else {
+            nextDispatchFrame_ = nextDispatchFrame_ + (RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS); // 20ms later
+        }
     }
 
     return Result<framenum_t>{nextDispatchFrame_};

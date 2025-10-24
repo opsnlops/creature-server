@@ -913,8 +913,271 @@ POST /api/v1/animation/interrupt
 
 ---
 
-**Build Status:** ✅ Clean build, no warnings (except E131 lib warnings)
-**Code Format:** ✅ clang-format applied
-**Documentation:** ✅ Complete with Mermaid diagrams
-**Testing Tools:** ✅ Ready to use
-**Production Status:** ✅ Ready for Zoom meetings!
+## Sound Playback During Animations - Bug Fix Session
+
+**Date:** 2025-10-23
+**Status:** ✅ Fixed and Verified
+**Context:** Sound playback broke during cooperative scheduler implementation
+
+### Summary
+
+After implementing the interrupt system, sound playback during animations completely stopped working. Controllers saw SSRC rotation but received no audio data. Through systematic debugging (including Wireshark packet capture), we discovered and fixed **four critical bugs** in the audio dispatch pipeline.
+
+### Bugs Found and Fixed
+
+#### Bug #11: Stale Frame Numbers After Audio Loading
+**Problem:** Audio loading in `CooperativeAnimationScheduler` is synchronous and blocks. By the time `scheduleAnimation()` finished loading the audio buffer, the `startingFrame` was already in the past, causing timing issues.
+
+**Root Cause:** Unlike `MusicEvent` which loads audio asynchronously in a background thread and recalculates the frame number afterward, `CooperativeAnimationScheduler` loaded audio synchronously without adjusting the starting frame.
+
+**Fix:** Recalculate `startingFrame` after audio loading completes, matching the pattern in `MusicEvent::scheduleRtpAudio()`:
+```cpp
+// src/server/animation/CooperativeAnimationScheduler.cpp:76-86
+// Audio loading is synchronous and heavy I/O - recalculate starting frame
+startingFrame = eventLoop->getNextFrameNumber() + 2; // +2 to allow for reset event
+
+// Apply animation delay for audio sync compensation if configured
+uint32_t delayMs = config->getAnimationDelayMs();
+if (delayMs > 0) {
+    framenum_t delayFrames = delayMs / EVENT_LOOP_PERIOD_MS;
+    startingFrame += delayFrames;
+}
+
+session->setStartingFrame(startingFrame);
+```
+
+**Impact:** Animation and audio now start at the correct synchronized time.
+
+---
+
+#### Bug #12: Missing SSRC Rotation for Animation Audio
+**Problem:** No `RtpEncoderResetEvent` was scheduled before animation audio playback, so controllers never detected the new audio stream (SSRC remained unchanged).
+
+**Root Cause:** `MusicEvent` explicitly schedules `RtpEncoderResetEvent` to rotate SSRC values before streaming audio, but `CooperativeAnimationScheduler` did not implement this step.
+
+**Fix:** Schedule `RtpEncoderResetEvent` one frame before animation starts (for RTP audio mode):
+```cpp
+// src/server/animation/CooperativeAnimationScheduler.cpp:90-96
+// If using RTP audio, schedule encoder reset event before playback starts
+// This rotates SSRC values so controllers can detect the new audio stream
+if (config->getAudioMode() == Configuration::AudioMode::RTP) {
+    framenum_t resetFrame = startingFrame - 1;
+    auto resetEvent = std::make_shared<RtpEncoderResetEvent>(resetFrame, 4); // 4 silent frames
+    eventLoop->scheduleEvent(resetEvent);
+    debug("Scheduled RtpEncoderResetEvent for frame {} (one frame before animation starts)", resetFrame);
+}
+```
+
+**Impact:** Controllers now detect the SSRC rotation and prepare to receive audio.
+
+---
+
+#### Bug #13: Thread-Local hasStarted Bug
+**Problem:** After the first animation played, subsequent animations would never call `onStart()`, so the audio transport was never started. Audio would work once, then fail for all subsequent animations.
+
+**Root Cause:** `PlaybackRunnerEvent` used `static thread_local bool hasStarted` which was shared across **ALL sessions on the same thread**. Once set to true by the first animation, it remained true forever.
+
+```cpp
+// BUG: src/server/eventloop/events/playback-runner.cpp:77-81 (before fix)
+static thread_local bool hasStarted = false;
+if (!hasStarted) {
+    session_->invokeOnStart();
+    hasStarted = true;  // ❌ Never resets! Affects all future animations!
+}
+```
+
+**Fix:** Moved `hasStarted_` to be per-session in `PlaybackSession` class instead of thread-local static:
+
+```cpp
+// src/server/animation/PlaybackSession.h:164-173
+bool invokeOnStart() {
+    if (hasStarted_) {
+        return false;
+    }
+    hasStarted_ = true;
+    if (onStart_) {
+        onStart_();
+    }
+    return true;
+}
+```
+
+```cpp
+// src/server/eventloop/events/playback-runner.cpp:77
+// Invoke onStart callback on first execution
+session_->invokeOnStart();  // ✅ Each session tracks its own state
+```
+
+**Impact:** Every animation now properly starts its audio transport, not just the first one.
+
+---
+
+#### Bug #14: Audio Playing Too Slowly
+**Problem:** After fixing bugs #11-13, audio played at the correct time and SSRC rotated correctly, but the audio playback was extremely slow (e.g., 5x slower than normal).
+
+**Root Cause:** `RtpAudioTransport::dispatchNextChunk()` only sent **one audio frame per call**. Since `PlaybackRunnerEvent` runs at the animation's frame rate (e.g., every 100ms for slow animations) but audio frames need to be sent every 20ms, only 1 frame was sent per 100ms instead of 5 frames.
+
+**Timeline:**
+- Animation frame rate: 100ms per frame
+- Audio frame rate: 20ms per frame (50Hz)
+- Expected: 5 audio frames sent per animation frame
+- Actual: 1 audio frame sent per animation frame
+- Result: Audio plays at 1/5 speed
+
+**Fix:** Modified `dispatchNextChunk()` to send **all frames that are due**, not just one:
+
+```cpp
+// src/server/audio/RtpAudioTransport.cpp:68-86
+// Dispatch all audio frames that are due (might be multiple if PlaybackRunnerEvent runs infrequently)
+while (currentFrame >= nextDispatchFrame_ && currentFrameIndex_ < totalFrames_ && !stopped_) {
+    // Send this frame to all 17 RTP channels (16 creatures + 1 BGM)
+    for (int ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
+        rtpServer_->send(static_cast<uint8_t>(ch),
+                         audioBuffer->getEncodedFrame(static_cast<uint8_t>(ch), currentFrameIndex_));
+    }
+
+    // Advance to next frame
+    currentFrameIndex_++;
+
+    // Calculate next dispatch time
+    if (currentFrameIndex_ < kPrefillFrames) {
+        nextDispatchFrame_ = nextDispatchFrame_ + 1; // 1ms later
+    } else {
+        nextDispatchFrame_ = nextDispatchFrame_ + (RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS); // 20ms later
+    }
+}
+```
+
+**Impact:** Audio now plays at the correct speed, with multiple audio frames dispatched in a batch to catch up when necessary.
+
+---
+
+### New Feature: Animation Delay for Audio Sync
+
+**Motivation:** SDL → pipewire → speakers introduces buffering latency. Animations were starting slightly before the audio became audible, causing sync issues.
+
+**Implementation:** Added `--animation-delay-ms` command line parameter to delay animation start:
+
+```cpp
+// src/server/config/CommandLine.cpp:134-138
+program.add_argument("--animation-delay-ms")
+    .help("delay in milliseconds before starting animation playback (for audio sync compensation)")
+    .default_value(0)
+    .scan<'i', int>()
+    .nargs(1);
+```
+
+**Usage:**
+```bash
+./creature-server --scheduler cooperative --animation-delay-ms 100
+```
+
+**How it works:** Delay is added to the animation starting frame after audio loading completes, effectively delaying DMX output while audio plays at the correct time.
+
+**Tuning:** Users can adjust the delay value to compensate for their specific audio pipeline latency (SDL, pipewire, hardware buffer bloat, etc.).
+
+---
+
+### Configuration Change: Cooperative Scheduler Now Default
+
+**Motivation:** After a week of production testing, the cooperative scheduler proved stable and reliable. All known bugs were fixed and the interrupt system works flawlessly.
+
+**Change:** Updated default scheduler from `Legacy` to `Cooperative`:
+
+```cpp
+// src/server/config/Configuration.h:205
+AnimationSchedulerType animationSchedulerType =
+    AnimationSchedulerType::Cooperative; ///< Default to cooperative (tested and stable)
+```
+
+```cpp
+// src/server/config/CommandLine.cpp:131
+.default_value(std::string("cooperative"))
+```
+
+**Fallback:** Legacy scheduler remains available via `--scheduler legacy` if needed.
+
+**Production Features:**
+- ✅ Frame-by-frame cooperative scheduling
+- ✅ Real-time animation interrupts
+- ✅ Automatic playlist resumption
+- ✅ Sound playback during animations
+- ✅ SSRC rotation and encoder resets
+- ✅ Audio sync compensation
+- ✅ Live streaming integration
+- ✅ Recording mode integration
+
+---
+
+### Files Modified (Sound Playback Fix)
+
+1. **src/server/animation/CooperativeAnimationScheduler.cpp**
+   - Recalculate starting frame after audio loading
+   - Schedule RtpEncoderResetEvent for SSRC rotation
+   - Apply animation delay for audio sync compensation
+
+2. **src/server/animation/PlaybackSession.h**
+   - Added `hasStarted_` member variable (per-session)
+   - Modified `invokeOnStart()` to return bool and track state
+   - Added `setStartingFrame()` method declaration
+
+3. **src/server/animation/PlaybackSession.cpp**
+   - Implemented `setStartingFrame()` to update starting frame and all track states
+
+4. **src/server/eventloop/events/playback-runner.cpp**
+   - Removed broken `static thread_local bool hasStarted`
+   - Changed to use session's `invokeOnStart()` method
+
+5. **src/server/audio/RtpAudioTransport.cpp**
+   - Modified `dispatchNextChunk()` to send all frames that are due (while loop)
+   - Fixed audio playback speed issue
+
+6. **src/server/config/CommandLine.cpp**
+   - Added `--animation-delay-ms` parameter
+   - Changed default scheduler to `cooperative`
+   - Updated help text
+
+7. **src/server/config/Configuration.h**
+   - Added `animationDelayMs` member variable
+   - Added getter/setter declarations
+   - Changed default scheduler to `Cooperative`
+
+8. **src/server/config/Configuration.cpp**
+   - Implemented `getAnimationDelayMs()` and `setAnimationDelayMs()`
+
+---
+
+### Debugging Process
+
+**Discovery Method:** Wireshark packet capture on macOS revealed that RTP packets WERE being sent correctly, proving the audio dispatch logic worked. The issue was just macOS routing multicast packets to the wrong interface.
+
+**Key Insight:** "Don't over-index on SSRC rotation" - the real issue wasn't just SSRC rotation, but also stale frame numbers, thread-local bugs, and audio dispatch rate.
+
+**Testing Approach:**
+1. Added multicast route on macOS: `sudo route add -net 239.19.63.0/24 -interface en10`
+2. Verified SSRC rotation in Wireshark
+3. Discovered audio was too slow
+4. Fixed dispatch rate bug
+5. Tested audio sync with delay parameter
+
+---
+
+### Final Verification
+
+**Test Results:**
+- ✅ SSRC rotation visible in Wireshark
+- ✅ RTP packets sent at correct rate (every 20ms)
+- ✅ Audio plays at correct speed
+- ✅ Animation and audio synchronized
+- ✅ First animation works
+- ✅ Subsequent animations work (thread-local bug fixed)
+- ✅ Animation delay parameter allows fine-tuning sync
+
+**Production Status:** ✅ Sound playback during animations fully functional
+
+---
+
+**Build Status:** ✅ Clean build, no errors
+**Code Format:** ✅ clang-format applied to all modified files
+**Testing:** ✅ Verified on macOS with multicast routing
+**Production Status:** ✅ Ready for deployment with sound playback!

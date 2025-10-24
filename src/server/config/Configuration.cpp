@@ -100,4 +100,8 @@ void Configuration::setAnimationSchedulerType(const Configuration::AnimationSche
     this->animationSchedulerType = _schedulerType;
 }
 
+uint32_t Configuration::getAnimationDelayMs() const { return this->animationDelayMs; }
+
+void Configuration::setAnimationDelayMs(const uint32_t _delayMs) { this->animationDelayMs = _delayMs; }
+
 } // namespace creatures

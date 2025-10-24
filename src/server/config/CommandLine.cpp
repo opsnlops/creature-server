@@ -127,8 +127,14 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     audioMode.add_argument("--rtp-audio").help("use RTP audio streaming").default_value(false).implicit_value(true);
 
     program.add_argument("--scheduler")
-        .help("animation scheduler to use: 'legacy' (default, safer) or 'cooperative' (experimental)")
-        .default_value(std::string("legacy"))
+        .help("animation scheduler to use: 'cooperative' (default, recommended) or 'legacy' (fallback)")
+        .default_value(std::string("cooperative"))
+        .nargs(1);
+
+    program.add_argument("--animation-delay-ms")
+        .help("delay in milliseconds before starting animation playback (for audio sync compensation)")
+        .default_value(0)
+        .scan<'i', int>()
         .nargs(1);
 
     program.add_description("Creature Server for April's Creature Workshop\n\n"
@@ -182,14 +188,25 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     auto schedulerStr = program.get<std::string>("--scheduler");
     if (schedulerStr == "cooperative") {
         config->setAnimationSchedulerType(Configuration::AnimationSchedulerType::Cooperative);
-        debug("using cooperative animation scheduler (experimental)");
+        debug("using cooperative animation scheduler (default, recommended)");
     } else if (schedulerStr == "legacy") {
         config->setAnimationSchedulerType(Configuration::AnimationSchedulerType::Legacy);
-        debug("using legacy animation scheduler (safe default)");
+        debug("using legacy animation scheduler (fallback mode)");
     } else {
         std::cerr << "Error: Invalid scheduler type '" << schedulerStr << "'. Must be 'legacy' or 'cooperative'."
                   << std::endl;
         std::exit(1);
+    }
+
+    // Animation delay for audio sync compensation
+    auto animationDelayMs = program.get<int>("--animation-delay-ms");
+    if (animationDelayMs < 0) {
+        std::cerr << "Error: --animation-delay-ms must be non-negative" << std::endl;
+        std::exit(1);
+    }
+    config->setAnimationDelayMs(static_cast<uint32_t>(animationDelayMs));
+    if (animationDelayMs > 0) {
+        debug("animation playback will be delayed by {}ms for audio sync", animationDelayMs);
     }
 
     // Set the GPIO usage

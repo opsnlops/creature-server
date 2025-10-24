@@ -74,6 +74,15 @@ Result<std::shared_ptr<PlaybackSession>> CooperativeAnimationScheduler::schedule
         // Audio loading is synchronous and heavy I/O - recalculate starting frame
         // This matches the pattern in MusicEvent::scheduleRtpAudio()
         startingFrame = eventLoop->getNextFrameNumber() + 2; // +2 to allow for reset event
+
+        // Apply animation delay for audio sync compensation if configured
+        uint32_t delayMs = config->getAnimationDelayMs();
+        if (delayMs > 0) {
+            framenum_t delayFrames = delayMs / EVENT_LOOP_PERIOD_MS;
+            startingFrame += delayFrames;
+            debug("Applying animation delay of {}ms ({} frames)", delayMs, delayFrames);
+        }
+
         session->setStartingFrame(startingFrame);
 
         debug("Audio loaded, adjusted starting frame to {}", startingFrame);

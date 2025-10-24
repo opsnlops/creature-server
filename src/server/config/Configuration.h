@@ -88,6 +88,9 @@ class Configuration {
     /** @return Animation scheduler type to use */
     AnimationSchedulerType getAnimationSchedulerType() const;
 
+    /** @return Animation delay in milliseconds for audio sync compensation */
+    uint32_t getAnimationDelayMs() const;
+
   protected:
     // Setters used by CommandLine to configure values from command line arguments
 
@@ -135,6 +138,9 @@ class Configuration {
 
     /** @param _schedulerType Animation scheduler type to use */
     void setAnimationSchedulerType(AnimationSchedulerType _schedulerType);
+
+    /** @param _delayMs Animation delay in milliseconds for audio sync compensation */
+    void setAnimationDelayMs(uint32_t _delayMs);
 
   private:
     // Hardware configuration
@@ -196,7 +202,11 @@ class Configuration {
     // Animation scheduler configuration
 
     /** Animation scheduler type */
-    AnimationSchedulerType animationSchedulerType = AnimationSchedulerType::Legacy; ///< Default to legacy for safety
+    AnimationSchedulerType animationSchedulerType =
+        AnimationSchedulerType::Cooperative; ///< Default to cooperative (tested and stable)
+
+    /** Animation delay in milliseconds for audio sync compensation */
+    uint32_t animationDelayMs = 0; ///< Default to no delay
 };
 
 } // namespace creatures
