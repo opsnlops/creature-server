@@ -137,6 +137,12 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .scan<'i', int>()
         .nargs(1);
 
+    program.add_argument("--adhoc-animation-ttl-hours")
+        .help("number of hours to retain ad-hoc animations (Mongo TTL + temp files)")
+        .default_value(environmentToInt(ADHOC_ANIMATION_TTL_HOURS_ENV, DEFAULT_ADHOC_ANIMATION_TTL_HOURS))
+        .scan<'i', int>()
+        .nargs(1);
+
     program.add_description("Creature Server for April's Creature Workshop\n\n"
                             "This application is the heart of my creature magic. It contains a websocket-based\n"
                             "server as well as the event loop that schedules events to happen in real time.");
@@ -208,6 +214,14 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     if (animationDelayMs > 0) {
         debug("animation playback will be delayed by {}ms for audio sync", animationDelayMs);
     }
+
+    auto adHocTtlHours = program.get<int>("--adhoc-animation-ttl-hours");
+    if (adHocTtlHours <= 0) {
+        std::cerr << "Error: --adhoc-animation-ttl-hours must be greater than zero" << std::endl;
+        std::exit(1);
+    }
+    config->setAdHocAnimationTtlHours(static_cast<uint32_t>(adHocTtlHours));
+    debug("ad-hoc animation TTL set to {} hours", adHocTtlHours);
 
     // Set the GPIO usage
     auto useGPIO = program.get<bool>("-g");

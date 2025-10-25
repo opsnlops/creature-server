@@ -54,6 +54,12 @@ struct Creature {
      * The inputs for this creature
      */
     std::vector<Input> inputs;
+
+    /**
+     * A list of animation IDs that can be used as base speech loops for
+     * dynamically generated dialogue.
+     */
+    std::vector<std::string> speech_loop_animation_ids;
 };
 
 #include OATPP_CODEGEN_BEGIN(DTO)
@@ -84,6 +90,12 @@ class CreatureDto : public oatpp::DTO {
 
     DTO_FIELD_INFO(inputs) { info->description = "The input map for this creature"; }
     DTO_FIELD(List<Object<InputDto>>, inputs);
+
+    DTO_FIELD_INFO(speech_loop_animation_ids) {
+        info->description = "Animations that can be used as base speech loops for ad-hoc speech";
+        info->required = false;
+    }
+    DTO_FIELD(List<String>, speech_loop_animation_ids);
 };
 
 #include OATPP_CODEGEN_END(DTO)

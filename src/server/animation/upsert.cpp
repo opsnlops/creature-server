@@ -1,8 +1,10 @@
 #include "server/config.h"
 
 #include "spdlog/spdlog.h"
+#include <chrono>
 
 #include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/builder/stream/helpers.hpp>
 #include <bsoncxx/exception/exception.hpp>
 #include <bsoncxx/json.hpp>
 
@@ -179,6 +181,66 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         if (dbSpan)
             dbSpan->setError(error_message);
         return Result<creatures::Animation>{ServerError(ServerError::InternalError, error_message)};
+    }
+}
+
+Result<void> Database::insertAdHocAnimation(const creatures::Animation &animation,
+                                            std::chrono::system_clock::time_point createdAt,
+                                            std::shared_ptr<OperationSpan> parentSpan) {
+
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.insertAdHocAnimation", parentSpan);
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", ADHOC_ANIMATIONS_COLLECTION);
+        dbSpan->setAttribute("animation.id", animation.id);
+    }
+
+    try {
+        auto animationJson = animationToJson(animation);
+        auto jsonString = animationJson.dump();
+
+        auto bsonResult =
+            JsonParser::jsonStringToBson(jsonString, fmt::format("adhoc animation {}", animation.id), dbSpan);
+        if (!bsonResult.isSuccess()) {
+            auto error = bsonResult.getError().value();
+            if (dbSpan) {
+                dbSpan->setError(error.getMessage());
+            }
+            return Result<void>{error};
+        }
+        auto bsonDoc = bsonResult.getValue().value();
+
+        auto collectionResult = getCollection(ADHOC_ANIMATIONS_COLLECTION);
+        if (!collectionResult.isSuccess()) {
+            auto error = collectionResult.getError().value();
+            if (dbSpan) {
+                dbSpan->setError(error.getMessage());
+            }
+            return Result<void>{error};
+        }
+        auto collection = collectionResult.getValue().value();
+
+        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(createdAt.time_since_epoch());
+        auto finalDoc = bsoncxx::builder::stream::document{} << "created_at" << bsoncxx::types::b_date{millis}
+                                                             << bsoncxx::builder::stream::concatenate(bsonDoc.view())
+                                                             << bsoncxx::builder::stream::finalize;
+
+        collection.insert_one(finalDoc.view());
+        info("Inserted ad-hoc animation {} into {}", animation.id, ADHOC_ANIMATIONS_COLLECTION);
+
+        if (dbSpan) {
+            dbSpan->setSuccess();
+        }
+
+        return Result<void>{};
+
+    } catch (const std::exception &e) {
+        std::string errorMessage = fmt::format("Failed to insert ad-hoc animation {}: {}", animation.id, e.what());
+        error(errorMessage);
+        if (dbSpan) {
+            dbSpan->recordException(e);
+            dbSpan->setError(errorMessage);
+        }
+        return Result<void>{ServerError(ServerError::DatabaseError, errorMessage)};
     }
 }
 } // namespace creatures

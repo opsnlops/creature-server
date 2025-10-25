@@ -5,6 +5,7 @@
 
 #include "CooperativeAnimationScheduler.h"
 
+#include <filesystem>
 #include <memory>
 
 #include "spdlog/spdlog.h"
@@ -36,6 +37,21 @@ extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 extern std::shared_ptr<SessionManager> sessionManager;
+
+namespace {
+
+std::filesystem::path resolveSoundFilePath(const std::string &soundFile) {
+    if (soundFile.empty()) {
+        return {};
+    }
+    std::filesystem::path path(soundFile);
+    if (path.is_absolute()) {
+        return path;
+    }
+    return std::filesystem::path(config->getSoundFileLocation()) / path;
+}
+
+} // namespace
 
 Result<std::shared_ptr<PlaybackSession>> CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame,
                                                                                           const Animation &animation,
@@ -128,14 +144,14 @@ Result<void> CooperativeAnimationScheduler::loadAudioBuffer(const Animation &ani
     }
 
     // Build full path to sound file
-    std::string soundFilePath = config->getSoundFileLocation() + "/" + animation.metadata.sound_file;
+    std::filesystem::path soundFilePath = resolveSoundFilePath(animation.metadata.sound_file);
 
-    debug("Loading audio buffer from: {}", soundFilePath);
+    debug("Loading audio buffer from: {}", soundFilePath.string());
 
     // Load and encode audio buffer (heavy I/O operation)
-    auto audioBuffer = rtp::AudioStreamBuffer::loadFromWavFile(soundFilePath, loadSpan);
+    auto audioBuffer = rtp::AudioStreamBuffer::loadFromWavFile(soundFilePath.string(), loadSpan);
     if (!audioBuffer) {
-        std::string errorMsg = fmt::format("Failed to load audio buffer from '{}'", soundFilePath);
+        std::string errorMsg = fmt::format("Failed to load audio buffer from '{}'", soundFilePath.string());
         error(errorMsg);
         if (loadSpan) {
             loadSpan->setError(errorMsg);

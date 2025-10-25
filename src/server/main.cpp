@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <csignal>
+#include <filesystem>
 #include <locale>
 #include <memory>
 #include <string>
@@ -117,6 +118,57 @@ std::shared_ptr<jobs::JobManager> jobManager;
 std::shared_ptr<jobs::JobWorker> jobWorker;
 } // namespace creatures
 
+namespace {
+
+void cleanupAdHocTempDirectory(uint32_t ttlHours) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    auto tempRoot = fs::temp_directory_path(ec) / "creature-adhoc";
+    if (ec || !fs::exists(tempRoot, ec)) {
+        return;
+    }
+
+    auto now = std::chrono::system_clock::now();
+    auto cutoff = now - std::chrono::hours(ttlHours);
+
+    for (const auto &entry : fs::directory_iterator(tempRoot, ec)) {
+        if (ec) {
+            warn("Unable to iterate temp directory {}: {}", tempRoot.string(), ec.message());
+            break;
+        }
+        if (!entry.is_directory()) {
+            continue;
+        }
+
+        std::error_code timeEc;
+        auto lastWrite = fs::last_write_time(entry, timeEc);
+        if (timeEc) {
+            warn("Unable to read timestamp for {}: {}", entry.path().string(), timeEc.message());
+            continue;
+        }
+
+#if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L
+        auto lastWriteSys = std::chrono::clock_cast<std::chrono::system_clock>(lastWrite);
+#else
+        auto lastWriteSys = std::chrono::system_clock::time_point(
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(lastWrite.time_since_epoch()));
+#endif
+
+        if (lastWriteSys < cutoff) {
+            std::error_code removeEc;
+            fs::remove_all(entry.path(), removeEc);
+            if (removeEc) {
+                warn("Failed to remove expired ad-hoc temp directory {}: {}", entry.path().string(),
+                     removeEc.message());
+            } else {
+                info("Removed expired ad-hoc temp directory {}", entry.path().string());
+            }
+        }
+    }
+}
+
+} // namespace
+
 // Signal handler to stop the event loop
 void signal_handler(int signal) {
 
@@ -194,6 +246,13 @@ int main(const int argc, char **argv) {
     mongocxx::instance instance{}; // Make sure the client is ready to go
     creatures::db = std::make_shared<Database>(mongoURI);
     debug("MongoDB connection created");
+
+    auto adHocIndexResult = creatures::db->ensureAdHocAnimationIndexes(creatures::config->getAdHocAnimationTtlHours());
+    if (!adHocIndexResult.isSuccess()) {
+        auto error = adHocIndexResult.getError().value();
+        warn("Unable to ensure ad-hoc animation TTL index: {}", error.getMessage());
+    }
+    cleanupAdHocTempDirectory(creatures::config->getAdHocAnimationTtlHours());
 
     // Fire up SDL
     if (!MusicEvent::initSDL()) {

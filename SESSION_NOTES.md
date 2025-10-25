@@ -1181,3 +1181,29 @@ AnimationSchedulerType animationSchedulerType =
 **Code Format:** ✅ clang-format applied to all modified files
 **Testing:** ✅ Verified on macOS with multicast routing
 **Production Status:** ✅ Ready for deployment with sound playback!
+
+## Ad-Hoc Speech Animations (Nov 2025)
+
+**Status:** ✅ API & job pipeline shipped
+
+### Highlights
+- Creatures now expose `speech_loop_animation_ids`, letting the server pick randomized loop bases when injecting Rhubarb mouth data.
+- New `/api/v1/animation/adhoc` endpoint queues an `AdHocSpeech` job (returns `JobCreatedDto` so clients rely on the existing job-progress websocket flow).
+- Job pipeline: ElevenLabs speech → multi-channel WAV conversion → Rhubarb JSON → `SoundDataProcessor` mouth-slot splice → Mongo insert into TTL-backed `adhoc_animations` collection → cooperative interrupt playback on the controller’s current universe.
+- Generated artifacts live under `${TMPDIR}/creature-adhoc/<job_id>/adhoc_<creature>_<timestamp>_<slug>.{wav,mp3,json}`; directories older than `--adhoc-animation-ttl-hours` (default 12h) are cleaned at startup alongside the Mongo TTL.
+- Shared `SpeechGenerationManager` keeps `VoiceService` and the ad-hoc job DRY; scheduler remains cooperative-only (job fails fast otherwise).
+
+### Key Files
+- `src/model/Creature.*`, `src/server/creature/helpers.cpp` – schema update (speech loop IDs).
+- `src/server/ws/controller/AnimationController.h` – new POST `/api/v1/animation/adhoc`.
+- `src/server/voice/SpeechGenerationManager.*` – centralized speech + conversion helper.
+- `src/server/jobs/JobWorker.*` – `AdHocSpeech` job handler with temp-file lifecycle.
+- `src/server/config/*`, `src/server/database.*`, `src/server/animation/upsert.cpp` – TTL config/index insertion.
+- `src/server/animation/CooperativeAnimationScheduler.cpp`, `src/server/audio/LocalSdlAudioTransport.cpp` – absolute/relative sound path handling for ad-hoc WAVs.
+
+**Next:** consider periodic runtime cleanup for temp dirs (currently done on startup) and add console UX affordances for launching/monitoring ad-hoc speech from the field.
+
+### 2025-11-xx Usage Note
+- API now fails fast if a creature lacks `speech_loop_animation_ids`, returning `422 Unprocessable Entity` with the creature’s display name.
+- `/api/v1/animation/adhoc` changed to port 8000 for local curl testing.
+- Heavy usage warning: job queue + temp directory cleanup share the same TTL (`--adhoc-animation-ttl-hours`). Keep an eye on disk if ad-hoc usage spikes faster than cleanup cadence.

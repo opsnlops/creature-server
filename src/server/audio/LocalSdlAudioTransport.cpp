@@ -20,6 +20,7 @@
 namespace creatures {
 
 extern const char *audioDevice;
+extern std::shared_ptr<Configuration> config;
 extern SDL_AudioSpec localAudioDeviceAudioSpec;
 extern std::shared_ptr<GPIO> gpioPins;
 extern std::shared_ptr<SystemCounters> metrics;
@@ -42,17 +43,19 @@ Result<void> LocalSdlAudioTransport::start(std::shared_ptr<PlaybackSession> sess
         return Result<void>{ServerError(ServerError::InvalidData, "No sound file in animation")};
     }
 
-    // Build full path (config will be accessed in thread)
-    std::string soundFilePath = animation.metadata.sound_file;
+    std::filesystem::path soundFilePath(animation.metadata.sound_file);
+    if (!soundFilePath.is_absolute()) {
+        soundFilePath = std::filesystem::path(config->getSoundFileLocation()) / soundFilePath;
+    }
 
     // Spawn audio thread
     shouldStop_ = false;
     isPlaying_ = true;
     hasFinished_ = false;
 
-    audioThread_ = std::thread(&LocalSdlAudioTransport::audioThreadFunc, this, soundFilePath);
+    audioThread_ = std::thread(&LocalSdlAudioTransport::audioThreadFunc, this, soundFilePath.string());
 
-    debug("LocalSdlAudioTransport started for file: {}", soundFilePath);
+    debug("LocalSdlAudioTransport started for file: {}", soundFilePath.string());
 
     return Result<void>{};
 }

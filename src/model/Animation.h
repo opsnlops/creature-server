@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
@@ -38,5 +39,6 @@ class AnimationDto : public oatpp::DTO {
 
 std::shared_ptr<AnimationDto> convertToDto(const Animation &creature);
 Animation convertFromDto(const std::shared_ptr<AnimationDto> &creatureDto);
+nlohmann::json animationToJson(const Animation &animation);
 
 } // namespace creatures

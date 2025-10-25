@@ -69,6 +69,11 @@ class JobWorker : public creatures::StoppableThread {
      * @param jobState The job state containing details about the job
      */
     void handleLipSyncJob(JobState &jobState);
+
+    /**
+     * Execute an ad-hoc speech animation job (speech + animation + interrupt).
+     */
+    void handleAdHocSpeechJob(JobState &jobState);
 };
 
 } // namespace creatures::jobs

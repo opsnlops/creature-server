@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fmt/format.h>
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
@@ -11,16 +12,24 @@
 #include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/database.h"
+#include "server/jobs/JobManager.h"
+#include "server/jobs/JobWorker.h"
 #include "server/metrics/counters.h"
+#include "server/ws/dto/CreateAdHocAnimationRequestDto.h"
+#include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/PlayAnimationRequestDto.h"
 #include "server/ws/service/AnimationService.h"
 #include "util/ObservabilityManager.h"
 #include "util/websocketUtils.h"
+#include <nlohmann/json.hpp>
 
 namespace creatures {
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<SessionManager> sessionManager;
 extern std::shared_ptr<Configuration> config;
+extern std::shared_ptr<jobs::JobManager> jobManager;
+extern std::shared_ptr<jobs::JobWorker> jobWorker;
+extern std::shared_ptr<Database> db;
 } // namespace creatures
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
@@ -332,6 +341,136 @@ class AnimationController : public oatpp::web::server::api::ApiController {
             error("Exception in interruptAnimation: {}", ex.what());
             throw;
         }
+    }
+
+    ENDPOINT_INFO(createAdHocAnimation) {
+        info->summary = "Generate and play an ad-hoc speech animation";
+        info->description =
+            "Creates a job that synthesizes audio, generates lip sync, stores a temporary animation, and interrupts.";
+        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/animation/adhoc", createAdHocAnimation,
+             BODY_DTO(Object<creatures::ws::CreateAdHocAnimationRequestDto>, requestBody),
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation/adhoc", "POST",
+                                                                "api/v1/animation/adhoc");
+        addHttpRequestAttributes(span, request);
+
+        creatures::metrics->incrementRestRequestsProcessed();
+
+        if (creatures::config->getAnimationSchedulerType() !=
+            creatures::Configuration::AnimationSchedulerType::Cooperative) {
+            auto result = creatures::ws::StatusDto::createShared();
+            result->status = "error";
+            result->code = 400;
+            result->message = "Ad-hoc speech requires the cooperative scheduler (--scheduler cooperative)";
+            if (span) {
+                span->setAttribute("error.type", "scheduler_not_supported");
+                span->setHttpStatus(400);
+            }
+            return createDtoResponse(Status::CODE_400, result);
+        }
+
+        auto creatureId = requestBody->creature_id ? std::string(requestBody->creature_id) : "";
+        auto text = requestBody->text ? std::string(requestBody->text) : "";
+        bool resumePlaylist = requestBody->resume_playlist ? static_cast<bool>(requestBody->resume_playlist) : true;
+
+        if (span) {
+            span->setAttribute("creature.id", creatureId);
+            span->setAttribute("text.length", static_cast<int64_t>(text.size()));
+            span->setAttribute("resume_playlist", resumePlaylist);
+        }
+
+        if (creatureId.empty() || text.empty()) {
+            auto result = creatures::ws::StatusDto::createShared();
+            result->status = "error";
+            result->code = 400;
+            result->message = "creature_id and text are required";
+            if (span) {
+                span->setAttribute("error.type", "invalid_request");
+                span->setHttpStatus(400);
+            }
+            return createDtoResponse(Status::CODE_400, result);
+        }
+
+        auto creatureLookupSpan =
+            creatures::observability->createChildOperationSpan("AnimationController.lookupCreature", nullptr);
+        if (creatureLookupSpan) {
+            creatureLookupSpan->setAttribute("creature.id", creatureId);
+        }
+
+        auto creatureResult = creatures::db->getCreature(creatureId, creatureLookupSpan);
+        if (!creatureResult.isSuccess()) {
+            auto error = creatureResult.getError().value();
+            auto result = creatures::ws::StatusDto::createShared();
+            result->status = "error";
+            result->message = error.getMessage().c_str();
+            Status status = Status::CODE_500;
+            switch (error.getCode()) {
+            case ServerError::NotFound:
+                status = Status::CODE_404;
+                break;
+            case ServerError::InvalidData:
+                status = Status::CODE_400;
+                break;
+            default:
+                status = Status::CODE_500;
+                break;
+            }
+            result->code = status.code;
+            if (creatureLookupSpan) {
+                creatureLookupSpan->setError(error.getMessage());
+                creatureLookupSpan->setAttribute("error.code", static_cast<int64_t>(status.code));
+            }
+            if (span) {
+                span->setAttribute("error.type", "creature_lookup_failed");
+                span->setHttpStatus(status.code);
+            }
+            return createDtoResponse(status, result);
+        }
+
+        if (creatureLookupSpan) {
+            creatureLookupSpan->setSuccess();
+        }
+
+        const auto creature = creatureResult.getValue().value();
+        if (creature.speech_loop_animation_ids.empty()) {
+            auto result = creatures::ws::StatusDto::createShared();
+            result->status = "error";
+            result->code = 422;
+            result->message =
+                fmt::format("{} has no speech_loop_animation_ids configured; ad-hoc speech cannot proceed.",
+                            creature.name)
+                    .c_str();
+            if (span) {
+                span->setAttribute("error.type", "missing_speech_loop_animation_ids");
+                span->setHttpStatus(422);
+            }
+            return createDtoResponse(Status::CODE_422, result);
+        }
+
+        nlohmann::json jobDetails;
+        jobDetails["creature_id"] = creatureId;
+        jobDetails["text"] = text;
+        jobDetails["resume_playlist"] = resumePlaylist;
+
+        auto jobId = creatures::jobManager->createJob(creatures::jobs::JobType::AdHocSpeech, jobDetails.dump());
+        creatures::jobWorker->queueJob(jobId);
+
+        auto response = JobCreatedDto::createShared();
+        response->job_id = jobId;
+        response->job_type = creatures::jobs::toString(creatures::jobs::JobType::AdHocSpeech).c_str();
+        response->message = fmt::format(
+            "Ad-hoc speech job created for '{}'. Listen for job-progress and job-complete messages.", creatureId);
+
+        if (span) {
+            span->setHttpStatus(202);
+            span->setAttribute("job.id", jobId);
+        }
+
+        return createDtoResponse(Status::CODE_202, response);
     }
 };
 } // namespace creatures::ws

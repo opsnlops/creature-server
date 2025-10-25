@@ -108,6 +108,36 @@ Result<creatures::Creature> Database::creatureFromJson(json creatureJson, std::s
         creature.mouth_slot = creatureJson["mouth_slot"];
         debug("Successfully parsed creature mouth_slot: {}", static_cast<int>(creature.mouth_slot));
 
+        if (creatureJson.contains("speech_loop_animation_ids") &&
+            !creatureJson["speech_loop_animation_ids"].is_null()) {
+            if (!creatureJson["speech_loop_animation_ids"].is_array()) {
+                std::string errorMessage = "'speech_loop_animation_ids' must be an array of animation IDs";
+                warn(errorMessage);
+                span->setError(errorMessage);
+                return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+
+            for (const auto &value : creatureJson["speech_loop_animation_ids"]) {
+                if (!value.is_string()) {
+                    std::string errorMessage = "All 'speech_loop_animation_ids' entries must be strings";
+                    warn(errorMessage);
+                    span->setError(errorMessage);
+                    return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+                }
+
+                const std::string animationId = value.get<std::string>();
+                if (animationId.empty()) {
+                    std::string errorMessage = "Speech loop animation IDs cannot be empty";
+                    warn(errorMessage);
+                    span->setError(errorMessage);
+                    return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+                }
+                creature.speech_loop_animation_ids.emplace_back(animationId);
+            }
+
+            debug("Parsed {} speech loop animation IDs", creature.speech_loop_animation_ids.size());
+        }
+
         if (creature.id.empty()) {
             std::string errorMessage = "Creature ID is empty";
             warn(errorMessage);
@@ -203,6 +233,8 @@ Result<creatures::Creature> Database::creatureFromJson(json creatureJson, std::s
         span->setAttribute("creature.audio_channel", creature.audio_channel);
         span->setAttribute("creature.channel_offset", creature.channel_offset);
         span->setAttribute("creature.mouth_slot", static_cast<int64_t>(creature.mouth_slot));
+        span->setAttribute("creature.speech_loop_animation_ids",
+                           static_cast<int64_t>(creature.speech_loop_animation_ids.size()));
         span->setAttribute("creature.inputs_count", static_cast<uint32_t>(creature.inputs.size()));
         return Result<creatures::Creature>{creature};
 

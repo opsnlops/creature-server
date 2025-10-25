@@ -13,7 +13,7 @@ namespace creatures {
 
 // List of required fields
 std::vector<std::string> creature_required_top_level_fields = {"id", "name", "audio_channel", "channel_offset",
-                                                                "mouth_slot"};
+                                                               "mouth_slot"};
 
 std::vector<std::string> creature_required_input_fields = {"name", "slot", "width", "joystick_axis"};
 
@@ -37,6 +37,15 @@ Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto) {
 
     creature.mouth_slot = creatureDto->mouth_slot;
     debug("mouth_slot: {}", static_cast<int>(creature.mouth_slot));
+
+    if (creatureDto->speech_loop_animation_ids) {
+        for (const auto &animationId : *creatureDto->speech_loop_animation_ids) {
+            if (animationId) {
+                creature.speech_loop_animation_ids.emplace_back(std::string(animationId));
+            }
+        }
+        debug("speech_loop_animation_ids count: {}", creature.speech_loop_animation_ids.size());
+    }
 
     // Make sure we're not about to read a null pointer
     if (creatureDto->inputs) {
@@ -71,6 +80,14 @@ oatpp::Object<CreatureDto> convertToDto(const Creature &creature) {
         inputDto->joystick_axis = joystick_axis;
 
         creatureDto->inputs->push_back(inputDto);
+    }
+
+    if (!creature.speech_loop_animation_ids.empty()) {
+        auto animations = oatpp::List<oatpp::String>::createShared();
+        for (const auto &animationId : creature.speech_loop_animation_ids) {
+            animations->push_back(animationId.c_str());
+        }
+        creatureDto->speech_loop_animation_ids = animations;
     }
 
     return creatureDto;

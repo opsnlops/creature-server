@@ -104,4 +104,8 @@ uint32_t Configuration::getAnimationDelayMs() const { return this->animationDela
 
 void Configuration::setAnimationDelayMs(const uint32_t _delayMs) { this->animationDelayMs = _delayMs; }
 
+uint32_t Configuration::getAdHocAnimationTtlHours() const { return this->adHocAnimationTtlHours; }
+
+void Configuration::setAdHocAnimationTtlHours(const uint32_t _ttlHours) { this->adHocAnimationTtlHours = _ttlHours; }
+
 } // namespace creatures

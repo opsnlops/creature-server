@@ -124,6 +124,18 @@ class Database {
                                                std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
+     * Ensure supporting indexes (including TTL) for the ad-hoc animation collection exist.
+     */
+    Result<void> ensureAdHocAnimationIndexes(uint32_t ttlHours);
+
+    /**
+     * Insert a freshly generated ad-hoc animation into the TTL collection.
+     */
+    Result<void> insertAdHocAnimation(const creatures::Animation &animation,
+                                      std::chrono::system_clock::time_point createdAt,
+                                      std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
      * Request that the database perform a health check
      *
      * This is what updates the serverPingable flag

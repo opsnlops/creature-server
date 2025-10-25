@@ -5,6 +5,7 @@
 
 #include "LegacyAnimationScheduler.h"
 
+#include <filesystem>
 #include <fmt/format.h>
 
 #include "server/config.h"
@@ -33,6 +34,21 @@ extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
+
+namespace {
+
+std::filesystem::path resolveSoundFilePath(const std::string &soundFile) {
+    if (soundFile.empty()) {
+        return {};
+    }
+    std::filesystem::path path(soundFile);
+    if (path.is_absolute()) {
+        return path;
+    }
+    return std::filesystem::path(config->getSoundFileLocation()) / path;
+}
+
+} // namespace
 
 /**
  * Schedules an animation on a given creature using the legacy bulk-scheduling approach
@@ -114,11 +130,10 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
     // Look and see if there's an audio file to play with this animation
     if (!animation.metadata.sound_file.empty()) {
 
-        // Set up the path to the sound file based on the startup config
-        std::string soundFileName = config->getSoundFileLocation() + "/" + animation.metadata.sound_file;
-        debug("using sound file name: {}", soundFileName);
+        auto soundFilePath = resolveSoundFilePath(animation.metadata.sound_file);
+        debug("using sound file name: {}", soundFilePath.string());
 
-        auto playSoundEvent = std::make_shared<MusicEvent>(startingFrame, soundFileName);
+        auto playSoundEvent = std::make_shared<MusicEvent>(startingFrame, soundFilePath.string());
         eventLoop->scheduleEvent(playSoundEvent);
         trace("scheduled sound event for frame {}", startingFrame);
     }

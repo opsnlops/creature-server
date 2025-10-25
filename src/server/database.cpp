@@ -10,6 +10,7 @@
 
 #include <bsoncxx/builder/stream/document.hpp>
 #include <mongocxx/client.hpp>
+#include <mongocxx/options/index.hpp>
 #include <mongocxx/pool.hpp>
 
 #include <nlohmann/json.hpp>
@@ -102,6 +103,42 @@ Result<bool> Database::checkJsonField(const nlohmann::json &jsonObj, const std::
     }
 
     return true;
+}
+
+Result<void> Database::ensureAdHocAnimationIndexes(uint32_t ttlHours) {
+    if (ttlHours == 0) {
+        const std::string errorMessage = "Ad-hoc animation TTL hours must be greater than zero";
+        warn(errorMessage);
+        return Result<void>{ServerError(ServerError::InvalidData, errorMessage)};
+    }
+
+    auto ttlSeconds = std::chrono::seconds(ttlHours * 3600ULL);
+
+    try {
+        auto collectionResult = getCollection(ADHOC_ANIMATIONS_COLLECTION);
+        if (!collectionResult.isSuccess()) {
+            return Result<void>{collectionResult.getError().value()};
+        }
+        auto collection = collectionResult.getValue().value();
+
+        bsoncxx::builder::stream::document ttlIndex;
+        ttlIndex << "created_at" << 1;
+
+        mongocxx::options::index options;
+        options.expire_after(ttlSeconds);
+        options.name("created_at_ttl");
+
+        collection.create_index(ttlIndex.view(), options);
+        info("Ensured TTL index on '{}' (created_at + {} hours)", ADHOC_ANIMATIONS_COLLECTION, ttlHours);
+
+        return Result<void>{};
+
+    } catch (const std::exception &e) {
+        std::string errorMessage =
+            fmt::format("Failed to ensure TTL index on {}: {}", ADHOC_ANIMATIONS_COLLECTION, e.what());
+        error(errorMessage);
+        return Result<void>{ServerError(ServerError::DatabaseError, errorMessage)};
+    }
 }
 
 } // namespace creatures

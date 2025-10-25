@@ -5,6 +5,7 @@
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
 #include "model/Track.h"
+#include <nlohmann/json.hpp>
 
 namespace creatures {
 
@@ -39,6 +40,32 @@ Animation convertFromDto(const std::shared_ptr<AnimationDto> &animationDto) {
     }
 
     return animation;
+}
+
+nlohmann::json animationToJson(const Animation &animation) {
+    nlohmann::json j;
+    j["id"] = animation.id;
+    nlohmann::json metadata;
+    metadata["animation_id"] = animation.metadata.animation_id;
+    metadata["title"] = animation.metadata.title;
+    metadata["milliseconds_per_frame"] = animation.metadata.milliseconds_per_frame;
+    metadata["note"] = animation.metadata.note;
+    metadata["sound_file"] = animation.metadata.sound_file;
+    metadata["number_of_frames"] = animation.metadata.number_of_frames;
+    metadata["multitrack_audio"] = animation.metadata.multitrack_audio;
+    j["metadata"] = metadata;
+
+    nlohmann::json tracks = nlohmann::json::array();
+    for (const auto &track : animation.tracks) {
+        nlohmann::json trackJson;
+        trackJson["id"] = track.id;
+        trackJson["creature_id"] = track.creature_id;
+        trackJson["animation_id"] = track.animation_id;
+        trackJson["frames"] = track.frames;
+        tracks.push_back(trackJson);
+    }
+    j["tracks"] = tracks;
+    return j;
 }
 
 } // namespace creatures
