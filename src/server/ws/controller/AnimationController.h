@@ -410,11 +410,11 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/animation/adhoc", createAdHocAnimation,
+    ENDPOINT("POST", "api/v1/animation/ad-hoc", createAdHocAnimation,
              BODY_DTO(Object<creatures::ws::CreateAdHocAnimationRequestDto>, requestBody),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation/adhoc", "POST",
-                                                                "api/v1/animation/adhoc");
+        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation/ad-hoc", "POST",
+                                                                "api/v1/animation/ad-hoc");
         addHttpRequestAttributes(span, request);
 
         creatures::metrics->incrementRestRequestsProcessed();
