@@ -15,6 +15,7 @@
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
 #include "server/metrics/counters.h"
+#include "server/ws/dto/AdHocAnimationDto.h"
 #include "server/ws/dto/CreateAdHocAnimationRequestDto.h"
 #include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/PlayAnimationRequestDto.h"
@@ -104,6 +105,64 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         // Record success metrics in the span
         if (span) {
             span->setAttribute("animations.count", static_cast<int64_t>(result->count));
+            span->setHttpStatus(200);
+        }
+
+        return createDtoResponse(Status::CODE_200, result);
+    }
+
+    ENDPOINT_INFO(listAdHocAnimations) {
+        info->summary = "List ad-hoc animations stored in the TTL collection";
+        info->addResponse<Object<AdHocAnimationListDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/animation/ad-hoc", listAdHocAnimations,
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        auto span =
+            creatures::observability->createRequestSpan("GET /api/v1/animation/ad-hoc", "GET", "api/v1/animation/ad-hoc");
+        addHttpRequestAttributes(span, request);
+
+        creatures::metrics->incrementRestRequestsProcessed();
+
+        if (span) {
+            span->setAttribute("endpoint", "listAdHocAnimations");
+            span->setAttribute("controller", "AnimationController");
+        }
+
+        auto result = m_animationService.listAdHocAnimations(span);
+        if (span) {
+            span->setHttpStatus(200);
+            span->setAttribute("adhoc.count", static_cast<int64_t>(result->count));
+        }
+        return createDtoResponse(Status::CODE_200, result);
+    }
+
+    ENDPOINT_INFO(getAdHocAnimation) {
+        info->summary = "Get an ad-hoc animation by id";
+        info->addResponse<Object<AnimationDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->pathParams["animationId"].description = "Ad-hoc animation ID";
+    }
+    ENDPOINT("GET", "api/v1/animation/ad-hoc/{animationId}", getAdHocAnimation, PATH(String, animationId),
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        auto span = creatures::observability->createRequestSpan("GET /api/v1/animation/ad-hoc/{animationId}", "GET",
+                                                                "api/v1/animation/ad-hoc/" + std::string(animationId));
+        addHttpRequestAttributes(span, request);
+
+        creatures::metrics->incrementRestRequestsProcessed();
+
+        if (span) {
+            span->setAttribute("endpoint", "getAdHocAnimation");
+            span->setAttribute("controller", "AnimationController");
+            span->setAttribute("animation.id", std::string(animationId));
+        }
+
+        auto result = m_animationService.getAdHocAnimation(animationId, span);
+
+        if (span) {
+            span->setAttribute("animation.title", std::string(result->metadata->title));
             span->setHttpStatus(200);
         }
 

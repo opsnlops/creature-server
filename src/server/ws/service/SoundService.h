@@ -8,6 +8,7 @@
 
 #include "model/Sound.h"
 
+#include "server/ws/dto/AdHocSoundEntryDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 
@@ -38,6 +39,17 @@ class SoundService {
      * Get all of the sound files
      */
     oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> getAllSounds();
+
+    /**
+     * Get all ad-hoc generated sound files.
+     */
+    oatpp::Object<AdHocSoundListDto> getAdHocSounds(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+
+    /**
+     * Resolve the absolute path for an ad-hoc sound filename.
+     */
+    std::string resolveAdHocSoundPath(const std::string &filename,
+                                      std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Generate lip sync data for a sound file using Rhubarb Lip Sync

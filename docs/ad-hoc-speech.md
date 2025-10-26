@@ -45,6 +45,34 @@ The job manager broadcasts:
 
 Use the job ID returned by the REST API to filter messages per request.
 
+## Inspecting Generated Assets
+
+Use the REST endpoints below to audit what the server has created recently. All responses are JSON for easy consumption by the iOS/macOS console apps.
+
+- `GET /api/v1/animation/ad-hoc` returns the TTL-backed animation records pulled straight from MongoDB (metadata plus embedded frames). Use this to confirm that an ad-hoc animation was persisted and learn its UUID.
+- `GET /api/v1/animation/ad-hoc/{animation_id}` returns the fully hydrated animation (metadata + tracks) just like the primary `/api/v1/animation/{id}` endpoint, but scoped to the TTL collection.
+- `GET /api/v1/sound/ad-hoc` walks those same records and surfaces any on-disk WAV artifacts. Each item wraps the familiar `SoundDto` plus extra metadata so existing clients can reuse their parsers:
+
+```json
+{
+  "animation_id": "70E7861F-D515-4091-9D0A-F7A57952F927",
+  "created_at": "2025-10-26T04:12:31Z",
+  "sound_file": "/tmp/creature-adhoc/F49100C5-C53D-4D67-A7C6-205A930A7DEA/adhoc_mango_20251025211226_hey-everyone-mango-is-live-on-stage.wav",
+  "sound": {
+    "file_name": "adhoc_mango_20251025211226_hey-everyone-mango-is-live-on-stage.wav",
+    "size": 4220658,
+    "transcript": "adhoc_mango_20251025211226_hey-everyone-mango-is-live-on-stage.txt",
+    "lipsync": "adhoc_mango_20251025211226_hey-everyone-mango-is-live-on-stage.json"
+  }
+}
+```
+
+### Downloading Ad-Hoc Audio
+
+To stream or download the synthesized WAV, call `GET /api/v1/sound/ad-hoc/{filename}` using the basename from the list response. The controller validates/sanitizes names, ensures the file still resides under `${TMPDIR}/creature-adhoc`, and then serves it with the same headers as the standard `/api/v1/sound/{filename}` download (plus a `Content-Disposition: attachment` hint). The helper files that contain the transcript (`.txt`) and Rhubarb output (`.json`) sit next to the WAV in the same temp directory and follow the same naming convention if you need to retrieve them manually.
+
+Clients should also subscribe to the existing WebSocket cache invalidation stream. Whenever a new ad-hoc job finishes, the server now emits `cache_type` values `ad-hoc-animation-list` and `ad-hoc-sound-list`. Treat those exactly like the legacy `animation`/`sound-list` invalidations and re-fetch `/api/v1/animation/ad-hoc` or `/api/v1/sound/ad-hoc` when observed.
+
 ## Housekeeping During Long Uptime
 
 The server deletes stale temp directories at boot, but if the host runs for days/weeks at a time you may want an external cleanup job. You can either add a cron entry or, preferably, a systemd timer. Replace `12` with whatever TTL you configured on the server.

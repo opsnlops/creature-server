@@ -38,6 +38,11 @@ using json = nlohmann::json;
 
 namespace creatures {
 
+struct AdHocAnimationRecord {
+    creatures::Animation animation;
+    std::chrono::system_clock::time_point createdAt;
+};
+
 class Database {
 
   public:
@@ -134,6 +139,10 @@ class Database {
     Result<void> insertAdHocAnimation(const creatures::Animation &animation,
                                       std::chrono::system_clock::time_point createdAt,
                                       std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<std::vector<AdHocAnimationRecord>>
+    listAdHocAnimations(std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<creatures::Animation> getAdHocAnimation(const animationId_t &animationId,
+                                                   std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
      * Request that the database perform a health check

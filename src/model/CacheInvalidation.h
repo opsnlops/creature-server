@@ -16,6 +16,8 @@ enum class CacheType {
     Creature,
     Playlist,
     SoundList,
+    AdHocAnimationList,
+    AdHocSoundList,
     Unknown,
 };
 

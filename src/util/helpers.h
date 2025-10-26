@@ -92,6 +92,7 @@ void displayFrames(const creatures::Animation &animation);
  * @return the current time in ISO8601 format
  */
 std::string getCurrentTimeISO8601();
+std::string formatTimeISO8601(std::chrono::system_clock::time_point timePoint);
 
 /**
  * Decode a string of bases64 data into a `std::vector<uint8_t>`. (ie, the type

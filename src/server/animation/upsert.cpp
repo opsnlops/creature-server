@@ -243,4 +243,147 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation &animatio
         return Result<void>{ServerError(ServerError::DatabaseError, errorMessage)};
     }
 }
+
+Result<std::vector<AdHocAnimationRecord>>
+Database::listAdHocAnimations(std::shared_ptr<OperationSpan> parentSpan) {
+
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.listAdHocAnimations", parentSpan);
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", ADHOC_ANIMATIONS_COLLECTION);
+    }
+
+    try {
+        auto collectionResult = getCollection(ADHOC_ANIMATIONS_COLLECTION);
+        if (!collectionResult.isSuccess()) {
+            if (dbSpan) {
+                dbSpan->setError(collectionResult.getError()->getMessage());
+            }
+            return Result<std::vector<AdHocAnimationRecord>>{collectionResult.getError().value()};
+        }
+        auto collection = collectionResult.getValue().value();
+
+        mongocxx::options::find options;
+        bsoncxx::builder::stream::document sortDoc;
+        sortDoc << "created_at" << -1;
+        options.sort(sortDoc.view());
+
+        std::vector<AdHocAnimationRecord> records;
+        auto cursor = collection.find({}, options);
+        for (const auto &doc : cursor) {
+            auto jsonResult = JsonParser::bsonToJson(doc, "adhoc animation list", dbSpan);
+            if (!jsonResult.isSuccess()) {
+                if (dbSpan) {
+                    dbSpan->setError(jsonResult.getError()->getMessage());
+                }
+                return Result<std::vector<AdHocAnimationRecord>>{jsonResult.getError().value()};
+            }
+
+            auto animationResult = animationFromJson(jsonResult.getValue().value());
+            if (!animationResult.isSuccess()) {
+                if (dbSpan) {
+                    dbSpan->setError(animationResult.getError()->getMessage());
+                }
+                return Result<std::vector<AdHocAnimationRecord>>{animationResult.getError().value()};
+            }
+
+            AdHocAnimationRecord record;
+            record.animation = animationResult.getValue().value();
+
+            if (doc["created_at"] && doc["created_at"].type() == bsoncxx::type::k_date) {
+                auto millis = doc["created_at"].get_date().value;
+                record.createdAt =
+                    std::chrono::system_clock::time_point(std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                        millis));
+            } else {
+                record.createdAt = std::chrono::system_clock::now();
+            }
+
+            records.push_back(std::move(record));
+        }
+
+        if (dbSpan) {
+            dbSpan->setAttribute("count", static_cast<int64_t>(records.size()));
+            dbSpan->setSuccess();
+        }
+
+        return Result<std::vector<AdHocAnimationRecord>>{records};
+
+    } catch (const std::exception &e) {
+        if (dbSpan) {
+            dbSpan->recordException(e);
+            dbSpan->setError(e.what());
+        }
+        return Result<std::vector<AdHocAnimationRecord>>{
+            ServerError(ServerError::DatabaseError, fmt::format("Failed to list ad-hoc animations: {}", e.what()))};
+    }
+}
+
+Result<creatures::Animation> Database::getAdHocAnimation(const animationId_t &animationId,
+                                                         std::shared_ptr<OperationSpan> parentSpan) {
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.getAdHocAnimation", parentSpan);
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", ADHOC_ANIMATIONS_COLLECTION);
+        dbSpan->setAttribute("animation.id", animationId);
+    }
+
+    try {
+        auto collectionResult = getCollection(ADHOC_ANIMATIONS_COLLECTION);
+        if (!collectionResult.isSuccess()) {
+            if (dbSpan) {
+                dbSpan->setError(collectionResult.getError()->getMessage());
+            }
+            return Result<creatures::Animation>{collectionResult.getError().value()};
+        }
+        auto collection = collectionResult.getValue().value();
+
+        auto filterById = bsoncxx::builder::stream::document{} << "id" << animationId
+                                                               << bsoncxx::builder::stream::finalize;
+        auto docOpt = collection.find_one(filterById.view());
+        if (!docOpt) {
+            auto filterByMetadataId =
+                bsoncxx::builder::stream::document{} << "metadata.animation_id" << animationId
+                                                     << bsoncxx::builder::stream::finalize;
+            docOpt = collection.find_one(filterByMetadataId.view());
+        }
+        if (!docOpt) {
+            if (dbSpan) {
+                dbSpan->setAttribute("result", "not_found");
+                dbSpan->setError("Ad-hoc animation not found");
+            }
+            return Result<creatures::Animation>{
+                ServerError(ServerError::NotFound, fmt::format("Ad-hoc animation {} not found", animationId))};
+        }
+
+        auto jsonResult = JsonParser::bsonToJson(docOpt->view(), "adhoc animation get", dbSpan);
+        if (!jsonResult.isSuccess()) {
+            if (dbSpan) {
+                dbSpan->setError(jsonResult.getError()->getMessage());
+            }
+            return Result<creatures::Animation>{jsonResult.getError().value()};
+        }
+
+        auto animationResult = animationFromJson(jsonResult.getValue().value());
+        if (!animationResult.isSuccess()) {
+            if (dbSpan) {
+                dbSpan->setError(animationResult.getError()->getMessage());
+            }
+            return Result<creatures::Animation>{animationResult.getError().value()};
+        }
+
+        if (dbSpan) {
+            dbSpan->setSuccess();
+        }
+
+        return Result<creatures::Animation>{animationResult.getValue().value()};
+
+    } catch (const std::exception &e) {
+        if (dbSpan) {
+            dbSpan->recordException(e);
+            dbSpan->setError(e.what());
+        }
+        return Result<creatures::Animation>{
+            ServerError(ServerError::DatabaseError,
+                        fmt::format("Failed to load ad-hoc animation {}: {}", animationId, e.what()))};
+    }
+}
 } // namespace creatures

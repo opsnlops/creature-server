@@ -230,6 +230,13 @@ std::string getCurrentTimeISO8601() {
     return ss.str();
 }
 
+std::string formatTimeISO8601(std::chrono::system_clock::time_point timePoint) {
+    auto timeT = std::chrono::system_clock::to_time_t(timePoint);
+    std::stringstream ss;
+    ss << std::put_time(std::gmtime(&timeT), "%Y-%m-%dT%H:%M:%SZ");
+    return ss.str();
+}
+
 std::vector<uint8_t> decodeBase64(const std::string &base64Data) {
 
     // Decode the base64 string to raw bytes

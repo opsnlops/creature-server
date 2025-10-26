@@ -453,7 +453,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         Animation adHocAnimation = baseAnimation;
         adHocAnimation.id = util::generateUUID();
         adHocAnimation.metadata.animation_id = adHocAnimation.id;
-        adHocAnimation.metadata.title = fmt::format("{} (ad-hoc {})", creatureName, timestamp);
+        adHocAnimation.metadata.title = fmt::format("{} - {} - {}", creatureName, timestamp, textSlug);
         adHocAnimation.metadata.sound_file = speechAssets.wavPath.string();
         adHocAnimation.metadata.note = fmt::format("Ad-hoc speech generated from text: {}", text);
         adHocAnimation.metadata.number_of_frames = static_cast<uint32_t>(encodedFrames.size());
@@ -466,11 +466,14 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         newTrack.frames = std::move(encodedFrames);
         adHocAnimation.tracks = {newTrack};
 
-        auto insertResult = db->insertAdHocAnimation(adHocAnimation, std::chrono::system_clock::now(), jobState.span);
+        auto createdAt = std::chrono::system_clock::now();
+        auto insertResult = db->insertAdHocAnimation(adHocAnimation, createdAt, jobState.span);
         if (!insertResult.isSuccess()) {
             failJob(insertResult.getError()->getMessage());
             return;
         }
+        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocAnimationList);
+        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
         updateProgress(0.85f);
 
         universe_t universe;

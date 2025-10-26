@@ -8,6 +8,7 @@
 
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
+#include "server/ws/dto/AdHocAnimationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 #include "util/ObservabilityManager.h"
@@ -24,8 +25,11 @@ class AnimationService {
     listAllAnimations(std::shared_ptr<RequestSpan> parentSpan = nullptr);
     oatpp::Object<creatures::AnimationDto> getAnimation(const oatpp::String &animationId,
                                                         std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    oatpp::Object<creatures::AnimationDto> getAdHocAnimation(const oatpp::String &animationId,
+                                                             std::shared_ptr<RequestSpan> parentSpan = nullptr);
     oatpp::Object<creatures::AnimationDto> upsertAnimation(const std::string &animationJson,
                                                            std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    oatpp::Object<AdHocAnimationListDto> listAdHocAnimations(std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Play a single animation on one universe out of the database

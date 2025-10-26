@@ -10,8 +10,10 @@
 
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
+#include "util/helpers.h"
 
 #include "AnimationService.h"
+#include "server/ws/dto/AdHocAnimationDto.h"
 
 namespace creatures {
 extern std::shared_ptr<Database> db;
@@ -94,6 +96,63 @@ AnimationService::listAllAnimations(std::shared_ptr<RequestSpan> parentSpan) {
     return page;
 }
 
+oatpp::Object<AdHocAnimationListDto>
+AnimationService::listAdHocAnimations(std::shared_ptr<RequestSpan> parentSpan) {
+    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+
+    auto span = creatures::observability->createOperationSpan("AnimationService.listAdHocAnimations", parentSpan);
+
+    bool error = false;
+    oatpp::String errorMessage;
+    Status status = Status::CODE_200;
+
+    auto result = db->listAdHocAnimations(span);
+    if (!result.isSuccess()) {
+        auto errorCode = result.getError().value().getCode();
+        switch (errorCode) {
+        case ServerError::NotFound:
+            status = Status::CODE_404;
+            break;
+        case ServerError::InvalidData:
+            status = Status::CODE_400;
+            break;
+        default:
+            status = Status::CODE_500;
+            break;
+        }
+        errorMessage = result.getError()->getMessage();
+        appLogger->warn(std::string(errorMessage));
+        if (span) {
+            span->setError(std::string(errorMessage));
+            span->setAttribute("error.code", static_cast<int64_t>(errorCode));
+        }
+        error = true;
+    }
+    OATPP_ASSERT_HTTP(!error, status, errorMessage)
+
+    auto list = AdHocAnimationListDto::createShared();
+    auto items = oatpp::List<oatpp::Object<AdHocAnimationDto>>::createShared();
+
+    const auto records = result.getValue().value();
+    for (const auto &record : records) {
+        auto dto = AdHocAnimationDto::createShared();
+        dto->animation_id = record.animation.id;
+        dto->metadata = convertToDto(record.animation.metadata);
+        dto->created_at = formatTimeISO8601(record.createdAt).c_str();
+        items->push_back(dto);
+    }
+
+    list->count = static_cast<v_uint32>(items->size());
+    list->items = items;
+
+    if (span) {
+        span->setAttribute("adhoc.count", static_cast<int64_t>(items->size()));
+        span->setSuccess();
+    }
+
+    return list;
+}
+
 oatpp::Object<creatures::AnimationDto> AnimationService::getAnimation(const oatpp::String &inAnimationId,
                                                                       std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
@@ -162,6 +221,63 @@ oatpp::Object<creatures::AnimationDto> AnimationService::getAnimation(const oatp
 
     const auto animation = result.getValue().value();
 
+    if (span) {
+        span->setAttribute("animation.title", animation.metadata.title);
+        span->setAttribute("animation.tracks", static_cast<int64_t>(animation.tracks.size()));
+        span->setAttribute("animation.number_of_frames", static_cast<int64_t>(animation.metadata.number_of_frames));
+        span->setAttribute("animation.milliseconds_per_frame",
+                           static_cast<int64_t>(animation.metadata.milliseconds_per_frame));
+        span->setSuccess();
+    }
+
+    return creatures::convertToDto(animation);
+}
+
+oatpp::Object<creatures::AnimationDto> AnimationService::getAdHocAnimation(const oatpp::String &inAnimationId,
+                                                                           std::shared_ptr<RequestSpan> parentSpan) {
+    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+
+    std::string animationId = std::string(inAnimationId);
+    appLogger->debug("AnimationService::getAdHocAnimation({})", animationId);
+
+    auto span = creatures::observability->createOperationSpan("AnimationService.getAdHocAnimation", parentSpan);
+    if (span) {
+        span->setAttribute("service", "AnimationService");
+        span->setAttribute("operation", "getAdHocAnimation");
+        span->setAttribute("animation.id", animationId);
+    }
+
+    bool error = false;
+    oatpp::String errorMessage;
+    Status status = Status::CODE_200;
+
+    auto result = db->getAdHocAnimation(animationId, span);
+    if (!result.isSuccess()) {
+        auto errorCode = result.getError().value().getCode();
+        switch (errorCode) {
+        case ServerError::NotFound:
+            status = Status::CODE_404;
+            break;
+        case ServerError::InvalidData:
+            status = Status::CODE_400;
+            break;
+        default:
+            status = Status::CODE_500;
+            break;
+        }
+        errorMessage = result.getError()->getMessage();
+        appLogger->warn(std::string(errorMessage));
+
+        if (span) {
+            span->setError(std::string(errorMessage));
+            span->setAttribute("error.code", static_cast<int64_t>(errorCode));
+        }
+
+        error = true;
+    }
+    OATPP_ASSERT_HTTP(!error, status, errorMessage);
+
+    const auto animation = result.getValue().value();
     if (span) {
         span->setAttribute("animation.title", animation.metadata.title);
         span->setAttribute("animation.tracks", static_cast<int64_t>(animation.tracks.size()));

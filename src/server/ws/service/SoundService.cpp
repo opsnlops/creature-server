@@ -16,6 +16,9 @@
 #include "server/config/Configuration.h"
 
 #include "model/Sound.h"
+#include "server/database.h"
+#include "server/ws/dto/AdHocDtoUtils.h"
+#include "server/ws/dto/AdHocSoundEntryDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 
@@ -28,6 +31,7 @@ namespace creatures {
 extern std::shared_ptr<creatures::Configuration> config;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<Database> db;
 } // namespace creatures
 
 namespace fs = std::filesystem;
@@ -35,6 +39,33 @@ namespace fs = std::filesystem;
 namespace creatures ::ws {
 
 using oatpp::web::protocol::http::Status;
+
+namespace {
+std::filesystem::path adHocRoot() {
+    return std::filesystem::temp_directory_path() / "creature-adhoc";
+}
+
+bool isSafeFilename(const std::string &filename) {
+    if (filename.empty()) {
+        return false;
+    }
+
+    fs::path candidate(filename);
+
+    // Reject absolute paths, root references, or anything with parent components
+    if (candidate.is_absolute() || candidate.has_root_path() || candidate != candidate.filename()) {
+        return false;
+    }
+
+    for (const auto &part : candidate) {
+        if (part == ".." || part == "." || part.native().find('\0') != std::string::npos) {
+            return false;
+        }
+    }
+
+    return true;
+}
+} // namespace
 
 oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllSounds() {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
@@ -142,6 +173,95 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
     return list;
 }
 
+oatpp::Object<AdHocSoundListDto> SoundService::getAdHocSounds(std::shared_ptr<RequestSpan> parentSpan) {
+    auto span = creatures::observability->createOperationSpan("SoundService.getAdHocSounds", parentSpan);
+
+    auto list = AdHocSoundListDto::createShared();
+    auto items = oatpp::List<oatpp::Object<AdHocSoundEntryDto>>::createShared();
+
+    auto result = db->listAdHocAnimations(span);
+    if (!result.isSuccess()) {
+        auto error = result.getError().value();
+        Status status = Status::CODE_500;
+        switch (error.getCode()) {
+        case ServerError::NotFound:
+            status = Status::CODE_404;
+            break;
+        case ServerError::InvalidData:
+            status = Status::CODE_400;
+            break;
+        default:
+            status = Status::CODE_500;
+            break;
+        }
+        if (span) {
+            span->setError(error.getMessage());
+        }
+        OATPP_ASSERT_HTTP(false, status, error.getMessage().c_str());
+    }
+
+    const auto records = result.getValue().value();
+    for (const auto &record : records) {
+        auto dto = buildAdHocSoundEntryDto(record.animation, record.createdAt);
+        if (!dto) {
+            continue;
+        }
+        items->push_back(dto);
+    }
+
+    list->count = static_cast<v_uint32>(items->size());
+    list->items = items;
+
+    if (span) {
+        span->setAttribute("adhoc_sound.count", static_cast<int64_t>(items->size()));
+        span->setSuccess();
+    }
+
+    debug("Returning {} ad-hoc sound files", list->count);
+    return list;
+}
+
+std::string SoundService::resolveAdHocSoundPath(const std::string &filename,
+                                                std::shared_ptr<RequestSpan> parentSpan) {
+    if (!isSafeFilename(filename)) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "Invalid filename");
+    }
+
+    auto span = creatures::observability->createOperationSpan("SoundService.resolveAdHocSoundPath", parentSpan);
+
+    auto root = adHocRoot();
+    if (!fs::exists(root)) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_404, "No ad-hoc sounds available");
+    }
+
+    try {
+        for (const auto &entry : fs::recursive_directory_iterator(root)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            if (entry.path().filename() == filename) {
+                auto canonicalRoot = fs::canonical(root);
+                auto canonicalFile = fs::canonical(entry.path());
+                if (canonicalFile.string().find(canonicalRoot.string()) != 0) {
+                    break;
+                }
+                if (span) {
+                    span->setAttribute("adhoc_sound.path", canonicalFile.string());
+                }
+                return canonicalFile.string();
+            }
+        }
+    } catch (const std::exception &e) {
+        if (span) {
+            span->setError(e.what());
+        }
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, e.what());
+    }
+
+    OATPP_ASSERT_HTTP(false, Status::CODE_404,
+                      fmt::format("Ad-hoc sound '{}' not found in {}", filename, root.string()).c_str());
+}
+
 /**
  * Schedule a sound to play on the next frame
  *
@@ -213,8 +333,6 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
 oatpp::Object<creatures::ws::StatusDto> SoundService::generateLipSync(const oatpp::String &inSoundFile,
                                                                       bool allowOverwrite,
                                                                       std::shared_ptr<RequestSpan> parentSpan) {
-
-    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
     std::string soundFile = std::string(inSoundFile);
     debug("generateLipSync() called for file: {}, allowOverwrite: {}", soundFile, allowOverwrite);

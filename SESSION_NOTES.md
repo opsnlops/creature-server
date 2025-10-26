@@ -1207,3 +1207,10 @@ AnimationSchedulerType animationSchedulerType =
 - API now fails fast if a creature lacks `speech_loop_animation_ids`, returning `422 Unprocessable Entity` with the creature’s display name.
 - `/api/v1/animation/adhoc` changed to port 8000 for local curl testing.
 - Heavy usage warning: job queue + temp directory cleanup share the same TTL (`--adhoc-animation-ttl-hours`). Keep an eye on disk if ad-hoc usage spikes faster than cleanup cadence.
+- WebSocket cache invalidations now emit `cache_type` values `ad-hoc-animation-list` and `ad-hoc-sound-list` whenever new ad-hoc jobs land. Have clients listen for these strings to refresh `/api/v1/animation/ad-hoc` or `/api/v1/sound/ad-hoc` datasets.
+
+### 2025-11-xx Latest Changes
+- Added `GET /api/v1/animation/ad-hoc/{id}` so clients can pull the fully synthesized animation payload (metadata + tracks). Docs updated with curl/test guidance.
+- Client cache enums now understand the two ad-hoc cache invalidation strings; SwiftUI processor currently just logs pending refresh logic.
+- Job worker titles ad-hoc animations as `<Creature> - <timestamp> - <slug>` to match console expectations.
+- Database lookup for ad-hoc fetch checks both `id` and `metadata.animation_id`, fixing the earlier 404 when clients used the DTO’s `animation_id`.

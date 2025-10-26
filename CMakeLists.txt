@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "3.4.0"
+        VERSION "3.4.1"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -335,6 +335,10 @@ add_executable(creature-server
         src/server/ws/App.h
         src/server/ws/App.cpp
 
+        src/server/ws/dto/AdHocAnimationDto.h
+        src/server/ws/dto/AdHocSoundEntryDto.h
+        src/server/ws/dto/AdHocDtoUtils.h
+        src/server/ws/dto/AdHocDtoUtils.cpp
         src/server/ws/dto/ListDto.h
         src/server/ws/dto/PlayAnimationRequestDto.h
         src/server/ws/dto/PlaySoundRequestDTO.h

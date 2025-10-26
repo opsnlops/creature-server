@@ -16,6 +16,7 @@
 #include "server/config.h"
 #include "server/database.h"
 
+#include "server/ws/dto/AdHocSoundEntryDto.h"
 #include "server/ws/dto/GenerateLipSyncRequestDto.h"
 #include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/ListDto.h"
@@ -28,6 +29,8 @@
 #include "server/metrics/counters.h"
 #include "util/ObservabilityManager.h"
 #include "util/websocketUtils.h"
+
+namespace fs = std::filesystem;
 
 namespace creatures {
 extern std::shared_ptr<creatures::Configuration> config;
@@ -68,6 +71,16 @@ class SoundController : public oatpp::web::server::api::ApiController {
         return createDtoResponse(Status::CODE_200, m_soundService.getAllSounds());
     }
 
+    ENDPOINT_INFO(getAdHocSounds) {
+        info->summary = "List ad-hoc/generated sound files";
+        info->addResponse<Object<AdHocSoundListDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/sound/ad-hoc", getAdHocSounds) {
+        creatures::metrics->incrementRestRequestsProcessed();
+        return createDtoResponse(Status::CODE_200, m_soundService.getAdHocSounds());
+    }
+
     ENDPOINT_INFO(playSound) {
         info->summary = "Queue up a sound to play on the next frame";
 
@@ -82,13 +95,20 @@ class SoundController : public oatpp::web::server::api::ApiController {
     }
 
     static std::string sanitizeFilename(const std::string &filename) {
-        // Reject any filename containing "../"
-        if (filename.find("..") != std::string::npos) {
+        if (filename.empty() || filename.find('\0') != std::string::npos) {
+            throw std::invalid_argument("Invalid filename: Empty or contains null bytes.");
+        }
+
+        fs::path candidate(filename);
+
+        // Reject absolute paths, root references, or anything with parent components.
+        if (candidate.is_absolute() || candidate.has_root_path() || candidate.has_parent_path() ||
+            candidate != candidate.filename()) {
             throw std::invalid_argument("Invalid filename: Path traversal detected.");
         }
 
-        // Ensure the filename contains only safe characters (e.g., alphanumeric, underscores, hyphens)
-        std::regex validFilenameRegex("^[a-zA-Z0-9_-]+\\.[a-zA-Z0-9]+$");
+        // Keep legacy restriction to predictable ASCII names with extensions.
+        static const std::regex validFilenameRegex("^[a-zA-Z0-9_-]+\\.[a-zA-Z0-9]+$");
         if (!std::regex_match(filename, validFilenameRegex)) {
             throw std::invalid_argument("Invalid filename: Contains unsafe characters.");
         }
@@ -210,6 +230,67 @@ class SoundController : public oatpp::web::server::api::ApiController {
             ResponseFactory::createResponse(Status::CODE_200, oatpp::String((const char *)buffer.data(), fileSize));
         response->putHeader("Content-Type", mimeType.c_str());
         // content-length is automatically added by oatpp
+        return response;
+    }
+
+    ENDPOINT_INFO(getAdHocSound) {
+        info->summary = "Retrieve an ad-hoc generated sound file";
+        info->addResponse<String>(Status::CODE_200, "audio/wav");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/sound/ad-hoc/{filename}", getAdHocSound, PATH(String, filename)) {
+        creatures::metrics->incrementRestRequestsProcessed();
+
+        std::string safeFilename;
+        try {
+            safeFilename = sanitizeFilename(filename);
+        } catch (const std::invalid_argument &e) {
+            auto response = StatusDto::createShared();
+            response->status = "Forbidden";
+            response->message = e.what();
+            response->code = 403;
+            return createDtoResponse(Status::CODE_403, response);
+        }
+
+        std::string filePath;
+        try {
+            filePath = m_soundService.resolveAdHocSoundPath(safeFilename);
+        } catch (oatpp::web::protocol::http::HttpError &err) {
+            auto info = err.getInfo();
+            auto response = StatusDto::createShared();
+            response->status = std::string(Status(info.status).description);
+            response->message = err.getMessage();
+            response->code = info.status.code;
+            return createDtoResponse(Status(info.status), response);
+        }
+
+        std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            auto response = StatusDto::createShared();
+            response->status = "Not Found";
+            response->message = "File not found.";
+            response->code = 404;
+            return createDtoResponse(Status::CODE_404, response);
+        }
+
+        std::streamsize fileSize = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        std::vector<char> buffer(fileSize);
+        if (!file.read(buffer.data(), fileSize)) {
+            auto response = StatusDto::createShared();
+            response->status = "Internal Server Error";
+            response->message = "Error reading file.";
+            response->code = 500;
+            return createDtoResponse(Status::CODE_500, response);
+        }
+
+        auto mimeType = getMimeType(filePath);
+        auto response =
+            ResponseFactory::createResponse(Status::CODE_200, oatpp::String((const char *)buffer.data(), fileSize));
+        response->putHeader("Content-Type", mimeType.c_str());
+        response->putHeader("Content-Disposition", "attachment; filename=\"" + safeFilename + "\"");
         return response;
     }
 

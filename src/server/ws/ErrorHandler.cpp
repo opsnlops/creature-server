@@ -20,18 +20,13 @@ ErrorHandler::handleError(const Status &status, const oatpp::String &message, co
         std::string msgStr = std::string(message);
 
         // Detect oatpp deserialization errors and convert to 400 Bad Request
-        if (msgStr.find("Deserializer") != std::string::npos ||
-            msgStr.find("Unknown field") != std::string::npos ||
+        if (msgStr.find("Deserializer") != std::string::npos || msgStr.find("Unknown field") != std::string::npos ||
             msgStr.find("readObject()") != std::string::npos) {
 
             actualStatus = Status::CODE_400;
 
-            // Provide helpful error message with required fields
-            if (msgStr.find("Unknown field") != std::string::npos) {
-                actualMessage = "Invalid request body. Request contains unknown field(s). Expected fields: sound_file (required)";
-            } else {
-                actualMessage = "Invalid request body. Missing required field(s): sound_file";
-            }
+            // Keep the original oatpp error message - it contains specific field information
+            actualMessage = message;
         }
     }
 

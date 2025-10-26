@@ -10,6 +10,7 @@
 
 #include <bsoncxx/builder/stream/document.hpp>
 #include <mongocxx/client.hpp>
+#include <mongocxx/options/find.hpp>
 #include <mongocxx/options/index.hpp>
 #include <mongocxx/pool.hpp>
 

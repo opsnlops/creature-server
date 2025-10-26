@@ -269,52 +269,58 @@ std::string AudioCache::getCacheFilePath(const std::string &sourceFilePath, uint
     return (std::filesystem::path(cacheDirPath) / filename).string();
 }
 
+namespace {
+std::string sanitizeComponent(const std::string &component) {
+    std::string sanitized;
+    sanitized.reserve(component.size());
+    for (char c : component) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.') {
+            sanitized += c;
+        } else {
+            sanitized += '_';
+        }
+    }
+
+    if (sanitized.empty() || sanitized[0] == '.') {
+        sanitized = "file_" + std::to_string(std::hash<std::string>{}(component));
+    }
+
+    constexpr size_t MAX_FILENAME_LENGTH = 200;
+    if (sanitized.length() > MAX_FILENAME_LENGTH) {
+        auto hash = std::to_string(std::hash<std::string>{}(sanitized));
+        sanitized = sanitized.substr(0, MAX_FILENAME_LENGTH - hash.length() - 1) + "_" + hash;
+    }
+    return sanitized;
+}
+} // namespace
+
 std::string AudioCache::getCacheDirectoryPath(const std::string &sourceFilePath) const {
     try {
         // Canonicalize the source path to resolve any .. or . components
         auto canonicalSourcePath = std::filesystem::canonical(sourceFilePath);
 
-        // Ensure the canonical source path is within the sound directory
-        auto canonicalSoundDir = std::filesystem::canonical(soundDirectory_);
-        auto relativePath = std::filesystem::relative(canonicalSourcePath, canonicalSoundDir);
-
-        // Check if the relative path starts with ".." which would indicate path traversal
-        auto relativePathStr = relativePath.string();
-        if (relativePath.empty() || (relativePathStr.size() >= 2 && relativePathStr.substr(0, 2) == "..")) {
-            error("🚨 PATH TRAVERSAL ATTEMPT: Source file {} is outside sound directory {}", sourceFilePath,
-                  soundDirectory_);
-            throw std::invalid_argument("Source file path outside allowed directory");
-        }
-
-        // Use only the filename (stem) to prevent directory traversal in cache
-        auto filename = canonicalSourcePath.stem().string();
-
-        // Sanitize filename to remove any dangerous characters
-        std::string sanitized;
-        sanitized.reserve(filename.size());
-
-        for (char c : filename) {
-            // Allow alphanumeric, dash, underscore, and dot
-            if (std::isalnum(c) || c == '-' || c == '_' || c == '.') {
-                sanitized += c;
-            } else {
-                sanitized += '_'; // Replace dangerous characters with underscore
+        bool insideSoundDir = false;
+        try {
+            auto canonicalSoundDir = std::filesystem::canonical(soundDirectory_);
+            auto relativePath = std::filesystem::relative(canonicalSourcePath, canonicalSoundDir);
+            auto relativePathStr = relativePath.string();
+            if (!relativePath.empty() && !(relativePathStr.size() >= 2 && relativePathStr.substr(0, 2) == "..")) {
+                insideSoundDir = true;
             }
+        } catch (const std::exception &e) {
+            warn("Unable to evaluate relative path for caching ({}): {}", soundDirectory_, e.what());
         }
 
-        // Ensure sanitized name isn't empty and doesn't start with dot
-        if (sanitized.empty() || sanitized[0] == '.') {
-            sanitized = "file_" + std::to_string(std::hash<std::string>{}(filename));
+        auto filename = canonicalSourcePath.stem().string();
+        auto sanitized = sanitizeComponent(filename);
+
+        std::filesystem::path baseCachePath = cacheDirectory_;
+        if (!insideSoundDir) {
+            baseCachePath /= "_external";
+            sanitized = fmt::format("{}_{}", sanitized, std::hash<std::string>{}(canonicalSourcePath.string()));
         }
 
-        // Limit filename length to prevent filesystem issues
-        constexpr size_t MAX_FILENAME_LENGTH = 200;
-        if (sanitized.length() > MAX_FILENAME_LENGTH) {
-            auto hash = std::to_string(std::hash<std::string>{}(sanitized));
-            sanitized = sanitized.substr(0, MAX_FILENAME_LENGTH - hash.length() - 1) + "_" + hash;
-        }
-
-        return (std::filesystem::path(cacheDirectory_) / sanitized).string();
+        return (baseCachePath / sanitized).string();
 
     } catch (const std::filesystem::filesystem_error &e) {
         error("Filesystem error processing cache path for {}: {}", sourceFilePath, e.what());
