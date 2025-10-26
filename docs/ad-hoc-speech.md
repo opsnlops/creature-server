@@ -4,7 +4,9 @@ This document explains how the ad-hoc speech feature works, how it is configured
 
 ## Overview
 
-1. **Client call** – `POST /api/v1/animation/adhoc` with:
+1. **Client call** – `POST /api/v1/animation/ad-hoc` to synthesize + play immediately, or
+   `POST /api/v1/animation/ad-hoc/prepare` to build everything but pause playback. Both
+   endpoints accept:
    ```json
    {
      "creature_id": "beaky",
@@ -19,7 +21,8 @@ This document explains how the ad-hoc speech feature works, how it is configured
    - Uses `SpeechGenerationManager` (shared with `/api/v1/voice`) to:
      - Generate speech via ElevenLabs (`CreatureVoices`).
      - Convert the MP3 to a 17-channel WAV (`AudioConverter`) targeting the creature’s audio channel.
-   - Runs Rhubarb lip sync against the WAV, producing a JSON of mouth cues.
+   - Runs Rhubarb lip sync against the WAV, producing a JSON of mouth cues, while pre-warming the 17-channel Opus cache
+     in parallel so the first playback already has encoded audio.
    - Uses `SoundDataProcessor` to inject the mouth values into the chosen speech-loop animation/track.
    - Stores the synthesized animation in the new `adhoc_animations` collection (Mongo TTL + job metadata).
    - Interrupts the cooperative scheduler on the creature’s current universe (mirrors `/api/v1/animation/interrupt` behavior, including optional playlist resume).
@@ -28,6 +31,29 @@ This document explains how the ad-hoc speech feature works, how it is configured
    - A per-job temp directory is created under `${TMPDIR}/creature-adhoc/<job_id>/`.
    - Files follow the pattern `adhoc_<creature>_<timestamp>_<slug>.{wav,mp3,json,txt}` to make manual inspection easy.
    - At server startup we prune directories older than `--adhoc-animation-ttl-hours` (default: 12h), keeping temp artifacts loosely in sync with the Mongo TTL.
+
+### Prepare vs Play Later
+
+If you want to line up the speech but wait for the perfect comedic beat, hit the prepare endpoint first:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/animation/ad-hoc/prepare \
+  -H "Content-Type: application/json" \
+  -d '{"creature_id":"mango","text":"Queue me up!", "resume_playlist":false}'
+```
+
+The returned job completes exactly like the auto-play variant but sets `auto_play=false` and `playback_triggered=false`
+inside the job-complete payload (there is no `universe` because nothing was interrupted yet). When you are ready, call:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/animation/ad-hoc/play \
+  -H "Content-Type: application/json" \
+  -d '{"animation_id":"<UUID from job result>", "resume_playlist":false}'
+```
+
+The play endpoint looks up the cached animation, verifies the creature is currently registered, and then interrupts on the
+spot. It reuses the same payload as `/api/v1/animation/interrupt`, so `resume_playlist` retains its meaning and defaults
+to `true` if omitted.
 
 ## Configuration
 
@@ -41,7 +67,9 @@ This document explains how the ad-hoc speech feature works, how it is configured
 
 The job manager broadcasts:
 - `job-progress` – includes `progress` (0.0–1.0) and a text status (speech synthesis, Rhubarb, scheduling, etc.).
-- `job-complete` – contains the `result` JSON (`animation_id`, `sound_file`, `universe`, `resume_playlist`, `temp_directory`) and success/failure state.
+- `job-complete` – contains the `result` JSON (`animation_id`, `sound_file`, `resume_playlist`, `temp_directory`,
+  `auto_play`, `playback_triggered`, and `universe` when playback happens) plus the success/failure state.
+- `job_type` tells clients which path ran: `ad-hoc-speech` for immediate playback, `ad-hoc-speech-prepare` for staged jobs.
 
 Use the job ID returned by the REST API to filter messages per request.
 

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <future>
 #include <random>
 
 #include <base64.hpp>
@@ -19,6 +20,7 @@
 #include "server/config/Configuration.h"
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
+#include "server/rtp/AudioStreamBuffer.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/RhubarbData.h"
 #include "server/voice/SoundDataProcessor.h"
@@ -36,6 +38,7 @@ extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMap;
 extern std::shared_ptr<SessionManager> sessionManager;
+extern std::shared_ptr<util::AudioCache> audioCache;
 } // namespace creatures
 
 namespace creatures::jobs {
@@ -69,6 +72,57 @@ std::string slugify(const std::string &value, std::size_t maxLength = 40) {
         slug.pop_back();
     }
     return slug;
+}
+
+Result<void> prewarmAudioCache(const std::filesystem::path &wavPath, std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = creatures::observability->createChildOperationSpan("AdHocSpeech.prewarmAudioCache", parentSpan);
+    if (span) {
+        span->setAttribute("sound.path", wavPath.string());
+    }
+
+    if (wavPath.empty()) {
+        std::string message = "Cannot prewarm audio cache without a WAV path";
+        warn(message);
+        if (span) {
+            span->setError(message);
+        }
+        return Result<void>{ServerError(ServerError::InvalidData, message)};
+    }
+
+    if (!std::filesystem::exists(wavPath)) {
+        auto message = fmt::format("Cannot prewarm cache; WAV {} does not exist", wavPath.string());
+        warn(message);
+        if (span) {
+            span->setError(message);
+        }
+        return Result<void>{ServerError(ServerError::NotFound, message)};
+    }
+
+    if (!creatures::audioCache) {
+        debug("Audio cache disabled, skipping prewarm for {}", wavPath.string());
+        if (span) {
+            span->setAttribute("cache.enabled", false);
+            span->setSuccess();
+        }
+        return Result<void>{};
+    }
+
+    auto buffer = creatures::rtp::AudioStreamBuffer::loadFromWavFile(wavPath.string(), span);
+    if (!buffer) {
+        auto message = fmt::format("AudioStreamBuffer failed while prewarming {}", wavPath.string());
+        warn(message);
+        if (span) {
+            span->setError(message);
+        }
+        return Result<void>{ServerError(ServerError::InternalError, message)};
+    }
+
+    if (span) {
+        span->setAttribute("cache.enabled", true);
+        span->setSuccess();
+    }
+    debug("Prewarmed audio cache for {}", wavPath.string());
+    return Result<void>{};
 }
 
 } // namespace
@@ -130,6 +184,10 @@ void JobWorker::processJob(const std::string &jobId) {
             break;
         case JobType::AdHocSpeech:
             info("Handling job {} as AdHocSpeech type", jobId);
+            handleAdHocSpeechJob(jobState);
+            break;
+        case JobType::AdHocSpeechPrepare:
+            info("Handling job {} as AdHocSpeechPrepare type", jobId);
             handleAdHocSpeechJob(jobState);
             break;
         default:
@@ -242,12 +300,14 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
     std::string creatureId;
     std::string text;
     bool resumePlaylist = true;
+    bool autoPlay = true;
 
     try {
         auto detailsJson = nlohmann::json::parse(jobState.details);
         creatureId = detailsJson.at("creature_id").get<std::string>();
         text = detailsJson.at("text").get<std::string>();
         resumePlaylist = detailsJson.value("resume_playlist", true);
+        autoPlay = detailsJson.value("auto_play", true);
     } catch (const std::exception &e) {
         std::string msg = fmt::format("Invalid job details: {}", e.what());
         error(msg);
@@ -365,6 +425,11 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         renameIfExists(speechAssets.mp3Path, "mp3");
         renameIfExists(speechAssets.transcriptPath, "txt");
 
+        auto cacheFuture = std::async(std::launch::async, [wavPath = speechAssets.wavPath, span = jobState.span]() {
+            debug("Starting background cache prewarm for {}", wavPath.string());
+            return prewarmAudioCache(wavPath, span);
+        });
+
         auto rhubarbProgress = [&, base = 0.2f, span = 0.3f](float lipSyncProgress) {
             updateProgress(base + span * lipSyncProgress);
         };
@@ -372,6 +437,13 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         auto lipSyncResult = voice::LipSyncProcessor::generateLipSync(speechAssets.wavPath.filename().string(),
                                                                       tempDir.string(), config->getRhubarbBinaryPath(),
                                                                       true, rhubarbProgress, jobState.span);
+        auto cachePrewarmResult = cacheFuture.get();
+        if (!cachePrewarmResult.isSuccess()) {
+            warn("Audio cache prewarm failed for job {}: {}", jobState.jobId,
+                 cachePrewarmResult.getError()->getMessage());
+        } else {
+            debug("Audio cache prewarm complete for {}", speechAssets.wavPath.string());
+        }
         if (!lipSyncResult.isSuccess()) {
             failJob(lipSyncResult.getError()->getMessage());
             return;
@@ -476,28 +548,35 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
         updateProgress(0.85f);
 
-        universe_t universe;
-        try {
-            auto universePtr = creatureUniverseMap->get(creatureId);
-            universe = *universePtr;
-        } catch (const std::exception &) {
-            failJob(
-                fmt::format("Creature {} is not registered with a universe. Is the controller online?", creatureId));
-            return;
-        }
-
-        auto sessionResult = sessionManager->interrupt(universe, adHocAnimation, resumePlaylist);
-        if (!sessionResult.isSuccess()) {
-            failJob(sessionResult.getError()->getMessage());
-            return;
-        }
-
         nlohmann::json completionJson;
         completionJson["animation_id"] = adHocAnimation.id;
         completionJson["sound_file"] = adHocAnimation.metadata.sound_file;
-        completionJson["universe"] = universe;
         completionJson["resume_playlist"] = resumePlaylist;
         completionJson["temp_directory"] = tempDir.string();
+        completionJson["auto_play"] = autoPlay;
+
+        bool playbackTriggered = false;
+        universe_t universe{};
+        if (autoPlay) {
+            try {
+                auto universePtr = creatureUniverseMap->get(creatureId);
+                universe = *universePtr;
+            } catch (const std::exception &) {
+                failJob(fmt::format("Creature {} is not registered with a universe. Is the controller online?",
+                                    creatureId));
+                return;
+            }
+
+            auto sessionResult = sessionManager->interrupt(universe, adHocAnimation, resumePlaylist);
+            if (!sessionResult.isSuccess()) {
+                failJob(sessionResult.getError()->getMessage());
+                return;
+            }
+
+            completionJson["universe"] = universe;
+            playbackTriggered = true;
+        }
+        completionJson["playback_triggered"] = playbackTriggered;
 
         updateProgress(1.0f);
         jobManager_->completeJob(jobState.jobId, completionJson.dump());

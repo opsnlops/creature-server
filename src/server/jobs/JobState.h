@@ -23,8 +23,9 @@ enum class JobStatus {
  * Type of background job
  */
 enum class JobType {
-    LipSync,     // Generate lip sync data using Rhubarb
-    AdHocSpeech, // Generate ad-hoc speech animation
+    LipSync,            // Generate lip sync data using Rhubarb
+    AdHocSpeech,        // Generate and immediately play ad-hoc speech
+    AdHocSpeechPrepare, // Generate ad-hoc speech but wait for manual trigger
 };
 
 /**
@@ -86,6 +87,8 @@ inline std::string toString(JobType type) {
         return "lip-sync";
     case JobType::AdHocSpeech:
         return "ad-hoc-speech";
+    case JobType::AdHocSpeechPrepare:
+        return "ad-hoc-speech-prepare";
     default:
         return "unknown";
     }

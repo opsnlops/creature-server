@@ -1214,3 +1214,9 @@ AnimationSchedulerType animationSchedulerType =
 - Client cache enums now understand the two ad-hoc cache invalidation strings; SwiftUI processor currently just logs pending refresh logic.
 - Job worker titles ad-hoc animations as `<Creature> - <timestamp> - <slug>` to match console expectations.
 - Database lookup for ad-hoc fetch checks both `id` and `metadata.animation_id`, fixing the earlier 404 when clients used the DTO’s `animation_id`.
+
+### 2025-10-26 Client & CLI Updates
+
+- Added a distinct `ad-hoc-speech-prepare` job type (with the same typed result payload used by `ad-hoc-speech`) so websocket consumers can tell whether auto-play occurred and read the generated `animation_id` without custom parsing.
+- Swift Common package now owns DTOs for `POST /api/v1/animation/ad-hoc`, `/ad-hoc/prepare`, and `/ad-hoc/play`, plus helpers on `CreatureServerClient` to call those endpoints.
+- Creature CLI exposes `voice ad-hoc play|prepare|trigger`. `play` mirrors the classic auto-play flow, `prepare` runs the full pipeline but waits, and `trigger` plays a prepared animation when the operator is ready. CLI job-complete logging prints the `animation_id` (and flags when playback hasn’t fired yet) so you can stage Mango’s timing precisely.
