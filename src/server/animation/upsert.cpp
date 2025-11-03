@@ -26,6 +26,8 @@ namespace creatures {
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability;
 
+using bsoncxx::builder::stream::document;
+
 /**
  * Create or update an animation in the database
  *
@@ -181,6 +183,174 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         if (dbSpan)
             dbSpan->setError(error_message);
         return Result<creatures::Animation>{ServerError(ServerError::InternalError, error_message)};
+    }
+}
+
+Result<void> Database::deleteAnimation(const animationId_t &animationId,
+                                       std::shared_ptr<OperationSpan> parentSpan) {
+
+    debug("request received to delete animation {}", animationId);
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.deleteAnimation", parentSpan);
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
+        dbSpan->setAttribute("database.operation", "delete_one");
+        dbSpan->setAttribute("animation.id", animationId);
+    }
+
+    if (animationId.empty()) {
+        std::string errorMessage = "Animation id cannot be empty when deleting";
+        warn(errorMessage);
+        if (dbSpan) {
+            dbSpan->setError(errorMessage);
+            dbSpan->setAttribute("error.type", "InvalidData");
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        }
+        return Result<void>{ServerError(ServerError::InvalidData, errorMessage)};
+    }
+
+    auto loadSpan = creatures::observability->createChildOperationSpan("Database.deleteAnimation.load", dbSpan);
+    auto animationResult = getAnimation(animationId, loadSpan);
+    if (!animationResult.isSuccess()) {
+        auto error = animationResult.getError().value();
+        if (dbSpan) {
+            dbSpan->setError(error.getMessage());
+            dbSpan->setAttribute("error.type", "LookupFailed");
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
+        }
+        return Result<void>{error};
+    }
+    auto animation = animationResult.getValue().value();
+    if (loadSpan) {
+        loadSpan->setAttribute("animation.track_count", static_cast<int64_t>(animation.tracks.size()));
+        loadSpan->setSuccess();
+    }
+
+    auto cleanupSpan =
+        creatures::observability->createChildOperationSpan("Database.deleteAnimation.cleanupTracks", dbSpan);
+    if (cleanupSpan) {
+        cleanupSpan->setAttribute("animation.track_count", static_cast<int64_t>(animation.tracks.size()));
+    }
+    for (const auto &track : animation.tracks) {
+        auto trackSpan =
+            creatures::observability->createChildOperationSpan("Database.deleteAnimation.cleanupTrack", cleanupSpan);
+        if (trackSpan) {
+            trackSpan->setAttribute("track.id", track.id);
+            trackSpan->setAttribute("track.creature_id", track.creature_id);
+            trackSpan->setAttribute("track.frame_count", static_cast<int64_t>(track.frames.size()));
+            trackSpan->setSuccess();
+        }
+        trace("Marking track {} for deletion with {} frames (creature {})", track.id, track.frames.size(),
+              track.creature_id);
+    }
+    if (cleanupSpan) {
+        cleanupSpan->setSuccess();
+    }
+
+    auto collectionSpan = creatures::observability->createChildOperationSpan("Database.getCollection", dbSpan);
+    auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+    if (!collectionResult.isSuccess()) {
+        auto error = collectionResult.getError().value();
+        warn("Failed to get animations collection while deleting {}: {}", animationId, error.getMessage());
+        if (collectionSpan) {
+            collectionSpan->setError(error.getMessage());
+        }
+        if (dbSpan) {
+            dbSpan->setError(error.getMessage());
+            dbSpan->setAttribute("error.type", "DatabaseError");
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
+        }
+        return Result<void>{error};
+    }
+    auto collection = collectionResult.getValue().value();
+    if (collectionSpan) {
+        collectionSpan->setSuccess();
+    }
+
+    auto filterSpan =
+        creatures::observability->createChildOperationSpan("Database.deleteAnimation.buildFilter", dbSpan);
+    document filterBuilder;
+    filterBuilder << "id" << animationId;
+    if (filterSpan) {
+        filterSpan->setAttribute("filter.field", "id");
+        filterSpan->setAttribute("filter.value", animationId);
+        filterSpan->setSuccess();
+    }
+
+    auto deleteSpan = creatures::observability->createChildOperationSpan("MongoDB.deleteOne", dbSpan);
+    if (deleteSpan) {
+        deleteSpan->setAttribute("db.system", "mongodb");
+        deleteSpan->setAttribute("db.name", DB_NAME);
+        deleteSpan->setAttribute("db.collection.name", ANIMATIONS_COLLECTION);
+        deleteSpan->setAttribute("db.operation", "deleteOne");
+    }
+
+    try {
+        auto result = collection.delete_one(filterBuilder.view());
+        if (!result || result->deleted_count() == 0) {
+            std::string errorMessage = fmt::format("Animation {} not found while attempting delete", animationId);
+            warn(errorMessage);
+            if (deleteSpan) {
+                deleteSpan->setError(errorMessage);
+            }
+            if (dbSpan) {
+                dbSpan->setError(errorMessage);
+                dbSpan->setAttribute("error.type", "NotFound");
+                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
+            }
+            return Result<void>{ServerError(ServerError::NotFound, errorMessage)};
+        }
+
+        info("Animation {} deleted ({} tracks removed)", animationId, animation.tracks.size());
+        if (deleteSpan) {
+            deleteSpan->setAttribute("db.deleted_count", static_cast<int64_t>(result->deleted_count()));
+            deleteSpan->setSuccess();
+        }
+        if (dbSpan) {
+            dbSpan->setAttribute("animation.track_count", static_cast<int64_t>(animation.tracks.size()));
+            dbSpan->setSuccess();
+        }
+
+        return Result<void>{};
+
+    } catch (const mongocxx::exception &e) {
+        std::string errorMessage =
+            fmt::format("MongoDB exception while deleting animation {}: {}", animationId, e.what());
+        error(errorMessage);
+        if (deleteSpan) {
+            deleteSpan->recordException(e);
+            deleteSpan->setError(errorMessage);
+        }
+        if (dbSpan) {
+            dbSpan->recordException(e);
+            dbSpan->setError(errorMessage);
+            dbSpan->setAttribute("error.type", "DatabaseError");
+        }
+        return Result<void>{ServerError(ServerError::DatabaseError, errorMessage)};
+    } catch (const std::exception &e) {
+        std::string errorMessage =
+            fmt::format("Unexpected error while deleting animation {}: {}", animationId, e.what());
+        error(errorMessage);
+        if (deleteSpan) {
+            deleteSpan->recordException(e);
+            deleteSpan->setError(errorMessage);
+        }
+        if (dbSpan) {
+            dbSpan->recordException(e);
+            dbSpan->setError(errorMessage);
+            dbSpan->setAttribute("error.type", "InternalError");
+        }
+        return Result<void>{ServerError(ServerError::InternalError, errorMessage)};
+    } catch (...) {
+        std::string errorMessage = fmt::format("Unknown error while deleting animation {}", animationId);
+        critical(errorMessage);
+        if (deleteSpan) {
+            deleteSpan->setError(errorMessage);
+        }
+        if (dbSpan) {
+            dbSpan->setError(errorMessage);
+            dbSpan->setAttribute("error.type", "InternalError");
+        }
+        return Result<void>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
 

@@ -1,5 +1,7 @@
 #include <string>
 
+#include <fmt/format.h>
+
 #include "exception/exception.h"
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
@@ -390,6 +392,60 @@ oatpp::Object<creatures::AnimationDto> AnimationService::upsertAnimation(const s
         serviceSpan->setSuccess();
     }
     return convertToDto(animation);
+}
+
+oatpp::Object<creatures::ws::StatusDto>
+AnimationService::deleteAnimation(const oatpp::String &animationId, std::shared_ptr<RequestSpan> parentSpan) {
+    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+
+    std::string animationIdStr = std::string(animationId);
+    appLogger->info("AnimationService::deleteAnimation({})", animationIdStr);
+
+    auto span = creatures::observability->createOperationSpan("AnimationService.deleteAnimation", parentSpan);
+    if (span) {
+        span->setAttribute("service", "AnimationService");
+        span->setAttribute("operation", "deleteAnimation");
+        span->setAttribute("animation.id", animationIdStr);
+    }
+
+    bool error = false;
+    oatpp::String errorMessage;
+    Status status = Status::CODE_200;
+
+    auto result = db->deleteAnimation(animationIdStr, span);
+    if (!result.isSuccess()) {
+        auto serverError = result.getError().value();
+        switch (serverError.getCode()) {
+        case ServerError::NotFound:
+            status = Status::CODE_404;
+            break;
+        case ServerError::InvalidData:
+            status = Status::CODE_400;
+            break;
+        default:
+            status = Status::CODE_500;
+            break;
+        }
+        errorMessage = serverError.getMessage();
+        appLogger->warn(std::string(errorMessage));
+        if (span) {
+            span->setError(std::string(errorMessage));
+            span->setAttribute("error.code", static_cast<int64_t>(serverError.getCode()));
+        }
+        error = true;
+    }
+    OATPP_ASSERT_HTTP(!error, status, errorMessage);
+
+    auto response = StatusDto::createShared();
+    response->status = "OK";
+    response->code = 200;
+    response->message = fmt::format("Deleted animation {}", animationIdStr);
+
+    if (span) {
+        span->setSuccess();
+    }
+
+    return response;
 }
 
 oatpp::Object<creatures::ws::StatusDto> AnimationService::playStoredAnimation(const oatpp::String &animationId,

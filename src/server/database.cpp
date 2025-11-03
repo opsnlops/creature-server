@@ -18,6 +18,7 @@
 using json = nlohmann::json;
 
 #include "util/Result.h"
+#include "util/JsonParser.h"
 
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;

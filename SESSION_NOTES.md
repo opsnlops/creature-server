@@ -1247,6 +1247,13 @@ AnimationSchedulerType animationSchedulerType =
 - Job worker titles ad-hoc animations as `<Creature> - <timestamp> - <slug>` to match console expectations.
 - Database lookup for ad-hoc fetch checks both `id` and `metadata.animation_id`, fixing the earlier 404 when clients used the DTO’s `animation_id`.
 
+### 2025-11-03 Animation Deletion Flow
+- Added `Database::deleteAnimation` with full observability spans; animation is fetched first so track metadata can be logged before issuing the Mongo `delete_one`.
+- Exposed `DELETE /api/v1/animation/{animationId}` through `AnimationController`/`AnimationService`, reusing the existing cache invalidation pipeline on success.
+- CLI `creature-cli animations delete` now targets the new endpoint and requires `--confirm` to guard against accidental removals; rest client gained `CreatureServerClient.deleteAnimation` to support it.
+- Added `creature-cli animations rename` helper that fetches, retitles, and re-saves an animation using the existing upsert flow.
+- Shared REST helpers now declare a local `EmptyBody` payload in animation methods, matching the playlist delete flow.
+
 ### 2025-10-26 Client & CLI Updates
 
 - Added a distinct `ad-hoc-speech-prepare` job type (with the same typed result payload used by `ad-hoc-speech`) so websocket consumers can tell whether auto-play occurred and read the generated `animation_id` without custom parsing.

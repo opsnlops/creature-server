@@ -117,6 +117,8 @@ class Database {
     listAnimations(creatures::SortBy sortBy, const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
     Result<creatures::Animation> upsertAnimation(const std::string &animationJson,
                                                  std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<void> deleteAnimation(const animationId_t &animationId,
+                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
     Result<std::string> playStoredAnimation(animationId_t animationId, universe_t universe,
                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
 

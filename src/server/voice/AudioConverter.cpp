@@ -273,10 +273,10 @@ Result<void> AudioConverter::extractChannelToMono(const std::filesystem::path &s
         return Result<void>{ServerError(ServerError::InternalError, errorMsg)};
     }
 
-    const int ffmpegChannelIndex = channelIndex - 1; // ffmpeg is zero-based
-    std::string ffmpegCommand = fmt::format("\"{}\" -y -i \"{}\" -map_channel 0.0.{} -ac 1 \"{}\" 2>&1",
-                                            ffmpegBinaryPath, sourcePath.string(), ffmpegChannelIndex,
-                                            outputPath.string());
+    const int ffmpegChannelIndex = channelIndex - 1; // zero-based for pan filter
+    std::string ffmpegCommand =
+        fmt::format("\"{}\" -y -i \"{}\" -filter_complex '[0:a]pan=mono|c0=c{}[aout]' -map '[aout]' -ac 1 \"{}\" 2>&1",
+                    ffmpegBinaryPath, sourcePath.string(), ffmpegChannelIndex, outputPath.string());
 
     FILE *pipe = popen(ffmpegCommand.c_str(), "r");
     if (!pipe) {

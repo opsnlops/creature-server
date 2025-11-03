@@ -30,6 +30,8 @@ class AnimationService {
     oatpp::Object<creatures::AnimationDto> upsertAnimation(const std::string &animationJson,
                                                            std::shared_ptr<RequestSpan> parentSpan = nullptr);
     oatpp::Object<AdHocAnimationListDto> listAdHocAnimations(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    oatpp::Object<creatures::ws::StatusDto> deleteAnimation(const oatpp::String &animationId,
+                                                            std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Play a single animation on one universe out of the database

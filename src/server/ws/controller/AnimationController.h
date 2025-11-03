@@ -374,6 +374,54 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         }
     }
 
+    ENDPOINT_INFO(deleteAnimation) {
+        info->summary = "Delete an animation and all of its tracks";
+        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->pathParams["animationId"].description = "Animation ID";
+    }
+    ENDPOINT("DELETE", "api/v1/animation/{animationId}", deleteAnimation, PATH(String, animationId),
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        auto span = creatures::observability->createRequestSpan(
+            "DELETE /api/v1/animation/{animationId}", "DELETE",
+            fmt::format("api/v1/animation/{}", std::string(animationId)));
+        addHttpRequestAttributes(span, request);
+
+        debug("delete animation via REST API: {}", std::string(animationId));
+        creatures::metrics->incrementRestRequestsProcessed();
+
+        if (span) {
+            span->setAttribute("endpoint", "deleteAnimation");
+            span->setAttribute("controller", "AnimationController");
+            span->setAttribute("animation.id", std::string(animationId));
+        }
+
+        try {
+            auto result = m_animationService.deleteAnimation(animationId, span);
+
+            if (span) {
+                span->setHttpStatus(200);
+            }
+
+            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
+            auto broadcastResult = broadcastCacheInvalidationToAllClients(CacheType::Animation);
+            if (!broadcastResult.isSuccess()) {
+                warn("Failed to broadcast animation cache invalidation: {}", broadcastResult.getError()->getMessage());
+            }
+            return createDtoResponse(Status::CODE_200, result);
+        } catch (const std::exception &ex) {
+            if (span) {
+                span->recordException(ex);
+                span->setHttpStatus(500);
+            }
+
+            error("Exception in deleteAnimation: {}", ex.what());
+            throw;
+        }
+    }
+
     ENDPOINT_INFO(playStoredAnimation) {
         info->summary = "Play one animation out of the database on a given universe";
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
