@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <filesystem>
+#include <regex>
 #include <sstream>
 
 #include <fmt/format.h>
@@ -150,6 +151,174 @@ Result<std::uintmax_t> AudioConverter::convertMp3ToWav(const std::filesystem::pa
     }
 
     return Result<std::uintmax_t>{wavFileSize};
+}
+
+Result<int> AudioConverter::getChannelCount(const std::filesystem::path &audioFilePath,
+                                             const std::string &ffmpegBinaryPath,
+                                             std::shared_ptr<OperationSpan> parentSpan) {
+
+    auto span = observability->createChildOperationSpan("AudioConverter.getChannelCount", parentSpan);
+    if (span) {
+        span->setAttribute("audio.path", audioFilePath.string());
+    }
+
+    if (!std::filesystem::exists(audioFilePath)) {
+        std::string errorMsg = fmt::format("Audio file does not exist: {}", audioFilePath.string());
+        error(errorMsg);
+        if (span)
+            span->setError(errorMsg);
+        return Result<int>{ServerError(ServerError::NotFound, errorMsg)};
+    }
+
+    std::string ffmpegCommand =
+        fmt::format("\"{}\" -hide_banner -i \"{}\" -f null - 2>&1", ffmpegBinaryPath, audioFilePath.string());
+
+    FILE *pipe = popen(ffmpegCommand.c_str(), "r");
+    if (!pipe) {
+        std::string errorMsg =
+            fmt::format("Failed to execute ffmpeg at {}. errno: {}", ffmpegBinaryPath, errno);
+        error(errorMsg);
+        if (span)
+            span->setError(errorMsg);
+        return Result<int>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    std::string output;
+    char buffer[512];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+
+    int exitCode = pclose(pipe);
+    if (exitCode != 0) {
+        std::string errorMsg =
+            fmt::format("ffmpeg failed to inspect audio file (exit code {}).\n\nOutput:\n{}", exitCode, output);
+        error(errorMsg);
+        if (span)
+            span->setError(errorMsg);
+        return Result<int>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    std::regex channelRegex(R"((\d+)\s+channels)");
+    std::smatch match;
+    int channelCount = -1;
+    if (std::regex_search(output, match, channelRegex)) {
+        try {
+            channelCount = std::stoi(match[1].str());
+        } catch (const std::exception &e) {
+            std::string errorMsg =
+                fmt::format("Unable to parse channel count from ffmpeg output: {}", e.what());
+            error(errorMsg);
+            if (span)
+                span->setError(errorMsg);
+            return Result<int>{ServerError(ServerError::InvalidData, errorMsg)};
+        }
+    }
+
+    if (channelCount <= 0) {
+        std::string errorMsg =
+            fmt::format("Could not determine channel count from ffmpeg output:\n{}", output);
+        error(errorMsg);
+        if (span)
+            span->setError(errorMsg);
+        return Result<int>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
+
+    if (span) {
+        span->setAttribute("audio.channels", static_cast<int64_t>(channelCount));
+        span->setSuccess();
+    }
+
+    return Result<int>{channelCount};
+}
+
+Result<void> AudioConverter::extractChannelToMono(const std::filesystem::path &sourcePath,
+                                                  const std::filesystem::path &outputPath,
+                                                  const std::string &ffmpegBinaryPath,
+                                                  int channelIndex,
+                                                  std::shared_ptr<OperationSpan> parentSpan) {
+
+    auto span = observability->createChildOperationSpan("AudioConverter.extractChannelToMono", parentSpan);
+    if (span) {
+        span->setAttribute("audio.source", sourcePath.string());
+        span->setAttribute("audio.output", outputPath.string());
+        span->setAttribute("audio.channel_index", channelIndex);
+    }
+
+    if (!std::filesystem::exists(sourcePath)) {
+        std::string errorMsg = fmt::format("Source audio file does not exist: {}", sourcePath.string());
+        error(errorMsg);
+        if (span)
+            span->setError(errorMsg);
+        return Result<void>{ServerError(ServerError::NotFound, errorMsg)};
+    }
+
+    if (channelIndex < 1 || channelIndex > RTP_STREAMING_CHANNELS) {
+        std::string errorMsg = fmt::format("Invalid channel index {}. Must be between 1 and {}", channelIndex,
+                                           RTP_STREAMING_CHANNELS);
+        error(errorMsg);
+        if (span)
+            span->setError(errorMsg);
+        return Result<void>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
+
+    std::error_code mkdirError;
+    std::filesystem::create_directories(outputPath.parent_path(), mkdirError);
+    if (mkdirError) {
+        std::string errorMsg =
+            fmt::format("Failed to create directory {}: {}", outputPath.parent_path().string(), mkdirError.message());
+        error(errorMsg);
+        if (span)
+            span->setError(errorMsg);
+        return Result<void>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    const int ffmpegChannelIndex = channelIndex - 1; // ffmpeg is zero-based
+    std::string ffmpegCommand = fmt::format("\"{}\" -y -i \"{}\" -map_channel 0.0.{} -ac 1 \"{}\" 2>&1",
+                                            ffmpegBinaryPath, sourcePath.string(), ffmpegChannelIndex,
+                                            outputPath.string());
+
+    FILE *pipe = popen(ffmpegCommand.c_str(), "r");
+    if (!pipe) {
+        std::string errorMsg =
+            fmt::format("Failed to execute ffmpeg at {}. errno: {}", ffmpegBinaryPath, errno);
+        error(errorMsg);
+        if (span)
+            span->setError(errorMsg);
+        return Result<void>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    std::string output;
+    char buffer[512];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+
+    int exitCode = pclose(pipe);
+    if (exitCode != 0) {
+        std::string errorMsg =
+            fmt::format("ffmpeg failed to extract channel {} (exit code {}).\n\nOutput:\n{}", channelIndex, exitCode,
+                        output);
+        error(errorMsg);
+        if (span)
+            span->setError(errorMsg);
+        return Result<void>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    if (!std::filesystem::exists(outputPath)) {
+        std::string errorMsg =
+            fmt::format("ffmpeg reported success but output file not found: {}", outputPath.string());
+        error(errorMsg);
+        if (span)
+            span->setError(errorMsg);
+        return Result<void>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    if (span) {
+        span->setSuccess();
+    }
+
+    return Result<void>{};
 }
 
 } // namespace creatures::voice

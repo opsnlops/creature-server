@@ -37,6 +37,34 @@ class AudioConverter {
                                                   int targetChannel,
                                                   int sampleRate = 48000,
                                                   std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * @brief Determine the channel count of an audio file using ffmpeg.
+     *
+     * @param audioFilePath Path to the audio file to inspect.
+     * @param ffmpegBinaryPath Path to the ffmpeg binary.
+     * @param parentSpan Optional parent span for tracing.
+     * @return Result<int> containing the detected channel count on success.
+     */
+    static Result<int> getChannelCount(const std::filesystem::path &audioFilePath,
+                                       const std::string &ffmpegBinaryPath,
+                                       std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * @brief Extract a single channel from a multichannel audio file into a mono WAV.
+     *
+     * @param sourcePath Path to the multichannel audio file.
+     * @param outputPath Destination path for the mono WAV file.
+     * @param ffmpegBinaryPath Path to the ffmpeg binary.
+     * @param channelIndex One-based channel index to extract (1 = first channel).
+     * @param parentSpan Optional parent span for tracing.
+     * @return Result<void> indicating success or failure.
+     */
+    static Result<void> extractChannelToMono(const std::filesystem::path &sourcePath,
+                                             const std::filesystem::path &outputPath,
+                                             const std::string &ffmpegBinaryPath,
+                                             int channelIndex,
+                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
 };
 
 } // namespace creatures::voice

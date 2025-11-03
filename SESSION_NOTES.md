@@ -10,6 +10,38 @@
 
 The cooperative animation scheduler with interrupt capabilities was thoroughly tested and debugged across two sessions. We discovered and fixed **10 critical bugs** including race conditions, cache safety issues, and shutdown crashes. The system now successfully handles the primary use case: interrupting a looping playlist with button-triggered animations during Zoom meetings, with automatic playlist resumption.
 
+## 2025-11-02 Lip Sync Automation
+
+### Summary
+
+Added end-to-end support for generating lip sync data directly on the server—either by uploading a local WAV or by deriving per-creature tracks from an animation’s multichannel audio. The flow is exposed through new REST endpoints, routed through the async job system, and surfaced in the CLI for both console and script usage.
+
+### What Shipped
+
+- **Server API**:
+  - `POST /api/v1/sound/generate-lipsync/upload` now returns a structured DTO and streams Rhubarb metadata, cleaning temp files automatically.
+  - `POST /api/v1/animation/generate-lipsync` validates multitrack audio and queues an `AnimationLipSync` job against the requested animation.
+- **Job Pipeline**:
+  - Introduced `JobType::AnimationLipSync` and `handleAnimationLipSyncJob`, which:
+    - Loads the animation, ensures multitrack audio, and creates a temp working dir.
+    - Extracts each creature’s channel with ffmpeg (`AudioConverter::getChannelCount` / `extractChannelToMono`).
+    - Runs Rhubarb on each mono track and patches frames via `SoundDataProcessor` using creature `mouth_slot`.
+    - Upserts the updated animation and broadcasts progress/completion (job result includes `animation_id` + `updated_tracks`).
+- **Client Support** (Common + CLI):
+  - Added DTOs for the upload response and animation job request.
+  - REST helpers: `generateLipSyncForAnimation`, `generateLipSyncUpload`.
+  - CLI enhancements:
+    - `sounds generate-lipsync-from-file` uploads a local WAV; prints JSON (or saves via `-o`).
+    - `animations generate-lipsync` queues the new job; job output now surfaces animation IDs & track counts.
+    - Job progress/completion logging recognises the new job type.
+
+### Testing & Notes
+
+- `ninja` build succeeds with the new job handler and audio utilities.
+- `swift build` still blocked by sandboxed SwiftPM caches (permission error remains).
+- clang-format could not run in-place because of filesystem restrictions; manual formatting applied where touched.
+- No schema changes required; animations are re-saved via the existing `upsertAnimation`.
+
 ### Bugs Found and Fixed
 
 During testing with the cooperative scheduler, we discovered and fixed 10 critical bugs:

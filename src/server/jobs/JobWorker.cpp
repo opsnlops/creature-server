@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <future>
 #include <random>
+#include <unordered_map>
 
 #include <base64.hpp>
 #include <fmt/chrono.h>
@@ -21,6 +22,7 @@
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
+#include "server/voice/AudioConverter.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/RhubarbData.h"
 #include "server/voice/SoundDataProcessor.h"
@@ -46,6 +48,7 @@ namespace creatures::jobs {
 namespace {
 
 std::filesystem::path getAdHocTempRoot() { return std::filesystem::temp_directory_path() / "creature-adhoc"; }
+std::filesystem::path getAnimationLipSyncTempRoot() { return std::filesystem::temp_directory_path() / "creature-lipsync"; }
 
 std::string slugify(const std::string &value, std::size_t maxLength = 40) {
     std::string slug;
@@ -190,6 +193,10 @@ void JobWorker::processJob(const std::string &jobId) {
             info("Handling job {} as AdHocSpeechPrepare type", jobId);
             handleAdHocSpeechJob(jobState);
             break;
+        case JobType::AnimationLipSync:
+            info("Handling job {} as AnimationLipSync type", jobId);
+            handleAnimationLipSyncJob(jobState);
+            break;
         default:
             error("Unknown job type for job {}: {}", jobId, toString(jobState.jobType));
             jobManager_->failJob(jobId, "Unknown job type");
@@ -201,6 +208,227 @@ void JobWorker::processJob(const std::string &jobId) {
     }
 
     debug("JobWorker::processJob() completed for job {}", jobId);
+}
+
+void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
+    auto broadcastProgress = [this](const std::string &jobId) {
+        auto updatedJobState = jobManager_->getJob(jobId);
+        if (updatedJobState) {
+            auto result = broadcastJobProgressToAllClients(*updatedJobState);
+            if (!result.isSuccess()) {
+                warn("Failed to broadcast job progress: {}", result.getError()->getMessage());
+            }
+        }
+    };
+
+    auto broadcastCompletion = [this](const std::string &jobId) {
+        auto updatedJobState = jobManager_->getJob(jobId);
+        if (updatedJobState) {
+            auto result = broadcastJobCompleteToAllClients(*updatedJobState);
+            if (!result.isSuccess()) {
+                warn("Failed to broadcast job completion: {}", result.getError()->getMessage());
+            }
+        }
+    };
+
+    auto updateProgress = [&](float value) {
+        jobManager_->updateJobProgress(jobState.jobId, value);
+        broadcastProgress(jobState.jobId);
+    };
+
+    auto failJob = [&](const std::string &message) {
+        error("Animation lip sync job {} failed: {}", jobState.jobId, message);
+        jobManager_->failJob(jobState.jobId, message);
+        broadcastCompletion(jobState.jobId);
+    };
+
+    std::string animationId;
+    try {
+        auto detailsJson = nlohmann::json::parse(jobState.details);
+        animationId = detailsJson.at("animation_id").get<std::string>();
+    } catch (const std::exception &e) {
+        failJob(fmt::format("Invalid job details: {}", e.what()));
+        return;
+    }
+
+    if (animationId.empty()) {
+        failJob("animation_id is required");
+        return;
+    }
+
+    if (jobState.span) {
+        jobState.span->setAttribute("animation.id", animationId);
+    }
+
+    updateProgress(0.02f);
+
+    auto animationSpan =
+        creatures::observability->createChildOperationSpan("Job.AnimationLipSync.loadAnimation", jobState.span);
+    auto animationResult = db->getAnimation(animationId, animationSpan);
+    if (!animationResult.isSuccess()) {
+        failJob(animationResult.getError()->getMessage());
+        return;
+    }
+    auto animation = animationResult.getValue().value();
+
+    if (animation.tracks.empty()) {
+        failJob(fmt::format("Animation {} has no tracks", animationId));
+        return;
+    }
+
+    if (animation.metadata.sound_file.empty()) {
+        failJob(fmt::format("Animation {} has no sound file", animationId));
+        return;
+    }
+
+    if (!animation.metadata.multitrack_audio) {
+        failJob(fmt::format("Animation {} does not use multitrack audio", animationId));
+        return;
+    }
+
+    const auto soundsDir = std::filesystem::path(config->getSoundFileLocation());
+    const auto audioPath = soundsDir / animation.metadata.sound_file;
+    if (!std::filesystem::exists(audioPath)) {
+        failJob(fmt::format("Sound file for animation not found: {}", audioPath.string()));
+        return;
+    }
+
+    auto channelCountResult =
+        voice::AudioConverter::getChannelCount(audioPath, config->getFfmpegBinaryPath(), jobState.span);
+    if (!channelCountResult.isSuccess()) {
+        failJob(channelCountResult.getError()->getMessage());
+        return;
+    }
+    const auto channelCount = channelCountResult.getValue().value();
+    if (channelCount != RTP_STREAMING_CHANNELS) {
+        failJob(fmt::format("Expected {} channels but audio has {}", RTP_STREAMING_CHANNELS, channelCount));
+        return;
+    }
+
+    auto tempRoot = getAnimationLipSyncTempRoot();
+    auto tempDir = tempRoot / jobState.jobId;
+    std::error_code tempEc;
+    std::filesystem::create_directories(tempDir, tempEc);
+    if (tempEc) {
+        failJob(fmt::format("Unable to create temp directory {}: {}", tempDir.string(), tempEc.message()));
+        return;
+    }
+
+    struct TempDirGuard {
+        std::filesystem::path path;
+        ~TempDirGuard() {
+            if (path.empty())
+                return;
+            std::error_code ec;
+            std::filesystem::remove_all(path, ec);
+            if (ec) {
+                warn("Failed to remove temp directory {}: {}", path.string(), ec.message());
+            }
+        }
+    } cleanup{tempDir};
+
+    SoundDataProcessor processor;
+    std::unordered_map<creatureId_t, Creature> creatureCache;
+
+    const size_t trackCount = animation.tracks.size();
+    const double baseProgress = 0.1;
+    const double perTrackRange = trackCount == 0 ? 0.0 : 0.8 / static_cast<double>(trackCount);
+
+    for (size_t idx = 0; idx < trackCount; ++idx) {
+        const auto &track = animation.tracks[idx];
+
+        if (track.frames.empty()) {
+            failJob(fmt::format("Track {} has no frames", track.id));
+            return;
+        }
+
+        const auto &creatureId = track.creature_id;
+        if (creatureId.empty()) {
+            failJob(fmt::format("Track {} has no creature_id", track.id));
+            return;
+        }
+
+        Creature creature;
+        auto cacheIt = creatureCache.find(creatureId);
+        if (cacheIt != creatureCache.end()) {
+            creature = cacheIt->second;
+        } else {
+            auto creatureResult = db->getCreature(creatureId, jobState.span);
+            if (!creatureResult.isSuccess()) {
+                failJob(fmt::format("Unable to load creature {}: {}", creatureId,
+                                    creatureResult.getError()->getMessage()));
+                return;
+            }
+            creature = creatureResult.getValue().value();
+            creatureCache.emplace(creatureId, creature);
+        }
+
+        if (creature.audio_channel == 0 || creature.audio_channel >= RTP_STREAMING_CHANNELS) {
+            failJob(fmt::format("Creature {} has invalid audio_channel {} (1-{} expected)", creatureId,
+                                creature.audio_channel, RTP_STREAMING_CHANNELS - 1));
+            return;
+        }
+
+        const std::string trackSlug = slugify(creatureId.empty() ? fmt::format("track{}", idx) : creatureId);
+        const auto monoPath = tempDir / fmt::format("{}-ch{}.wav", trackSlug, creature.audio_channel);
+
+        auto trackStageProgress = [&](double stage) {
+            double progress = baseProgress + perTrackRange * (static_cast<double>(idx) + stage);
+            updateProgress(static_cast<float>(std::min(progress, 0.95)));
+        };
+
+        trackStageProgress(0.05);
+
+        auto extractResult = voice::AudioConverter::extractChannelToMono(
+            audioPath, monoPath, config->getFfmpegBinaryPath(), static_cast<int>(creature.audio_channel),
+            jobState.span);
+        if (!extractResult.isSuccess()) {
+            failJob(extractResult.getError()->getMessage());
+            return;
+        }
+
+        auto lipSyncProgress = [&](float stage) {
+            trackStageProgress(0.1 + 0.6 * static_cast<double>(stage));
+        };
+
+        auto lipSyncResult =
+            voice::LipSyncProcessor::generateLipSync(monoPath.filename().string(), tempDir.string(),
+                                                     config->getRhubarbBinaryPath(), true, lipSyncProgress,
+                                                     jobState.span);
+        if (!lipSyncResult.isSuccess()) {
+            failJob(lipSyncResult.getError()->getMessage());
+            return;
+        }
+
+        auto rhubarbData = RhubarbSoundData::fromJsonString(lipSyncResult.getValue().value());
+
+        auto trackResult = processor.replaceAxisDataWithSoundData(rhubarbData, creature.mouth_slot, track,
+                                                                  animation.metadata.milliseconds_per_frame);
+        if (!trackResult.isSuccess()) {
+            failJob(trackResult.getError()->getMessage());
+            return;
+        }
+
+        animation.tracks[idx] = trackResult.getValue().value();
+        trackStageProgress(0.95);
+    }
+
+    auto animationJson = animationToJson(animation);
+    auto upsertResult = db->upsertAnimation(animationJson.dump(), jobState.span);
+    if (!upsertResult.isSuccess()) {
+        failJob(upsertResult.getError()->getMessage());
+        return;
+    }
+
+    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
+    updateProgress(0.98f);
+
+    nlohmann::json resultJson;
+    resultJson["animation_id"] = animation.id;
+    resultJson["updated_tracks"] = trackCount;
+
+    jobManager_->completeJob(jobState.jobId, resultJson.dump());
+    broadcastCompletion(jobState.jobId);
 }
 
 void JobWorker::handleLipSyncJob(JobState &jobState) {

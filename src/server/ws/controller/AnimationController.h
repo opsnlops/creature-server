@@ -21,6 +21,7 @@
 #include "server/ws/dto/CreateAdHocAnimationRequestDto.h"
 #include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/PlayAnimationRequestDto.h"
+#include "server/ws/dto/RegenerateLipSyncRequestDto.h"
 #include "server/ws/dto/TriggerAdHocAnimationRequestDto.h"
 #include "server/ws/service/AnimationService.h"
 #include "util/ObservabilityManager.h"
@@ -208,6 +209,120 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         }
 
         return createDtoResponse(Status::CODE_200, result);
+    }
+
+    ENDPOINT_INFO(generateLipSyncForAnimation) {
+        info->summary = "Generate lip sync for an animation";
+        info->description =
+            "Queues a background job to derive per-creature lip sync from the animation's multitrack audio.";
+        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/animation/generate-lipsync", generateLipSyncForAnimation,
+             BODY_DTO(Object<creatures::ws::RegenerateLipSyncRequestDto>, requestBody),
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation/generate-lipsync", "POST",
+                                                                "api/v1/animation/generate-lipsync");
+        addHttpRequestAttributes(span, request);
+        creatures::metrics->incrementRestRequestsProcessed();
+
+        if (!requestBody || !requestBody->animation_id || requestBody->animation_id->empty()) {
+            auto response = StatusDto::createShared();
+            response->status = "error";
+            response->code = 400;
+            response->message = "animation_id is required";
+            if (span) {
+                span->setAttribute("error.type", "invalid_request");
+                span->setHttpStatus(400);
+            }
+            return createDtoResponse(Status::CODE_400, response);
+        }
+
+        std::string animationId = std::string(requestBody->animation_id);
+        if (span) {
+            span->setAttribute("animation.id", animationId);
+        }
+
+        auto animationLookupSpan =
+            creatures::observability->createOperationSpan("AnimationController.getAnimation", span);
+        if (animationLookupSpan) {
+            animationLookupSpan->setAttribute("animation.id", animationId);
+        }
+
+        auto animationResult = creatures::db->getAnimation(animationId, animationLookupSpan);
+        if (!animationResult.isSuccess()) {
+            auto error = animationResult.getError().value();
+            auto response = StatusDto::createShared();
+            response->status = "error";
+            response->message = error.getMessage();
+            Status status = Status::CODE_500;
+            switch (error.getCode()) {
+            case ServerError::NotFound:
+                status = Status::CODE_404;
+                break;
+            case ServerError::InvalidData:
+                status = Status::CODE_400;
+                break;
+            default:
+                status = Status::CODE_500;
+                break;
+            }
+            response->code = status.code;
+            if (span) {
+                span->setHttpStatus(status.code);
+                span->setAttribute("error.type", "animation_lookup_failed");
+            }
+            return createDtoResponse(status, response);
+        }
+        auto animation = animationResult.getValue().value();
+
+        if (animation.metadata.sound_file.empty()) {
+            auto response = StatusDto::createShared();
+            response->status = "error";
+            response->code = 422;
+            response->message = "Animation has no sound file configured";
+            if (span) {
+                span->setHttpStatus(422);
+                span->setAttribute("error.type", "missing_sound_file");
+            }
+            return createDtoResponse(Status::CODE_422, response);
+        }
+
+        if (!animation.metadata.multitrack_audio) {
+            auto response = StatusDto::createShared();
+            response->status = "error";
+            response->code = 422;
+            response->message = "Animation audio must be multitrack to generate lip sync";
+            if (span) {
+                span->setHttpStatus(422);
+                span->setAttribute("error.type", "audio_not_multitrack");
+            }
+            return createDtoResponse(Status::CODE_422, response);
+        }
+
+        nlohmann::json jobDetails;
+        jobDetails["animation_id"] = animationId;
+
+        auto jobId = creatures::jobManager->createJob(creatures::jobs::JobType::AnimationLipSync, jobDetails.dump());
+        creatures::jobWorker->queueJob(jobId);
+
+        auto response = JobCreatedDto::createShared();
+        response->job_id = jobId;
+        response->job_type = "animation-lip-sync";
+        response->message =
+            fmt::format("Lip sync generation job created for animation {}. Monitor job-progress events for updates.",
+                        animationId);
+
+        if (span) {
+            span->setHttpStatus(202);
+            span->setAttribute("job.id", jobId);
+            span->setAttribute("success", true);
+        }
+
+        return createDtoResponse(Status::CODE_202, response);
     }
 
     ENDPOINT_INFO(upsertAnimation) {
