@@ -6,9 +6,11 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "PlaybackSession.h"
 #include "model/Animation.h"
+#include "model/PlaylistStatus.h"
 #include "server/namespace-stuffs.h"
 
 namespace creatures {
@@ -152,6 +154,12 @@ class SessionManager {
      */
     void clearCurrentSession(universe_t universe);
 
+    void setPlaylistStatus(universe_t universe, const PlaylistStatus &status);
+    std::optional<PlaylistStatus> getPlaylistStatus(universe_t universe) const;
+    std::vector<PlaylistStatus> getAllPlaylistStatuses() const;
+    void clearPlaylist(universe_t universe);
+    bool updatePlaylistCurrentAnimation(universe_t universe, const std::string &animationId);
+
   private:
     struct UniverseState {
         std::shared_ptr<PlaybackSession> currentSession;
@@ -163,6 +171,7 @@ class SessionManager {
         // Playlist state for resumption
         std::string playlistId;
         size_t currentPlaylistIndex{0};
+        std::optional<PlaylistStatus> playlistStatus;
     };
 
     mutable std::mutex mutex_;

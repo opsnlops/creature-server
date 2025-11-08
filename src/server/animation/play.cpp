@@ -13,7 +13,6 @@
 #include "server/metrics/counters.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
-#include "util/cache.h"
 #include "util/websocketUtils.h"
 
 #include "server/namespace-stuffs.h"
@@ -23,7 +22,6 @@ namespace creatures {
 extern std::shared_ptr<Configuration> config;
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<EventLoop> eventLoop;
-extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 extern std::shared_ptr<SessionManager> sessionManager;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
@@ -85,7 +83,7 @@ Result<std::string> Database::playStoredAnimation(animationId_t animationId, uni
         if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
             info("Stopping playlist on universe {} to play single animation", universe);
             sessionManager->stopPlaylist(universe);
-            runningPlaylists->remove(universe);
+            sessionManager->clearPlaylist(universe);
 
             // Notify clients that playlist has stopped
             PlaylistStatus emptyStatus{};

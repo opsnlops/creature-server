@@ -186,8 +186,7 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
     }
 }
 
-Result<void> Database::deleteAnimation(const animationId_t &animationId,
-                                       std::shared_ptr<OperationSpan> parentSpan) {
+Result<void> Database::deleteAnimation(const animationId_t &animationId, std::shared_ptr<OperationSpan> parentSpan) {
 
     debug("request received to delete animation {}", animationId);
     auto dbSpan = creatures::observability->createChildOperationSpan("Database.deleteAnimation", parentSpan);
@@ -414,8 +413,7 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation &animatio
     }
 }
 
-Result<std::vector<AdHocAnimationRecord>>
-Database::listAdHocAnimations(std::shared_ptr<OperationSpan> parentSpan) {
+Result<std::vector<AdHocAnimationRecord>> Database::listAdHocAnimations(std::shared_ptr<OperationSpan> parentSpan) {
 
     auto dbSpan = creatures::observability->createChildOperationSpan("Database.listAdHocAnimations", parentSpan);
     if (dbSpan) {
@@ -461,9 +459,8 @@ Database::listAdHocAnimations(std::shared_ptr<OperationSpan> parentSpan) {
 
             if (doc["created_at"] && doc["created_at"].type() == bsoncxx::type::k_date) {
                 auto millis = doc["created_at"].get_date().value;
-                record.createdAt =
-                    std::chrono::system_clock::time_point(std::chrono::duration_cast<std::chrono::system_clock::duration>(
-                        millis));
+                record.createdAt = std::chrono::system_clock::time_point(
+                    std::chrono::duration_cast<std::chrono::system_clock::duration>(millis));
             } else {
                 record.createdAt = std::chrono::system_clock::now();
             }
@@ -510,9 +507,8 @@ Result<creatures::Animation> Database::getAdHocAnimation(const animationId_t &an
                                                                << bsoncxx::builder::stream::finalize;
         auto docOpt = collection.find_one(filterById.view());
         if (!docOpt) {
-            auto filterByMetadataId =
-                bsoncxx::builder::stream::document{} << "metadata.animation_id" << animationId
-                                                     << bsoncxx::builder::stream::finalize;
+            auto filterByMetadataId = bsoncxx::builder::stream::document{} << "metadata.animation_id" << animationId
+                                                                           << bsoncxx::builder::stream::finalize;
             docOpt = collection.find_one(filterByMetadataId.view());
         }
         if (!docOpt) {
@@ -551,9 +547,8 @@ Result<creatures::Animation> Database::getAdHocAnimation(const animationId_t &an
             dbSpan->recordException(e);
             dbSpan->setError(e.what());
         }
-        return Result<creatures::Animation>{
-            ServerError(ServerError::DatabaseError,
-                        fmt::format("Failed to load ad-hoc animation {}: {}", animationId, e.what()))};
+        return Result<creatures::Animation>{ServerError(
+            ServerError::DatabaseError, fmt::format("Failed to load ad-hoc animation {}: {}", animationId, e.what()))};
     }
 }
 } // namespace creatures

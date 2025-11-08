@@ -25,7 +25,6 @@
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/rtp/MultiOpusRtpServer.h"
 #include "util/ObservabilityManager.h"
-#include "util/cache.h"
 
 namespace creatures {
 
@@ -34,7 +33,6 @@ extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<GPIO> gpioPins;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
-extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 extern std::shared_ptr<SessionManager> sessionManager;
 
@@ -242,15 +240,16 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
             info("Animation finished on universe {} - resuming interrupted playlist", universe);
 
             // Clear the interrupted state
-            sessionManager->resumePlaylist(universe);
+            bool resumed = sessionManager->resumePlaylist(universe);
+            auto snapshot = sessionManager->getPlaylistStatus(universe);
 
             // Schedule a new PlaylistEvent to continue the playlist
-            if (runningPlaylists->contains(universe)) {
+            if (resumed && snapshot && !snapshot->playlist.empty()) {
                 auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
                 eventLoop->scheduleEvent(nextPlaylistEvent);
                 info("Scheduled PlaylistEvent to resume playlist on universe {}", universe);
             } else {
-                warn("Interrupted playlist state inconsistent - playlist no longer in cache for universe {}", universe);
+                warn("Interrupted playlist state inconsistent - playlist snapshot missing for universe {}", universe);
             }
         }
     });

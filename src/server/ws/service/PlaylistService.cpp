@@ -11,7 +11,7 @@
 #include "server/ws/dto/ListDto.h"
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
-#include "util/cache.h"
+#include "util/websocketUtils.h"
 
 #include "PlaylistService.h"
 
@@ -20,7 +20,6 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
-extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 extern std::shared_ptr<SessionManager> sessionManager;
 } // namespace creatures
 
@@ -342,30 +341,15 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
         existingSession->cancel();
     }
 
-    // Set the playlist in the cache
-    if (!runningPlaylists) {
-        errorMessage = "Running playlists cache is not initialized";
-        appLogger->error(std::string(errorMessage));
-        status = Status::CODE_500;
-        error = true;
-
-        if (span) {
-            span->setError(std::string(errorMessage));
-            span->setAttribute("error.type", "InternalError");
-            span->setAttribute("error.code", 500);
-        }
-    }
-    OATPP_ASSERT_HTTP(!error, status, errorMessage)
-
     PlaylistStatus playlistStatus;
     playlistStatus.universe = universe;
     playlistStatus.playlist = playlistId;
     playlistStatus.playing = true;
     playlistStatus.current_animation = ""; // Will get filled in on the next frame
-    runningPlaylists->put(universe, playlistStatus);
 
     // Register playlist with SessionManager so getPlaylistState() works
     creatures::sessionManager->startPlaylist(universe, std::string(playlistId));
+    creatures::sessionManager->setPlaylistStatus(universe, playlistStatus);
 
     if (!eventLoop) {
         errorMessage = "EventLoop is not initialized";
@@ -413,11 +397,15 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::stopPlaylist(universe_t
 
     info("stopping playlist on universe {}", universe);
 
-    // Cancel any current session and mark playlist as stopped in SessionManager
+    // Cancel any current session and mark playlist as stopped/cleared in SessionManager
     creatures::sessionManager->stopPlaylist(universe);
-
-    // Remove the playlist from the cache
-    runningPlaylists->remove(universe);
+    creatures::sessionManager->clearPlaylist(universe);
+    PlaylistStatus emptyStatus{};
+    emptyStatus.universe = universe;
+    emptyStatus.playlist = "";
+    emptyStatus.playing = false;
+    emptyStatus.current_animation = "";
+    broadcastPlaylistStatusToAllClients(emptyStatus);
 
     auto response = StatusDto::createShared();
     response->code = 200;
@@ -431,30 +419,25 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::stopPlaylist(universe_t
 oatpp::Object<creatures::PlaylistStatusDto> PlaylistService::playlistStatus(universe_t universe) {
     debug("returning the status of the playlist on universe {}", universe);
 
-    if (runningPlaylists->contains(universe)) {
-        auto playlistStatus = runningPlaylists->get(universe);
-        return convertToDto(*playlistStatus);
-
-    } else {
-
-        // It doesn't exist, so let's make a blank one
-        PlaylistStatus playlistStatus;
-        playlistStatus.universe = universe;
-        playlistStatus.playlist = "";
-        playlistStatus.playing = false;
-        playlistStatus.current_animation = "";
-        return convertToDto(playlistStatus);
+    if (auto status = creatures::sessionManager->getPlaylistStatus(universe)) {
+        return convertToDto(*status);
     }
+
+    PlaylistStatus playlistStatus;
+    playlistStatus.universe = universe;
+    playlistStatus.playlist = "";
+    playlistStatus.playing = false;
+    playlistStatus.current_animation = "";
+    return convertToDto(playlistStatus);
 }
 
 oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistStatusDto>>> PlaylistService::getAllPlaylistStatuses() {
     debug("returning the status of all playlists");
 
     auto playlists = oatpp::Vector<oatpp::Object<creatures::PlaylistStatusDto>>::createShared();
-
-    auto keys = runningPlaylists->getAllKeys();
-    for (const auto &key : keys) {
-        playlists->emplace_back(playlistStatus(key));
+    auto snapshots = creatures::sessionManager->getAllPlaylistStatuses();
+    for (const auto &status : snapshots) {
+        playlists->emplace_back(convertToDto(status));
     }
 
     auto page = ListDto<oatpp::Object<creatures::PlaylistStatusDto>>::createShared();

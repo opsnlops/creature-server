@@ -159,6 +159,9 @@ bool SessionManager::resumePlaylist(universe_t universe) {
     info("SessionManager: resuming playlist on universe {}", universe);
     it->second.isInterrupted = false;
     it->second.shouldResumePlaylist = false;
+    if (it->second.playlistStatus) {
+        it->second.playlistStatus->playing = true;
+    }
 
     return true;
 }
@@ -241,6 +244,10 @@ void SessionManager::stopPlaylist(universe_t universe) {
         it->second.isStopped = true;
         it->second.isInterrupted = false;
         it->second.shouldResumePlaylist = false;
+        if (it->second.playlistStatus) {
+            it->second.playlistStatus->playing = false;
+            it->second.playlistStatus->current_animation.clear();
+        }
 
         // Cancel the current session
         if (it->second.currentSession) {
@@ -254,16 +261,19 @@ void SessionManager::startPlaylist(universe_t universe, const std::string &playl
 
     info("SessionManager: registering playlist start on universe {} (playlist: {})", universe, playlistId);
 
-    // Create or update state for this universe
-    UniverseState state;
+    auto &state = universeStates_[universe];
     state.currentSession = nullptr; // No session yet, will be set when first animation plays
     state.isPlaylist = true;
     state.isInterrupted = false;
     state.isStopped = false;
     state.shouldResumePlaylist = false;
     state.playlistId = playlistId;
-
-    universeStates_[universe] = state;
+    if (!state.playlistStatus) {
+        state.playlistStatus = PlaylistStatus{};
+        state.playlistStatus->universe = universe;
+    }
+    state.playlistStatus->playlist = playlistId;
+    state.playlistStatus->playing = true;
 }
 
 void SessionManager::clearCurrentSession(universe_t universe) {
@@ -274,6 +284,75 @@ void SessionManager::clearCurrentSession(universe_t universe) {
         debug("SessionManager: clearing current session pointer for universe {} (preserving playlist state)", universe);
         it->second.currentSession = nullptr;
     }
+}
+
+void SessionManager::setPlaylistStatus(universe_t universe, const PlaylistStatus &status) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto &state = universeStates_[universe];
+    if (!state.playlistStatus) {
+        state.playlistStatus = PlaylistStatus{};
+    }
+    state.playlistStatus = status;
+    state.playlistStatus->universe = universe;
+    state.playlistId = status.playlist;
+    state.isPlaylist = !status.playlist.empty();
+    state.isStopped = !status.playing && state.isPlaylist;
+}
+
+std::optional<PlaylistStatus> SessionManager::getPlaylistStatus(universe_t universe) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end() || !it->second.playlistStatus) {
+        return std::nullopt;
+    }
+    PlaylistStatus snapshot = *it->second.playlistStatus;
+    snapshot.universe = universe;
+    return snapshot;
+}
+
+std::vector<PlaylistStatus> SessionManager::getAllPlaylistStatuses() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<PlaylistStatus> statuses;
+    statuses.reserve(universeStates_.size());
+    for (const auto &[universe, state] : universeStates_) {
+        if (state.playlistStatus) {
+            PlaylistStatus snapshot = *state.playlistStatus;
+            snapshot.universe = universe;
+            statuses.push_back(snapshot);
+        }
+    }
+    return statuses;
+}
+
+void SessionManager::clearPlaylist(universe_t universe) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end()) {
+        return;
+    }
+    it->second.isPlaylist = false;
+    it->second.isInterrupted = false;
+    it->second.isStopped = false;
+    it->second.shouldResumePlaylist = false;
+    it->second.playlistId.clear();
+    it->second.playlistStatus.reset();
+
+    if (!it->second.currentSession) {
+        universeStates_.erase(it);
+    }
+}
+
+bool SessionManager::updatePlaylistCurrentAnimation(universe_t universe, const std::string &animationId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end() || !it->second.playlistStatus) {
+        return false;
+    }
+    it->second.playlistStatus->current_animation = animationId;
+    it->second.playlistStatus->playing = true;
+    it->second.playlistStatus->universe = universe;
+    return true;
 }
 
 } // namespace creatures

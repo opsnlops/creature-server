@@ -68,13 +68,6 @@ std::shared_ptr<e131::E131Server> e131Server;
 std::shared_ptr<EventLoop> eventLoop;
 
 /**
- * Only one playlist can be running on a universe at a time. This is because animation can
- * involve any creature in a universe, so it doesn't make sense to have more than one playing
- * at any one time.
- */
-std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
-
-/**
  * Maintain a cache of the creatures. While going to the DB is very quick, there's some operations
  * that require looking them up over and over again, like streaming frames. Rather than going back
  * to the database each time, let's keep a cache of them on hand.
@@ -275,7 +268,6 @@ int main(const int argc, char **argv) {
     creatures::statusLights->start();
 
     // Create the playlist cache
-    creatures::runningPlaylists = std::make_shared<creatures::ObjectCache<universe_t, creatures::PlaylistStatus>>();
     debug("Playlist cache made");
 
     // Create the Creature cache

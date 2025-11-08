@@ -19,7 +19,6 @@
 
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
-#include "util/cache.h"
 #include "util/websocketUtils.h"
 
 namespace creatures {
@@ -28,7 +27,6 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
-extern std::shared_ptr<ObjectCache<universe_t, PlaylistStatus>> runningPlaylists;
 extern std::shared_ptr<SessionManager> sessionManager;
 
 PlaylistEvent::PlaylistEvent(framenum_t frameNumber_, universe_t universe_)
@@ -53,7 +51,7 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
         std::string errorMessage =
             fmt::format("Playlist on universe {} is stopped or doesn't exist. Cleaning up.", activeUniverse);
         info(errorMessage);
-        runningPlaylists->remove(activeUniverse);
+        sessionManager->clearPlaylist(activeUniverse);
         sendEmptyPlaylistUpdate(activeUniverse);
         span->setAttribute("reason", "stopped_or_none");
         span->setSuccess(); // Not an error, just cleanup
@@ -84,33 +82,33 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
         return Result<framenum_t>{this->frameNumber};
     }
 
-    // Go fetch the active playlist - check cache first
-    if (!runningPlaylists->contains(activeUniverse)) {
+    // Go fetch the active playlist snapshot
+    auto activePlaylistStatusOpt = sessionManager->getPlaylistStatus(activeUniverse);
+    if (!activePlaylistStatusOpt || activePlaylistStatusOpt->playlist.empty()) {
         std::string errorMessage = fmt::format(
-            "Playlist state is Active but runningPlaylists cache doesn't have entry for universe {}. Cleaning up.",
-            activeUniverse);
+            "Playlist state is Active but no playlist snapshot exists for universe {}. Cleaning up.", activeUniverse);
         warn(errorMessage);
-        sessionManager->stopPlaylist(activeUniverse);
+        sessionManager->clearPlaylist(activeUniverse);
         sendEmptyPlaylistUpdate(activeUniverse);
         span->setAttribute("reason", "cache_missing");
         span->setSuccess();
         return Result<framenum_t>{this->frameNumber};
     }
 
-    auto activePlaylistStatus = runningPlaylists->get(activeUniverse);
-    debug("the active playlistStatus out of the cache is {}", activePlaylistStatus->playlist);
+    PlaylistStatus activePlaylistStatus = *activePlaylistStatusOpt;
+    debug("the active playlistStatus snapshot is {}", activePlaylistStatus.playlist);
 
     // Go look this one up
     auto dbSpan = observability->createChildOperationSpan("music_event.db_lookup", span);
     if (dbSpan) {
-        dbSpan->setAttribute("playlist.id", activePlaylistStatus->playlist);
+        dbSpan->setAttribute("playlist.id", activePlaylistStatus.playlist);
     }
-    auto playListResult = db->getPlaylist(activePlaylistStatus->playlist, dbSpan);
+    auto playListResult = db->getPlaylist(activePlaylistStatus.playlist, dbSpan);
     if (!playListResult.isSuccess()) {
         std::string errorMessage = fmt::format("Playlist ID {} not found while in a playlist event. halting playback.",
-                                               activePlaylistStatus->playlist);
+                                               activePlaylistStatus.playlist);
         warn(errorMessage);
-        runningPlaylists->remove(activeUniverse);
+        sessionManager->clearPlaylist(activeUniverse);
         sendEmptyPlaylistUpdate(activeUniverse);
         dbSpan->setError(errorMessage);
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
@@ -161,7 +159,7 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
         if (animationSpan) {
             animationSpan->setError(errorMessage);
         }
-        runningPlaylists->remove(activeUniverse);
+        sessionManager->clearPlaylist(activeUniverse);
         sendEmptyPlaylistUpdate(activeUniverse);
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
@@ -178,7 +176,7 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
         std::string errorMessage = fmt::format("Unable to schedule animation: {}. Halting playback.",
                                                scheduleResult.getError().value().getMessage());
         warn(errorMessage);
-        runningPlaylists->remove(activeUniverse);
+        sessionManager->clearPlaylist(activeUniverse);
         sendEmptyPlaylistUpdate(activeUniverse);
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
@@ -191,10 +189,10 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
     eventLoop->scheduleEvent(nextEvent);
 
     // Update the cache with the animation we're currently playing
-    activePlaylistStatus->current_animation = chosenAnimation;
-    runningPlaylists->put(activeUniverse, activePlaylistStatus);
+    activePlaylistStatus.current_animation = chosenAnimation;
+    sessionManager->setPlaylistStatus(activeUniverse, activePlaylistStatus);
 
-    sendPlaylistUpdate(*activePlaylistStatus);
+    sendPlaylistUpdate(activePlaylistStatus);
 
     debug("scheduled next event for frame {}. later!", lastFrame + 1);
     return Result<framenum_t>{lastFrame};
