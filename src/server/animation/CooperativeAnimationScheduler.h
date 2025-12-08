@@ -41,8 +41,9 @@ class CooperativeAnimationScheduler {
      * @param universe DMX universe to play on
      * @return Playback session handle for external control, or error
      */
-    static Result<std::shared_ptr<PlaybackSession>> scheduleAnimation(framenum_t startingFrame,
-                                                                      const Animation &animation, universe_t universe);
+    static Result<std::shared_ptr<PlaybackSession>>
+    scheduleAnimation(framenum_t startingFrame, const Animation &animation, universe_t universe,
+                      creatures::runtime::ActivityReason reason = creatures::runtime::ActivityReason::Play);
 
   private:
     // No instances needed - all static methods

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "server/namespace-stuffs.h"
+#include "server/runtime/Activity.h"
 #include "util/Result.h"
 #include "util/helpers.h"
 
@@ -17,9 +18,11 @@ namespace creatures {
  * @param startingFrame the frame number to start the animation on
  * @param animation the animation to play
  * @param universe the universe to play the animation on
+ * @param reason activity reason (play|playlist|ad_hoc)
  * @return the last frame number of the animation
  */
-Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::Animation &animation,
-                                     universe_t universe);
+Result<framenum_t>
+scheduleAnimation(framenum_t startingFrame, const creatures::Animation &animation, universe_t universe,
+                  creatures::runtime::ActivityReason reason = creatures::runtime::ActivityReason::Play);
 
 } // namespace creatures

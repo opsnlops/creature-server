@@ -38,9 +38,12 @@ class AnimationService {
      *
      * @param animationId the animation to play
      * @param universe which universe to play the animation in
+     * @param reason reason tag for activity reporting (play|playlist|ad_hoc)
      * @return The status of what happened
      */
-    oatpp::Object<creatures::ws::StatusDto> playStoredAnimation(const oatpp::String &animationId, universe_t universe);
+    oatpp::Object<creatures::ws::StatusDto> playStoredAnimation(const oatpp::String &animationId, universe_t universe,
+                                                                const std::string &reason = "play",
+                                                                std::shared_ptr<RequestSpan> parentSpan = nullptr);
 };
 
 } // namespace creatures::ws

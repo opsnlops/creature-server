@@ -19,6 +19,8 @@ enum class MessageType {
     PlaylistStatus,
     JobProgress,
     JobComplete,
+    IdleStateChanged,
+    CreatureActivity,
 };
 
 // Don't forget to update the toString function in MessageTypes.cpp

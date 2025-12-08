@@ -34,6 +34,10 @@ std::string toString(MessageType type) {
         return "job-progress";
     case MessageType::JobComplete:
         return "job-complete";
+    case MessageType::IdleStateChanged:
+        return "idle-state-changed";
+    case MessageType::CreatureActivity:
+        return "creature-activity";
 
     default:
         return "unknown";

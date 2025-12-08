@@ -3,6 +3,8 @@
 
 #include "spdlog/spdlog.h"
 
+#include <unordered_set>
+
 #include "model/PlaylistStatus.h"
 #include "server/animation/SessionManager.h"
 #include "server/animation/player.h"
@@ -11,6 +13,8 @@
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/metrics/counters.h"
+#include "server/runtime/Activity.h"
+#include "server/ws/service/CreatureService.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 #include "util/websocketUtils.h"
@@ -117,6 +121,14 @@ Result<std::string> Database::playStoredAnimation(animationId_t animationId, uni
     lastFrame = playResult.getValue().value();
     auto okayMessage = fmt::format("✅ Animation scheduled from frame {} to {}", startingFrame, lastFrame);
     info(okayMessage);
+
+    // Attach session id to span for cooperative scheduler
+    if (config->getAnimationSchedulerType() == Configuration::AnimationSchedulerType::Cooperative && playSpan) {
+        auto currentSession = sessionManager->getCurrentSession(universe);
+        if (currentSession) {
+            playSpan->setAttribute("session.id", currentSession->getSessionId());
+        }
+    }
 
     if (playSpan) {
         playSpan->setAttribute("animation.title", animation.metadata.title);

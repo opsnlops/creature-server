@@ -47,7 +47,7 @@ extern std::shared_ptr<ObservabilityManager> observability;
  * @return the frame number of last frame of the animation (legacy), or session handle (cooperative)
  */
 Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::Animation &animation,
-                                     universe_t universe) {
+                                     universe_t universe, creatures::runtime::ActivityReason reason) {
 
     // Check which scheduler to use
     auto schedulerType = config->getAnimationSchedulerType();
@@ -56,7 +56,8 @@ Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::
         // Use the modern cooperative scheduler
         debug("Using cooperative animation scheduler for animation '{}'", animation.metadata.title);
 
-        auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(startingFrame, animation, universe);
+        auto sessionResult =
+            CooperativeAnimationScheduler::scheduleAnimation(startingFrame, animation, universe, reason);
         if (!sessionResult.isSuccess()) {
             return Result<framenum_t>{sessionResult.getError().value()};
         }

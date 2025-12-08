@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "3.4.5"
+        VERSION "3.5.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -9,7 +9,7 @@ project(creature-server
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
-# Store warning flags to apply to our targets only (not dependencies)
+#Store warning flags to apply to our targets only(not dependencies)
 set(CREATURE_SERVER_WARNING_FLAGS
     -Wshadow
     -Wall
@@ -23,14 +23,14 @@ find_package(PkgConfig REQUIRED)
 
 set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
 
-# Make our version available to the project
+#Make our version available to the project
 configure_file(src/server/Version.h.in Version.h)
 
-# Log loudly
+#Log loudly
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
 
-# Configure MongoDB drivers for static linking BEFORE fetching
+#Configure MongoDB drivers for static linking BEFORE fetching
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
 set(ENABLE_STATIC ON CACHE BOOL "Build static mongoc" FORCE)
 set(ENABLE_SHARED OFF CACHE BOOL "Don't build shared mongoc" FORCE)
@@ -43,7 +43,7 @@ set(MONGOCXX_ENABLE_STATIC ON CACHE BOOL "Build static mongocxx" FORCE)
 set(BSONCXX_POLY_USE_BOOST OFF CACHE BOOL "Don't use boost" FORCE)
 set(BSONCXX_POLY_USE_MNMLSTC OFF CACHE BOOL "Don't use mnmlstc" FORCE)
 
-# Fetch MongoDB C driver
+#Fetch MongoDB C driver
 FetchContent_Declare(
   mongo-c-driver
   GIT_REPOSITORY https://github.com/mongodb/mongo-c-driver.git
@@ -51,7 +51,7 @@ FetchContent_Declare(
   GIT_SHALLOW    TRUE
 )
 
-# Fetch MongoDB C++ driver
+#Fetch MongoDB C++ driver
 FetchContent_Declare(
   mongo-cxx-driver
   GIT_REPOSITORY https://github.com/mongodb/mongo-cxx-driver.git
@@ -59,11 +59,11 @@ FetchContent_Declare(
   GIT_SHALLOW    TRUE
 )
 
-# Build both drivers
+#Build both drivers
 FetchContent_MakeAvailable(mongo-c-driver)
 FetchContent_MakeAvailable(mongo-cxx-driver)
 
-# Create aliases that match the existing code
+#Create aliases that match the existing code
 if(TARGET mongocxx_static)
   add_library(mongocxx::mongocxx ALIAS mongocxx_static)
 endif()
@@ -72,16 +72,16 @@ if(TARGET bsoncxx_static)
   add_library(bsoncxx::bsoncxx ALIAS bsoncxx_static)
 endif()
 
-# This project uses threads
+#This project uses threads
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-# Why are UUIDs so hard in 2025?
+#Why are UUIDs so hard in 2025 ?
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     pkg_search_module(UUID REQUIRED uuid)
 endif()
 
-# Force O3 optimization for Release builds
+#Force O3 optimization for Release builds
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
         set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
@@ -89,8 +89,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     endif()
 endif()
 
-
-# fmt
+#fmt
 message(STATUS "fmt")
 FetchContent_Declare(
         fmt
@@ -101,7 +100,7 @@ FetchContent_MakeAvailable(fmt)
 set(FMT_HEADER_ONLY ON)
 set(FMT_LOCALE ON)
 
-# spdlog
+#spdlog
 FetchContent_Declare(
         spdlog
         GIT_REPOSITORY https://github.com/gabime/spdlog
@@ -109,20 +108,20 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
-# argparse
+#argparse
 FetchContent_Declare(
         argparse
         GIT_REPOSITORY https://github.com/p-ranav/argparse.git
 )
 FetchContent_MakeAvailable(argparse)
 
-# json
+#json
 FetchContent_Declare(
         json
         URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
 FetchContent_MakeAvailable(json)
 
-# uvgRTP
+#uvgRTP
 FetchContent_Declare(
   uvgrtp
   GIT_REPOSITORY https://github.com/ultravideo/uvgRTP.git
@@ -130,8 +129,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(uvgrtp)
 
-# Opus
-# Force Opus' own CMake options *before* the project is configured
+#Opus
+#Force Opus' own CMake options *before* the project is configured
 set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_STATIC         ON  CACHE BOOL "" FORCE)
 set(OPUS_BUILD_PROGRAMS       OFF CACHE BOOL "" FORCE)   # cli tools
@@ -143,20 +142,19 @@ FetchContent_Declare(
         GIT_TAG         v1.5.2
 )
 FetchContent_MakeAvailable(opus)
-# Optimise Opus even when the rest of the build is Debug
+#Optimise Opus even when the rest of the build is Debug
 target_compile_options(opus PRIVATE
         $<$<CONFIG:Debug>:-O3>
 )
 
-
-# Google Test
+#Google Test
 FetchContent_Declare(
         googletest
         URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
 )
 FetchContent_MakeAvailable(googletest)
 
-# Now configure OpenTelemetry with very specific settings
+#Now configure OpenTelemetry with very specific settings
 set(BUILD_TESTING OFF CACHE BOOL "Disable testing" FORCE)
 set(WITH_EXAMPLES OFF CACHE BOOL "Disable examples" FORCE)
 set(WITH_BENCHMARK OFF CACHE BOOL "Disable benchmarks" FORCE)
@@ -164,23 +162,23 @@ set(WITH_FUNC_TESTS OFF CACHE BOOL "Disable functional tests" FORCE)
 set(OPENTELEMETRY_INSTALL OFF CACHE BOOL "Disable install" FORCE)
 set(WITH_GTEST OFF CACHE BOOL "Disable gtest in OpenTelemetry" FORCE)
 
-# Enable what we need for traces AND metrics
+#Enable what we need for traces AND metrics
 set(WITH_OTLP_HTTP ON CACHE BOOL "Enable OTLP HTTP exporter" FORCE)
 set(WITH_OTLP_GRPC OFF CACHE BOOL "Disable OTLP gRPC exporter" FORCE)
 
-# Enable metrics support
+#Enable metrics support
 set(WITH_METRICS_API ON CACHE BOOL "Enable metrics API" FORCE)
 set(WITH_METRICS_SDK ON CACHE BOOL "Enable metrics SDK" FORCE)
 set(WITH_OTLP_HTTP_METRIC_EXPORT ON CACHE BOOL "Enable OTLP HTTP metric exporter" FORCE)
 
-# Disable everything else to avoid dependencies
+#Disable everything else to avoid dependencies
 set(WITH_ZIPKIN OFF CACHE BOOL "Disable Zipkin" FORCE)
 set(WITH_JAEGER OFF CACHE BOOL "Disable Jaeger" FORCE)
 set(WITH_PROMETHEUS OFF CACHE BOOL "Disable Prometheus" FORCE)
 set(WITH_METRICS_PREVIEW OFF CACHE BOOL "Disable metrics preview" FORCE)
 set(WITH_LOGS_PREVIEW OFF CACHE BOOL "Disable logs preview" FORCE)
 
-# OpenTelemetry
+#OpenTelemetry
 FetchContent_Declare(
         opentelemetry-cpp
         GIT_REPOSITORY https://github.com/open-telemetry/opentelemetry-cpp.git
@@ -188,12 +186,12 @@ FetchContent_Declare(
         GIT_SHALLOW TRUE
 )
 
-# After FetchContent_Declare but before FetchContent_MakeAvailable
+#After FetchContent_Declare but before FetchContent_MakeAvailable
 set(OPENTELEMETRY_BUILD_SHARED_LIBS OFF CACHE BOOL "Build OpenTelemetry as static" FORCE)
 
 FetchContent_MakeAvailable(opentelemetry-cpp)
 
-# Use the oatpp that we've already made
+#Use the oatpp that we've already made
 find_package(oatpp           REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
 find_package(oatpp-swagger   REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
 find_package(oatpp-websocket REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-websocket-1.3.0)
@@ -206,19 +204,19 @@ add_definitions(
         -DOATPP_SWAGGER_RES_PATH="${oatpp-swagger_INCLUDE_DIRS}/../bin/oatpp-swagger/res"
 )
 
-# ...and our own libraries
+#... and our own libraries
 add_subdirectory(lib/e131_service)
 add_subdirectory(lib/CreatureVoicesLib)
 
-# Set up a base64 encoder/decoder
+#Set up a base64 encoder / decoder
 set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
 
-# Set up a concurrent queue
+#Set up a concurrent queue
 set(MOODYCAMEL_DIR "${CMAKE_SOURCE_DIR}/lib/concurrentqueue")
 
 #
-# If we're on macOS, use the local copy of the Swagger UI. On Linux, use the one from the
-# package that we installed.
+#If we're on macOS, use the local copy of the Swagger UI. On Linux, use the one from the
+#package that we installed.
 #
 if(APPLE)
     add_definitions(-DSWAGGER_UI_PATH="${CMAKE_SOURCE_DIR}/externals/build/oatpp-swagger-prefix/src/oatpp-swagger/res/")
@@ -226,17 +224,17 @@ else()
     add_definitions(-DSWAGGER_UI_PATH="/usr/share/creature-server/swagger-ui/")
 endif()
 
-# SDL
+#SDL
 find_package(SDL2 REQUIRED)
 find_package(SDL2_mixer REQUIRED)
 
-# OpenSSL for SHA-256 hashing in audio cache
+#OpenSSL for SHA - 256 hashing in audio cache
 find_package(OpenSSL REQUIRED)
 
-# Leave a message
+#Leave a message
 message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
 
-# Our source files
+#Our source files
 file(GLOB serverFiles
         src/util/*
         src/exception/*
@@ -473,8 +471,11 @@ add_executable(creature-server-test
         tests/model/LogItem_test.cpp
         tests/model/Animation_test.cpp
         tests/model/AnimationMetadata_test.cpp
+        tests/runtime/Activity_test.cpp
+        tests/server/ws/CreatureActivityMessage_test.cpp
         src/model/SortBy.h
         src/model/Track.cpp
+        src/server/ws/dto/websocket/MessageTypes.cpp
 )
 
 target_link_libraries(creature-server-test
@@ -508,6 +509,7 @@ target_include_directories(creature-server-test PRIVATE
         ${googletest_SOURCE_DIR}/include
         ${googlemock_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/
+        ${CMAKE_BINARY_DIR}/_deps/opentelemetry-cpp-src/api/include
 )
 
 # Tell CMake where our tests are

@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CTEST_EXCLUDE: >-
+    mongoc/fixtures/fake_kms_provider_server/start|
+    mongoc/CMake/bare-bson-import|
+    mongoc/CMake/bare-mongoc-import|
+    mongoc/CMake/bson-import-1.0|
+    mongoc/CMake/bson-import-range-upper|
+    mongoc/CMake/bson-import-range-lower|
+    mongoc/CMake/bson-import-major-range|
+    mongoc/CMake/bson-import-opt-components
+
+jobs:
+  build-and-test:
+    runs-on: buildjet-8vcpu-ubuntu-2204
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build test image
+        run: docker build -f Dockerfile . --target build -t creature-server-buildtest
+
+      - name: Run ctest (skip vendor mongo driver fixtures)
+        run: docker run --rm creature-server-buildtest ctest -E "${CTEST_EXCLUDE}" --output-on-failure

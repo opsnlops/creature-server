@@ -19,6 +19,7 @@ using json = nlohmann::json;
 #include "server/database.h"
 
 #include "server/metrics/counters.h"
+#include "server/ws/dto/IdleToggleDto.h"
 #include "server/ws/dto/RegisterCreatureRequestDto.h"
 #include "server/ws/service/CreatureService.h"
 #include "util/ObservabilityManager.h"
@@ -185,6 +186,41 @@ class CreatureController : public oatpp::web::server::api::ApiController {
             error("Exception in upsertCreature: {}", ex.what());
             throw;
         }
+    }
+
+    ENDPOINT_INFO(setIdleEnabled) {
+        info->summary = "Enable or disable idle loop for a creature (runtime-only)";
+        info->addResponse<Object<creatures::CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("PATCH", "api/v1/creature/{creatureId}/idle", setIdleEnabled, PATH(String, creatureId),
+             BODY_DTO(Object<IdleToggleDto>, body),
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        auto span = creatures::observability->createRequestSpan("PATCH /api/v1/creature/{creatureId}/idle", "PATCH",
+                                                                "api/v1/creature/" + std::string(creatureId) + "/idle");
+        addHttpRequestAttributes(span, request);
+
+        creatures::metrics->incrementRestRequestsProcessed();
+
+        if (span) {
+            span->setAttribute("endpoint", "setIdleEnabled");
+            span->setAttribute("controller", "CreatureController");
+            span->setAttribute("creature.id", std::string(creatureId));
+        }
+
+        bool enabled = true;
+        if (body && body->enabled) {
+            enabled = *body->enabled;
+        }
+
+        auto result = m_creatureService.setIdleEnabled(creatureId, enabled, span);
+
+        if (span) {
+            span->setHttpStatus(200);
+        }
+
+        return createDtoResponse(Status::CODE_200, result);
     }
 
     ENDPOINT_INFO(registerCreature) {

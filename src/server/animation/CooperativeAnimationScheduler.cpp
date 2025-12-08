@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <unordered_set>
 
 #include "spdlog/spdlog.h"
 
@@ -24,6 +25,8 @@
 #include "server/metrics/counters.h"
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/rtp/MultiOpusRtpServer.h"
+#include "server/runtime/Activity.h"
+#include "server/ws/service/CreatureService.h"
 #include "util/ObservabilityManager.h"
 
 namespace creatures {
@@ -51,9 +54,9 @@ std::filesystem::path resolveSoundFilePath(const std::string &soundFile) {
 
 } // namespace
 
-Result<std::shared_ptr<PlaybackSession>> CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame,
-                                                                                          const Animation &animation,
-                                                                                          universe_t universe) {
+Result<std::shared_ptr<PlaybackSession>>
+CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const Animation &animation,
+                                                 universe_t universe, creatures::runtime::ActivityReason reason) {
     // Create observability span
     auto scheduleSpan = observability->createOperationSpan("CooperativeAnimationScheduler.scheduleAnimation");
     if (scheduleSpan) {
@@ -64,11 +67,25 @@ Result<std::shared_ptr<PlaybackSession>> CooperativeAnimationScheduler::schedule
         scheduleSpan->setAttribute("scheduler.type", "cooperative");
     }
 
-    debug("CooperativeAnimationScheduler: scheduling animation '{}' on universe {} at frame {}",
-          animation.metadata.title, universe, startingFrame);
-
     // Create playback session
     auto session = std::make_shared<PlaybackSession>(animation, universe, startingFrame, scheduleSpan);
+    session->setActivityReason(reason);
+    if (scheduleSpan) {
+        scheduleSpan->setAttribute("session.id", session->getSessionId());
+    }
+
+    debug("CooperativeAnimationScheduler: scheduling animation '{}' on universe {} at frame {} (session {})",
+          animation.metadata.title, universe, startingFrame, session->getSessionId());
+
+    // Broadcast initial activity state for involved creatures using the session UUID
+    std::unordered_set<creatureId_t> creatureSet;
+    creatureSet.reserve(animation.tracks.size());
+    for (const auto &track : animation.tracks) {
+        creatureSet.insert(track.creature_id);
+    }
+    std::vector<creatureId_t> creatureIds(creatureSet.begin(), creatureSet.end());
+    creatures::ws::CreatureService::setActivityRunning(creatureIds, animation.id, reason, session->getSessionId(),
+                                                       scheduleSpan);
 
     // Load audio buffer if animation has sound
     if (!animation.metadata.sound_file.empty()) {
@@ -127,8 +144,8 @@ Result<std::shared_ptr<PlaybackSession>> CooperativeAnimationScheduler::schedule
         scheduleSpan->setSuccess();
     }
 
-    info("✅ Scheduled cooperative animation '{}' for universe {} starting at frame {}", animation.metadata.title,
-         universe, startingFrame);
+    info("✅ Scheduled cooperative animation '{}' for universe {} starting at frame {} (session {})",
+         animation.metadata.title, universe, startingFrame, session->getSessionId());
 
     return Result<std::shared_ptr<PlaybackSession>>{session};
 }

@@ -1,5 +1,11 @@
+#include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
+
+#include <mutex>
+#include <unordered_map>
+
+#include "blockingconcurrentqueue.h"
 
 #include "exception/exception.h"
 #include "model/Creature.h"
@@ -7,9 +13,14 @@
 #include "util/Result.h"
 #include "util/cache.h"
 
+#include "server/runtime/Activity.h"
 #include "server/ws/dto/ListDto.h"
+#include "server/ws/dto/websocket/CreatureActivityMessage.h"
+#include "server/ws/dto/websocket/MessageTypes.h"
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h" // Include ObservabilityManager
+#include "util/helpers.h"
+#include "util/uuidUtils.h"
 
 #include "CreatureService.h"
 
@@ -17,11 +28,99 @@ namespace creatures {
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability; // Declare observability extern
 extern std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMap;
+extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 } // namespace creatures
 
 namespace creatures ::ws {
 
 using oatpp::web::protocol::http::Status;
+
+namespace {
+
+std::mutex runtimeMutex;
+std::unordered_map<std::string, oatpp::Object<creatures::CreatureRuntimeDto>> runtimeState;
+
+oatpp::Object<creatures::CreatureRuntimeCountersDto> makeDefaultCounters() {
+    auto counters = creatures::CreatureRuntimeCountersDto::createShared();
+    counters->sessions_started_total = static_cast<v_uint64>(0);
+    counters->sessions_cancelled_total = static_cast<v_uint64>(0);
+    counters->idle_started_total = static_cast<v_uint64>(0);
+    counters->idle_stopped_total = static_cast<v_uint64>(0);
+    counters->idle_toggles_total = static_cast<v_uint64>(0);
+    counters->skips_missing_creature_total = static_cast<v_uint64>(0);
+    counters->bgm_takeovers_total = static_cast<v_uint64>(0);
+    counters->audio_resets_total = static_cast<v_uint64>(0);
+    return counters;
+}
+
+oatpp::Object<creatures::CreatureRuntimeActivityDto> makeDefaultActivity() {
+    auto activity = creatures::CreatureRuntimeActivityDto::createShared();
+    activity->state = "stopped";
+    activity->animation_id = nullptr;
+    activity->session_id = nullptr;
+    activity->reason = "disabled";
+    auto now = getCurrentTimeISO8601();
+    activity->started_at = now;
+    activity->updated_at = now;
+    return activity;
+}
+
+oatpp::Object<creatures::CreatureRuntimeDto> makeDefaultRuntime() {
+    auto runtime = creatures::CreatureRuntimeDto::createShared();
+    runtime->idle_enabled = true;
+    runtime->activity = makeDefaultActivity();
+    runtime->counters = makeDefaultCounters();
+    runtime->bgm_owner = nullptr;
+    runtime->last_error = nullptr;
+    return runtime;
+}
+
+oatpp::Object<creatures::CreatureRuntimeDto> getOrCreateRuntime(const std::string &creatureId) {
+    std::lock_guard<std::mutex> lock(runtimeMutex);
+    auto it = runtimeState.find(creatureId);
+    if (it != runtimeState.end()) {
+        return it->second;
+    }
+    auto runtime = makeDefaultRuntime();
+    runtimeState.emplace(creatureId, runtime);
+    return runtime;
+}
+
+void broadcastIdleStateChanged(const std::string &creatureId, bool enabled) {
+    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+    auto msg = creatures::ws::IdleStateChangedMessage::createShared();
+    msg->command = toString(creatures::ws::MessageType::IdleStateChanged).c_str();
+
+    auto payload = creatures::ws::IdleStateChangedDto::createShared();
+    payload->creature_id = creatureId.c_str();
+    payload->idle_enabled = enabled;
+    payload->timestamp = getCurrentTimeISO8601();
+    msg->payload = payload;
+
+    creatures::websocketOutgoingMessages->enqueue(jsonMapper->writeToString(msg));
+}
+
+void broadcastCreatureActivity(const std::string &creatureId, const oatpp::Object<creatures::CreatureRuntimeDto> &rt) {
+    if (!rt || !rt->activity) {
+        return;
+    }
+    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+    auto msg = creatures::ws::CreatureActivityMessage::createShared();
+    msg->command = toString(creatures::ws::MessageType::CreatureActivity).c_str();
+
+    auto payload = creatures::ws::CreatureActivityDto::createShared();
+    payload->creature_id = creatureId.c_str();
+    payload->state = rt->activity->state;
+    payload->animation_id = rt->activity->animation_id;
+    payload->session_id = rt->activity->session_id;
+    payload->reason = rt->activity->reason;
+    payload->timestamp = getCurrentTimeISO8601();
+
+    msg->payload = payload;
+    creatures::websocketOutgoingMessages->enqueue(jsonMapper->writeToString(msg));
+}
+
+} // namespace
 
 oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>>
 CreatureService::getAllCreatures(std::shared_ptr<RequestSpan> parentSpan) {
@@ -92,7 +191,9 @@ CreatureService::getAllCreatures(std::shared_ptr<RequestSpan> parentSpan) {
     auto creatures = result.getValue().value();
     for (const auto &creature : creatures) {
         appLogger->debug("Adding creature: {}", creature.id);
-        items->emplace_back(creatures::convertToDto(creature));
+        auto dto = creatures::convertToDto(creature);
+        dto->runtime = getOrCreateRuntime(creature.id);
+        items->emplace_back(dto);
     }
 
     auto page = ListDto<oatpp::Object<creatures::CreatureDto>>::createShared();
@@ -182,7 +283,9 @@ oatpp::Object<creatures::CreatureDto> CreatureService::getCreature(const oatpp::
         span->setSuccess();
     }
 
-    return creatures::convertToDto(creature);
+    auto dto = creatures::convertToDto(creature);
+    dto->runtime = getOrCreateRuntime(creature.id);
+    return dto;
 }
 
 oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std::string &jsonCreature,
@@ -289,7 +392,10 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
         serviceSpan->setAttribute("creature.name", creature.name);
         serviceSpan->setSuccess();
     }
-    return convertToDto(creature);
+
+    auto dto = convertToDto(creature);
+    dto->runtime = getOrCreateRuntime(creature.id);
+    return dto;
 }
 
 oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const std::string &jsonCreature,
@@ -339,6 +445,136 @@ oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const st
     }
 
     return creatureDto;
+}
+
+oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatpp::String &inCreatureId, bool enabled,
+                                                                      std::shared_ptr<RequestSpan> parentSpan) {
+    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+
+    creatureId_t creatureId = std::string(inCreatureId);
+    appLogger->info("Setting idle {} for creature {}", enabled ? "enabled" : "disabled", creatureId);
+
+    auto span = creatures::observability->createOperationSpan("CreatureService.setIdleEnabled", parentSpan);
+    if (span) {
+        span->setAttribute("creature.id", creatureId);
+        span->setAttribute("idle.enabled", enabled);
+    }
+
+    // Ensure creature exists
+    auto creatureResult = db->getCreature(creatureId, span);
+    OATPP_ASSERT_HTTP(creatureResult.isSuccess(), Status::CODE_404, creatureResult.getError()->getMessage().c_str());
+
+    // Update runtime state
+    auto runtime = getOrCreateRuntime(creatureId);
+    runtime->idle_enabled = enabled;
+    if (!runtime->activity) {
+        runtime->activity = makeDefaultActivity();
+    }
+    runtime->activity->animation_id = nullptr;
+    runtime->activity->session_id = nullptr;
+    runtime->activity->reason = creatures::runtime::toString(enabled ? creatures::runtime::ActivityReason::Idle
+                                                                     : creatures::runtime::ActivityReason::Disabled);
+    runtime->activity->state = creatures::runtime::toString(enabled ? creatures::runtime::ActivityState::Idle
+                                                                    : creatures::runtime::ActivityState::Disabled);
+    auto now = getCurrentTimeISO8601();
+    runtime->activity->started_at = now;
+    runtime->activity->updated_at = now;
+    if (runtime->counters) {
+        v_uint64 current = runtime->counters->idle_toggles_total ? *runtime->counters->idle_toggles_total : 0;
+        runtime->counters->idle_toggles_total = static_cast<v_uint64>(current + 1);
+        if (!enabled) {
+            // Treat disabling idle as a stop event
+            v_uint64 stopped = runtime->counters->idle_stopped_total ? *runtime->counters->idle_stopped_total : 0;
+            runtime->counters->idle_stopped_total = static_cast<v_uint64>(stopped + 1);
+        }
+    }
+
+    // Build DTO response
+    auto dto = creatures::convertToDto(creatureResult.getValue().value());
+    dto->runtime = runtime;
+
+    broadcastIdleStateChanged(creatureId, enabled);
+    broadcastCreatureActivity(creatureId, runtime);
+
+    if (span) {
+        span->setSuccess();
+    }
+
+    return dto;
+}
+
+// Helper to decide idle vs disabled state when attempting to mark idle
+static creatures::runtime::ActivityState resolveIdleState(const oatpp::Object<creatures::CreatureRuntimeDto> &runtime,
+                                                          creatures::runtime::ActivityState requested) {
+    bool idleEnabled = !runtime->idle_enabled || *runtime->idle_enabled;
+    if (requested == creatures::runtime::ActivityState::Idle && !idleEnabled) {
+        return creatures::runtime::ActivityState::Disabled;
+    }
+    return requested;
+}
+
+std::string CreatureService::setActivityState(const std::vector<creatureId_t> &creatureIds,
+                                              const std::string &animationId, runtime::ActivityReason reason,
+                                              runtime::ActivityState state, const std::string &sessionId,
+                                              std::shared_ptr<OperationSpan> /*parentSpan*/) {
+
+    // Generate or reuse session ID
+    std::string sid = sessionId.empty() ? creatures::util::generateUUID() : sessionId;
+    auto now = getCurrentTimeISO8601();
+
+    for (const auto &creatureId : creatureIds) {
+        if (creatureId.empty()) {
+            continue;
+        }
+        auto runtime = getOrCreateRuntime(creatureId);
+        if (!runtime->activity) {
+            runtime->activity = makeDefaultActivity();
+        }
+
+        auto resolvedState = resolveIdleState(runtime, state);
+        auto resolvedReason = reason;
+        if (resolvedState == creatures::runtime::ActivityState::Disabled &&
+            state == creatures::runtime::ActivityState::Idle) {
+            resolvedReason = creatures::runtime::ActivityReason::Disabled;
+        }
+
+        runtime->activity->state = creatures::runtime::toString(resolvedState);
+        if (resolvedState == creatures::runtime::ActivityState::Running) {
+            runtime->activity->animation_id = animationId.c_str();
+            runtime->activity->session_id = sid.c_str();
+        } else {
+            runtime->activity->animation_id = nullptr;
+            runtime->activity->session_id = nullptr;
+        }
+        runtime->activity->reason = creatures::runtime::toString(resolvedReason);
+        runtime->activity->started_at = now;
+        runtime->activity->updated_at = now;
+
+        if (runtime->counters) {
+            if (resolvedState == creatures::runtime::ActivityState::Running) {
+                v_uint64 current =
+                    runtime->counters->sessions_started_total ? *runtime->counters->sessions_started_total : 0;
+                runtime->counters->sessions_started_total = static_cast<v_uint64>(current + 1);
+            }
+            if (resolvedReason == creatures::runtime::ActivityReason::Cancelled) {
+                v_uint64 cancelled =
+                    runtime->counters->sessions_cancelled_total ? *runtime->counters->sessions_cancelled_total : 0;
+                runtime->counters->sessions_cancelled_total = static_cast<v_uint64>(cancelled + 1);
+            }
+        }
+
+        broadcastCreatureActivity(creatureId, runtime);
+    }
+
+    return sid;
+}
+
+std::string CreatureService::setActivityRunning(const std::vector<creatureId_t> &creatureIds,
+                                                const std::string &animationId, runtime::ActivityReason reason,
+                                                const std::string &sessionId,
+                                                std::shared_ptr<OperationSpan> parentSpan) {
+    return setActivityState(creatureIds, animationId, reason, creatures::runtime::ActivityState::Running, sessionId,
+                            parentSpan);
 }
 
 } // namespace creatures::ws

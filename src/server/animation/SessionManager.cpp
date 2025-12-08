@@ -8,6 +8,8 @@
 #include "CooperativeAnimationScheduler.h"
 #include "server/creature-server.h"
 #include "server/eventloop/eventloop.h"
+#include "server/runtime/Activity.h"
+#include "server/ws/service/CreatureService.h"
 #include "spdlog/spdlog.h"
 #include "util/ObservabilityManager.h"
 
@@ -24,6 +26,7 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+    bool playlistContext = isPlaylist;
 
     // Cancel any existing session on this universe (but only if it's still active)
     auto it = universeStates_.find(universe);
@@ -35,6 +38,14 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
             if (span) {
                 span->setAttribute("cancelled_existing_session", true);
             }
+            std::vector<creatureId_t> creatureIds;
+            for (const auto &trackState : it->second.currentSession->getTrackStates()) {
+                creatureIds.push_back(trackState.creatureId);
+            }
+            creatures::ws::CreatureService::setActivityState(creatureIds, it->second.currentSession->getAnimation().id,
+                                                             creatures::runtime::ActivityReason::Cancelled,
+                                                             creatures::runtime::ActivityState::Stopped,
+                                                             it->second.currentSession->getSessionId());
         } else {
             debug("SessionManager: existing session on universe {} already cancelled/finished, not cancelling again",
                   universe);
@@ -45,6 +56,7 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
     if (it != universeStates_.end()) {
         // Preserve existing playlist state (isPlaylist, playlistId, isInterrupted, etc.)
         it->second.currentSession = session;
+        playlistContext = playlistContext || it->second.isPlaylist;
         // Only update isPlaylist if we're explicitly setting it to true (starting a new playlist)
         if (isPlaylist) {
             it->second.isPlaylist = true;
@@ -61,7 +73,12 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
         info("SessionManager: registered new session on universe {} (playlist: {})", universe, isPlaylist);
     }
 
+    if (playlistContext) {
+        session->setActivityReason(creatures::runtime::ActivityReason::Playlist);
+    }
+
     if (span) {
+        span->setAttribute("session.id", session->getSessionId());
         span->setSuccess();
     }
 }
@@ -88,6 +105,15 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
 
             // Cancel current session
             it->second.currentSession->cancel();
+            // Mark activity as cancelled for involved creatures
+            std::vector<creatureId_t> creatureIds;
+            for (const auto &trackState : it->second.currentSession->getTrackStates()) {
+                creatureIds.push_back(trackState.creatureId);
+            }
+            creatures::ws::CreatureService::setActivityState(creatureIds, it->second.currentSession->getAnimation().id,
+                                                             creatures::runtime::ActivityReason::Cancelled,
+                                                             creatures::runtime::ActivityState::Stopped,
+                                                             it->second.currentSession->getSessionId());
 
             // Mark as interrupted if it was a playlist
             if (it->second.isPlaylist) {
@@ -105,8 +131,8 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
     }
 
     // Schedule the interrupt animation using cooperative scheduler
-    auto sessionResult =
-        CooperativeAnimationScheduler::scheduleAnimation(eventLoop->getNextFrameNumber(), interruptAnimation, universe);
+    auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(
+        eventLoop->getNextFrameNumber(), interruptAnimation, universe, creatures::runtime::ActivityReason::AdHoc);
 
     if (!sessionResult.isSuccess()) {
         error("SessionManager: failed to schedule interrupt animation: {}", sessionResult.getError()->getMessage());
@@ -140,6 +166,7 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
          universe);
 
     if (span) {
+        span->setAttribute("session.id", session->getSessionId());
         span->setSuccess();
     }
 
@@ -173,6 +200,14 @@ void SessionManager::cancelUniverse(universe_t universe) {
     if (it != universeStates_.end() && it->second.currentSession) {
         info("SessionManager: cancelling all playback on universe {}", universe);
         it->second.currentSession->cancel();
+        // Mark activity as cancelled for involved creatures
+        std::vector<creatureId_t> creatureIds;
+        for (const auto &trackState : it->second.currentSession->getTrackStates()) {
+            creatureIds.push_back(trackState.creatureId);
+        }
+        creatures::ws::CreatureService::setActivityState(
+            creatureIds, it->second.currentSession->getAnimation().id, creatures::runtime::ActivityReason::Cancelled,
+            creatures::runtime::ActivityState::Stopped, it->second.currentSession->getSessionId());
         universeStates_.erase(it);
     }
 }
@@ -252,6 +287,14 @@ void SessionManager::stopPlaylist(universe_t universe) {
         // Cancel the current session
         if (it->second.currentSession) {
             it->second.currentSession->cancel();
+            std::vector<creatureId_t> creatureIds;
+            for (const auto &trackState : it->second.currentSession->getTrackStates()) {
+                creatureIds.push_back(trackState.creatureId);
+            }
+            creatures::ws::CreatureService::setActivityState(creatureIds, it->second.currentSession->getAnimation().id,
+                                                             creatures::runtime::ActivityReason::Cancelled,
+                                                             creatures::runtime::ActivityState::Stopped,
+                                                             it->second.currentSession->getSessionId());
         }
     }
 }
