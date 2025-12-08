@@ -9,6 +9,7 @@
 #include "server/eventloop/events/types.h"
 #include "server/metrics/counters.h"
 #include "server/ws/dto/ListDto.h"
+#include "server/ws/service/CreatureService.h"
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
 #include "util/websocketUtils.h"
@@ -381,6 +382,13 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
     response->code = 200;
     response->message = "Started playback";
     response->status = "OK";
+    // Session will be created when the first animation is scheduled; populate when available
+    if (auto session = creatures::sessionManager->getCurrentSession(universe)) {
+        response->session_id = session->getSessionId().c_str();
+        if (span) {
+            span->setAttribute("session.id", session->getSessionId());
+        }
+    }
 
     // Record success metrics in the span
     if (span) {
@@ -411,6 +419,10 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::stopPlaylist(universe_t
     response->code = 200;
     response->message = "Stopped playback";
     response->status = "OK";
+    // Attach the session id that was stopped if present
+    if (auto session = creatures::sessionManager->getCurrentSession(universe)) {
+        response->session_id = session->getSessionId().c_str();
+    }
 
     debug("returning a 200");
     return response;

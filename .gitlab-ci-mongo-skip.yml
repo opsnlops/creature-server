@@ -1,0 +1,9 @@
+#
+# Skip upstream mongo-c-driver fixture/import tests that require network/FS capabilities
+# They are vendor-only and fail in our CI runners.
+#
+ctest:
+  variables:
+    CTEST_OUTPUT_ON_FAILURE: "1"
+  script:
+    - ctest -E "mongoc/fixtures/fake_kms_provider_server/start|mongoc/CMake/bare-bson-import|mongoc/CMake/bare-mongoc-import|mongoc/CMake/bson-import-1.0|mongoc/CMake/bson-import-range-upper|mongoc/CMake/bson-import-range-lower|mongoc/CMake/bson-import-major-range|mongoc/CMake/bson-import-opt-components"

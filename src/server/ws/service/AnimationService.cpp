@@ -5,6 +5,8 @@
 #include "exception/exception.h"
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
+#include "server/animation/SessionManager.h"
+#include "server/config/Configuration.h"
 #include "server/database.h"
 
 #include "server/ws/dto/ListDto.h"
@@ -20,6 +22,8 @@
 namespace creatures {
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<SessionManager> sessionManager;
+extern std::shared_ptr<Configuration> config;
 } // namespace creatures
 
 namespace creatures ::ws {
@@ -98,8 +102,7 @@ AnimationService::listAllAnimations(std::shared_ptr<RequestSpan> parentSpan) {
     return page;
 }
 
-oatpp::Object<AdHocAnimationListDto>
-AnimationService::listAdHocAnimations(std::shared_ptr<RequestSpan> parentSpan) {
+oatpp::Object<AdHocAnimationListDto> AnimationService::listAdHocAnimations(std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
     auto span = creatures::observability->createOperationSpan("AnimationService.listAdHocAnimations", parentSpan);
@@ -394,8 +397,8 @@ oatpp::Object<creatures::AnimationDto> AnimationService::upsertAnimation(const s
     return convertToDto(animation);
 }
 
-oatpp::Object<creatures::ws::StatusDto>
-AnimationService::deleteAnimation(const oatpp::String &animationId, std::shared_ptr<RequestSpan> parentSpan) {
+oatpp::Object<creatures::ws::StatusDto> AnimationService::deleteAnimation(const oatpp::String &animationId,
+                                                                          std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
     std::string animationIdStr = std::string(animationId);
@@ -449,16 +452,20 @@ AnimationService::deleteAnimation(const oatpp::String &animationId, std::shared_
 }
 
 oatpp::Object<creatures::ws::StatusDto> AnimationService::playStoredAnimation(const oatpp::String &animationId,
-                                                                              universe_t universe) {
+                                                                              universe_t universe,
+                                                                              const std::string &reason,
+                                                                              std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
     appLogger->debug("AnimationService::playStoredAnimation({}, {})", std::string(animationId), universe);
+
+    (void)reason; // placeholder until lifecycle hooks use this reason for activity tracking
 
     bool error = false;
     oatpp::String errorMessage;
     Status status = Status::CODE_200;
 
-    auto result = db->playStoredAnimation(std::string(animationId), universe);
+    auto result = db->playStoredAnimation(std::string(animationId), universe, nullptr);
     if (!result.isSuccess()) {
 
         auto errorCode = result.getError().value().getCode();
@@ -483,6 +490,14 @@ oatpp::Object<creatures::ws::StatusDto> AnimationService::playStoredAnimation(co
     playResult->status = "OK";
     playResult->message = result.getValue().value();
     playResult->code = 200;
+    if (config->getAnimationSchedulerType() == Configuration::AnimationSchedulerType::Cooperative) {
+        if (auto session = sessionManager->getCurrentSession(universe)) {
+            playResult->session_id = session->getSessionId().c_str();
+            if (parentSpan) {
+                parentSpan->setAttribute("session.id", session->getSessionId());
+            }
+        }
+    }
 
     return playResult;
 }

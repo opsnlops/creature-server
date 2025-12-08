@@ -20,6 +20,9 @@ class StatusDto : public oatpp::DTO {
 
     DTO_FIELD_INFO(message) { info->description = "Verbose message"; }
     DTO_FIELD(String, message);
+
+    DTO_FIELD_INFO(session_id) { info->description = "Session UUID for newly scheduled playback (optional)"; }
+    DTO_FIELD(String, session_id);
 };
 } // namespace creatures::ws
 #include OATPP_CODEGEN_END(DTO)

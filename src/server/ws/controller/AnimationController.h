@@ -24,6 +24,7 @@
 #include "server/ws/dto/RegenerateLipSyncRequestDto.h"
 #include "server/ws/dto/TriggerAdHocAnimationRequestDto.h"
 #include "server/ws/service/AnimationService.h"
+#include "server/ws/service/CreatureService.h"
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
 #include "util/websocketUtils.h"
@@ -312,9 +313,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         auto response = JobCreatedDto::createShared();
         response->job_id = jobId;
         response->job_type = "animation-lip-sync";
-        response->message =
-            fmt::format("Lip sync generation job created for animation {}. Monitor job-progress events for updates.",
-                        animationId);
+        response->message = fmt::format(
+            "Lip sync generation job created for animation {}. Monitor job-progress events for updates.", animationId);
 
         if (span) {
             span->setHttpStatus(202);
@@ -384,9 +384,9 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("DELETE", "api/v1/animation/{animationId}", deleteAnimation, PATH(String, animationId),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability->createRequestSpan(
-            "DELETE /api/v1/animation/{animationId}", "DELETE",
-            fmt::format("api/v1/animation/{}", std::string(animationId)));
+        auto span =
+            creatures::observability->createRequestSpan("DELETE /api/v1/animation/{animationId}", "DELETE",
+                                                        fmt::format("api/v1/animation/{}", std::string(animationId)));
         addHttpRequestAttributes(span, request);
 
         debug("delete animation via REST API: {}", std::string(animationId));
@@ -444,10 +444,11 @@ class AnimationController : public oatpp::web::server::api::ApiController {
                 span->setAttribute("controller", "AnimationController");
                 span->setAttribute("animation.id", std::string(requestBody->animation_id));
                 span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
+                span->setAttribute("reason", "play");
             }
 
-            auto result =
-                m_animationService.playStoredAnimation(std::string(requestBody->animation_id), requestBody->universe);
+            auto result = m_animationService.playStoredAnimation(std::string(requestBody->animation_id),
+                                                                 requestBody->universe, "play");
 
             if (span) {
                 span->setAttribute("result.message", std::string(result->message));
@@ -550,12 +551,14 @@ class AnimationController : public oatpp::web::server::api::ApiController {
             if (span) {
                 span->setAttribute("result.success", true);
                 span->setHttpStatus(200);
+                span->setAttribute("session.id", sessionResult.getValue().value()->getSessionId());
             }
 
             auto result = creatures::ws::StatusDto::createShared();
             result->status = "success";
             result->code = 200;
             result->message = "Animation interrupt scheduled successfully";
+            result->session_id = sessionResult.getValue().value()->getSessionId().c_str();
 
             return createDtoResponse(Status::CODE_200, result);
 
@@ -770,10 +773,12 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         response->message =
             fmt::format("Triggered ad-hoc animation {} for {} on universe {}", animationId, creatureId, universe)
                 .c_str();
+        response->session_id = sessionResult.getValue().value()->getSessionId().c_str();
 
         if (span) {
             span->setAttribute("creature.id", creatureId);
             span->setAttribute("universe", static_cast<int64_t>(universe));
+            span->setAttribute("session.id", sessionResult.getValue().value()->getSessionId());
             span->setHttpStatus(200);
         }
 

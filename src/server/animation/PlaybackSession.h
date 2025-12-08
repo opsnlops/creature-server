@@ -9,6 +9,8 @@
 #include "model/Animation.h"
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
+#include "server/runtime/Activity.h"
+#include "util/uuidUtils.h"
 
 namespace creatures {
 
@@ -118,6 +120,12 @@ class PlaybackSession {
     [[nodiscard]] uint32_t getMsPerFrame() const { return animation_.metadata.milliseconds_per_frame; }
 
     /**
+     * Get/set the activity reason for this session (play|playlist|ad_hoc|idle|disabled|cancelled)
+     */
+    [[nodiscard]] creatures::runtime::ActivityReason getActivityReason() const { return activityReason_; }
+    void setActivityReason(creatures::runtime::ActivityReason reason) { activityReason_ = reason; }
+
+    /**
      * Get the observability span for this session
      */
     [[nodiscard]] std::shared_ptr<OperationSpan> getSpan() const { return sessionSpan_; }
@@ -182,6 +190,11 @@ class PlaybackSession {
     }
 
     /**
+     * Get the session UUID for activity correlation
+     */
+    [[nodiscard]] const std::string &getSessionId() const { return sessionId_; }
+
+    /**
      * Get track states (for DMX emission)
      */
     [[nodiscard]] std::vector<TrackState> &getTrackStates() { return trackStates_; }
@@ -196,6 +209,7 @@ class PlaybackSession {
     Animation animation_;
     universe_t universe_;
     framenum_t startingFrame_;
+    std::string sessionId_{creatures::util::generateUUID()};
 
     // Per-track decoded frames and playback state
     std::vector<TrackState> trackStates_;
@@ -218,6 +232,9 @@ class PlaybackSession {
 
     // Observability
     std::shared_ptr<OperationSpan> sessionSpan_;
+
+    // Activity reason for runtime reporting
+    creatures::runtime::ActivityReason activityReason_{creatures::runtime::ActivityReason::Play};
 };
 
 } // namespace creatures

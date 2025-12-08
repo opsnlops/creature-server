@@ -18,6 +18,8 @@
 #include "server/eventloop/eventloop.h"
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
+#include "server/runtime/Activity.h"
+#include "server/ws/service/CreatureService.h"
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
 #include "util/helpers.h"
@@ -53,6 +55,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
         runnerSpan->setAttribute("runner.frame", static_cast<int64_t>(this->frameNumber));
         runnerSpan->setAttribute("session.animation_id", session_->getAnimation().id);
         runnerSpan->setAttribute("session.universe", static_cast<int64_t>(session_->getUniverse()));
+        runnerSpan->setAttribute("session.id", session_->getSessionId());
     }
 
     // Check if session has been cancelled
@@ -64,6 +67,16 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
 
         // Invoke finish callback
         session_->invokeOnFinish();
+
+        // Mark runtime activity as idle for involved creatures
+        std::vector<creatureId_t> creatureIds;
+        for (const auto &trackState : session_->getTrackStates()) {
+            creatureIds.push_back(trackState.creatureId);
+        }
+        auto reason = session_->getActivityReason();
+        creatures::ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
+                                                         creatures::runtime::ActivityState::Stopped,
+                                                         session_->getSessionId(), session_->getSpan());
 
         if (runnerSpan) {
             runnerSpan->setAttribute("runner.cancelled", true);
@@ -105,6 +118,16 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
 
         // Invoke finish callback
         session_->invokeOnFinish();
+
+        // Mark runtime activity as idle for involved creatures
+        std::vector<creatureId_t> creatureIds;
+        for (const auto &trackState : session_->getTrackStates()) {
+            creatureIds.push_back(trackState.creatureId);
+        }
+        auto reason = session_->getActivityReason();
+        creatures::ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
+                                                         creatures::runtime::ActivityState::Idle,
+                                                         session_->getSessionId(), session_->getSpan());
 
         if (runnerSpan) {
             runnerSpan->setAttribute("runner.completed_naturally", true);

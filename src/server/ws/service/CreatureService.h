@@ -7,6 +7,7 @@
 #include <oatpp/web/protocol/http/Http.hpp>
 
 #include "model/Creature.h"
+#include "server/runtime/Activity.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/SimpleResponseDto.h"
 #include "server/ws/dto/StatusDto.h"
@@ -47,6 +48,33 @@ class CreatureService {
      */
     static oatpp::Object<creatures::CreatureDto> registerCreature(const std::string &jsonCreature, universe_t universe,
                                                                   std::shared_ptr<RequestSpan> parentSpan = nullptr);
+
+    /**
+     * Toggle idle enabled/disabled for a creature (runtime only)
+     */
+    static oatpp::Object<creatures::CreatureDto> setIdleEnabled(const oatpp::String &inCreatureId, bool enabled,
+                                                                std::shared_ptr<RequestSpan> parentSpan = nullptr);
+
+    /**
+     * Update runtime activity state for creatures (runtime only)
+     *
+     * @param creatureIds list of creature IDs involved
+     * @param animationId animation identifier (cleared automatically when state is not running)
+     * @param reason descriptive reason (play|ad_hoc|playlist|idle|disabled|cancelled)
+     * @param state activity state (running|idle|disabled|stopped)
+     * @param sessionId optional session UUID (if empty, a new UUIDv4 is generated)
+     */
+    static std::string setActivityState(const std::vector<creatureId_t> &creatureIds, const std::string &animationId,
+                                        runtime::ActivityReason reason, runtime::ActivityState state,
+                                        const std::string &sessionId = "",
+                                        std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * Convenience wrapper for marking creatures as running a specific animation
+     */
+    static std::string setActivityRunning(const std::vector<creatureId_t> &creatureIds, const std::string &animationId,
+                                          runtime::ActivityReason reason, const std::string &sessionId = "",
+                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);
 };
 
 } // namespace creatures::ws

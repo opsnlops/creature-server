@@ -14,6 +14,8 @@
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/metrics/counters.h"
+#include "server/runtime/Activity.h"
+#include "server/ws/service/CreatureService.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -171,7 +173,8 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
     }
 
     // Schedule this animation
-    auto scheduleResult = scheduleAnimation(eventLoop->getNextFrameNumber(), animation, activeUniverse);
+    auto scheduleResult = scheduleAnimation(eventLoop->getNextFrameNumber(), animation, activeUniverse,
+                                            creatures::runtime::ActivityReason::Playlist);
     if (!scheduleResult.isSuccess()) {
         std::string errorMessage = fmt::format("Unable to schedule animation: {}. Halting playback.",
                                                scheduleResult.getError().value().getMessage());
