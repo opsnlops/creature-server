@@ -232,15 +232,19 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
 
         // Check if this session was cancelled vs finished naturally
         bool wasCancelled = false;
+        std::string sessionId;
         if (auto session = weakSession.lock()) {
             wasCancelled = session->isCancelled();
+            sessionId = session->getSessionId();
         }
 
         if (wasCancelled) {
             // This animation was cancelled (interrupted), don't resume playlists
             // The interrupt animation that replaced this one will handle resume when IT finishes
             debug("PlaybackSession was cancelled, skipping resume logic");
-            sessionManager->clearCurrentSession(universe);
+            if (!sessionId.empty()) {
+                sessionManager->clearSession(universe, sessionId);
+            }
             return;
         }
 
@@ -250,7 +254,9 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
         eventLoop->scheduleEvent(statusLightOff);
 
         // Clear the session pointer so registerSession() doesn't try to cancel stale sessions
-        sessionManager->clearCurrentSession(universe);
+        if (!sessionId.empty()) {
+            sessionManager->clearSession(universe, sessionId);
+        }
 
         // Check if there's an interrupted playlist that should resume
         if (sessionManager->hasInterruptedPlaylist(universe)) {

@@ -99,6 +99,12 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .scan<'g', double>()
         .nargs(1);
 
+    program.add_argument("--streaming-timeout-frames")
+        .help("number of 1ms frames to wait before marking streaming as stopped")
+        .default_value(environmentToInt(STREAMING_TIMEOUT_FRAMES_ENV, DEFAULT_STREAMING_TIMEOUT_FRAMES))
+        .scan<'i', int>()
+        .nargs(1);
+
     program.add_argument("--rtp-fragment")
         .help("enable RTP packet fragmentation for standard MTU networks (WiFi, etc.)")
         .default_value(environmentToInt(RTP_FRAGMENT_PACKETS_ENV, DEFAULT_RTP_FRAGMENT_PACKETS) == 1)
@@ -214,6 +220,14 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     if (animationDelayMs > 0) {
         debug("animation playback will be delayed by {}ms for audio sync", animationDelayMs);
     }
+
+    auto streamingTimeoutFrames = program.get<int>("--streaming-timeout-frames");
+    if (streamingTimeoutFrames <= 0) {
+        std::cerr << "Error: --streaming-timeout-frames must be greater than zero" << std::endl;
+        std::exit(1);
+    }
+    config->setStreamingTimeoutFrames(static_cast<uint32_t>(streamingTimeoutFrames));
+    debug("streaming timeout set to {} frames (~{}ms)", streamingTimeoutFrames, streamingTimeoutFrames);
 
     auto adHocTtlHours = program.get<int>("--adhoc-animation-ttl-hours");
     if (adHocTtlHours <= 0) {

@@ -4,7 +4,7 @@ namespace creatures::runtime {
 
 enum class ActivityState { Running, Idle, Disabled, Stopped };
 
-enum class ActivityReason { Play, Playlist, AdHoc, Idle, Disabled, Cancelled };
+enum class ActivityReason { Play, Playlist, AdHoc, Idle, Disabled, Cancelled, Streaming };
 
 inline const char *toString(ActivityState state) {
     switch (state) {
@@ -34,6 +34,8 @@ inline const char *toString(ActivityReason reason) {
         return "disabled";
     case ActivityReason::Cancelled:
         return "cancelled";
+    case ActivityReason::Streaming:
+        return "streaming";
     }
     return "unknown";
 }

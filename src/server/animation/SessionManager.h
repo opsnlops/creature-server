@@ -50,7 +50,7 @@ class SessionManager {
     /**
      * Register a new playback session
      *
-     * If there's an existing session on the same universe, it will be cancelled.
+     * Cancels only overlapping creature sessions on the same universe (last request wins per creature).
      *
      * @param universe The universe this session is playing on
      * @param session The playback session
@@ -98,6 +98,19 @@ class SessionManager {
      * @return The active session, or nullptr if none
      */
     std::shared_ptr<PlaybackSession> getCurrentSession(universe_t universe) const;
+
+    /**
+     * Cancel active sessions on a universe that involve the provided creatures.
+     *
+     * @param universe The universe to operate on
+     * @param creatureIds The creatures to cancel sessions for
+     */
+    void cancelSessionsForCreatures(universe_t universe, const std::vector<creatureId_t> &creatureIds);
+
+    /**
+     * Get a snapshot of active sessions on a universe.
+     */
+    std::vector<std::shared_ptr<PlaybackSession>> getActiveSessions(universe_t universe) const;
 
     /**
      * Check if a universe is currently playing
@@ -152,7 +165,7 @@ class SessionManager {
      *
      * @param universe The universe to clear
      */
-    void clearCurrentSession(universe_t universe);
+    void clearSession(universe_t universe, const std::string &sessionId);
 
     void setPlaylistStatus(universe_t universe, const PlaylistStatus &status);
     std::optional<PlaylistStatus> getPlaylistStatus(universe_t universe) const;
@@ -162,7 +175,7 @@ class SessionManager {
 
   private:
     struct UniverseState {
-        std::shared_ptr<PlaybackSession> currentSession;
+        std::vector<std::shared_ptr<PlaybackSession>> activeSessions;
         bool isPlaylist{false};
         bool isInterrupted{false};
         bool isStopped{false}; // Explicitly stopped, will not resume

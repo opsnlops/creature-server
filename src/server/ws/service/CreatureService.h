@@ -12,6 +12,11 @@
 #include "server/ws/dto/SimpleResponseDto.h"
 #include "server/ws/dto/StatusDto.h"
 
+namespace creatures {
+class RequestSpan;
+class OperationSpan;
+} // namespace creatures
+
 namespace creatures ::ws {
 
 class CreatureService {
@@ -75,6 +80,11 @@ class CreatureService {
     static std::string setActivityRunning(const std::vector<creatureId_t> &creatureIds, const std::string &animationId,
                                           runtime::ActivityReason reason, const std::string &sessionId = "",
                                           std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * Check if a creature is currently in streaming mode (runtime-only).
+     */
+    static bool isCreatureStreaming(const creatureId_t &creatureId);
 };
 
 } // namespace creatures::ws

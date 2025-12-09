@@ -473,9 +473,29 @@ add_executable(creature-server-test
         tests/model/AnimationMetadata_test.cpp
         tests/runtime/Activity_test.cpp
         tests/server/ws/CreatureActivityMessage_test.cpp
+        tests/server/ws/CreatureService_streaming_test.cpp
+        tests/server/TestGlobals.cpp
+        src/model/Animation.cpp
+        src/model/AnimationMetadata.cpp
+        src/model/Playlist.cpp
+        src/model/PlaylistItem.cpp
         src/model/SortBy.h
         src/model/Track.cpp
+        src/model/Creature.cpp
+        src/model/Input.cpp
+        src/model/StreamFrame.cpp
+        src/model/VirtualStatusLights.cpp
+        src/server/creature/helpers.cpp
+        src/server/ws/service/CreatureService.cpp
         src/server/ws/dto/websocket/MessageTypes.cpp
+        src/util/JsonParser.cpp
+        src/util/helpers.cpp
+        src/util/uuidUtils.cpp
+        src/util/Result.cpp
+        src/util/environment.cpp
+        tests/server/FakeObservabilityManager.cpp
+        tests/server/FakeDatabase.cpp
+        tests/server/FakeSpans.cpp
 )
 
 target_link_libraries(creature-server-test
@@ -490,6 +510,13 @@ target_link_libraries(creature-server-test
         nlohmann_json::nlohmann_json
         mongocxx::mongocxx
         bsoncxx::bsoncxx
+        opentelemetry_trace
+        opentelemetry_exporter_otlp_http
+        opentelemetry_resources
+        opentelemetry_common
+        opentelemetry_http_client_curl
+        opentelemetry_metrics
+        opentelemetry_exporter_otlp_http_metric
         argparse
         e131_service
         CreatureVoicesLib
@@ -510,6 +537,7 @@ target_include_directories(creature-server-test PRIVATE
         ${googlemock_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/
         ${CMAKE_BINARY_DIR}/_deps/opentelemetry-cpp-src/api/include
+        ${CMAKE_BINARY_DIR}/_deps/opentelemetry-cpp-src/exporters/otlp/include
 )
 
 # Tell CMake where our tests are

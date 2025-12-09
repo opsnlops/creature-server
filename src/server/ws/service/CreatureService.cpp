@@ -39,6 +39,7 @@ namespace {
 
 std::mutex runtimeMutex;
 std::unordered_map<std::string, oatpp::Object<creatures::CreatureRuntimeDto>> runtimeState;
+std::unordered_map<std::string, std::string> creatureNameCache;
 
 oatpp::Object<creatures::CreatureRuntimeCountersDto> makeDefaultCounters() {
     auto counters = creatures::CreatureRuntimeCountersDto::createShared();
@@ -86,7 +87,42 @@ oatpp::Object<creatures::CreatureRuntimeDto> getOrCreateRuntime(const std::strin
     return runtime;
 }
 
+oatpp::String resolveCreatureName(const std::string &creatureId) {
+    {
+        std::lock_guard<std::mutex> lock(runtimeMutex);
+        auto it = creatureNameCache.find(creatureId);
+        if (it != creatureNameCache.end()) {
+            return it->second.c_str();
+        }
+    }
+
+    if (!creatures::db) {
+        warn("CreatureService: database unavailable while resolving creature name for {}, using ID fallback",
+             creatureId);
+        return creatureId.c_str();
+    }
+
+    auto creatureResult = creatures::db->getCreature(creatureId, nullptr);
+    if (!creatureResult.isSuccess()) {
+        warn("CreatureService: failed to resolve creature name for {}: {}", creatureId,
+             creatureResult.getError()->getMessage());
+        return creatureId.c_str();
+    }
+
+    auto creature = creatureResult.getValue().value();
+    {
+        std::lock_guard<std::mutex> lock(runtimeMutex);
+        creatureNameCache.emplace(creatureId, creature.name);
+    }
+    return creature.name.c_str();
+}
+
 void broadcastIdleStateChanged(const std::string &creatureId, bool enabled) {
+    if (!creatures::websocketOutgoingMessages) {
+        warn("CreatureService: websocket queue unavailable, skipping idle state broadcast for {}", creatureId);
+        return;
+    }
+
     auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
     auto msg = creatures::ws::IdleStateChangedMessage::createShared();
     msg->command = toString(creatures::ws::MessageType::IdleStateChanged).c_str();
@@ -104,12 +140,17 @@ void broadcastCreatureActivity(const std::string &creatureId, const oatpp::Objec
     if (!rt || !rt->activity) {
         return;
     }
+    if (!creatures::websocketOutgoingMessages) {
+        warn("CreatureService: websocket queue unavailable, skipping activity broadcast for {}", creatureId);
+        return;
+    }
     auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
     auto msg = creatures::ws::CreatureActivityMessage::createShared();
     msg->command = toString(creatures::ws::MessageType::CreatureActivity).c_str();
 
     auto payload = creatures::ws::CreatureActivityDto::createShared();
     payload->creature_id = creatureId.c_str();
+    payload->creature_name = resolveCreatureName(creatureId);
     payload->state = rt->activity->state;
     payload->animation_id = rt->activity->animation_id;
     payload->session_id = rt->activity->session_id;
@@ -121,6 +162,20 @@ void broadcastCreatureActivity(const std::string &creatureId, const oatpp::Objec
 }
 
 } // namespace
+
+bool CreatureService::isCreatureStreaming(const creatureId_t &creatureId) {
+    auto runtime = getOrCreateRuntime(creatureId);
+    if (!runtime || !runtime->activity) {
+        return false;
+    }
+    auto reasonStr = runtime->activity->reason;
+    auto stateStr = runtime->activity->state;
+    if (!reasonStr || !stateStr) {
+        return false;
+    }
+    return reasonStr == creatures::runtime::toString(creatures::runtime::ActivityReason::Streaming) &&
+           stateStr == creatures::runtime::toString(creatures::runtime::ActivityState::Running);
+}
 
 oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>>
 CreatureService::getAllCreatures(std::shared_ptr<RequestSpan> parentSpan) {
