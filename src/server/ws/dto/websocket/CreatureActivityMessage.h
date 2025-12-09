@@ -21,11 +21,12 @@ class CreatureActivityDto : public oatpp::DTO {
     DTO_INIT(CreatureActivityDto, DTO)
 
     DTO_FIELD(String, creature_id);
-    DTO_FIELD(String, state);        // running|idle|disabled|stopped
-    DTO_FIELD(String, animation_id); // nullable
-    DTO_FIELD(String, session_id);   // nullable UUIDv4
-    DTO_FIELD(String, reason);       // play|ad_hoc|playlist|idle|disabled
-    DTO_FIELD(String, timestamp);    // ISO8601
+    DTO_FIELD(String, creature_name); // optional convenience for clients
+    DTO_FIELD(String, state);         // running|idle|disabled|stopped
+    DTO_FIELD(String, animation_id);  // nullable
+    DTO_FIELD(String, session_id);    // nullable UUIDv4
+    DTO_FIELD(String, reason);        // play|ad_hoc|playlist|idle|disabled
+    DTO_FIELD(String, timestamp);     // ISO8601
 };
 
 class IdleStateChangedMessage : public WebSocketMessageDto<oatpp::Object<IdleStateChangedDto>> {

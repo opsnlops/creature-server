@@ -12,11 +12,48 @@
 #include "server/ws/service/CreatureService.h"
 #include "spdlog/spdlog.h"
 #include "util/ObservabilityManager.h"
+#include <algorithm>
+#include <unordered_set>
 
 namespace creatures {
 
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<ObservabilityManager> observability;
+
+namespace {
+
+std::unordered_set<creatureId_t> collectCreatureIds(const std::shared_ptr<PlaybackSession> &session) {
+    std::unordered_set<creatureId_t> creatureIds;
+    for (const auto &trackState : session->getTrackStates()) {
+        creatureIds.insert(trackState.creatureId);
+    }
+    return creatureIds;
+}
+
+bool overlaps(const std::unordered_set<creatureId_t> &lhs, const std::shared_ptr<PlaybackSession> &session) {
+    auto rhs = collectCreatureIds(session);
+    for (const auto &id : lhs) {
+        if (rhs.count(id) > 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void cancelSessionAndMarkActivity(const std::shared_ptr<PlaybackSession> &session) {
+    session->cancel();
+    session->markCancellationNotified();
+    std::vector<creatureId_t> creatureIds;
+    creatureIds.reserve(session->getTrackStates().size());
+    for (const auto &trackState : session->getTrackStates()) {
+        creatureIds.push_back(trackState.creatureId);
+    }
+    creatures::ws::CreatureService::setActivityState(
+        creatureIds, session->getAnimation().id, creatures::runtime::ActivityReason::Cancelled,
+        creatures::runtime::ActivityState::Stopped, session->getSessionId());
+}
+
+} // namespace
 
 void SessionManager::registerSession(universe_t universe, std::shared_ptr<PlaybackSession> session, bool isPlaylist) {
     auto span = observability->createOperationSpan("SessionManager.registerSession");
@@ -27,45 +64,47 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
 
     std::lock_guard<std::mutex> lock(mutex_);
     bool playlistContext = isPlaylist;
+    auto newCreatures = collectCreatureIds(session);
 
-    // Cancel any existing session on this universe (but only if it's still active)
+    // Cancel overlapping sessions on this universe (last request wins per creature)
     auto it = universeStates_.find(universe);
-    if (it != universeStates_.end() && it->second.currentSession) {
-        // Only cancel if the session is still running (not already cancelled or finished)
-        if (!it->second.currentSession->isCancelled()) {
-            debug("SessionManager: cancelling existing session on universe {} for new session", universe);
-            it->second.currentSession->cancel();
-            if (span) {
-                span->setAttribute("cancelled_existing_session", true);
+    if (it != universeStates_.end()) {
+        std::vector<std::shared_ptr<PlaybackSession>> survivors;
+        size_t cancelled = 0;
+        survivors.reserve(it->second.activeSessions.size());
+        for (auto &existing : it->second.activeSessions) {
+            if (!existing) {
+                continue;
             }
-            std::vector<creatureId_t> creatureIds;
-            for (const auto &trackState : it->second.currentSession->getTrackStates()) {
-                creatureIds.push_back(trackState.creatureId);
+            if (overlaps(newCreatures, existing) && !existing->isCancelled()) {
+                debug("SessionManager: cancelling overlapping session on universe {} for new session", universe);
+                cancelSessionAndMarkActivity(existing);
+                cancelled++;
+            } else {
+                survivors.push_back(existing);
             }
-            creatures::ws::CreatureService::setActivityState(creatureIds, it->second.currentSession->getAnimation().id,
-                                                             creatures::runtime::ActivityReason::Cancelled,
-                                                             creatures::runtime::ActivityState::Stopped,
-                                                             it->second.currentSession->getSessionId());
-        } else {
-            debug("SessionManager: existing session on universe {} already cancelled/finished, not cancelling again",
-                  universe);
+        }
+        it->second.activeSessions.swap(survivors);
+        if (span && cancelled > 0) {
+            span->setAttribute("cancelled_existing_sessions", static_cast<int64_t>(cancelled));
         }
     }
 
     // Register new session - preserve existing playlist state if present
     if (it != universeStates_.end()) {
         // Preserve existing playlist state (isPlaylist, playlistId, isInterrupted, etc.)
-        it->second.currentSession = session;
+        it->second.activeSessions.push_back(session);
         playlistContext = playlistContext || it->second.isPlaylist;
         // Only update isPlaylist if we're explicitly setting it to true (starting a new playlist)
         if (isPlaylist) {
             it->second.isPlaylist = true;
         }
-        debug("SessionManager: updated session on universe {} (playlist: {})", universe, it->second.isPlaylist);
+        debug("SessionManager: updated session on universe {} (playlist: {}, active_sessions: {})", universe,
+              it->second.isPlaylist, it->second.activeSessions.size());
     } else {
         // No existing state, create new
         UniverseState state;
-        state.currentSession = session;
+        state.activeSessions.push_back(session);
         state.isPlaylist = isPlaylist;
         state.isInterrupted = false;
         state.isStopped = false;
@@ -99,21 +138,18 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
 
         // Check if there's something playing
         auto it = universeStates_.find(universe);
-        if (it != universeStates_.end() && it->second.currentSession) {
-            info("SessionManager: interrupting playback on universe {} with animation '{}'", universe,
-                 interruptAnimation.metadata.title);
-
-            // Cancel current session
-            it->second.currentSession->cancel();
-            // Mark activity as cancelled for involved creatures
-            std::vector<creatureId_t> creatureIds;
-            for (const auto &trackState : it->second.currentSession->getTrackStates()) {
-                creatureIds.push_back(trackState.creatureId);
+        if (it != universeStates_.end()) {
+            if (!it->second.activeSessions.empty()) {
+                info("SessionManager: interrupting playback on universe {} with animation '{}'", universe,
+                     interruptAnimation.metadata.title);
             }
-            creatures::ws::CreatureService::setActivityState(creatureIds, it->second.currentSession->getAnimation().id,
-                                                             creatures::runtime::ActivityReason::Cancelled,
-                                                             creatures::runtime::ActivityState::Stopped,
-                                                             it->second.currentSession->getSessionId());
+
+            for (auto &existing : it->second.activeSessions) {
+                if (existing && !existing->isCancelled()) {
+                    cancelSessionAndMarkActivity(existing);
+                }
+            }
+            it->second.activeSessions.clear();
 
             // Mark as interrupted if it was a playlist
             if (it->second.isPlaylist) {
@@ -149,13 +185,13 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = universeStates_.find(universe);
         if (it != universeStates_.end()) {
-            // Keep the playlist state but update current session
-            it->second.currentSession = session;
+            // Keep the playlist state but update current sessions
+            it->second.activeSessions.push_back(session);
             // isInterrupted remains true if it was set
         } else {
             // No previous state, create new
             UniverseState state;
-            state.currentSession = session;
+            state.activeSessions.push_back(session);
             state.isPlaylist = false;
             state.isInterrupted = false;
             universeStates_[universe] = state;
@@ -197,17 +233,15 @@ void SessionManager::cancelUniverse(universe_t universe) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = universeStates_.find(universe);
-    if (it != universeStates_.end() && it->second.currentSession) {
-        info("SessionManager: cancelling all playback on universe {}", universe);
-        it->second.currentSession->cancel();
-        // Mark activity as cancelled for involved creatures
-        std::vector<creatureId_t> creatureIds;
-        for (const auto &trackState : it->second.currentSession->getTrackStates()) {
-            creatureIds.push_back(trackState.creatureId);
+    if (it != universeStates_.end()) {
+        if (!it->second.activeSessions.empty()) {
+            info("SessionManager: cancelling all playback on universe {}", universe);
         }
-        creatures::ws::CreatureService::setActivityState(
-            creatureIds, it->second.currentSession->getAnimation().id, creatures::runtime::ActivityReason::Cancelled,
-            creatures::runtime::ActivityState::Stopped, it->second.currentSession->getSessionId());
+        for (auto &session : it->second.activeSessions) {
+            if (session) {
+                cancelSessionAndMarkActivity(session);
+            }
+        }
         universeStates_.erase(it);
     }
 }
@@ -216,19 +250,55 @@ std::shared_ptr<PlaybackSession> SessionManager::getCurrentSession(universe_t un
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = universeStates_.find(universe);
-    if (it != universeStates_.end()) {
-        return it->second.currentSession;
+    if (it != universeStates_.end() && !it->second.activeSessions.empty()) {
+        for (auto rit = it->second.activeSessions.rbegin(); rit != it->second.activeSessions.rend(); ++rit) {
+            if (*rit && !(*rit)->isCancelled()) {
+                return *rit;
+            }
+        }
     }
 
     return nullptr;
+}
+
+void SessionManager::cancelSessionsForCreatures(universe_t universe, const std::vector<creatureId_t> &creatureIds) {
+    std::unordered_set<creatureId_t> toCancel{creatureIds.begin(), creatureIds.end()};
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end()) {
+        return;
+    }
+
+    std::vector<std::shared_ptr<PlaybackSession>> survivors;
+    survivors.reserve(it->second.activeSessions.size());
+    for (auto &session : it->second.activeSessions) {
+        if (session && overlaps(toCancel, session) && !session->isCancelled()) {
+            debug("SessionManager: cancelling session on universe {} for creature-specific request", universe);
+            cancelSessionAndMarkActivity(session);
+        } else {
+            survivors.push_back(session);
+        }
+    }
+    it->second.activeSessions.swap(survivors);
+}
+
+std::vector<std::shared_ptr<PlaybackSession>> SessionManager::getActiveSessions(universe_t universe) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end()) {
+        return {};
+    }
+    return it->second.activeSessions;
 }
 
 bool SessionManager::isPlaying(universe_t universe) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = universeStates_.find(universe);
-    if (it != universeStates_.end() && it->second.currentSession) {
-        return !it->second.currentSession->isCancelled();
+    if (it != universeStates_.end()) {
+        return std::any_of(
+            it->second.activeSessions.begin(), it->second.activeSessions.end(),
+            [](const std::shared_ptr<PlaybackSession> &session) { return session && !session->isCancelled(); });
     }
 
     return false;
@@ -284,18 +354,17 @@ void SessionManager::stopPlaylist(universe_t universe) {
             it->second.playlistStatus->current_animation.clear();
         }
 
-        // Cancel the current session
-        if (it->second.currentSession) {
-            it->second.currentSession->cancel();
-            std::vector<creatureId_t> creatureIds;
-            for (const auto &trackState : it->second.currentSession->getTrackStates()) {
-                creatureIds.push_back(trackState.creatureId);
+        // Cancel any playlist sessions
+        std::vector<std::shared_ptr<PlaybackSession>> survivors;
+        for (auto &session : it->second.activeSessions) {
+            if (session && session->getActivityReason() == creatures::runtime::ActivityReason::Playlist &&
+                !session->isCancelled()) {
+                cancelSessionAndMarkActivity(session);
+            } else {
+                survivors.push_back(session);
             }
-            creatures::ws::CreatureService::setActivityState(creatureIds, it->second.currentSession->getAnimation().id,
-                                                             creatures::runtime::ActivityReason::Cancelled,
-                                                             creatures::runtime::ActivityState::Stopped,
-                                                             it->second.currentSession->getSessionId());
         }
+        it->second.activeSessions.swap(survivors);
     }
 }
 
@@ -305,7 +374,6 @@ void SessionManager::startPlaylist(universe_t universe, const std::string &playl
     info("SessionManager: registering playlist start on universe {} (playlist: {})", universe, playlistId);
 
     auto &state = universeStates_[universe];
-    state.currentSession = nullptr; // No session yet, will be set when first animation plays
     state.isPlaylist = true;
     state.isInterrupted = false;
     state.isStopped = false;
@@ -319,13 +387,18 @@ void SessionManager::startPlaylist(universe_t universe, const std::string &playl
     state.playlistStatus->playing = true;
 }
 
-void SessionManager::clearCurrentSession(universe_t universe) {
+void SessionManager::clearSession(universe_t universe, const std::string &sessionId) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = universeStates_.find(universe);
     if (it != universeStates_.end()) {
-        debug("SessionManager: clearing current session pointer for universe {} (preserving playlist state)", universe);
-        it->second.currentSession = nullptr;
+        debug("SessionManager: clearing session {} for universe {} (preserving playlist state)", sessionId, universe);
+        auto &sessions = it->second.activeSessions;
+        sessions.erase(std::remove_if(sessions.begin(), sessions.end(),
+                                      [&](const std::shared_ptr<PlaybackSession> &session) {
+                                          return session && session->getSessionId() == sessionId;
+                                      }),
+                       sessions.end());
     }
 }
 
@@ -381,7 +454,7 @@ void SessionManager::clearPlaylist(universe_t universe) {
     it->second.playlistId.clear();
     it->second.playlistStatus.reset();
 
-    if (!it->second.currentSession) {
+    if (it->second.activeSessions.empty()) {
         universeStates_.erase(it);
     }
 }

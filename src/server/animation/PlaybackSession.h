@@ -126,6 +126,12 @@ class PlaybackSession {
     void setActivityReason(creatures::runtime::ActivityReason reason) { activityReason_ = reason; }
 
     /**
+     * Track whether cancellation was already broadcast to avoid duplicate activity events.
+     */
+    void markCancellationNotified() { cancellationNotified_ = true; }
+    [[nodiscard]] bool isCancellationNotified() const { return cancellationNotified_; }
+
+    /**
      * Get the observability span for this session
      */
     [[nodiscard]] std::shared_ptr<OperationSpan> getSpan() const { return sessionSpan_; }
@@ -235,6 +241,9 @@ class PlaybackSession {
 
     // Activity reason for runtime reporting
     creatures::runtime::ActivityReason activityReason_{creatures::runtime::ActivityReason::Play};
+
+    // Cancellation activity already broadcast
+    bool cancellationNotified_{false};
 };
 
 } // namespace creatures

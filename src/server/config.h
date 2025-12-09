@@ -79,6 +79,9 @@
 
 #define SOUND_BUFFER_SIZE 2048 // Higher = less CPU, lower = less latency
 
+#define STREAMING_TIMEOUT_FRAMES_ENV "STREAMING_TIMEOUT_FRAMES"
+#define DEFAULT_STREAMING_TIMEOUT_FRAMES 60 // ~60ms at 1ms frame rate
+
 // Should we use the GPIO devices for LEDs? This only works on the Raspberry Pi,
 // since Macs don't have these 😅
 #define USE_GPIO_ENV "USE_GPIO"

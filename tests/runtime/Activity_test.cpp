@@ -16,4 +16,5 @@ TEST(ActivityEnumTest, ToStringMappings) {
     EXPECT_STREQ("idle", toString(ActivityReason::Idle));
     EXPECT_STREQ("disabled", toString(ActivityReason::Disabled));
     EXPECT_STREQ("cancelled", toString(ActivityReason::Cancelled));
+    EXPECT_STREQ("streaming", toString(ActivityReason::Streaming));
 }

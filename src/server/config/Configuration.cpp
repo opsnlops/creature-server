@@ -108,4 +108,10 @@ uint32_t Configuration::getAdHocAnimationTtlHours() const { return this->adHocAn
 
 void Configuration::setAdHocAnimationTtlHours(const uint32_t _ttlHours) { this->adHocAnimationTtlHours = _ttlHours; }
 
+uint32_t Configuration::getStreamingTimeoutFrames() const { return this->streamingTimeoutFrames; }
+
+void Configuration::setStreamingTimeoutFrames(const uint32_t _timeoutFrames) {
+    this->streamingTimeoutFrames = _timeoutFrames;
+}
+
 } // namespace creatures

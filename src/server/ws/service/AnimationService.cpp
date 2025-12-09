@@ -67,6 +67,9 @@ AnimationService::listAllAnimations(std::shared_ptr<RequestSpan> parentSpan) {
         case ServerError::InvalidData:
             status = Status::CODE_400;
             break;
+        case ServerError::Conflict:
+            status = Status::CODE_409;
+            break;
         default:
             status = Status::CODE_500;
             break;

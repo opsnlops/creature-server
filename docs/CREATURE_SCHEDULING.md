@@ -61,9 +61,10 @@ Partial availability:
 
 API/DTO impacts (to design in detail next):
 - Creature GET DTO: include runtime sub-object (empty in config if absent):
+  - idle_animation_ids: [string] // optional; idle loop candidates stored with creature config
   - runtime: {
       idle_enabled: bool,
-      activity: {state: running|idle|disabled|stopped, animation_id: string|null, session_id: uuid|null, started_at: iso8601, updated_at: iso8601, reason: play|ad_hoc|playlist|idle|disabled},
+      activity: {state: running|idle|disabled|stopped, animation_id: string|null, session_id: uuid|null, started_at: iso8601, updated_at: iso8601, reason: play|ad_hoc|playlist|idle|disabled|streaming},
       counters: {sessions_started_total: uint64, sessions_cancelled_total: uint64, idle_started_total: uint64, idle_stopped_total: uint64, idle_toggles_total: uint64, skips_missing_creature_total: uint64, bgm_takeovers_total: uint64, audio_resets_total: uint64},
       bgm_owner: creature_id|null,
       last_error: {message: string, timestamp: iso8601}|null
@@ -81,7 +82,12 @@ Observability/metrics:
 
 Current implementation snapshot:
 - Runtime DTO is live: includes idle_enabled, activity (state/reason/animation_id/session_id/timestamps), counters, bgm_owner, last_error.
-- Activity enums enforced server-side: state = running|idle|disabled|stopped; reason = play|playlist|ad_hoc|idle|disabled|cancelled.
+- Activity enums enforced server-side: state = running|idle|disabled|stopped; reason = play|playlist|ad_hoc|idle|disabled|cancelled|streaming.
+- Streaming mode:
+  - Live streaming cancels overlapping sessions and marks activity reason=streaming (running).
+  - Streaming stop is auto-emitted after a short timeout when frames cease (default 60 frames / ~60ms, configurable via
+    `--streaming-timeout-frames` or `STREAMING_TIMEOUT_FRAMES`).
+  - Animation play requests fail with 409 Conflict if any involved creature is streaming.
 - WebSocket messages implemented:
   - idle-state-changed {creature_id, idle_enabled, timestamp}
   - creature-activity {creature_id, state, animation_id, session_id, reason, timestamp}

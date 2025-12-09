@@ -47,6 +47,15 @@ Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto) {
         debug("speech_loop_animation_ids count: {}", creature.speech_loop_animation_ids.size());
     }
 
+    if (creatureDto->idle_animation_ids) {
+        for (const auto &animationId : *creatureDto->idle_animation_ids) {
+            if (animationId) {
+                creature.idle_animation_ids.emplace_back(std::string(animationId));
+            }
+        }
+        debug("idle_animation_ids count: {}", creature.idle_animation_ids.size());
+    }
+
     // Make sure we're not about to read a null pointer
     if (creatureDto->inputs) {
         for (const auto &inputDto : *creatureDto->inputs) {
@@ -88,6 +97,14 @@ oatpp::Object<CreatureDto> convertToDto(const Creature &creature) {
             animations->push_back(animationId.c_str());
         }
         creatureDto->speech_loop_animation_ids = animations;
+    }
+
+    if (!creature.idle_animation_ids.empty()) {
+        auto animations = oatpp::List<oatpp::String>::createShared();
+        for (const auto &animationId : creature.idle_animation_ids) {
+            animations->push_back(animationId.c_str());
+        }
+        creatureDto->idle_animation_ids = animations;
     }
 
     return creatureDto;

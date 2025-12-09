@@ -73,10 +73,12 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
         for (const auto &trackState : session_->getTrackStates()) {
             creatureIds.push_back(trackState.creatureId);
         }
-        auto reason = session_->getActivityReason();
-        creatures::ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
-                                                         creatures::runtime::ActivityState::Stopped,
-                                                         session_->getSessionId(), session_->getSpan());
+        if (!session_->isCancellationNotified()) {
+            auto reason = creatures::runtime::ActivityReason::Cancelled;
+            creatures::ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
+                                                             creatures::runtime::ActivityState::Stopped,
+                                                             session_->getSessionId(), session_->getSpan());
+        }
 
         if (runnerSpan) {
             runnerSpan->setAttribute("runner.cancelled", true);

@@ -94,6 +94,9 @@ class Configuration {
     /** @return TTL (in hours) for ad-hoc animations */
     uint32_t getAdHocAnimationTtlHours() const;
 
+    /** @return Number of frames to wait before declaring streaming stopped */
+    uint32_t getStreamingTimeoutFrames() const;
+
   protected:
     // Setters used by CommandLine to configure values from command line arguments
 
@@ -147,6 +150,9 @@ class Configuration {
 
     /** @param _ttlHours TTL (hours) for ad-hoc animations */
     void setAdHocAnimationTtlHours(uint32_t _ttlHours);
+
+    /** @param _timeoutFrames Number of frames to wait before declaring streaming stopped */
+    void setStreamingTimeoutFrames(uint32_t _timeoutFrames);
 
   private:
     // Hardware configuration
@@ -216,6 +222,9 @@ class Configuration {
 
     /** TTL (hours) for ad-hoc animations (default 12h) */
     uint32_t adHocAnimationTtlHours = DEFAULT_ADHOC_ANIMATION_TTL_HOURS;
+
+    /** Timeout (frames) after the last stream frame before marking streaming stopped */
+    uint32_t streamingTimeoutFrames = DEFAULT_STREAMING_TIMEOUT_FRAMES;
 };
 
 } // namespace creatures

@@ -68,40 +68,31 @@ Result<std::string> Database::playStoredAnimation(animationId_t animationId, uni
     auto animation = animationResult.getValue().value();
     info("Playing animation {} on universe {}", animation.metadata.title, universe);
 
-    // If using cooperative scheduler, cancel any existing playback on this universe first
-    // This prevents concurrent animations from running and conflicting with each other
-    if (config->getAnimationSchedulerType() == Configuration::AnimationSchedulerType::Cooperative) {
-        auto existingSession = sessionManager->getCurrentSession(universe);
-        if (existingSession && !existingSession->isCancelled()) {
-            info("Cooperative scheduler: cancelling existing playback on universe {} before starting new animation",
-                 universe);
-            existingSession->cancel();
+    // Guard against playing while any involved creature is actively streaming
+    for (const auto &track : animation.tracks) {
+        if (creatures::ws::CreatureService::isCreatureStreaming(track.creature_id)) {
+            auto error = ServerError(ServerError::Conflict,
+                                     fmt::format("Creature {} is currently streaming; cannot play animation",
+                                                 track.creature_id));
             if (playSpan) {
-                playSpan->setAttribute("cancelled_existing_session", true);
+                playSpan->setError(error.getMessage());
             }
+            warn(error.getMessage());
+            return Result<std::string>{error};
         }
+    }
 
-        // Stop any running playlist on this universe using the single source of truth
-        // This marks the playlist as stopped in SessionManager, making future PlaylistEvents exit cleanly
-        auto playlistState = sessionManager->getPlaylistState(universe);
-        if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
-            info("Stopping playlist on universe {} to play single animation", universe);
-            sessionManager->stopPlaylist(universe);
-            sessionManager->clearPlaylist(universe);
-
-            // Notify clients that playlist has stopped
-            PlaylistStatus emptyStatus{};
-            emptyStatus.universe = universe;
-            emptyStatus.playlist = "";
-            emptyStatus.playing = false;
-            emptyStatus.current_animation = "";
-            auto broadcastResult = broadcastPlaylistStatusToAllClients(emptyStatus);
-            if (!broadcastResult.isSuccess()) {
-                warn("Failed to broadcast playlist stop: {}", broadcastResult.getError()->getMessage());
-            }
-
+    if (config->getAnimationSchedulerType() == Configuration::AnimationSchedulerType::Cooperative) {
+        // Cancel overlapping sessions first so cancel events precede new activity notifications
+        std::unordered_set<creatureId_t> creatureIds;
+        for (const auto &track : animation.tracks) {
+            creatureIds.insert(track.creature_id);
+        }
+        if (!creatureIds.empty()) {
+            std::vector<creatureId_t> toCancel(creatureIds.begin(), creatureIds.end());
+            sessionManager->cancelSessionsForCreatures(universe, toCancel);
             if (playSpan) {
-                playSpan->setAttribute("stopped_playlist", true);
+                playSpan->setAttribute("pre_cancelled_sessions", static_cast<int64_t>(toCancel.size()));
             }
         }
     }

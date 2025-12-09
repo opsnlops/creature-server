@@ -62,6 +62,11 @@ struct Creature {
     std::vector<std::string> speech_loop_animation_ids;
 
     /**
+     * A list of animation IDs that can be used as idle loops for this creature.
+     */
+    std::vector<std::string> idle_animation_ids;
+
+    /**
      * Runtime state is managed in memory and not persisted with the config.
      * This struct can be extended later to hold runtime values when needed.
      */
@@ -187,6 +192,12 @@ class CreatureDto : public oatpp::DTO {
         info->required = false;
     }
     DTO_FIELD(List<String>, speech_loop_animation_ids);
+
+    DTO_FIELD_INFO(idle_animation_ids) {
+        info->description = "Animations that can be used as idle loops for this creature";
+        info->required = false;
+    }
+    DTO_FIELD(List<String>, idle_animation_ids);
 
     DTO_FIELD_INFO(runtime) {
         info->description = "Runtime state (present only at runtime; absent in config documents)";

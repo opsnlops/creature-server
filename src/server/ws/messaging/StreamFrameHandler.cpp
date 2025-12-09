@@ -1,15 +1,21 @@
 
 #include <spdlog/spdlog.h>
 
+#include <mutex>
+#include <optional>
+#include <unordered_set>
+
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
 #include "model/StreamFrame.h"
 #include "server/animation/SessionManager.h"
+#include "server/config/Configuration.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/metrics/counters.h"
+#include "server/ws/service/CreatureService.h"
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
 #include "util/helpers.h"
@@ -33,10 +39,71 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<Configuration> config;
 extern std::shared_ptr<SessionManager> sessionManager;
 } // namespace creatures
 
 namespace creatures ::ws {
+
+namespace {
+std::mutex streamingMutex;
+std::unordered_set<creatureId_t> streamingCreatures;
+std::unordered_map<creatureId_t, framenum_t> streamingDeadlines;
+
+bool markStreamingIfNew(const creatureId_t &creatureId) {
+    std::lock_guard<std::mutex> lock(streamingMutex);
+    auto [it, inserted] = streamingCreatures.insert(creatureId);
+    return inserted;
+}
+
+void updateStreamingDeadline(const creatureId_t &creatureId, framenum_t deadline) {
+    std::lock_guard<std::mutex> lock(streamingMutex);
+    streamingDeadlines[creatureId] = deadline;
+}
+
+std::optional<framenum_t> getStreamingDeadline(const creatureId_t &creatureId) {
+    std::lock_guard<std::mutex> lock(streamingMutex);
+    auto it = streamingDeadlines.find(creatureId);
+    if (it == streamingDeadlines.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+void clearStreamingState(const creatureId_t &creatureId) {
+    std::lock_guard<std::mutex> lock(streamingMutex);
+    streamingCreatures.erase(creatureId);
+    streamingDeadlines.erase(creatureId);
+}
+
+class StreamingTimeoutEvent : public EventBase<StreamingTimeoutEvent> {
+  public:
+    StreamingTimeoutEvent(framenum_t frame, creatureId_t creatureId)
+        : EventBase<StreamingTimeoutEvent>(frame), creatureId_(std::move(creatureId)) {}
+
+    Result<framenum_t> executeImpl() {
+        auto deadline = getStreamingDeadline(creatureId_);
+        if (!deadline.has_value()) {
+            return Result<framenum_t>{this->frameNumber};
+        }
+        // If another frame extended the deadline, skip
+        if (deadline.value() != this->frameNumber) {
+            return Result<framenum_t>{this->frameNumber};
+        }
+
+        // Mark streaming stopped
+        creatures::ws::CreatureService::setActivityState(
+            {creatureId_}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
+            creatures::runtime::ActivityState::Stopped, "" /*sessionId*/, nullptr);
+        info("Streaming timeout reached for creature {} at frame {}", creatureId_, this->frameNumber);
+        clearStreamingState(creatureId_);
+        return Result<framenum_t>{this->frameNumber};
+    }
+
+  private:
+    creatureId_t creatureId_;
+};
+} // namespace
 
 void StreamFrameHandler::processMessage(const oatpp::String &message) {
 
@@ -94,20 +161,15 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
 
     appLogger->trace("Entered StreamFrameHandler::stream()");
 
-    // Cancel any active playback on this universe (live streaming takes priority)
-    // Check if there's an active session and cancel it
-    auto existingSession = creatures::sessionManager->getCurrentSession(frame.universe);
-    if (existingSession && !existingSession->isCancelled()) {
-        appLogger->info("Cancelling active session on universe {} for live streaming", frame.universe);
-        existingSession->cancel();
-        span->setAttribute("cancelled_session_for_streaming", true);
+    // Cancel any active playback on this universe for the targeted creature (live streaming takes priority)
+    creatures::sessionManager->cancelSessionsForCreatures(frame.universe, {frame.creature_id});
+    span->setAttribute("cancelled_session_for_streaming", true);
 
-        // Also stop any playlist state
-        auto playlistState = creatures::sessionManager->getPlaylistState(frame.universe);
-        if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
-            appLogger->info("Stopping playlist on universe {} for live streaming", frame.universe);
-            creatures::sessionManager->stopPlaylist(frame.universe);
-        }
+    // Also stop any playlist state
+    auto playlistState = creatures::sessionManager->getPlaylistState(frame.universe);
+    if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
+        appLogger->info("Stopping playlist on universe {} for live streaming", frame.universe);
+        creatures::sessionManager->stopPlaylist(frame.universe);
     }
 
     // Make sure this creature is in the cache
@@ -159,6 +221,24 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
         span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
         return;
     }
+
+    // Mark runtime activity as streaming (only once per creature)
+    if (markStreamingIfNew(frame.creature_id)) {
+        creatures::ws::CreatureService::setActivityState(
+            {frame.creature_id}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
+            creatures::runtime::ActivityState::Running, "" /*sessionId*/, nullptr);
+    }
+
+    // Schedule a timeout to mark streaming stopped if frames stop arriving
+    framenum_t streamingTimeoutFrames = DEFAULT_STREAMING_TIMEOUT_FRAMES;
+    if (creatures::config) {
+        streamingTimeoutFrames = creatures::config->getStreamingTimeoutFrames();
+    }
+
+    auto deadline = eventLoop->getNextFrameNumber() + streamingTimeoutFrames;
+    updateStreamingDeadline(frame.creature_id, deadline);
+    auto timeoutEvent = std::make_shared<StreamingTimeoutEvent>(deadline, frame.creature_id);
+    eventLoop->scheduleEvent(timeoutEvent);
 
     // appLogger->debug("Creature: {}, Offset: {}", creature->name, creature->channel_offset);
 
