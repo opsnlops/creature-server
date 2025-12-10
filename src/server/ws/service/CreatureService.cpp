@@ -4,6 +4,7 @@
 
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 #include "blockingconcurrentqueue.h"
 
@@ -175,6 +176,16 @@ bool CreatureService::isCreatureStreaming(const creatureId_t &creatureId) {
     }
     return reasonStr == creatures::runtime::toString(creatures::runtime::ActivityReason::Streaming) &&
            stateStr == creatures::runtime::toString(creatures::runtime::ActivityState::Running);
+}
+
+std::vector<std::pair<std::string, oatpp::Object<creatures::CreatureRuntimeDto>>> CreatureService::getRuntimeStates() {
+    std::lock_guard<std::mutex> lock(runtimeMutex);
+    std::vector<std::pair<std::string, oatpp::Object<creatures::CreatureRuntimeDto>>> snapshot;
+    snapshot.reserve(runtimeState.size());
+    for (const auto &entry : runtimeState) {
+        snapshot.emplace_back(entry.first, entry.second);
+    }
+    return snapshot;
 }
 
 oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>>

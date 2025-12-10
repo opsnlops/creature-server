@@ -3,6 +3,9 @@
 
 #include "spdlog/spdlog.h"
 
+#include <utility>
+#include <vector>
+
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/web/protocol/http/Http.hpp>
 
@@ -85,6 +88,11 @@ class CreatureService {
      * Check if a creature is currently in streaming mode (runtime-only).
      */
     static bool isCreatureStreaming(const creatureId_t &creatureId);
+
+    /**
+     * Snapshot of all creature runtime states currently held in memory.
+     */
+    static std::vector<std::pair<std::string, oatpp::Object<creatures::CreatureRuntimeDto>>> getRuntimeStates();
 };
 
 } // namespace creatures::ws
