@@ -1241,6 +1241,32 @@ AnimationSchedulerType animationSchedulerType =
 - Heavy usage warning: job queue + temp directory cleanup share the same TTL (`--adhoc-animation-ttl-hours`). Keep an eye on disk if ad-hoc usage spikes faster than cleanup cadence.
 - WebSocket cache invalidations now emit `cache_type` values `ad-hoc-animation-list` and `ad-hoc-sound-list` whenever new ad-hoc jobs land. Have clients listen for these strings to refresh `/api/v1/animation/ad-hoc` or `/api/v1/sound/ad-hoc` datasets.
 
+## 2025-12-09 Streaming & Runtime Visibility Hardening
+
+### Summary
+
+- Streaming activity is first-class: play requests return 409 Conflict if any track creature is actively streaming.
+- Streaming start/stop is emitted as creature-activity events; stop auto-emits after a timeout (default 60 frames, configurable).
+- Creatures carry idle/speech loop IDs and richer runtime fields; client CLI “creatures detail” shows runtime/counters.
+
+### Server Changes
+
+- **Streaming timeout knob**: `--streaming-timeout-frames` / `STREAMING_TIMEOUT_FRAMES` (default 60 frames ≈ 60ms). Timeout is logged when it fires.
+- **Activity safety**: broadcasts tolerate missing websocket queue; creature name resolution falls back to ID if DB unavailable.
+- **Play guard**: `playStoredAnimation` pre-cancels overlapping creatures (cooperative scheduler) and rejects if any is streaming.
+- **SessionManager**: per-universe sessions cancel only overlapping creatures; avoids duplicate cancellation notifications.
+- **Schema/validation**: creatures accept `idle_animation_ids`; activity reason enum includes `streaming`.
+- **Docs**: streaming reason + timeout knob + idle list captured in `docs/CREATURE_SCHEDULING.md`.
+
+### Client (creature-console) Notes
+
+- Runtime DTOs decode ISO8601 dates; idle/speech loop lists included.
+- REST `getCreature` implemented; CLI `creatures detail <id>` prints runtime/counters.
+
+### Test Harness
+
+- Added lightweight stubs for observability/spans/database so `creature-server-test` links without full deps; small streaming-state and validation checks added.
+
 ### 2025-11-xx Latest Changes
 - Added `GET /api/v1/animation/ad-hoc/{id}` so clients can pull the fully synthesized animation payload (metadata + tracks). Docs updated with curl/test guidance.
 - Client cache enums now understand the two ad-hoc cache invalidation strings; SwiftUI processor currently just logs pending refresh logic.

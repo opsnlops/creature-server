@@ -15,6 +15,7 @@
 #include "server/namespace-stuffs.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
 #include "server/ws/dto/websocket/ServerCountersMessage.h"
+#include "server/ws/service/CreatureService.h"
 
 // Include the ObservabilityManager for metrics export
 #include "server/sensors/SensorDataCache.h"
@@ -37,7 +38,22 @@ Result<framenum_t> CounterSendEvent::executeImpl() {
     // First, send to websocket clients
     auto message = oatpp::Object<ws::ServerCountersMessage>::createShared();
     message->command = toString(ws::MessageType::ServerCounters);
-    message->payload = metrics->convertToDto();
+
+    // Build payload with counters and runtime state snapshot
+    auto payload = ws::ServerCountersPayloadDto::createShared();
+    payload->counters = metrics->convertToDto();
+
+    auto runtimeSnapshot = creatures::ws::CreatureService::getRuntimeStates();
+    auto runtimeList = oatpp::List<oatpp::Object<ws::ServerCountersCreatureRuntimeDto>>::createShared();
+    for (const auto &entry : runtimeSnapshot) {
+        auto runtimeDto = ws::ServerCountersCreatureRuntimeDto::createShared();
+        runtimeDto->creature_id = entry.first.c_str();
+        runtimeDto->runtime = entry.second;
+        runtimeList->emplace_back(runtimeDto);
+    }
+    payload->runtime_states = runtimeList;
+
+    message->payload = payload;
 
     // Serialize our message to a string
     std::string messageAsString = jsonMapper->writeToString(message);
