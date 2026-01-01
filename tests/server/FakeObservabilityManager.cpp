@@ -9,17 +9,17 @@ void ObservabilityManager::initialize(const std::string &, const std::string &, 
 
 std::shared_ptr<RequestSpan> ObservabilityManager::createRequestSpan(const std::string &, const std::string &,
                                                                      const std::string &) {
-    return nullptr;
+    return std::make_shared<RequestSpan>(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span>(), "", "");
 }
 
 std::shared_ptr<OperationSpan> ObservabilityManager::createOperationSpan(const std::string &,
                                                                          std::shared_ptr<RequestSpan>) {
-    return nullptr;
+    return std::make_shared<OperationSpan>(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span>());
 }
 
 std::shared_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(const std::string &,
                                                                               std::shared_ptr<OperationSpan>) {
-    return nullptr;
+    return std::make_shared<OperationSpan>(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span>());
 }
 
 std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std::string &, double) { return nullptr; }

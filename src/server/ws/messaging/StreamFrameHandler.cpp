@@ -97,6 +97,7 @@ class StreamingTimeoutEvent : public EventBase<StreamingTimeoutEvent> {
             creatures::runtime::ActivityState::Stopped, "" /*sessionId*/, nullptr);
         info("Streaming timeout reached for creature {} at frame {}", creatureId_, this->frameNumber);
         clearStreamingState(creatureId_);
+        creatures::ws::CreatureService::startIdleIfNeeded(creatureId_, nullptr);
         return Result<framenum_t>{this->frameNumber};
     }
 

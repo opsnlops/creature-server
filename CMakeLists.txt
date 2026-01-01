@@ -474,7 +474,9 @@ add_executable(creature-server-test
         tests/runtime/Activity_test.cpp
         tests/server/ws/CreatureActivityMessage_test.cpp
         tests/server/ws/CreatureService_streaming_test.cpp
+        tests/server/ws/CreatureService_validate_test.cpp
         tests/server/TestGlobals.cpp
+        tests/server/FakeIdleScheduling.cpp
         src/model/Animation.cpp
         src/model/AnimationMetadata.cpp
         src/model/Playlist.cpp

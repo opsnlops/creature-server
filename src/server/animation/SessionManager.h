@@ -113,12 +113,32 @@ class SessionManager {
     std::vector<std::shared_ptr<PlaybackSession>> getActiveSessions(universe_t universe) const;
 
     /**
+     * Check if a creature has an active session on the given universe.
+     */
+    bool hasActiveSessionForCreature(universe_t universe, const creatureId_t &creatureId) const;
+
+    /**
+     * Cancel an idle session for a creature on the given universe (if one exists).
+     *
+     * @return true if an idle session was cancelled
+     */
+    bool cancelIdleSessionForCreature(universe_t universe, const creatureId_t &creatureId);
+
+    /**
      * Check if a universe is currently playing
      *
      * @param universe The universe to check
      * @return True if there's an active session on this universe
      */
     bool isPlaying(universe_t universe) const;
+
+    /**
+     * Check if a universe has any active non-idle sessions.
+     *
+     * @param universe The universe to check
+     * @return True if a non-idle session is active
+     */
+    bool hasActiveNonIdleSession(universe_t universe) const;
 
     /**
      * Check if a universe has a paused playlist that can be resumed
@@ -164,6 +184,7 @@ class SessionManager {
      * Preserves playlist state (isPlaylist, isInterrupted, etc.)
      *
      * @param universe The universe to clear
+     * @param sessionId The session ID to clear
      */
     void clearSession(universe_t universe, const std::string &sessionId);
 

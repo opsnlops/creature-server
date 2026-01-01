@@ -30,6 +30,15 @@ std::unordered_set<creatureId_t> collectCreatureIds(const std::shared_ptr<Playba
     return creatureIds;
 }
 
+bool sessionHasCreature(const std::shared_ptr<PlaybackSession> &session, const creatureId_t &creatureId) {
+    for (const auto &trackState : session->getTrackStates()) {
+        if (trackState.creatureId == creatureId) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool overlaps(const std::unordered_set<creatureId_t> &lhs, const std::shared_ptr<PlaybackSession> &session) {
     auto rhs = collectCreatureIds(session);
     for (const auto &id : lhs) {
@@ -41,6 +50,15 @@ bool overlaps(const std::unordered_set<creatureId_t> &lhs, const std::shared_ptr
 }
 
 void cancelSessionAndMarkActivity(const std::shared_ptr<PlaybackSession> &session) {
+    if (session->getActivityReason() == creatures::runtime::ActivityReason::Idle) {
+        std::vector<creatureId_t> idleCreatures;
+        idleCreatures.reserve(session->getTrackStates().size());
+        for (const auto &trackState : session->getTrackStates()) {
+            idleCreatures.push_back(trackState.creatureId);
+        }
+        creatures::ws::CreatureService::incrementIdleStopped(idleCreatures);
+    }
+
     session->cancel();
     session->markCancellationNotified();
     std::vector<creatureId_t> creatureIds;
@@ -291,6 +309,46 @@ std::vector<std::shared_ptr<PlaybackSession>> SessionManager::getActiveSessions(
     return it->second.activeSessions;
 }
 
+bool SessionManager::hasActiveSessionForCreature(universe_t universe, const creatureId_t &creatureId) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end()) {
+        return false;
+    }
+
+    for (const auto &session : it->second.activeSessions) {
+        if (session && !session->isCancelled() && sessionHasCreature(session, creatureId)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SessionManager::cancelIdleSessionForCreature(universe_t universe, const creatureId_t &creatureId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end()) {
+        return false;
+    }
+
+    bool cancelled = false;
+    std::vector<std::shared_ptr<PlaybackSession>> survivors;
+    survivors.reserve(it->second.activeSessions.size());
+    for (auto &session : it->second.activeSessions) {
+        if (session && !session->isCancelled() &&
+            session->getActivityReason() == creatures::runtime::ActivityReason::Idle &&
+            sessionHasCreature(session, creatureId)) {
+            debug("SessionManager: cancelling idle session on universe {} for creature {}", universe, creatureId);
+            cancelSessionAndMarkActivity(session);
+            cancelled = true;
+        } else {
+            survivors.push_back(session);
+        }
+    }
+    it->second.activeSessions.swap(survivors);
+    return cancelled;
+}
+
 bool SessionManager::isPlaying(universe_t universe) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -299,6 +357,24 @@ bool SessionManager::isPlaying(universe_t universe) const {
         return std::any_of(
             it->second.activeSessions.begin(), it->second.activeSessions.end(),
             [](const std::shared_ptr<PlaybackSession> &session) { return session && !session->isCancelled(); });
+    }
+
+    return false;
+}
+
+bool SessionManager::hasActiveNonIdleSession(universe_t universe) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end()) {
+        return false;
+    }
+
+    for (const auto &session : it->second.activeSessions) {
+        if (session && !session->isCancelled() &&
+            session->getActivityReason() != creatures::runtime::ActivityReason::Idle) {
+            return true;
+        }
     }
 
     return false;

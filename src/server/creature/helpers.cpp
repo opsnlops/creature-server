@@ -1,17 +1,8 @@
 
-
-#include <cstdlib>
 #include <string>
 
 #include <spdlog/spdlog.h>
 
-#include <bsoncxx/array/element.hpp>
-#include <bsoncxx/document/element.hpp>
-#include <bsoncxx/json.hpp>
-#include <bsoncxx/types.hpp>
-#include <mongocxx/client.hpp>
-#include <mongocxx/cursor.hpp>
-#include <mongocxx/exception/bulk_write_exception.hpp>
 #include <mongocxx/pool.hpp>
 
 #include <bsoncxx/builder/stream/document.hpp>
@@ -20,8 +11,6 @@
 #include "server/database.h"
 #include "util/ObservabilityManager.h"
 #include "util/helpers.h"
-
-#include "server/namespace-stuffs.h"
 
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
@@ -277,6 +266,10 @@ Result<creatures::Creature> Database::creatureFromJson(json creatureJson, std::s
         span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
         return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
     }
+}
+
+Result<creatures::Creature> Database::parseCreatureJson(json creatureJson, std::shared_ptr<OperationSpan> parentSpan) {
+    return creatureFromJson(std::move(creatureJson), std::move(parentSpan));
 }
 
 Result<bool> Database::has_required_fields(const nlohmann::json &j, const std::vector<std::string> &required_fields) {

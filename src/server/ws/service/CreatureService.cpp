@@ -2,19 +2,30 @@
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
+#include <algorithm>
 #include <mutex>
+#include <optional>
+#include <random>
 #include <unordered_map>
 #include <vector>
+
+#include <fmt/format.h>
+#include <nlohmann/json.hpp>
 
 #include "blockingconcurrentqueue.h"
 
 #include "exception/exception.h"
 #include "model/Creature.h"
+#include "server/animation/SessionManager.h"
+#include "server/animation/player.h"
+#include "server/config.h"
 #include "server/database.h"
+#include "server/eventloop/eventloop.h"
 #include "util/Result.h"
 #include "util/cache.h"
 
 #include "server/runtime/Activity.h"
+#include "server/ws/dto/CreatureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/websocket/CreatureActivityMessage.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
@@ -30,6 +41,9 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability; // Declare observability extern
 extern std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMap;
 extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
+extern std::shared_ptr<EventLoop> eventLoop;
+extern std::shared_ptr<SessionManager> sessionManager;
+extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 } // namespace creatures
 
 namespace creatures ::ws {
@@ -41,6 +55,8 @@ namespace {
 std::mutex runtimeMutex;
 std::unordered_map<std::string, oatpp::Object<creatures::CreatureRuntimeDto>> runtimeState;
 std::unordered_map<std::string, std::string> creatureNameCache;
+// Track last idle animation per creature to avoid immediate repeats.
+std::unordered_map<std::string, std::string> lastIdleAnimationByCreature;
 
 oatpp::Object<creatures::CreatureRuntimeCountersDto> makeDefaultCounters() {
     auto counters = creatures::CreatureRuntimeCountersDto::createShared();
@@ -86,6 +102,24 @@ oatpp::Object<creatures::CreatureRuntimeDto> getOrCreateRuntime(const std::strin
     auto runtime = makeDefaultRuntime();
     runtimeState.emplace(creatureId, runtime);
     return runtime;
+}
+
+std::optional<std::string> getLastIdleAnimationId(const std::string &creatureId) {
+    std::lock_guard<std::mutex> lock(runtimeMutex);
+    auto it = lastIdleAnimationByCreature.find(creatureId);
+    if (it == lastIdleAnimationByCreature.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+void setLastIdleAnimationId(const std::string &creatureId, const std::string &animationId) {
+    std::lock_guard<std::mutex> lock(runtimeMutex);
+    if (animationId.empty()) {
+        lastIdleAnimationByCreature.erase(creatureId);
+        return;
+    }
+    lastIdleAnimationByCreature[creatureId] = animationId;
 }
 
 oatpp::String resolveCreatureName(const std::string &creatureId) {
@@ -160,6 +194,29 @@ void broadcastCreatureActivity(const std::string &creatureId, const oatpp::Objec
 
     msg->payload = payload;
     creatures::websocketOutgoingMessages->enqueue(jsonMapper->writeToString(msg));
+}
+
+bool animationTargetsSingleCreature(const Animation &animation, const creatureId_t &creatureId) {
+    if (animation.tracks.empty()) {
+        return false;
+    }
+    for (const auto &track : animation.tracks) {
+        if (track.creature_id != creatureId) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::vector<std::string> shuffledIds(const std::vector<std::string> &ids) {
+    std::vector<std::string> shuffled = ids;
+    if (shuffled.size() <= 1) {
+        return shuffled;
+    }
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::shuffle(shuffled.begin(), shuffled.end(), gen);
+    return shuffled;
 }
 
 } // namespace
@@ -504,6 +561,8 @@ oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const st
     appLogger->info("Registered creature '{}' (id: {}) on universe {}", std::string(creatureDto->name), creatureId,
                     universe);
 
+    startIdleIfNeeded(creatureId, serviceSpan);
+
     if (serviceSpan) {
         serviceSpan->setAttribute("creature.id", creatureId);
         serviceSpan->setAttribute("creature.name", std::string(creatureDto->name));
@@ -530,6 +589,15 @@ oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatp
     auto creatureResult = db->getCreature(creatureId, span);
     OATPP_ASSERT_HTTP(creatureResult.isSuccess(), Status::CODE_404, creatureResult.getError()->getMessage().c_str());
 
+    bool cancelledIdleSession = false;
+    if (!enabled && creatures::creatureUniverseMap && creatures::creatureUniverseMap->contains(creatureId) &&
+        creatures::sessionManager) {
+        auto universePtr = creatures::creatureUniverseMap->get(creatureId);
+        if (universePtr) {
+            cancelledIdleSession = creatures::sessionManager->cancelIdleSessionForCreature(*universePtr, creatureId);
+        }
+    }
+
     // Update runtime state
     auto runtime = getOrCreateRuntime(creatureId);
     runtime->idle_enabled = enabled;
@@ -548,7 +616,7 @@ oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatp
     if (runtime->counters) {
         v_uint64 current = runtime->counters->idle_toggles_total ? *runtime->counters->idle_toggles_total : 0;
         runtime->counters->idle_toggles_total = static_cast<v_uint64>(current + 1);
-        if (!enabled) {
+        if (!enabled && !cancelledIdleSession) {
             // Treat disabling idle as a stop event
             v_uint64 stopped = runtime->counters->idle_stopped_total ? *runtime->counters->idle_stopped_total : 0;
             runtime->counters->idle_stopped_total = static_cast<v_uint64>(stopped + 1);
@@ -561,6 +629,10 @@ oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatp
 
     broadcastIdleStateChanged(creatureId, enabled);
     broadcastCreatureActivity(creatureId, runtime);
+
+    if (enabled) {
+        startIdleIfNeeded(creatureId, span);
+    }
 
     if (span) {
         span->setSuccess();
@@ -641,6 +713,218 @@ std::string CreatureService::setActivityRunning(const std::vector<creatureId_t> 
                                                 std::shared_ptr<OperationSpan> parentSpan) {
     return setActivityState(creatureIds, animationId, reason, creatures::runtime::ActivityState::Running, sessionId,
                             parentSpan);
+}
+
+void CreatureService::incrementIdleStopped(const std::vector<creatureId_t> &creatureIds) {
+    for (const auto &creatureId : creatureIds) {
+        if (creatureId.empty()) {
+            continue;
+        }
+        auto runtime = getOrCreateRuntime(creatureId);
+        if (!runtime || !runtime->counters) {
+            continue;
+        }
+        v_uint64 stopped = runtime->counters->idle_stopped_total ? *runtime->counters->idle_stopped_total : 0;
+        runtime->counters->idle_stopped_total = static_cast<v_uint64>(stopped + 1);
+    }
+}
+
+bool CreatureService::startIdleIfNeeded(const creatureId_t &creatureId, std::shared_ptr<OperationSpan> parentSpan) {
+    if (creatureId.empty()) {
+        return false;
+    }
+
+    if (!creatures::db || !creatures::eventLoop || !creatures::sessionManager || !creatures::creatureUniverseMap) {
+        warn("CreatureService: idle scheduling unavailable (missing dependencies)");
+        return false;
+    }
+
+    auto runtime = getOrCreateRuntime(creatureId);
+    bool idleEnabled = !runtime->idle_enabled || *runtime->idle_enabled;
+    if (!idleEnabled) {
+        return false;
+    }
+
+    if (CreatureService::isCreatureStreaming(creatureId)) {
+        return false;
+    }
+
+    if (!creatures::creatureUniverseMap->contains(creatureId)) {
+        return false;
+    }
+
+    std::shared_ptr<universe_t> universePtr;
+    try {
+        universePtr = creatures::creatureUniverseMap->get(creatureId);
+    } catch (const std::out_of_range &) {
+        return false;
+    }
+    if (!universePtr) {
+        return false;
+    }
+    universe_t universe = *universePtr;
+
+    if (creatures::sessionManager->hasActiveSessionForCreature(universe, creatureId)) {
+        return false;
+    }
+
+    Creature creature;
+    bool creatureLoaded = false;
+    if (creatures::creatureCache && creatures::creatureCache->contains(creatureId)) {
+        try {
+            creature = *creatures::creatureCache->get(creatureId);
+            creatureLoaded = true;
+        } catch (const std::out_of_range &) {
+            creatureLoaded = false;
+        }
+    }
+    if (!creatureLoaded) {
+        auto creatureResult = creatures::db->getCreature(creatureId, parentSpan);
+        if (!creatureResult.isSuccess() || !creatureResult.getValue().has_value()) {
+            return false;
+        }
+        creature = creatureResult.getValue().value();
+        creatureLoaded = true;
+    }
+
+    if (!creatureLoaded) {
+        return false;
+    }
+    if (creature.idle_animation_ids.empty()) {
+        return false;
+    }
+
+    auto candidates = shuffledIds(creature.idle_animation_ids);
+    // Push the last-used idle to the end so we try other options first.
+    auto lastIdleAnimation = getLastIdleAnimationId(creatureId);
+    if (lastIdleAnimation && candidates.size() > 1) {
+        candidates.erase(std::remove(candidates.begin(), candidates.end(), *lastIdleAnimation), candidates.end());
+        candidates.push_back(*lastIdleAnimation);
+    }
+    for (const auto &animationId : candidates) {
+        if (animationId.empty()) {
+            continue;
+        }
+        auto animationResult = creatures::db->getAnimation(animationId, parentSpan);
+        if (!animationResult.isSuccess() || !animationResult.getValue().has_value()) {
+            warn("CreatureService: idle animation {} not found for creature {}", animationId, creatureId);
+            continue;
+        }
+
+        auto animation = animationResult.getValue().value();
+        if (!animationTargetsSingleCreature(animation, creatureId)) {
+            warn("CreatureService: idle animation {} targets multiple creatures; skipping for {}", animationId,
+                 creatureId);
+            continue;
+        }
+
+        framenum_t startFrame = creatures::eventLoop->getNextFrameNumber() + ANIMATION_DELAY_FRAMES;
+        auto scheduleResult =
+            scheduleAnimation(startFrame, animation, universe, creatures::runtime::ActivityReason::Idle);
+        if (!scheduleResult.isSuccess()) {
+            warn("CreatureService: failed to schedule idle animation {} for {}: {}", animationId, creatureId,
+                 scheduleResult.getError()->getMessage());
+            return false;
+        }
+
+        setLastIdleAnimationId(creatureId, animationId);
+
+        if (runtime && runtime->counters) {
+            v_uint64 started = runtime->counters->idle_started_total ? *runtime->counters->idle_started_total : 0;
+            runtime->counters->idle_started_total = static_cast<v_uint64>(started + 1);
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+oatpp::Object<CreatureConfigValidationDto>
+CreatureService::validateCreatureConfig(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan) {
+    auto span = creatures::observability->createOperationSpan("CreatureService.validateCreatureConfig", parentSpan);
+    auto resultDto = CreatureConfigValidationDto::createShared();
+    resultDto->valid = true;
+    resultDto->missing_animation_ids = oatpp::List<oatpp::String>::createShared();
+    resultDto->mismatched_animation_ids = oatpp::List<oatpp::String>::createShared();
+    resultDto->error_messages = oatpp::List<oatpp::String>::createShared();
+
+    if (!creatures::db) {
+        resultDto->valid = false;
+        resultDto->error_messages->push_back("Database unavailable");
+        if (span) {
+            span->setError("Database unavailable");
+        }
+        return resultDto;
+    }
+
+    nlohmann::json parsed;
+    try {
+        parsed = nlohmann::json::parse(jsonCreature);
+    } catch (const std::exception &ex) {
+        resultDto->valid = false;
+        auto message = fmt::format("Invalid JSON: {}", ex.what());
+        resultDto->error_messages->push_back(message.c_str());
+        if (span) {
+            span->setError("Invalid JSON");
+        }
+        return resultDto;
+    }
+
+    auto creatureResult = creatures::db->parseCreatureJson(parsed, span);
+    if (!creatureResult.isSuccess()) {
+        resultDto->valid = false;
+        resultDto->error_messages->push_back(creatureResult.getError()->getMessage().c_str());
+        if (span) {
+            span->setError(creatureResult.getError()->getMessage());
+        }
+        return resultDto;
+    }
+    if (!creatureResult.getValue().has_value()) {
+        resultDto->valid = false;
+        resultDto->error_messages->push_back("Creature validation returned no value");
+        if (span) {
+            span->setError("Creature validation returned no value");
+        }
+        return resultDto;
+    }
+
+    auto creature = creatureResult.getValue().value();
+    resultDto->creature_id = creature.id.c_str();
+
+    auto checkAnimations = [&](const std::vector<std::string> &ids) {
+        for (const auto &animationId : ids) {
+            if (animationId.empty()) {
+                resultDto->valid = false;
+                resultDto->error_messages->push_back("Animation ID cannot be empty");
+                continue;
+            }
+            auto animationResult = creatures::db->getAnimation(animationId, span);
+            if (!animationResult.isSuccess() || !animationResult.getValue().has_value()) {
+                resultDto->valid = false;
+                resultDto->missing_animation_ids->push_back(animationId.c_str());
+                continue;
+            }
+            auto animation = animationResult.getValue().value();
+            if (!animationTargetsSingleCreature(animation, creature.id)) {
+                resultDto->valid = false;
+                resultDto->mismatched_animation_ids->push_back(animationId.c_str());
+            }
+        }
+    };
+
+    checkAnimations(creature.idle_animation_ids);
+    checkAnimations(creature.speech_loop_animation_ids);
+
+    if (span) {
+        if (resultDto->valid) {
+            span->setSuccess();
+        } else {
+            span->setError("Creature config validation failed");
+        }
+    }
+
+    return resultDto;
 }
 
 } // namespace creatures::ws
