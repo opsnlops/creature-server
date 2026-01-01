@@ -516,8 +516,9 @@ class AnimationController : public oatpp::web::server::api::ApiController {
             }
 
             bool shouldResume = requestBody->resumePlaylist ? true : false;
-            info("REST API: interrupting universe {} with animation {} (resume: {})", requestBody->universe,
-                 std::string(requestBody->animation_id), shouldResume);
+            info("REST API: interrupting universe {} with animation {} (resume: {})",
+                 static_cast<uint32_t>(requestBody->universe), std::string(requestBody->animation_id),
+                 shouldResume);
 
             // Get the animation from the database
             auto animationDto = m_animationService.getAnimation(requestBody->animation_id, span);

@@ -169,7 +169,7 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
     list->count = soundList->size();
     list->items = soundList;
 
-    appLogger->debug("Returning {} sound files", list->count);
+    appLogger->debug("Returning {} sound files", static_cast<uint32_t>(list->count));
     return list;
 }
 
@@ -217,7 +217,7 @@ oatpp::Object<AdHocSoundListDto> SoundService::getAdHocSounds(std::shared_ptr<Re
         span->setSuccess();
     }
 
-    debug("Returning {} ad-hoc sound files", list->count);
+    debug("Returning {} ad-hoc sound files", static_cast<uint32_t>(list->count));
     return list;
 }
 

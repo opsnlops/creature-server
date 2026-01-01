@@ -111,7 +111,7 @@ void MultiOpusRtpServer::sendSilentFrames(uint8_t numberOfFrames) {
                     auto transmissionResult = send(channelIndex, encodedSilentFrame);
                     if (transmissionResult != RTP_OK) {
                         warn("Failed to send silent frame {} on channel {}: error {}", frameIndex, channelIndex,
-                             transmissionResult);
+                             static_cast<int>(transmissionResult));
                     }
                 } catch (const std::exception &exception) {
                     error("Error encoding/sending silent frame {} on channel {}: {}", frameIndex, channelIndex,
