@@ -16,6 +16,42 @@ The cooperative animation scheduler with interrupt capabilities was thoroughly t
 
 Added end-to-end support for generating lip sync data directly on the server—either by uploading a local WAV or by deriving per-creature tracks from an animation’s multichannel audio. The flow is exposed through new REST endpoints, routed through the async job system, and surfaced in the CLI for both console and script usage.
 
+## 2025-12-31 Idle Loop Scheduling + Creature Config Validation
+
+### Summary
+
+Implemented per-creature idle loop scheduling that starts on register/playlist/streaming-stop and keeps idle creatures running when they are not part of a playlist. Added a creature config validation endpoint (server + CLI) that checks JSON validity, animation existence, and creature ownership of referenced animations.
+
+### What Shipped
+
+- **Idle scheduling**:
+  - Idle starts immediately after registration when enabled and idle list is present.
+  - Idle resumes after playback completes or is cancelled, and after streaming stops.
+  - When a playlist runs, creatures not in the chosen animation idle (idle sessions are allowed to coexist).
+  - Idle is skipped if `idle_animation_ids` is empty or idle is disabled.
+  - Idle selection shuffles candidates and avoids immediate repeats when multiple IDs exist.
+  - Defensive guard: idle sessions are cancelled if they target multiple creatures.
+- **Validation API**:
+  - `POST /api/v1/creature/validate` accepts raw JSON and returns validation results:
+    - `valid`, `creature_id`, `missing_animation_ids`, `mismatched_animation_ids`, `error_messages`.
+  - Enforces required fields including `mouth_slot`.
+  - Verifies each animation exists and targets only the creature in the config.
+- **Client/CLI**:
+  - Added DTO + REST helper + CLI command `creatures validate <path>`.
+  - CLI prints validation errors and missing/mismatched animation IDs.
+
+### Guardrails + Reliability
+
+- Idle scheduling uses cache lookups with TOCTOU-safe guards (no crashes if cache entries change).
+- Playlist spans are null-safe when observability is unavailable.
+- Playlist scheduling ignores idle-only sessions to avoid skipping playlist animations.
+- Safety guard cancels idle sessions that do not target exactly one creature.
+
+### Testing
+
+- Server tests: `creature-server-test` (idle + validation coverage, mismatched animation IDs).
+- Client tests: `swift test` in creature-console Common.
+
 ### What Shipped
 
 - **Server API**:

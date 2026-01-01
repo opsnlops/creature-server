@@ -6,14 +6,12 @@
 #include <utility>
 #include <vector>
 
-#include <oatpp/core/macro/component.hpp>
 #include <oatpp/web/protocol/http/Http.hpp>
 
 #include "model/Creature.h"
 #include "server/runtime/Activity.h"
+#include "server/ws/dto/CreatureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
-#include "server/ws/dto/SimpleResponseDto.h"
-#include "server/ws/dto/StatusDto.h"
 
 namespace creatures {
 class RequestSpan;
@@ -83,6 +81,24 @@ class CreatureService {
     static std::string setActivityRunning(const std::vector<creatureId_t> &creatureIds, const std::string &animationId,
                                           runtime::ActivityReason reason, const std::string &sessionId = "",
                                           std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * Increment idle stopped counters for creatures (runtime only).
+     */
+    static void incrementIdleStopped(const std::vector<creatureId_t> &creatureIds);
+
+    /**
+     * Start idle playback for a creature if it's idle-enabled and available.
+     *
+     * @return true if an idle animation was scheduled
+     */
+    static bool startIdleIfNeeded(const creatureId_t &creatureId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * Validate a creature config document without persisting it.
+     */
+    static oatpp::Object<CreatureConfigValidationDto>
+    validateCreatureConfig(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Check if a creature is currently in streaming mode (runtime-only).

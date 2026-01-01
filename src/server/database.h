@@ -117,8 +117,7 @@ class Database {
     listAnimations(creatures::SortBy sortBy, const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
     Result<creatures::Animation> upsertAnimation(const std::string &animationJson,
                                                  std::shared_ptr<OperationSpan> parentSpan = nullptr);
-    Result<void> deleteAnimation(const animationId_t &animationId,
-                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<void> deleteAnimation(const animationId_t &animationId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
     Result<std::string> playStoredAnimation(animationId_t animationId, universe_t universe,
                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
@@ -141,8 +140,7 @@ class Database {
     Result<void> insertAdHocAnimation(const creatures::Animation &animation,
                                       std::chrono::system_clock::time_point createdAt,
                                       std::shared_ptr<OperationSpan> parentSpan = nullptr);
-    Result<std::vector<AdHocAnimationRecord>>
-    listAdHocAnimations(std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<std::vector<AdHocAnimationRecord>> listAdHocAnimations(std::shared_ptr<OperationSpan> parentSpan = nullptr);
     Result<creatures::Animation> getAdHocAnimation(const animationId_t &animationId,
                                                    std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
@@ -159,6 +157,12 @@ class Database {
      * @return true if the server is pingable
      */
     bool isServerPingable() const;
+
+    /**
+     * Parse and validate a creature config JSON document without persisting it.
+     */
+    Result<creatures::Creature> parseCreatureJson(json creatureJson,
+                                                  std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
   protected:
     /**

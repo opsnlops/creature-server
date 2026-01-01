@@ -93,6 +93,9 @@ Current implementation snapshot:
   - creature-activity {creature_id, state, animation_id, session_id, reason, timestamp}
 - Session IDs are stable per playback and reused on completion/cancel; returned by REST for ad-hoc/interrupt and cooperative play/playlist when a session exists.
 - Activity transitions: completion -> idle (or disabled if idle is off); cancel -> stopped with reason cancelled; idle request remaps to disabled when idle is off.
+- Idle list behavior: if `idle_animation_ids` is empty, the creature does not auto-idle and remains stopped/disabled after playback.
+- Playlist behavior: playlist events ignore idle-only sessions and trigger idle loops for creatures on the same universe that are not in the playlist animation.
+- Idle selection: idle loops shuffle candidate lists and avoid immediate repeats when multiple options exist.
 - BGM is last-request-wins; ad-hoc animations skip BGM.
 
 Client alignment (creature-console):
@@ -121,6 +124,9 @@ API sketch (proposal):
   - Body: {enabled: bool, reason?: string}
   - Response: updated creature with runtime snapshot
   - Side effects: cancel idle if disabling; broadcast idle_state_changed
+- POST /api/v1/creature/validate
+  - Body: raw creature JSON string
+  - Response: {valid, creature_id, missing_animation_ids, mismatched_animation_ids, error_messages}
 - (Optional) GET /api/v1/creature/{id}/activity
   - Returns runtime.activity and counters (same shape as runtime section above)
 

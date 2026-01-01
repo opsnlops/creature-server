@@ -6,6 +6,7 @@
 #include "types.h"
 
 #include <memory>
+#include <unordered_set>
 
 #include "spdlog/spdlog.h"
 #include <fmt/format.h>
@@ -17,7 +18,6 @@
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/gpio/gpio.h"
-#include "server/metrics/counters.h"
 #include "server/runtime/Activity.h"
 #include "server/ws/service/CreatureService.h"
 #include "util/ObservabilityManager.h"
@@ -42,8 +42,7 @@ PlaybackRunnerEvent::PlaybackRunnerEvent(framenum_t frameNumber, std::shared_ptr
 Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
     std::shared_ptr<SamplingSpan> runnerSpan = nullptr;
     if (observability) {
-        auto parentSpan = session_->getSpan();
-        if (parentSpan) {
+        if (auto parentSpan = session_->getSpan()) {
             runnerSpan = observability->createSamplingSpan("playback_runner.execute", parentSpan,
                                                            PLAYBACK_RUNNER_TRACE_SAMPLING);
         } else {
@@ -56,6 +55,21 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
         runnerSpan->setAttribute("session.animation_id", session_->getAnimation().id);
         runnerSpan->setAttribute("session.universe", static_cast<int64_t>(session_->getUniverse()));
         runnerSpan->setAttribute("session.id", session_->getSessionId());
+    }
+
+    // Defensive guard: idle sessions should target a single creature.
+    if (!session_->isCancelled() && session_->getActivityReason() == creatures::runtime::ActivityReason::Idle) {
+        std::unordered_set<creatureId_t> creatureIds;
+        for (const auto &trackState : session_->getTrackStates()) {
+            if (!trackState.creatureId.empty()) {
+                creatureIds.insert(trackState.creatureId);
+            }
+        }
+        if (creatureIds.size() != 1) {
+            warn("PlaybackRunnerEvent: idle session {} targets {} creatures; cancelling", session_->getSessionId(),
+                 creatureIds.size());
+            session_->cancel();
+        }
     }
 
     // Check if session has been cancelled
@@ -80,20 +94,23 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
                                                              session_->getSessionId(), session_->getSpan());
         }
 
+        for (const auto &creatureId : creatureIds) {
+            ws::CreatureService::startIdleIfNeeded(creatureId, session_->getSpan());
+        }
+
         if (runnerSpan) {
             runnerSpan->setAttribute("runner.cancelled", true);
             runnerSpan->setSuccess();
         }
 
-        return Result<framenum_t>{this->frameNumber};
+        return Result{this->frameNumber};
     }
 
     // Invoke onStart callback on first execution
     session_->invokeOnStart();
 
     // Emit DMX frames for all tracks at current frame
-    auto dmxResult = emitDmxFrames();
-    if (!dmxResult.isSuccess()) {
+    if (auto dmxResult = emitDmxFrames(); !dmxResult.isSuccess()) {
         error("Failed to emit DMX frames: {}", dmxResult.getError()->getMessage());
         if (runnerSpan) {
             runnerSpan->setError(dmxResult.getError()->getMessage());
@@ -102,10 +119,9 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
     }
 
     // Dispatch audio if needed (RTP mode)
-    auto audioTransport = session_->getAudioTransport();
-    if (audioTransport && audioTransport->needsPerFrameDispatch()) {
-        auto audioResult = audioTransport->dispatchNextChunk(this->frameNumber);
-        if (!audioResult.isSuccess()) {
+    if (auto audioTransport = session_->getAudioTransport();
+        audioTransport && audioTransport->needsPerFrameDispatch()) {
+        if (auto audioResult = audioTransport->dispatchNextChunk(this->frameNumber); !audioResult.isSuccess()) {
             warn("Audio dispatch failed: {}", audioResult.getError()->getMessage());
             // Non-fatal - continue playback
         }
@@ -127,16 +143,22 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
             creatureIds.push_back(trackState.creatureId);
         }
         auto reason = session_->getActivityReason();
-        creatures::ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
-                                                         creatures::runtime::ActivityState::Idle,
-                                                         session_->getSessionId(), session_->getSpan());
+        ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
+                                              creatures::runtime::ActivityState::Idle, session_->getSessionId(),
+                                              session_->getSpan());
+
+        if (reason != runtime::ActivityReason::Playlist) {
+            for (const auto &creatureId : creatureIds) {
+                ws::CreatureService::startIdleIfNeeded(creatureId, session_->getSpan());
+            }
+        }
 
         if (runnerSpan) {
             runnerSpan->setAttribute("runner.completed_naturally", true);
             runnerSpan->setSuccess();
         }
 
-        return Result<framenum_t>{this->frameNumber};
+        return Result{this->frameNumber};
     }
 
     // Calculate next frame number
@@ -166,8 +188,7 @@ void PlaybackRunnerEvent::performTeardown() {
     eventLoop->scheduleEvent(statusLightOff);
 
     // Stop audio if playing
-    auto audioTransport = session_->getAudioTransport();
-    if (audioTransport) {
+    if (const auto audioTransport = session_->getAudioTransport()) {
         audioTransport->stop();
     }
 
@@ -262,8 +283,8 @@ bool PlaybackRunnerEvent::areAllTracksFinished() const {
 
 framenum_t PlaybackRunnerEvent::calculateNextFrameNumber() const {
     // Calculate next frame based on ms per frame
-    uint32_t msPerFrame = session_->getMsPerFrame();
-    framenum_t framesPerAnimFrame = msPerFrame / EVENT_LOOP_PERIOD_MS;
+    const uint32_t msPerFrame = session_->getMsPerFrame();
+    const framenum_t framesPerAnimFrame = msPerFrame / EVENT_LOOP_PERIOD_MS;
 
     return this->frameNumber + framesPerAnimFrame;
 }

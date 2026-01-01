@@ -13,12 +13,8 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/web/protocol/http/outgoing/ResponseFactory.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
-
-#include "server/config.h"
-#include "server/database.h"
 
 #include "server/ws/dto/AdHocSoundEntryDto.h"
 #include "server/ws/dto/GenerateLipSyncRequestDto.h"
@@ -37,7 +33,6 @@
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 #include "util/uuidUtils.h"
-#include "util/websocketUtils.h"
 
 namespace fs = std::filesystem;
 
@@ -55,8 +50,7 @@ namespace creatures ::ws {
 
 class SoundController : public oatpp::web::server::api::ApiController {
   public:
-    SoundController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper))
-        : oatpp::web::server::api::ApiController(objectMapper) {}
+    SoundController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper)) : ApiController(objectMapper) {}
 
   private:
     SoundService m_soundService; // Create the sound service
@@ -86,7 +80,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound/ad-hoc", getAdHocSounds) {
-        creatures::metrics->incrementRestRequestsProcessed();
+        metrics->incrementRestRequestsProcessed();
         return createDtoResponse(Status::CODE_200, m_soundService.getAdHocSounds());
     }
 
@@ -106,7 +100,6 @@ class SoundController : public oatpp::web::server::api::ApiController {
     ENDPOINT_INFO(generateLipSyncFromUpload) {
         info->summary = "Generate lip sync data by uploading a WAV file";
 
-        info->addTag("Lip Sync");
         info->addResponse<String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -118,7 +111,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
         auto span = creatures::observability->createRequestSpan("POST /api/v1/sound/generate-lipsync/upload", "POST",
                                                                 "api/v1/sound/generate-lipsync/upload");
 
-        creatures::metrics->incrementRestRequestsProcessed();
+        metrics->incrementRestRequestsProcessed();
         info("REST call to generateLipSyncFromUpload");
 
         if (span) {
@@ -128,8 +121,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
             span->setAttribute("http.target", "api/v1/sound/generate-lipsync/upload");
         }
 
-        auto userAgent = request->getHeader("User-Agent");
-        if (span && userAgent) {
+        if (auto userAgent = request->getHeader("User-Agent"); span && userAgent) {
             span->setAttribute("http.user_agent", std::string(userAgent));
         }
 
@@ -273,8 +265,8 @@ class SoundController : public oatpp::web::server::api::ApiController {
             span->setAttribute("rhubarb.binary", rhubarbBinaryPath);
         }
 
-        auto result = creatures::voice::LipSyncProcessor::generateLipSync(sanitizedFilename, tempDir.string(),
-                                                                          rhubarbBinaryPath, true, nullptr, nullptr);
+        auto result = voice::LipSyncProcessor::generateLipSync(sanitizedFilename, tempDir.string(), rhubarbBinaryPath,
+                                                               true, nullptr, nullptr);
 
         if (!result.isSuccess()) {
             auto errorResult = result.getError().value();
@@ -309,7 +301,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
 
         auto jsonContent = result.getValue().value();
 
-        creatures::RhubarbSoundData lipSyncData;
+        RhubarbSoundData lipSyncData;
         try {
             lipSyncData = creatures::RhubarbSoundData::fromJsonString(jsonContent);
         } catch (const std::exception &e) {
@@ -337,7 +329,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
             mouthCuesDto->push_back(cueDto);
         }
 
-        auto responseDto = creatures::ws::GenerateLipSyncUploadResponseDto::createShared();
+        auto responseDto = GenerateLipSyncUploadResponseDto::createShared();
         responseDto->metadata = metadataDto;
         responseDto->mouthCues = mouthCuesDto;
 
@@ -361,11 +353,9 @@ class SoundController : public oatpp::web::server::api::ApiController {
             throw std::invalid_argument("Invalid filename: Empty or contains null bytes.");
         }
 
-        fs::path candidate(filename);
-
         // Reject absolute paths, root references, or anything with parent components.
-        if (candidate.is_absolute() || candidate.has_root_path() || candidate.has_parent_path() ||
-            candidate != candidate.filename()) {
+        if (const fs::path candidate(filename); candidate.is_absolute() || candidate.has_root_path() ||
+                                                candidate.has_parent_path() || candidate != candidate.filename()) {
             throw std::invalid_argument("Invalid filename: Path traversal detected.");
         }
 
@@ -484,7 +474,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
         }
 
         // Increment metrics and log
-        creatures::metrics->incrementSoundFilesServed();
+        metrics->incrementSoundFilesServed();
         info("Serving sound file: {} ({}, {} bytes)", std::string(filename), mimeType, fileSize);
 
         // Create response
@@ -502,7 +492,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound/ad-hoc/{filename}", getAdHocSound, PATH(String, filename)) {
-        creatures::metrics->incrementRestRequestsProcessed();
+        metrics->incrementRestRequestsProcessed();
 
         std::string safeFilename;
         try {
@@ -568,11 +558,11 @@ class SoundController : public oatpp::web::server::api::ApiController {
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
 
         // Create a trace span for this request
-        auto span = creatures::observability->createRequestSpan("POST /api/v1/sound/generate-lipsync", "POST",
-                                                                "api/v1/sound/generate-lipsync");
+        const auto span = observability->createRequestSpan("POST /api/v1/sound/generate-lipsync", "POST",
+                                                           "api/v1/sound/generate-lipsync");
 
         info("REST call to generateLipSync (async)");
-        creatures::metrics->incrementRestRequestsProcessed();
+        metrics->incrementRestRequestsProcessed();
 
         if (span) {
             span->setAttribute("endpoint", "generateLipSync");
@@ -581,8 +571,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
             span->setAttribute("http.target", "api/v1/sound/generate-lipsync");
 
             // Add User-Agent if present
-            auto userAgent = request->getHeader("User-Agent");
-            if (userAgent) {
+            if (const auto userAgent = request->getHeader("User-Agent")) {
                 span->setAttribute("http.user_agent", std::string(userAgent));
             }
 
@@ -590,7 +579,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
             span->setAttribute("sound.file", std::string(requestBody->sound_file));
         }
 
-        std::string soundFile = std::string(requestBody->sound_file);
+        auto soundFile = std::string(requestBody->sound_file);
         bool allowOverwrite = requestBody->allow_overwrite ? static_cast<bool>(requestBody->allow_overwrite) : false;
 
         // Create a job for the lip sync processing
@@ -598,7 +587,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
         nlohmann::json jobDetails;
         jobDetails["sound_file"] = soundFile;
         jobDetails["allow_overwrite"] = allowOverwrite;
-        std::string jobDetailsStr = jobDetails.dump();
+        const std::string jobDetailsStr = jobDetails.dump();
 
         debug("Creating lip sync job for sound file: {}, allow_overwrite: {}", soundFile, allowOverwrite);
         std::string jobId = creatures::jobManager->createJob(creatures::jobs::JobType::LipSync, jobDetailsStr);
@@ -614,7 +603,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
         info("Job {} queued successfully", jobId);
 
         // Create the response DTO
-        auto response = JobCreatedDto::createShared();
+        const auto response = JobCreatedDto::createShared();
         response->job_id = jobId;
         response->job_type = "lip-sync";
         response->message = fmt::format(
