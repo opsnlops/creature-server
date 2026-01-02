@@ -233,7 +233,7 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         }
 
         bool enabled = true;
-        if (body && body->enabled) {
+        if (body && body->enabled != nullptr) {
             enabled = *body->enabled;
         }
 

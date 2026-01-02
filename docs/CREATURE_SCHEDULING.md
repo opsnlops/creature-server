@@ -93,6 +93,7 @@ Current implementation snapshot:
   - creature-activity {creature_id, state, animation_id, session_id, reason, timestamp}
 - Session IDs are stable per playback and reused on completion/cancel; returned by REST for ad-hoc/interrupt and cooperative play/playlist when a session exists.
 - Activity transitions: completion -> idle (or disabled if idle is off); cancel -> stopped with reason cancelled; idle request remaps to disabled when idle is off.
+- Registration behavior: creatures register as idle disabled (still) until a client explicitly enables idle.
 - Idle list behavior: if `idle_animation_ids` is empty, the creature does not auto-idle and remains stopped/disabled after playback.
 - Playlist behavior: playlist events ignore idle-only sessions and trigger idle loops for creatures on the same universe that are not in the playlist animation.
 - Idle selection: idle loops shuffle candidate lists and avoid immediate repeats when multiple options exist.

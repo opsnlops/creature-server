@@ -561,7 +561,20 @@ oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const st
     appLogger->info("Registered creature '{}' (id: {}) on universe {}", std::string(creatureDto->name), creatureId,
                     universe);
 
-    startIdleIfNeeded(creatureId, serviceSpan);
+    // Default to idle disabled on registration; clients must explicitly enable it.
+    auto runtime = getOrCreateRuntime(creatureId);
+    runtime->idle_enabled = false;
+    if (!runtime->activity) {
+        runtime->activity = makeDefaultActivity();
+    }
+    runtime->activity->animation_id = nullptr;
+    runtime->activity->session_id = nullptr;
+    runtime->activity->reason = creatures::runtime::toString(creatures::runtime::ActivityReason::Disabled);
+    runtime->activity->state = creatures::runtime::toString(creatures::runtime::ActivityState::Disabled);
+    auto now = getCurrentTimeISO8601();
+    runtime->activity->started_at = now;
+    runtime->activity->updated_at = now;
+    broadcastCreatureActivity(creatureId, runtime);
 
     if (serviceSpan) {
         serviceSpan->setAttribute("creature.id", creatureId);
