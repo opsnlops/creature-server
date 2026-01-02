@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "3.5.1"
+        VERSION "3.5.2"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -9,7 +9,7 @@ project(creature-server
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
-#Store warning flags to apply to our targets only(not dependencies)
+#Store warning flags to apply to our targets only (not dependencies)
 set(CREATURE_SERVER_WARNING_FLAGS
     -Wshadow
     -Wall

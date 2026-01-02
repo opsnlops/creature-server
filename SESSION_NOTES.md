@@ -20,12 +20,12 @@ Added end-to-end support for generating lip sync data directly on the server—e
 
 ### Summary
 
-Implemented per-creature idle loop scheduling that starts on register/playlist/streaming-stop and keeps idle creatures running when they are not part of a playlist. Added a creature config validation endpoint (server + CLI) that checks JSON validity, animation existence, and creature ownership of referenced animations.
+Implemented per-creature idle loop scheduling that starts on register/playlist/streaming-stop and keeps idle creatures running when they are not part of a playlist. Added a creature config validation endpoint (server + CLI/controller) that checks JSON validity, animation existence, and creature ownership of referenced animations.
 
 ### What Shipped
 
 - **Idle scheduling**:
-  - Idle starts immediately after registration when enabled and idle list is present.
+  - Idle does not start on registration; creatures stay still until a client enables idle.
   - Idle resumes after playback completes or is cancelled, and after streaming stops.
   - When a playlist runs, creatures not in the chosen animation idle (idle sessions are allowed to coexist).
   - Idle is skipped if `idle_animation_ids` is empty or idle is disabled.
@@ -39,6 +39,9 @@ Implemented per-creature idle loop scheduling that starts on register/playlist/s
 - **Client/CLI**:
   - Added DTO + REST helper + CLI command `creatures validate <path>`.
   - CLI prints validation errors and missing/mismatched animation IDs.
+- **Controller**:
+  - Added `--validate-creature-config` to send the local config to the server for validation and exit with a success/failure code.
+  - Controller uses libcurl for HTTP (POST/GET helpers) and keeps ixwebsocket for WebSocket-only use.
 
 ### Guardrails + Reliability
 
