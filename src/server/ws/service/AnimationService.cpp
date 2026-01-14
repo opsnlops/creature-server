@@ -460,7 +460,9 @@ oatpp::Object<creatures::ws::StatusDto> AnimationService::playStoredAnimation(co
                                                                               std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
-    appLogger->debug("AnimationService::playStoredAnimation({}, {})", std::string(animationId), universe);
+    if (appLogger) {
+        appLogger->debug("AnimationService::playStoredAnimation({}, {})", std::string(animationId), universe);
+    }
 
     (void)reason; // placeholder until lifecycle hooks use this reason for activity tracking
 
@@ -468,30 +470,48 @@ oatpp::Object<creatures::ws::StatusDto> AnimationService::playStoredAnimation(co
     oatpp::String errorMessage;
     Status status = Status::CODE_200;
 
-    auto result = db->playStoredAnimation(std::string(animationId), universe, nullptr);
-    if (!result.isSuccess()) {
-
-        auto errorCode = result.getError().value().getCode();
-        switch (errorCode) {
-        case ServerError::NotFound:
-            status = Status::CODE_404;
-            break;
-        case ServerError::InvalidData:
-            status = Status::CODE_400;
-            break;
-        default:
-            status = Status::CODE_500;
-            break;
-        }
-        errorMessage = result.getError().value().getMessage();
-        appLogger->warn(std::string(errorMessage));
+    if (!db) {
+        errorMessage = "Animation playback unavailable: database missing";
+        status = Status::CODE_500;
         error = true;
+    }
+
+    if (!config || !sessionManager) {
+        errorMessage = "Animation playback unavailable: scheduler dependencies missing";
+        status = Status::CODE_500;
+        error = true;
+    }
+
+    std::string playMessage;
+    if (!error) {
+        auto result = db->playStoredAnimation(std::string(animationId), universe, nullptr);
+        if (!result.isSuccess()) {
+            auto errorCode = result.getError().value().getCode();
+            switch (errorCode) {
+            case ServerError::NotFound:
+                status = Status::CODE_404;
+                break;
+            case ServerError::InvalidData:
+                status = Status::CODE_400;
+                break;
+            default:
+                status = Status::CODE_500;
+                break;
+            }
+            errorMessage = result.getError().value().getMessage();
+            if (appLogger) {
+                appLogger->warn(std::string(errorMessage));
+            }
+            error = true;
+        } else {
+            playMessage = result.getValue().value();
+        }
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
     auto playResult = StatusDto::createShared();
     playResult->status = "OK";
-    playResult->message = result.getValue().value();
+    playResult->message = playMessage.c_str();
     playResult->code = 200;
     if (config->getAnimationSchedulerType() == Configuration::AnimationSchedulerType::Cooperative) {
         if (auto session = sessionManager->getCurrentSession(universe)) {

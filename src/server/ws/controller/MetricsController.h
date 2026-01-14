@@ -38,12 +38,15 @@ class MetricsController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(counters) {
         info->summary = "Gets all of the system counters";
+        info->addTag("Metrics");
 
         info->addResponse<Object<SystemCountersDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/metric/counters", counters) {
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return createDtoResponse(Status::CODE_200, m_metricsService.getCounters());
     }
 };

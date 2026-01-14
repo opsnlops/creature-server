@@ -41,9 +41,7 @@ namespace creatures ::ws {
 using oatpp::web::protocol::http::Status;
 
 namespace {
-std::filesystem::path adHocRoot() {
-    return std::filesystem::temp_directory_path() / "creature-adhoc";
-}
+std::filesystem::path adHocRoot() { return std::filesystem::temp_directory_path() / "creature-adhoc"; }
 
 bool isSafeFilename(const std::string &filename) {
     if (filename.empty()) {
@@ -69,8 +67,17 @@ bool isSafeFilename(const std::string &filename) {
 
 oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllSounds() {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
 
-    appLogger->debug("Request to return a list of the sound files");
+    if (!logger) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
+    }
+
+    logger->debug("Request to return a list of the sound files");
+
+    if (!config) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Sound configuration unavailable");
+    }
 
     // Copy the path locally
     std::string path = config->getSoundFileLocation();
@@ -99,14 +106,14 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
                         try {
                             size = fs::file_size(filepath);
                         } catch (const fs::filesystem_error &e) {
-                            appLogger->warn("Failed to get file size for {}: {}", filename, e.what());
+                            logger->warn("Failed to get file size for {}: {}", filename, e.what());
                             continue; // Skip this file
                         }
 
                         // Validate file size is reasonable (prevent display of huge files)
                         constexpr uintmax_t MAX_SOUND_FILE_SIZE = 1024 * 1024 * 1024; // 1GB max
                         if (size > MAX_SOUND_FILE_SIZE) {
-                            appLogger->warn("Skipping oversized sound file: {} ({} bytes)", filename, size);
+                            logger->warn("Skipping oversized sound file: {} ({} bytes)", filename, size);
                             continue;
                         }
 
@@ -130,7 +137,7 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
 
                         Sound sound{filename, (uint32_t)size, transcript, lipsync};
 
-                        appLogger->debug("Adding sound file: {} ({})", sound.fileName, sound.size);
+                        logger->debug("Adding sound file: {} ({})", sound.fileName, sound.size);
                         soundList->emplace_back(creatures::convertSoundToDto(sound));
                     }
                 }
@@ -146,17 +153,17 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
                           return aLower < bLower;
                       });
 
-            appLogger->debug("found {} sound files", soundList->size());
+            logger->debug("found {} sound files", soundList->size());
 
         } else {
-            appLogger->warn("Sound file location not found: {}", path);
+            logger->warn("Sound file location not found: {}", path);
 
             status = Status::CODE_404;
             message = fmt::format("No files found in {}", path);
             error = true;
         }
     } catch (const fs::filesystem_error &e) {
-        appLogger->error("Error reading sound file location: {}", e.what());
+        logger->error("Error reading sound file location: {}", e.what());
 
         status = Status::CODE_500;
         message = fmt::format("Error reading sound file location: {}", e.what());
@@ -169,12 +176,21 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
     list->count = soundList->size();
     list->items = soundList;
 
-    appLogger->debug("Returning {} sound files", static_cast<uint32_t>(list->count));
+    logger->debug("Returning {} sound files", static_cast<uint32_t>(list->count));
     return list;
 }
 
 oatpp::Object<AdHocSoundListDto> SoundService::getAdHocSounds(std::shared_ptr<RequestSpan> parentSpan) {
-    auto span = creatures::observability->createOperationSpan("SoundService.getAdHocSounds", parentSpan);
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("SoundService.getAdHocSounds", parentSpan)
+                    : nullptr;
+
+    if (!db) {
+        if (span) {
+            span->setError("Database unavailable");
+        }
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
+    }
 
     auto list = AdHocSoundListDto::createShared();
     auto items = oatpp::List<oatpp::Object<AdHocSoundEntryDto>>::createShared();
@@ -221,14 +237,14 @@ oatpp::Object<AdHocSoundListDto> SoundService::getAdHocSounds(std::shared_ptr<Re
     return list;
 }
 
-std::string SoundService::resolveAdHocSoundPath(const std::string &filename,
-                                                std::shared_ptr<RequestSpan> parentSpan) {
+std::string SoundService::resolveAdHocSoundPath(const std::string &filename, std::shared_ptr<RequestSpan> parentSpan) {
     if (!isSafeFilename(filename)) {
         OATPP_ASSERT_HTTP(false, Status::CODE_400, "Invalid filename");
     }
 
-    auto span = creatures::observability->createOperationSpan("SoundService.resolveAdHocSoundPath", parentSpan);
-
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("SoundService.resolveAdHocSoundPath", parentSpan)
+                    : nullptr;
     auto root = adHocRoot();
     if (!fs::exists(root)) {
         OATPP_ASSERT_HTTP(false, Status::CODE_404, "No ad-hoc sounds available");
@@ -271,10 +287,22 @@ std::string SoundService::resolveAdHocSoundPath(const std::string &filename,
 oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::String &inSoundFile) {
 
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
+
+    if (!logger) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
+    }
 
     std::string soundFile = std::string(inSoundFile);
 
-    appLogger->debug("Request to play sound file: {}", soundFile);
+    logger->debug("Request to play sound file: {}", soundFile);
+
+    if (!config) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Sound configuration unavailable");
+    }
+    if (!eventLoop) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Sound event loop unavailable");
+    }
 
     // Fill out the full path to the file
     std::string fullFilePath = config->getSoundFileLocation() + "/" + inSoundFile;
@@ -300,15 +328,15 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
 
     } catch (const creatures::InternalError &e) {
         message = fmt::format("Internal error: {}", e.what());
-        appLogger->error(std::string(message));
+        logger->error(std::string(message));
         error = true;
     } catch (const creatures::DataFormatException &e) {
         message = fmt::format("Data format error: {}", e.what());
-        appLogger->error(std::string(message));
+        logger->error(std::string(message));
         error = true;
     } catch (...) {
         message = fmt::format("Unknown error");
-        appLogger->error(std::string(message));
+        logger->error(std::string(message));
         error = true;
     }
     OATPP_ASSERT_HTTP(!error, Status::CODE_500, message)
@@ -342,7 +370,9 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::generateLipSync(const oatp
     }
 
     // Create operation span - connects to parent RequestSpan if provided
-    auto span = creatures::observability->createOperationSpan("SoundService.generateLipSync", std::move(parentSpan));
+    auto span = creatures::observability ? creatures::observability->createOperationSpan("SoundService.generateLipSync",
+                                                                                         std::move(parentSpan))
+                                         : nullptr;
 
     if (span) {
         span->setAttribute("sound.file", soundFile);
@@ -351,6 +381,18 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::generateLipSync(const oatp
     }
 
     auto response = StatusDto::createShared();
+
+    if (!config) {
+        std::string errorMsg = "Sound configuration unavailable";
+        error(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        response->code = 500;
+        response->status = "Internal Server Error";
+        response->message = errorMsg;
+        return response;
+    }
 
     // Get the sounds directory from config
     std::string soundsDir = config->getSoundFileLocation();

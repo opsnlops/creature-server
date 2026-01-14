@@ -37,7 +37,7 @@ class EventLoop final : public StoppableThread {
     framenum_t frameCount = 0;
 
     std::unique_ptr<EventScheduler> eventScheduler;
-    std::mutex eventQueueMutex;
+    mutable std::mutex eventQueueMutex;
 };
 
 } // namespace creatures

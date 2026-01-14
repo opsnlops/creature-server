@@ -248,15 +248,29 @@ std::vector<std::pair<std::string, oatpp::Object<creatures::CreatureRuntimeDto>>
 oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>>
 CreatureService::getAllCreatures(std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
+
+    if (!logger) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
+    }
 
     if (!parentSpan) {
         warn("no parent span provided for CreatureService.getAllCreatures, creating a root span");
     }
 
-    // 🐰 Create a trace span for this request
-    auto span = creatures::observability->createOperationSpan("CreatureService.getAllCreatures", std::move(parentSpan));
+    if (!db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature database unavailable");
+    }
 
-    appLogger->debug("CreatureService::getAllCreatures()");
+    // 🐰 Create a trace span for this request
+    auto span =
+        creatures::observability
+            ? creatures::observability->createOperationSpan("CreatureService.getAllCreatures", std::move(parentSpan))
+            : nullptr;
+
+    if (logger) {
+        logger->debug("CreatureService::getAllCreatures()");
+    }
 
     if (span) {
         trace("adding attributes to the span for CreatureService.getAllCreatures");
@@ -285,7 +299,7 @@ CreatureService::getAllCreatures(std::shared_ptr<RequestSpan> parentSpan) {
             break;
         }
         errorMessage = result.getError()->getMessage();
-        appLogger->warn(std::string(result.getError()->getMessage()));
+        logger->warn(std::string(result.getError()->getMessage()));
 
         // Update the span with the error
         if (span) {
@@ -313,7 +327,7 @@ CreatureService::getAllCreatures(std::shared_ptr<RequestSpan> parentSpan) {
 
     auto creatures = result.getValue().value();
     for (const auto &creature : creatures) {
-        appLogger->debug("Adding creature: {}", creature.id);
+        logger->debug("Adding creature: {}", creature.id);
         auto dto = creatures::convertToDto(creature);
         dto->runtime = getOrCreateRuntime(creature.id);
         items->emplace_back(dto);
@@ -335,13 +349,26 @@ CreatureService::getAllCreatures(std::shared_ptr<RequestSpan> parentSpan) {
 oatpp::Object<creatures::CreatureDto> CreatureService::getCreature(const oatpp::String &inCreatureId,
                                                                    std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
+
+    if (!logger) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
+    }
 
     // Convert the oatpp string to a std::string
     creatureId_t creatureId = std::string(inCreatureId);
 
-    appLogger->debug("CreatureService::getCreature({})", creatureId);
+    if (!db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature database unavailable");
+    }
 
-    auto span = creatures::observability->createOperationSpan("CreatureService.getCreature", parentSpan);
+    if (logger) {
+        logger->debug("CreatureService::getCreature({})", creatureId);
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("CreatureService.getCreature", parentSpan)
+                    : nullptr;
 
     if (span) {
         span->setAttribute("service", "CreatureService");
@@ -376,7 +403,7 @@ oatpp::Object<creatures::CreatureDto> CreatureService::getCreature(const oatpp::
             break;
         }
         errorMessage = result.getError()->getMessage();
-        appLogger->warn(std::string(result.getError()->getMessage()));
+        logger->warn(std::string(result.getError()->getMessage()));
 
         if (span) {
             span->setError(std::string(errorMessage));
@@ -414,17 +441,30 @@ oatpp::Object<creatures::CreatureDto> CreatureService::getCreature(const oatpp::
 oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std::string &jsonCreature,
                                                                       std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
 
-    auto serviceSpan = creatures::observability->createOperationSpan("CreatureService.upsertCreature", parentSpan);
+    if (!logger) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
+    }
 
-    appLogger->info("attempting to upsert a creature");
+    if (!db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature database unavailable");
+    }
+
+    auto serviceSpan = creatures::observability
+                           ? creatures::observability->createOperationSpan("CreatureService.upsertCreature", parentSpan)
+                           : nullptr;
+
+    if (logger) {
+        logger->info("attempting to upsert a creature");
+    }
 
     if (serviceSpan) {
         serviceSpan->setAttribute("service", "CreatureService");
         serviceSpan->setAttribute("operation", "upsertCreature");
         serviceSpan->setAttribute("json.size", static_cast<int64_t>(jsonCreature.length()));
     }
-    appLogger->trace("JSON: {}", jsonCreature);
+    logger->trace("JSON: {}", jsonCreature);
 
     bool error = false;
     oatpp::String errorMessage;
@@ -432,8 +472,9 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
 
     // ✨ Create a span for the validation step in the service
     auto validationSpan =
-        creatures::observability->createChildOperationSpan("CreatureService.validateJson", serviceSpan);
-
+        creatures::observability
+            ? creatures::observability->createChildOperationSpan("CreatureService.validateJson", serviceSpan)
+            : nullptr;
     // Validate the JSON
     try {
 
@@ -449,7 +490,7 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
         if (!jsonResult.isSuccess()) {
             auto parseError = jsonResult.getError().value();
             errorMessage = parseError.getMessage();
-            appLogger->warn(std::string(errorMessage));
+            logger->warn(std::string(errorMessage));
             status = Status::CODE_400;
             error = true;
         }
@@ -461,7 +502,7 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
 
         if (!result.isSuccess()) {
             errorMessage = result.getError()->getMessage();
-            appLogger->warn(std::string(result.getError()->getMessage()));
+            logger->warn(std::string(result.getError()->getMessage()));
             status = Status::CODE_400;
             if (validationSpan)
                 validationSpan->setError(std::string(errorMessage));
@@ -471,7 +512,7 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
         }
     } catch (const nlohmann::json::parse_error &e) {
         errorMessage = e.what();
-        appLogger->warn(std::string(e.what()));
+        logger->warn(std::string(e.what()));
         status = Status::CODE_400;
         if (validationSpan)
             validationSpan->recordException(e);
@@ -483,14 +524,14 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
         validationSpan->setSuccess();
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-    appLogger->debug("passing the upsert request off to the database");
+    logger->debug("passing the upsert request off to the database");
     auto result = db->upsertCreature(jsonCreature, serviceSpan);
 
     // If there's an error, let the client know
     if (!result.isSuccess()) {
 
         errorMessage = result.getError()->getMessage();
-        appLogger->warn(std::string(result.getError()->getMessage()));
+        logger->warn(std::string(result.getError()->getMessage()));
         status = Status::CODE_500;
         if (serviceSpan)
             serviceSpan->setError(std::string(errorMessage));
@@ -501,7 +542,7 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
     // This should never happen and is a bad bug if it does 😱
     if (!result.getValue().has_value()) {
         errorMessage = "DB didn't return a value after upserting the creature. This is a bug. Please report it.";
-        appLogger->error(std::string(errorMessage));
+        logger->error(std::string(errorMessage));
         if (serviceSpan)
             serviceSpan->setError(std::string(errorMessage));
         OATPP_ASSERT_HTTP(true, Status::CODE_500, errorMessage);
@@ -525,14 +566,28 @@ oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const st
                                                                         universe_t universe,
                                                                         std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
+
+    if (!logger) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
+    }
 
     if (!parentSpan) {
         warn("no parent span provided for CreatureService.registerCreature, creating a root span");
     }
 
-    auto serviceSpan = creatures::observability->createOperationSpan("CreatureService.registerCreature", parentSpan);
+    if (!creatureUniverseMap) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature universe map unavailable");
+    }
 
-    appLogger->info("Controller registering creature with universe {}", universe);
+    auto serviceSpan =
+        creatures::observability
+            ? creatures::observability->createOperationSpan("CreatureService.registerCreature", parentSpan)
+            : nullptr;
+
+    if (logger) {
+        logger->info("Controller registering creature with universe {}", universe);
+    }
 
     if (serviceSpan) {
         serviceSpan->setAttribute("service", "CreatureService");
@@ -558,8 +613,8 @@ oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const st
     std::string creatureId = std::string(creatureDto->id);
     creatures::creatureUniverseMap->put(creatureId, universe);
 
-    appLogger->info("Registered creature '{}' (id: {}) on universe {}", std::string(creatureDto->name), creatureId,
-                    universe);
+    logger->info("Registered creature '{}' (id: {}) on universe {}", std::string(creatureDto->name), creatureId,
+                 universe);
 
     // Default to idle disabled on registration; clients must explicitly enable it.
     auto runtime = getOrCreateRuntime(creatureId);
@@ -588,11 +643,22 @@ oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const st
 oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatpp::String &inCreatureId, bool enabled,
                                                                       std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
+
+    if (!logger) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
+    }
 
     creatureId_t creatureId = std::string(inCreatureId);
-    appLogger->info("Setting idle {} for creature {}", enabled ? "enabled" : "disabled", creatureId);
+    logger->info("Setting idle {} for creature {}", enabled ? "enabled" : "disabled", creatureId);
 
-    auto span = creatures::observability->createOperationSpan("CreatureService.setIdleEnabled", parentSpan);
+    if (!db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature database unavailable");
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("CreatureService.setIdleEnabled", parentSpan)
+                    : nullptr;
     if (span) {
         span->setAttribute("creature.id", creatureId);
         span->setAttribute("idle.enabled", enabled);
@@ -855,7 +921,10 @@ bool CreatureService::startIdleIfNeeded(const creatureId_t &creatureId, std::sha
 
 oatpp::Object<CreatureConfigValidationDto>
 CreatureService::validateCreatureConfig(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan) {
-    auto span = creatures::observability->createOperationSpan("CreatureService.validateCreatureConfig", parentSpan);
+    auto span =
+        creatures::observability
+            ? creatures::observability->createOperationSpan("CreatureService.validateCreatureConfig", parentSpan)
+            : nullptr;
     auto resultDto = CreatureConfigValidationDto::createShared();
     resultDto->valid = true;
     resultDto->missing_animation_ids = oatpp::List<oatpp::String>::createShared();

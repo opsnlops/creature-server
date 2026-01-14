@@ -31,6 +31,22 @@ extern std::shared_ptr<SensorDataCache> sensorDataCache;
 
 Result<framenum_t> CounterSendEvent::executeImpl() {
 
+    if (!metrics) {
+        const std::string errorMsg = "CounterSendEvent: metrics unavailable";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+    if (!websocketOutgoingMessages) {
+        const std::string errorMsg = "CounterSendEvent: websocket queue unavailable";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+    if (!eventLoop) {
+        const std::string errorMsg = "CounterSendEvent: event loop unavailable";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
     auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
 
     debug("sending the server metrics to all clients");

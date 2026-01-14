@@ -55,8 +55,9 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
         }
 
         // Update metrics
-        metrics->incrementRtpEncoderResets();
-
+        if (metrics) {
+            metrics->incrementRtpEncoderResets();
+        }
         if (span) {
             span->setAttribute("old_ssrc", static_cast<int64_t>(oldSSRC));
             span->setAttribute("new_ssrc", static_cast<int64_t>(newSSRC));

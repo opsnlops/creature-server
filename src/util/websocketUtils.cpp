@@ -26,8 +26,7 @@
 
 namespace creatures {
 
-extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>>
-    websocketOutgoingMessages;
+extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websocketOutgoingMessages;
 extern std::shared_ptr<EventLoop> eventLoop;
 
 /**
@@ -39,6 +38,10 @@ extern std::shared_ptr<EventLoop> eventLoop;
 Result<bool> broadcastNoticeToAllClients(const std::string &message) {
 
     info("broadcasting notice to all clients: {}", message);
+
+    if (!websocketOutgoingMessages) {
+        return Result<bool>{ServerError(ServerError::InternalError, "Websocket queue unavailable")};
+    }
 
     try {
         // Create the actual Notice object
@@ -52,8 +55,7 @@ Result<bool> broadcastNoticeToAllClients(const std::string &message) {
         noticeMessage->payload = creatures::convertToDto(notice);
 
         // Make a JSON mapper
-        auto jsonMapper =
-            oatpp::parser::json::mapping::ObjectMapper::createShared();
+        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
 
         std::string outgoingMessage = jsonMapper->writeToString(noticeMessage);
         debug("Outgoing notice to clients: {}", outgoingMessage);
@@ -63,9 +65,8 @@ Result<bool> broadcastNoticeToAllClients(const std::string &message) {
     } catch (const std::exception &e) {
         return Result<bool>{ServerError(ServerError::InternalError, e.what())};
     } catch (...) {
-        return Result<bool>{ServerError(
-            ServerError::InternalError,
-            "broadcastNoticeToAllClients() caught an unknown exception")};
+        return Result<bool>{
+            ServerError(ServerError::InternalError, "broadcastNoticeToAllClients() caught an unknown exception")};
     }
 }
 
@@ -79,16 +80,20 @@ Result<bool> broadcastNoticeToAllClients(const std::string &message) {
 Result<bool> broadcastCacheInvalidationToAllClients(const CacheType &type) {
 
     auto cacheTypeString = toString(type);
-    info("broadcasting a '{}' cache invalidation to all clients",
-         cacheTypeString);
+    info("broadcasting a '{}' cache invalidation to all clients", cacheTypeString);
+
+    if (!websocketOutgoingMessages) {
+        auto errorMessage = "Websocket queue unavailable";
+        warn(errorMessage);
+        return Result<bool>{ServerError(ServerError::InternalError, errorMessage)};
+    }
 
     // Make sure this is a valid cache type
     if (type == CacheType::Unknown) {
-        auto errorMessage = fmt::format("Cannot invalidate cache of type '{}'",
-                                        cacheTypeString);
+
+        auto errorMessage = fmt::format("Cannot invalidate cache of type '{}'", cacheTypeString);
         warn(errorMessage);
-        return Result<bool>{
-            ServerError(ServerError::InvalidData, errorMessage)};
+        return Result<bool>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
     try {
@@ -96,18 +101,14 @@ Result<bool> broadcastCacheInvalidationToAllClients(const CacheType &type) {
         cacheInvalidation.cache_type = type;
 
         // Create the message to send with the command and payload
-        auto invalidateMessage =
-            oatpp::Object<ws::CacheInvalidationMessage>::createShared();
-        invalidateMessage->command =
-            toString(ws::MessageType::CacheInvalidation);
+        auto invalidateMessage = oatpp::Object<ws::CacheInvalidationMessage>::createShared();
+        invalidateMessage->command = toString(ws::MessageType::CacheInvalidation);
         invalidateMessage->payload = creatures::convertToDto(cacheInvalidation);
 
         // Make a JSON mapper
-        auto jsonMapper =
-            oatpp::parser::json::mapping::ObjectMapper::createShared();
+        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
 
-        std::string outgoingMessage =
-            jsonMapper->writeToString(invalidateMessage);
+        std::string outgoingMessage = jsonMapper->writeToString(invalidateMessage);
         debug("Outgoing cache invalidation to clients: {}", outgoingMessage);
 
         websocketOutgoingMessages->enqueue(outgoingMessage);
@@ -115,46 +116,44 @@ Result<bool> broadcastCacheInvalidationToAllClients(const CacheType &type) {
     } catch (const std::exception &e) {
         return Result<bool>{ServerError(ServerError::InternalError, e.what())};
     } catch (...) {
-        return Result<bool>{ServerError(ServerError::InternalError,
-                                        "broadcastCacheInvalidationToAllClients"
-                                        "() caught an unknown exception")};
+        return Result<bool>{ServerError(ServerError::InternalError, "broadcastCacheInvalidationToAllClients"
+                                                                    "() caught an unknown exception")};
     }
 }
 
 void scheduleCacheInvalidationEvent(framenum_t frameOffset, CacheType type) {
+    if (!eventLoop) {
+        warn("scheduleCacheInvalidationEvent skipped: event loop unavailable");
+        return;
+    }
 
     framenum_t eventTime = eventLoop->getCurrentFrameNumber() + frameOffset;
 
-    auto invalidateEvent =
-        std::make_shared<CacheInvalidateEvent>(eventTime, type);
+    auto invalidateEvent = std::make_shared<CacheInvalidateEvent>(eventTime, type);
 
     eventLoop->scheduleEvent(invalidateEvent);
-    debug("cache invalidate message for the '{}' cache scheduled for frame {}",
-          toString(type), eventTime);
+    debug("cache invalidate message for the '{}' cache scheduled for frame {}", toString(type), eventTime);
 }
 
-Result<bool>
-broadcastPlaylistStatusToAllClients(const PlaylistStatus &playlistStatus) {
+Result<bool> broadcastPlaylistStatusToAllClients(const PlaylistStatus &playlistStatus) {
 
-    debug("broadcasting playlist status to all clients: {}",
-          playlistStatus.playlist);
+    debug("broadcasting playlist status to all clients: {}", playlistStatus.playlist);
+
+    if (!websocketOutgoingMessages) {
+        return Result<bool>{ServerError(ServerError::InternalError, "Websocket queue unavailable")};
+    }
 
     try {
 
         // Create the message to send with the command and payload
-        auto playlistStatusMessage =
-            oatpp::Object<ws::PlaylistStatusMessage>::createShared();
-        playlistStatusMessage->command =
-            toString(ws::MessageType::PlaylistStatus);
-        playlistStatusMessage->payload =
-            creatures::convertToDto(playlistStatus);
+        auto playlistStatusMessage = oatpp::Object<ws::PlaylistStatusMessage>::createShared();
+        playlistStatusMessage->command = toString(ws::MessageType::PlaylistStatus);
+        playlistStatusMessage->payload = creatures::convertToDto(playlistStatus);
 
         // Make a JSON mapper
-        auto jsonMapper =
-            oatpp::parser::json::mapping::ObjectMapper::createShared();
+        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
 
-        std::string outgoingMessage =
-            jsonMapper->writeToString(playlistStatusMessage);
+        std::string outgoingMessage = jsonMapper->writeToString(playlistStatusMessage);
         debug("Outgoing playlist update for clients: {}", outgoingMessage);
 
         websocketOutgoingMessages->enqueue(outgoingMessage);
@@ -162,9 +161,8 @@ broadcastPlaylistStatusToAllClients(const PlaylistStatus &playlistStatus) {
     } catch (const std::exception &e) {
         return Result<bool>{ServerError(ServerError::InternalError, e.what())};
     } catch (...) {
-        return Result<bool>{ServerError(ServerError::InternalError,
-                                        "broadcastPlaylistStatusToAllClients() "
-                                        "caught an unknown exception")};
+        return Result<bool>{ServerError(ServerError::InternalError, "broadcastPlaylistStatusToAllClients() "
+                                                                    "caught an unknown exception")};
     }
 }
 
@@ -172,6 +170,10 @@ Result<bool> broadcastJobProgressToAllClients(const jobs::JobState &jobState) {
 
     debug("broadcasting job progress to all clients: job_id={}, progress={:.1f}%", jobState.jobId,
           jobState.progress * 100.0f);
+
+    if (!websocketOutgoingMessages) {
+        return Result<bool>{ServerError(ServerError::InternalError, "Websocket queue unavailable")};
+    }
 
     try {
         // Create the DTO
@@ -207,6 +209,10 @@ Result<bool> broadcastJobCompleteToAllClients(const jobs::JobState &jobState) {
 
     info("broadcasting job completion to all clients: job_id={}, status={}", jobState.jobId,
          jobs::toString(jobState.status));
+
+    if (!websocketOutgoingMessages) {
+        return Result<bool>{ServerError(ServerError::InternalError, "Websocket queue unavailable")};
+    }
 
     try {
         // Create the DTO

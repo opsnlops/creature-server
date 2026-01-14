@@ -21,8 +21,11 @@ using oatpp::web::protocol::http::Status;
 oatpp::Object<creatures::SystemCountersDto> MetricsService::getCounters() {
 
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
 
-    appLogger->trace("MetricsService::getCounters()");
+    if (logger) {
+        logger->trace("MetricsService::getCounters()");
+    }
 
     bool error = false;
     oatpp::String errorMessage;
@@ -30,7 +33,9 @@ oatpp::Object<creatures::SystemCountersDto> MetricsService::getCounters() {
     // Make sure we have a metrics object
     if (creatures::metrics == nullptr) {
         errorMessage = "Metrics object is null";
-        appLogger->error(std::string(errorMessage));
+        if (logger) {
+            logger->error(std::string(errorMessage));
+        }
         error = true;
     }
     OATPP_ASSERT_HTTP(!error, Status::CODE_500, errorMessage)

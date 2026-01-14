@@ -38,6 +38,7 @@ class DebugController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(invalidate_creature) {
         info->summary = "Sends a message to all clients to invalidate their creature cache";
+        info->addTag("Debug");
 
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -53,12 +54,15 @@ class DebugController : public oatpp::web::server::api::ApiController {
         status->code = 200;
         status->message = statusMessage;
         status->status = "OK";
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return createDtoResponse(Status::CODE_200, status);
     }
 
     ENDPOINT_INFO(invalidate_animation) {
         info->summary = "Sends a message to all clients to invalidate their animation cache";
+        info->addTag("Debug");
 
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -75,12 +79,15 @@ class DebugController : public oatpp::web::server::api::ApiController {
         status->code = 200;
         status->message = statusMessage;
         status->status = "OK";
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return createDtoResponse(Status::CODE_200, status);
     }
 
     ENDPOINT_INFO(invalidate_playlist) {
         info->summary = "Sends a message to all clients to invalidate their playlist cache";
+        info->addTag("Debug");
 
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -97,12 +104,15 @@ class DebugController : public oatpp::web::server::api::ApiController {
         status->code = 200;
         status->message = statusMessage;
         status->status = "OK";
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return createDtoResponse(Status::CODE_200, status);
     }
 
     ENDPOINT_INFO(test_playlist_updates) {
         info->summary = "Tests the ability to send a playlist update";
+        info->addTag("Debug");
 
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -121,7 +131,9 @@ class DebugController : public oatpp::web::server::api::ApiController {
         status->code = 200;
         status->message = "Playlist update sent";
         status->status = "OK";
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return createDtoResponse(Status::CODE_200, status);
     }
 };

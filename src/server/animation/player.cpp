@@ -1,4 +1,5 @@
 
+#include <algorithm>
 #include <fmt/format.h>
 
 #include "server/config.h"
@@ -49,12 +50,32 @@ extern std::shared_ptr<ObservabilityManager> observability;
 Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::Animation &animation,
                                      universe_t universe, creatures::runtime::ActivityReason reason) {
 
+    if (animation.metadata.milliseconds_per_frame == 0 || animation.metadata.number_of_frames == 0) {
+        std::string errorMessage =
+            fmt::format("Invalid animation timing data for '{}' (ms_per_frame={}, frames={})", animation.metadata.title,
+                        animation.metadata.milliseconds_per_frame, animation.metadata.number_of_frames);
+        warn(errorMessage);
+        return Result<framenum_t>{ServerError(ServerError::InvalidData, errorMessage)};
+    }
+
+    if (!config) {
+        std::string errorMessage = "Animation scheduler unavailable: configuration missing";
+        warn(errorMessage);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+
     // Check which scheduler to use
     auto schedulerType = config->getAnimationSchedulerType();
 
     if (schedulerType == Configuration::AnimationSchedulerType::Cooperative) {
         // Use the modern cooperative scheduler
         debug("Using cooperative animation scheduler for animation '{}'", animation.metadata.title);
+
+        if (!sessionManager) {
+            std::string errorMessage = "Animation scheduler unavailable: session manager missing";
+            warn(errorMessage);
+            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+        }
 
         auto sessionResult =
             CooperativeAnimationScheduler::scheduleAnimation(startingFrame, animation, universe, reason);
@@ -68,7 +89,8 @@ Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::
 
         // Calculate the last frame of the animation
         // Each animation frame takes (milliseconds_per_frame / EVENT_LOOP_PERIOD_MS) event loop frames
-        framenum_t framesPerAnimFrame = animation.metadata.milliseconds_per_frame / EVENT_LOOP_PERIOD_MS;
+        framenum_t framesPerAnimFrame = std::max<framenum_t>(
+            1, static_cast<framenum_t>(animation.metadata.milliseconds_per_frame / EVENT_LOOP_PERIOD_MS));
         framenum_t lastFrame = startingFrame + framesPerAnimFrame * (animation.metadata.number_of_frames - 1);
 
         debug("Cooperative scheduler: animation '{}' will run from frame {} to {} ({} animation frames at {}ms each)",

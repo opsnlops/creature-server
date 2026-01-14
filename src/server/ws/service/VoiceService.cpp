@@ -36,8 +36,15 @@ using oatpp::web::protocol::http::Status;
 oatpp::Object<ListDto<oatpp::Object<creatures::voice::VoiceDto>>> VoiceService::getAllVoices() {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
     OATPP_COMPONENT(std::shared_ptr<creatures::voice::CreatureVoices>, voiceService);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
 
-    appLogger->debug("Asked to return all of the voices");
+    if (logger) {
+        logger->debug("Asked to return all of the voices");
+    }
+
+    if (!voiceService) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Voice service unavailable");
+    }
 
     bool error = false;
     oatpp::String errorMessage;
@@ -63,12 +70,16 @@ oatpp::Object<ListDto<oatpp::Object<creatures::voice::VoiceDto>>> VoiceService::
 
     // Looks good, let's keep going!
     auto voices = voiceResult.getValue().value();
-    appLogger->debug("Found {} voices", voices.size());
+    if (logger) {
+        logger->debug("Found {} voices", voices.size());
+    }
 
     auto voiceList = oatpp::Vector<oatpp::Object<creatures::voice::VoiceDto>>::createShared();
     for (auto &voice : voices) {
         voiceList->push_back(convertToDto(voice));
-        appLogger->trace("adding voice: {}", voice.name);
+        if (logger) {
+            logger->trace("adding voice: {}", voice.name);
+        }
     }
 
     auto list = ListDto<oatpp::Object<creatures::voice::VoiceDto>>::createShared();
@@ -81,8 +92,15 @@ oatpp::Object<ListDto<oatpp::Object<creatures::voice::VoiceDto>>> VoiceService::
 oatpp::Object<creatures::voice::SubscriptionDto> VoiceService::getSubscriptionStatus() {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
     OATPP_COMPONENT(std::shared_ptr<creatures::voice::CreatureVoices>, creatureVoices);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
 
-    appLogger->debug("Asked to return all of the voices");
+    if (logger) {
+        logger->debug("Asked to return all of the voices");
+    }
+
+    if (!creatureVoices) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Voice service unavailable");
+    }
 
     bool error = false;
     oatpp::String errorMessage;
@@ -108,7 +126,9 @@ oatpp::Object<creatures::voice::SubscriptionDto> VoiceService::getSubscriptionSt
 
     // Looks good, let's keep going!
     auto subscription = voiceResult.getValue().value();
-    debug("Found subscription: {}", subscription.status);
+    if (logger) {
+        logger->debug("Found subscription: {}", subscription.status);
+    }
 
     auto dto = convertToDto(subscription);
     return dto;
@@ -118,10 +138,22 @@ oatpp::Object<creatures::voice::CreatureSpeechResponseDto>
 VoiceService::generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto> &soundFileRequest) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
     OATPP_COMPONENT(std::shared_ptr<creatures::voice::CreatureVoices>, creatureVoices);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
 
-    appLogger->debug("Incoming request for speech generation");
+    if (logger) {
+        logger->debug("Incoming request for speech generation");
+    }
 
-    auto speechSpan = creatures::observability->createOperationSpan("VoiceService.generateCreatureSpeech");
+    if (!creatureVoices) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Voice service unavailable");
+    }
+
+    if (!config) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Voice configuration unavailable");
+    }
+    auto speechSpan = creatures::observability
+                          ? creatures::observability->createOperationSpan("VoiceService.generateCreatureSpeech")
+                          : nullptr;
     if (speechSpan) {
         speechSpan->setAttribute("creature.id", std::string(soundFileRequest->creature_id));
         speechSpan->setAttribute("request.text", std::string(soundFileRequest->text));

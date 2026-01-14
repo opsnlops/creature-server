@@ -57,27 +57,36 @@ void AudioStreamBuffer::setAudioCacheInstance(std::shared_ptr<util::AudioCache> 
 
 Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
                                                std::shared_ptr<OperationSpan> parentSpan) {
-    const auto span = observability->createChildOperationSpan("AudioStreamBuffer.loadWaveFile", parentSpan);
-    span->setAttribute("file_path", audioFilePath);
+    const auto span =
+        observability ? observability->createChildOperationSpan("AudioStreamBuffer.loadWaveFile", parentSpan) : nullptr;
+    if (span) {
+        span->setAttribute("file_path", audioFilePath);
+    }
 
     // Early validation
     if (audioFilePath.empty()) {
         const auto errorMsg = "Empty file path provided";
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         error(errorMsg);
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
     if (!std::filesystem::exists(audioFilePath)) {
         const auto errorMsg = fmt::format("WAV file not found: {}", audioFilePath);
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         error(errorMsg);
         return Result<size_t>{ServerError(ServerError::NotFound, errorMsg)};
     }
 
     if (!std::filesystem::is_regular_file(audioFilePath)) {
         const auto errorMsg = fmt::format("Path is not a regular file: {}", audioFilePath);
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         error(errorMsg);
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
@@ -91,7 +100,9 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
     // SDL_LoadWAV returns nullptr on failure
     if (!SDL_LoadWAV(audioFilePath.c_str(), &spec, &raw, &len)) {
         const auto errorMsg = fmt::format("SDL failed to load WAV file '{}': {}", audioFilePath, SDL_GetError());
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         error(errorMsg);
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
@@ -112,7 +123,9 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
                                           audioFilePath, spec.freq, spec.channels, spec.format, RTP_SRATE,
                                           RTP_STREAMING_CHANNELS, AUDIO_S16);
         error(errorMsg);
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
@@ -120,27 +133,22 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
     if (len == 0) {
         const auto errorMsg = fmt::format("WAV file has zero length: {}", audioFilePath);
         error(errorMsg);
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
-    // Check for potential overflow in division
-    if (len > SIZE_MAX / 2) {
-        const auto errorMsg =
-            fmt::format("WAV file too large: {} bytes (maximum supported: {} bytes)", len, SIZE_MAX / 2);
-        error(errorMsg);
-        span->setError(errorMsg);
-        return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
-    }
-
-    const auto totalSamples = len / sizeof(int16_t);
+    const auto totalSamples = static_cast<size_t>(len) / sizeof(int16_t);
 
     // Validate divisor to prevent division by zero
     const auto samplesPerFrame = static_cast<uint64_t>(RTP_STREAMING_CHANNELS) * RTP_SAMPLES;
     if (samplesPerFrame == 0) {
         const auto errorMsg = "Invalid audio configuration: samplesPerFrame is zero";
         error(errorMsg);
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
     }
 
@@ -149,7 +157,9 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         const auto errorMsg = fmt::format("WAV file calculation overflow: {} total samples with {} samples per frame",
                                           totalSamples, samplesPerFrame);
         error(errorMsg);
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
@@ -159,7 +169,9 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         const auto errorMsg = fmt::format("WAV file too short: {} ({} samples, need at least {} for one frame)",
                                           audioFilePath, totalSamples, samplesPerFrame);
         error(errorMsg);
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
@@ -169,7 +181,9 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         const auto errorMsg = fmt::format("WAV file too long: {} frames per channel (maximum supported: {})",
                                           numberOfFramesPerChannel_, MAX_FRAMES_PER_CHANNEL);
         error(errorMsg);
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
@@ -212,7 +226,9 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
                                         interleavedIndex, maxSampleOffset, frameIndex, numberOfFramesPerChannel_,
                                         sampleIndex, RTP_SAMPLES, channelIndex);
                         error(errorMsg);
-                        span->setError(errorMsg);
+                        if (span) {
+                            span->setError(errorMsg);
+                        }
                         return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
                     }
 
@@ -224,7 +240,9 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
                     const auto errorMsg =
                         fmt::format("Channel index {} exceeds encoder array size {}", channelIndex, encoders.size());
                     error(errorMsg);
-                    span->setError(errorMsg);
+                    if (span) {
+                        span->setError(errorMsg);
+                    }
                     return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
                 }
 
@@ -243,21 +261,31 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
     } catch (const std::exception &e) {
         const auto errorMsg = fmt::format("Error while encoding WAV to Opus: {}", e.what());
         error(errorMsg);
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
     } catch (...) {
         const auto errorMsg = "Unknown error occurred during Opus encoding";
         error(errorMsg);
-        span->setError(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
         return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
     }
 
     info("Successfully loaded and encoded {} frames per channel from WAV file: {}", numberOfFramesPerChannel_,
          audioFilePath);
 
-    span->setSuccess();
-    span->setAttribute("frames_per_channel", static_cast<int64_t>(numberOfFramesPerChannel_));
-    span->setAttribute("total_frames", static_cast<int64_t>(numberOfFramesPerChannel_ * RTP_STREAMING_CHANNELS));
+    if (span) {
+        span->setSuccess();
+    }
+    if (span) {
+        span->setAttribute("frames_per_channel", static_cast<int64_t>(numberOfFramesPerChannel_));
+    }
+    if (span) {
+        span->setAttribute("total_frames", static_cast<int64_t>(numberOfFramesPerChannel_ * RTP_STREAMING_CHANNELS));
+    }
 
     // Return the number of frames we successfully loaded
     return Result<size_t>{numberOfFramesPerChannel_};
@@ -265,11 +293,16 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
 
 Result<size_t> AudioStreamBuffer::loadWithCaching(const std::string &audioFilePath,
                                                   std::shared_ptr<OperationSpan> parentSpan) {
-    auto span = observability->createChildOperationSpan("AudioStreamBuffer.loadWithCaching", parentSpan);
-    span->setAttribute("file_path", audioFilePath);
+    auto span = observability ? observability->createChildOperationSpan("AudioStreamBuffer.loadWithCaching", parentSpan)
+                              : nullptr;
+    if (span) {
+        span->setAttribute("file_path", audioFilePath);
+    }
 
     // Fast path: try to load from cache
-    auto cacheSpan = observability->createChildOperationSpan("AudioStreamBuffer.tryCache", span);
+    auto cacheSpan =
+        observability ? observability->createChildOperationSpan("AudioStreamBuffer.tryCache", span) : nullptr;
+
     auto cachedAudioData = sharedAudioCacheInstance_->tryLoadFromCache(audioFilePath, cacheSpan);
 
     if (cachedAudioData) {
@@ -277,20 +310,30 @@ Result<size_t> AudioStreamBuffer::loadWithCaching(const std::string &audioFilePa
         debug("Cache hit for {}, loading {} frames from cache", audioFilePath, cachedAudioData->framesPerChannel);
         loadFromCachedAudioData(*cachedAudioData);
 
-        span->setAttribute("cache_result", "hit");
-        span->setAttribute("frames_loaded", static_cast<int64_t>(numberOfFramesPerChannel_));
-        span->setSuccess();
+        if (span) {
+            span->setAttribute("cache_result", "hit");
+        }
+        if (span) {
+            span->setAttribute("frames_loaded", static_cast<int64_t>(numberOfFramesPerChannel_));
+        }
+        if (span) {
+            span->setSuccess();
+        }
 
         return Result<size_t>{numberOfFramesPerChannel_};
     }
 
     // Cache miss: load from WAV and cache the result
     debug("Cache miss for {}, loading from WAV file and caching", audioFilePath);
-    span->setAttribute("cache_result", "miss");
+    if (span) {
+        span->setAttribute("cache_result", "miss");
+    }
 
     auto loadResult = loadWaveFile(audioFilePath, span);
     if (!loadResult.isSuccess()) {
-        span->setError(loadResult.getError()->getMessage());
+        if (span) {
+            span->setError(loadResult.getError()->getMessage());
+        }
         return loadResult;
     }
 
@@ -302,13 +345,17 @@ Result<size_t> AudioStreamBuffer::loadWithCaching(const std::string &audioFilePa
     auto cacheResult = sharedAudioCacheInstance_->saveToCache(audioFilePath, audioDataToCache, span);
     if (cacheResult.isSuccess()) {
         debug("Successfully cached {} frames for {}", numberOfFramesPerChannel_, audioFilePath);
-        span->setAttribute("cached_frames", static_cast<int64_t>(numberOfFramesPerChannel_));
+        if (span) {
+            span->setAttribute("cached_frames", static_cast<int64_t>(numberOfFramesPerChannel_));
+        }
     } else {
         warn("Failed to cache audio data for {}: {}", audioFilePath, cacheResult.getError()->getMessage());
         // Don't fail the overall operation if caching fails
     }
 
-    span->setSuccess();
+    if (span) {
+        span->setSuccess();
+    }
     return loadResult;
 }
 

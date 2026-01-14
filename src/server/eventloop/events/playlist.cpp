@@ -43,6 +43,40 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
     }
 
     debug("hello from a playlist event for universe {}", activeUniverse);
+
+    if (!metrics) {
+        const std::string errorMessage = "PlaylistEvent: metrics unavailable";
+        error(errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+    if (!sessionManager) {
+        const std::string errorMessage = "PlaylistEvent: session manager unavailable";
+        error(errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+    if (!db) {
+        const std::string errorMessage = "PlaylistEvent: database unavailable";
+        error(errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+    if (!eventLoop) {
+        const std::string errorMessage = "PlaylistEvent: event loop unavailable";
+        error(errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+
     metrics->incrementPlaylistsEventsProcessed();
 
     // Single source of truth: Check playlist state via SessionManager
@@ -175,7 +209,8 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
     }
 
     // Go get this animation
-    auto animationSpan = observability->createChildOperationSpan("music_event.animation_lookup", span);
+    auto animationSpan =
+        observability ? observability->createChildOperationSpan("music_event.animation_lookup", span) : nullptr;
     if (animationSpan) {
         animationSpan->setAttribute("animation.id", chosenAnimation);
     }

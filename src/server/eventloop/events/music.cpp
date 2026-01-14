@@ -109,6 +109,15 @@ Result<framenum_t> MusicEvent::executeImpl() {
         return Result<framenum_t>{ServerError(ServerError::Forbidden, errorMessage)};
     }
 
+    if (!config) {
+        std::string errorMessage = "MusicEvent: configuration unavailable";
+        error(errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+
     // Dispatch based on audio mode
     Result result = {this->frameNumber}; // Default to current frame number
     if (config->getAudioMode() == Configuration::AudioMode::RTP) {
@@ -143,8 +152,11 @@ Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> par
 
     debug("Starting local audio playback for: {}", filePath);
 
+    const bool hasGpio = gpioPins != nullptr;
+    const bool hasMetrics = metrics != nullptr;
+
     // Spawn the audio thread with proper RAII and error handling
-    std::thread([filePath = this->filePath, span] {
+    std::thread([filePath = this->filePath, span, hasGpio, hasMetrics] {
         // RAII wrapper for SDL Mixer resources
         struct SDLMixerGuard {
             Mix_Music *music = nullptr;
@@ -166,8 +178,14 @@ Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> par
 
         SDLMixerGuard guard;
 
+        auto setPlayingSound = [hasGpio](bool isPlaying) {
+            if (hasGpio && gpioPins) {
+                gpioPins->playingSound(isPlaying);
+            }
+        };
+
         try {
-            gpioPins->playingSound(true);
+            setPlayingSound(true);
 
             // Open audio device with error checking
             if (Mix_OpenAudioDevice(localAudioDeviceAudioSpec.freq, localAudioDeviceAudioSpec.format,
@@ -235,9 +253,12 @@ Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> par
                 Mix_HaltMusic();
             }
 
-            metrics->incrementSoundsPlayed();
-            if (span)
+            if (hasMetrics && metrics) {
+                metrics->incrementSoundsPlayed();
+            }
+            if (span) {
                 span->setSuccess();
+            }
             debug("Local audio playback completed successfully");
 
         } catch (const std::exception &e) {
@@ -253,7 +274,7 @@ Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> par
         }
 
         // Cleanup happens automatically via RAII guard
-        gpioPins->playingSound(false);
+        setPlayingSound(false);
     }).detach();
 
     // Return immediately - the music plays in the background
@@ -270,12 +291,22 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
         span = observability->createChildOperationSpan("music_event.schedule_rtp", parentSpan);
     }
 
+    if (!eventLoop) {
+        std::string errorMsg = "MusicEvent: event loop unavailable";
+        error(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
     // Validate RTP server availability
     if (!rtpServer || !rtpServer->isReady()) {
         std::string errorMsg = "RTP server not ready - cannot stream audio";
         error(errorMsg);
-        if (span)
+        if (span) {
             span->setError(errorMsg);
+        }
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
     }
 
@@ -293,6 +324,24 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
     std::thread worker([span, localPath, startingFrame]() {
 #endif
         debug("RTP worker thread starting");
+
+        if (!eventLoop) {
+            const std::string errorMsg = "MusicEvent: event loop unavailable in RTP worker";
+            error(errorMsg);
+            if (span) {
+                span->setError(errorMsg);
+            }
+            return;
+        }
+
+        if (!rtpServer || !rtpServer->isReady()) {
+            const std::string errorMsg = "RTP server not ready in RTP worker";
+            error(errorMsg);
+            if (span) {
+                span->setError(errorMsg);
+            }
+            return;
+        }
 
         // Heavy I/O – off the event‑loop thread!
         debug("Loading audio buffer from WAV file: {}", localPath);
@@ -359,9 +408,12 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
         }
 
         debug("Finished scheduling {} RTP audio frames", frames);
-        metrics->incrementSoundsPlayed();
-        if (span)
+        if (metrics) {
+            metrics->incrementSoundsPlayed();
+        }
+        if (span) {
             span->setSuccess();
+        }
     });
 
     debug("Detaching RTP worker thread");

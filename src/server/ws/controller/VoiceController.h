@@ -41,18 +41,22 @@ class VoiceController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(getAllVoices) {
         info->summary = "Lists all of the voices files";
+        info->addTag("Voice");
 
         info->addResponse<Object<VoiceListDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/voice/list-available", getAllVoices) {
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return createDtoResponse(Status::CODE_200, m_voiceService.getAllVoices());
     }
 
     ENDPOINT_INFO(getSubscriptionStatus) {
         info->summary = "Returns the status of our subscription to the voice API";
+        info->addTag("Voice");
 
         info->addResponse<Object<creatures::voice::SubscriptionDto>>(Status::CODE_200,
                                                                      "application/json; charset=utf-8");
@@ -60,12 +64,15 @@ class VoiceController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/voice/subscription", getSubscriptionStatus) {
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return createDtoResponse(Status::CODE_200, m_voiceService.getSubscriptionStatus());
     }
 
     ENDPOINT_INFO(makeSoundFile) {
         info->summary = "Create a sound file for a creature based on the text given";
+        info->addTag("Voice");
 
         info->addResponse<Object<creatures::voice::CreatureSpeechResponseDto>>(Status::CODE_200,
                                                                                "application/json; charset=utf-8");
@@ -74,7 +81,9 @@ class VoiceController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/voice", makeSoundFile,
              BODY_DTO(Object<creatures::ws::MakeSoundFileRequestDto>, requestBody)) {
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
 
         auto response = m_voiceService.generateCreatureSpeech(requestBody);
 

@@ -17,6 +17,12 @@ RtpAudioTransport::RtpAudioTransport(std::shared_ptr<rtp::MultiOpusRtpServer> se
 Result<void> RtpAudioTransport::start(std::shared_ptr<PlaybackSession> session) {
     session_ = session;
 
+    if (!session_) {
+        std::string errorMsg = "No playback session provided";
+        error(errorMsg);
+        return Result<void>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
+
     // Validate RTP server is available
     if (!rtpServer_ || !rtpServer_->isReady()) {
         std::string errorMsg = "RTP server not ready - cannot stream audio";
@@ -49,6 +55,13 @@ void RtpAudioTransport::stop() {
 }
 
 Result<framenum_t> RtpAudioTransport::dispatchNextChunk(framenum_t currentFrame) {
+    if (!session_) {
+        return Result<framenum_t>{ServerError(ServerError::InternalError, "Missing playback session")};
+    }
+    if (!rtpServer_ || !rtpServer_->isReady()) {
+        return Result<framenum_t>{ServerError(ServerError::InternalError, "RTP server unavailable")};
+    }
+
     // Check if we should dispatch on this frame
     if (currentFrame < nextDispatchFrame_) {
         // Not time yet
@@ -66,23 +79,33 @@ Result<framenum_t> RtpAudioTransport::dispatchNextChunk(framenum_t currentFrame)
     }
 
     // Dispatch all audio frames that are due (might be multiple if PlaybackRunnerEvent runs infrequently)
-    while (currentFrame >= nextDispatchFrame_ && currentFrameIndex_ < totalFrames_ && !stopped_) {
-        // Send this frame to all 17 RTP channels (16 creatures + 1 BGM)
-        for (int ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
-            rtpServer_->send(static_cast<uint8_t>(ch),
-                             audioBuffer->getEncodedFrame(static_cast<uint8_t>(ch), currentFrameIndex_));
-        }
+    try {
+        while (currentFrame >= nextDispatchFrame_ && currentFrameIndex_ < totalFrames_ && !stopped_) {
+            // Send this frame to all 17 RTP channels (16 creatures + 1 BGM)
+            for (int ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
+                rtpServer_->send(static_cast<uint8_t>(ch),
+                                 audioBuffer->getEncodedFrame(static_cast<uint8_t>(ch), currentFrameIndex_));
+            }
 
-        // Advance to next frame
-        currentFrameIndex_++;
+            // Advance to next frame
+            currentFrameIndex_++;
 
-        // Calculate next dispatch time
-        // First few frames are prefill (1ms apart), then normal pacing (20ms apart)
-        if (currentFrameIndex_ < kPrefillFrames) {
-            nextDispatchFrame_ = nextDispatchFrame_ + 1; // 1ms later
-        } else {
-            nextDispatchFrame_ = nextDispatchFrame_ + (RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS); // 20ms later
+            // Calculate next dispatch time
+            // First few frames are prefill (1ms apart), then normal pacing (20ms apart)
+            if (currentFrameIndex_ < kPrefillFrames) {
+                nextDispatchFrame_ = nextDispatchFrame_ + 1; // 1ms later
+            } else {
+                nextDispatchFrame_ = nextDispatchFrame_ + (RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS); // 20ms later
+            }
         }
+    } catch (const std::exception &ex) {
+        std::string errorMsg = fmt::format("RTP audio dispatch failed: {}", ex.what());
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    } catch (...) {
+        std::string errorMsg = "RTP audio dispatch failed with unknown error";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
     }
 
     return Result<framenum_t>{nextDispatchFrame_};

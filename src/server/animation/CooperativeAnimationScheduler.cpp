@@ -58,13 +58,52 @@ Result<std::shared_ptr<PlaybackSession>>
 CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const Animation &animation,
                                                  universe_t universe, creatures::runtime::ActivityReason reason) {
     // Create observability span
-    auto scheduleSpan = observability->createOperationSpan("CooperativeAnimationScheduler.scheduleAnimation");
+    auto scheduleSpan =
+        observability ? observability->createOperationSpan("CooperativeAnimationScheduler.scheduleAnimation") : nullptr;
     if (scheduleSpan) {
         scheduleSpan->setAttribute("animation.id", animation.id);
         scheduleSpan->setAttribute("animation.title", animation.metadata.title);
         scheduleSpan->setAttribute("animation.universe", static_cast<int64_t>(universe));
         scheduleSpan->setAttribute("animation.starting_frame", static_cast<int64_t>(startingFrame));
         scheduleSpan->setAttribute("scheduler.type", "cooperative");
+    }
+
+    if (!eventLoop) {
+        std::string errorMsg = "CooperativeAnimationScheduler: event loop unavailable";
+        error(errorMsg);
+        if (scheduleSpan) {
+            scheduleSpan->setError(errorMsg);
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    if (!config) {
+        std::string errorMsg = "CooperativeAnimationScheduler: config unavailable";
+        error(errorMsg);
+        if (scheduleSpan) {
+            scheduleSpan->setError(errorMsg);
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    if (!sessionManager) {
+        std::string errorMsg = "CooperativeAnimationScheduler: session manager unavailable";
+        error(errorMsg);
+        if (scheduleSpan) {
+            scheduleSpan->setError(errorMsg);
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    if (animation.metadata.milliseconds_per_frame == 0 || animation.metadata.number_of_frames == 0) {
+        std::string errorMsg =
+            fmt::format("Invalid animation timing data for '{}' (ms_per_frame={}, frames={})", animation.metadata.title,
+                        animation.metadata.milliseconds_per_frame, animation.metadata.number_of_frames);
+        error(errorMsg);
+        if (scheduleSpan) {
+            scheduleSpan->setError(errorMsg);
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
     // Create playback session
@@ -138,7 +177,9 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
     debug("CooperativeAnimationScheduler: scheduled initial PlaybackRunnerEvent for frame {}", startingFrame);
 
     // Increment metrics
-    metrics->incrementAnimationsPlayed();
+    if (metrics) {
+        metrics->incrementAnimationsPlayed();
+    }
 
     if (scheduleSpan) {
         scheduleSpan->setSuccess();
@@ -153,9 +194,27 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
 Result<void> CooperativeAnimationScheduler::loadAudioBuffer(const Animation &animation,
                                                             std::shared_ptr<PlaybackSession> session,
                                                             std::shared_ptr<OperationSpan> parentSpan) {
-    auto loadSpan = observability->createChildOperationSpan("load_audio_buffer", parentSpan);
+    auto loadSpan = observability ? observability->createChildOperationSpan("load_audio_buffer", parentSpan) : nullptr;
     if (loadSpan) {
         loadSpan->setAttribute("sound_file", animation.metadata.sound_file);
+    }
+
+    if (!config) {
+        std::string errorMsg = "Audio buffer load failed: config unavailable";
+        error(errorMsg);
+        if (loadSpan) {
+            loadSpan->setError(errorMsg);
+        }
+        return Result<void>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    if (!session) {
+        std::string errorMsg = "Audio buffer load failed: missing playback session";
+        error(errorMsg);
+        if (loadSpan) {
+            loadSpan->setError(errorMsg);
+        }
+        return Result<void>{ServerError(ServerError::InternalError, errorMsg)};
     }
 
     // Build full path to sound file
@@ -188,6 +247,10 @@ Result<void> CooperativeAnimationScheduler::loadAudioBuffer(const Animation &ani
 
 std::shared_ptr<AudioTransport>
 CooperativeAnimationScheduler::createAudioTransport(std::shared_ptr<PlaybackSession> /* session */) {
+    if (!config) {
+        warn("CooperativeAnimationScheduler: config unavailable for audio transport");
+        return nullptr;
+    }
 
     // Check audio mode configuration
     auto audioMode = config->getAudioMode();
@@ -210,9 +273,13 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
     session->setOnStartCallback([weakSession, universe]() {
         debug("PlaybackSession starting for universe {}", universe);
 
-        auto statusLightOn =
-            std::make_shared<StatusLightEvent>(eventLoop->getNextFrameNumber(), StatusLight::Animation, true);
-        eventLoop->scheduleEvent(statusLightOn);
+        if (!eventLoop) {
+            warn("PlaybackSession start skipped status light: event loop unavailable");
+        } else {
+            auto statusLightOn =
+                std::make_shared<StatusLightEvent>(eventLoop->getNextFrameNumber(), StatusLight::Animation, true);
+            eventLoop->scheduleEvent(statusLightOn);
+        }
 
         // Start audio transport if present
         if (auto session = weakSession.lock()) {
@@ -238,6 +305,11 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
             sessionId = session->getSessionId();
         }
 
+        if (!sessionManager) {
+            warn("PlaybackSession finish skipped session manager updates: unavailable");
+            return;
+        }
+
         if (wasCancelled) {
             // This animation was cancelled (interrupted), don't resume playlists
             // The interrupt animation that replaced this one will handle resume when IT finishes
@@ -249,9 +321,13 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
         }
 
         // Animation finished naturally (not cancelled)
-        auto statusLightOff =
-            std::make_shared<StatusLightEvent>(eventLoop->getNextFrameNumber(), StatusLight::Animation, false);
-        eventLoop->scheduleEvent(statusLightOff);
+        if (!eventLoop) {
+            warn("PlaybackSession finish skipped status light/playlist scheduling: event loop unavailable");
+        } else {
+            auto statusLightOff =
+                std::make_shared<StatusLightEvent>(eventLoop->getNextFrameNumber(), StatusLight::Animation, false);
+            eventLoop->scheduleEvent(statusLightOff);
+        }
 
         // Clear the session pointer so registerSession() doesn't try to cancel stale sessions
         if (!sessionId.empty()) {
@@ -268,9 +344,13 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
 
             // Schedule a new PlaylistEvent to continue the playlist
             if (resumed && snapshot && !snapshot->playlist.empty()) {
-                auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
-                eventLoop->scheduleEvent(nextPlaylistEvent);
-                info("Scheduled PlaylistEvent to resume playlist on universe {}", universe);
+                if (!eventLoop) {
+                    warn("Interrupted playlist resume skipped: event loop unavailable");
+                } else {
+                    auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
+                    eventLoop->scheduleEvent(nextPlaylistEvent);
+                    info("Scheduled PlaylistEvent to resume playlist on universe {}", universe);
+                }
             } else {
                 warn("Interrupted playlist state inconsistent - playlist snapshot missing for universe {}", universe);
             }

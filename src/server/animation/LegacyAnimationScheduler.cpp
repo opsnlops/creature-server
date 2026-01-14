@@ -5,6 +5,7 @@
 
 #include "LegacyAnimationScheduler.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fmt/format.h>
 
@@ -45,6 +46,10 @@ std::filesystem::path resolveSoundFilePath(const std::string &soundFile) {
     if (path.is_absolute()) {
         return path;
     }
+    if (!config) {
+        warn("Legacy scheduler: config unavailable when resolving sound file path");
+        return path;
+    }
     return std::filesystem::path(config->getSoundFileLocation()) / path;
 }
 
@@ -67,7 +72,8 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
                                                                universe_t universe) {
 
     // Create a parent span for the entire animation scheduling operation
-    auto scheduleSpan = observability->createOperationSpan("Animation.scheduleAnimation.legacy");
+    auto scheduleSpan =
+        observability ? observability->createOperationSpan("Animation.scheduleAnimation.legacy") : nullptr;
     if (scheduleSpan) {
         scheduleSpan->setAttribute("animation.id", animation.id);
         scheduleSpan->setAttribute("animation.title", animation.metadata.title);
@@ -82,18 +88,39 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
     debug("scheduling animation {} ({}) on universe {} for frame {}", animation.metadata.title, animation.id, universe,
           startingFrame);
 
+    if (animation.metadata.milliseconds_per_frame == 0 || animation.metadata.number_of_frames == 0) {
+        std::string errorMessage =
+            fmt::format("Invalid animation timing data for '{}' (ms_per_frame={}, frames={})", animation.metadata.title,
+                        animation.metadata.milliseconds_per_frame, animation.metadata.number_of_frames);
+        warn(errorMessage);
+        if (scheduleSpan) {
+            scheduleSpan->setError(errorMessage);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InvalidData, errorMessage)};
+    }
+
     /*
      * Let's validate that all of the creatures in the animation actually exist before we start to
      * do this. This is also making sure that the creature is in the cache, because if it's not the
      * database will hate us.
      */
 
+    if (!db) {
+        std::string errorMessage = "Legacy scheduler: database unavailable for creature validation";
+        warn(errorMessage);
+        if (scheduleSpan) {
+            scheduleSpan->setError(errorMessage);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+
     for (const auto &track : animation.tracks) {
         creatureId_t creatureId = track.creature_id;
 
         // Create a child span for this creature validation
         auto validationSpan =
-            observability->createChildOperationSpan("scheduleAnimation.validateCreature", scheduleSpan);
+            observability ? observability->createChildOperationSpan("scheduleAnimation.validateCreature", scheduleSpan)
+                          : nullptr;
         if (validationSpan) {
             validationSpan->setAttribute("creature.id", creatureId);
             validationSpan->setAttribute("animation.id", animation.id);
@@ -121,11 +148,23 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
         debug("validated that creatureId {} exists! (It's {})", creatureId, creatureResult.getValue().value().name);
     }
 
+    if (!eventLoop) {
+        std::string errorMessage = "Legacy scheduler: event loop unavailable";
+        warn(errorMessage);
+        if (scheduleSpan) {
+            scheduleSpan->setError(errorMessage);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+
     // Schedule this animation in the event loop
     trace("starting with frame {}", startingFrame);
 
     uint32_t msPerFrame = animation.metadata.milliseconds_per_frame;
     trace("playing at a speed of {}ms per frame", msPerFrame);
+
+    framenum_t framesPerAnimFrame = std::max<framenum_t>(
+        1, static_cast<framenum_t>(animation.metadata.milliseconds_per_frame / EVENT_LOOP_PERIOD_MS));
 
     // Look and see if there's an audio file to play with this animation
     if (!animation.metadata.sound_file.empty()) {
@@ -153,7 +192,7 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
 
         // Get the creature for this track - check cache first, then DB
         std::shared_ptr<Creature> creature;
-        if (creatureCache->contains(creatureId)) {
+        if (creatureCache && creatureCache->contains(creatureId)) {
             creature = creatureCache->get(creatureId);
         } else {
             // Not in cache - fetch from database and cache it
@@ -166,7 +205,9 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
                 return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
             }
             creature = std::make_shared<Creature>(creatureResult.getValue().value());
-            creatureCache->put(creatureId, creature);
+            if (creatureCache) {
+                creatureCache->put(creatureId, creature);
+            }
             debug("Cached creature {} for playback", creatureId);
         }
 
@@ -194,17 +235,17 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
             eventLoop->scheduleEvent(thisFrame);
 
             numberOfFrames += 1;
-            currentFrame += (msPerFrame / EVENT_LOOP_PERIOD_MS);
+            currentFrame += framesPerAnimFrame;
         }
 
         std::string okayMessage =
             fmt::format("✅ Scheduled {} frames on creature {} at a pacing of {}ms per frame for frames {} to {}",
-                        numberOfFrames, creature->name, msPerFrame, startingFrame, (currentFrame - msPerFrame));
+                        numberOfFrames, creature->name, msPerFrame, startingFrame, (currentFrame - framesPerAnimFrame));
         info(okayMessage);
 
         // Keep track of the last frame we scheduled
-        if (lastFrame < (currentFrame - msPerFrame)) {
-            lastFrame = currentFrame - msPerFrame;
+        if (lastFrame < (currentFrame - framesPerAnimFrame)) {
+            lastFrame = currentFrame - framesPerAnimFrame;
             debug("set the last frame to {}", lastFrame);
         }
     }
@@ -217,7 +258,9 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
     auto okayMessage =
         fmt::format("✅ Scheduled animation {} for frame {} to {}", animation.metadata.title, startingFrame, lastFrame);
     info(okayMessage);
-    metrics->incrementAnimationsPlayed();
+    if (metrics) {
+        metrics->incrementAnimationsPlayed();
+    }
 
     // Mark the overall scheduling as successful
     if (scheduleSpan) {
