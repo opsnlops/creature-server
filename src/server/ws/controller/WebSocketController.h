@@ -39,11 +39,21 @@ class WebSocketController : public oatpp::web::server::api::ApiController {
         return std::make_shared<WebSocketController>(objectMapper);
     }
 
-    ENDPOINT_INFO(ws) { info->summary = "WebSocket endpoint"; }
+    ENDPOINT_INFO(ws) {
+        info->summary = "WebSocket endpoint";
+        info->addTag("WebSocket");
+    }
     ENDPOINT("GET", "api/v1/websocket", ws, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-        appLogger->info("WebSocket connection received");
-        creatures::metrics->incrementWebsocketConnectionsProcessed();
+        if (appLogger) {
+            appLogger->info("WebSocket connection received");
+        }
+        if (creatures::metrics) {
+            creatures::metrics->incrementWebsocketConnectionsProcessed();
+        }
+        if (!websocketConnectionHandler) {
+            return createResponse(Status::CODE_500, "WebSocket handler unavailable");
+        }
         return oatpp::websocket::Handshaker::serversideHandshake(request->getHeaders(), websocketConnectionHandler);
     };
 };

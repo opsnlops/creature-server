@@ -5,6 +5,8 @@
 
 #include "PlaybackSession.h"
 
+#include <fmt/format.h>
+
 #include "spdlog/spdlog.h"
 #include "util/ObservabilityManager.h"
 #include "util/helpers.h"
@@ -42,6 +44,8 @@ PlaybackSession::PlaybackSession(const Animation &animation, universe_t universe
     trackStates_.reserve(animation_.tracks.size());
     uint64_t totalFramesDecoded = 0;
 
+    bool decodeFailed = false;
+
     for (const auto &track : animation_.tracks) {
         TrackState state;
         state.creatureId = track.creature_id;
@@ -51,7 +55,33 @@ PlaybackSession::PlaybackSession(const Animation &animation, universe_t universe
         // Decode all frames for this track
         state.decodedFrames.reserve(track.frames.size());
         for (const auto &frameData : track.frames) {
-            state.decodedFrames.push_back(decodeBase64(frameData));
+            try {
+                state.decodedFrames.push_back(decodeBase64(frameData));
+            } catch (const std::exception &ex) {
+                std::string errorMsg =
+                    fmt::format("Failed to decode frame for creature {}: {}", track.creature_id, ex.what());
+                error(errorMsg);
+                if (sessionSpan_) {
+                    sessionSpan_->setError(errorMsg);
+                }
+                cancelled_.store(true);
+                decodeFailed = true;
+                break;
+            } catch (...) {
+                std::string errorMsg =
+                    fmt::format("Failed to decode frame for creature {}: unknown error", track.creature_id);
+                error(errorMsg);
+                if (sessionSpan_) {
+                    sessionSpan_->setError(errorMsg);
+                }
+                cancelled_.store(true);
+                decodeFailed = true;
+                break;
+            }
+        }
+
+        if (decodeFailed) {
+            break;
         }
 
         totalFramesDecoded += track.frames.size();

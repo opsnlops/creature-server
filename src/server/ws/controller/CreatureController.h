@@ -71,6 +71,7 @@ class CreatureController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(getAllCreatures) {
         info->summary = "Get all of the creatures";
+        info->addTag("Creatures");
 
         info->addResponse<Object<CreaturesListDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -78,10 +79,17 @@ class CreatureController : public oatpp::web::server::api::ApiController {
     ENDPOINT("GET", "api/v1/creature", getAllCreatures,
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         // Create a trace span for this request
-        const auto span = creatures::observability->createRequestSpan("GET /api/v1/creature", "GET", "api/v1/creature");
+        const auto span =
+            creatures::observability
+                ? creatures::observability->createRequestSpan("GET /api/v1/creature", "GET", "api/v1/creature")
+                : nullptr;
         addHttpRequestAttributes(span, request);
 
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            if (creatures::metrics) {
+                creatures::metrics->incrementRestRequestsProcessed();
+            }
+        }
 
         if (span) {
             span->setAttribute("endpoint", "getAllCreatures");
@@ -100,6 +108,7 @@ class CreatureController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(getCreature) {
         info->summary = "Get one creature by id";
+        info->addTag("Creatures");
 
         info->addResponse<Object<CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -110,11 +119,16 @@ class CreatureController : public oatpp::web::server::api::ApiController {
     ENDPOINT("GET", "api/v1/creature/{creatureId}", getCreature, PATH(String, creatureId),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         // RequestSpan only handles HTTP-level concerns
-        const auto span = creatures::observability->createRequestSpan("GET /api/v1/creature/{creatureId}", "GET",
-                                                                      "api/v1/creature/" + std::string(creatureId));
+        const auto span =
+            creatures::observability
+                ? creatures::observability->createRequestSpan("GET /api/v1/creature/{creatureId}", "GET",
+                                                              "api/v1/creature/" + std::string(creatureId))
+                : nullptr;
         addHttpRequestAttributes(span, request);
 
-        metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
 
         if (span) {
             span->setAttribute("endpoint", "getCreature");
@@ -136,6 +150,7 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         info->description =
             "Accepts raw creature JSON and upserts it to the database. "
             "All required fields must be present in the JSON (id, name, channel_offset, audio_channel, mouth_slot).";
+        info->addTag("Creatures");
 
         info->addResponse<Object<creatures::CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
@@ -144,11 +159,15 @@ class CreatureController : public oatpp::web::server::api::ApiController {
     ENDPOINT("POST", "api/v1/creature", upsertCreature, BODY_STRING(String, body),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         const auto span =
-            creatures::observability->createRequestSpan("POST /api/v1/creature", "POST", "api/v1/creature");
+            creatures::observability
+                ? creatures::observability->createRequestSpan("POST /api/v1/creature", "POST", "api/v1/creature")
+                : nullptr;
         addHttpRequestAttributes(span, request);
 
         debug("Upserting creature via POST /api/v1/creature");
-        metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
 
         try {
             const auto creatureConfig = std::string(body);
@@ -185,16 +204,20 @@ class CreatureController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(validateCreatureConfig) {
         info->summary = "Validate a creature configuration payload";
+        info->addTag("Creatures");
         info->addResponse<Object<CreatureConfigValidationDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/creature/validate", validateCreatureConfig, BODY_STRING(String, body),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability->createRequestSpan("POST /api/v1/creature/validate", "POST",
-                                                                "api/v1/creature/validate");
+        auto span = creatures::observability ? creatures::observability->createRequestSpan(
+                                                   "POST /api/v1/creature/validate", "POST", "api/v1/creature/validate")
+                                             : nullptr;
         addHttpRequestAttributes(span, request);
 
-        metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
 
         if (span) {
             span->setAttribute("endpoint", "validateCreatureConfig");
@@ -213,6 +236,7 @@ class CreatureController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(setIdleEnabled) {
         info->summary = "Enable or disable idle loop for a creature (runtime-only)";
+        info->addTag("Creatures");
         info->addResponse<Object<creatures::CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -220,11 +244,17 @@ class CreatureController : public oatpp::web::server::api::ApiController {
     ENDPOINT("PATCH", "api/v1/creature/{creatureId}/idle", setIdleEnabled, PATH(String, creatureId),
              BODY_DTO(Object<IdleToggleDto>, body),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        const auto span = observability->createRequestSpan("PATCH /api/v1/creature/{creatureId}/idle", "PATCH",
-                                                           "api/v1/creature/" + std::string(creatureId) + "/idle");
+        const auto span =
+            creatures::observability
+                ? creatures::observability->createRequestSpan("PATCH /api/v1/creature/{creatureId}/idle", "PATCH",
+                                                              "api/v1/creature/" + std::string(creatureId) + "/idle")
+                : nullptr;
+
         addHttpRequestAttributes(span, request);
 
-        metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
 
         if (span) {
             span->setAttribute("endpoint", "setIdleEnabled");
@@ -252,6 +282,7 @@ class CreatureController : public oatpp::web::server::api::ApiController {
             "Called by controllers when they start up to register a creature and its current universe. "
             "The creature config from the controller's JSON file is the source of truth and will be upserted "
             "to the database. The universe assignment is stored in runtime memory only.";
+        info->addTag("Creatures");
 
         info->addResponse<Object<creatures::CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
@@ -259,8 +290,11 @@ class CreatureController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/creature/register", registerCreature,
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        const auto span = creatures::observability->createRequestSpan("POST /api/v1/creature/register", "POST",
-                                                                      "api/v1/creature/register");
+        const auto span = creatures::observability
+                              ? creatures::observability->createRequestSpan("POST /api/v1/creature/register", "POST",
+                                                                            "api/v1/creature/register")
+                              : nullptr;
+
         addHttpRequestAttributes(span, request);
 
         debug("----> Controller registering creature with universe assignment");
@@ -275,7 +309,9 @@ class CreatureController : public oatpp::web::server::api::ApiController {
                   std::string(body->data(), std::min(200UL, static_cast<size_t>(body->size()))));
         }
 
-        metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
 
         // Parse the JSON manually for now
         Object<RegisterCreatureRequestDto> dto;

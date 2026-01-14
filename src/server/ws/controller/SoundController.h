@@ -64,28 +64,37 @@ class SoundController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(getAllSounds) {
         info->summary = "Lists all of the sound files";
+        info->addTag("Sounds");
 
         info->addResponse<Object<SoundsListDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound", getAllSounds) {
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            if (creatures::metrics) {
+                creatures::metrics->incrementRestRequestsProcessed();
+            }
+        }
         return createDtoResponse(Status::CODE_200, m_soundService.getAllSounds());
     }
 
     ENDPOINT_INFO(getAdHocSounds) {
         info->summary = "List ad-hoc/generated sound files";
+        info->addTag("Sounds");
         info->addResponse<Object<AdHocSoundListDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound/ad-hoc", getAdHocSounds) {
-        metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return createDtoResponse(Status::CODE_200, m_soundService.getAdHocSounds());
     }
 
     ENDPOINT_INFO(playSound) {
         info->summary = "Queue up a sound to play on the next frame";
+        info->addTag("Sounds");
 
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -93,12 +102,15 @@ class SoundController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/sound/play", playSound,
              BODY_DTO(Object<creatures::ws::PlaySoundRequestDTO>, requestBody)) {
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return createDtoResponse(Status::CODE_200, m_soundService.playSound(std::string(requestBody->file_name)));
     }
 
     ENDPOINT_INFO(generateLipSyncFromUpload) {
         info->summary = "Generate lip sync data by uploading a WAV file";
+        info->addTag("Sounds");
 
         info->addResponse<String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
@@ -108,10 +120,14 @@ class SoundController : public oatpp::web::server::api::ApiController {
     ENDPOINT("POST", "api/v1/sound/generate-lipsync/upload", generateLipSyncFromUpload, BODY_STRING(String, body),
              QUERY(String, filename, "filename"), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
 
-        auto span = creatures::observability->createRequestSpan("POST /api/v1/sound/generate-lipsync/upload", "POST",
-                                                                "api/v1/sound/generate-lipsync/upload");
+        auto span = creatures::observability
+                        ? creatures::observability->createRequestSpan("POST /api/v1/sound/generate-lipsync/upload",
+                                                                      "POST", "api/v1/sound/generate-lipsync/upload")
+                        : nullptr;
 
-        metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         info("REST call to generateLipSyncFromUpload");
 
         if (span) {
@@ -380,6 +396,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(getSound) {
         info->summary = "Retrieve a sound file";
+        info->addTag("Sounds");
 
         info->addResponse<String>(Status::CODE_200, "audio/mpeg");
         info->addResponse<String>(Status::CODE_200, "audio/ogg");
@@ -392,7 +409,9 @@ class SoundController : public oatpp::web::server::api::ApiController {
     ENDPOINT("GET", "/api/v1/sound/{filename}", getSound, PATH(String, filename)) {
 
         debug("Request to serve sound file: {}", std::string(filename));
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
 
         // Sanitize the filename
         std::string safeFilename;
@@ -487,12 +506,15 @@ class SoundController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(getAdHocSound) {
         info->summary = "Retrieve an ad-hoc generated sound file";
+        info->addTag("Sounds");
         info->addResponse<String>(Status::CODE_200, "audio/wav");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound/ad-hoc/{filename}", getAdHocSound, PATH(String, filename)) {
-        metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
 
         std::string safeFilename;
         try {
@@ -548,6 +570,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(generateLipSync) {
         info->summary = "Generate lip sync data for a sound file using Rhubarb Lip Sync (async job)";
+        info->addTag("Sounds");
 
         info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
@@ -558,11 +581,15 @@ class SoundController : public oatpp::web::server::api::ApiController {
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
 
         // Create a trace span for this request
-        const auto span = observability->createRequestSpan("POST /api/v1/sound/generate-lipsync", "POST",
-                                                           "api/v1/sound/generate-lipsync");
+        const auto span = creatures::observability
+                              ? creatures::observability->createRequestSpan("POST /api/v1/sound/generate-lipsync",
+                                                                            "POST", "api/v1/sound/generate-lipsync")
+                              : nullptr;
 
         info("REST call to generateLipSync (async)");
-        metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
 
         if (span) {
             span->setAttribute("endpoint", "generateLipSync");

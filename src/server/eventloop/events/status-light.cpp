@@ -27,6 +27,12 @@ Result<framenum_t> StatusLightEvent::executeImpl() {
 
     std::string lightName;
 
+    if (!gpioPins || !statusLights) {
+        const std::string errorMsg = "StatusLightEvent: GPIO or status lights unavailable";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
     switch (light) {
     case StatusLight::Animation:
         gpioPins->playingAnimation(on);

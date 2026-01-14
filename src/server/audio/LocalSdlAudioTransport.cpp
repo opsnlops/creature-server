@@ -37,6 +37,13 @@ LocalSdlAudioTransport::~LocalSdlAudioTransport() {
 Result<void> LocalSdlAudioTransport::start(std::shared_ptr<PlaybackSession> session) {
     session_ = session;
 
+    if (!session_) {
+        return Result<void>{ServerError(ServerError::InvalidData, "No playback session provided")};
+    }
+    if (!config) {
+        return Result<void>{ServerError(ServerError::InternalError, "Audio configuration unavailable")};
+    }
+
     // Get the sound file path from the animation metadata
     const auto &animation = session_->getAnimation();
     if (animation.metadata.sound_file.empty()) {
@@ -91,8 +98,14 @@ void LocalSdlAudioTransport::audioThreadFunc(std::string filePath) {
 
     SDLMixerGuard guard;
 
+    auto setPlayingSound = [](bool isPlaying) {
+        if (gpioPins) {
+            gpioPins->playingSound(isPlaying);
+        }
+    };
+
     try {
-        gpioPins->playingSound(true);
+        setPlayingSound(true);
 
         // Open audio device with error checking
         if (Mix_OpenAudioDevice(localAudioDeviceAudioSpec.freq, localAudioDeviceAudioSpec.format,
@@ -101,7 +114,7 @@ void LocalSdlAudioTransport::audioThreadFunc(std::string filePath) {
             error(errorMsg);
             isPlaying_ = false;
             hasFinished_ = true;
-            gpioPins->playingSound(false);
+            setPlayingSound(false);
             return;
         }
         guard.audioDeviceOpen = true;
@@ -113,7 +126,7 @@ void LocalSdlAudioTransport::audioThreadFunc(std::string filePath) {
             error(errorMsg);
             isPlaying_ = false;
             hasFinished_ = true;
-            gpioPins->playingSound(false);
+            setPlayingSound(false);
             return;
         }
 
@@ -133,7 +146,7 @@ void LocalSdlAudioTransport::audioThreadFunc(std::string filePath) {
             error(errorMsg);
             isPlaying_ = false;
             hasFinished_ = true;
-            gpioPins->playingSound(false);
+            setPlayingSound(false);
             return;
         }
 
@@ -143,7 +156,7 @@ void LocalSdlAudioTransport::audioThreadFunc(std::string filePath) {
             error(errorMsg);
             isPlaying_ = false;
             hasFinished_ = true;
-            gpioPins->playingSound(false);
+            setPlayingSound(false);
             return;
         }
 
@@ -167,7 +180,9 @@ void LocalSdlAudioTransport::audioThreadFunc(std::string filePath) {
             debug("Local audio playback completed successfully");
         }
 
-        metrics->incrementSoundsPlayed();
+        if (metrics) {
+            metrics->incrementSoundsPlayed();
+        }
 
     } catch (const std::exception &e) {
         const std::string errorMsg = fmt::format("Exception in audio playback thread: {}", e.what());
@@ -178,7 +193,7 @@ void LocalSdlAudioTransport::audioThreadFunc(std::string filePath) {
     }
 
     // Cleanup happens automatically via RAII guard
-    gpioPins->playingSound(false);
+    setPlayingSound(false);
     isPlaying_ = false;
     hasFinished_ = true;
 }

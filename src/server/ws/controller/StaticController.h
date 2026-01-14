@@ -51,12 +51,15 @@ class StaticController : public oatpp::web::server::api::ApiController {
         response->putHeader(Header::SERVER, oatpp::String(version));
         response->putHeader("All-The-Birds-Sing-Words", oatpp::String("yes"));
         response->putHeader("And-The-Flowers-Croon", oatpp::String("of course"));
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return response;
     }
 
     ENDPOINT_INFO(health) {
         info->summary = "Returns OK if the server is healthy";
+        info->addTag("System");
 
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
     }
@@ -67,7 +70,9 @@ class StaticController : public oatpp::web::server::api::ApiController {
         response->message = "Server is operational";
         response->code = 200;
 
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
         return createDtoResponse(Status::CODE_200, response);
     }
 };

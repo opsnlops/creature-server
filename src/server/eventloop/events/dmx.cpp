@@ -23,11 +23,19 @@ extern std::shared_ptr<SystemCounters> metrics;
 
 Result<framenum_t> DMXEvent::executeImpl() {
 
+    if (!e131Server) {
+        const std::string errorMsg = "DMXEvent: e131Server unavailable";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
     // Send the DMX data
     e131Server->setValues(universe, channelOffset, data);
 
     // Update our metrics
-    metrics->incrementDMXEventsProcessed();
+    if (metrics) {
+        metrics->incrementDMXEventsProcessed();
+    }
 
 #if DEBUG_EVENT_DMX
     debug("DMX data: Offset: {}, data: {}", channelOffset, vectorToHexString(data));

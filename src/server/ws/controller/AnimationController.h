@@ -88,6 +88,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(listAllAnimations) {
         info->summary = "List all of the animations";
+        info->addTag("Animations");
         info->addResponse<Object<AnimationsListDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -120,6 +121,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(listAdHocAnimations) {
         info->summary = "List ad-hoc animations stored in the TTL collection";
+        info->addTag("Animations");
         info->addResponse<Object<AdHocAnimationListDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
@@ -146,6 +148,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(getAdHocAnimation) {
         info->summary = "Get an ad-hoc animation by id";
+        info->addTag("Animations");
         info->addResponse<Object<AnimationDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -178,6 +181,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(getAnimation) {
         info->summary = "Get an animation by id";
+        info->addTag("Animations");
         info->addResponse<Object<AnimationDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -216,6 +220,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->summary = "Generate lip sync for an animation";
         info->description =
             "Queues a background job to derive per-creature lip sync from the animation's multitrack audio.";
+        info->addTag("Animations");
         info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -327,6 +332,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(upsertAnimation) {
         info->summary = "Create or update an animation in the database";
+        info->addTag("Animations");
         info->addResponse<Object<AnimationDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -376,6 +382,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(deleteAnimation) {
         info->summary = "Delete an animation and all of its tracks";
+        info->addTag("Animations");
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -424,6 +431,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
 
     ENDPOINT_INFO(playStoredAnimation) {
         info->summary = "Play one animation out of the database on a given universe";
+        info->addTag("Animations");
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -432,11 +440,26 @@ class AnimationController : public oatpp::web::server::api::ApiController {
              BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         // The most exciting span - playing an animation!
-        auto span =
-            creatures::observability->createRequestSpan("POST /api/v1/animation/play", "POST", "api/v1/animation/play");
+        auto span = creatures::observability ? creatures::observability->createRequestSpan(
+                                                   "POST /api/v1/animation/play", "POST", "api/v1/animation/play")
+                                             : nullptr;
         addHttpRequestAttributes(span, request); // Add HTTP attributes
 
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
+
+        if (!creatures::config || !creatures::db) {
+            auto result = creatures::ws::StatusDto::createShared();
+            result->status = "error";
+            result->code = 500;
+            result->message = "Animation play unavailable: server dependencies missing";
+            if (span) {
+                span->setAttribute("error.type", "missing_dependencies");
+                span->setHttpStatus(500);
+            }
+            return createDtoResponse(Status::CODE_500, result);
+        }
 
         try {
             if (span) {
@@ -472,6 +495,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->summary = "Interrupt current playback with a new animation (for interactive Zoom meetings!)";
         info->description =
             "Requires cooperative scheduler (--scheduler cooperative). Returns 400 if legacy scheduler is active.";
+        info->addTag("Animations");
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -480,11 +504,27 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     ENDPOINT("POST", "api/v1/animation/interrupt", interruptAnimation,
              BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation/interrupt", "POST",
-                                                                "api/v1/animation/interrupt");
+        auto span = creatures::observability
+                        ? creatures::observability->createRequestSpan("POST /api/v1/animation/interrupt", "POST",
+                                                                      "api/v1/animation/interrupt")
+                        : nullptr;
         addHttpRequestAttributes(span, request);
 
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
+
+        if (!creatures::config || !creatures::sessionManager) {
+            auto result = creatures::ws::StatusDto::createShared();
+            result->status = "error";
+            result->code = 500;
+            result->message = "Animation interrupt unavailable: server dependencies missing";
+            if (span) {
+                span->setAttribute("error.type", "missing_dependencies");
+                span->setHttpStatus(500);
+            }
+            return createDtoResponse(Status::CODE_500, result);
+        }
 
         // Check if cooperative scheduler is enabled
         if (creatures::config->getAnimationSchedulerType() !=
@@ -517,8 +557,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
 
             bool shouldResume = requestBody->resumePlaylist ? true : false;
             info("REST API: interrupting universe {} with animation {} (resume: {})",
-                 static_cast<uint32_t>(requestBody->universe), std::string(requestBody->animation_id),
-                 shouldResume);
+                 static_cast<uint32_t>(requestBody->universe), std::string(requestBody->animation_id), shouldResume);
 
             // Get the animation from the database
             auto animationDto = m_animationService.getAnimation(requestBody->animation_id, span);
@@ -578,6 +617,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->summary = "Generate and play an ad-hoc speech animation";
         info->description =
             "Creates a job that synthesizes audio, generates lip sync, stores a temporary animation, and interrupts.";
+        info->addTag("Animations");
         info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -593,6 +633,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->summary = "Prepare an ad-hoc speech animation without playing it";
         info->description =
             "Creates the same ad-hoc speech job pipeline but skips the final playback. Use the play endpoint later.";
+        info->addTag("Animations");
         info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
@@ -609,6 +650,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->summary = "Play a prepared ad-hoc animation";
         info->description =
             "Loads an ad-hoc animation from the TTL cache and interrupts the current universe without regenerating.";
+        info->addTag("Animations");
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
@@ -619,10 +661,26 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     ENDPOINT("POST", "api/v1/animation/ad-hoc/play", playPreparedAdHocAnimation,
              BODY_DTO(Object<creatures::ws::TriggerAdHocAnimationRequestDto>, requestBody),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation/ad-hoc/play", "POST",
-                                                                "api/v1/animation/ad-hoc/play");
+        auto span = creatures::observability
+                        ? creatures::observability->createRequestSpan("POST /api/v1/animation/ad-hoc/play", "POST",
+                                                                      "api/v1/animation/ad-hoc/play")
+                        : nullptr;
         addHttpRequestAttributes(span, request);
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
+
+        if (!creatures::config || !creatures::db || !creatures::sessionManager || !creatures::creatureUniverseMap) {
+            auto result = creatures::ws::StatusDto::createShared();
+            result->status = "error";
+            result->code = 500;
+            result->message = "Ad-hoc play unavailable: server dependencies missing";
+            if (span) {
+                span->setAttribute("error.type", "missing_dependencies");
+                span->setHttpStatus(500);
+            }
+            return createDtoResponse(Status::CODE_500, result);
+        }
 
         if (creatures::config->getAnimationSchedulerType() !=
             creatures::Configuration::AnimationSchedulerType::Cooperative) {
@@ -658,7 +716,9 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         }
 
         auto animationLookupSpan =
-            creatures::observability->createOperationSpan("AnimationController.getAdHocAnimation", span);
+            creatures::observability
+                ? creatures::observability->createOperationSpan("AnimationController.getAdHocAnimation", span)
+                : nullptr;
         if (animationLookupSpan) {
             animationLookupSpan->setAttribute("animation.id", animationId);
         }
@@ -755,17 +815,32 @@ class AnimationController : public oatpp::web::server::api::ApiController {
             return createDtoResponse(Status::CODE_409, result);
         }
 
-        auto sessionResult = creatures::sessionManager->interrupt(universe, animation, resumePlaylist);
+        auto sessionResult = creatures::sessionManager->interruptIdleOnly(universe, animation, std::string(creatureId));
         if (!sessionResult.isSuccess()) {
+            auto error = sessionResult.getError().value();
             auto result = creatures::ws::StatusDto::createShared();
             result->status = "error";
-            result->code = 500;
-            result->message = sessionResult.getError()->getMessage().c_str();
+            result->message = error.getMessage().c_str();
+
+            Status status = Status::CODE_500;
+            switch (error.getCode()) {
+            case ServerError::Conflict:
+                status = Status::CODE_409;
+                break;
+            case ServerError::InvalidData:
+                status = Status::CODE_400;
+                break;
+            default:
+                status = Status::CODE_500;
+                break;
+            }
+
+            result->code = status.code;
             if (span) {
                 span->setAttribute("error.type", "session_interrupt_failed");
-                span->setHttpStatus(500);
+                span->setHttpStatus(status.code);
             }
-            return createDtoResponse(Status::CODE_500, result);
+            return createDtoResponse(status, result);
         }
 
         auto response = creatures::ws::StatusDto::createShared();
@@ -793,12 +868,28 @@ class AnimationController : public oatpp::web::server::api::ApiController {
                                 creatures::jobs::JobType jobType, bool autoPlay, const std::string &spanName,
                                 const std::string &endpointPath) {
 
-        auto span = creatures::observability->createRequestSpan(spanName, "POST", endpointPath);
+        auto span = creatures::observability
+                        ? creatures::observability->createRequestSpan(spanName, "POST", endpointPath)
+                        : nullptr;
         addHttpRequestAttributes(span, request);
-        creatures::metrics->incrementRestRequestsProcessed();
+        if (creatures::metrics) {
+            creatures::metrics->incrementRestRequestsProcessed();
+        }
 
         if (span) {
             span->setAttribute("auto_play", autoPlay);
+        }
+
+        if (!creatures::config || !creatures::db || !creatures::sessionManager) {
+            auto result = creatures::ws::StatusDto::createShared();
+            result->status = "error";
+            result->code = 500;
+            result->message = "Ad-hoc request unavailable: server dependencies missing";
+            if (span) {
+                span->setAttribute("error.type", "missing_dependencies");
+                span->setHttpStatus(500);
+            }
+            return createDtoResponse(Status::CODE_500, result);
         }
 
         if (creatures::config->getAnimationSchedulerType() !=

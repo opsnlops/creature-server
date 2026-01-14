@@ -59,7 +59,9 @@ void EventLoop::run() {
 
         // Increment the frame counter for this pass
         frameCount++;
-        metrics->incrementTotalFrames();
+        if (metrics) {
+            metrics->incrementTotalFrames();
+        }
 
         // Process the events for this frame, if any, keeping the queue locked as short as possible.
         uint32_t eventsProcessedThisFrame = 0;
@@ -86,27 +88,31 @@ void EventLoop::run() {
 
                 if (event) {
                     event->execute();
-                    metrics->incrementEventsProcessed();
+                    if (metrics) {
+                        metrics->incrementEventsProcessed();
+                    }
                     eventsProcessedThisFrame++;
                 }
 
             } catch (const std::runtime_error &e) {
                 frameHadError = true;
                 eventErrorMessage = e.what();
-                critical("An unhandled runtime error occurred on event {}: {}", metrics->getEventsProcessed(),
-                         e.what());
+                const auto processedEvents = metrics ? metrics->getEventsProcessed() : 0;
+                critical("An unhandled runtime error occurred on event {}: {}", processedEvents, e.what());
                 if (frameSpan)
                     frameSpan->recordException(e);
             } catch (const std::exception &e) {
                 frameHadError = true;
                 eventErrorMessage = e.what();
-                critical("An unhandled exception was thrown on event {}: {}", metrics->getEventsProcessed(), e.what());
+                const auto processedEvents = metrics ? metrics->getEventsProcessed() : 0;
+                critical("An unhandled exception was thrown on event {}: {}", processedEvents, e.what());
                 if (frameSpan)
                     frameSpan->recordException(e);
             } catch (...) {
                 frameHadError = true;
                 eventErrorMessage = "Unknown error";
-                critical("An unknown error occurred on event {}!", metrics->getEventsProcessed());
+                const auto processedEvents = metrics ? metrics->getEventsProcessed() : 0;
+                critical("An unknown error occurred on event {}!", processedEvents);
                 if (frameSpan) {
                     frameSpan->setError("Unknown exception occurred during event processing");
                 }
@@ -144,9 +150,16 @@ framenum_t EventLoop::getCurrentFrameNumber() const { return frameCount; }
 
 framenum_t EventLoop::getNextFrameNumber() const { return frameCount + 1; }
 
-uint32_t EventLoop::getQueueSize() const { return eventScheduler->event_queue.size(); }
+uint32_t EventLoop::getQueueSize() const {
+    std::lock_guard lock(eventQueueMutex);
+    return eventScheduler->event_queue.size();
+}
 
 void EventLoop::scheduleEvent(const std::shared_ptr<Event> &e) {
+    if (!e) {
+        warn("EventLoop: attempted to schedule null event");
+        return;
+    }
     std::lock_guard lock(eventQueueMutex);
     eventScheduler->event_queue.push(e);
 }

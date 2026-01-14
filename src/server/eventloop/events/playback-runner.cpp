@@ -5,6 +5,7 @@
 
 #include "types.h"
 
+#include <algorithm>
 #include <memory>
 #include <unordered_set>
 
@@ -28,7 +29,12 @@ namespace creatures {
 
 namespace {
 constexpr double PLAYBACK_RUNNER_TRACE_SAMPLING = 0.0005; // 0.05% sampling rate
+
+framenum_t frameStepForMs(uint32_t msPerFrame) {
+    auto frames = msPerFrame / EVENT_LOOP_PERIOD_MS;
+    return std::max<framenum_t>(1, static_cast<framenum_t>(frames));
 }
+} // namespace
 
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<EventLoop> eventLoop;
@@ -40,6 +46,18 @@ PlaybackRunnerEvent::PlaybackRunnerEvent(framenum_t frameNumber, std::shared_ptr
     : EventBase(frameNumber), session_(session) {}
 
 Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
+    if (!session_) {
+        std::string errorMsg = "PlaybackRunnerEvent has no session";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    if (!eventLoop) {
+        std::string errorMsg = "PlaybackRunnerEvent missing event loop";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
     std::shared_ptr<SamplingSpan> runnerSpan = nullptr;
     if (observability) {
         if (auto parentSpan = session_->getSpan()) {
@@ -177,15 +195,24 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
 }
 
 void PlaybackRunnerEvent::performTeardown() {
+    if (!session_) {
+        warn("PlaybackRunnerEvent teardown skipped: missing session");
+        return;
+    }
+
     debug("PlaybackRunnerEvent performing teardown for animation '{}'", session_->getAnimation().metadata.title);
 
     // NOTE: We do NOT send DMX blackout - creatures are left in their final state
     // This is intentional to avoid dangerous rapid state changes
 
-    // Turn off status light
-    auto statusLightOff =
-        std::make_shared<StatusLightEvent>(eventLoop->getNextFrameNumber(), StatusLight::Animation, false);
-    eventLoop->scheduleEvent(statusLightOff);
+    if (!eventLoop) {
+        warn("PlaybackRunnerEvent teardown skipped: missing event loop");
+    } else {
+        // Turn off status light
+        auto statusLightOff =
+            std::make_shared<StatusLightEvent>(eventLoop->getNextFrameNumber(), StatusLight::Animation, false);
+        eventLoop->scheduleEvent(statusLightOff);
+    }
 
     // Stop audio if playing
     if (const auto audioTransport = session_->getAudioTransport()) {
@@ -197,6 +224,24 @@ void PlaybackRunnerEvent::performTeardown() {
 
 Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
     trace("emitDmxFrames called for frame {}", this->frameNumber);
+
+    if (!creatureCache) {
+        std::string errorMsg = "Creature cache unavailable during playback";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    if (!db) {
+        std::string errorMsg = "Database unavailable during playback";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    if (!eventLoop) {
+        std::string errorMsg = "Event loop unavailable during playback";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
 
     auto &trackStates = session_->getTrackStates();
     uint32_t framesEmitted = 0;
@@ -254,7 +299,7 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
 
         // Advance track state
         trackState.currentFrameIndex++;
-        trackState.nextDispatchFrame = this->frameNumber + (session_->getMsPerFrame() / EVENT_LOOP_PERIOD_MS);
+        trackState.nextDispatchFrame = this->frameNumber + frameStepForMs(session_->getMsPerFrame());
 
         framesEmitted++;
     }
@@ -284,9 +329,7 @@ bool PlaybackRunnerEvent::areAllTracksFinished() const {
 framenum_t PlaybackRunnerEvent::calculateNextFrameNumber() const {
     // Calculate next frame based on ms per frame
     const uint32_t msPerFrame = session_->getMsPerFrame();
-    const framenum_t framesPerAnimFrame = msPerFrame / EVENT_LOOP_PERIOD_MS;
-
-    return this->frameNumber + framesPerAnimFrame;
+    return this->frameNumber + frameStepForMs(msPerFrame);
 }
 
 } // namespace creatures

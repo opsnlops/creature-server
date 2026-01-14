@@ -16,6 +16,17 @@ extern std::shared_ptr<SystemCounters> metrics;
 
 Result<framenum_t> TickEvent::executeImpl() {
 
+    if (!eventLoop) {
+        const std::string errorMsg = "TickEvent: event loop unavailable";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+    if (!metrics) {
+        const std::string errorMsg = "TickEvent: metrics unavailable";
+        error(errorMsg);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
     // Just go tick!
     debug("⌚️ Hello from frame {:L}! Event queue length: {}, events: {:L}, frames streamed: {:L}, animations played: "
           "{:L}, DMX events sent: {:L}, sounds played: {:L}, playlists started: {:L}, playlists stopped: {:L}, "

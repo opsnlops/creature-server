@@ -31,11 +31,20 @@ using oatpp::web::protocol::http::Status;
 oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistDto>>> PlaylistService::getAllPlaylists() {
 
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
 
-    appLogger->debug("PlaylistService::getAllPlaylists()");
+    if (logger) {
+        logger->debug("PlaylistService::getAllPlaylists()");
+    }
+
+    if (!db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Playlist database unavailable");
+    }
 
     // Create a span for this operation
-    auto span = creatures::observability->createOperationSpan("PlaylistService.getAllPlaylists");
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("PlaylistService.getAllPlaylists")
+                    : nullptr;
 
     bool error = false;
     std::string errorMessage;
@@ -65,14 +74,16 @@ oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistDto>>> PlaylistService::g
             break;
         }
         errorMessage = fmt::format("getAllPlaylists() error {}: {}", errorValue, result.getError()->getMessage());
-        appLogger->warn(errorMessage);
+        if (appLogger) {
+            logger->warn(errorMessage);
+        }
         if (span) {
             span->setError(errorMessage);
         }
         error = true;
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
-    appLogger->trace("done fetching items");
+    logger->trace("done fetching items");
 
     auto items = oatpp::Vector<oatpp::Object<creatures::PlaylistDto>>::createShared();
     auto playlists = result.getValue().value();
@@ -80,7 +91,9 @@ oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistDto>>> PlaylistService::g
     // If there aren't any playlists, return a 404
     if (playlists.empty()) {
         errorMessage = "No playlists found";
-        appLogger->warn(errorMessage);
+        if (appLogger) {
+            logger->warn(errorMessage);
+        }
         if (span) {
             span->setError(errorMessage);
         }
@@ -93,9 +106,9 @@ oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistDto>>> PlaylistService::g
     }
 
     for (const auto &playlist : playlists) {
-        appLogger->debug("Adding playlist: {}", playlist.id);
+        logger->debug("Adding playlist: {}", playlist.id);
         items->emplace_back(creatures::convertToDto(playlist));
-        appLogger->trace("added");
+        logger->trace("added");
     }
 
     auto page = ListDto<oatpp::Object<creatures::PlaylistDto>>::createShared();
@@ -107,14 +120,20 @@ oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistDto>>> PlaylistService::g
 
 oatpp::Object<creatures::PlaylistDto> PlaylistService::getPlaylist(const oatpp::String &inPlaylistId) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
 
     // Convert the oatpp string to a std::string
     std::string playlistId = std::string(inPlaylistId);
 
-    appLogger->debug("PlaylistService::getPlaylist({})", playlistId);
+    logger->debug("PlaylistService::getPlaylist({})", playlistId);
+
+    if (!db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Playlist database unavailable");
+    }
 
     // Create a span for this operation
-    auto span = creatures::observability->createOperationSpan("PlaylistService.getPlaylist");
+    auto span = creatures::observability ? creatures::observability->createOperationSpan("PlaylistService.getPlaylist")
+                                         : nullptr;
     if (span) {
         span->setAttribute("playlist.id", playlistId);
     }
@@ -139,7 +158,9 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::getPlaylist(const oatpp::
             break;
         }
         errorMessage = result.getError().value().getMessage();
-        appLogger->warn(std::string(errorMessage));
+        if (appLogger) {
+            logger->warn(std::string(errorMessage));
+        }
         if (span) {
             span->setError(std::string(errorMessage));
         }
@@ -157,13 +178,20 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::getPlaylist(const oatpp::
 
 oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std::string &playlistJson) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
 
-    appLogger->info("attempting to upsert a playlist");
+    logger->info("attempting to upsert a playlist");
 
-    appLogger->debug("JSON: {}", playlistJson);
+    logger->debug("JSON: {}", playlistJson);
+
+    if (!db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Playlist database unavailable");
+    }
 
     // Create a span for this operation
-    auto span = creatures::observability->createOperationSpan("PlaylistService.upsertPlaylist");
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("PlaylistService.upsertPlaylist")
+                    : nullptr;
 
     bool error = false;
     oatpp::String errorMessage;
@@ -180,7 +208,9 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
         if (!jsonResult.isSuccess()) {
             auto parseError = jsonResult.getError().value();
             errorMessage = parseError.getMessage();
-            appLogger->warn(std::string(errorMessage));
+            if (appLogger) {
+                logger->warn(std::string(errorMessage));
+            }
             if (span) {
                 span->setError(std::string(errorMessage));
             }
@@ -192,7 +222,7 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
         auto result = db->validatePlaylistJson(jsonObject);
         if (!result.isSuccess()) {
             errorMessage = result.getError()->getMessage();
-            appLogger->warn(std::string(result.getError()->getMessage()));
+            logger->warn(std::string(result.getError()->getMessage()));
             if (span) {
                 span->setError(std::string(errorMessage));
             }
@@ -201,7 +231,7 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
         }
     } catch (const nlohmann::json::parse_error &e) {
         errorMessage = e.what();
-        appLogger->warn(std::string(e.what()));
+        logger->warn(std::string(e.what()));
         if (span) {
             span->recordException(e);
             span->setError(std::string(errorMessage));
@@ -211,14 +241,14 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-    appLogger->debug("passing the upsert request off to the database");
+    logger->debug("passing the upsert request off to the database");
     auto result = db->upsertPlaylist(playlistJson, span);
 
     // If there's an error, let the client know
     if (!result.isSuccess()) {
 
         errorMessage = result.getError()->getMessage();
-        appLogger->warn(std::string(result.getError()->getMessage()));
+        logger->warn(std::string(result.getError()->getMessage()));
         if (span) {
             span->setError(std::string(errorMessage));
         }
@@ -230,7 +260,7 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
     // This should never happen and is a bad bug if it does 😱
     if (!result.getValue().has_value()) {
         errorMessage = "DB didn't return a value after upserting a playlist. This is a bug. Please report it.";
-        appLogger->error(std::string(errorMessage));
+        logger->error(std::string(errorMessage));
         if (span) {
             span->setError(std::string(errorMessage));
         }
@@ -251,14 +281,21 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
 oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_t universe,
                                                                        const oatpp::String &inPlaylistId) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    auto logger = appLogger ? appLogger : spdlog::default_logger();
 
     // Convert the oatpp string to a std::string
     std::string playlistId = std::string(inPlaylistId);
 
-    // 🐰 Create a trace span for this request
-    auto span = creatures::observability->createOperationSpan("PlaylistService.startPlaylist");
+    if (!db || !sessionManager || !eventLoop) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Playlist scheduler unavailable");
+    }
 
-    appLogger->debug("PlaylistService::startPlaylist({}, {})", universe, std::string(playlistId));
+    // 🐰 Create a trace span for this request
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("PlaylistService.startPlaylist")
+                    : nullptr;
+
+    logger->debug("PlaylistService::startPlaylist({}, {})", universe, std::string(playlistId));
 
     if (span) {
         span->setAttribute("service", "PlaylistService");
@@ -274,7 +311,9 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
     // First make sure the playlist is valid
     if (playlistId.empty()) {
         errorMessage = "No playlist ID provided";
-        appLogger->warn(std::string(errorMessage));
+        if (appLogger) {
+            logger->warn(std::string(errorMessage));
+        }
         status = Status::CODE_400;
         error = true;
 
@@ -302,7 +341,9 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
             break;
         }
         errorMessage = playlistResult.getError().value().getMessage();
-        appLogger->warn(std::string(errorMessage));
+        if (appLogger) {
+            logger->warn(std::string(errorMessage));
+        }
         error = true;
 
         if (span) {
@@ -338,7 +379,7 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
     // Cancel any existing playback on this universe first
     auto existingSession = creatures::sessionManager->getCurrentSession(universe);
     if (existingSession && !existingSession->isCancelled()) {
-        appLogger->info("Cancelling existing session on universe {} before starting playlist", universe);
+        logger->info("Cancelling existing session on universe {} before starting playlist", universe);
         existingSession->cancel();
     }
 
@@ -354,7 +395,7 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::startPlaylist(universe_
 
     if (!eventLoop) {
         errorMessage = "EventLoop is not initialized";
-        appLogger->error(std::string(errorMessage));
+        logger->error(std::string(errorMessage));
         status = Status::CODE_500;
         error = true;
 
@@ -405,6 +446,14 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::stopPlaylist(universe_t
 
     info("stopping playlist on universe {}", universe);
 
+    if (!sessionManager) {
+        auto response = StatusDto::createShared();
+        response->code = 500;
+        response->message = "Playlist scheduler unavailable";
+        response->status = "error";
+        return response;
+    }
+
     // Cancel any current session and mark playlist as stopped/cleared in SessionManager
     creatures::sessionManager->stopPlaylist(universe);
     creatures::sessionManager->clearPlaylist(universe);
@@ -431,6 +480,15 @@ oatpp::Object<creatures::ws::StatusDto> PlaylistService::stopPlaylist(universe_t
 oatpp::Object<creatures::PlaylistStatusDto> PlaylistService::playlistStatus(universe_t universe) {
     debug("returning the status of the playlist on universe {}", universe);
 
+    if (!sessionManager) {
+        PlaylistStatus playlistStatus;
+        playlistStatus.universe = universe;
+        playlistStatus.playlist = "";
+        playlistStatus.playing = false;
+        playlistStatus.current_animation = "";
+        return convertToDto(playlistStatus);
+    }
+
     if (auto status = creatures::sessionManager->getPlaylistStatus(universe)) {
         return convertToDto(*status);
     }
@@ -447,6 +505,13 @@ oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistStatusDto>>> PlaylistServ
     debug("returning the status of all playlists");
 
     auto playlists = oatpp::Vector<oatpp::Object<creatures::PlaylistStatusDto>>::createShared();
+    if (!sessionManager) {
+        auto page = ListDto<oatpp::Object<creatures::PlaylistStatusDto>>::createShared();
+        page->count = playlists->size();
+        page->items = playlists;
+        return page;
+    }
+
     auto snapshots = creatures::sessionManager->getAllPlaylistStatuses();
     for (const auto &status : snapshots) {
         playlists->emplace_back(convertToDto(status));

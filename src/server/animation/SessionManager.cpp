@@ -6,8 +6,10 @@
 #include "SessionManager.h"
 
 #include "CooperativeAnimationScheduler.h"
+#include "exception/exception.h"
 #include "server/creature-server.h"
 #include "server/eventloop/eventloop.h"
+#include "server/eventloop/events/types.h"
 #include "server/runtime/Activity.h"
 #include "server/ws/service/CreatureService.h"
 #include "spdlog/spdlog.h"
@@ -24,6 +26,9 @@ namespace {
 
 std::unordered_set<creatureId_t> collectCreatureIds(const std::shared_ptr<PlaybackSession> &session) {
     std::unordered_set<creatureId_t> creatureIds;
+    if (!session) {
+        return creatureIds;
+    }
     for (const auto &trackState : session->getTrackStates()) {
         creatureIds.insert(trackState.creatureId);
     }
@@ -31,6 +36,9 @@ std::unordered_set<creatureId_t> collectCreatureIds(const std::shared_ptr<Playba
 }
 
 bool sessionHasCreature(const std::shared_ptr<PlaybackSession> &session, const creatureId_t &creatureId) {
+    if (!session) {
+        return false;
+    }
     for (const auto &trackState : session->getTrackStates()) {
         if (trackState.creatureId == creatureId) {
             return true;
@@ -50,6 +58,9 @@ bool overlaps(const std::unordered_set<creatureId_t> &lhs, const std::shared_ptr
 }
 
 void cancelSessionAndMarkActivity(const std::shared_ptr<PlaybackSession> &session) {
+    if (!session) {
+        return;
+    }
     if (session->getActivityReason() == creatures::runtime::ActivityReason::Idle) {
         std::vector<creatureId_t> idleCreatures;
         idleCreatures.reserve(session->getTrackStates().size());
@@ -71,17 +82,29 @@ void cancelSessionAndMarkActivity(const std::shared_ptr<PlaybackSession> &sessio
         creatures::runtime::ActivityState::Stopped, session->getSessionId());
 }
 
+void scheduleImmediateTeardown(const std::shared_ptr<PlaybackSession> &session) {
+    if (!session || !eventLoop) {
+        return;
+    }
+    auto teardownRunner = std::make_shared<PlaybackRunnerEvent>(eventLoop->getNextFrameNumber(), session);
+    eventLoop->scheduleEvent(teardownRunner);
+}
+
 } // namespace
 
 void SessionManager::registerSession(universe_t universe, std::shared_ptr<PlaybackSession> session, bool isPlaylist) {
-    auto span = observability->createOperationSpan("SessionManager.registerSession");
+    if (!session) {
+        warn("SessionManager: attempted to register null session on universe {}", universe);
+        return;
+    }
+
+    auto span = observability ? observability->createOperationSpan("SessionManager.registerSession") : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
         span->setAttribute("is_playlist", isPlaylist);
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    bool playlistContext = isPlaylist;
     auto newCreatures = collectCreatureIds(session);
 
     // Cancel overlapping sessions on this universe (last request wins per creature)
@@ -112,7 +135,6 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
     if (it != universeStates_.end()) {
         // Preserve existing playlist state (isPlaylist, playlistId, isInterrupted, etc.)
         it->second.activeSessions.push_back(session);
-        playlistContext = playlistContext || it->second.isPlaylist;
         // Only update isPlaylist if we're explicitly setting it to true (starting a new playlist)
         if (isPlaylist) {
             it->second.isPlaylist = true;
@@ -130,10 +152,6 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
         info("SessionManager: registered new session on universe {} (playlist: {})", universe, isPlaylist);
     }
 
-    if (playlistContext) {
-        session->setActivityReason(creatures::runtime::ActivityReason::Playlist);
-    }
-
     if (span) {
         span->setAttribute("session.id", session->getSessionId());
         span->setSuccess();
@@ -142,12 +160,21 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
 
 Result<std::shared_ptr<PlaybackSession>>
 SessionManager::interrupt(universe_t universe, const Animation &interruptAnimation, bool shouldResumePlaylist) {
-    auto span = observability->createOperationSpan("SessionManager.interrupt");
+    auto span = observability ? observability->createOperationSpan("SessionManager.interrupt") : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
         span->setAttribute("interrupt.animation_id", interruptAnimation.id);
         span->setAttribute("interrupt.animation_title", interruptAnimation.metadata.title);
         span->setAttribute("interrupt.should_resume_playlist", shouldResumePlaylist);
+    }
+
+    if (!eventLoop) {
+        std::string errorMessage = "SessionManager: event loop unavailable";
+        error(errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
     bool interruptedPlaylist = false;
@@ -218,6 +245,94 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
 
     info("SessionManager: interrupt animation '{}' scheduled on universe {}", interruptAnimation.metadata.title,
          universe);
+
+    if (span) {
+        span->setAttribute("session.id", session->getSessionId());
+        span->setSuccess();
+    }
+
+    return Result<std::shared_ptr<PlaybackSession>>{session};
+}
+
+Result<std::shared_ptr<PlaybackSession>> SessionManager::interruptIdleOnly(universe_t universe,
+                                                                           const Animation &interruptAnimation,
+                                                                           const creatureId_t &creatureId) {
+    auto span = observability ? observability->createOperationSpan("SessionManager.interruptIdleOnly") : nullptr;
+    if (span) {
+        span->setAttribute("universe", static_cast<int64_t>(universe));
+        span->setAttribute("interrupt.animation_id", interruptAnimation.id);
+        span->setAttribute("interrupt.animation_title", interruptAnimation.metadata.title);
+        span->setAttribute("creature.id", creatureId);
+    }
+
+    if (!eventLoop) {
+        std::string errorMessage = "SessionManager: event loop unavailable";
+        error(errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+
+    std::vector<std::shared_ptr<PlaybackSession>> cancelledSessions;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = universeStates_.find(universe);
+        if (it != universeStates_.end()) {
+            for (const auto &existing : it->second.activeSessions) {
+                if (!existing || existing->isCancelled()) {
+                    continue;
+                }
+                if (existing->getActivityReason() == creatures::runtime::ActivityReason::Idle) {
+                    continue;
+                }
+                if (sessionHasCreature(existing, creatureId)) {
+                    std::string errorMessage = "Creature " + creatureId + " already has an active non-idle session";
+                    if (span) {
+                        span->setError(errorMessage);
+                    }
+                    return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::Conflict, errorMessage)};
+                }
+            }
+
+            std::vector<std::shared_ptr<PlaybackSession>> survivors;
+            survivors.reserve(it->second.activeSessions.size());
+            for (const auto &existing : it->second.activeSessions) {
+                if (existing && !existing->isCancelled() &&
+                    existing->getActivityReason() == creatures::runtime::ActivityReason::Idle &&
+                    sessionHasCreature(existing, creatureId)) {
+                    debug("SessionManager: cancelling idle session on universe {} for creature {} (ad-hoc)", universe,
+                          creatureId);
+                    cancelSessionAndMarkActivity(existing);
+                    cancelledSessions.push_back(existing);
+                } else {
+                    survivors.push_back(existing);
+                }
+            }
+            it->second.activeSessions.swap(survivors);
+        }
+    }
+
+    auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(
+        eventLoop->getNextFrameNumber(), interruptAnimation, universe, creatures::runtime::ActivityReason::AdHoc);
+
+    if (!sessionResult.isSuccess()) {
+        for (const auto &cancelledSession : cancelledSessions) {
+            scheduleImmediateTeardown(cancelledSession);
+        }
+        if (span) {
+            span->setError(sessionResult.getError()->getMessage());
+        }
+        return sessionResult;
+    }
+
+    auto session = sessionResult.getValue().value();
+    registerSession(universe, session, false);
+
+    for (const auto &cancelledSession : cancelledSessions) {
+        scheduleImmediateTeardown(cancelledSession);
+    }
 
     if (span) {
         span->setAttribute("session.id", session->getSessionId());
@@ -340,6 +455,7 @@ bool SessionManager::cancelIdleSessionForCreature(universe_t universe, const cre
             sessionHasCreature(session, creatureId)) {
             debug("SessionManager: cancelling idle session on universe {} for creature {}", universe, creatureId);
             cancelSessionAndMarkActivity(session);
+            scheduleImmediateTeardown(session);
             cancelled = true;
         } else {
             survivors.push_back(session);
@@ -373,6 +489,29 @@ bool SessionManager::hasActiveNonIdleSession(universe_t universe) const {
     for (const auto &session : it->second.activeSessions) {
         if (session && !session->isCancelled() &&
             session->getActivityReason() != creatures::runtime::ActivityReason::Idle) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool SessionManager::hasActiveNonIdleSessionForCreature(universe_t universe, const creatureId_t &creatureId) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end()) {
+        return false;
+    }
+
+    for (const auto &session : it->second.activeSessions) {
+        if (!session || session->isCancelled()) {
+            continue;
+        }
+        if (session->getActivityReason() == creatures::runtime::ActivityReason::Idle) {
+            continue;
+        }
+        if (sessionHasCreature(session, creatureId)) {
             return true;
         }
     }

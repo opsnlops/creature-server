@@ -75,6 +75,19 @@ class SessionManager {
                                                        bool shouldResumePlaylist = false);
 
     /**
+     * Interrupt only idle playback for a specific creature.
+     *
+     * This is used for ad-hoc animations to avoid preempting active non-idle sessions.
+     *
+     * @param universe The universe to target
+     * @param interruptAnimation The animation to play
+     * @param creatureId The creature to interrupt idle on
+     * @return The session for the ad-hoc animation, or error
+     */
+    Result<std::shared_ptr<PlaybackSession>> interruptIdleOnly(universe_t universe, const Animation &interruptAnimation,
+                                                               const creatureId_t &creatureId);
+
+    /**
      * Resume playlist playback after an interrupt
      *
      * This will only work if there was a playlist previously interrupted.
@@ -139,6 +152,15 @@ class SessionManager {
      * @return True if a non-idle session is active
      */
     bool hasActiveNonIdleSession(universe_t universe) const;
+
+    /**
+     * Check if a creature has any active non-idle sessions.
+     *
+     * @param universe The universe to check
+     * @param creatureId The creature to check
+     * @return True if a non-idle session is active for that creature
+     */
+    bool hasActiveNonIdleSessionForCreature(universe_t universe, const creatureId_t &creatureId) const;
 
     /**
      * Check if a universe has a paused playlist that can be resumed
