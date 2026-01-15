@@ -725,7 +725,10 @@ oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatp
 // Helper to decide idle vs disabled state when attempting to mark idle
 static creatures::runtime::ActivityState resolveIdleState(const oatpp::Object<creatures::CreatureRuntimeDto> &runtime,
                                                           creatures::runtime::ActivityState requested) {
-    bool idleEnabled = !runtime->idle_enabled || *runtime->idle_enabled;
+    bool idleEnabled = true;
+    if (runtime->idle_enabled != nullptr) {
+        idleEnabled = *runtime->idle_enabled;
+    }
     if (requested == creatures::runtime::ActivityState::Idle && !idleEnabled) {
         return creatures::runtime::ActivityState::Disabled;
     }
@@ -821,7 +824,10 @@ bool CreatureService::startIdleIfNeeded(const creatureId_t &creatureId, std::sha
     }
 
     auto runtime = getOrCreateRuntime(creatureId);
-    bool idleEnabled = !runtime->idle_enabled || *runtime->idle_enabled;
+    bool idleEnabled = true;
+    if (runtime->idle_enabled != nullptr) {
+        idleEnabled = *runtime->idle_enabled;
+    }
     if (!idleEnabled) {
         return false;
     }
