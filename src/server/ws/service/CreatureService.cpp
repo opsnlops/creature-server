@@ -668,6 +668,10 @@ oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatp
     auto creatureResult = db->getCreature(creatureId, span);
     OATPP_ASSERT_HTTP(creatureResult.isSuccess(), Status::CODE_404, creatureResult.getError()->getMessage().c_str());
 
+    // Update runtime state early so cancellations won't restart idle.
+    auto runtime = getOrCreateRuntime(creatureId);
+    runtime->idle_enabled = enabled;
+
     bool cancelledIdleSession = false;
     if (!enabled && creatures::creatureUniverseMap && creatures::creatureUniverseMap->contains(creatureId) &&
         creatures::sessionManager) {
@@ -678,8 +682,6 @@ oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatp
     }
 
     // Update runtime state
-    auto runtime = getOrCreateRuntime(creatureId);
-    runtime->idle_enabled = enabled;
     if (!runtime->activity) {
         runtime->activity = makeDefaultActivity();
     }
