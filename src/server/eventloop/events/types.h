@@ -5,6 +5,8 @@
 #pragma once
 
 #include <cstdlib>
+#include <optional>
+#include <unordered_set>
 #include <vector>
 
 #include "model/CacheInvalidation.h"
@@ -21,6 +23,11 @@ namespace creatures {
 
 // Forward declaration for PlaybackSession
 class PlaybackSession;
+
+class OperationSpan;
+enum class PlaylistState;
+struct Animation;
+struct Playlist;
 
 class TickEvent : public EventBase<TickEvent> {
   public:
@@ -98,8 +105,23 @@ class PlaylistEvent : public EventBase<PlaylistEvent> {
   private:
     universe_t activeUniverse;
 
+    // PlaylistEvent helpers (implemented in playlist.cpp)
+    Result<void> ensureDependencies(std::shared_ptr<OperationSpan> span);
+    std::optional<Result<framenum_t>> handlePlaylistState(PlaylistState playlistState,
+                                                          std::shared_ptr<OperationSpan> span);
+    bool shouldSkipForActiveSession(std::shared_ptr<OperationSpan> span);
+    std::optional<Result<framenum_t>> loadActivePlaylistStatus(PlaylistStatus &playlistStatus,
+                                                               std::shared_ptr<OperationSpan> span);
+    Result<Playlist> fetchPlaylist(const PlaylistStatus &playlistStatus, std::shared_ptr<OperationSpan> span);
+    Result<std::string> chooseWeightedAnimation(const Playlist &playlist);
+    Result<Animation> fetchAnimation(const std::string &animationId, std::shared_ptr<OperationSpan> span);
+    std::unordered_set<creatureId_t> collectInvolvedCreatures(const Animation &animation);
+    Result<framenum_t> scheduleChosenAnimation(const Animation &animation);
+    void scheduleNextPlaylistEvent(framenum_t lastFrame);
+    void updatePlaylistStatus(PlaylistStatus playlistStatus, const std::string &chosenAnimation);
+    void startIdleLoopsForUniverse(const std::unordered_set<creatureId_t> &involvedCreatures,
+                                   std::shared_ptr<OperationSpan> span);
     static void sendEmptyPlaylistUpdate(universe_t universe);
-
     static void sendPlaylistUpdate(const PlaylistStatus &playlistStatus);
 };
 
