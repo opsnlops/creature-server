@@ -48,7 +48,9 @@ namespace creatures::jobs {
 namespace {
 
 std::filesystem::path getAdHocTempRoot() { return std::filesystem::temp_directory_path() / "creature-adhoc"; }
-std::filesystem::path getAnimationLipSyncTempRoot() { return std::filesystem::temp_directory_path() / "creature-lipsync"; }
+std::filesystem::path getAnimationLipSyncTempRoot() {
+    return std::filesystem::temp_directory_path() / "creature-lipsync";
+}
 
 std::string slugify(const std::string &value, std::size_t maxLength = 40) {
     std::string slug;
@@ -355,8 +357,8 @@ void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
         } else {
             auto creatureResult = db->getCreature(creatureId, jobState.span);
             if (!creatureResult.isSuccess()) {
-                failJob(fmt::format("Unable to load creature {}: {}", creatureId,
-                                    creatureResult.getError()->getMessage()));
+                failJob(
+                    fmt::format("Unable to load creature {}: {}", creatureId, creatureResult.getError()->getMessage()));
                 return;
             }
             creature = creatureResult.getValue().value();
@@ -379,22 +381,19 @@ void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
 
         trackStageProgress(0.05);
 
-        auto extractResult = voice::AudioConverter::extractChannelToMono(
-            audioPath, monoPath, config->getFfmpegBinaryPath(), static_cast<int>(creature.audio_channel),
-            jobState.span);
+        auto extractResult =
+            voice::AudioConverter::extractChannelToMono(audioPath, monoPath, config->getFfmpegBinaryPath(),
+                                                        static_cast<int>(creature.audio_channel), jobState.span);
         if (!extractResult.isSuccess()) {
             failJob(extractResult.getError()->getMessage());
             return;
         }
 
-        auto lipSyncProgress = [&](float stage) {
-            trackStageProgress(0.1 + 0.6 * static_cast<double>(stage));
-        };
+        auto lipSyncProgress = [&](float stage) { trackStageProgress(0.1 + 0.6 * static_cast<double>(stage)); };
 
-        auto lipSyncResult =
-            voice::LipSyncProcessor::generateLipSync(monoPath.filename().string(), tempDir.string(),
-                                                     config->getRhubarbBinaryPath(), true, lipSyncProgress,
-                                                     jobState.span);
+        auto lipSyncResult = voice::LipSyncProcessor::generateLipSync(monoPath.filename().string(), tempDir.string(),
+                                                                      config->getRhubarbBinaryPath(), true,
+                                                                      lipSyncProgress, jobState.span);
         if (!lipSyncResult.isSuccess()) {
             failJob(lipSyncResult.getError()->getMessage());
             return;
@@ -681,7 +680,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         updateProgress(0.55f);
 
         if (speechAssets.creature.speech_loop_animation_ids.empty()) {
-            failJob(fmt::format("Creature {} has no speech_loop_animation_ids configured", creatureId));
+            failJob(fmt::format("Creature '{}' has no speech_loop_animation_ids configured", creatureName));
             return;
         }
 
@@ -696,8 +695,8 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
 
         auto baseAnimationResult = db->getAnimation(baseAnimationId, jobState.span);
         if (!baseAnimationResult.isSuccess()) {
-            failJob(fmt::format("Unable to load base speech loop animation {}: {}", baseAnimationId,
-                                baseAnimationResult.getError()->getMessage()));
+            failJob(fmt::format("Unable to load speech loop animation '{}' for creature '{}': {}", baseAnimationId,
+                                creatureName, baseAnimationResult.getError()->getMessage()));
             return;
         }
         auto baseAnimation = baseAnimationResult.getValue().value();
@@ -705,14 +704,17 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         auto trackIt = std::find_if(baseAnimation.tracks.begin(), baseAnimation.tracks.end(),
                                     [&](const Track &track) { return track.creature_id == creatureId; });
         if (trackIt == baseAnimation.tracks.end()) {
-            failJob(
-                fmt::format("Base speech loop animation {} does not contain creature {}", baseAnimationId, creatureId));
+            failJob(fmt::format("Speech loop animation '{}' does not have a track for creature '{}'. "
+                                "Add a track for '{}' to this animation, or remove it from the creature's "
+                                "speech_loop_animation_ids list.",
+                                baseAnimation.metadata.title, creatureName, creatureName));
             return;
         }
         const auto &baseTrack = *trackIt;
 
         if (baseTrack.frames.empty()) {
-            failJob(fmt::format("Base speech loop track {} has no frames", baseTrack.id));
+            failJob(fmt::format("Speech loop track for '{}' in animation '{}' has no frames", creatureName,
+                                baseAnimation.metadata.title));
             return;
         }
 
