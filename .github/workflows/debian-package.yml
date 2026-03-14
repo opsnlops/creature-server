@@ -13,11 +13,11 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - buildjet-8vcpu-ubuntu-2204
-          - buildjet-16vcpu-ubuntu-2204-arm
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -31,7 +31,7 @@ jobs:
         run: mkdir ${{github.workspace}}/package/ && docker cp temp-container:/package/ ${{github.workspace}}/
 
       - name: Save artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: creature-server-package-${{ matrix.os }}
           path: ${{github.workspace}}/package/
