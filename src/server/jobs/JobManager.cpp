@@ -10,15 +10,18 @@ extern std::shared_ptr<ObservabilityManager> observability;
 
 namespace creatures::jobs {
 
-std::string JobManager::createJob(JobType type, const std::string &details) {
+std::string JobManager::createJob(JobType type, const std::string &details,
+                                  std::shared_ptr<creatures::RequestSpan> parentSpan) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     std::string jobId = util::generateUUID();
     JobState job(jobId, type, details);
 
-    // Create a parent span that will live for the entire job lifecycle
-    // Child operations will attach to this span
-    job.span = observability->createOperationSpan("Job." + toString(type));
+    // Create a span for the job lifecycle. When a parent request span is provided
+    // (e.g., from the HTTP handler that created the job), the job span becomes a
+    // child of that request trace, enabling end-to-end visibility across the async
+    // boundary.
+    job.span = observability->createOperationSpan("Job." + toString(type), parentSpan);
     if (job.span) {
         job.span->setAttribute("job.id", jobId);
         job.span->setAttribute("job.type", toString(type));
