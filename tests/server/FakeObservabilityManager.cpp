@@ -8,8 +8,12 @@ void ObservabilityManager::initialize(const std::string &, const std::string &, 
                                       const std::string &) {}
 
 std::shared_ptr<RequestSpan> ObservabilityManager::createRequestSpan(const std::string &, const std::string &,
-                                                                     const std::string &) {
+                                                                     const std::string &, const std::string &) {
     return std::make_shared<RequestSpan>(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span>(), "", "");
+}
+
+opentelemetry::trace::SpanContext ObservabilityManager::parseTraceparent(const std::string &) {
+    return opentelemetry::trace::SpanContext::GetInvalid();
 }
 
 std::shared_ptr<OperationSpan> ObservabilityManager::createOperationSpan(const std::string &,

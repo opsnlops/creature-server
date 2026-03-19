@@ -26,6 +26,7 @@
 
 #pragma GCC diagnostic pop
 
+#include <array>
 #include <chrono>
 #include <mutex>
 #include <random>
@@ -431,9 +432,70 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
     }
 }
 
+opentelemetry::trace::SpanContext ObservabilityManager::parseTraceparent(const std::string &traceparent) {
+    // W3C Trace Context format: {version}-{trace-id}-{parent-id}-{trace-flags}
+    // Example: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+    // Total length: 2 + 1 + 32 + 1 + 16 + 1 + 2 = 55
+    if (traceparent.length() != 55) {
+        return opentelemetry::trace::SpanContext::GetInvalid();
+    }
+
+    if (traceparent[2] != '-' || traceparent[35] != '-' || traceparent[52] != '-') {
+        return opentelemetry::trace::SpanContext::GetInvalid();
+    }
+
+    auto version = traceparent.substr(0, 2);
+    auto traceIdHex = traceparent.substr(3, 32);
+    auto spanIdHex = traceparent.substr(36, 16);
+    auto flagsHex = traceparent.substr(53, 2);
+
+    // Only support version 00
+    if (version != "00") {
+        return opentelemetry::trace::SpanContext::GetInvalid();
+    }
+
+    // Parse hex strings into byte arrays
+    auto hexToByte = [](char hi, char lo) -> uint8_t {
+        auto hexVal = [](char c) -> uint8_t {
+            if (c >= '0' && c <= '9') return static_cast<uint8_t>(c - '0');
+            if (c >= 'a' && c <= 'f') return static_cast<uint8_t>(c - 'a' + 10);
+            if (c >= 'A' && c <= 'F') return static_cast<uint8_t>(c - 'A' + 10);
+            return 0xFF;
+        };
+        auto h = hexVal(hi);
+        auto l = hexVal(lo);
+        if (h == 0xFF || l == 0xFF) return 0;
+        return static_cast<uint8_t>((h << 4) | l);
+    };
+
+    // Parse trace ID (16 bytes from 32 hex chars)
+    std::array<uint8_t, 16> traceIdBytes{};
+    for (size_t i = 0; i < 16; i++) {
+        traceIdBytes[i] = hexToByte(traceIdHex[i * 2], traceIdHex[i * 2 + 1]);
+    }
+    opentelemetry::trace::TraceId traceId(
+        opentelemetry::nostd::span<const uint8_t, 16>(traceIdBytes.data(), 16));
+
+    // Parse span ID (8 bytes from 16 hex chars)
+    std::array<uint8_t, 8> spanIdBytes{};
+    for (size_t i = 0; i < 8; i++) {
+        spanIdBytes[i] = hexToByte(spanIdHex[i * 2], spanIdHex[i * 2 + 1]);
+    }
+    opentelemetry::trace::SpanId spanId(
+        opentelemetry::nostd::span<const uint8_t, 8>(spanIdBytes.data(), 8));
+
+    // Parse trace flags
+    uint8_t flags = hexToByte(flagsHex[0], flagsHex[1]);
+    opentelemetry::trace::TraceFlags traceFlags(flags);
+
+    // Create a remote SpanContext (is_remote = true)
+    return opentelemetry::trace::SpanContext(traceId, spanId, traceFlags, true);
+}
+
 std::shared_ptr<RequestSpan> ObservabilityManager::createRequestSpan(const std::string &operationName,
                                                                      const std::string &httpMethod,
-                                                                     const std::string &httpUrl) {
+                                                                     const std::string &httpUrl,
+                                                                     const std::string &traceparent) {
 
     if (!initialized_) {
         return nullptr;
@@ -444,7 +506,26 @@ std::shared_ptr<RequestSpan> ObservabilityManager::createRequestSpan(const std::
         return nullptr;
     }
 
-    auto span = tracer_->StartSpan(operationName);
+    opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span;
+
+    // If a W3C traceparent header was provided, parse it and use as remote parent.
+    // Format: {version}-{trace-id}-{parent-id}-{trace-flags}
+    // Example: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+    if (!traceparent.empty()) {
+        auto remoteContext = parseTraceparent(traceparent);
+        if (remoteContext.IsValid()) {
+            debug("Using remote parent trace context from traceparent header for: {}", operationName);
+            auto options = opentelemetry::trace::StartSpanOptions{};
+            options.parent = remoteContext;
+            span = tracer_->StartSpan(operationName, options);
+        } else {
+            debug("Invalid traceparent header received for {}, creating root span", operationName);
+            span = tracer_->StartSpan(operationName);
+        }
+    } else {
+        span = tracer_->StartSpan(operationName);
+    }
+
     if (!span) {
         critical("🚨 FAILED TO CREATE REQUEST SPAN! Tracer returned null span for operation: {}", operationName);
         return nullptr;

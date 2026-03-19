@@ -17,8 +17,8 @@ using json = nlohmann::json;
 #include "server/metrics/counters.h"
 #include "server/ws/dto/IdleToggleDto.h"
 #include "server/ws/dto/RegisterCreatureRequestDto.h"
+#include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/service/CreatureService.h"
-#include "util/ObservabilityManager.h"
 
 namespace creatures {
 extern std::shared_ptr<SystemCounters> metrics;
@@ -43,32 +43,6 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         return std::make_shared<CreatureController>(objectMapper);
     }
 
-    // Helper function to add common HTTP attributes to a span
-    static void
-    addHttpRequestAttributes(const std::shared_ptr<creatures::RequestSpan> &span,
-                             const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request) {
-        if (span && request) {
-            span->setAttribute("http.method", std::string(request->getStartingLine().method.toString()));
-            span->setAttribute("http.target", std::string(request->getStartingLine().path.toString()));
-
-            // Add User-Agent if present (getHeader works directly)
-            if (const auto userAgent = request->getHeader("User-Agent")) {
-                span->setAttribute("http.user_agent", std::string(userAgent));
-            }
-
-            // Add Content-Length if present
-            if (const auto contentLength = request->getHeader("Content-Length")) {
-                span->setAttribute("http.request_content_length", std::string(contentLength));
-            }
-
-            // Add Host if present
-            if (auto host = request->getHeader("Host")) {
-                span->setAttribute("http.host", std::string(host));
-            }
-            span->setAttribute("http.flavor", "1.1"); // Assuming HTTP/1.1 for oatpp
-        }
-    }
-
     ENDPOINT_INFO(getAllCreatures) {
         info->summary = "Get all of the creatures";
         info->addTag("Creatures");
@@ -81,7 +55,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         // Create a trace span for this request
         const auto span =
             creatures::observability
-                ? creatures::observability->createRequestSpan("GET /api/v1/creature", "GET", "api/v1/creature")
+                ? creatures::observability->createRequestSpan("GET /api/v1/creature", "GET", "api/v1/creature",
+                                                              extractTraceparent(request))
                 : nullptr;
         addHttpRequestAttributes(span, request);
 
@@ -122,7 +97,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         const auto span =
             creatures::observability
                 ? creatures::observability->createRequestSpan("GET /api/v1/creature/{creatureId}", "GET",
-                                                              "api/v1/creature/" + std::string(creatureId))
+                                                              "api/v1/creature/" + std::string(creatureId),
+                                                              extractTraceparent(request))
                 : nullptr;
         addHttpRequestAttributes(span, request);
 
@@ -160,7 +136,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         const auto span =
             creatures::observability
-                ? creatures::observability->createRequestSpan("POST /api/v1/creature", "POST", "api/v1/creature")
+                ? creatures::observability->createRequestSpan("POST /api/v1/creature", "POST", "api/v1/creature",
+                                                              extractTraceparent(request))
                 : nullptr;
         addHttpRequestAttributes(span, request);
 
@@ -211,7 +188,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
     ENDPOINT("POST", "api/v1/creature/validate", validateCreatureConfig, BODY_STRING(String, body),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         auto span = creatures::observability ? creatures::observability->createRequestSpan(
-                                                   "POST /api/v1/creature/validate", "POST", "api/v1/creature/validate")
+                                                   "POST /api/v1/creature/validate", "POST", "api/v1/creature/validate",
+                                                   extractTraceparent(request))
                                              : nullptr;
         addHttpRequestAttributes(span, request);
 
@@ -247,7 +225,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         const auto span =
             creatures::observability
                 ? creatures::observability->createRequestSpan("PATCH /api/v1/creature/{creatureId}/idle", "PATCH",
-                                                              "api/v1/creature/" + std::string(creatureId) + "/idle")
+                                                              "api/v1/creature/" + std::string(creatureId) + "/idle",
+                                                              extractTraceparent(request))
                 : nullptr;
 
         addHttpRequestAttributes(span, request);
@@ -292,7 +271,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         const auto span = creatures::observability
                               ? creatures::observability->createRequestSpan("POST /api/v1/creature/register", "POST",
-                                                                            "api/v1/creature/register")
+                                                                            "api/v1/creature/register",
+                                                                            extractTraceparent(request))
                               : nullptr;
 
         addHttpRequestAttributes(span, request);
