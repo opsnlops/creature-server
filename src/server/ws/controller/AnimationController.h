@@ -549,7 +549,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
             auto animation = convertFromDto(animationDtoPtr);
 
             // Use SessionManager to interrupt
-            auto sessionResult = creatures::sessionManager->interrupt(requestBody->universe, animation, shouldResume);
+            auto sessionResult =
+                creatures::sessionManager->interrupt(requestBody->universe, animation, shouldResume, span);
 
             if (!sessionResult.isSuccess()) {
                 auto errorMsg = sessionResult.getError()->getMessage();
@@ -797,7 +798,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
             return createDtoResponse(Status::CODE_409, result);
         }
 
-        auto sessionResult = creatures::sessionManager->interruptIdleOnly(universe, animation, std::string(creatureId));
+        auto sessionResult =
+            creatures::sessionManager->interruptIdleOnly(universe, animation, std::string(creatureId), span);
         if (!sessionResult.isSuccess()) {
             auto error = sessionResult.getError().value();
             auto result = creatures::ws::StatusDto::createShared();
@@ -911,7 +913,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         }
 
         auto creatureLookupSpan =
-            creatures::observability->createChildOperationSpan("AnimationController.lookupCreature", nullptr);
+            creatures::observability->createOperationSpan("AnimationController.lookupCreature", span);
         if (creatureLookupSpan) {
             creatureLookupSpan->setAttribute("creature.id", creatureId);
         }

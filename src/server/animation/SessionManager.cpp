@@ -92,13 +92,15 @@ void scheduleImmediateTeardown(const std::shared_ptr<PlaybackSession> &session) 
 
 } // namespace
 
-void SessionManager::registerSession(universe_t universe, std::shared_ptr<PlaybackSession> session, bool isPlaylist) {
+void SessionManager::registerSession(universe_t universe, std::shared_ptr<PlaybackSession> session, bool isPlaylist,
+                                     std::shared_ptr<RequestSpan> parentSpan) {
     if (!session) {
         warn("SessionManager: attempted to register null session on universe {}", universe);
         return;
     }
 
-    auto span = observability ? observability->createOperationSpan("SessionManager.registerSession") : nullptr;
+    auto span = observability ? observability->createOperationSpan("SessionManager.registerSession", parentSpan)
+                              : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
         span->setAttribute("is_playlist", isPlaylist);
@@ -159,8 +161,9 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
 }
 
 Result<std::shared_ptr<PlaybackSession>>
-SessionManager::interrupt(universe_t universe, const Animation &interruptAnimation, bool shouldResumePlaylist) {
-    auto span = observability ? observability->createOperationSpan("SessionManager.interrupt") : nullptr;
+SessionManager::interrupt(universe_t universe, const Animation &interruptAnimation, bool shouldResumePlaylist,
+                         std::shared_ptr<RequestSpan> parentSpan) {
+    auto span = observability ? observability->createOperationSpan("SessionManager.interrupt", parentSpan) : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
         span->setAttribute("interrupt.animation_id", interruptAnimation.id);
@@ -256,8 +259,11 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
 
 Result<std::shared_ptr<PlaybackSession>> SessionManager::interruptIdleOnly(universe_t universe,
                                                                            const Animation &interruptAnimation,
-                                                                           const creatureId_t &creatureId) {
-    auto span = observability ? observability->createOperationSpan("SessionManager.interruptIdleOnly") : nullptr;
+                                                                           const creatureId_t &creatureId,
+                                                                           std::shared_ptr<RequestSpan> parentSpan) {
+    auto span = observability
+                    ? observability->createOperationSpan("SessionManager.interruptIdleOnly", parentSpan)
+                    : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
         span->setAttribute("interrupt.animation_id", interruptAnimation.id);
