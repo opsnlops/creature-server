@@ -9,6 +9,7 @@
 #include <string>
 
 #include "JobState.h"
+#include "util/ObservabilityManager.h"
 
 namespace creatures::jobs {
 
@@ -40,7 +41,8 @@ class JobManager {
      * @param details Additional details about the job (e.g., filename)
      * @return The unique job ID (UUID)
      */
-    std::string createJob(JobType type, const std::string &details);
+    std::string createJob(JobType type, const std::string &details,
+                          std::shared_ptr<creatures::RequestSpan> parentSpan = nullptr);
 
     /**
      * Get the current state of a job

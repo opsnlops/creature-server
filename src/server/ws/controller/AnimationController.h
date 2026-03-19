@@ -289,7 +289,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         nlohmann::json jobDetails;
         jobDetails["animation_id"] = animationId;
 
-        auto jobId = creatures::jobManager->createJob(creatures::jobs::JobType::AnimationLipSync, jobDetails.dump());
+        auto jobId =
+            creatures::jobManager->createJob(creatures::jobs::JobType::AnimationLipSync, jobDetails.dump(), span);
         creatures::jobWorker->queueJob(jobId);
 
         auto response = JobCreatedDto::createShared();
@@ -974,7 +975,7 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         jobDetails["resume_playlist"] = resumePlaylist;
         jobDetails["auto_play"] = autoPlay;
 
-        auto jobId = creatures::jobManager->createJob(jobType, jobDetails.dump());
+        auto jobId = creatures::jobManager->createJob(jobType, jobDetails.dump(), span);
         creatures::jobWorker->queueJob(jobId);
 
         auto response = JobCreatedDto::createShared();

@@ -619,7 +619,8 @@ class SoundController : public oatpp::web::server::api::ApiController {
         const std::string jobDetailsStr = jobDetails.dump();
 
         debug("Creating lip sync job for sound file: {}, allow_overwrite: {}", soundFile, allowOverwrite);
-        std::string jobId = creatures::jobManager->createJob(creatures::jobs::JobType::LipSync, jobDetailsStr);
+        std::string jobId =
+            creatures::jobManager->createJob(creatures::jobs::JobType::LipSync, jobDetailsStr, span);
         info("Created lip sync job with ID: {}", jobId);
 
         if (span) {
