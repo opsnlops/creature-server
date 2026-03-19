@@ -12,6 +12,7 @@
 #include "model/Animation.h"
 #include "model/PlaylistStatus.h"
 #include "server/namespace-stuffs.h"
+#include "util/ObservabilityManager.h"
 
 namespace creatures {
 
@@ -56,7 +57,8 @@ class SessionManager {
      * @param session The playback session
      * @param isPlaylist True if this session is part of a playlist
      */
-    void registerSession(universe_t universe, std::shared_ptr<PlaybackSession> session, bool isPlaylist = false);
+    void registerSession(universe_t universe, std::shared_ptr<PlaybackSession> session, bool isPlaylist = false,
+                         std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Interrupt current playback on a universe with a new animation
@@ -72,7 +74,8 @@ class SessionManager {
      * @return The session for the interrupt animation, or error
      */
     Result<std::shared_ptr<PlaybackSession>> interrupt(universe_t universe, const Animation &interruptAnimation,
-                                                       bool shouldResumePlaylist = false);
+                                                       bool shouldResumePlaylist = false,
+                                                       std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Interrupt only idle playback for a specific creature.
@@ -85,7 +88,8 @@ class SessionManager {
      * @return The session for the ad-hoc animation, or error
      */
     Result<std::shared_ptr<PlaybackSession>> interruptIdleOnly(universe_t universe, const Animation &interruptAnimation,
-                                                               const creatureId_t &creatureId);
+                                                               const creatureId_t &creatureId,
+                                                               std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Resume playlist playback after an interrupt
