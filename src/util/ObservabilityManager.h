@@ -64,7 +64,8 @@ class ObservabilityManager {
      * @return A unique pointer to the span (RAII cleanup)
      */
     std::shared_ptr<RequestSpan> createRequestSpan(const std::string &operationName, const std::string &httpMethod,
-                                                   const std::string &httpUrl);
+                                                   const std::string &httpUrl,
+                                                   const std::string &traceparent = "");
 
     /**
      * Create a child span for database operations, service calls, etc.
@@ -155,6 +156,14 @@ class ObservabilityManager {
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> sensorPowerGauge_;
 
     bool initialized_;
+
+    /**
+     * Parse a W3C traceparent header into a SpanContext for remote parent propagation.
+     *
+     * @param traceparent The traceparent header value (e.g., "00-traceId-spanId-flags")
+     * @return A valid SpanContext if parsing succeeded, an invalid one otherwise
+     */
+    static opentelemetry::trace::SpanContext parseTraceparent(const std::string &traceparent);
 
     /**
      * Initialize all the metric instruments

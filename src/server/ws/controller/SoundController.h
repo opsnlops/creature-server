@@ -30,7 +30,7 @@
 #include "server/metrics/counters.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/RhubarbData.h"
-#include "util/ObservabilityManager.h"
+#include "server/ws/controller/ControllerUtils.h"
 #include "util/Result.h"
 #include "util/uuidUtils.h"
 
@@ -122,7 +122,8 @@ class SoundController : public oatpp::web::server::api::ApiController {
 
         auto span = creatures::observability
                         ? creatures::observability->createRequestSpan("POST /api/v1/sound/generate-lipsync/upload",
-                                                                      "POST", "api/v1/sound/generate-lipsync/upload")
+                                                                      "POST", "api/v1/sound/generate-lipsync/upload",
+                                                                      extractTraceparent(request))
                         : nullptr;
 
         if (creatures::metrics) {
@@ -583,7 +584,8 @@ class SoundController : public oatpp::web::server::api::ApiController {
         // Create a trace span for this request
         const auto span = creatures::observability
                               ? creatures::observability->createRequestSpan("POST /api/v1/sound/generate-lipsync",
-                                                                            "POST", "api/v1/sound/generate-lipsync")
+                                                                            "POST", "api/v1/sound/generate-lipsync",
+                                                                            extractTraceparent(request))
                               : nullptr;
 
         info("REST call to generateLipSync (async)");

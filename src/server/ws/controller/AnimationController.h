@@ -25,7 +25,7 @@
 #include "server/ws/dto/TriggerAdHocAnimationRequestDto.h"
 #include "server/ws/service/AnimationService.h"
 #include "server/ws/service/CreatureService.h"
-#include "util/ObservabilityManager.h"
+#include "server/ws/controller/ControllerUtils.h"
 #include "util/cache.h"
 #include "util/websocketUtils.h"
 #include <nlohmann/json.hpp>
@@ -58,34 +58,6 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         return std::make_shared<AnimationController>(objectMapper);
     }
 
-    // Helper function to add common HTTP attributes to a span
-    void addHttpRequestAttributes(const std::shared_ptr<creatures::RequestSpan> &span,
-                                  const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request) {
-        if (span && request) {
-            span->setAttribute("http.method", std::string(request->getStartingLine().method.toString()));
-            span->setAttribute("http.target", std::string(request->getStartingLine().path.toString()));
-
-            // Add User-Agent if present (getHeader works directly)
-            auto userAgent = request->getHeader("User-Agent");
-            if (userAgent) {
-                span->setAttribute("http.user_agent", std::string(userAgent));
-            }
-
-            // Add Content-Length if present
-            auto contentLength = request->getHeader("Content-Length");
-            if (contentLength) {
-                span->setAttribute("http.request_content_length", std::string(contentLength));
-            }
-
-            // Add Host if present
-            auto host = request->getHeader("Host");
-            if (host) {
-                span->setAttribute("http.host", std::string(host));
-            }
-            span->setAttribute("http.flavor", "1.1"); // Assuming HTTP/1.1 for oatpp
-        }
-    }
-
     ENDPOINT_INFO(listAllAnimations) {
         info->summary = "List all of the animations";
         info->addTag("Animations");
@@ -97,7 +69,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     ENDPOINT("GET", "api/v1/animation", listAllAnimations,
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         // Create a trace span for this request
-        auto span = creatures::observability->createRequestSpan("GET /api/v1/animation", "GET", "api/v1/animation");
+        auto span = creatures::observability->createRequestSpan("GET /api/v1/animation", "GET", "api/v1/animation",
+                                                                extractTraceparent(request));
         addHttpRequestAttributes(span, request); // Add HTTP attributes
 
         debug("REST call to listAllAnimations");
@@ -128,7 +101,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     ENDPOINT("GET", "api/v1/animation/ad-hoc", listAdHocAnimations,
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         auto span = creatures::observability->createRequestSpan("GET /api/v1/animation/ad-hoc", "GET",
-                                                                "api/v1/animation/ad-hoc");
+                                                                "api/v1/animation/ad-hoc",
+                                                                extractTraceparent(request));
         addHttpRequestAttributes(span, request);
 
         creatures::metrics->incrementRestRequestsProcessed();
@@ -158,7 +132,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     ENDPOINT("GET", "api/v1/animation/ad-hoc/{animationId}", getAdHocAnimation, PATH(String, animationId),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         auto span = creatures::observability->createRequestSpan("GET /api/v1/animation/ad-hoc/{animationId}", "GET",
-                                                                "api/v1/animation/ad-hoc/" + std::string(animationId));
+                                                                "api/v1/animation/ad-hoc/" + std::string(animationId),
+                                                                extractTraceparent(request));
         addHttpRequestAttributes(span, request);
 
         creatures::metrics->incrementRestRequestsProcessed();
@@ -192,7 +167,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         // RequestSpan only handles HTTP-level concerns
         auto span = creatures::observability->createRequestSpan("GET /api/v1/animation/{animationId}", "GET",
-                                                                "api/v1/animation/" + std::string(animationId));
+                                                                "api/v1/animation/" + std::string(animationId),
+                                                                extractTraceparent(request));
         addHttpRequestAttributes(span, request); // Add HTTP attributes
 
         debug("get animation by ID via REST API: {}", std::string(animationId));
@@ -231,7 +207,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
              BODY_DTO(Object<creatures::ws::RegenerateLipSyncRequestDto>, requestBody),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         auto span = creatures::observability->createRequestSpan("POST /api/v1/animation/generate-lipsync", "POST",
-                                                                "api/v1/animation/generate-lipsync");
+                                                                "api/v1/animation/generate-lipsync",
+                                                                extractTraceparent(request));
         addHttpRequestAttributes(span, request);
         creatures::metrics->incrementRestRequestsProcessed();
 
@@ -340,7 +317,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     ENDPOINT("POST", "api/v1/animation", upsertAnimation,
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         // Span for the upsert operation
-        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation", "POST", "api/v1/animation");
+        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation", "POST", "api/v1/animation",
+                                                                extractTraceparent(request));
         addHttpRequestAttributes(span, request); // Add HTTP attributes
 
         debug("new animation uploaded via REST API");
@@ -393,7 +371,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         auto span =
             creatures::observability->createRequestSpan("DELETE /api/v1/animation/{animationId}", "DELETE",
-                                                        fmt::format("api/v1/animation/{}", std::string(animationId)));
+                                                        fmt::format("api/v1/animation/{}", std::string(animationId)),
+                                                        extractTraceparent(request));
         addHttpRequestAttributes(span, request);
 
         debug("delete animation via REST API: {}", std::string(animationId));
@@ -441,7 +420,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         // The most exciting span - playing an animation!
         auto span = creatures::observability ? creatures::observability->createRequestSpan(
-                                                   "POST /api/v1/animation/play", "POST", "api/v1/animation/play")
+                                                   "POST /api/v1/animation/play", "POST", "api/v1/animation/play",
+                                                   extractTraceparent(request))
                                              : nullptr;
         addHttpRequestAttributes(span, request); // Add HTTP attributes
 
@@ -506,7 +486,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         auto span = creatures::observability
                         ? creatures::observability->createRequestSpan("POST /api/v1/animation/interrupt", "POST",
-                                                                      "api/v1/animation/interrupt")
+                                                                      "api/v1/animation/interrupt",
+                                                                      extractTraceparent(request))
                         : nullptr;
         addHttpRequestAttributes(span, request);
 
@@ -663,7 +644,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         auto span = creatures::observability
                         ? creatures::observability->createRequestSpan("POST /api/v1/animation/ad-hoc/play", "POST",
-                                                                      "api/v1/animation/ad-hoc/play")
+                                                                      "api/v1/animation/ad-hoc/play",
+                                                                      extractTraceparent(request))
                         : nullptr;
         addHttpRequestAttributes(span, request);
         if (creatures::metrics) {
@@ -869,7 +851,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
                                 const std::string &endpointPath) {
 
         auto span = creatures::observability
-                        ? creatures::observability->createRequestSpan(spanName, "POST", endpointPath)
+                        ? creatures::observability->createRequestSpan(spanName, "POST", endpointPath,
+                                                                      extractTraceparent(request))
                         : nullptr;
         addHttpRequestAttributes(span, request);
         if (creatures::metrics) {
