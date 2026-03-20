@@ -595,18 +595,15 @@ ObservabilityManager::createLinkedOperationSpan(const std::string &operationName
         return span ? std::make_shared<OperationSpan>(span) : nullptr;
     }
 
-    // Extract the trace ID from the linked span so the new span appears in the
-    // same trace, but use an invalid (zero) span ID as parent so it's a root span
-    // within that trace — no parent-child relationship.
+    // Make the job span a child of the request span so it shares the same trace ID
+    // and appears in the same Honeycomb trace. The request span will have already
+    // ended by the time the job completes, but that's OK — the job span is still
+    // visible in the trace. We also add a span link to explicitly mark the
+    // "triggered by" relationship.
     auto linkedContext = linkedSpan->getSpan()->GetContext();
-    auto syntheticParent = opentelemetry::trace::SpanContext(
-        linkedContext.trace_id(),
-        opentelemetry::trace::SpanId(),  // invalid — makes this a root span
-        linkedContext.trace_flags(),
-        false);  // not remote
 
     auto options = opentelemetry::trace::StartSpanOptions{};
-    options.parent = syntheticParent;
+    options.parent = linkedContext;
 
     auto span = tracer_->StartSpan(operationName, options);
     if (!span) {
@@ -614,10 +611,10 @@ ObservabilityManager::createLinkedOperationSpan(const std::string &operationName
         return nullptr;
     }
 
-    // Add a link back to the originating request span for the "triggered by" relationship
+    // Add a span link for explicit "triggered by" semantics
     span->AddLink(linkedContext, {});
 
-    debug("Created linked operation span for: {} (same trace, no parent)", operationName);
+    debug("Created linked operation span for: {} (child of request + link)", operationName);
     return std::make_shared<OperationSpan>(span);
 }
 
