@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "3.6.2"
+        VERSION "3.6.3"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -115,11 +115,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(argparse)
 
-#json
-FetchContent_Declare(
-        json
-        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
-FetchContent_MakeAvailable(json)
+# nlohmann_json is provided by OpenTelemetry's FetchContent below.
+# Configure it before OTel fetches it.
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 
 #uvgRTP
 FetchContent_Declare(
@@ -162,6 +160,10 @@ set(WITH_FUNC_TESTS OFF CACHE BOOL "Disable functional tests" FORCE)
 set(OPENTELEMETRY_INSTALL OFF CACHE BOOL "Disable install" FORCE)
 set(WITH_GTEST OFF CACHE BOOL "Disable gtest in OpenTelemetry" FORCE)
 
+#Use ABI version 2 for span links support (AddLink/AddLinks)
+set(WITH_ABI_VERSION_1 OFF CACHE BOOL "Disable ABI version 1" FORCE)
+set(WITH_ABI_VERSION_2 ON CACHE BOOL "Enable ABI version 2" FORCE)
+
 #Enable what we need for traces AND metrics
 set(WITH_OTLP_HTTP ON CACHE BOOL "Enable OTLP HTTP exporter" FORCE)
 set(WITH_OTLP_GRPC OFF CACHE BOOL "Disable OTLP gRPC exporter" FORCE)
@@ -182,8 +184,9 @@ set(WITH_LOGS_PREVIEW OFF CACHE BOOL "Disable logs preview" FORCE)
 FetchContent_Declare(
         opentelemetry-cpp
         GIT_REPOSITORY https://github.com/open-telemetry/opentelemetry-cpp.git
-        GIT_TAG v1.21.0
+        GIT_TAG v1.26.0
         GIT_SHALLOW TRUE
+        GIT_SUBMODULES ""  # Skip submodules - we provide nlohmann_json ourselves
 )
 
 #After FetchContent_Declare but before FetchContent_MakeAvailable

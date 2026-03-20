@@ -18,7 +18,7 @@
 #include <opentelemetry/sdk/metrics/meter_provider_factory.h>
 #include <opentelemetry/sdk/metrics/push_metric_exporter.h>
 #include <opentelemetry/sdk/resource/resource.h>
-#include <opentelemetry/sdk/resource/semantic_conventions.h>
+#include <opentelemetry/semconv/service_attributes.h>
 #include <opentelemetry/sdk/trace/batch_span_processor_factory.h>
 #include <opentelemetry/sdk/trace/simple_processor_factory.h>
 #include <opentelemetry/sdk/trace/tracer_provider_factory.h>
@@ -51,8 +51,8 @@ void ObservabilityManager::initialize(const std::string &serviceName, const std:
 
     // Create resource attributes using semantic conventions
     auto resource_attributes =
-        resource::ResourceAttributes{{resource::SemanticConventions::kServiceName, serviceName},
-                                     {resource::SemanticConventions::kServiceVersion, serviceVersion}};
+        resource::ResourceAttributes{{opentelemetry::semconv::service::kServiceName, serviceName},
+                                     {opentelemetry::semconv::service::kServiceVersion, serviceVersion}};
     auto resource = resource::Resource::Create(resource_attributes);
 
     // ============= TRACING SETUP =============
@@ -93,14 +93,10 @@ void ObservabilityManager::initialize(const std::string &serviceName, const std:
 
     auto metric_exporter = otlp::OtlpHttpMetricExporterFactory::Create(metric_exporter_options);
 
-    // Use periodic reader with manual export from event loop for optimal timing
+    // Use periodic reader with manual export from event loop for optimal timing.
+    // Default options: 60s export interval (fallback), 30s timeout — matches our needs.
     auto metric_reader = metrics_sdk::PeriodicExportingMetricReaderFactory::Create(
-        std::move(metric_exporter), metrics_sdk::PeriodicExportingMetricReaderOptions{
-                                        // Set export interval to something long since we'll trigger
-                                        // manually
-                                        .export_interval_millis = std::chrono::milliseconds(60000), // 1 minute fallback
-                                        .export_timeout_millis = std::chrono::milliseconds(30000)   // 30 second timeout
-                                    });
+        std::move(metric_exporter), metrics_sdk::PeriodicExportingMetricReaderOptions{});
 
     // Create MeterProvider with proper API for v1.21.0
     auto view_registry = std::make_unique<metrics_sdk::ViewRegistry>();
