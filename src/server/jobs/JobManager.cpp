@@ -17,18 +17,15 @@ std::string JobManager::createJob(JobType type, const std::string &details,
     std::string jobId = util::generateUUID();
     JobState job(jobId, type, details);
 
-    // Create a root span for the job lifecycle with a link back to the originating
-    // request. We use a span link instead of parent-child because the HTTP request
-    // span ends in ~1ms while the job runs for seconds. A parent-child relationship
-    // would show a "(missing)" parent in Honeycomb since the parent is long gone.
-    // A span link preserves the "triggered by" relationship without requiring the
-    // request span to encompass the job's entire duration.
-    job.span = observability->createOperationSpan("Job." + toString(type));
+    // Create a span for the job lifecycle that shares the same trace as the
+    // originating request, but is NOT a child of the request span. We do this
+    // by creating the span with the request's trace ID but no parent span ID.
+    // This keeps the job visible in the same Honeycomb trace without requiring
+    // the short-lived request span to encompass the job's entire duration
+    // (which caused "(missing)" parent spans). A span link back to the request
+    // span preserves the "triggered by" relationship.
+    job.span = observability->createLinkedOperationSpan("Job." + toString(type), parentSpan);
     if (job.span) {
-        // Link back to the originating request span
-        if (parentSpan && parentSpan->getSpan()) {
-            job.span->getSpan()->AddLink(parentSpan->getSpan()->GetContext(), {});
-        }
         job.span->setAttribute("job.id", jobId);
         job.span->setAttribute("job.type", toString(type));
         job.span->setAttribute("job.details", details);
