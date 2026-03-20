@@ -78,6 +78,22 @@ class ObservabilityManager {
                                                        std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
+     * Create an operation span that shares the same trace as a request span but
+     * is not a child of it. The span appears in the same trace in Honeycomb with
+     * a link back to the originating request, but its lifetime is independent.
+     *
+     * Use this for long-running async work (like jobs) triggered by a short-lived
+     * HTTP request. A parent-child relationship would show "(missing)" in Honeycomb
+     * because the request span ends before the job completes.
+     *
+     * @param operationName The name of the operation
+     * @param linkedSpan The request span to link to (shares its trace ID)
+     * @return A shared pointer to the new span, or a plain root span if linkedSpan is null
+     */
+    std::shared_ptr<OperationSpan> createLinkedOperationSpan(const std::string &operationName,
+                                                              std::shared_ptr<RequestSpan> linkedSpan);
+
+    /**
      * Create a child operation span from another operation span
      *
      * @param operationName The name of the operation

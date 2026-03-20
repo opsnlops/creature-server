@@ -576,6 +576,52 @@ std::shared_ptr<OperationSpan> ObservabilityManager::createOperationSpan(const s
 }
 
 std::shared_ptr<OperationSpan>
+ObservabilityManager::createLinkedOperationSpan(const std::string &operationName,
+                                                std::shared_ptr<RequestSpan> linkedSpan) {
+
+    if (!initialized_) {
+        return nullptr;
+    }
+
+    if (!tracer_) {
+        critical("🚨 TRACER IS NULL! Cannot create linked operation span for: {}", operationName);
+        return nullptr;
+    }
+
+    // If no linked span, fall back to a plain root span
+    if (!linkedSpan || !linkedSpan->getSpan()) {
+        warn("No linked span provided for operation: {}, creating root span", operationName);
+        auto span = tracer_->StartSpan(operationName);
+        return span ? std::make_shared<OperationSpan>(span) : nullptr;
+    }
+
+    // Extract the trace ID from the linked span so the new span appears in the
+    // same trace, but use an invalid (zero) span ID as parent so it's a root span
+    // within that trace — no parent-child relationship.
+    auto linkedContext = linkedSpan->getSpan()->GetContext();
+    auto syntheticParent = opentelemetry::trace::SpanContext(
+        linkedContext.trace_id(),
+        opentelemetry::trace::SpanId(),  // invalid — makes this a root span
+        linkedContext.trace_flags(),
+        false);  // not remote
+
+    auto options = opentelemetry::trace::StartSpanOptions{};
+    options.parent = syntheticParent;
+
+    auto span = tracer_->StartSpan(operationName, options);
+    if (!span) {
+        critical("🚨 FAILED TO CREATE LINKED SPAN for: {}", operationName);
+        return nullptr;
+    }
+
+    // Add a link back to the originating request span for the "triggered by" relationship
+    span->AddLink(linkedContext, {});
+
+    debug("Created linked operation span for: {} (same trace, no parent)", operationName);
+    return std::make_shared<OperationSpan>(span);
+}
+
+std::shared_ptr<OperationSpan>
 ObservabilityManager::createChildOperationSpan(const std::string &operationName,
                                                std::shared_ptr<OperationSpan> parentSpan) {
 
