@@ -52,11 +52,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(spdlog)
 
 
-# json
+# nlohmann_json - use the same FetchContent name as the parent project and OTel
 FetchContent_Declare(
-        json
-        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
-FetchContent_MakeAvailable(json)
+        nlohmann_json
+        URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
+FetchContent_MakeAvailable(nlohmann_json)
 
 
 # Use the oatpp that we've already made
