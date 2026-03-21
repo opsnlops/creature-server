@@ -433,10 +433,12 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
             std::string text(payload.begin(), payload.end());
 
             // Log what fields exist in this JSON before parsing
+            // Note: only check top-level JSON structure, not inside base64 payload
+            // Use the parsed JSON below for reliable field detection
             bool textHasAudio = text.find("\"audio\"") != std::string::npos;
             bool textHasNull = text.find("\"audio\":null") != std::string::npos;
-            bool textHasAlign = text.find("\"alignment\"") != std::string::npos;
-            bool textHasFinal = text.find("\"isFinal\"") != std::string::npos;
+            bool textHasAlign = false; // detected from parsed JSON below
+            bool textHasFinal = text.find("\"isFinal\":true") != std::string::npos;
             info("StreamingTTSClient: text frame #{}: {} bytes, audio={} audioNull={} alignment={} isFinal={} "
                  "first100='{}'",
                  wsFrameCount, text.size(), textHasAudio, textHasNull, textHasAlign, textHasFinal,
@@ -445,7 +447,7 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
             try {
                 auto json = nlohmann::json::parse(text);
 
-                if (json.contains("isFinal") && json["isFinal"].get<bool>()) {
+                if (json.contains("isFinal") && json["isFinal"].is_boolean() && json["isFinal"].get<bool>()) {
                     info("StreamingTTSClient: isFinal received after {} frames, {} audio chunks ({} bytes), "
                          "{} alignment chunks ({} chars)",
                          wsFrameCount, audioChunkCount, result.audioData.size(),
