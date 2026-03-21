@@ -104,6 +104,12 @@ class ObservabilityManager {
                                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
+     * Create a child operation span from a request span
+     */
+    std::shared_ptr<OperationSpan> createChildOperationSpan(const std::string &operationName,
+                                                            std::shared_ptr<RequestSpan> parentSpan);
+
+    /**
      * Create a sampling span that only exports traces under certain conditions
      *
      * @param operationName The name of the operation (e.g., "eventloop.frame")
@@ -214,6 +220,11 @@ class RequestSpan {
     void setAttribute(const std::string &key, const std::string &value);
     void setAttribute(const std::string &key, int64_t value);
     void setAttribute(const std::string &key, bool value);
+
+    /**
+     * Mark the request as failed with an error message
+     */
+    void setError(const std::string &errorMessage);
 
     /**
      * Record an exception that occurred during processing
