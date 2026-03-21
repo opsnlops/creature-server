@@ -27,6 +27,7 @@
 #include "server/voice/RhubarbData.h"
 #include "server/voice/SoundDataProcessor.h"
 #include "server/voice/SpeechGenerationManager.h"
+#include "server/voice/StreamingSpeechGenerationManager.h"
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
 #include "util/helpers.h"

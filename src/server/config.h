@@ -61,6 +61,16 @@
 #define FFMPEG_BINARY_PATH_ENV "FFMPEG_BINARY_PATH"
 #define DEFAULT_FFMPEG_BINARY_PATH "/usr/bin/ffmpeg"
 
+#define WHISPER_MODEL_PATH_ENV "WHISPER_MODEL_PATH"
+#define DEFAULT_WHISPER_MODEL_PATH "/usr/share/creature-server/data/ggml-base.en.bin"
+
+#define CMU_DICT_PATH_ENV "CMU_DICT_PATH"
+#define DEFAULT_CMU_DICT_PATH "/usr/share/creature-server/data/cmudict.dict"
+
+// Lip sync engine selection: "whisper" or "rhubarb"
+#define LIP_SYNC_ENGINE_ENV "LIP_SYNC_ENGINE"
+#define DEFAULT_LIP_SYNC_ENGINE "whisper"
+
 #define ADHOC_ANIMATION_TTL_HOURS_ENV "ADHOC_ANIMATION_TTL_HOURS"
 #define DEFAULT_ADHOC_ANIMATION_TTL_HOURS 12
 

@@ -114,4 +114,22 @@ void Configuration::setStreamingTimeoutFrames(const uint32_t _timeoutFrames) {
     this->streamingTimeoutFrames = _timeoutFrames;
 }
 
+// Lip Sync Configuration
+
+std::string Configuration::getWhisperModelPath() const { return this->whisperModelPath; }
+
+void Configuration::setWhisperModelPath(std::string _whisperModelPath) {
+    this->whisperModelPath = std::move(_whisperModelPath);
+}
+
+std::string Configuration::getCmuDictPath() const { return this->cmuDictPath; }
+
+void Configuration::setCmuDictPath(std::string _cmuDictPath) { this->cmuDictPath = std::move(_cmuDictPath); }
+
+std::string Configuration::getLipSyncEngine() const { return this->lipSyncEngine; }
+
+void Configuration::setLipSyncEngine(std::string _lipSyncEngine) {
+    this->lipSyncEngine = std::move(_lipSyncEngine);
+}
+
 } // namespace creatures

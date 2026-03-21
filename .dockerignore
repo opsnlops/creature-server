@@ -1,10 +1,8 @@
 .idea/
 *.iml
-bin/
-cmake-*/
 build/
+cmake-build-*/
 package/
+data/
 *.DS_Store
 externals/build/
-externals/install/
-data/

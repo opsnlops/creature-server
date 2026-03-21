@@ -97,6 +97,15 @@ class Configuration {
     /** @return Number of frames to wait before declaring streaming stopped */
     uint32_t getStreamingTimeoutFrames() const;
 
+    /** @return Path to the whisper.cpp GGML model file */
+    std::string getWhisperModelPath() const;
+
+    /** @return Path to the CMU Pronouncing Dictionary file */
+    std::string getCmuDictPath() const;
+
+    /** @return Lip sync engine to use ("whisper" or "rhubarb") */
+    std::string getLipSyncEngine() const;
+
   protected:
     // Setters used by CommandLine to configure values from command line arguments
 
@@ -153,6 +162,15 @@ class Configuration {
 
     /** @param _timeoutFrames Number of frames to wait before declaring streaming stopped */
     void setStreamingTimeoutFrames(uint32_t _timeoutFrames);
+
+    /** @param _whisperModelPath Path to the whisper GGML model file */
+    void setWhisperModelPath(std::string _whisperModelPath);
+
+    /** @param _cmuDictPath Path to the CMU Pronouncing Dictionary file */
+    void setCmuDictPath(std::string _cmuDictPath);
+
+    /** @param _lipSyncEngine Lip sync engine ("whisper" or "rhubarb") */
+    void setLipSyncEngine(std::string _lipSyncEngine);
 
   private:
     // Hardware configuration
@@ -225,6 +243,17 @@ class Configuration {
 
     /** Timeout (frames) after the last stream frame before marking streaming stopped */
     uint32_t streamingTimeoutFrames = DEFAULT_STREAMING_TIMEOUT_FRAMES;
+
+    // Lip sync configuration
+
+    /** Path to the whisper.cpp GGML model file (empty = whisper not available) */
+    std::string whisperModelPath = DEFAULT_WHISPER_MODEL_PATH;
+
+    /** Path to the CMU Pronouncing Dictionary file */
+    std::string cmuDictPath = DEFAULT_CMU_DICT_PATH;
+
+    /** Lip sync engine: "whisper" or "rhubarb" */
+    std::string lipSyncEngine = DEFAULT_LIP_SYNC_ENGINE;
 };
 
 } // namespace creatures
