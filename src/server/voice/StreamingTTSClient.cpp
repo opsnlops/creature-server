@@ -212,6 +212,11 @@ Result<void> StreamingTTSClient::connectWebSocket(const std::string &host, uint1
         return Result<void>{ServerError(ServerError::InternalError, msg)};
     }
 
+    // Force HTTP/1.1 via ALPN — ElevenLabs defaults to h2 which doesn't
+    // support the classic WebSocket upgrade handshake
+    static const unsigned char alpn[] = {8, 'h', 't', 't', 'p', '/', '1', '.', '1'};
+    SSL_CTX_set_alpn_protos(conn_->ctx, alpn, sizeof(alpn));
+
     conn_->ssl = SSL_new(conn_->ctx);
     SSL_set_fd(conn_->ssl, conn_->sockfd);
     SSL_set_tlsext_host_name(conn_->ssl, host.c_str());
@@ -235,8 +240,8 @@ Result<void> StreamingTTSClient::connectWebSocket(const std::string &host, uint1
     }
     std::string wsKey = base64Encode(keyBytes, 16);
 
-    // Send HTTP upgrade request with xi-api-key header for authentication
-    // Auth is also sent in the BOS message body as a fallback
+    // Send HTTP upgrade request with xi-api-key header
+    // ALPN must be set to http/1.1 above or the server negotiates h2 and rejects the upgrade
     std::string upgradeRequest = fmt::format(
         "GET {} HTTP/1.1\r\n"
         "Host: {}\r\n"
