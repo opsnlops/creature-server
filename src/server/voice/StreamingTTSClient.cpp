@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <base64.hpp>
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 #include <openssl/err.h>
@@ -234,7 +235,8 @@ Result<void> StreamingTTSClient::connectWebSocket(const std::string &host, uint1
     }
     std::string wsKey = base64Encode(keyBytes, 16);
 
-    // Send HTTP upgrade request
+    // Send HTTP upgrade request with xi-api-key header for authentication
+    // Auth is also sent in the BOS message body as a fallback
     std::string upgradeRequest = fmt::format(
         "GET {} HTTP/1.1\r\n"
         "Host: {}\r\n"
@@ -329,6 +331,7 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
 
     bool running = true;
     size_t totalBytesReceived = 0;
+    double alignmentOffsetMs = 0.0; // Accumulated time offset for alignment across chunks
 
     while (running) {
         // Read frame header (2 bytes minimum)
@@ -385,15 +388,34 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
         totalBytesReceived += payloadLen;
 
         switch (opcode) {
-        case 0x01: // Text frame (JSON alignment data)
+        case 0x01: // Text frame — JSON with base64 audio + alignment data
         {
             std::string text(payload.begin(), payload.end());
             try {
                 auto json = nlohmann::json::parse(text);
 
-                // ElevenLabs sends alignment data as:
-                // {"audio": "<base64>", "alignment": {"charStartTimesMs": [...], "charDurationsMs": [...], "chars":
-                // [...]}}
+                // Check for final message: {"isFinal": true}
+                if (json.contains("isFinal") && json["isFinal"].get<bool>()) {
+                    debug("Received isFinal message from ElevenLabs");
+                    running = false;
+                    break;
+                }
+
+                // Decode base64 audio from the "audio" field
+                // ElevenLabs sends ALL audio as base64 in JSON text frames
+                if (json.contains("audio") && json["audio"].is_string()) {
+                    auto audioB64 = json["audio"].get<std::string>();
+                    if (!audioB64.empty()) {
+                        // Decode base64 to raw bytes
+                        auto decoded = base64::from_base64(audioB64);
+                        auto decodedBytes = reinterpret_cast<const uint8_t *>(decoded.data());
+                        result.audioData.insert(result.audioData.end(), decodedBytes,
+                                                decodedBytes + decoded.size());
+                    }
+                }
+
+                // Parse alignment data (character-level timing)
+                // Timing values are RELATIVE to this chunk — add accumulated offset
                 if (json.contains("alignment") && !json["alignment"].is_null()) {
                     auto &alignment = json["alignment"];
                     if (alignment.contains("chars") && alignment.contains("charStartTimesMs") &&
@@ -403,26 +425,24 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
                         auto durations = alignment["charDurationsMs"].get<std::vector<double>>();
 
                         size_t count = std::min({chars.size(), startTimes.size(), durations.size()});
+                        double chunkMaxEndMs = 0.0;
+
                         for (size_t i = 0; i < count; ++i) {
                             TextToViseme::CharTiming ct;
                             ct.character = chars[i].empty() ? ' ' : chars[i][0];
-                            ct.startTimeMs = startTimes[i];
+                            ct.startTimeMs = startTimes[i] + alignmentOffsetMs;
                             ct.durationMs = durations[i];
                             result.charTimings.push_back(ct);
                             result.alignmentText.push_back(ct.character);
-                        }
-                    }
-                }
 
-                // ElevenLabs may also send audio as base64 in the JSON
-                if (json.contains("audio") && json["audio"].is_string()) {
-                    // Audio chunk is base64-encoded in the text frame
-                    // We'll handle this but prefer binary frames
-                    auto audioB64 = json["audio"].get<std::string>();
-                    if (!audioB64.empty()) {
-                        // Simple base64 decode
-                        // (ElevenLabs sends audio in binary frames, this is a fallback)
-                        debug("Received audio in JSON text frame ({} base64 chars)", audioB64.size());
+                            double endMs = startTimes[i] + durations[i];
+                            if (endMs > chunkMaxEndMs) {
+                                chunkMaxEndMs = endMs;
+                            }
+                        }
+
+                        // Advance offset for next chunk
+                        alignmentOffsetMs += chunkMaxEndMs;
                     }
                 }
             } catch (const nlohmann::json::exception &e) {
@@ -431,7 +451,7 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
             break;
         }
 
-        case 0x02: // Binary frame (raw audio data)
+        case 0x02: // Binary frame (not expected from ElevenLabs, but handle gracefully)
             result.audioData.insert(result.audioData.end(), payload.begin(), payload.end());
             break;
 
@@ -500,9 +520,10 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeech(const std::string 
         progressCallback(0.05f);
     }
 
-    // Build WebSocket URL path
-    std::string path =
-        fmt::format("/v1/text-to-speech/{}/stream-input?model_id={}&output_format={}", voiceId, modelId, outputFormat);
+    // Build WebSocket URL path with sync_alignment for character-level timing data
+    std::string path = fmt::format(
+        "/v1/text-to-speech/{}/stream-input?model_id={}&output_format={}&sync_alignment=true", voiceId, modelId,
+        outputFormat);
 
     // Connect
     auto connectResult = connectWebSocket("api.elevenlabs.io", 443, path, apiKey, span);
@@ -518,6 +539,7 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeech(const std::string 
     }
 
     // Send BOS (Begin of Stream) message with generation config
+    // The API key and alignment request go in this first message
     nlohmann::json bosMessage;
     bosMessage["text"] = " "; // BOS requires a space
     bosMessage["voice_settings"]["stability"] = stability;

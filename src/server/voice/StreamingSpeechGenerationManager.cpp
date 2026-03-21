@@ -144,7 +144,7 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
         // Convert audio to 17-channel WAV
         auto wavPath = outputDir / "speech.wav";
 
-        if (outputFormat == "pcm_48000") {
+        if (outputFormat == "pcm_44100") {
             auto writeResult = writePcmToMultichannelWav(ttsData.audioData, wavPath, audioChannel, 48000);
             if (!writeResult.isSuccess()) {
                 if (span) {
