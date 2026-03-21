@@ -695,7 +695,27 @@ ObservabilityManager::createChildOperationSpan(const std::string &operationName,
     return std::make_shared<OperationSpan>(span);
 }
 
-// RequestSpan implementation (unchanged from your original)
+std::shared_ptr<OperationSpan>
+ObservabilityManager::createChildOperationSpan(const std::string &operationName,
+                                               std::shared_ptr<RequestSpan> parentSpan) {
+    if (!initialized_ || !parentSpan) {
+        return createChildOperationSpan(operationName, std::shared_ptr<OperationSpan>(nullptr));
+    }
+
+    auto parentSpanPtr = parentSpan->getSpan();
+    if (!parentSpanPtr) {
+        return createChildOperationSpan(operationName, std::shared_ptr<OperationSpan>(nullptr));
+    }
+
+    auto spanContext = parentSpanPtr->GetContext();
+    auto options = opentelemetry::trace::StartSpanOptions{};
+    options.parent = spanContext;
+
+    auto span = tracer_->StartSpan(operationName, options);
+    return std::make_shared<OperationSpan>(span);
+}
+
+// RequestSpan implementation
 RequestSpan::RequestSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span,
                          const std::string &httpMethod, const std::string &httpUrl)
     : span_(span), statusSet_(false) {
@@ -745,6 +765,14 @@ void RequestSpan::setAttribute(const std::string &key, int64_t value) {
 void RequestSpan::setAttribute(const std::string &key, bool value) {
     if (span_)
         span_->SetAttribute(key, value);
+}
+
+void RequestSpan::setError(const std::string &errorMessage) {
+    if (span_) {
+        span_->SetStatus(trace_api::StatusCode::kError, errorMessage);
+        span_->SetAttribute("error.message", errorMessage);
+        statusSet_ = true;
+    }
 }
 
 void RequestSpan::recordException(const std::exception &ex) {

@@ -19,6 +19,7 @@
 #include "controller/MetricsController.h"
 #include "controller/PlaylistController.h"
 #include "controller/SoundController.h"
+#include "controller/StreamingAdHocController.h"
 #include "controller/StaticController.h"
 #include "controller/VoiceController.h"
 #include "controller/WebSocketController.h"
@@ -63,6 +64,7 @@ void App::run() {
     docEndpoints.append(router->addController(MetricsController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(PlaylistController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(SoundController::createShared())->getEndpoints());
+    docEndpoints.append(router->addController(StreamingAdHocController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(StaticController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(VoiceController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(WebSocketController::createShared())->getEndpoints());
