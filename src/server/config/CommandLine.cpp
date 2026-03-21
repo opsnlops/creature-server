@@ -88,6 +88,21 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .default_value(environmentToString(FFMPEG_BINARY_PATH_ENV, DEFAULT_FFMPEG_BINARY_PATH))
         .nargs(1);
 
+    program.add_argument("--whisper-model-path")
+        .help("path to the whisper.cpp GGML model file (e.g., ggml-base.en.bin)")
+        .default_value(environmentToString(WHISPER_MODEL_PATH_ENV, DEFAULT_WHISPER_MODEL_PATH))
+        .nargs(1);
+
+    program.add_argument("--cmu-dict-path")
+        .help("path to the CMU Pronouncing Dictionary file")
+        .default_value(environmentToString(CMU_DICT_PATH_ENV, DEFAULT_CMU_DICT_PATH))
+        .nargs(1);
+
+    program.add_argument("--lip-sync-engine")
+        .help("lip sync engine to use: 'whisper' (fast, library) or 'rhubarb' (legacy, subprocess)")
+        .default_value(environmentToString(LIP_SYNC_ENGINE_ENV, DEFAULT_LIP_SYNC_ENGINE))
+        .nargs(1);
+
     program.add_argument("-h", "--honeycomb-api-key")
         .help("Honeycomb API key")
         .default_value(environmentToString(HONEYCOMB_API_KEY_ENV, DEFAULT_HONEYCOMB_API_KEY))
@@ -315,6 +330,27 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     debug("read event loop trace sampling rate {} from command line", eventLoopTraceSampling);
     config->setEventLoopTraceSampling(eventLoopTraceSampling);
     debug("set event loop trace sampling rate to {}", eventLoopTraceSampling);
+
+    auto whisperModelPath = program.get<std::string>("--whisper-model-path");
+    if (!whisperModelPath.empty()) {
+        config->setWhisperModelPath(whisperModelPath);
+        debug("set whisper model path to {}", whisperModelPath);
+    }
+
+    auto cmuDictPath = program.get<std::string>("--cmu-dict-path");
+    if (!cmuDictPath.empty()) {
+        config->setCmuDictPath(cmuDictPath);
+        debug("set CMU dictionary path to {}", cmuDictPath);
+    }
+
+    auto lipSyncEngine = program.get<std::string>("--lip-sync-engine");
+    if (lipSyncEngine != "whisper" && lipSyncEngine != "rhubarb") {
+        std::cerr << "Error: --lip-sync-engine must be 'whisper' or 'rhubarb', got '" << lipSyncEngine << "'"
+                  << std::endl;
+        std::exit(1);
+    }
+    config->setLipSyncEngine(lipSyncEngine);
+    debug("set lip sync engine to {}", lipSyncEngine);
 
     auto networkDeviceName = program.get<std::string>("-n");
     debug("read network device name {} from command line", networkDeviceName);

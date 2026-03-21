@@ -248,4 +248,31 @@ class PlaybackRunnerEvent : public EventBase<PlaybackRunnerEvent> {
     [[nodiscard]] framenum_t calculateNextFrameNumber() const;
 };
 
+/**
+ * StreamingPlaybackRunnerEvent - Cooperative streaming playback event
+ *
+ * Similar to PlaybackRunnerEvent but handles incremental frame delivery
+ * from the ElevenLabs WebSocket stream. Handles buffer underrun by holding
+ * the last known frame position instead of jerking to rest.
+ *
+ * See streaming-playback-runner.h for full documentation.
+ */
+class StreamingPlaybackSession; // Forward declaration
+
+class StreamingPlaybackRunnerEvent : public EventBase<StreamingPlaybackRunnerEvent> {
+  public:
+    StreamingPlaybackRunnerEvent(framenum_t frameNumber, std::shared_ptr<StreamingPlaybackSession> session);
+
+    virtual ~StreamingPlaybackRunnerEvent() = default;
+
+    Result<framenum_t> executeImpl();
+
+  private:
+    std::shared_ptr<StreamingPlaybackSession> session_;
+
+    void performTeardown();
+    Result<framenum_t> emitDmxFrames();
+    [[nodiscard]] framenum_t calculateNextFrameNumber() const;
+};
+
 } // namespace creatures

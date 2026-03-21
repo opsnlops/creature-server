@@ -5,32 +5,144 @@
 
 #include <nlohmann/json.hpp>
 
+#include "WhisperLipSyncProcessor.h"
+#include "server/config/Configuration.h"
 #include "server/namespace-stuffs.h"
 #include "util/ObservabilityManager.h"
 
 namespace fs = std::filesystem;
 
 namespace creatures {
+extern std::shared_ptr<Configuration> config;
 extern std::shared_ptr<ObservabilityManager> observability;
-}
+} // namespace creatures
 
 namespace creatures::voice {
+
+bool LipSyncProcessor::initializeWhisperEngine(const std::string &whisperModelPath,
+                                                const std::string &cmuDictPath) {
+    if (whisperModelPath.empty()) {
+        warn("Whisper model path is empty, whisper engine will not be available");
+        return false;
+    }
+    if (cmuDictPath.empty()) {
+        warn("CMU dictionary path is empty, whisper engine will not be available");
+        return false;
+    }
+
+    info("Initializing whisper lip sync engine...");
+    return WhisperLipSyncProcessor::instance().initialize(whisperModelPath, cmuDictPath);
+}
 
 Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFile, const std::string &soundsDir,
                                                        const std::string &rhubarbBinaryPath, bool allowOverwrite,
                                                        ProgressCallback progressCallback,
                                                        std::shared_ptr<OperationSpan> parentSpan) {
 
-    debug("LipSyncProcessor::generateLipSync() called for file: {}, allowOverwrite: {}", soundFile, allowOverwrite);
+    // Dispatch based on configured engine
+    std::string engine = config->getLipSyncEngine();
+
+    if (engine == "whisper" && WhisperLipSyncProcessor::instance().isInitialized()) {
+        info("Using whisper.cpp lip sync engine for {}", soundFile);
+        return generateWithWhisper(soundFile, soundsDir, allowOverwrite, progressCallback, parentSpan);
+    }
+
+    if (engine == "whisper" && !WhisperLipSyncProcessor::instance().isInitialized()) {
+        warn("Whisper engine configured but not initialized, falling back to Rhubarb for {}", soundFile);
+    }
+
+    debug("Using Rhubarb lip sync engine for {}", soundFile);
+    return generateWithRhubarb(soundFile, soundsDir, rhubarbBinaryPath, allowOverwrite, progressCallback, parentSpan);
+}
+
+Result<std::string> LipSyncProcessor::generateWithWhisper(const std::string &soundFile, const std::string &soundsDir,
+                                                           bool allowOverwrite, ProgressCallback progressCallback,
+                                                           std::shared_ptr<OperationSpan> parentSpan) {
+
+    auto span = observability->createChildOperationSpan("LipSyncProcessor.generateWithWhisper", parentSpan);
+    if (span) {
+        span->setAttribute("sound.file", soundFile);
+        span->setAttribute("engine", std::string("whisper"));
+    }
+
+    fs::path soundFilePath = fs::path(soundsDir) / soundFile;
+
+    // Validate the sound file
+    auto validationResult = validateSoundFile(soundFilePath, span);
+    if (!validationResult.isSuccess()) {
+        auto error = validationResult.getError().value();
+        if (span) {
+            span->setError(error.getMessage());
+        }
+        return error;
+    }
+
+    // Check if JSON file already exists
+    fs::path jsonOutputPath = soundFilePath;
+    jsonOutputPath.replace_extension(".json");
+
+    if (fs::exists(jsonOutputPath) && !allowOverwrite) {
+        std::string errorMsg =
+            fmt::format("JSON file '{}' already exists. Set 'allow_overwrite' to true to overwrite it.",
+                        jsonOutputPath.filename().string());
+        warn(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        return ServerError(ServerError::InvalidData, errorMsg);
+    }
+
+    // Check for transcript file (optional, improves whisper accuracy)
+    fs::path transcriptPath = soundFilePath;
+    transcriptPath.replace_extension(".txt");
+    std::string transcriptText;
+    if (fs::exists(transcriptPath)) {
+        std::ifstream transcriptFile(transcriptPath);
+        if (transcriptFile.is_open()) {
+            std::string line;
+            while (std::getline(transcriptFile, line)) {
+                if (!transcriptText.empty()) {
+                    transcriptText += " ";
+                }
+                transcriptText += line;
+            }
+            info("Loaded transcript for whisper: {} chars", transcriptText.size());
+        }
+    }
+
+    // Run whisper lip sync
+    auto result = WhisperLipSyncProcessor::instance().generateLipSync(soundFilePath, transcriptText,
+                                                                       progressCallback, span);
+
+    if (result.isSuccess()) {
+        auto jsonContent = result.getValue().value();
+        info("Whisper lip sync completed for {}: {} bytes", soundFile, jsonContent.size());
+        if (span) {
+            span->setSuccess();
+        }
+    } else if (span) {
+        span->setError(result.getError()->getMessage());
+    }
+
+    return result;
+}
+
+Result<std::string> LipSyncProcessor::generateWithRhubarb(const std::string &soundFile, const std::string &soundsDir,
+                                                           const std::string &rhubarbBinaryPath, bool allowOverwrite,
+                                                           ProgressCallback progressCallback,
+                                                           std::shared_ptr<OperationSpan> parentSpan) {
+
+    debug("LipSyncProcessor::generateWithRhubarb() called for file: {}, allowOverwrite: {}", soundFile, allowOverwrite);
 
     if (!parentSpan) {
         warn("no parent span provided for LipSyncProcessor.generateLipSync, creating a root span");
     }
 
-    auto span = observability->createChildOperationSpan("LipSyncProcessor.generateLipSync", parentSpan);
+    auto span = observability->createChildOperationSpan("LipSyncProcessor.generateWithRhubarb", parentSpan);
     if (span) {
         span->setAttribute("sound.file", soundFile);
         span->setAttribute("allow_overwrite", allowOverwrite);
+        span->setAttribute("engine", std::string("rhubarb"));
     }
 
     fs::path soundFilePath = fs::path(soundsDir) / soundFile;
@@ -105,7 +217,8 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
         span->setAttribute("rhubarb.binary", rhubarbBinaryPath);
     }
 
-    std::string command = fmt::format("{} -f json --machineReadable -o \"{}\"", rhubarbBinaryPath, jsonOutputPath.string());
+    std::string command =
+        fmt::format("{} -f json --machineReadable -o \"{}\"", rhubarbBinaryPath, jsonOutputPath.string());
     debug("Building Rhubarb command...");
 
     // Add transcript if available
@@ -143,9 +256,9 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
     debug("Verifying JSON file was created: {}", jsonOutputPath.string());
     if (!fs::exists(jsonOutputPath)) {
         auto rhubarbOutput = executionResult.getValue().value();
-        std::string errorMsg =
-            fmt::format("Rhubarb completed but did not create the expected JSON file '{}'.\n\nCommand: {}\n\nOutput:\n{}",
-                        jsonOutputPath.filename().string(), command, rhubarbOutput);
+        std::string errorMsg = fmt::format(
+            "Rhubarb completed but did not create the expected JSON file '{}'.\n\nCommand: {}\n\nOutput:\n{}",
+            jsonOutputPath.filename().string(), command, rhubarbOutput);
         error(errorMsg);
         if (span) {
             span->setError(errorMsg);
@@ -226,7 +339,8 @@ Result<bool> LipSyncProcessor::validateSoundFile(const std::filesystem::path &so
     return true;
 }
 
-Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &command, const std::string &rhubarbBinaryPath,
+Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &command,
+                                                      const std::string &rhubarbBinaryPath,
                                                       std::shared_ptr<OperationSpan> parentSpan,
                                                       ProgressCallback progressCallback) {
 
@@ -280,7 +394,8 @@ Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &command,
                         // Scale progress to 0.25-0.95 range (leave room for our other steps)
                         float scaledProgress = 0.25f + (progress * 0.70f);
 
-                        debug("Rhubarb progress: {:.1f}% (scaled to {:.1f}%)", progress * 100.0f, scaledProgress * 100.0f);
+                        debug("Rhubarb progress: {:.1f}% (scaled to {:.1f}%)", progress * 100.0f,
+                              scaledProgress * 100.0f);
                         progressCallback(scaledProgress);
 
                         if (span) {
@@ -304,8 +419,9 @@ Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &command,
 
         // Check if command succeeded
         if (exitCode != 0) {
-            std::string errorMsg = fmt::format("Rhubarb processing failed with exit code {}.\n\nCommand: {}\n\nOutput:\n{}",
-                                               exitCode, command, commandOutput);
+            std::string errorMsg =
+                fmt::format("Rhubarb processing failed with exit code {}.\n\nCommand: {}\n\nOutput:\n{}", exitCode,
+                            command, commandOutput);
             error(errorMsg);
             if (span) {
                 span->setError(errorMsg);
@@ -320,8 +436,8 @@ Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &command,
         return commandOutput;
 
     } catch (const std::exception &e) {
-        std::string errorMsg =
-            fmt::format("Exception during Rhubarb execution: {}\n\nCommand: {}\n\nOutput:\n{}", e.what(), command, commandOutput);
+        std::string errorMsg = fmt::format("Exception during Rhubarb execution: {}\n\nCommand: {}\n\nOutput:\n{}",
+                                           e.what(), command, commandOutput);
         error(errorMsg);
         if (span) {
             span->setError(errorMsg);

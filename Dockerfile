@@ -81,6 +81,11 @@ RUN mkdir /app
 COPY --from=build /build/creature-server/build/creature-server /app/creature-server
 COPY --from=build /usr/local/lib /usr/local/lib
 
+# Whisper model and CMU dictionary for lip sync
+RUN mkdir -p /usr/share/creature-server/data
+COPY --from=build /build/creature-server/build/data/ggml-base.en.bin /usr/share/creature-server/data/
+COPY --from=build /build/creature-server/build/data/cmudict.dict /usr/share/creature-server/data/
+
 EXPOSE 8000
 
 CMD ["/app/creature-server"]

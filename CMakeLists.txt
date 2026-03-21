@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "3.6.5"
+        VERSION "3.7.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -151,6 +151,79 @@ FetchContent_Declare(
         URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
 )
 FetchContent_MakeAvailable(googletest)
+
+#whisper.cpp - fast speech recognition for lip sync
+set(WHISPER_BUILD_TESTS OFF CACHE BOOL "Disable whisper tests" FORCE)
+set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "Disable whisper examples" FORCE)
+set(WHISPER_BUILD_SERVER OFF CACHE BOOL "Disable whisper server" FORCE)
+set(WHISPER_NO_METAL ON CACHE BOOL "Disable Metal (Linux server)" FORCE)
+set(GGML_METAL OFF CACHE BOOL "Disable Metal backend" FORCE)
+set(GGML_CUDA OFF CACHE BOOL "Disable CUDA backend" FORCE)
+set(GGML_VULKAN OFF CACHE BOOL "Disable Vulkan backend" FORCE)
+
+FetchContent_Declare(
+        whisper
+        GIT_REPOSITORY https://github.com/ggerganov/whisper.cpp.git
+        GIT_TAG v1.7.5
+        GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(whisper)
+
+#Data files for lip sync: whisper model + CMU dictionary
+#These are downloaded at configure time and installed into the DEB package
+set(CREATURE_DATA_DIR "${CMAKE_BINARY_DIR}/data")
+file(MAKE_DIRECTORY ${CREATURE_DATA_DIR})
+
+#whisper model (base.en, ~150MB) - English-only, fast on CPU with AVX2
+set(WHISPER_MODEL_FILE "${CREATURE_DATA_DIR}/ggml-base.en.bin")
+if(NOT EXISTS ${WHISPER_MODEL_FILE})
+    message(STATUS "Downloading whisper base.en model (~150MB)...")
+    file(DOWNLOAD
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+        ${WHISPER_MODEL_FILE}
+        SHOW_PROGRESS
+        STATUS WHISPER_DL_STATUS
+    )
+    list(GET WHISPER_DL_STATUS 0 WHISPER_DL_CODE)
+    if(NOT WHISPER_DL_CODE EQUAL 0)
+        message(WARNING "Failed to download whisper model: ${WHISPER_DL_STATUS}")
+    else()
+        message(STATUS "Whisper model downloaded to ${WHISPER_MODEL_FILE}")
+    endif()
+else()
+    message(STATUS "Whisper model already present: ${WHISPER_MODEL_FILE}")
+endif()
+
+#CMU Pronouncing Dictionary (~4MB, ~134k words with ARPAbet phonemes)
+set(CMU_DICT_FILE "${CREATURE_DATA_DIR}/cmudict.dict")
+if(NOT EXISTS ${CMU_DICT_FILE})
+    message(STATUS "Downloading CMU Pronouncing Dictionary...")
+    file(DOWNLOAD
+        "https://raw.githubusercontent.com/cmusphinx/cmudict/master/cmudict.dict"
+        ${CMU_DICT_FILE}
+        SHOW_PROGRESS
+        STATUS CMU_DL_STATUS
+    )
+    list(GET CMU_DL_STATUS 0 CMU_DL_CODE)
+    if(NOT CMU_DL_CODE EQUAL 0)
+        message(WARNING "Failed to download CMU dictionary: ${CMU_DL_STATUS}")
+    else()
+        message(STATUS "CMU dictionary downloaded to ${CMU_DICT_FILE}")
+    endif()
+else()
+    message(STATUS "CMU dictionary already present: ${CMU_DICT_FILE}")
+endif()
+
+#Install data files for packaging (DEB)
+set(CREATURE_INSTALL_DATA_DIR "/usr/share/creature-server/data")
+install(FILES ${WHISPER_MODEL_FILE}
+        DESTINATION ${CREATURE_INSTALL_DATA_DIR}
+        COMPONENT creature-server
+)
+install(FILES ${CMU_DICT_FILE}
+        DESTINATION ${CREATURE_INSTALL_DATA_DIR}
+        COMPONENT creature-server
+)
 
 #Now configure OpenTelemetry with very specific settings
 set(BUILD_TESTING OFF CACHE BOOL "Disable testing" FORCE)
@@ -451,6 +524,7 @@ target_link_libraries(creature-server
         Threads::Threads
         uvgrtp
         opus
+        whisper
         OpenSSL::SSL
         OpenSSL::Crypto
         ${MONGO_SYSTEM_LIBS}
