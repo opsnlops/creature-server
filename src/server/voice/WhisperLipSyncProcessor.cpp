@@ -117,13 +117,40 @@ std::vector<float> WhisperLipSyncProcessor::loadAudioForWhisper(const std::files
             file.read(reinterpret_cast<char *>(&blockAlign), 2);
             file.read(reinterpret_cast<char *>(&bitsPerSample), 2);
 
-            // Skip any extra format bytes
-            if (chunkSize > 16) {
+            // Handle WAVE_FORMAT_EXTENSIBLE (0xFFFE / 65534)
+            // ffmpeg outputs this for multi-channel WAVs. The actual format
+            // is in the SubFormat GUID at the end of the extended header.
+            // For our purposes, if bitsPerSample is 16, it's PCM data.
+            if (audioFormat == 0xFFFE && chunkSize > 16) {
+                // Read cbSize (2 bytes), validBitsPerSample (2 bytes), channelMask (4 bytes)
+                uint16_t cbSize = 0;
+                file.read(reinterpret_cast<char *>(&cbSize), 2);
+                uint16_t validBitsPerSample = 0;
+                file.read(reinterpret_cast<char *>(&validBitsPerSample), 2);
+                uint32_t channelMask = 0;
+                file.read(reinterpret_cast<char *>(&channelMask), 4);
+
+                // Read first 2 bytes of SubFormat GUID to get the actual format
+                uint16_t subFormat = 0;
+                file.read(reinterpret_cast<char *>(&subFormat), 2);
+
+                if (subFormat == 1) { // KSDATAFORMAT_SUBTYPE_PCM
+                    audioFormat = 1; // Treat as regular PCM
+                    debug("WAVE_FORMAT_EXTENSIBLE with PCM subformat, {} channels", numChannels);
+                }
+
+                // Skip remaining SubFormat GUID bytes (14) + any extra
+                size_t bytesRead = 16 + 2 + 2 + 4 + 2; // fmt fields + cbSize + validBits + mask + subFormat
+                if (chunkSize > bytesRead) {
+                    file.seekg(chunkSize - bytesRead, std::ios::cur);
+                }
+            } else if (chunkSize > 16) {
+                // Skip any extra format bytes for other formats
                 file.seekg(chunkSize - 16, std::ios::cur);
             }
             foundFmt = true;
         } else if (std::strncmp(chunkId, "data", 4) == 0 && foundFmt) {
-            if (audioFormat != 1) { // PCM
+            if (audioFormat != 1) { // PCM (or EXTENSIBLE resolved to PCM above)
                 error("WAV file is not PCM format (format={}): {}", audioFormat, wavFilePath.string());
                 return {};
             }
@@ -228,13 +255,32 @@ Result<std::string> WhisperLipSyncProcessor::generateLipSync(const std::filesyst
 
     // Load audio
     double audioDuration = 0.0;
-    auto audioData = loadAudioForWhisper(wavFilePath, audioDuration);
-    if (audioData.empty()) {
-        std::string errorMsg = fmt::format("Failed to load audio from {}", wavFilePath.string());
-        if (span) {
-            span->setError(errorMsg);
+    std::vector<float> audioData;
+    {
+        auto loadSpan =
+            creatures::observability->createChildOperationSpan("WhisperLipSyncProcessor.loadAudio", span);
+        if (loadSpan) {
+            loadSpan->setAttribute("sound.file", wavFilePath.string());
         }
-        return ServerError(ServerError::InternalError, errorMsg);
+
+        audioData = loadAudioForWhisper(wavFilePath, audioDuration);
+
+        if (audioData.empty()) {
+            std::string errorMsg = fmt::format("Failed to load audio from {}", wavFilePath.string());
+            if (loadSpan) {
+                loadSpan->setError(errorMsg);
+            }
+            if (span) {
+                span->setError(errorMsg);
+            }
+            return ServerError(ServerError::InternalError, errorMsg);
+        }
+
+        if (loadSpan) {
+            loadSpan->setAttribute("audio.duration_s", audioDuration);
+            loadSpan->setAttribute("audio.samples", static_cast<int64_t>(audioData.size()));
+            loadSpan->setSuccess();
+        }
     }
 
     if (span) {
@@ -361,7 +407,19 @@ Result<std::string> WhisperLipSyncProcessor::generateLipSync(const std::filesyst
     debug("Whisper found {} word tokens in {:.2f}s audio", wordTimings.size(), audioDuration);
 
     // Convert word timings to mouth cues using TextToViseme
-    auto mouthCues = textToViseme_.wordsToMouthCues(wordTimings);
+    std::vector<RhubarbMouthCue> mouthCues;
+    {
+        auto visemeSpan =
+            creatures::observability->createChildOperationSpan("WhisperLipSyncProcessor.wordsToVisemes", span);
+
+        mouthCues = textToViseme_.wordsToMouthCues(wordTimings);
+
+        if (visemeSpan) {
+            visemeSpan->setAttribute("input.word_count", static_cast<int64_t>(wordTimings.size()));
+            visemeSpan->setAttribute("output.cue_count", static_cast<int64_t>(mouthCues.size()));
+            visemeSpan->setSuccess();
+        }
+    }
 
     if (span) {
         span->setAttribute("mouth_cues.count", static_cast<int64_t>(mouthCues.size()));
