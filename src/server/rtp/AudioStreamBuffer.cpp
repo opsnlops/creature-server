@@ -9,6 +9,8 @@
 //
 
 #include <filesystem>
+#include <future>
+#include <thread>
 
 #include <SDL2/SDL.h>
 #include <spdlog/spdlog.h>
@@ -193,9 +195,6 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
     debug("Encoding {} frames to Opus", numberOfFramesPerChannel_);
 
     try {
-        // Create encoders for each channel
-        std::array<opus::Encoder, RTP_STREAMING_CHANNELS> encoders;
-
         // Resize storage for all encoded frames
         for (auto &frameVector : encodedOpusFrames_) {
             frameVector.resize(numberOfFramesPerChannel_);
@@ -203,60 +202,62 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
 
         const int16_t *pcm = reinterpret_cast<const int16_t *>(raw);
 
-        // Encode frame by frame
-        for (std::size_t frameIndex = 0; frameIndex < numberOfFramesPerChannel_; ++frameIndex) {
-            const int16_t *frameBasePointer = pcm + frameIndex * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
+        // Encode all 17 channels in parallel — each channel is independent
+        // with its own Opus encoder state, so this is trivially parallelizable.
+        // On the Ryzen 9 16-core server, all 17 channels encode simultaneously.
+        std::array<std::future<Result<size_t>>, RTP_STREAMING_CHANNELS> futures;
 
-            // Process each channel separately
-            for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
-                // De-interleave the audio data for this channel with bounds checking
-                std::array<int16_t, RTP_SAMPLES> monoChannelData{};
+        for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+            futures[channelIndex] = std::async(
+                std::launch::async,
+                [this, pcm, channelIndex, span]() -> Result<size_t> {
+                    auto channelSpan = observability
+                                           ? observability->createChildOperationSpan(
+                                                 fmt::format("AudioStreamBuffer.encodeChannel.{}", channelIndex), span)
+                                           : nullptr;
+                    if (channelSpan) {
+                        channelSpan->setAttribute("channel", static_cast<int64_t>(channelIndex));
+                        channelSpan->setAttribute("frames", static_cast<int64_t>(numberOfFramesPerChannel_));
+                    }
 
-                for (std::size_t sampleIndex = 0; sampleIndex < RTP_SAMPLES; ++sampleIndex) {
-                    // Calculate the interleaved index with bounds checking
-                    const std::size_t interleavedIndex = sampleIndex * RTP_STREAMING_CHANNELS + channelIndex;
-                    const std::size_t maxSampleOffset =
-                        (numberOfFramesPerChannel_ - frameIndex) * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
+                    opus::Encoder encoder;
 
-                    // Bounds check: ensure we don't read beyond the allocated buffer
-                    if (interleavedIndex >= maxSampleOffset) {
-                        const auto errorMsg =
-                            fmt::format("Buffer overflow prevented: interleavedIndex {} >= maxOffset {} "
-                                        "(frame {}/{}, sample {}/{}, channel {})",
-                                        interleavedIndex, maxSampleOffset, frameIndex, numberOfFramesPerChannel_,
-                                        sampleIndex, RTP_SAMPLES, channelIndex);
-                        error(errorMsg);
-                        if (span) {
-                            span->setError(errorMsg);
+                    for (std::size_t frameIndex = 0; frameIndex < numberOfFramesPerChannel_; ++frameIndex) {
+                        const int16_t *frameBase = pcm + frameIndex * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
+
+                        // De-interleave this channel's samples from the interleaved PCM
+                        std::array<int16_t, RTP_SAMPLES> mono{};
+                        for (std::size_t s = 0; s < RTP_SAMPLES; ++s) {
+                            mono[s] = frameBase[s * RTP_STREAMING_CHANNELS + channelIndex];
                         }
-                        return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
+
+                        encodedOpusFrames_[channelIndex][frameIndex] = encoder.encode(mono.data());
                     }
 
-                    monoChannelData[sampleIndex] = frameBasePointer[interleavedIndex];
-                }
-
-                // Validate channel index before accessing encoders array
-                if (channelIndex >= encoders.size()) {
-                    const auto errorMsg =
-                        fmt::format("Channel index {} exceeds encoder array size {}", channelIndex, encoders.size());
-                    error(errorMsg);
-                    if (span) {
-                        span->setError(errorMsg);
+                    if (channelSpan) {
+                        channelSpan->setSuccess();
                     }
-                    return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
+                    return Result<size_t>{numberOfFramesPerChannel_};
+                });
+        }
+
+        // Wait for all channels to complete
+        for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+            auto channelResult = futures[channelIndex].get();
+            if (!channelResult.isSuccess()) {
+                auto errorMsg =
+                    fmt::format("Opus encoding failed for channel {}: {}", channelIndex,
+                                channelResult.getError()->getMessage());
+                error(errorMsg);
+                if (span) {
+                    span->setError(errorMsg);
                 }
-
-                // Encode this frame for this channel
-                encodedOpusFrames_[channelIndex][frameIndex] = encoders[channelIndex].encode(monoChannelData.data());
-            }
-
-            // Log progress for long files
-            if (frameIndex % 1000 == 0 && frameIndex > 0) {
-                debug("Encoded {}/{} frames", frameIndex, numberOfFramesPerChannel_);
+                return Result<size_t>{channelResult.getError().value()};
             }
         }
 
-        debug("Encoding completed successfully - {} frames per channel encoded to Opus", numberOfFramesPerChannel_);
+        debug("Parallel encoding completed - {} frames × {} channels encoded to Opus",
+              numberOfFramesPerChannel_, RTP_STREAMING_CHANNELS);
 
     } catch (const std::exception &e) {
         const auto errorMsg = fmt::format("Error while encoding WAV to Opus: {}", e.what());
