@@ -36,6 +36,7 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
     if (span) {
         span->setAttribute("creature.id", request.creatureId);
         span->setAttribute("text.length", static_cast<int64_t>(request.text.size()));
+        span->setAttribute("tts.method", std::string("elevenlabs_websocket"));
     }
 
     try {

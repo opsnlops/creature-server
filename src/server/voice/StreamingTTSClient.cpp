@@ -338,6 +338,10 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
     size_t totalBytesReceived = 0;
     double alignmentOffsetMs = 0.0; // Accumulated time offset for alignment across chunks
 
+    // Fragmentation state: WebSocket messages may span multiple frames
+    std::vector<uint8_t> fragmentBuffer;
+    uint8_t fragmentOpcode = 0; // Opcode of the first frame in a fragmented message
+
     while (running) {
         // Read frame header (2 bytes minimum)
         uint8_t header[2];
@@ -391,6 +395,25 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
         }
 
         totalBytesReceived += payloadLen;
+
+        // Handle fragmentation: continuation frames (opcode 0x00)
+        if (opcode == 0x00) {
+            // Continuation frame — append to fragment buffer
+            fragmentBuffer.insert(fragmentBuffer.end(), payload.begin(), payload.end());
+            if (!fin) {
+                continue; // More fragments coming
+            }
+            // Final fragment — reassemble and process as the original opcode
+            opcode = fragmentOpcode;
+            payload = std::move(fragmentBuffer);
+            fragmentBuffer.clear();
+            fragmentOpcode = 0;
+        } else if (!fin && (opcode == 0x01 || opcode == 0x02)) {
+            // First frame of a fragmented message
+            fragmentOpcode = opcode;
+            fragmentBuffer = std::move(payload);
+            continue; // Wait for continuation frames
+        }
 
         switch (opcode) {
         case 0x01: // Text frame — JSON with base64 audio + alignment data
@@ -451,7 +474,8 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
                     }
                 }
             } catch (const nlohmann::json::exception &e) {
-                trace("Non-JSON text frame received: {}", text.substr(0, 100));
+                warn("Failed to parse WebSocket text frame as JSON: {}, data: {}", e.what(),
+                     text.substr(0, 200));
             }
             break;
         }
@@ -481,7 +505,7 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
             break;
         }
 
-        (void)fin; // We process complete messages regardless of FIN
+        // fin is handled above for fragmentation
 
         // Update progress based on data received (rough estimate)
         if (progressCallback && totalBytesReceived > 0) {
