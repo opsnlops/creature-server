@@ -632,13 +632,17 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         auto textSlug = slugify(text);
         auto timestamp = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
 
+        if (jobState.span) {
+            jobState.span->setAttribute("speech.attempted_engine", std::string("websocket_streaming"));
+        }
+
         auto streamingResult = voice::StreamingSpeechGenerationManager::generate(speechRequest);
         if (streamingResult.isSuccess()) {
             auto streamingAssets = streamingResult.getValue().value();
             info("Streaming TTS succeeded for job {} ({:.2f}s audio)", jobState.jobId,
                  streamingAssets.audioDurationSeconds);
             if (jobState.span) {
-                jobState.span->setAttribute("speech.engine", std::string("streaming"));
+                jobState.span->setAttribute("speech.engine_used", std::string("websocket_streaming"));
                 jobState.span->setAttribute("audio.duration_s", streamingAssets.audioDurationSeconds);
             }
 
@@ -665,7 +669,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
             warn("Streaming TTS failed for job {}: {}, falling back to REST path", jobState.jobId,
                  streamingResult.getError()->getMessage());
             if (jobState.span) {
-                jobState.span->setAttribute("speech.engine", std::string("rest_fallback"));
+                jobState.span->setAttribute("speech.engine_used", std::string("rest_fallback"));
                 jobState.span->setAttribute("speech.streaming_error", streamingResult.getError()->getMessage());
             }
 
