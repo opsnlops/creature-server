@@ -336,17 +336,22 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
 
     bool running = true;
     size_t totalBytesReceived = 0;
-    double alignmentOffsetMs = 0.0; // Accumulated time offset for alignment across chunks
+    int wsFrameCount = 0;
+    int audioChunkCount = 0;
+    int alignmentChunkCount = 0;
 
-    // Fragmentation state: WebSocket messages may span multiple frames
+    // Fragmentation state
     std::vector<uint8_t> fragmentBuffer;
-    uint8_t fragmentOpcode = 0; // Opcode of the first frame in a fragmented message
+    uint8_t fragmentOpcode = 0;
+    int fragmentCount = 0;
+
+    info("StreamingTTSClient: starting frame receive loop (format={})", outputFormat);
 
     while (running) {
-        // Read frame header (2 bytes minimum)
         uint8_t header[2];
         if (!sslReadExact(conn_->ssl, header, 2)) {
-            debug("WebSocket connection closed by server");
+            warn("StreamingTTSClient: connection closed reading frame header "
+                 "(after {} frames, {} audio bytes)", wsFrameCount, result.audioData.size());
             break;
         }
 
@@ -394,138 +399,170 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
             }
         }
 
+        wsFrameCount++;
         totalBytesReceived += payloadLen;
 
-        // Handle fragmentation: continuation frames (opcode 0x00)
+        debug("StreamingTTSClient: ws frame #{}: opcode={} fin={} masked={} len={} totalBytes={}",
+              wsFrameCount, opcode, fin, masked, payloadLen, totalBytesReceived);
+
+        // Handle fragmentation
         if (opcode == 0x00) {
-            // Continuation frame — append to fragment buffer
+            fragmentCount++;
             fragmentBuffer.insert(fragmentBuffer.end(), payload.begin(), payload.end());
+            debug("StreamingTTSClient: continuation frame #{}, buffer={} bytes", fragmentCount, fragmentBuffer.size());
             if (!fin) {
-                continue; // More fragments coming
+                continue;
             }
-            // Final fragment — reassemble and process as the original opcode
             opcode = fragmentOpcode;
             payload = std::move(fragmentBuffer);
             fragmentBuffer.clear();
+            info("StreamingTTSClient: reassembled {} fragments -> {} bytes (opcode={})",
+                 fragmentCount, payload.size(), opcode);
             fragmentOpcode = 0;
+            fragmentCount = 0;
         } else if (!fin && (opcode == 0x01 || opcode == 0x02)) {
-            // First frame of a fragmented message
             fragmentOpcode = opcode;
             fragmentBuffer = std::move(payload);
-            continue; // Wait for continuation frames
+            fragmentCount = 1;
+            debug("StreamingTTSClient: fragment start (opcode={}), {} bytes", opcode, fragmentBuffer.size());
+            continue;
         }
 
         switch (opcode) {
-        case 0x01: // Text frame — JSON with base64 audio + alignment data
-        {
+        case 0x01: {
             std::string text(payload.begin(), payload.end());
+
+            // Log what fields exist in this JSON before parsing
+            bool textHasAudio = text.find("\"audio\"") != std::string::npos;
+            bool textHasNull = text.find("\"audio\":null") != std::string::npos;
+            bool textHasAlign = text.find("\"alignment\"") != std::string::npos;
+            bool textHasFinal = text.find("\"isFinal\"") != std::string::npos;
+            info("StreamingTTSClient: text frame #{}: {} bytes, audio={} audioNull={} alignment={} isFinal={} "
+                 "first100='{}'",
+                 wsFrameCount, text.size(), textHasAudio, textHasNull, textHasAlign, textHasFinal,
+                 text.substr(0, 100));
+
             try {
                 auto json = nlohmann::json::parse(text);
 
-                // Check for final message: {"isFinal": true}
                 if (json.contains("isFinal") && json["isFinal"].get<bool>()) {
-                    debug("Received isFinal message from ElevenLabs");
+                    info("StreamingTTSClient: isFinal received after {} frames, {} audio chunks ({} bytes), "
+                         "{} alignment chunks ({} chars)",
+                         wsFrameCount, audioChunkCount, result.audioData.size(),
+                         alignmentChunkCount, result.charTimings.size());
                     running = false;
                     break;
                 }
 
-                // Decode base64 audio from the "audio" field
-                // ElevenLabs sends ALL audio as base64 in JSON text frames
-                if (json.contains("audio") && json["audio"].is_string()) {
-                    auto audioB64 = json["audio"].get<std::string>();
-                    if (!audioB64.empty()) {
-                        // Decode base64 to raw bytes
-                        auto decoded = base64::from_base64(audioB64);
-                        auto decodedBytes = reinterpret_cast<const uint8_t *>(decoded.data());
-                        result.audioData.insert(result.audioData.end(), decodedBytes,
-                                                decodedBytes + decoded.size());
+                // Audio decoding
+                if (json.contains("audio")) {
+                    if (json["audio"].is_null()) {
+                        debug("StreamingTTSClient: audio=null in frame #{}", wsFrameCount);
+                    } else if (json["audio"].is_string()) {
+                        auto audioB64 = json["audio"].get<std::string>();
+                        if (audioB64.empty()) {
+                            debug("StreamingTTSClient: audio=\"\" (empty) in frame #{}", wsFrameCount);
+                        } else {
+                            try {
+                                auto decoded = base64::from_base64(audioB64);
+                                result.audioData.insert(result.audioData.end(),
+                                                        reinterpret_cast<const uint8_t *>(decoded.data()),
+                                                        reinterpret_cast<const uint8_t *>(decoded.data()) +
+                                                            decoded.size());
+                                audioChunkCount++;
+                                info("StreamingTTSClient: audio chunk {}: {} b64 chars -> {} bytes decoded "
+                                     "(cumulative: {} bytes)",
+                                     audioChunkCount, audioB64.size(), decoded.size(), result.audioData.size());
+                            } catch (const std::exception &e) {
+                                error("StreamingTTSClient: BASE64 DECODE FAILED: {} "
+                                      "({} chars, first80='{}')",
+                                      e.what(), audioB64.size(), audioB64.substr(0, 80));
+                            }
+                        }
+                    } else {
+                        warn("StreamingTTSClient: audio is unexpected JSON type: {}", json["audio"].type_name());
                     }
+                } else {
+                    debug("StreamingTTSClient: no 'audio' key in frame #{}", wsFrameCount);
                 }
 
-                // Parse alignment data (character-level timing)
-                // Timing values are RELATIVE to this chunk — add accumulated offset
+                // Alignment (times are absolute, not per-chunk)
                 if (json.contains("alignment") && !json["alignment"].is_null()) {
-                    auto &alignment = json["alignment"];
-                    if (alignment.contains("chars") && alignment.contains("charStartTimesMs") &&
-                        alignment.contains("charDurationsMs")) {
-                        auto chars = alignment["chars"].get<std::vector<std::string>>();
-                        auto startTimes = alignment["charStartTimesMs"].get<std::vector<double>>();
-                        auto durations = alignment["charDurationsMs"].get<std::vector<double>>();
-
-                        size_t count = std::min({chars.size(), startTimes.size(), durations.size()});
-                        double chunkMaxEndMs = 0.0;
+                    auto &al = json["alignment"];
+                    if (al.contains("chars") && al.contains("charStartTimesMs") && al.contains("charDurationsMs")) {
+                        auto chars = al["chars"].get<std::vector<std::string>>();
+                        auto starts = al["charStartTimesMs"].get<std::vector<double>>();
+                        auto durs = al["charDurationsMs"].get<std::vector<double>>();
+                        size_t count = std::min({chars.size(), starts.size(), durs.size()});
+                        std::string chunkText;
 
                         for (size_t i = 0; i < count; ++i) {
                             TextToViseme::CharTiming ct;
                             ct.character = chars[i].empty() ? ' ' : chars[i][0];
-                            ct.startTimeMs = startTimes[i] + alignmentOffsetMs;
-                            ct.durationMs = durations[i];
+                            ct.startTimeMs = starts[i];
+                            ct.durationMs = durs[i];
                             result.charTimings.push_back(ct);
                             result.alignmentText.push_back(ct.character);
-
-                            double endMs = startTimes[i] + durations[i];
-                            if (endMs > chunkMaxEndMs) {
-                                chunkMaxEndMs = endMs;
-                            }
+                            chunkText.push_back(ct.character);
                         }
-
-                        // Advance offset for next chunk
-                        alignmentOffsetMs += chunkMaxEndMs;
+                        alignmentChunkCount++;
+                        info("StreamingTTSClient: alignment chunk {}: {} chars, text='{}' (cumulative: {})",
+                             alignmentChunkCount, count, chunkText, result.charTimings.size());
                     }
                 }
-            } catch (const nlohmann::json::exception &e) {
-                warn("Failed to parse WebSocket text frame as JSON: {}, data: {}", e.what(),
-                     text.substr(0, 200));
+            } catch (const std::exception &e) {
+                error("StreamingTTSClient: EXCEPTION in frame #{}: {} size={} preview='{}'",
+                      wsFrameCount, e.what(), text.size(), text.substr(0, 200));
             }
             break;
         }
 
-        case 0x02: // Binary frame (not expected from ElevenLabs, but handle gracefully)
+        case 0x02:
             result.audioData.insert(result.audioData.end(), payload.begin(), payload.end());
+            info("StreamingTTSClient: binary frame: {} bytes (cumulative: {})", payloadLen, result.audioData.size());
             break;
 
-        case 0x08: // Close frame
-            debug("Received WebSocket close frame");
+        case 0x08:
+            info("StreamingTTSClient: close frame after {} frames", wsFrameCount);
             running = false;
             break;
 
-        case 0x09: // Ping
-        {
-            // Respond with pong
+        case 0x09: {
             auto pong = buildFrame(0x0A, payload.data(), payload.size());
             sslWriteAll(conn_->ssl, pong.data(), pong.size());
+            debug("StreamingTTSClient: ping -> pong");
             break;
         }
 
-        case 0x0A: // Pong
+        case 0x0A:
             break;
 
         default:
-            trace("Unknown WebSocket opcode: {}", opcode);
+            warn("StreamingTTSClient: unknown opcode {} in frame #{}", opcode, wsFrameCount);
             break;
         }
 
-        // fin is handled above for fragmentation
-
-        // Update progress based on data received (rough estimate)
         if (progressCallback && totalBytesReceived > 0) {
-            // Can't know total size ahead of time, use a logarithmic estimate
             float progress = std::min(0.9f, static_cast<float>(totalBytesReceived) / 500000.0f);
             progressCallback(progress);
         }
     }
 
-    // Estimate audio duration from data size
-    if (outputFormat == "pcm_48000") {
-        // 48kHz, 16-bit mono = 96000 bytes/second
-        result.audioDurationSeconds = static_cast<double>(result.audioData.size()) / 96000.0;
+    // Estimate audio duration
+    if (outputFormat.find("pcm") != std::string::npos) {
+        result.audioDurationSeconds = static_cast<double>(result.audioData.size()) / 88200.0;
     } else if (outputFormat.find("mp3") != std::string::npos) {
-        // Rough MP3 estimate: ~24000 bytes/second at 192kbps
         result.audioDurationSeconds = static_cast<double>(result.audioData.size()) / 24000.0;
     }
 
-    info("Streaming TTS complete: {} bytes audio, {} alignment chars, {:.2f}s estimated", result.audioData.size(),
-         result.charTimings.size(), result.audioDurationSeconds);
+    info("StreamingTTSClient COMPLETE: {} ws frames, {} audio chunks ({} bytes), "
+         "{} alignment chunks ({} chars), est {:.2f}s",
+         wsFrameCount, audioChunkCount, result.audioData.size(),
+         alignmentChunkCount, result.charTimings.size(), result.audioDurationSeconds);
+
+    if (result.audioData.empty()) {
+        error("StreamingTTSClient: ZERO audio bytes received! Review frame log above.");
+    }
 
     return result;
 }
