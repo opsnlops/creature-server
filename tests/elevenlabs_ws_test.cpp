@@ -17,7 +17,7 @@
 static const char *API_KEY = "8c275a537e96131c29a878f2b76a6164";
 static const char *VOICE_ID = "Nggzl2QAXh3OijoXD116"; // Beaky's voice from the logs
 static const char *MODEL_ID = "eleven_turbo_v2_5";
-static const char *TEXT = "Hello! This is a quick test of the streaming speech pipeline.";
+static const char *TEXT = "Now listen to this! The front door is locked, nice and tight. April is most likely attempting to train a dust bunny to do tricks, and needs concentration!";
 
 // --- Base64 encode (for WebSocket key) ---
 static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -224,18 +224,23 @@ int main() {
     sslWriteAll(ssl, eosFrame.data(), eosFrame.size());
     std::cout << "Sent EOS\n";
 
-    // Receive frames
+    // Receive frames — with detailed diagnostics
     size_t totalAudio = 0;
     size_t totalAlignment = 0;
     int frameCount = 0;
 
+    // Fragmentation state
+    std::vector<uint8_t> fragBuf;
+    uint8_t fragOpcode = 0;
+
     while (true) {
         uint8_t hdr[2];
         if (!sslReadExact(ssl, hdr, 2)) {
-            std::cout << "Connection closed\n";
+            std::cout << "Connection closed (read failed)\n";
             break;
         }
 
+        bool fin = (hdr[0] & 0x80) != 0;
         uint8_t opcode = hdr[0] & 0x0F;
         bool masked = (hdr[1] & 0x80) != 0;
         uint64_t payloadLen = hdr[1] & 0x7F;
@@ -262,43 +267,70 @@ int main() {
         }
 
         frameCount++;
+        std::cout << "  raw frame " << frameCount << ": opcode=" << int(opcode)
+                  << " fin=" << fin << " len=" << payloadLen << "\n";
+
+        // Handle fragmentation
+        if (opcode == 0x00) {
+            fragBuf.insert(fragBuf.end(), payload.begin(), payload.end());
+            if (!fin) continue;
+            opcode = fragOpcode;
+            payload = std::move(fragBuf);
+            fragBuf.clear();
+            fragOpcode = 0;
+            std::cout << "    -> reassembled: opcode=" << int(opcode) << " total=" << payload.size() << "\n";
+        } else if (!fin && (opcode == 0x01 || opcode == 0x02)) {
+            fragOpcode = opcode;
+            fragBuf = std::move(payload);
+            std::cout << "    -> fragment start, waiting for continuation\n";
+            continue;
+        }
 
         if (opcode == 0x01) { // Text
             std::string text(payload.begin(), payload.end());
-            // Check for audio field
-            if (text.find("\"audio\"") != std::string::npos && text.find("\"isFinal\"") == std::string::npos) {
-                // Count rough audio size
+
+            // Check isFinal — must match literal "isFinal":true (not null!)
+            // ElevenLabs sends "isFinal":null in every audio frame
+            if (text.find("\"isFinal\":true") != std::string::npos) {
+                std::cout << "    isFinal:true — stream complete\n";
+                break;
+            }
+
+            if (text.find("\"audio\"") != std::string::npos) {
                 auto audioStart = text.find("\"audio\":\"");
                 if (audioStart != std::string::npos) {
                     audioStart += 9;
                     auto audioEnd = text.find("\"", audioStart);
                     if (audioEnd != std::string::npos) {
-                        totalAudio += (audioEnd - audioStart) * 3 / 4; // rough b64 decode size
+                        size_t b64len = audioEnd - audioStart;
+                        totalAudio += b64len * 3 / 4;
+                        std::cout << "    audio: " << b64len << " base64 chars (~" << (b64len*3/4) << " bytes)\n";
+                    }
+                } else {
+                    // Check if audio is null
+                    auto nullCheck = text.find("\"audio\":null");
+                    if (nullCheck != std::string::npos) {
+                        std::cout << "    audio: null\n";
                     }
                 }
                 if (text.find("\"alignment\"") != std::string::npos) {
                     totalAlignment++;
+                    std::cout << "    has alignment data\n";
                 }
-                std::cout << "  chunk " << frameCount << ": ~" << (payloadLen / 1024) << "KB json (audio+alignment)\n";
             } else {
-                std::cout << "  msg " << frameCount << ": " << text.substr(0, 200) << "\n";
-            }
-
-            if (text.find("\"isFinal\"") != std::string::npos) {
-                std::cout << "Got isFinal!\n";
-                break;
+                std::cout << "    text: " << text.substr(0, 200) << "\n";
             }
         } else if (opcode == 0x02) {
             totalAudio += payloadLen;
-            std::cout << "  binary frame " << frameCount << ": " << payloadLen << " bytes\n";
+            std::cout << "    binary: " << payloadLen << " bytes\n";
         } else if (opcode == 0x08) {
-            std::cout << "Close frame received\n";
+            std::cout << "    Close frame\n";
             break;
         } else if (opcode == 0x09) {
-            // Pong
             auto pong = buildTextFrame("");
-            pong[0] = 0x8A; // FIN + PONG
+            pong[0] = 0x8A;
             sslWriteAll(ssl, pong.data(), pong.size());
+            std::cout << "    Ping -> Pong\n";
         }
     }
 
