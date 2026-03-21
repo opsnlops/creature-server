@@ -550,6 +550,14 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         return;
     }
 
+    if (jobState.span) {
+        jobState.span->setAttribute("creature.id", creatureId);
+        jobState.span->setAttribute("speech.text", text);
+        jobState.span->setAttribute("speech.text_length", static_cast<int64_t>(text.size()));
+        jobState.span->setAttribute("speech.auto_play", autoPlay);
+        jobState.span->setAttribute("speech.resume_playlist", resumePlaylist);
+    }
+
     if (creatureId.empty() || text.empty()) {
         std::string msg = "Ad-hoc speech jobs require both creature_id and text";
         jobManager_->failJob(jobState.jobId, msg);
@@ -613,74 +621,153 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         speechRequest.outputDirectory = tempDir;
         speechRequest.parentSpan = jobState.span;
 
-        auto speechResult = voice::SpeechGenerationManager::generate(speechRequest);
-        if (!speechResult.isSuccess()) {
-            failJob(speechResult.getError()->getMessage());
-            return;
-        }
-        updateProgress(0.2f);
-
-        auto speechAssets = speechResult.getValue().value();
-        auto creatureName = speechAssets.creature.name.empty() ? creatureId : speechAssets.creature.name;
-        auto creatureSlug = slugify(creatureName);
+        // Speech generation + lip sync data
+        // Try streaming path first (single WebSocket call for audio + alignment)
+        // Falls back to REST TTS + whisper/rhubarb if streaming fails
+        RhubarbSoundData rhubarbData;
+        std::filesystem::path wavPath;
+        std::filesystem::path transcriptPath;
+        Creature creature;
+        std::string creatureName;
         auto textSlug = slugify(text);
         auto timestamp = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
-        auto baseName = fmt::format("adhoc_{}_{}_{}", creatureSlug, timestamp, textSlug);
 
-        auto renameIfExists = [&](const std::filesystem::path &oldPath, const std::string &extension) {
-            if (oldPath.empty() || !std::filesystem::exists(oldPath)) {
-                return;
+        auto streamingResult = voice::StreamingSpeechGenerationManager::generate(speechRequest);
+        if (streamingResult.isSuccess()) {
+            auto streamingAssets = streamingResult.getValue().value();
+            info("Streaming TTS succeeded for job {} ({:.2f}s audio)", jobState.jobId,
+                 streamingAssets.audioDurationSeconds);
+            if (jobState.span) {
+                jobState.span->setAttribute("speech.engine", std::string("streaming"));
+                jobState.span->setAttribute("audio.duration_s", streamingAssets.audioDurationSeconds);
             }
-            std::filesystem::path newPath = oldPath.parent_path() / fmt::format("{}.{}", baseName, extension);
-            std::error_code renameEc;
-            std::filesystem::rename(oldPath, newPath, renameEc);
-            if (renameEc) {
-                warn("Unable to rename {} to {}: {}", oldPath.string(), newPath.string(), renameEc.message());
-                return;
+
+            rhubarbData = streamingAssets.lipSyncData;
+            wavPath = streamingAssets.wavPath;
+            transcriptPath = streamingAssets.transcriptPath;
+            creature = streamingAssets.creature;
+            creatureName = creature.name.empty() ? creatureId : creature.name;
+            updateProgress(0.45f);
+
+            // Prewarm audio cache in background
+            auto cacheFuture =
+                std::async(std::launch::async, [wp = wavPath, span = jobState.span]() {
+                    debug("Starting background cache prewarm for {}", wp.string());
+                    return prewarmAudioCache(wp, span);
+                });
+            auto cacheResult = cacheFuture.get();
+            if (!cacheResult.isSuccess()) {
+                warn("Audio cache prewarm failed: {}", cacheResult.getError()->getMessage());
             }
-            if (extension == "wav") {
-                speechAssets.wavPath = newPath;
-                speechAssets.response.sound_file_name = newPath.filename().string();
-            } else if (extension == "mp3") {
-                speechAssets.mp3Path = newPath;
-            } else if (extension == "txt") {
-                speechAssets.transcriptPath = newPath;
-                speechAssets.response.transcript_file_name = newPath.filename().string();
-            }
-        };
-
-        renameIfExists(speechAssets.wavPath, "wav");
-        renameIfExists(speechAssets.mp3Path, "mp3");
-        renameIfExists(speechAssets.transcriptPath, "txt");
-
-        auto cacheFuture = std::async(std::launch::async, [wavPath = speechAssets.wavPath, span = jobState.span]() {
-            debug("Starting background cache prewarm for {}", wavPath.string());
-            return prewarmAudioCache(wavPath, span);
-        });
-
-        auto rhubarbProgress = [&, base = 0.2f, span = 0.3f](float lipSyncProgress) {
-            updateProgress(base + span * lipSyncProgress);
-        };
-
-        auto lipSyncResult = voice::LipSyncProcessor::generateLipSync(speechAssets.wavPath.filename().string(),
-                                                                      tempDir.string(), config->getRhubarbBinaryPath(),
-                                                                      true, rhubarbProgress, jobState.span);
-        auto cachePrewarmResult = cacheFuture.get();
-        if (!cachePrewarmResult.isSuccess()) {
-            warn("Audio cache prewarm failed for job {}: {}", jobState.jobId,
-                 cachePrewarmResult.getError()->getMessage());
+            updateProgress(0.55f);
         } else {
-            debug("Audio cache prewarm complete for {}", speechAssets.wavPath.string());
-        }
-        if (!lipSyncResult.isSuccess()) {
-            failJob(lipSyncResult.getError()->getMessage());
-            return;
+            // Streaming failed — fall back to REST TTS + lip sync
+            warn("Streaming TTS failed for job {}: {}, falling back to REST path", jobState.jobId,
+                 streamingResult.getError()->getMessage());
+            if (jobState.span) {
+                jobState.span->setAttribute("speech.engine", std::string("rest_fallback"));
+                jobState.span->setAttribute("speech.streaming_error", streamingResult.getError()->getMessage());
+            }
+
+            auto speechResult = voice::SpeechGenerationManager::generate(speechRequest);
+            if (!speechResult.isSuccess()) {
+                failJob(speechResult.getError()->getMessage());
+                return;
+            }
+            updateProgress(0.2f);
+
+            auto speechAssets = speechResult.getValue().value();
+            creature = speechAssets.creature;
+            creatureName = creature.name.empty() ? creatureId : creature.name;
+
+            // Rename files with descriptive names
+            auto creatureSlug = slugify(creatureName);
+            auto textSlug = slugify(text);
+            auto ts = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
+            auto baseName = fmt::format("adhoc_{}_{}_{}", creatureSlug, ts, textSlug);
+
+            auto renameIfExists = [&](const std::filesystem::path &oldPath, const std::string &ext) {
+                if (oldPath.empty() || !std::filesystem::exists(oldPath)) {
+                    return;
+                }
+                auto newPath = oldPath.parent_path() / fmt::format("{}.{}", baseName, ext);
+                std::error_code renameEc;
+                std::filesystem::rename(oldPath, newPath, renameEc);
+                if (renameEc) {
+                    warn("Unable to rename {} to {}: {}", oldPath.string(), newPath.string(), renameEc.message());
+                    return;
+                }
+                if (ext == "wav") {
+                    speechAssets.wavPath = newPath;
+                } else if (ext == "txt") {
+                    speechAssets.transcriptPath = newPath;
+                }
+            };
+
+            renameIfExists(speechAssets.wavPath, "wav");
+            renameIfExists(speechAssets.mp3Path, "mp3");
+            renameIfExists(speechAssets.transcriptPath, "txt");
+
+            wavPath = speechAssets.wavPath;
+            transcriptPath = speechAssets.transcriptPath;
+
+            // Prewarm audio cache + lip sync in parallel
+            auto cacheFuture =
+                std::async(std::launch::async, [wp = wavPath, span = jobState.span]() {
+                    debug("Starting background cache prewarm for {}", wp.string());
+                    return prewarmAudioCache(wp, span);
+                });
+
+            auto lipSyncProgress = [&, base = 0.2f, range = 0.3f](float p) {
+                updateProgress(base + range * p);
+            };
+
+            auto lipSyncResult = voice::LipSyncProcessor::generateLipSync(
+                wavPath.filename().string(), tempDir.string(), config->getRhubarbBinaryPath(), true,
+                lipSyncProgress, jobState.span);
+
+            auto cacheResult = cacheFuture.get();
+            if (!cacheResult.isSuccess()) {
+                warn("Audio cache prewarm failed: {}", cacheResult.getError()->getMessage());
+            }
+            if (!lipSyncResult.isSuccess()) {
+                failJob(lipSyncResult.getError()->getMessage());
+                return;
+            }
+
+            rhubarbData = RhubarbSoundData::fromJsonString(lipSyncResult.getValue().value());
+            updateProgress(0.55f);
         }
 
-        auto rhubarbData = RhubarbSoundData::fromJsonString(lipSyncResult.getValue().value());
-        updateProgress(0.55f);
+        // Rename WAV/transcript with descriptive names if streaming path was used
+        // (streaming path outputs generic names)
+        if (streamingResult.isSuccess()) {
+            auto creatureSlug = slugify(creatureName);
+            auto textSlug = slugify(text);
+            auto ts = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
+            auto baseName = fmt::format("adhoc_{}_{}_{}", creatureSlug, ts, textSlug);
 
-        if (speechAssets.creature.speech_loop_animation_ids.empty()) {
+            auto renameFile = [&](std::filesystem::path &path, const std::string &ext) {
+                if (path.empty() || !std::filesystem::exists(path)) {
+                    return;
+                }
+                auto newPath = path.parent_path() / fmt::format("{}.{}", baseName, ext);
+                std::error_code renameEc;
+                std::filesystem::rename(path, newPath, renameEc);
+                if (!renameEc) {
+                    path = newPath;
+                }
+            };
+
+            renameFile(wavPath, "wav");
+            renameFile(transcriptPath, "txt");
+        }
+
+        if (jobState.span) {
+            jobState.span->setAttribute("creature.name", creatureName);
+        }
+
+        if (creature.speech_loop_animation_ids.empty()) {
             failJob(fmt::format("Creature '{}' has no speech_loop_animation_ids configured", creatureName));
             return;
         }
@@ -691,8 +778,8 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         }
 
         std::mt19937 rng(static_cast<uint32_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
-        std::uniform_int_distribution<std::size_t> dist(0, speechAssets.creature.speech_loop_animation_ids.size() - 1);
-        auto baseAnimationId = speechAssets.creature.speech_loop_animation_ids[dist(rng)];
+        std::uniform_int_distribution<std::size_t> dist(0, creature.speech_loop_animation_ids.size() - 1);
+        auto baseAnimationId = creature.speech_loop_animation_ids[dist(rng)];
 
         auto baseAnimationResult = db->getAnimation(baseAnimationId, jobState.span);
         if (!baseAnimationResult.isSuccess()) {
@@ -726,7 +813,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         }
 
         const auto frameWidth = decodedFrames.front().size();
-        const auto mouthSlot = speechAssets.creature.mouth_slot;
+        const auto mouthSlot = creature.mouth_slot;
         if (mouthSlot >= frameWidth) {
             failJob(fmt::format("Mouth slot {} out of bounds for frame width {}", mouthSlot, frameWidth));
             return;
@@ -757,7 +844,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         adHocAnimation.id = util::generateUUID();
         adHocAnimation.metadata.animation_id = adHocAnimation.id;
         adHocAnimation.metadata.title = fmt::format("{} - {} - {}", creatureName, timestamp, textSlug);
-        adHocAnimation.metadata.sound_file = speechAssets.wavPath.string();
+        adHocAnimation.metadata.sound_file = wavPath.string();
         adHocAnimation.metadata.note = fmt::format("Ad-hoc speech generated from text: {}", text);
         adHocAnimation.metadata.number_of_frames = static_cast<uint32_t>(encodedFrames.size());
         adHocAnimation.metadata.multitrack_audio = true;
