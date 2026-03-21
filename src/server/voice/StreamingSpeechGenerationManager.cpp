@@ -99,16 +99,37 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
         float stability = voiceConfig["stability"].get<float>();
         float similarityBoost = voiceConfig["similarity_boost"].get<float>();
 
+        // Validate that the configured model supports WebSocket streaming.
+        // eleven_v3 and eleven_multilingual_v2 do NOT support the stream-input endpoint
+        // and will return 403. The creature's voice config must use a streaming-compatible
+        // model like eleven_turbo_v2_5 or eleven_flash_v2_5.
+        static const std::vector<std::string> nonStreamingModels = {"eleven_v3", "eleven_multilingual_v2",
+                                                                     "eleven_monolingual_v1",
+                                                                     "eleven_multilingual_v1"};
+        for (const auto &blocked : nonStreamingModels) {
+            if (modelId == blocked) {
+                std::string errorMsg = fmt::format(
+                    "Creature '{}' is configured with model '{}' which does not support "
+                    "WebSocket streaming. Change the creature's voice model to "
+                    "'eleven_turbo_v2_5' or 'eleven_flash_v2_5' in the creature config, "
+                    "then try again.",
+                    request.creatureId, modelId);
+                warn(errorMsg);
+                if (span) {
+                    span->setError(errorMsg);
+                }
+                return Result<StreamingSpeechResult>{ServerError(ServerError::InvalidData, errorMsg)};
+            }
+        }
+
         if (span) {
             span->setAttribute("voice.id", voiceId);
             span->setAttribute("voice.model", modelId);
             span->setAttribute("audio.channel", static_cast<int64_t>(audioChannel));
         }
 
-        // Determine audio format
-        // PCM is preferred (no decode step) but requires a paid ElevenLabs plan
-        // Fall back to MP3 which is universally available
-        std::string outputFormat = "mp3_44100_192"; // Safe default
+        // MP3 is universally available across ElevenLabs plans
+        std::string outputFormat = "mp3_44100_192";
 
         // Call ElevenLabs streaming API
         StreamingTTSClient client;
