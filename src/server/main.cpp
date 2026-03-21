@@ -55,6 +55,7 @@
 #include "util/websocketUtils.h"
 #include "watchdog/Watchdog.h"
 
+#include "server/voice/LipSyncProcessor.h"
 #include "server/ws/App.h"
 
 using creatures::Database;
@@ -326,6 +327,19 @@ int main(const int argc, char **argv) {
         warn("Audio will be encoded without caching (slower performance)");
         creatures::audioCache = nullptr;
         creatures::rtp::AudioStreamBuffer::setAudioCacheInstance(nullptr);
+    }
+
+    // Initialize whisper lip sync engine if configured
+    if (creatures::config->getLipSyncEngine() == "whisper") {
+        auto whisperModelPath = creatures::config->getWhisperModelPath();
+        auto cmuDictPath = creatures::config->getCmuDictPath();
+        if (creatures::voice::LipSyncProcessor::initializeWhisperEngine(whisperModelPath, cmuDictPath)) {
+            info("Whisper lip sync engine initialized (replaces Rhubarb)");
+        } else {
+            warn("Whisper lip sync engine failed to initialize, falling back to Rhubarb");
+        }
+    } else {
+        info("Using Rhubarb lip sync engine (legacy)");
     }
 
     // Bring the E131Server online

@@ -56,7 +56,7 @@ RUN cd /build/creature-server && \
 
 # Run the build in a different layer so we avoid grabbing the code over
 # and over again
-RUN cd /build/creature-server/build && ninja
+RUN cd /build/creature-server/build && ninja -j4
 
 
 # Now build a small runtime
