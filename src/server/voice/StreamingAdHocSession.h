@@ -93,9 +93,16 @@ class StreamingAdHocSession {
     // TextToViseme (loaded once in start())
     TextToViseme textToViseme_;
 
-    // Futures for in-flight TTS calls (one per sentence)
+    // Futures for in-flight sentence processing (TTS + build, one per sentence)
+    // Each future produces a ready-to-play Animation
     std::mutex futuresMutex_;
-    std::vector<std::future<Result<StreamingTTSResult>>> sentenceFutures_;
+    std::vector<std::future<Result<Animation>>> sentenceFutures_;
+
+    // Frame offset synchronization: each sentence waits for the previous one's
+    // offset before building, so body motion is seamless. Uses promise/future pairs.
+    std::mutex offsetMutex_;
+    std::vector<std::promise<size_t>> offsetPromises_;
+    std::vector<std::shared_future<size_t>> offsetFutures_;
 };
 
 /**
