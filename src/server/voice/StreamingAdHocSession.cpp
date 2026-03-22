@@ -256,31 +256,19 @@ Result<std::string> StreamingAdHocSession::finish() {
         finishSpan->setAttribute("text.sentences", static_cast<int64_t>(chunksReceived_));
     }
 
-    info("StreamingAdHocSession finishing: session={}, {} sentences, collecting TTS results...",
-         sessionId_, chunksReceived_);
+    info("StreamingAdHocSession finishing: session={}, {} sentences", sessionId_, chunksReceived_);
 
-    // Collect all TTS results in order (most will already be done)
-    std::vector<StreamingTTSResult> ttsResults;
+    // Take ownership of the futures
+    std::vector<std::future<Result<StreamingTTSResult>>> futures;
     {
         std::lock_guard<std::mutex> lock(futuresMutex_);
-        for (auto &future : sentenceFutures_) {
-            if (future.valid()) {
-                auto result = future.get();
-                if (result.isSuccess()) {
-                    ttsResults.push_back(result.getValue().value());
-                } else {
-                    warn("Sentence TTS failed: {}", result.getError()->getMessage());
-                }
-            }
-        }
+        futures = std::move(sentenceFutures_);
         sentenceFutures_.clear();
     }
 
-    if (ttsResults.empty()) {
-        return Result<std::string>{ServerError(ServerError::InternalError, "All sentence TTS calls failed")};
+    if (futures.empty()) {
+        return Result<std::string>{ServerError(ServerError::InternalError, "No sentences were submitted")};
     }
-
-    info("Collected {} TTS results, building per-sentence animations", ttsResults.size());
 
     // Write transcript
     auto tempRoot = std::filesystem::temp_directory_path() / "creature-adhoc";
@@ -291,17 +279,24 @@ Result<std::string> StreamingAdHocSession::finish() {
         f << fullText_;
     }
 
-    // Process each sentence in order, building a separate animation for each.
-    // First sentence triggers interrupt() for immediate playback.
-    // Subsequent sentences go to queueAnimation() for seamless chaining.
+    // Process sentences IN ORDER. Sentence 1 gets built and played immediately
+    // via interrupt(). Remaining sentences are built and queued for seamless chaining.
     auto creatureName = creature_.name.empty() ? creatureId_ : creature_.name;
     auto timestamp = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
     size_t baseFrameOffset = 0;
     std::string lastAnimationId;
+    size_t totalSentences = futures.size();
 
-    for (size_t i = 0; i < ttsResults.size(); ++i) {
-        const auto &tts = ttsResults[i];
+    for (size_t i = 0; i < totalSentences; ++i) {
         int sentenceIndex = static_cast<int>(i + 1);
+
+        // Wait for this sentence's TTS to complete (in order!)
+        auto ttsResult = futures[i].get();
+        if (!ttsResult.isSuccess()) {
+            warn("Sentence {} TTS failed: {}", sentenceIndex, ttsResult.getError()->getMessage());
+            continue;
+        }
+        const auto tts = ttsResult.getValue().value();
 
         auto buildSpan = creatures::observability
                              ? creatures::observability->createChildOperationSpan(
@@ -370,7 +365,7 @@ Result<std::string> StreamingAdHocSession::finish() {
         animation.metadata.title =
             fmt::format("{} - {} - s{} - {}", creatureName, timestamp, sentenceIndex, textSlug);
         animation.metadata.sound_file = wavPath.string();
-        animation.metadata.note = fmt::format("Streaming sentence {}/{}", sentenceIndex, ttsResults.size());
+        animation.metadata.note = fmt::format("Streaming sentence {}/{}", sentenceIndex, totalSentences);
         animation.metadata.number_of_frames = static_cast<uint32_t>(encodedFrames.size());
         animation.metadata.multitrack_audio = true;
 
@@ -413,12 +408,12 @@ Result<std::string> StreamingAdHocSession::finish() {
 
     if (finishSpan) {
         finishSpan->setAttribute("last_animation.id", lastAnimationId);
-        finishSpan->setAttribute("animations_built", static_cast<int64_t>(ttsResults.size()));
+        finishSpan->setAttribute("animations_built", static_cast<int64_t>(totalSentences));
         finishSpan->setSuccess();
     }
 
     info("StreamingAdHocSession finished: session={}, {} animations, last={}",
-         sessionId_, ttsResults.size(), lastAnimationId);
+         sessionId_, totalSentences, lastAnimationId);
 
     return lastAnimationId;
 }
