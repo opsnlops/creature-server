@@ -334,6 +334,27 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
             sessionManager->clearSession(universe, sessionId);
         }
 
+        // Check animation queue before idle/playlist logic.
+        // Streaming ad-hoc speech queues sentence animations here for seamless chaining.
+        auto nextQueued = sessionManager->popQueuedAnimation(universe);
+        if (nextQueued) {
+            info("Animation queue: scheduling next animation '{}' on universe {}", nextQueued->metadata.title,
+                 universe);
+
+            auto nextResult = CooperativeAnimationScheduler::scheduleAnimation(
+                eventLoop->getNextFrameNumber(), *nextQueued, universe, creatures::runtime::ActivityReason::AdHoc);
+
+            if (nextResult.isSuccess()) {
+                sessionManager->registerSession(universe, nextResult.getValue().value(), false);
+            } else {
+                warn("Animation queue: failed to schedule next: {}", nextResult.getError()->getMessage());
+            }
+
+            // Don't turn off status light — next animation starts immediately
+            // Don't resume playlist — more speech may be queued
+            return;
+        }
+
         // Check if there's an interrupted playlist that should resume
         if (sessionManager->hasInterruptedPlaylist(universe)) {
             info("Animation finished on universe {} - resuming interrupted playlist", universe);

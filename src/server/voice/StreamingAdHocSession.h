@@ -1,13 +1,10 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
 #include <future>
 #include <memory>
 #include <mutex>
-#include <queue>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -25,17 +22,17 @@ namespace creatures::voice {
  * StreamingAdHocSession
  *
  * Manages a pipelined streaming ad-hoc speech session. Each sentence from
- * the agent is processed independently through the full TTS→animation pipeline,
- * and animations are chained back-to-back for seamless playback.
+ * the agent kicks off a parallel ElevenLabs TTS call immediately. When
+ * finish() is called, all TTS results are collected, combined into a single
+ * animation with seamless body motion, and played as one uninterrupted piece.
+ *
+ * The latency win: TTS calls run in parallel while the LLM is still generating.
+ * By the time the last sentence arrives, earlier sentences are already TTS'd.
  *
  * 1. start(): looks up creature, loads base animation, prepares for sentences
- * 2. addText(): kicks off TTS+animation pipeline for this sentence immediately
- *    in a background thread — first sentence triggers interrupt(), subsequent
- *    sentences queue for chained playback
- * 3. finish(): waits for all in-flight sentences to complete, returns final animation ID
- *
- * The base animation frame offset is tracked across sentences so body motion
- * continues seamlessly — only the mouth data changes between sentence animations.
+ * 2. addText(): kicks off ElevenLabs TTS immediately in a background thread
+ * 3. finish(): collects all TTS results (most already done), combines audio +
+ *    alignment into one animation, triggers single uninterrupted playback
  */
 class StreamingAdHocSession {
   public:
@@ -53,14 +50,13 @@ class StreamingAdHocSession {
     Result<void> start();
 
     /**
-     * Add a sentence. Immediately kicks off TTS+animation in a background thread.
-     * First sentence triggers playback; subsequent sentences chain seamlessly.
+     * Add a sentence. Immediately kicks off TTS in a background thread.
      */
     Result<void> addText(const std::string &text);
 
     /**
-     * Wait for all in-flight sentences to finish processing and playing.
-     * Returns the last animation ID.
+     * Collect all TTS results, combine into one animation, trigger playback.
+     * Returns the animation ID.
      */
     Result<std::string> finish();
 
@@ -90,48 +86,16 @@ class StreamingAdHocSession {
     // Universe for playback
     universe_t universe_ = 0;
 
-    // Track base animation frame offset for seamless body motion
-    std::atomic<size_t> baseFrameOffset_{0};
-
-    // Track whether this is the first sentence (triggers interrupt vs chain)
-    std::atomic<bool> firstSentence_{true};
-
     // Accumulated text for transcript
     std::string fullText_;
     int chunksReceived_ = 0;
-    std::string lastAnimationId_;
 
     // TextToViseme (loaded once in start())
     TextToViseme textToViseme_;
 
-    // Futures for in-flight sentence processing
+    // Futures for in-flight TTS calls (one per sentence)
     std::mutex futuresMutex_;
-    std::vector<std::future<Result<std::string>>> sentenceFutures_;
-
-    // Pending animations queue for chained playback
-    std::mutex pendingMutex_;
-    std::queue<Animation> pendingAnimations_;
-    std::condition_variable pendingCv_;
-
-    /**
-     * Process a single sentence through the full pipeline:
-     * TTS → MP3→WAV → lip sync → Opus → animation build → playback
-     */
-    Result<std::string> processSentence(const std::string &text, int sentenceIndex);
-
-    /**
-     * Build an animation from TTS result, using the shared base animation
-     * with the current frame offset for seamless body motion.
-     */
-    Result<Animation> buildSentenceAnimation(const StreamingTTSResult &ttsData,
-                                              const std::string &text, int sentenceIndex,
-                                              std::shared_ptr<OperationSpan> parentSpan);
-
-    /**
-     * Schedule the next pending animation for playback.
-     * Called from the previous animation's onFinish callback.
-     */
-    void playNextPending();
+    std::vector<std::future<Result<StreamingTTSResult>>> sentenceFutures_;
 };
 
 /**
