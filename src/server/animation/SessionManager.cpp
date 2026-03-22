@@ -692,4 +692,33 @@ bool SessionManager::updatePlaylistCurrentAnimation(universe_t universe, const s
     return true;
 }
 
+// --- Animation Queue ---
+
+void SessionManager::queueAnimation(universe_t universe, const Animation &animation) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto &state = universeStates_[universe];
+    state.animationQueue.push(animation);
+    info("SessionManager: queued animation '{}' on universe {} (queue depth: {})", animation.metadata.title, universe,
+         state.animationQueue.size());
+}
+
+std::optional<Animation> SessionManager::popQueuedAnimation(universe_t universe) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end() || it->second.animationQueue.empty()) {
+        return std::nullopt;
+    }
+    auto animation = std::move(it->second.animationQueue.front());
+    it->second.animationQueue.pop();
+    debug("SessionManager: popped queued animation '{}' from universe {} (remaining: {})", animation.metadata.title,
+          universe, it->second.animationQueue.size());
+    return animation;
+}
+
+bool SessionManager::hasQueuedAnimation(universe_t universe) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = universeStates_.find(universe);
+    return it != universeStates_.end() && !it->second.animationQueue.empty();
+}
+
 } // namespace creatures

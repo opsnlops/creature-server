@@ -195,7 +195,9 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController {
 
         auto finishResult = session->finish();
 
-        // Always clean up the session
+        // Safe to remove now — finish() completes all TTS and animation construction
+        // before returning. Playback is triggered via interrupt() which creates its
+        // own PlaybackSession with its own lifecycle.
         mgr.removeSession(sessionId->c_str());
 
         if (!finishResult.isSuccess()) {

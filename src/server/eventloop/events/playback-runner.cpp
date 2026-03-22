@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 
 #include "server/animation/PlaybackSession.h"
+#include "server/animation/SessionManager.h"
 #include "server/audio/AudioTransport.h"
 #include "server/config.h"
 #include "server/creature-server.h"
@@ -41,6 +42,7 @@ extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<GPIO> gpioPins;
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
+extern std::shared_ptr<SessionManager> sessionManager;
 
 PlaybackRunnerEvent::PlaybackRunnerEvent(framenum_t frameNumber, std::shared_ptr<PlaybackSession> session)
     : EventBase(frameNumber), session_(session) {}
@@ -155,20 +157,39 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
         // Invoke finish callback
         session_->invokeOnFinish();
 
-        // Mark runtime activity as idle for involved creatures
+        // Mark runtime activity as idle for involved creatures —
+        // but only if the onFinish callback didn't start a new session
+        // (e.g., from the animation queue for chained ad-hoc speech)
         std::vector<creatureId_t> creatureIds;
         for (const auto &trackState : session_->getTrackStates()) {
             creatureIds.push_back(trackState.creatureId);
         }
-        auto reason = session_->getActivityReason();
-        ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
-                                              creatures::runtime::ActivityState::Idle, session_->getSessionId(),
-                                              session_->getSpan());
 
-        if (reason != runtime::ActivityReason::Playlist) {
-            for (const auto &creatureId : creatureIds) {
-                ws::CreatureService::startIdleIfNeeded(creatureId, session_->getSpan());
+        // Check if a new active non-idle session was started by the callback
+        bool newSessionStarted = false;
+        if (creatures::sessionManager) {
+            for (const auto &cid : creatureIds) {
+                if (creatures::sessionManager->hasActiveNonIdleSessionForCreature(
+                        session_->getUniverse(), cid)) {
+                    newSessionStarted = true;
+                    break;
+                }
             }
+        }
+
+        if (!newSessionStarted) {
+            auto reason = session_->getActivityReason();
+            ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
+                                                  creatures::runtime::ActivityState::Idle, session_->getSessionId(),
+                                                  session_->getSpan());
+
+            if (reason != runtime::ActivityReason::Playlist) {
+                for (const auto &creatureId : creatureIds) {
+                    ws::CreatureService::startIdleIfNeeded(creatureId, session_->getSpan());
+                }
+            }
+        } else {
+            debug("PlaybackRunnerEvent: skipping idle — new session was started by onFinish callback");
         }
 
         if (runnerSpan) {

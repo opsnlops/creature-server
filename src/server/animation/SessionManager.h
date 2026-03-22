@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <string>
 #include <vector>
 
@@ -214,6 +215,27 @@ class SessionManager {
      */
     void clearSession(universe_t universe, const std::string &sessionId);
 
+    /**
+     * Queue an animation to play on a universe after the current animation finishes.
+     *
+     * Used by the streaming ad-hoc speech pipeline to chain sentence animations
+     * seamlessly. The queued animation plays automatically when the current one
+     * completes — no callback chaining needed.
+     */
+    void queueAnimation(universe_t universe, const Animation &animation);
+
+    /**
+     * Pop the next queued animation for a universe, if any.
+     *
+     * @return The next animation, or std::nullopt if the queue is empty
+     */
+    std::optional<Animation> popQueuedAnimation(universe_t universe);
+
+    /**
+     * Check if a universe has queued animations waiting.
+     */
+    bool hasQueuedAnimation(universe_t universe) const;
+
     void setPlaylistStatus(universe_t universe, const PlaylistStatus &status);
     std::optional<PlaylistStatus> getPlaylistStatus(universe_t universe) const;
     std::vector<PlaylistStatus> getAllPlaylistStatuses() const;
@@ -232,6 +254,9 @@ class SessionManager {
         std::string playlistId;
         size_t currentPlaylistIndex{0};
         std::optional<PlaylistStatus> playlistStatus;
+
+        // Animation queue for chained playback (streaming ad-hoc speech)
+        std::queue<Animation> animationQueue;
     };
 
     mutable std::mutex mutex_;
