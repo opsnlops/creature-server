@@ -103,6 +103,11 @@ class StreamingAdHocSession {
     std::mutex offsetMutex_;
     std::vector<std::promise<size_t>> offsetPromises_;
     std::vector<std::shared_future<size_t>> offsetFutures_;
+
+    // Request ID chaining for ElevenLabs prosody continuity.
+    // Each sentence passes its request ID to the next via promise/future.
+    std::vector<std::promise<std::string>> requestIdPromises_;
+    std::vector<std::shared_future<std::string>> requestIdFutures_;
 };
 
 /**
