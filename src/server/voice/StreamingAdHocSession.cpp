@@ -204,12 +204,15 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
 
     info("StreamingAdHocSession sentence {}: \"{}\" ({} chars)", sentenceIndex, text, text.size());
 
-    // Create promise/future pair for frame offset synchronization.
-    // Sentence N waits for sentence N-1's offset before building.
+    // Create promise/future pairs for synchronization between sentences:
+    // - Frame offset: sentence N waits for N-1's offset before building
+    // - Request ID: sentence N uses N-1's ElevenLabs request ID for prosody continuity
     {
         std::lock_guard<std::mutex> lock(offsetMutex_);
         offsetPromises_.emplace_back();
         offsetFutures_.push_back(offsetPromises_.back().get_future().share());
+        requestIdPromises_.emplace_back();
+        requestIdFutures_.push_back(requestIdPromises_.back().get_future().share());
     }
 
     // Kick off full pipeline (TTS + ffmpeg + Opus + animation build) in background.
@@ -229,17 +232,28 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
                                       sentenceSpan->setAttribute("sentence.text", text);
                                   }
 
-                                  // 1. TTS
+                                  // 1. TTS via REST with previous_request_ids for prosody continuity
+                                  std::vector<std::string> prevIds;
+                                  if (sentenceIndex > 1) {
+                                      auto prevId = requestIdFutures_[sentenceIndex - 2].get();
+                                      if (!prevId.empty()) {
+                                          prevIds.push_back(prevId);
+                                      }
+                                  }
+
                                   StreamingTTSClient client;
-                                  auto ttsResult = client.generateSpeech(
+                                  auto ttsResult = client.generateSpeechREST(
                                       creatures::config->getVoiceApiKey(), voiceId_, modelId_, text, "mp3_44100_192",
-                                      stability_, similarityBoost_, nullptr, sentenceSpan);
+                                      stability_, similarityBoost_, prevIds, nullptr, sentenceSpan);
                                   if (!ttsResult.isSuccess()) {
                                       if (sentenceSpan) sentenceSpan->setError(ttsResult.getError()->getMessage());
-                                      // Unblock next sentence's offset wait
+                                      // Unblock next sentence's waits
                                       std::lock_guard<std::mutex> lock(offsetMutex_);
                                       if (sentenceIndex <= static_cast<int>(offsetPromises_.size())) {
                                           offsetPromises_[sentenceIndex - 1].set_value(0);
+                                      }
+                                      if (sentenceIndex <= static_cast<int>(requestIdPromises_.size())) {
+                                          requestIdPromises_[sentenceIndex - 1].set_value("");
                                       }
                                       return Result<Animation>{ttsResult.getError().value()};
                                   }
@@ -309,11 +323,12 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
                                       encodedFrames.push_back(base64::to_base64(raw));
                                   }
 
-                                  // 7. Signal next sentence with our ending offset
+                                  // 7. Signal next sentence with our ending offset and request ID
                                   size_t endOffset = (baseOffset + targetFrames) % decodedBaseFrames_.size();
                                   {
                                       std::lock_guard<std::mutex> lock(offsetMutex_);
                                       offsetPromises_[sentenceIndex - 1].set_value(endOffset);
+                                      requestIdPromises_[sentenceIndex - 1].set_value(tts.requestId);
                                   }
 
                                   // 8. Build animation object

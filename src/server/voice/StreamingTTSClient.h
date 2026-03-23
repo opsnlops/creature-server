@@ -33,6 +33,9 @@ struct StreamingTTSResult {
 
     /// Total audio duration in seconds (estimated from audio data size)
     double audioDurationSeconds = 0.0;
+
+    /// Request ID from ElevenLabs response header (for previous_request_ids chaining)
+    std::string requestId;
 };
 
 /**
@@ -86,6 +89,22 @@ class StreamingTTSClient {
                                                float similarityBoost,
                                                ProgressCallback progressCallback = nullptr,
                                                std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * Generate speech via ElevenLabs REST streaming API with timestamps.
+     *
+     * Uses POST /v1/text-to-speech/{voice_id}/stream/with-timestamps which
+     * supports previous_request_ids for prosody continuity between sentences.
+     *
+     * @param previousRequestIds Request IDs from prior TTS calls for prosody continuity (max 3)
+     */
+    Result<StreamingTTSResult> generateSpeechREST(const std::string &apiKey, const std::string &voiceId,
+                                                    const std::string &modelId, const std::string &text,
+                                                    const std::string &outputFormat, float stability,
+                                                    float similarityBoost,
+                                                    const std::vector<std::string> &previousRequestIds = {},
+                                                    ProgressCallback progressCallback = nullptr,
+                                                    std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
   private:
     struct SSLConnection;

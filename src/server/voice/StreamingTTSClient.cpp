@@ -682,4 +682,295 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeech(const std::string 
     return ttsResult;
 }
 
+Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
+    const std::string &apiKey, const std::string &voiceId, const std::string &modelId, const std::string &text,
+    const std::string &outputFormat, float stability, float similarityBoost,
+    const std::vector<std::string> &previousRequestIds, ProgressCallback progressCallback,
+    std::shared_ptr<OperationSpan> parentSpan) {
+
+    auto span =
+        creatures::observability->createChildOperationSpan("StreamingTTSClient.generateSpeechREST", parentSpan);
+    if (span) {
+        span->setAttribute("voice.id", voiceId);
+        span->setAttribute("voice.model", modelId);
+        span->setAttribute("text.length", static_cast<int64_t>(text.size()));
+        span->setAttribute("audio.format", outputFormat);
+        span->setAttribute("previous_request_ids.count", static_cast<int64_t>(previousRequestIds.size()));
+    }
+
+    if (progressCallback) {
+        progressCallback(0.05f);
+    }
+
+    // Build JSON request body
+    nlohmann::json body;
+    body["text"] = text;
+    body["model_id"] = modelId;
+    body["voice_settings"]["stability"] = stability;
+    body["voice_settings"]["similarity_boost"] = similarityBoost;
+    if (!previousRequestIds.empty()) {
+        body["previous_request_ids"] = previousRequestIds;
+    }
+
+    std::string bodyStr = body.dump();
+
+    // Build URL path
+    std::string path = fmt::format("/v1/text-to-speech/{}/stream/with-timestamps?output_format={}", voiceId,
+                                    outputFormat);
+
+    // Connect via TLS
+    auto connectSpan =
+        creatures::observability->createChildOperationSpan("StreamingTTSClient.REST.connect", span);
+
+    conn_ = std::make_unique<SSLConnection>();
+    const std::string host = "api.elevenlabs.io";
+
+    // DNS
+    struct addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *res = nullptr;
+    if (getaddrinfo(host.c_str(), "443", &hints, &res) != 0 || !res) {
+        std::string msg = "DNS resolution failed for " + host;
+        if (span) span->setError(msg);
+        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
+    }
+
+    conn_->sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (connect(conn_->sockfd, res->ai_addr, res->ai_addrlen) < 0) {
+        freeaddrinfo(res);
+        conn_.reset();
+        std::string msg = "TCP connection failed to " + host;
+        if (span) span->setError(msg);
+        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
+    }
+    freeaddrinfo(res);
+
+    conn_->ctx = SSL_CTX_new(TLS_client_method());
+    // Force HTTP/1.1 via ALPN
+    static const unsigned char alpn[] = {8, 'h', 't', 't', 'p', '/', '1', '.', '1'};
+    SSL_CTX_set_alpn_protos(conn_->ctx, alpn, sizeof(alpn));
+
+    conn_->ssl = SSL_new(conn_->ctx);
+    SSL_set_fd(conn_->ssl, conn_->sockfd);
+    SSL_set_tlsext_host_name(conn_->ssl, host.c_str());
+
+    if (SSL_connect(conn_->ssl) <= 0) {
+        conn_.reset();
+        std::string msg = "TLS handshake failed with " + host;
+        if (span) span->setError(msg);
+        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
+    }
+
+    if (connectSpan) connectSpan->setSuccess();
+
+    if (progressCallback) {
+        progressCallback(0.10f);
+    }
+
+    // Send HTTP POST request
+    std::string httpRequest = fmt::format(
+        "POST {} HTTP/1.1\r\n"
+        "Host: {}\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: {}\r\n"
+        "xi-api-key: {}\r\n"
+        "Accept: text/event-stream\r\n"
+        "\r\n"
+        "{}",
+        path, host, bodyStr.size(), apiKey, bodyStr);
+
+    if (!sslWriteAll(conn_->ssl, reinterpret_cast<const uint8_t *>(httpRequest.data()), httpRequest.size())) {
+        conn_.reset();
+        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, "Failed to send HTTP request")};
+    }
+
+    // Read HTTP response headers
+    std::string responseHeaders;
+    char c;
+    int newlines = 0;
+    while (true) {
+        if (SSL_read(conn_->ssl, &c, 1) <= 0) break;
+        responseHeaders.push_back(c);
+        if (c == '\n') {
+            if (newlines == 1) break;
+            newlines++;
+        } else if (c != '\r') {
+            newlines = 0;
+        }
+    }
+
+    // Check for 200 OK
+    if (responseHeaders.find("200") == std::string::npos) {
+        conn_.reset();
+        std::string msg = fmt::format("ElevenLabs REST TTS failed: {}", responseHeaders.substr(0, 200));
+        error(msg);
+        if (span) span->setError(msg);
+        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
+    }
+
+    // Extract request-id from response headers
+    StreamingTTSResult result;
+    result.audioFormat = outputFormat;
+
+    auto reqIdPos = responseHeaders.find("request-id: ");
+    if (reqIdPos == std::string::npos) {
+        reqIdPos = responseHeaders.find("Request-Id: ");
+    }
+    if (reqIdPos == std::string::npos) {
+        reqIdPos = responseHeaders.find("x-request-id: ");
+    }
+    if (reqIdPos != std::string::npos) {
+        auto start = responseHeaders.find(": ", reqIdPos) + 2;
+        auto end = responseHeaders.find("\r", start);
+        if (end == std::string::npos) end = responseHeaders.find("\n", start);
+        if (end != std::string::npos) {
+            result.requestId = responseHeaders.substr(start, end - start);
+            debug("StreamingTTSClient REST: request-id={}", result.requestId);
+        }
+    }
+
+    if (progressCallback) {
+        progressCallback(0.15f);
+    }
+
+    // Check if response is chunked transfer encoding
+    bool isChunked = responseHeaders.find("Transfer-Encoding: chunked") != std::string::npos ||
+                     responseHeaders.find("transfer-encoding: chunked") != std::string::npos;
+
+    // Read streaming JSON response — newline-delimited JSON objects
+    // Each contains audio_base64 and alignment data
+    int chunkCount = 0;
+    std::string lineBuffer;
+
+    auto readLine = [&]() -> std::string {
+        std::string line;
+        char ch;
+        while (SSL_read(conn_->ssl, &ch, 1) > 0) {
+            if (ch == '\n') {
+                return line;
+            }
+            if (ch != '\r') {
+                line.push_back(ch);
+            }
+        }
+        return line;
+    };
+
+    while (true) {
+        std::string line;
+
+        if (isChunked) {
+            // Read chunk size
+            std::string chunkSizeLine = readLine();
+            if (chunkSizeLine.empty()) continue;
+
+            size_t chunkSize = 0;
+            try {
+                chunkSize = std::stoull(chunkSizeLine, nullptr, 16);
+            } catch (...) {
+                continue;
+            }
+
+            if (chunkSize == 0) {
+                break; // End of chunked response
+            }
+
+            // Read chunk data
+            std::vector<uint8_t> chunkData(chunkSize);
+            if (!sslReadExact(conn_->ssl, chunkData.data(), chunkSize)) {
+                break;
+            }
+            line = std::string(chunkData.begin(), chunkData.end());
+
+            // Read trailing \r\n after chunk
+            char cr, lf;
+            SSL_read(conn_->ssl, &cr, 1);
+            SSL_read(conn_->ssl, &lf, 1);
+        } else {
+            line = readLine();
+        }
+
+        if (line.empty()) continue;
+
+        // Parse JSON
+        try {
+            auto json = nlohmann::json::parse(line);
+
+            // Decode audio
+            if (json.contains("audio_base64") && json["audio_base64"].is_string()) {
+                auto audioB64 = json["audio_base64"].get<std::string>();
+                if (!audioB64.empty()) {
+                    try {
+                        auto decoded = base64::from_base64(audioB64);
+                        result.audioData.insert(result.audioData.end(),
+                                                reinterpret_cast<const uint8_t *>(decoded.data()),
+                                                reinterpret_cast<const uint8_t *>(decoded.data()) + decoded.size());
+                        chunkCount++;
+                    } catch (const std::exception &e) {
+                        warn("StreamingTTSClient REST: base64 decode failed: {}", e.what());
+                    }
+                }
+            }
+
+            // Parse alignment (REST uses seconds, not milliseconds)
+            if (json.contains("alignment") && !json["alignment"].is_null()) {
+                auto &al = json["alignment"];
+                if (al.contains("characters") && al.contains("character_start_times_seconds") &&
+                    al.contains("character_end_times_seconds")) {
+                    auto chars = al["characters"].get<std::vector<std::string>>();
+                    auto starts = al["character_start_times_seconds"].get<std::vector<double>>();
+                    auto ends = al["character_end_times_seconds"].get<std::vector<double>>();
+
+                    size_t count = std::min({chars.size(), starts.size(), ends.size()});
+                    for (size_t i = 0; i < count; ++i) {
+                        TextToViseme::CharTiming ct;
+                        ct.character = chars[i].empty() ? ' ' : chars[i][0];
+                        ct.startTimeMs = starts[i] * 1000.0; // seconds → milliseconds
+                        ct.durationMs = (ends[i] - starts[i]) * 1000.0;
+                        result.charTimings.push_back(ct);
+                        result.alignmentText.push_back(ct.character);
+                    }
+                }
+            }
+        } catch (const nlohmann::json::exception &) {
+            // Not JSON — might be end of stream marker or empty line
+        }
+
+        if (progressCallback && !result.audioData.empty()) {
+            float progress = std::min(0.9f, static_cast<float>(result.audioData.size()) / 500000.0f);
+            progressCallback(progress);
+        }
+    }
+
+    disconnect();
+
+    // Estimate duration
+    if (outputFormat.find("mp3") != std::string::npos) {
+        result.audioDurationSeconds = static_cast<double>(result.audioData.size()) / 24000.0;
+    } else if (outputFormat.find("pcm") != std::string::npos) {
+        result.audioDurationSeconds = static_cast<double>(result.audioData.size()) / 88200.0;
+    }
+
+    info("StreamingTTSClient REST complete: {} chunks, {} bytes audio, {} alignment chars, "
+         "request_id={}, {:.2f}s estimated",
+         chunkCount, result.audioData.size(), result.charTimings.size(), result.requestId,
+         result.audioDurationSeconds);
+
+    if (span) {
+        span->setAttribute("audio.bytes", static_cast<int64_t>(result.audioData.size()));
+        span->setAttribute("alignment.chars", static_cast<int64_t>(result.charTimings.size()));
+        span->setAttribute("audio.duration_s", result.audioDurationSeconds);
+        span->setAttribute("request_id", result.requestId);
+        span->setAttribute("chunks", static_cast<int64_t>(chunkCount));
+        span->setSuccess();
+    }
+
+    if (progressCallback) {
+        progressCallback(1.0f);
+    }
+
+    return result;
+}
+
 } // namespace creatures::voice
