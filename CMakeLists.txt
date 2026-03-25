@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "3.8.6"
+        VERSION "3.8.7"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -307,6 +307,9 @@ find_package(SDL2_mixer REQUIRED)
 #OpenSSL for SHA - 256 hashing in audio cache
 find_package(OpenSSL REQUIRED)
 
+#libcurl for HTTP client (ElevenLabs REST API)
+find_package(CURL REQUIRED)
+
 #Leave a message
 message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
 
@@ -527,6 +530,7 @@ target_link_libraries(creature-server
         whisper
         OpenSSL::SSL
         OpenSSL::Crypto
+        CURL::libcurl
         ${MONGO_SYSTEM_LIBS}
 )
 
