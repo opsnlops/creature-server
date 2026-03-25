@@ -11,6 +11,7 @@
 #include <base64.hpp>
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
+#include <curl/curl.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
@@ -712,153 +713,48 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
     if (!previousRequestIds.empty()) {
         body["previous_request_ids"] = previousRequestIds;
     }
-
     std::string bodyStr = body.dump();
 
-    // Build URL path
-    std::string path = fmt::format("/v1/text-to-speech/{}/stream/with-timestamps?output_format={}", voiceId,
-                                    outputFormat);
+    // Build URL
+    std::string url = fmt::format(
+        "https://api.elevenlabs.io/v1/text-to-speech/{}/stream/with-timestamps?output_format={}", voiceId,
+        outputFormat);
 
-    // Connect via TLS
-    auto connectSpan =
-        creatures::observability->createChildOperationSpan("StreamingTTSClient.REST.connect", span);
-
-    conn_ = std::make_unique<SSLConnection>();
-    const std::string host = "api.elevenlabs.io";
-
-    // DNS
-    struct addrinfo hints{};
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    struct addrinfo *res = nullptr;
-    if (getaddrinfo(host.c_str(), "443", &hints, &res) != 0 || !res) {
-        std::string msg = "DNS resolution failed for " + host;
-        if (span) span->setError(msg);
-        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
-    }
-
-    conn_->sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (connect(conn_->sockfd, res->ai_addr, res->ai_addrlen) < 0) {
-        freeaddrinfo(res);
-        conn_.reset();
-        std::string msg = "TCP connection failed to " + host;
-        if (span) span->setError(msg);
-        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
-    }
-    freeaddrinfo(res);
-
-    conn_->ctx = SSL_CTX_new(TLS_client_method());
-    // Force HTTP/1.1 via ALPN
-    static const unsigned char alpn[] = {8, 'h', 't', 't', 'p', '/', '1', '.', '1'};
-    SSL_CTX_set_alpn_protos(conn_->ctx, alpn, sizeof(alpn));
-
-    conn_->ssl = SSL_new(conn_->ctx);
-    SSL_set_fd(conn_->ssl, conn_->sockfd);
-    SSL_set_tlsext_host_name(conn_->ssl, host.c_str());
-
-    if (SSL_connect(conn_->ssl) <= 0) {
-        conn_.reset();
-        std::string msg = "TLS handshake failed with " + host;
-        if (span) span->setError(msg);
-        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
-    }
-
-    if (connectSpan) connectSpan->setSuccess();
-
-    if (progressCallback) {
-        progressCallback(0.10f);
-    }
-
-    // Send HTTP POST request
-    std::string httpRequest = fmt::format(
-        "POST {} HTTP/1.1\r\n"
-        "Host: {}\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: {}\r\n"
-        "xi-api-key: {}\r\n"
-        "Accept: text/event-stream\r\n"
-        "\r\n"
-        "{}",
-        path, host, bodyStr.size(), apiKey, bodyStr);
-
-    if (!sslWriteAll(conn_->ssl, reinterpret_cast<const uint8_t *>(httpRequest.data()), httpRequest.size())) {
-        conn_.reset();
-        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, "Failed to send HTTP request")};
-    }
-
-    // Read HTTP response headers
-    std::string responseHeaders;
-    char c;
-    int newlines = 0;
-    while (true) {
-        if (SSL_read(conn_->ssl, &c, 1) <= 0) break;
-        responseHeaders.push_back(c);
-        if (c == '\n') {
-            if (newlines == 1) break;
-            newlines++;
-        } else if (c != '\r') {
-            newlines = 0;
-        }
-    }
-
-    // Check for 200 OK
-    if (responseHeaders.find("200") == std::string::npos) {
-        conn_.reset();
-        std::string msg = fmt::format("ElevenLabs REST TTS failed: {}", responseHeaders.substr(0, 200));
-        error(msg);
-        if (span) span->setError(msg);
-        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
-    }
-
-    // Extract request-id from response headers
+    // Result accumulation — curl callbacks append here
     StreamingTTSResult result;
     result.audioFormat = outputFormat;
-
-    auto reqIdPos = responseHeaders.find("request-id: ");
-    if (reqIdPos == std::string::npos) {
-        reqIdPos = responseHeaders.find("Request-Id: ");
-    }
-    if (reqIdPos == std::string::npos) {
-        reqIdPos = responseHeaders.find("x-request-id: ");
-    }
-    if (reqIdPos != std::string::npos) {
-        auto start = responseHeaders.find(": ", reqIdPos) + 2;
-        auto end = responseHeaders.find("\r", start);
-        if (end == std::string::npos) end = responseHeaders.find("\n", start);
-        if (end != std::string::npos) {
-            result.requestId = responseHeaders.substr(start, end - start);
-            debug("StreamingTTSClient REST: request-id={}", result.requestId);
-        }
-    }
-
-    if (progressCallback) {
-        progressCallback(0.15f);
-    }
-
-    // Read newline-delimited JSON from a chunked transfer-encoded response.
-    // We dechunk on the fly: read each HTTP chunk, append to a line accumulator,
-    // and process complete JSON lines (delimited by \n) as they appear.
-    bool isChunked = responseHeaders.find("Transfer-Encoding: chunked") != std::string::npos ||
-                     responseHeaders.find("transfer-encoding: chunked") != std::string::npos;
-
     int chunkCount = 0;
-    std::string lineAccumulator; // Accumulates partial lines across HTTP chunks
+    std::string lineBuffer; // Accumulates partial lines across curl callbacks
 
-    // Lambda: process all complete lines in the accumulator
-    auto processLines = [&]() {
+    // Curl write callback: receives response body data
+    struct WriteContext {
+        StreamingTTSResult *result;
+        int *chunkCount;
+        std::string *lineBuffer;
+    };
+    WriteContext writeCtx{&result, &chunkCount, &lineBuffer};
+
+    auto writeCallback = [](char *data, size_t size, size_t nmemb, void *userdata) -> size_t {
+        auto *ctx = static_cast<WriteContext *>(userdata);
+        size_t totalBytes = size * nmemb;
+
+        // Append to line buffer
+        ctx->lineBuffer->append(data, totalBytes);
+
+        // Process all complete newline-delimited JSON lines
         size_t pos = 0;
-        while (pos < lineAccumulator.size()) {
-            auto nlPos = lineAccumulator.find('\n', pos);
+        while (pos < ctx->lineBuffer->size()) {
+            auto nlPos = ctx->lineBuffer->find('\n', pos);
             if (nlPos == std::string::npos) {
-                // No more complete lines — keep the remainder
-                lineAccumulator = lineAccumulator.substr(pos);
-                return;
+                // Partial line — keep remainder for next callback
+                *ctx->lineBuffer = ctx->lineBuffer->substr(pos);
+                return totalBytes;
             }
 
-            std::string line = lineAccumulator.substr(pos, nlPos - pos);
+            std::string line = ctx->lineBuffer->substr(pos, nlPos - pos);
             pos = nlPos + 1;
 
-            // Trim \r
+            // Trim
             while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) {
                 line.pop_back();
             }
@@ -867,107 +763,142 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
             try {
                 auto json = nlohmann::json::parse(line);
 
-            // Decode audio
-            if (json.contains("audio_base64") && json["audio_base64"].is_string()) {
-                auto audioB64 = json["audio_base64"].get<std::string>();
-                if (!audioB64.empty()) {
-                    try {
-                        auto decoded = base64::from_base64(audioB64);
-                        result.audioData.insert(result.audioData.end(),
-                                                reinterpret_cast<const uint8_t *>(decoded.data()),
-                                                reinterpret_cast<const uint8_t *>(decoded.data()) + decoded.size());
-                        chunkCount++;
-                    } catch (const std::exception &e) {
-                        warn("StreamingTTSClient REST: base64 decode failed: {}", e.what());
+                // Decode audio
+                if (json.contains("audio_base64") && json["audio_base64"].is_string()) {
+                    auto audioB64 = json["audio_base64"].get<std::string>();
+                    if (!audioB64.empty()) {
+                        try {
+                            auto decoded = base64::from_base64(audioB64);
+                            ctx->result->audioData.insert(
+                                ctx->result->audioData.end(),
+                                reinterpret_cast<const uint8_t *>(decoded.data()),
+                                reinterpret_cast<const uint8_t *>(decoded.data()) + decoded.size());
+                            (*ctx->chunkCount)++;
+                        } catch (...) {
+                            // Base64 decode failed — skip this chunk
+                        }
                     }
                 }
-            }
 
-            // Parse alignment (REST uses seconds, not milliseconds)
-            if (json.contains("alignment") && !json["alignment"].is_null()) {
-                auto &al = json["alignment"];
-                if (al.contains("characters") && al.contains("character_start_times_seconds") &&
-                    al.contains("character_end_times_seconds")) {
-                    auto chars = al["characters"].get<std::vector<std::string>>();
-                    auto starts = al["character_start_times_seconds"].get<std::vector<double>>();
-                    auto ends = al["character_end_times_seconds"].get<std::vector<double>>();
+                // Parse alignment (seconds → milliseconds)
+                if (json.contains("alignment") && !json["alignment"].is_null()) {
+                    auto &al = json["alignment"];
+                    if (al.contains("characters") && al.contains("character_start_times_seconds") &&
+                        al.contains("character_end_times_seconds")) {
+                        auto chars = al["characters"].get<std::vector<std::string>>();
+                        auto starts = al["character_start_times_seconds"].get<std::vector<double>>();
+                        auto ends = al["character_end_times_seconds"].get<std::vector<double>>();
 
-                    size_t count = std::min({chars.size(), starts.size(), ends.size()});
-                    for (size_t i = 0; i < count; ++i) {
-                        TextToViseme::CharTiming ct;
-                        ct.character = chars[i].empty() ? ' ' : chars[i][0];
-                        ct.startTimeMs = starts[i] * 1000.0; // seconds → milliseconds
-                        ct.durationMs = (ends[i] - starts[i]) * 1000.0;
-                        result.charTimings.push_back(ct);
-                        result.alignmentText.push_back(ct.character);
+                        size_t count = std::min({chars.size(), starts.size(), ends.size()});
+                        for (size_t i = 0; i < count; ++i) {
+                            TextToViseme::CharTiming ct;
+                            ct.character = chars[i].empty() ? ' ' : chars[i][0];
+                            ct.startTimeMs = starts[i] * 1000.0;
+                            ct.durationMs = (ends[i] - starts[i]) * 1000.0;
+                            ctx->result->charTimings.push_back(ct);
+                            ctx->result->alignmentText.push_back(ct.character);
+                        }
                     }
                 }
-            }
             } catch (const nlohmann::json::exception &) {
                 // Not valid JSON — skip
             }
         }
 
-        // Keep any remaining partial line in the accumulator
-        lineAccumulator = lineAccumulator.substr(pos);
+        ctx->lineBuffer->clear();
+        return totalBytes;
     };
 
-    // Dechunk loop: read HTTP chunks and feed into the line accumulator
-    if (isChunked) {
-        while (true) {
-            // Read chunk size line
-            std::string sizeLine;
-            char ch;
-            while (SSL_read(conn_->ssl, &ch, 1) > 0) {
-                if (ch == '\n') break;
-                if (ch != '\r') sizeLine.push_back(ch);
-            }
-            if (sizeLine.empty()) continue;
+    // Curl header callback: capture request-id
+    struct HeaderContext {
+        std::string *requestId;
+    };
+    HeaderContext headerCtx{&result.requestId};
 
-            size_t httpChunkSize = 0;
-            try {
-                httpChunkSize = std::stoull(sizeLine, nullptr, 16);
-            } catch (...) {
-                break;
-            }
-            if (httpChunkSize == 0) break; // Final chunk
+    auto headerCallback = [](char *data, size_t size, size_t nmemb, void *userdata) -> size_t {
+        auto *ctx = static_cast<HeaderContext *>(userdata);
+        size_t totalBytes = size * nmemb;
+        std::string header(data, totalBytes);
 
-            // Read chunk data
-            std::vector<uint8_t> chunkData(httpChunkSize);
-            if (!sslReadExact(conn_->ssl, chunkData.data(), httpChunkSize)) break;
+        // Look for request-id header (case-insensitive)
+        auto lower = header;
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
 
-            // Append to line accumulator and process any complete lines
-            lineAccumulator.append(reinterpret_cast<const char *>(chunkData.data()), httpChunkSize);
-            processLines();
-
-            // Read trailing \r\n after chunk data
-            char cr, lf;
-            SSL_read(conn_->ssl, &cr, 1);
-            SSL_read(conn_->ssl, &lf, 1);
-
-            if (progressCallback && !result.audioData.empty()) {
-                float progress = std::min(0.9f, static_cast<float>(result.audioData.size()) / 500000.0f);
-                progressCallback(progress);
+        if (lower.find("request-id:") == 0 || lower.find("x-request-id:") == 0) {
+            auto colonPos = header.find(':');
+            if (colonPos != std::string::npos) {
+                auto value = header.substr(colonPos + 1);
+                // Trim whitespace and newlines
+                while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+                    value.erase(value.begin());
+                }
+                while (!value.empty() &&
+                       (value.back() == '\r' || value.back() == '\n' || value.back() == ' ')) {
+                    value.pop_back();
+                }
+                *ctx->requestId = value;
             }
         }
-    } else {
-        // Non-chunked: read byte-by-byte into line accumulator
-        char ch;
-        while (SSL_read(conn_->ssl, &ch, 1) > 0) {
-            lineAccumulator.push_back(ch);
-            if (ch == '\n') {
-                processLines();
-            }
-        }
+
+        return totalBytes;
+    };
+
+    if (progressCallback) {
+        progressCallback(0.10f);
     }
 
-    // Process any remaining data in the accumulator
-    if (!lineAccumulator.empty()) {
-        lineAccumulator.push_back('\n');
-        processLines();
+    // Execute request with curl
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        std::string msg = "Failed to initialize curl";
+        if (span) span->setError(msg);
+        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
     }
 
-    disconnect();
+    struct curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, fmt::format("xi-api-key: {}", apiKey).c_str());
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, "Accept: text/event-stream");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, bodyStr.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                     static_cast<size_t (*)(char *, size_t, size_t, void *)>(writeCallback));
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &writeCtx);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION,
+                     static_cast<size_t (*)(char *, size_t, size_t, void *)>(headerCallback));
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &headerCtx);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    CURLcode res = curl_easy_perform(curl);
+
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        std::string msg = fmt::format("ElevenLabs REST TTS curl error: {}", curl_easy_strerror(res));
+        error(msg);
+        if (span) span->setError(msg);
+        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
+    }
+
+    if (httpCode != 200) {
+        std::string msg = fmt::format("ElevenLabs REST TTS HTTP {}", httpCode);
+        error(msg);
+        if (span) span->setError(msg);
+        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
+    }
+
+    // Process any remaining data in the line buffer
+    if (!lineBuffer.empty()) {
+        lineBuffer.push_back('\n');
+        writeCallback(lineBuffer.data(), 1, lineBuffer.size(), &writeCtx);
+    }
 
     // Estimate duration
     if (outputFormat.find("mp3") != std::string::npos) {
