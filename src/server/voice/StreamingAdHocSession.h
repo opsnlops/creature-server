@@ -1,10 +1,12 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -22,17 +24,15 @@ namespace creatures::voice {
  * StreamingAdHocSession
  *
  * Manages a pipelined streaming ad-hoc speech session. Each sentence from
- * the agent kicks off a parallel ElevenLabs TTS call immediately. When
- * finish() is called, all TTS results are collected, combined into a single
- * animation with seamless body motion, and played as one uninterrupted piece.
- *
- * The latency win: TTS calls run in parallel while the LLM is still generating.
- * By the time the last sentence arrives, earlier sentences are already TTS'd.
+ * the agent kicks off a parallel ElevenLabs TTS call immediately. A background
+ * playback thread monitors the futures and triggers playback as soon as each
+ * sentence is ready — Beaky starts talking while the LLM is still generating.
  *
  * 1. start(): looks up creature, loads base animation, prepares for sentences
- * 2. addText(): kicks off ElevenLabs TTS immediately in a background thread
- * 3. finish(): collects all TTS results (most already done), combines audio +
- *    alignment into one animation, triggers single uninterrupted playback
+ * 2. addText(): kicks off ElevenLabs TTS immediately in a background thread;
+ *    on the first call, also spawns the playback thread
+ * 3. finish(): signals no more sentences, waits for playback thread to complete,
+ *    then cleans up
  */
 class StreamingAdHocSession {
   public:
@@ -51,12 +51,15 @@ class StreamingAdHocSession {
 
     /**
      * Add a sentence. Immediately kicks off TTS in a background thread.
+     * On the first call, also spawns the playback thread that will trigger
+     * interrupt() as soon as sentence 1's TTS completes.
      */
     Result<void> addText(const std::string &text);
 
     /**
-     * Collect all TTS results, combine into one animation, trigger playback.
-     * Returns the animation ID.
+     * Signal that no more sentences are coming. Waits for the playback thread
+     * to finish processing all queued animations, then cleans up.
+     * Returns the last animation ID.
      */
     Result<std::string> finish();
 
@@ -64,6 +67,9 @@ class StreamingAdHocSession {
     [[nodiscard]] int getChunksReceived() const { return chunksReceived_; }
 
   private:
+    /// Background thread that monitors futures and triggers playback in order.
+    void playbackThreadFunc();
+
     std::string sessionId_;
     std::string creatureId_;
     bool resumePlaylist_;
@@ -97,6 +103,14 @@ class StreamingAdHocSession {
     // Each future produces a ready-to-play Animation
     std::mutex futuresMutex_;
     std::vector<std::future<Result<Animation>>> sentenceFutures_;
+
+    // Condition variable to wake the playback thread when new futures are added
+    // or when finish() signals no more sentences.
+    std::condition_variable playbackCv_;
+
+    // Playback thread — spawned on first addText(), joins in finish()
+    std::thread playbackThread_;
+    std::atomic<bool> finished_{false};  // Signals: no more sentences coming
 
     // Frame offset synchronization: each sentence waits for the previous one's
     // offset before building, so body motion is seamless. Uses promise/future pairs.
