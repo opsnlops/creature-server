@@ -4,6 +4,7 @@
 #include <cstring>
 #include <netdb.h>
 #include <random>
+#include <sstream>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -834,68 +835,37 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
         progressCallback(0.15f);
     }
 
-    // Check if response is chunked transfer encoding
+    // Read newline-delimited JSON from a chunked transfer-encoded response.
+    // We dechunk on the fly: read each HTTP chunk, append to a line accumulator,
+    // and process complete JSON lines (delimited by \n) as they appear.
     bool isChunked = responseHeaders.find("Transfer-Encoding: chunked") != std::string::npos ||
                      responseHeaders.find("transfer-encoding: chunked") != std::string::npos;
 
-    // Read streaming JSON response — newline-delimited JSON objects
-    // Each contains audio_base64 and alignment data
     int chunkCount = 0;
-    std::string lineBuffer;
+    std::string lineAccumulator; // Accumulates partial lines across HTTP chunks
 
-    auto readLine = [&]() -> std::string {
-        std::string line;
-        char ch;
-        while (SSL_read(conn_->ssl, &ch, 1) > 0) {
-            if (ch == '\n') {
-                return line;
+    // Lambda: process all complete lines in the accumulator
+    auto processLines = [&]() {
+        size_t pos = 0;
+        while (pos < lineAccumulator.size()) {
+            auto nlPos = lineAccumulator.find('\n', pos);
+            if (nlPos == std::string::npos) {
+                // No more complete lines — keep the remainder
+                lineAccumulator = lineAccumulator.substr(pos);
+                return;
             }
-            if (ch != '\r') {
-                line.push_back(ch);
+
+            std::string line = lineAccumulator.substr(pos, nlPos - pos);
+            pos = nlPos + 1;
+
+            // Trim \r
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) {
+                line.pop_back();
             }
-        }
-        return line;
-    };
+            if (line.empty()) continue;
 
-    while (true) {
-        std::string line;
-
-        if (isChunked) {
-            // Read chunk size
-            std::string chunkSizeLine = readLine();
-            if (chunkSizeLine.empty()) continue;
-
-            size_t chunkSize = 0;
             try {
-                chunkSize = std::stoull(chunkSizeLine, nullptr, 16);
-            } catch (...) {
-                continue;
-            }
-
-            if (chunkSize == 0) {
-                break; // End of chunked response
-            }
-
-            // Read chunk data
-            std::vector<uint8_t> chunkData(chunkSize);
-            if (!sslReadExact(conn_->ssl, chunkData.data(), chunkSize)) {
-                break;
-            }
-            line = std::string(chunkData.begin(), chunkData.end());
-
-            // Read trailing \r\n after chunk
-            char cr, lf;
-            SSL_read(conn_->ssl, &cr, 1);
-            SSL_read(conn_->ssl, &lf, 1);
-        } else {
-            line = readLine();
-        }
-
-        if (line.empty()) continue;
-
-        // Parse JSON
-        try {
-            auto json = nlohmann::json::parse(line);
+                auto json = nlohmann::json::parse(line);
 
             // Decode audio
             if (json.contains("audio_base64") && json["audio_base64"].is_string()) {
@@ -933,14 +903,68 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
                     }
                 }
             }
-        } catch (const nlohmann::json::exception &) {
-            // Not JSON — might be end of stream marker or empty line
+            } catch (const nlohmann::json::exception &) {
+                // Not valid JSON — skip
+            }
         }
 
-        if (progressCallback && !result.audioData.empty()) {
-            float progress = std::min(0.9f, static_cast<float>(result.audioData.size()) / 500000.0f);
-            progressCallback(progress);
+        // Keep any remaining partial line in the accumulator
+        lineAccumulator = lineAccumulator.substr(pos);
+    };
+
+    // Dechunk loop: read HTTP chunks and feed into the line accumulator
+    if (isChunked) {
+        while (true) {
+            // Read chunk size line
+            std::string sizeLine;
+            char ch;
+            while (SSL_read(conn_->ssl, &ch, 1) > 0) {
+                if (ch == '\n') break;
+                if (ch != '\r') sizeLine.push_back(ch);
+            }
+            if (sizeLine.empty()) continue;
+
+            size_t httpChunkSize = 0;
+            try {
+                httpChunkSize = std::stoull(sizeLine, nullptr, 16);
+            } catch (...) {
+                break;
+            }
+            if (httpChunkSize == 0) break; // Final chunk
+
+            // Read chunk data
+            std::vector<uint8_t> chunkData(httpChunkSize);
+            if (!sslReadExact(conn_->ssl, chunkData.data(), httpChunkSize)) break;
+
+            // Append to line accumulator and process any complete lines
+            lineAccumulator.append(reinterpret_cast<const char *>(chunkData.data()), httpChunkSize);
+            processLines();
+
+            // Read trailing \r\n after chunk data
+            char cr, lf;
+            SSL_read(conn_->ssl, &cr, 1);
+            SSL_read(conn_->ssl, &lf, 1);
+
+            if (progressCallback && !result.audioData.empty()) {
+                float progress = std::min(0.9f, static_cast<float>(result.audioData.size()) / 500000.0f);
+                progressCallback(progress);
+            }
         }
+    } else {
+        // Non-chunked: read byte-by-byte into line accumulator
+        char ch;
+        while (SSL_read(conn_->ssl, &ch, 1) > 0) {
+            lineAccumulator.push_back(ch);
+            if (ch == '\n') {
+                processLines();
+            }
+        }
+    }
+
+    // Process any remaining data in the accumulator
+    if (!lineAccumulator.empty()) {
+        lineAccumulator.push_back('\n');
+        processLines();
     }
 
     disconnect();
