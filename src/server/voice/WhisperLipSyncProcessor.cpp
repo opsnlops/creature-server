@@ -460,4 +460,79 @@ Result<std::string> WhisperLipSyncProcessor::generateLipSync(const std::filesyst
     return jsonContent;
 }
 
+Result<std::string> WhisperLipSyncProcessor::transcribe(const std::vector<float> &audioData,
+                                                         std::shared_ptr<OperationSpan> parentSpan) {
+    if (!initialized_) {
+        return ServerError(ServerError::InternalError, "WhisperLipSyncProcessor not initialized");
+    }
+
+    if (audioData.empty()) {
+        return ServerError(ServerError::InvalidData, "Empty audio data");
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createChildOperationSpan("whisper.transcribe", parentSpan)
+                    : nullptr;
+
+    float durationSec = static_cast<float>(audioData.size()) / static_cast<float>(WHISPER_SAMPLE_RATE);
+    info("Transcribing {:.1f}s of audio ({} samples)...", durationSec, audioData.size());
+
+    if (span) {
+        span->setAttribute("audio.duration_sec", static_cast<double>(durationSec));
+        span->setAttribute("audio.samples", static_cast<int64_t>(audioData.size()));
+    }
+
+    std::string transcript;
+    {
+        std::lock_guard<std::mutex> lock(whisperMutex_);
+
+        struct whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+        params.print_progress = false;
+        params.print_special = false;
+        params.print_realtime = false;
+        params.print_timestamps = false;
+        params.language = "en";
+        params.token_timestamps = false;  // Don't need word timestamps for STT
+        params.no_context = true;
+        params.single_segment = true;
+        params.suppress_blank = true;
+        params.suppress_nst = true;
+
+        int result = whisper_full(whisperCtx_, params, audioData.data(),
+                                   static_cast<int>(audioData.size()));
+        if (result != 0) {
+            std::string errorMsg = fmt::format("Whisper inference failed: error code {}", result);
+            if (span) span->setError(errorMsg);
+            return ServerError(ServerError::InternalError, errorMsg);
+        }
+
+        int numSegments = whisper_full_n_segments(whisperCtx_);
+        for (int i = 0; i < numSegments; i++) {
+            const char* segmentText = whisper_full_get_segment_text(whisperCtx_, i);
+            if (segmentText) {
+                if (!transcript.empty()) transcript += " ";
+                transcript += segmentText;
+            }
+        }
+    }
+
+    // Trim whitespace
+    auto start = transcript.find_first_not_of(" \t\n\r");
+    auto end = transcript.find_last_not_of(" \t\n\r");
+    if (start != std::string::npos) {
+        transcript = transcript.substr(start, end - start + 1);
+    } else {
+        transcript.clear();
+    }
+
+    if (span) {
+        span->setAttribute("transcript.length", static_cast<int64_t>(transcript.size()));
+        span->setAttribute("transcript.text", transcript);
+        span->setSuccess();
+    }
+
+    info("Transcription complete: \"{}\" ({} chars)", transcript, transcript.size());
+    return transcript;
+}
+
 } // namespace creatures::voice

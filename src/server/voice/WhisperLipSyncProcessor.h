@@ -61,6 +61,20 @@ class WhisperLipSyncProcessor {
                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
+     * Transcribe raw 16kHz mono float audio to text.
+     *
+     * This is a simpler interface than generateLipSync — it just returns
+     * the transcribed text without word timestamps or viseme conversion.
+     * Used by creature-listener to offload STT from the Pi to the server.
+     *
+     * @param audioData 16kHz mono float32 samples
+     * @param parentSpan Optional parent span for observability
+     * @return Result containing the transcribed text
+     */
+    Result<std::string> transcribe(const std::vector<float> &audioData,
+                                    std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
      * Get the singleton instance.
      *
      * The processor must be initialized before use via initialize().
