@@ -181,32 +181,35 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
     }
 
     bool interruptedPlaylist = false;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
 
-        // Check if there's something playing
-        auto it = universeStates_.find(universe);
-        if (it != universeStates_.end()) {
-            if (!it->second.activeSessions.empty()) {
-                info("SessionManager: interrupting playback on universe {} with animation '{}'", universe,
-                     interruptAnimation.metadata.title);
-            }
+    // IMPORTANT: Hold the mutex across the entire cancel → schedule → register
+    // sequence. There was a race condition where the event loop thread could see
+    // activeSessions as empty (after clear but before push_back) and start idle
+    // loops that would cancel the interrupt animation we're about to schedule.
+    std::unique_lock<std::mutex> lock(mutex_);
 
-            for (auto &existing : it->second.activeSessions) {
-                if (existing && !existing->isCancelled()) {
-                    cancelSessionAndMarkActivity(existing);
-                }
-            }
-            it->second.activeSessions.clear();
+    // Check if there's something playing
+    auto it = universeStates_.find(universe);
+    if (it != universeStates_.end()) {
+        if (!it->second.activeSessions.empty()) {
+            info("SessionManager: interrupting playback on universe {} with animation '{}'", universe,
+                 interruptAnimation.metadata.title);
+        }
 
-            // Mark as interrupted if it was a playlist
-            if (it->second.isPlaylist) {
-                it->second.isInterrupted = true;
-                it->second.shouldResumePlaylist = shouldResumePlaylist;
-                interruptedPlaylist = true;
-                info("SessionManager: marked playlist on universe {} as interrupted (resume: {})", universe,
-                     shouldResumePlaylist);
+        for (auto &existing : it->second.activeSessions) {
+            if (existing && !existing->isCancelled()) {
+                cancelSessionAndMarkActivity(existing);
             }
+        }
+        it->second.activeSessions.clear();
+
+        // Mark as interrupted if it was a playlist
+        if (it->second.isPlaylist) {
+            it->second.isInterrupted = true;
+            it->second.shouldResumePlaylist = shouldResumePlaylist;
+            interruptedPlaylist = true;
+            info("SessionManager: marked playlist on universe {} as interrupted (resume: {})", universe,
+                 shouldResumePlaylist);
         }
     }
 
@@ -214,11 +217,15 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
         span->setAttribute("interrupted_playlist", interruptedPlaylist);
     }
 
-    // Schedule the interrupt animation using cooperative scheduler
+    // Schedule the interrupt animation using cooperative scheduler.
+    // We hold the mutex during this to prevent the event loop from seeing
+    // an empty activeSessions and starting idle loops that would cancel
+    // the interrupt animation.
     auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(
         eventLoop->getNextFrameNumber(), interruptAnimation, universe, creatures::runtime::ActivityReason::AdHoc);
 
     if (!sessionResult.isSuccess()) {
+        lock.unlock();
         error("SessionManager: failed to schedule interrupt animation: {}", sessionResult.getError()->getMessage());
         if (span) {
             span->setError(sessionResult.getError()->getMessage());
@@ -228,23 +235,22 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
 
     auto session = sessionResult.getValue().value();
 
-    // Register the interrupt session (but NOT as a playlist)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto it = universeStates_.find(universe);
-        if (it != universeStates_.end()) {
-            // Keep the playlist state but update current sessions
-            it->second.activeSessions.push_back(session);
-            // isInterrupted remains true if it was set
-        } else {
-            // No previous state, create new
-            UniverseState state;
-            state.activeSessions.push_back(session);
-            state.isPlaylist = false;
-            state.isInterrupted = false;
-            universeStates_[universe] = state;
-        }
+    // Register the interrupt session (still under the same lock)
+    it = universeStates_.find(universe);
+    if (it != universeStates_.end()) {
+        // Keep the playlist state but update current sessions
+        it->second.activeSessions.push_back(session);
+        // isInterrupted remains true if it was set
+    } else {
+        // No previous state, create new
+        UniverseState state;
+        state.activeSessions.push_back(session);
+        state.isPlaylist = false;
+        state.isInterrupted = false;
+        universeStates_[universe] = state;
     }
+
+    lock.unlock();
 
     info("SessionManager: interrupt animation '{}' scheduled on universe {}", interruptAnimation.metadata.title,
          universe);

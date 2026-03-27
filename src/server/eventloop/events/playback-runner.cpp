@@ -114,8 +114,19 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
                                                              session_->getSessionId(), session_->getSpan());
         }
 
-        for (const auto &creatureId : creatureIds) {
-            ws::CreatureService::startIdleIfNeeded(creatureId, session_->getSpan());
+        // Only restart idle loops for creatures that don't already have an
+        // active session. This is critical: when interrupt() cancels multiple
+        // sessions (e.g. Beaky idle + Mango idle) and schedules a Beaky-only
+        // interrupt animation, Mango's idle should restart (she has no active
+        // session), but Beaky's idle must NOT restart (it would cancel the
+        // interrupt animation that just replaced it).
+        if (creatures::sessionManager) {
+            for (const auto &creatureId : creatureIds) {
+                if (!creatures::sessionManager->hasActiveSessionForCreature(
+                        session_->getUniverse(), creatureId)) {
+                    ws::CreatureService::startIdleIfNeeded(creatureId, session_->getSpan());
+                }
+            }
         }
 
         if (runnerSpan) {
