@@ -17,7 +17,7 @@ jobs:
           - buildjet-16vcpu-ubuntu-2204-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -31,7 +31,11 @@ jobs:
         run: mkdir ${{github.workspace}}/package/ && docker cp temp-container:/package/ ${{github.workspace}}/
 
       - name: Save artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: creature-server-package-${{ matrix.os }}
           path: ${{github.workspace}}/package/
+          # 7-day retention so build artifacts don't pile up against the
+          # account-level Actions storage quota. Long enough to grab a
+          # package off a recent commit; older commits should be rebuilt.
+          retention-days: 7
