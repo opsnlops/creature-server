@@ -75,6 +75,10 @@ void FixtureBindingDispatcher::onCreatureActivity(const creatureId_t &creatureId
         if (it != lastSeen_.end()) {
             prev = it->second;
             if (it->second.reason == reason && it->second.state == state) {
+                if (span) {
+                    span->setAttribute("activity.edge_changed", false);
+                    span->setSuccess();
+                }
                 return;
             }
         }
@@ -82,13 +86,29 @@ void FixtureBindingDispatcher::onCreatureActivity(const creatureId_t &creatureId
     }
 
     const auto fixtureIds = fixtureCache->getAllKeys();
-    if (fixtureIds.empty())
+    if (fixtureIds.empty()) {
+        if (span) {
+            span->setAttribute("activity.edge_changed", true);
+            span->setAttribute("fixtures.scanned", static_cast<int64_t>(0));
+            span->setSuccess();
+        }
         return;
+    }
 
     const framenum_t currentFrame = eventLoop ? eventLoop->getNextFrameNumber() : 0;
     bool startedAny = false;
 
+    // Per-tick fan-out counters — what did this transition actually trigger? Without these
+    // the span only tells you the transition fired, not what the dispatcher did about it.
+    int64_t fixturesScanned = 0;
+    int64_t bindingsMatched = 0;
+    int64_t patternsStarted = 0;
+    int64_t patternsStopped = 0;
+    int64_t skippedUnknownPattern = 0;
+    int64_t skippedNoUniverse = 0;
+
     for (const auto &fid : fixtureIds) {
+        ++fixturesScanned;
         std::shared_ptr<DmxFixture> fixture;
         try {
             fixture = fixtureCache->get(fid);
@@ -101,6 +121,7 @@ void FixtureBindingDispatcher::onCreatureActivity(const creatureId_t &creatureId
         for (const auto &binding : fixture->bindings) {
             if (binding.creature_id != creatureId)
                 continue;
+            ++bindingsMatched;
 
             const bool nowMatches = matches(binding.on_reason, binding.on_state, reason, state);
             const bool prevMatched =
@@ -110,20 +131,24 @@ void FixtureBindingDispatcher::onCreatureActivity(const creatureId_t &creatureId
                 const FixturePattern *pattern = fixture->findPatternById(binding.pattern_id);
                 if (!pattern) {
                     warn("Binding on fixture {} references unknown pattern {}", fixture->id, binding.pattern_id);
+                    ++skippedUnknownPattern;
                     continue;
                 }
                 const auto universePtr = fixtureUniverseMap ? fixtureUniverseMap->tryGet(fid) : nullptr;
                 if (!universePtr) {
                     debug("Skipping pattern {} on fixture {} — no assigned_universe", binding.pattern_id, fid);
+                    ++skippedNoUniverse;
                     continue;
                 }
                 const universe_t universe = *universePtr;
                 if (fixturePatternRunner->start(*fixture, *pattern, universe, creatureId, currentFrame, span)) {
                     startedAny = true;
+                    ++patternsStarted;
                 }
             } else if (!nowMatches && prevMatched) {
                 fixturePatternRunner->stop(fid, currentFrame, span);
                 startedAny = true; // need a tick to render the fade-out
+                ++patternsStopped;
             }
         }
     }
@@ -132,8 +157,16 @@ void FixtureBindingDispatcher::onCreatureActivity(const creatureId_t &creatureId
         armTickIfNeeded();
     }
 
-    if (span)
+    if (span) {
+        span->setAttribute("activity.edge_changed", true);
+        span->setAttribute("fixtures.scanned", fixturesScanned);
+        span->setAttribute("bindings.matched", bindingsMatched);
+        span->setAttribute("patterns.started", patternsStarted);
+        span->setAttribute("patterns.stopped", patternsStopped);
+        span->setAttribute("patterns.skipped_unknown_pattern", skippedUnknownPattern);
+        span->setAttribute("patterns.skipped_no_universe", skippedNoUniverse);
         span->setSuccess();
+    }
 }
 
 } // namespace creatures
