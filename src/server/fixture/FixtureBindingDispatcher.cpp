@@ -51,6 +51,22 @@ void FixtureBindingDispatcher::onCreatureActivity(const creatureId_t &creatureId
         span->setAttribute("activity.state", runtime::toString(state));
     }
 
+    // Serialize concurrent transitions for the *same* creature. Different creatures still
+    // process in parallel. Previously the edge check + lastSeen update happened under the
+    // global mutex but the fixture scan ran outside it — so two transitions for the same
+    // creature could both pass the edge check, both stomp `lastSeen_`, and then race
+    // start()/stop() calls to the runner. Holding a per-creature mutex across the whole
+    // body collapses that window (security review M2).
+    std::shared_ptr<std::mutex> creatureMutex;
+    {
+        std::lock_guard<std::mutex> mapLock(creatureMutexMapMutex_);
+        auto &slot = creatureMutexes_[creatureId];
+        if (!slot)
+            slot = std::make_shared<std::mutex>();
+        creatureMutex = slot;
+    }
+    std::lock_guard<std::mutex> creatureLock(*creatureMutex);
+
     // Edge-triggered: bail if nothing changed.
     std::optional<LastSeen> prev;
     {

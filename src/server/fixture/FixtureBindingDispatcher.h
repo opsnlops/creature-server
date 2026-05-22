@@ -55,6 +55,12 @@ class FixtureBindingDispatcher {
 
     std::mutex mutex_;
     std::unordered_map<creatureId_t, LastSeen> lastSeen_;
+
+    // Per-creature mutex map. We hold one of these across the whole onCreatureActivity
+    // body so concurrent transitions for the same creature can't race on the runner.
+    // Different creatures still process in parallel.
+    std::mutex creatureMutexMapMutex_;
+    std::unordered_map<creatureId_t, std::shared_ptr<std::mutex>> creatureMutexes_;
 };
 
 } // namespace creatures
