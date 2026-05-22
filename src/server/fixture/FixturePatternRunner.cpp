@@ -9,16 +9,37 @@
 
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
+#include "util/ObservabilityManager.h"
 
 namespace creatures {
 
 extern std::shared_ptr<EventLoop> eventLoop;
+extern std::shared_ptr<ObservabilityManager> observability;
 
 bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern &pattern, universe_t universe,
-                                 const creatureId_t &creatureId, framenum_t currentFrame) {
+                                 const creatureId_t &creatureId, framenum_t currentFrame,
+                                 std::shared_ptr<OperationSpan> parentSpan) {
+
+    auto span = observability ? observability->createChildOperationSpan("FixturePatternRunner.start", parentSpan)
+                              : nullptr;
+    if (span) {
+        span->setAttribute("fixture.id", fixture.id);
+        span->setAttribute("fixture.name", fixture.name);
+        span->setAttribute("fixture.universe", static_cast<int64_t>(universe));
+        span->setAttribute("pattern.id", pattern.id);
+        span->setAttribute("pattern.name", pattern.name);
+        span->setAttribute("pattern.fade_in_ms", static_cast<int64_t>(pattern.fade_in_ms));
+        span->setAttribute("pattern.hold_ms", static_cast<int64_t>(pattern.hold_ms));
+        span->setAttribute("pattern.fade_out_ms", static_cast<int64_t>(pattern.fade_out_ms));
+        span->setAttribute("creature.id", creatureId);
+    }
 
     if (fixture.channels.empty()) {
         warn("FixturePatternRunner::start: fixture {} has no channels", fixture.id);
+        if (span) {
+            span->setAttribute("error.type", "NoChannels");
+            span->setError("fixture has no channels");
+        }
         return false;
     }
 
@@ -42,6 +63,10 @@ bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern
 
     if (!anyChannelTouched) {
         warn("FixturePatternRunner::start: pattern {} on fixture {} touched no valid channels", pattern.id, fixture.id);
+        if (span) {
+            span->setAttribute("error.type", "NoChannelsTouched");
+            span->setError("pattern touched no valid channels");
+        }
         return false;
     }
 
@@ -88,18 +113,39 @@ bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern
     debug(
         "FixturePatternRunner: started pattern {} on fixture {} (universe {}, fade_in={}ms, hold={}ms, fade_out={}ms)",
         pattern.id, fixture.id, universe, pattern.fade_in_ms, pattern.hold_ms, pattern.fade_out_ms);
+    if (span)
+        span->setSuccess();
     return true;
 }
 
-void FixturePatternRunner::stop(const fixtureId_t &fixtureId, framenum_t currentFrame) {
+void FixturePatternRunner::stop(const fixtureId_t &fixtureId, framenum_t currentFrame,
+                                std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = observability ? observability->createChildOperationSpan("FixturePatternRunner.stop", parentSpan)
+                              : nullptr;
+    if (span) {
+        span->setAttribute("fixture.id", fixtureId);
+    }
+
     std::lock_guard<std::mutex> lock(mapMutex_);
     auto it = active_.find(fixtureId);
     if (it == active_.end()) {
+        if (span) {
+            span->setAttribute("fixture.pattern.no_op", "not_active");
+            span->setSuccess();
+        }
         return;
     }
     auto &entry = it->second;
     if (entry.phase == FixturePatternPhase::FadeOut || entry.phase == FixturePatternPhase::Done) {
+        if (span) {
+            span->setAttribute("fixture.pattern.no_op", "already_stopping");
+            span->setSuccess();
+        }
         return;
+    }
+    if (span) {
+        span->setAttribute("pattern.id", entry.patternId);
+        span->setAttribute("pattern.fade_out_ms", static_cast<int64_t>(entry.fadeOutMs));
     }
 
     // Start fading out from wherever we are now. The current rendered values become the new
@@ -118,9 +164,11 @@ void FixturePatternRunner::stop(const fixtureId_t &fixtureId, framenum_t current
     entry.holdDoneFrame = currentFrame;
     entry.fadeOutDoneFrame = currentFrame + static_cast<framenum_t>(entry.fadeOutMs);
     debug("FixturePatternRunner: fade-out starting on fixture {} ({}ms)", fixtureId, entry.fadeOutMs);
+    if (span)
+        span->setSuccess();
 }
 
-bool FixturePatternRunner::tick(framenum_t currentFrame) {
+bool FixturePatternRunner::tick(framenum_t currentFrame, std::shared_ptr<OperationSpan> tickSpan) {
 
     // KNOWN LIMITATION: animation-vs-pattern precedence is not enforced here.
     //
@@ -212,6 +260,26 @@ bool FixturePatternRunner::tick(framenum_t currentFrame) {
         }
     }
 
+    // Count phases for telemetry. Per-fixture spans inside this loop would be one span per
+    // fixture per 20ms — too expensive. Use summary counters on the parent tick span instead
+    // (the BubbleUp-friendly pattern).
+    size_t fadeInCount = 0, holdCount = 0, fadeOutCount = 0;
+    for (auto *entry : toEmit) {
+        switch (entry->phase) {
+        case FixturePatternPhase::FadeIn:
+            ++fadeInCount;
+            break;
+        case FixturePatternPhase::Hold:
+            ++holdCount;
+            break;
+        case FixturePatternPhase::FadeOut:
+            ++fadeOutCount;
+            break;
+        case FixturePatternPhase::Done:
+            break;
+        }
+    }
+
     // Schedule DMX events. We keep the lock during scheduling so the entries don't get yanked
     // out from under us, but the eventLoop has its own internal synchronization.
     if (eventLoop) {
@@ -224,6 +292,20 @@ bool FixturePatternRunner::tick(framenum_t currentFrame) {
         }
     } else {
         warn("FixturePatternRunner::tick: eventLoop unavailable, dropping {} pattern frames", toEmit.size());
+        if (tickSpan) {
+            tickSpan->setAttribute("error.type", "EventLoopUnavailable");
+            tickSpan->setError("eventLoop unavailable, DMX frames dropped");
+        }
+    }
+
+    if (tickSpan) {
+        tickSpan->setAttribute("fixture.patterns.active_count", static_cast<int64_t>(toEmit.size()));
+        tickSpan->setAttribute("fixture.patterns.finished_count", static_cast<int64_t>(finished.size()));
+        tickSpan->setAttribute("fixture.patterns.fade_in_count", static_cast<int64_t>(fadeInCount));
+        tickSpan->setAttribute("fixture.patterns.hold_count", static_cast<int64_t>(holdCount));
+        tickSpan->setAttribute("fixture.patterns.fade_out_count", static_cast<int64_t>(fadeOutCount));
+        tickSpan->setAttribute("fixture.dmx_events.emitted",
+                               static_cast<int64_t>(eventLoop ? toEmit.size() : 0));
     }
 
     // Clean up finished entries.

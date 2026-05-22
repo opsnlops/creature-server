@@ -118,11 +118,11 @@ void FixtureBindingDispatcher::onCreatureActivity(const creatureId_t &creatureId
                     continue;
                 }
                 const universe_t universe = *universePtr;
-                if (fixturePatternRunner->start(*fixture, *pattern, universe, creatureId, currentFrame)) {
+                if (fixturePatternRunner->start(*fixture, *pattern, universe, creatureId, currentFrame, span)) {
                     startedAny = true;
                 }
             } else if (!nowMatches && prevMatched) {
-                fixturePatternRunner->stop(fid, currentFrame);
+                fixturePatternRunner->stop(fid, currentFrame, span);
                 startedAny = true; // need a tick to render the fade-out
             }
         }

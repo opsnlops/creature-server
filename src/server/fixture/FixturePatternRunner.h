@@ -77,23 +77,29 @@ class FixturePatternRunner {
      * If a pattern is already active on this fixture, the new pattern uses the currently
      * rendered DMX values as its `startValues` — guarantees no snap.
      *
+     * @param parentSpan optional parent for the operation span this method creates.
      * @return false if the pattern doesn't reference any channels on the fixture
      */
     bool start(const DmxFixture &fixture, const FixturePattern &pattern, universe_t universe,
-               const creatureId_t &creatureId, framenum_t currentFrame);
+               const creatureId_t &creatureId, framenum_t currentFrame,
+               std::shared_ptr<class OperationSpan> parentSpan = nullptr);
 
     /**
      * Stop a pattern. Transitions it into FadeOut; the entry is removed from the map
      * once fade-out completes.
      */
-    void stop(const fixtureId_t &fixtureId, framenum_t currentFrame);
+    void stop(const fixtureId_t &fixtureId, framenum_t currentFrame,
+              std::shared_ptr<class OperationSpan> parentSpan = nullptr);
 
     /**
      * Advance all active patterns and schedule one DMXEvent per fixture for the current frame.
      *
+     * @param tickSpan optional span for recording per-tick counters (active count, emitted
+     *                 DMX events, fixtures finished, etc.). Treated as parent for emitted
+     *                 DMXEvents' linkage — see FixturePatternTickEvent.
      * @return true if any patterns are still active (caller should reschedule the tick)
      */
-    bool tick(framenum_t currentFrame);
+    bool tick(framenum_t currentFrame, std::shared_ptr<class OperationSpan> tickSpan = nullptr);
 
     /**
      * Atomic flag the tick event uses to avoid double-arming itself.

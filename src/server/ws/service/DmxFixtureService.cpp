@@ -470,7 +470,7 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const 
     const universe_t universe = *universePtr;
     const framenum_t currentFrame = creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0;
 
-    if (!creatures::fixturePatternRunner->start(*fixture, *pattern, universe, /*creatureId=*/"", currentFrame)) {
+    if (!creatures::fixturePatternRunner->start(*fixture, *pattern, universe, /*creatureId=*/"", currentFrame, span)) {
         const auto message = fmt::format("Failed to start pattern {} on fixture {}", patternId, fixtureId);
         if (span)
             span->setError(message);

@@ -26,4 +26,8 @@ class FixturePatternTickEvent : public EventBase<FixturePatternTickEvent> {
 // consoles use. Faster is wasted CPU on values no receiver can show.
 constexpr framenum_t FIXTURE_PATTERN_TICK_INTERVAL_FRAMES = 20;
 
+// 0.05% — matches DEFAULT_EVENT_LOOP_TRACE_SAMPLING and PLAYBACK_RUNNER_TRACE_SAMPLING.
+// At 50 Hz that's ~1.5 sampled traces/min when patterns are active, ~0 when idle.
+constexpr double FIXTURE_PATTERN_TICK_TRACE_SAMPLING = 0.0005;
+
 } // namespace creatures
