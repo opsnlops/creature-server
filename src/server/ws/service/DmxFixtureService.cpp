@@ -323,8 +323,10 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::setFixtureUniverse(co
         OATPP_ASSERT_HTTP(false, Status::CODE_500, err.getMessage().c_str())
     }
 
-    if (span)
+    if (span) {
+        span->setAttribute("fixture.name", fetched.getValue().value().name);
         span->setSuccess();
+    }
     return creatures::convertToDto(fetched.getValue().value());
 }
 
@@ -376,6 +378,10 @@ DmxFixtureService::validateFixtureConfig(const std::string &jsonFixture, std::sh
 
     auto fixture = parseResult.getValue().value();
     resultDto->fixture_id = fixture.id.c_str();
+    if (span) {
+        span->setAttribute("fixture.id", fixture.id);
+        span->setAttribute("fixture.bindings_count", static_cast<int64_t>(fixture.bindings.size()));
+    }
 
     // Soft check: warn (don't fail) when bindings reference creatures that don't currently exist.
     // Dedupe up front — a fixture with N bindings to the same creature shouldn't issue N
@@ -393,8 +399,13 @@ DmxFixtureService::validateFixtureConfig(const std::string &jsonFixture, std::sh
         }
     }
 
-    if (span)
+    if (span) {
+        span->setAttribute("validation.passed", static_cast<bool>(resultDto->valid));
+        span->setAttribute("validation.missing_creature_ids_count",
+                           static_cast<int64_t>(resultDto->missing_creature_ids->size()));
+        span->setAttribute("validation.error_count", static_cast<int64_t>(resultDto->error_messages->size()));
         span->setSuccess();
+    }
     return resultDto;
 }
 
@@ -529,19 +540,20 @@ void DmxFixtureService::hydrateFromDatabase(std::shared_ptr<OperationSpan> paren
     }
 
     const auto fixtures = result.getValue().value();
+    int64_t withUniverse = 0;
     for (const auto &fixture : fixtures) {
         // getAllFixtures already populates fixtureCache. We just need to mirror the universe.
         if (fixture.assigned_universe.has_value()) {
             creatures::fixtureUniverseMap->put(fixture.id, *fixture.assigned_universe);
+            ++withUniverse;
         }
     }
 
-    info("Hydrated {} fixtures into cache; {} have assigned universes", fixtures.size(),
-         std::count_if(fixtures.begin(), fixtures.end(),
-                       [](const creatures::DmxFixture &f) { return f.assigned_universe.has_value(); }));
+    info("Hydrated {} fixtures into cache; {} have assigned universes", fixtures.size(), withUniverse);
 
     if (span) {
         span->setAttribute("fixtures.count", static_cast<int64_t>(fixtures.size()));
+        span->setAttribute("fixtures.with_universe", withUniverse);
         span->setSuccess();
     }
 }

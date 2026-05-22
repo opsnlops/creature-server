@@ -105,6 +105,20 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
 
         fixtureCache->put(fixture.id, fixture);
 
+        if (upsertSpan) {
+            upsertSpan->setAttribute("fixture.id", fixture.id);
+            upsertSpan->setAttribute("fixture.name", fixture.name);
+            upsertSpan->setAttribute("fixture.type", fixtureTypeToString(fixture.type));
+            upsertSpan->setAttribute("fixture.channels_count", static_cast<int64_t>(fixture.channels.size()));
+            upsertSpan->setAttribute("fixture.patterns_count", static_cast<int64_t>(fixture.patterns.size()));
+            upsertSpan->setAttribute("fixture.bindings_count", static_cast<int64_t>(fixture.bindings.size()));
+            upsertSpan->setAttribute("fixture.universe.set", fixture.assigned_universe.has_value());
+            if (fixture.assigned_universe.has_value()) {
+                upsertSpan->setAttribute("fixture.universe", static_cast<int64_t>(*fixture.assigned_universe));
+            }
+            upsertSpan->setSuccess();
+        }
+
         info("Fixture upserted in the database: {}", fixture.id);
         return Result<DmxFixture>{fixture};
 
