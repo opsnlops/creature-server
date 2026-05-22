@@ -37,7 +37,10 @@
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
 #include "server/database.h"
+#include "server/fixture/FixtureBindingDispatcher.h"
+#include "server/fixture/FixturePatternRunner.h"
 #include "server/ws/service/DmxFixtureService.h"
+#include "server/ws/service/FixtureActivityHook.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
@@ -95,6 +98,24 @@ std::shared_ptr<ObjectCache<fixtureId_t, DmxFixture>> fixtureCache;
  * persisted assigned_universe field. Updated whenever the universe assignment changes.
  */
 std::shared_ptr<ObjectCache<fixtureId_t, universe_t>> fixtureUniverseMap;
+
+/**
+ * Renders fixture patterns into DMX output over time (fade-in / hold / fade-out).
+ * Driven by FixturePatternTickEvent at ~50 Hz when any patterns are active.
+ */
+std::shared_ptr<FixturePatternRunner> fixturePatternRunner;
+
+/**
+ * Watches creature activity transitions and arms/disarms fixture patterns to match.
+ * Called from CreatureService::setActivityState via `fixtureActivityHook`.
+ */
+std::shared_ptr<FixtureBindingDispatcher> fixtureBindingDispatcher;
+
+/**
+ * Bridge from CreatureService to the fixture dispatcher. Installed at startup so
+ * CreatureService doesn't have to link the fixture subsystem.
+ */
+FixtureActivityHook fixtureActivityHook;
 
 std::shared_ptr<GPIO> gpioPins;
 std::shared_ptr<SystemCounters> metrics;
@@ -296,7 +317,15 @@ int main(const int argc, char **argv) {
     // Create the DmxFixture cache and universe mapping, then hydrate from DB.
     creatures::fixtureCache = std::make_shared<creatures::ObjectCache<fixtureId_t, creatures::DmxFixture>>();
     creatures::fixtureUniverseMap = std::make_shared<creatures::ObjectCache<fixtureId_t, universe_t>>();
-    debug("Created the DmxFixture cache and universe map");
+    creatures::fixturePatternRunner = std::make_shared<creatures::FixturePatternRunner>();
+    creatures::fixtureBindingDispatcher = std::make_shared<creatures::FixtureBindingDispatcher>();
+    creatures::fixtureActivityHook = [](const creatureId_t &id, creatures::runtime::ActivityReason reason,
+                                        creatures::runtime::ActivityState state) {
+        if (creatures::fixtureBindingDispatcher) {
+            creatures::fixtureBindingDispatcher->onCreatureActivity(id, reason, state);
+        }
+    };
+    debug("Created the DmxFixture cache, universe map, pattern runner, and binding dispatcher");
     creatures::ws::DmxFixtureService::hydrateFromDatabase();
 
     // Create the sensor data cache

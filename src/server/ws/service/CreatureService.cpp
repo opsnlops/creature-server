@@ -21,6 +21,7 @@
 #include "server/config.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
+#include "server/ws/service/FixtureActivityHook.h"
 #include "util/Result.h"
 #include "util/cache.h"
 
@@ -44,6 +45,7 @@ extern std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> websock
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SessionManager> sessionManager;
 extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
+extern FixtureActivityHook fixtureActivityHook;
 } // namespace creatures
 
 namespace creatures ::ws {
@@ -786,6 +788,12 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
         }
 
         broadcastCreatureActivity(creatureId, runtime);
+
+        // Notify fixture bindings of the (possibly new) activity state. The hook is installed
+        // by main.cpp at startup; in tests it stays empty so no fixture work runs.
+        if (creatures::fixtureActivityHook) {
+            creatures::fixtureActivityHook(creatureId, resolvedReason, resolvedState);
+        }
     }
 
     return sid;

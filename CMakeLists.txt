@@ -379,6 +379,12 @@ add_executable(creature-server
         src/model/Creature.cpp
         src/model/DmxFixture.h
         src/model/DmxFixture.cpp
+        src/server/fixture/FixtureBindingDispatcher.h
+        src/server/fixture/FixtureBindingDispatcher.cpp
+        src/server/fixture/FixturePatternRunner.h
+        src/server/fixture/FixturePatternRunner.cpp
+        src/server/fixture/FixturePatternTickEvent.h
+        src/server/fixture/FixturePatternTickEvent.cpp
         src/model/Input.h
         src/model/Input.cpp
         src/model/LogLevel.h
