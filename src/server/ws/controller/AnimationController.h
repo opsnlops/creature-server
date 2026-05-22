@@ -77,8 +77,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         creatures::metrics->incrementRestRequestsProcessed();
 
         if (span) {
-            span->setAttribute("endpoint", "listAllAnimations");
-            span->setAttribute("controller", "AnimationController");
+            span->setAttribute("endpoint.name", "listAllAnimations");
+            span->setAttribute("controller.name", "AnimationController");
         }
 
         auto result = m_animationService.listAllAnimations(std::move(span));
@@ -108,8 +108,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         creatures::metrics->incrementRestRequestsProcessed();
 
         if (span) {
-            span->setAttribute("endpoint", "listAdHocAnimations");
-            span->setAttribute("controller", "AnimationController");
+            span->setAttribute("endpoint.name", "listAdHocAnimations");
+            span->setAttribute("controller.name", "AnimationController");
         }
 
         auto result = m_animationService.listAdHocAnimations(span);
@@ -139,8 +139,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         creatures::metrics->incrementRestRequestsProcessed();
 
         if (span) {
-            span->setAttribute("endpoint", "getAdHocAnimation");
-            span->setAttribute("controller", "AnimationController");
+            span->setAttribute("endpoint.name", "getAdHocAnimation");
+            span->setAttribute("controller.name", "AnimationController");
             span->setAttribute("animation.id", std::string(animationId));
         }
 
@@ -175,8 +175,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         creatures::metrics->incrementRestRequestsProcessed();
 
         if (span) {
-            span->setAttribute("endpoint", "getAnimation");
-            span->setAttribute("controller", "AnimationController");
+            span->setAttribute("endpoint.name", "getAnimation");
+            span->setAttribute("controller.name", "AnimationController");
             span->setAttribute("animation.id", std::string(animationId));
         }
 
@@ -330,8 +330,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
             trace("request was: {}", requestAsString);
 
             if (span) {
-                span->setAttribute("endpoint", "upsertAnimation");
-                span->setAttribute("controller", "AnimationController");
+                span->setAttribute("endpoint.name", "upsertAnimation");
+                span->setAttribute("controller.name", "AnimationController");
                 span->setAttribute("request.body_size", static_cast<int64_t>(requestAsString.length()));
             }
 
@@ -380,8 +380,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         creatures::metrics->incrementRestRequestsProcessed();
 
         if (span) {
-            span->setAttribute("endpoint", "deleteAnimation");
-            span->setAttribute("controller", "AnimationController");
+            span->setAttribute("endpoint.name", "deleteAnimation");
+            span->setAttribute("controller.name", "AnimationController");
             span->setAttribute("animation.id", std::string(animationId));
         }
 
@@ -444,8 +444,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
 
         try {
             if (span) {
-                span->setAttribute("endpoint", "playStoredAnimation");
-                span->setAttribute("controller", "AnimationController");
+                span->setAttribute("endpoint.name", "playStoredAnimation");
+                span->setAttribute("controller.name", "AnimationController");
                 span->setAttribute("animation.id", std::string(requestBody->animation_id));
                 span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
                 span->setAttribute("reason", "play");
@@ -530,8 +530,8 @@ class AnimationController : public oatpp::web::server::api::ApiController {
 
         try {
             if (span) {
-                span->setAttribute("endpoint", "interruptAnimation");
-                span->setAttribute("controller", "AnimationController");
+                span->setAttribute("endpoint.name", "interruptAnimation");
+                span->setAttribute("controller.name", "AnimationController");
                 span->setAttribute("animation.id", std::string(requestBody->animation_id));
                 span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
                 span->setAttribute("resume_playlist", static_cast<bool>(requestBody->resumePlaylist));

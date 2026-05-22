@@ -63,8 +63,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         if (creatures::metrics)
             creatures::metrics->incrementRestRequestsProcessed();
         if (span) {
-            span->setAttribute("endpoint", "getAllFixtures");
-            span->setAttribute("controller", "DmxFixtureController");
+            span->setAttribute("endpoint.name", "getAllFixtures");
+            span->setAttribute("controller.name", "DmxFixtureController");
         }
 
         return withSpanStatus(span, [&] {
@@ -96,8 +96,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         if (creatures::metrics)
             creatures::metrics->incrementRestRequestsProcessed();
         if (span) {
-            span->setAttribute("endpoint", "getFixture");
-            span->setAttribute("controller", "DmxFixtureController");
+            span->setAttribute("endpoint.name", "getFixture");
+            span->setAttribute("controller.name", "DmxFixtureController");
             span->setAttribute("fixture.id", std::string(fixtureId));
         }
 
@@ -131,8 +131,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         return withSpanStatus(span, [&] {
             const auto fixtureConfig = std::string(body);
             if (span) {
-                span->setAttribute("endpoint", "upsertFixture");
-                span->setAttribute("controller", "DmxFixtureController");
+                span->setAttribute("endpoint.name", "upsertFixture");
+                span->setAttribute("controller.name", "DmxFixtureController");
                 span->setAttribute("request.body_size", static_cast<int64_t>(fixtureConfig.length()));
             }
             const auto result = m_service.upsertFixture(fixtureConfig, span);
@@ -165,7 +165,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         if (creatures::metrics)
             creatures::metrics->incrementRestRequestsProcessed();
         if (span) {
-            span->setAttribute("endpoint", "deleteFixture");
+            span->setAttribute("endpoint.name", "deleteFixture");
             span->setAttribute("fixture.id", std::string(fixtureId));
         }
 
@@ -198,8 +198,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         if (creatures::metrics)
             creatures::metrics->incrementRestRequestsProcessed();
         if (span) {
-            span->setAttribute("endpoint", "validateFixtureConfig");
-            span->setAttribute("controller", "DmxFixtureController");
+            span->setAttribute("endpoint.name", "validateFixtureConfig");
+            span->setAttribute("controller.name", "DmxFixtureController");
             span->setAttribute("request.body_size", static_cast<int64_t>(body ? body->size() : 0));
         }
 
@@ -244,7 +244,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         OATPP_ASSERT_HTTP(universe >= 1 && universe <= 63999, Status::CODE_400, "universe must be in [1, 63999]");
 
         if (span) {
-            span->setAttribute("endpoint", "setFixtureUniverse");
+            span->setAttribute("endpoint.name", "setFixtureUniverse");
             span->setAttribute("fixture.id", std::string(fixtureId));
             span->setAttribute("fixture.universe", static_cast<int64_t>(universe));
         }
@@ -287,7 +287,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         if (creatures::metrics)
             creatures::metrics->incrementRestRequestsProcessed();
         if (span) {
-            span->setAttribute("endpoint", "triggerFixturePattern");
+            span->setAttribute("endpoint.name", "triggerFixturePattern");
             span->setAttribute("fixture.id", std::string(fixtureId));
             span->setAttribute("pattern.id", std::string(patternId));
         }
@@ -350,7 +350,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         if (creatures::metrics)
             creatures::metrics->incrementRestRequestsProcessed();
         if (span) {
-            span->setAttribute("endpoint", "clearFixtureUniverse");
+            span->setAttribute("endpoint.name", "clearFixtureUniverse");
             span->setAttribute("fixture.id", std::string(fixtureId));
         }
 

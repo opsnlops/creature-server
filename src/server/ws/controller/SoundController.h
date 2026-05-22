@@ -132,8 +132,8 @@ class SoundController : public oatpp::web::server::api::ApiController {
         info("REST call to generateLipSyncFromUpload");
 
         if (span) {
-            span->setAttribute("endpoint", "generateLipSyncFromUpload");
-            span->setAttribute("controller", "SoundController");
+            span->setAttribute("endpoint.name", "generateLipSyncFromUpload");
+            span->setAttribute("controller.name", "SoundController");
             span->setAttribute("http.method", "POST");
             span->setAttribute("http.target", "api/v1/sound/generate-lipsync/upload");
         }
@@ -594,8 +594,8 @@ class SoundController : public oatpp::web::server::api::ApiController {
         }
 
         if (span) {
-            span->setAttribute("endpoint", "generateLipSync");
-            span->setAttribute("controller", "SoundController");
+            span->setAttribute("endpoint.name", "generateLipSync");
+            span->setAttribute("controller.name", "SoundController");
             span->setAttribute("http.method", "POST");
             span->setAttribute("http.target", "api/v1/sound/generate-lipsync");
 

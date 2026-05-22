@@ -67,8 +67,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         }
 
         if (span) {
-            span->setAttribute("endpoint", "getAllCreatures");
-            span->setAttribute("controller", "CreatureController");
+            span->setAttribute("endpoint.name", "getAllCreatures");
+            span->setAttribute("controller.name", "CreatureController");
         }
 
         const auto result = m_creatureService.getAllCreatures(span);
@@ -107,8 +107,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         }
 
         if (span) {
-            span->setAttribute("endpoint", "getCreature");
-            span->setAttribute("controller", "CreatureController");
+            span->setAttribute("endpoint.name", "getCreature");
+            span->setAttribute("controller.name", "CreatureController");
             span->setAttribute("creature.id", std::string(creatureId));
         }
 
@@ -150,8 +150,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
             const auto creatureConfig = std::string(body);
 
             if (span) {
-                span->setAttribute("endpoint", "upsertCreature");
-                span->setAttribute("controller", "CreatureController");
+                span->setAttribute("endpoint.name", "upsertCreature");
+                span->setAttribute("controller.name", "CreatureController");
                 span->setAttribute("request.body_size", static_cast<int64_t>(creatureConfig.length()));
             }
 
@@ -198,8 +198,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         }
 
         if (span) {
-            span->setAttribute("endpoint", "validateCreatureConfig");
-            span->setAttribute("controller", "CreatureController");
+            span->setAttribute("endpoint.name", "validateCreatureConfig");
+            span->setAttribute("controller.name", "CreatureController");
             span->setAttribute("request.body_size", static_cast<int64_t>(body ? body->size() : 0));
         }
 
@@ -236,8 +236,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         }
 
         if (span) {
-            span->setAttribute("endpoint", "setIdleEnabled");
-            span->setAttribute("controller", "CreatureController");
+            span->setAttribute("endpoint.name", "setIdleEnabled");
+            span->setAttribute("controller.name", "CreatureController");
             span->setAttribute("creature.id", std::string(creatureId));
         }
 
@@ -318,8 +318,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
             const std::string creatureConfig = std::string(dto->creature_config);
 
             if (span) {
-                span->setAttribute("endpoint", "registerCreature");
-                span->setAttribute("controller", "CreatureController");
+                span->setAttribute("endpoint.name", "registerCreature");
+                span->setAttribute("controller.name", "CreatureController");
                 span->setAttribute("universe", static_cast<int64_t>(dto->universe));
                 span->setAttribute("request.body_size", static_cast<int64_t>(creatureConfig.length()));
             }
