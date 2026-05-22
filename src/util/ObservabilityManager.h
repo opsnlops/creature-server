@@ -219,6 +219,11 @@ class RequestSpan {
     void setAttribute(const std::string &key, const std::string &value);
     void setAttribute(const std::string &key, int64_t value);
     void setAttribute(const std::string &key, bool value);
+    // Without an explicit const char* overload, string literals decay to const char*
+    // and the *bool* overload wins (standard pointer-to-bool conversion beats the
+    // user-defined std::string conversion). Result: every setAttribute(key, "string")
+    // call silently records `true`. Forward to the std::string version.
+    void setAttribute(const std::string &key, const char *value) { setAttribute(key, std::string(value ? value : "")); }
 
     /**
      * Mark the request as failed with an error message
@@ -286,6 +291,9 @@ class OperationSpan {
     void setAttribute(const std::string &key, uint32_t value);
     void setAttribute(const std::string &key, bool value);
     void setAttribute(const std::string &key, framenum_t value);
+    // const char* overload — see comment on RequestSpan::setAttribute above. Without
+    // this, string literals fall through to the bool overload and record `true`.
+    void setAttribute(const std::string &key, const char *value) { setAttribute(key, std::string(value ? value : "")); }
 
     /**
      * Record an exception
@@ -366,6 +374,8 @@ class SamplingSpan : public OperationSpan {
     void setAttribute(const std::string &key, double value);
     void setAttribute(const std::string &key, bool value);
     void setAttribute(const std::string &key, framenum_t value);
+    // const char* overload — see comment on RequestSpan::setAttribute above.
+    void setAttribute(const std::string &key, const char *value) { setAttribute(key, std::string(value ? value : "")); }
 
     /**
      * Record an exception (always exports)
