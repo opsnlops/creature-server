@@ -122,6 +122,26 @@ void FixturePatternRunner::stop(const fixtureId_t &fixtureId, framenum_t current
 
 bool FixturePatternRunner::tick(framenum_t currentFrame) {
 
+    // KNOWN LIMITATION: animation-vs-pattern precedence is not enforced here.
+    //
+    // The plan (plan/dmx-fixture.md → "Precedence: animation tracks vs patterns") says
+    // animation tracks should win over fixture patterns when both target the same
+    // (universe, channel) range. That is NOT currently implemented — both this tick
+    // and PlaybackRunnerEvent::emitDmxFrames enqueue DMXEvents to the same event loop,
+    // and the wire value for any given byte is just "whichever event the loop processes
+    // last for that frame." Because the pattern tick runs at ~20 ms cadence and the
+    // playback runner at 1 ms, animation will usually win by writing more recently —
+    // but this is incidental, not guaranteed, and a fixture whose channel range overlaps
+    // a creature's animation output can stomp the animation in unpredictable ways.
+    //
+    // Mitigations (not yet implemented):
+    //   1. Cheap: at start() time, refuse to start a pattern on a fixture whose
+    //      (universe, channel_offset..+span) overlaps an active PlaybackSession track.
+    //   2. Proper: a merge step in the event loop that combines pending DMXEvents
+    //      for the same frame, with documented priority.
+    //
+    // This is tracked in the "DmxFixture follow-up work" section of AGENTS.md.
+
     std::vector<ActivePattern *> toEmit;
     std::vector<fixtureId_t> finished;
 

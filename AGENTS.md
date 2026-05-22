@@ -420,6 +420,17 @@ Docker-based deployment with multi-architecture support (AMD64/ARM64). GitHub Ac
 
 ## Future Work
 
+### DmxFixture follow-up work
+
+Items called out by the post-merge security + OTel reviews of the DmxFixture feature that should land in a follow-up PR (none are critical bugs — they're architectural gaps and observability polish):
+
+- **Animation-vs-pattern DMX precedence (security H4)**. The plan said "animation tracks win" but it's not implemented. Both `FixturePatternRunner::tick` and `PlaybackRunnerEvent::emitDmxFrames` enqueue DMXEvents to the same loop with no merge step; the on-wire byte is whichever event the loop processes last. A fixture whose `(universe, channel_offset..+span)` overlaps a creature's animation channels can stomp the animation. Cheap fix: refuse to `start()` a pattern on a fixture that overlaps an active session's track. Proper fix: per-frame DMXEvent merge with documented priority.
+- **Trace context propagation through scheduled events (OTel P1b)**. `ActivePattern` should carry the trigger's trace_id / span_id so the DMX frames emitted on later ticks link back to the originating REST span. Apply the same to `AutoStopEvent`.
+- **`runEndpoint(...)` helper for controllers (OTel P1c)**. Every endpoint repeats span creation, metrics increment, try/catch, setHttpStatus boilerplate. Factor it out — this also fixes the existing creature controllers, where `setHttpStatus(200)` outside try/catch means error paths silently drop the status code.
+- **Pagination on `GET /api/v1/fixture`**. Same as the creature endpoint shape, not urgent on a home network.
+- **`assigned_universe` E1.31 range check (security L1)**. Reject 0 and values > 63999 — already added (see commit log), this entry tracks any further per-port restrictions the controller side wants.
+- **UUID-shape check on path params (security M4)**. Already added, but the same hardening should apply to the existing creature controller for log-injection resistance.
+
 ### Rhubarb Lip Sync Integration
 
 The `mouth_slot` field is prepared for integration with Rhubarb Lip Sync. When that feature is implemented:
