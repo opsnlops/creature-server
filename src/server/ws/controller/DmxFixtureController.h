@@ -84,6 +84,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("GET", "api/v1/fixture/{fixtureId}", getFixture, PATH(String, fixtureId),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
+                          "fixtureId must be a UUID");
         const auto span = creatures::observability
                               ? creatures::observability->createRequestSpan("GET /api/v1/fixture/{fixtureId}", "GET",
                                                                             "api/v1/fixture/" + std::string(fixtureId),
@@ -160,6 +162,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("DELETE", "api/v1/fixture/{fixtureId}", deleteFixture, PATH(String, fixtureId),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
+                          "fixtureId must be a UUID");
         const auto span = creatures::observability
                               ? creatures::observability->createRequestSpan(
                                     "DELETE /api/v1/fixture/{fixtureId}", "DELETE",
@@ -226,6 +230,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
     ENDPOINT("PUT", "api/v1/fixture/{fixtureId}/universe", setFixtureUniverse, PATH(String, fixtureId),
              BODY_DTO(Object<SetFixtureUniverseRequestDto>, body),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
+                          "fixtureId must be a UUID");
         const auto span =
             creatures::observability
                 ? creatures::observability->createRequestSpan("PUT /api/v1/fixture/{fixtureId}/universe", "PUT",
@@ -269,6 +275,10 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
     ENDPOINT("POST", "api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger", triggerFixturePattern,
              PATH(String, fixtureId), PATH(String, patternId),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
+                          "fixtureId must be a UUID");
+        OATPP_ASSERT_HTTP(patternId && isUuidShape(std::string(patternId)), Status::CODE_400,
+                          "patternId must be a UUID");
         const auto span =
             creatures::observability
                 ? creatures::observability->createRequestSpan(
@@ -330,6 +340,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("DELETE", "api/v1/fixture/{fixtureId}/universe", clearFixtureUniverse, PATH(String, fixtureId),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
+                          "fixtureId must be a UUID");
         const auto span =
             creatures::observability
                 ? creatures::observability->createRequestSpan("DELETE /api/v1/fixture/{fixtureId}/universe", "DELETE",
