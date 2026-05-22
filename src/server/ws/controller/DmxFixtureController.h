@@ -292,7 +292,22 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             try {
                 const auto parsed = nlohmann::json::parse(std::string(body));
                 if (parsed.contains("stop_after_ms") && !parsed["stop_after_ms"].is_null()) {
-                    stopAfterMs = parsed["stop_after_ms"].get<uint32_t>();
+                    const auto raw = parsed["stop_after_ms"].get<uint32_t>();
+                    // Cap at 10 minutes. UInt32 max would schedule ~50 days of stuck DMX
+                    // and a far-future AutoStopEvent pinned in the event-loop priority
+                    // queue. Reject 0 explicitly — "stop immediately" is a footgun.
+                    constexpr uint32_t MAX_STOP_AFTER_MS = 10 * 60 * 1000;
+                    if (raw == 0) {
+                        OATPP_ASSERT_HTTP(false, Status::CODE_400,
+                                          "stop_after_ms must be > 0 (omit it to disable auto-stop)");
+                    }
+                    if (raw > MAX_STOP_AFTER_MS) {
+                        OATPP_ASSERT_HTTP(false, Status::CODE_400,
+                                          fmt::format("stop_after_ms must be <= {} ms (10 min); got {}",
+                                                      MAX_STOP_AFTER_MS, raw)
+                                              .c_str());
+                    }
+                    stopAfterMs = raw;
                 }
             } catch (const std::exception &e) {
                 OATPP_ASSERT_HTTP(false, Status::CODE_400, fmt::format("Invalid trigger body: {}", e.what()).c_str());
