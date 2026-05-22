@@ -12,6 +12,7 @@
 #include "spdlog/spdlog.h"
 #include <fmt/format.h>
 
+#include "model/DmxFixture.h"
 #include "server/animation/PlaybackSession.h"
 #include "server/animation/SessionManager.h"
 #include "server/audio/AudioTransport.h"
@@ -42,6 +43,8 @@ extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<GPIO> gpioPins;
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
+extern std::shared_ptr<ObjectCache<fixtureId_t, DmxFixture>> fixtureCache;
+extern std::shared_ptr<ObjectCache<fixtureId_t, universe_t>> fixtureUniverseMap;
 extern std::shared_ptr<SessionManager> sessionManager;
 
 PlaybackRunnerEvent::PlaybackRunnerEvent(framenum_t frameNumber, std::shared_ptr<PlaybackSession> session)
@@ -290,31 +293,75 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
             continue; // Not time yet for this track
         }
 
-        // Get the creature for this track
-        std::shared_ptr<Creature> creature;
+        uint16_t channelOffset = 0;
+        universe_t targetUniverse = session_->getUniverse();
+        std::string targetLabel; // for logging
 
-        // First check if it's in the cache
-        if (creatureCache->contains(trackState.creatureId)) {
-            creature = creatureCache->get(trackState.creatureId);
-        } else {
-            // Not in cache - fetch from database and cache it
-            debug("Creature {} not in cache, fetching from database", trackState.creatureId);
-            auto creatureResult = db->getCreature(trackState.creatureId, nullptr);
-            if (!creatureResult.isSuccess()) {
-                std::string errorMsg =
-                    fmt::format("Creature {} not found in database during playback", trackState.creatureId);
+        if (trackState.isFixtureTrack()) {
+            // Fixture track — look up via fixtureCache and resolve its persisted universe via fixtureUniverseMap.
+            // A fixture's universe is independent of the animation's session universe.
+            if (!fixtureCache || !fixtureUniverseMap) {
+                std::string errorMsg = "Fixture cache or universe map unavailable during playback";
                 error(errorMsg);
                 return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
             }
-            creature = std::make_shared<Creature>(creatureResult.getValue().value());
-            creatureCache->put(trackState.creatureId, creature);
-            debug("Cached creature {} for playback", trackState.creatureId);
+
+            std::shared_ptr<DmxFixture> fixture;
+            if (fixtureCache->contains(trackState.fixtureId)) {
+                fixture = fixtureCache->get(trackState.fixtureId);
+            } else {
+                debug("Fixture {} not in cache, fetching from database", trackState.fixtureId);
+                auto fixtureResult = db->getFixture(trackState.fixtureId, nullptr);
+                if (!fixtureResult.isSuccess()) {
+                    std::string errorMsg =
+                        fmt::format("Fixture {} not found in database during playback", trackState.fixtureId);
+                    error(errorMsg);
+                    return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+                }
+                fixture = std::make_shared<DmxFixture>(fixtureResult.getValue().value());
+                fixtureCache->put(trackState.fixtureId, fixture);
+            }
+
+            if (!fixtureUniverseMap->contains(trackState.fixtureId)) {
+                debug("Fixture {} has no universe assignment; skipping frame {}", trackState.fixtureId,
+                      trackState.currentFrameIndex);
+                // Advance anyway so the track eventually finishes; just skip emitting DMX.
+                trackState.currentFrameIndex++;
+                trackState.nextDispatchFrame = this->frameNumber + frameStepForMs(session_->getMsPerFrame());
+                continue;
+            }
+            targetUniverse = *fixtureUniverseMap->get(trackState.fixtureId);
+            channelOffset = fixture->channel_offset;
+            targetLabel = fmt::format("fixture {} ({})", fixture->name, trackState.fixtureId);
+        } else {
+            // Creature track — original path.
+            std::shared_ptr<Creature> creature;
+
+            if (creatureCache->contains(trackState.creatureId)) {
+                creature = creatureCache->get(trackState.creatureId);
+            } else {
+                debug("Creature {} not in cache, fetching from database", trackState.creatureId);
+                auto creatureResult = db->getCreature(trackState.creatureId, nullptr);
+                if (!creatureResult.isSuccess()) {
+                    std::string errorMsg =
+                        fmt::format("Creature {} not found in database during playback", trackState.creatureId);
+                    error(errorMsg);
+                    return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+                }
+                creature = std::make_shared<Creature>(creatureResult.getValue().value());
+                creatureCache->put(trackState.creatureId, creature);
+                debug("Cached creature {} for playback", trackState.creatureId);
+            }
+
+            channelOffset = creature->channel_offset;
+            targetUniverse = session_->getUniverse();
+            targetLabel = fmt::format("creature {} ({})", creature->name, trackState.creatureId);
         }
 
         // Create DMX event for this frame
         auto dmxEvent = std::make_shared<DMXEvent>(this->frameNumber);
-        dmxEvent->universe = session_->getUniverse();
-        dmxEvent->channelOffset = creature->channel_offset;
+        dmxEvent->universe = targetUniverse;
+        dmxEvent->channelOffset = channelOffset;
 
         // Copy the decoded frame data
         const auto &frameData = trackState.decodedFrames[trackState.currentFrameIndex];
@@ -326,8 +373,7 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
         // Schedule the DMX event
         eventLoop->scheduleEvent(dmxEvent);
 
-        trace("Emitted DMX frame {} for creature {} ({}) on universe {}", trackState.currentFrameIndex, creature->name,
-              trackState.creatureId, session_->getUniverse());
+        trace("Emitted DMX frame {} for {} on universe {}", trackState.currentFrameIndex, targetLabel, targetUniverse);
 
         // Advance track state
         trackState.currentFrameIndex++;

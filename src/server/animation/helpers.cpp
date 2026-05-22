@@ -38,11 +38,16 @@ Result<creatures::Track> Database::trackFromJson(json trackJson) {
             return ServerError(ServerError::InvalidData, errorMessage);
         }
 
-        track.creature_id = trackJson["creature_id"];
-        debug("creature_id: {}", track.creature_id);
+        track.creature_id = trackJson.value("creature_id", "");
+        track.fixture_id = trackJson.value("fixture_id", "");
+        debug("creature_id: '{}', fixture_id: '{}'", track.creature_id, track.fixture_id);
 
-        if (track.creature_id.empty()) {
-            std::string errorMessage = "Track creature_id is empty";
+        const bool hasCreature = !track.creature_id.empty();
+        const bool hasFixture = !track.fixture_id.empty();
+        if (hasCreature == hasFixture) {
+            std::string errorMessage = hasCreature
+                                           ? "Track must have exactly one of creature_id or fixture_id, not both"
+                                           : "Track must have exactly one of creature_id or fixture_id, got neither";
             warn(errorMessage);
             return ServerError(ServerError::InvalidData, errorMessage);
         }

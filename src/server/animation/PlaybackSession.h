@@ -23,13 +23,17 @@ class OperationSpan;
  * Holds decoded DMX frames and playback position for a single track
  */
 struct TrackState {
-    creatureId_t creatureId;                         // Creature this track controls
+    // Exactly one of `creatureId` / `fixtureId` is set per track. The playback runner picks the
+    // matching lookup path based on which one is non-empty.
+    creatureId_t creatureId;                         // Creature this track controls, or empty
+    fixtureId_t fixtureId;                           // Fixture this track controls, or empty
     std::vector<std::vector<uint8_t>> decodedFrames; // Decoded DMX data for each frame
     uint32_t currentFrameIndex{0};                   // Current playback position
     framenum_t nextDispatchFrame{0};                 // Next event loop frame to emit on
 
     [[nodiscard]] bool isFinished() const { return currentFrameIndex >= decodedFrames.size(); }
     [[nodiscard]] uint32_t getTotalFrames() const { return static_cast<uint32_t>(decodedFrames.size()); }
+    [[nodiscard]] bool isFixtureTrack() const { return !fixtureId.empty(); }
 };
 
 /**

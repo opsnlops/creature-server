@@ -49,8 +49,12 @@ PlaybackSession::PlaybackSession(const Animation &animation, universe_t universe
     for (const auto &track : animation_.tracks) {
         TrackState state;
         state.creatureId = track.creature_id;
+        state.fixtureId = track.fixture_id;
         state.currentFrameIndex = 0;
         state.nextDispatchFrame = startingFrame_;
+
+        const std::string trackTarget = !track.fixture_id.empty() ? fmt::format("fixture {}", track.fixture_id)
+                                                                  : fmt::format("creature {}", track.creature_id);
 
         // Decode all frames for this track
         state.decodedFrames.reserve(track.frames.size());
@@ -58,8 +62,7 @@ PlaybackSession::PlaybackSession(const Animation &animation, universe_t universe
             try {
                 state.decodedFrames.push_back(decodeBase64(frameData));
             } catch (const std::exception &ex) {
-                std::string errorMsg =
-                    fmt::format("Failed to decode frame for creature {}: {}", track.creature_id, ex.what());
+                std::string errorMsg = fmt::format("Failed to decode frame for {}: {}", trackTarget, ex.what());
                 error(errorMsg);
                 if (sessionSpan_) {
                     sessionSpan_->setError(errorMsg);
@@ -68,8 +71,7 @@ PlaybackSession::PlaybackSession(const Animation &animation, universe_t universe
                 decodeFailed = true;
                 break;
             } catch (...) {
-                std::string errorMsg =
-                    fmt::format("Failed to decode frame for creature {}: unknown error", track.creature_id);
+                std::string errorMsg = fmt::format("Failed to decode frame for {}: unknown error", trackTarget);
                 error(errorMsg);
                 if (sessionSpan_) {
                     sessionSpan_->setError(errorMsg);
@@ -87,7 +89,7 @@ PlaybackSession::PlaybackSession(const Animation &animation, universe_t universe
         totalFramesDecoded += track.frames.size();
         trackStates_.push_back(std::move(state));
 
-        trace("Decoded {} frames for creature {} in animation '{}'", track.frames.size(), track.creature_id,
+        trace("Decoded {} frames for {} in animation '{}'", track.frames.size(), trackTarget,
               animation_.metadata.title);
     }
 
