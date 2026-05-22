@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include <oatpp/web/protocol/http/Http.hpp>
 #include <oatpp/web/protocol/http/incoming/Request.hpp>
 
 #include "util/ObservabilityManager.h"
@@ -39,6 +40,31 @@ inline void addHttpRequestAttributes(
         span->setAttribute("http.host", std::string(host));
     }
     span->setAttribute("http.flavor", "1.1");
+}
+
+/// Wrap an endpoint's work in a try/catch that updates the span's http.status_code on
+/// exception paths and records the exception, then re-throws so oatpp's normal error
+/// rendering still runs. Without this wrapper, the typical pattern of
+/// `setHttpStatus(200)` on the success line means error paths (via OATPP_ASSERT_HTTP
+/// or anything that throws) leave the span's status unset — so a Honeycomb query like
+/// `WHERE http.status_code >= 400` misses real failures.
+template <typename F>
+auto withSpanStatus(const std::shared_ptr<creatures::RequestSpan> &span, F &&work) -> decltype(work()) {
+    try {
+        return work();
+    } catch (oatpp::web::protocol::http::HttpError &e) {
+        if (span) {
+            span->setHttpStatus(e.getInfo().status.code);
+            span->recordException(e);
+        }
+        throw;
+    } catch (const std::exception &e) {
+        if (span) {
+            span->setHttpStatus(500);
+            span->recordException(e);
+        }
+        throw;
+    }
 }
 
 /// Cheap RFC 4122 UUID shape check. Accepts the canonical 8-4-4-4-12 hex form,

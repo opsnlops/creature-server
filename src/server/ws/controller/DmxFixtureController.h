@@ -67,11 +67,12 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             span->setAttribute("controller", "DmxFixtureController");
         }
 
-        const auto result = m_service.getAllFixtures(span);
-
-        if (span)
-            span->setHttpStatus(200);
-        return createDtoResponse(Status::CODE_200, result);
+        return withSpanStatus(span, [&] {
+            const auto result = m_service.getAllFixtures(span);
+            if (span)
+                span->setHttpStatus(200);
+            return createDtoResponse(Status::CODE_200, result);
+        });
     }
 
     ENDPOINT_INFO(getFixture) {
@@ -100,11 +101,12 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             span->setAttribute("fixture.id", std::string(fixtureId));
         }
 
-        const auto result = m_service.getFixture(fixtureId, span);
-
-        if (span)
-            span->setHttpStatus(200);
-        return createDtoResponse(Status::CODE_200, result);
+        return withSpanStatus(span, [&] {
+            const auto result = m_service.getFixture(fixtureId, span);
+            if (span)
+                span->setHttpStatus(200);
+            return createDtoResponse(Status::CODE_200, result);
+        });
     }
 
     ENDPOINT_INFO(upsertFixture) {
@@ -126,31 +128,21 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         if (creatures::metrics)
             creatures::metrics->incrementRestRequestsProcessed();
 
-        try {
+        return withSpanStatus(span, [&] {
             const auto fixtureConfig = std::string(body);
             if (span) {
                 span->setAttribute("endpoint", "upsertFixture");
                 span->setAttribute("controller", "DmxFixtureController");
                 span->setAttribute("request.body_size", static_cast<int64_t>(fixtureConfig.length()));
             }
-
             const auto result = m_service.upsertFixture(fixtureConfig, span);
-
             if (span) {
                 span->setAttribute("fixture.id", std::string(result->id));
                 span->setHttpStatus(200);
             }
-
             scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
             return createDtoResponse(Status::CODE_200, result);
-        } catch (const std::exception &ex) {
-            if (span) {
-                span->recordException(ex);
-                span->setHttpStatus(500);
-            }
-            error("Exception in upsertFixture: {}", ex.what());
-            throw;
-        }
+        });
     }
 
     ENDPOINT_INFO(deleteFixture) {
@@ -177,17 +169,17 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             span->setAttribute("fixture.id", std::string(fixtureId));
         }
 
-        m_service.deleteFixture(fixtureId, span);
-
-        if (span)
-            span->setHttpStatus(200);
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
-
-        const auto ok = StatusDto::createShared();
-        ok->status = "OK";
-        ok->code = 200;
-        ok->message = "Fixture deleted";
-        return createDtoResponse(Status::CODE_200, ok);
+        return withSpanStatus(span, [&] {
+            m_service.deleteFixture(fixtureId, span);
+            if (span)
+                span->setHttpStatus(200);
+            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
+            const auto ok = StatusDto::createShared();
+            ok->status = "OK";
+            ok->code = 200;
+            ok->message = "Fixture deleted";
+            return createDtoResponse(Status::CODE_200, ok);
+        });
     }
 
     ENDPOINT_INFO(validateFixtureConfig) {
@@ -211,10 +203,12 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             span->setAttribute("request.body_size", static_cast<int64_t>(body ? body->size() : 0));
         }
 
-        const auto result = m_service.validateFixtureConfig(std::string(body), span);
-        if (span)
-            span->setHttpStatus(200);
-        return createDtoResponse(Status::CODE_200, result);
+        return withSpanStatus(span, [&] {
+            const auto result = m_service.validateFixtureConfig(std::string(body), span);
+            if (span)
+                span->setHttpStatus(200);
+            return createDtoResponse(Status::CODE_200, result);
+        });
     }
 
     ENDPOINT_INFO(setFixtureUniverse) {
@@ -256,12 +250,14 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             span->setAttribute("fixture.universe", static_cast<int64_t>(universe));
         }
 
-        const auto result = m_service.setFixtureUniverse(fixtureId, std::optional<universe_t>{universe}, span);
-
-        if (span)
-            span->setHttpStatus(200);
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
-        return createDtoResponse(Status::CODE_200, result);
+        return withSpanStatus(span, [&] {
+            const auto result =
+                m_service.setFixtureUniverse(fixtureId, std::optional<universe_t>{universe}, span);
+            if (span)
+                span->setHttpStatus(200);
+            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
+            return createDtoResponse(Status::CODE_200, result);
+        });
     }
 
     ENDPOINT_INFO(triggerFixturePattern) {
@@ -327,11 +323,12 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             }
         }
 
-        const auto result = m_service.triggerPattern(fixtureId, patternId, stopAfterMs, span);
-
-        if (span)
-            span->setHttpStatus(200);
-        return createDtoResponse(Status::CODE_200, result);
+        return withSpanStatus(span, [&] {
+            const auto result = m_service.triggerPattern(fixtureId, patternId, stopAfterMs, span);
+            if (span)
+                span->setHttpStatus(200);
+            return createDtoResponse(Status::CODE_200, result);
+        });
     }
 
     ENDPOINT_INFO(clearFixtureUniverse) {
@@ -359,12 +356,13 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             span->setAttribute("fixture.id", std::string(fixtureId));
         }
 
-        const auto result = m_service.setFixtureUniverse(fixtureId, std::nullopt, span);
-
-        if (span)
-            span->setHttpStatus(200);
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
-        return createDtoResponse(Status::CODE_200, result);
+        return withSpanStatus(span, [&] {
+            const auto result = m_service.setFixtureUniverse(fixtureId, std::nullopt, span);
+            if (span)
+                span->setHttpStatus(200);
+            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
+            return createDtoResponse(Status::CODE_200, result);
+        });
     }
 };
 
