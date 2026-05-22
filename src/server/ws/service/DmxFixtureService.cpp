@@ -2,6 +2,7 @@
 #include <oatpp/core/Types.hpp>
 
 #include <optional>
+#include <set>
 #include <string>
 
 #include <fmt/format.h>
@@ -349,12 +350,18 @@ DmxFixtureService::validateFixtureConfig(const std::string &jsonFixture, std::sh
     resultDto->fixture_id = fixture.id.c_str();
 
     // Soft check: warn (don't fail) when bindings reference creatures that don't currently exist.
+    // Dedupe up front — a fixture with N bindings to the same creature shouldn't issue N
+    // identical Mongo queries (security review H2b).
+    std::set<std::string> uniqueCreatureIds;
     for (const auto &binding : fixture.bindings) {
-        if (binding.creature_id.empty())
-            continue;
-        auto creatureLookup = creatures::db->getCreature(binding.creature_id, span);
+        if (!binding.creature_id.empty()) {
+            uniqueCreatureIds.insert(binding.creature_id);
+        }
+    }
+    for (const auto &creatureId : uniqueCreatureIds) {
+        auto creatureLookup = creatures::db->getCreature(creatureId, span);
         if (!creatureLookup.isSuccess()) {
-            resultDto->missing_creature_ids->push_back(binding.creature_id.c_str());
+            resultDto->missing_creature_ids->push_back(creatureId.c_str());
         }
     }
 
