@@ -241,8 +241,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         }
         const universe_t universe = static_cast<universe_t>(*body->universe);
         // E1.31 universes are valid in [1, 63999]. Reject 0 (reserved) and >63999.
-        OATPP_ASSERT_HTTP(universe >= 1 && universe <= 63999, Status::CODE_400,
-                          "universe must be in [1, 63999]");
+        OATPP_ASSERT_HTTP(universe >= 1 && universe <= 63999, Status::CODE_400, "universe must be in [1, 63999]");
 
         if (span) {
             span->setAttribute("endpoint", "setFixtureUniverse");
@@ -251,8 +250,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         }
 
         return withSpanStatus(span, [&] {
-            const auto result =
-                m_service.setFixtureUniverse(fixtureId, std::optional<universe_t>{universe}, span);
+            const auto result = m_service.setFixtureUniverse(fixtureId, std::optional<universe_t>{universe}, span);
             if (span)
                 span->setHttpStatus(200);
             scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
@@ -311,10 +309,10 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
                                           "stop_after_ms must be > 0 (omit it to disable auto-stop)");
                     }
                     if (raw > MAX_STOP_AFTER_MS) {
-                        OATPP_ASSERT_HTTP(false, Status::CODE_400,
-                                          fmt::format("stop_after_ms must be <= {} ms (10 min); got {}",
-                                                      MAX_STOP_AFTER_MS, raw)
-                                              .c_str());
+                        OATPP_ASSERT_HTTP(
+                            false, Status::CODE_400,
+                            fmt::format("stop_after_ms must be <= {} ms (10 min); got {}", MAX_STOP_AFTER_MS, raw)
+                                .c_str());
                     }
                     stopAfterMs = raw;
                 }

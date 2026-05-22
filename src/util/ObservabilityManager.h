@@ -64,8 +64,7 @@ class ObservabilityManager {
      * @return A unique pointer to the span (RAII cleanup)
      */
     std::shared_ptr<RequestSpan> createRequestSpan(const std::string &operationName, const std::string &httpMethod,
-                                                   const std::string &httpUrl,
-                                                   const std::string &traceparent = "");
+                                                   const std::string &httpUrl, const std::string &traceparent = "");
 
     /**
      * Create a child span for database operations, service calls, etc.
@@ -91,7 +90,7 @@ class ObservabilityManager {
      * @return A shared pointer to the new span, or a plain root span if linkedSpan is null
      */
     std::shared_ptr<OperationSpan> createLinkedOperationSpan(const std::string &operationName,
-                                                              std::shared_ptr<RequestSpan> linkedSpan);
+                                                             std::shared_ptr<RequestSpan> linkedSpan);
 
     /**
      * Create a child operation span from another operation span

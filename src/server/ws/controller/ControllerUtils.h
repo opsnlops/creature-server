@@ -14,18 +14,18 @@ namespace creatures::ws {
 
 /// Extract the W3C traceparent header from an incoming oatpp request.
 /// Returns an empty string when the header is absent.
-inline std::string extractTraceparent(
-    const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request) {
-    if (!request) return "";
+inline std::string extractTraceparent(const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request) {
+    if (!request)
+        return "";
     auto tp = request->getHeader("traceparent");
     return tp ? std::string(tp) : "";
 }
 
 /// Populate common HTTP semantic-convention attributes on a RequestSpan.
-inline void addHttpRequestAttributes(
-    const std::shared_ptr<creatures::RequestSpan> &span,
-    const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request) {
-    if (!span || !request) return;
+inline void addHttpRequestAttributes(const std::shared_ptr<creatures::RequestSpan> &span,
+                                     const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request) {
+    if (!span || !request)
+        return;
 
     span->setAttribute("http.method", std::string(request->getStartingLine().method.toString()));
     span->setAttribute("http.target", std::string(request->getStartingLine().path.toString()));

@@ -125,8 +125,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
         // interrupt animation that just replaced it).
         if (creatures::sessionManager) {
             for (const auto &creatureId : creatureIds) {
-                if (!creatures::sessionManager->hasActiveSessionForCreature(
-                        session_->getUniverse(), creatureId)) {
+                if (!creatures::sessionManager->hasActiveSessionForCreature(session_->getUniverse(), creatureId)) {
                     ws::CreatureService::startIdleIfNeeded(creatureId, session_->getSpan());
                 }
             }
@@ -183,8 +182,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
         bool newSessionStarted = false;
         if (creatures::sessionManager) {
             for (const auto &cid : creatureIds) {
-                if (creatures::sessionManager->hasActiveNonIdleSessionForCreature(
-                        session_->getUniverse(), cid)) {
+                if (creatures::sessionManager->hasActiveNonIdleSessionForCreature(session_->getUniverse(), cid)) {
                     newSessionStarted = true;
                     break;
                 }

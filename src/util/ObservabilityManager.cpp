@@ -18,10 +18,10 @@
 #include <opentelemetry/sdk/metrics/meter_provider_factory.h>
 #include <opentelemetry/sdk/metrics/push_metric_exporter.h>
 #include <opentelemetry/sdk/resource/resource.h>
-#include <opentelemetry/semconv/service_attributes.h>
 #include <opentelemetry/sdk/trace/batch_span_processor_factory.h>
 #include <opentelemetry/sdk/trace/simple_processor_factory.h>
 #include <opentelemetry/sdk/trace/tracer_provider_factory.h>
+#include <opentelemetry/semconv/service_attributes.h>
 #include <opentelemetry/trace/provider.h>
 
 #pragma GCC diagnostic pop
@@ -453,14 +453,18 @@ opentelemetry::trace::SpanContext ObservabilityManager::parseTraceparent(const s
     // Parse hex strings into byte arrays
     auto hexToByte = [](char hi, char lo) -> uint8_t {
         auto hexVal = [](char c) -> uint8_t {
-            if (c >= '0' && c <= '9') return static_cast<uint8_t>(c - '0');
-            if (c >= 'a' && c <= 'f') return static_cast<uint8_t>(c - 'a' + 10);
-            if (c >= 'A' && c <= 'F') return static_cast<uint8_t>(c - 'A' + 10);
+            if (c >= '0' && c <= '9')
+                return static_cast<uint8_t>(c - '0');
+            if (c >= 'a' && c <= 'f')
+                return static_cast<uint8_t>(c - 'a' + 10);
+            if (c >= 'A' && c <= 'F')
+                return static_cast<uint8_t>(c - 'A' + 10);
             return 0xFF;
         };
         auto h = hexVal(hi);
         auto l = hexVal(lo);
-        if (h == 0xFF || l == 0xFF) return 0;
+        if (h == 0xFF || l == 0xFF)
+            return 0;
         return static_cast<uint8_t>((h << 4) | l);
     };
 
@@ -469,16 +473,14 @@ opentelemetry::trace::SpanContext ObservabilityManager::parseTraceparent(const s
     for (size_t i = 0; i < 16; i++) {
         traceIdBytes[i] = hexToByte(traceIdHex[i * 2], traceIdHex[i * 2 + 1]);
     }
-    opentelemetry::trace::TraceId traceId(
-        opentelemetry::nostd::span<const uint8_t, 16>(traceIdBytes.data(), 16));
+    opentelemetry::trace::TraceId traceId(opentelemetry::nostd::span<const uint8_t, 16>(traceIdBytes.data(), 16));
 
     // Parse span ID (8 bytes from 16 hex chars)
     std::array<uint8_t, 8> spanIdBytes{};
     for (size_t i = 0; i < 8; i++) {
         spanIdBytes[i] = hexToByte(spanIdHex[i * 2], spanIdHex[i * 2 + 1]);
     }
-    opentelemetry::trace::SpanId spanId(
-        opentelemetry::nostd::span<const uint8_t, 8>(spanIdBytes.data(), 8));
+    opentelemetry::trace::SpanId spanId(opentelemetry::nostd::span<const uint8_t, 8>(spanIdBytes.data(), 8));
 
     // Parse trace flags
     uint8_t flags = hexToByte(flagsHex[0], flagsHex[1]);
@@ -695,9 +697,8 @@ ObservabilityManager::createChildOperationSpan(const std::string &operationName,
     return std::make_shared<OperationSpan>(span);
 }
 
-std::shared_ptr<OperationSpan>
-ObservabilityManager::createChildOperationSpan(const std::string &operationName,
-                                               std::shared_ptr<RequestSpan> parentSpan) {
+std::shared_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(const std::string &operationName,
+                                                                              std::shared_ptr<RequestSpan> parentSpan) {
     if (!initialized_ || !parentSpan) {
         return createChildOperationSpan(operationName, std::shared_ptr<OperationSpan>(nullptr));
     }

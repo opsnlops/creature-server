@@ -20,8 +20,8 @@ bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern
                                  const creatureId_t &creatureId, framenum_t currentFrame,
                                  std::shared_ptr<OperationSpan> parentSpan) {
 
-    auto span = observability ? observability->createChildOperationSpan("FixturePatternRunner.start", parentSpan)
-                              : nullptr;
+    auto span =
+        observability ? observability->createChildOperationSpan("FixturePatternRunner.start", parentSpan) : nullptr;
     if (span) {
         span->setAttribute("fixture.id", fixture.id);
         span->setAttribute("fixture.name", fixture.name);
@@ -126,8 +126,8 @@ bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern
 
 void FixturePatternRunner::stop(const fixtureId_t &fixtureId, framenum_t currentFrame,
                                 std::shared_ptr<OperationSpan> parentSpan) {
-    auto span = observability ? observability->createChildOperationSpan("FixturePatternRunner.stop", parentSpan)
-                              : nullptr;
+    auto span =
+        observability ? observability->createChildOperationSpan("FixturePatternRunner.stop", parentSpan) : nullptr;
     if (span) {
         span->setAttribute("fixture.id", fixtureId);
     }
@@ -310,8 +310,7 @@ bool FixturePatternRunner::tick(framenum_t currentFrame, std::shared_ptr<Operati
         tickSpan->setAttribute("fixture.patterns.fade_in_count", static_cast<int64_t>(fadeInCount));
         tickSpan->setAttribute("fixture.patterns.hold_count", static_cast<int64_t>(holdCount));
         tickSpan->setAttribute("fixture.patterns.fade_out_count", static_cast<int64_t>(fadeOutCount));
-        tickSpan->setAttribute("fixture.dmx_events.emitted",
-                               static_cast<int64_t>(eventLoop ? toEmit.size() : 0));
+        tickSpan->setAttribute("fixture.dmx_events.emitted", static_cast<int64_t>(eventLoop ? toEmit.size() : 0));
 
         // Surface the trigger trace IDs of the first active pattern that has one. This
         // gives a single Honeycomb-searchable link back to the originating REST/activity

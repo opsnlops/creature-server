@@ -32,7 +32,6 @@ constexpr size_t MAX_PATTERNS_PER_FIXTURE = 256;
 constexpr size_t MAX_VALUES_PER_PATTERN = 64;
 constexpr size_t MAX_BINDINGS_PER_FIXTURE = 256;
 
-
 template <typename T> Result<T> invalidData(const std::shared_ptr<OperationSpan> &span, const std::string &message) {
     warn(message);
     if (span) {
@@ -112,9 +111,8 @@ Result<creatures::DmxFixture> Database::fixtureFromJson(json fixtureJson, std::s
             return invalidData<DmxFixture>(span, "Fixture 'channels' must be non-empty");
         }
         if (fixtureJson["channels"].size() > MAX_CHANNELS_PER_FIXTURE) {
-            return invalidData<DmxFixture>(
-                span, fmt::format("Fixture 'channels' must have at most {} entries; got {}",
-                                  MAX_CHANNELS_PER_FIXTURE, fixtureJson["channels"].size()));
+            return invalidData<DmxFixture>(span, fmt::format("Fixture 'channels' must have at most {} entries; got {}",
+                                                             MAX_CHANNELS_PER_FIXTURE, fixtureJson["channels"].size()));
         }
 
         std::set<std::string> seenChannelNames;
@@ -168,9 +166,9 @@ Result<creatures::DmxFixture> Database::fixtureFromJson(json fixtureJson, std::s
                 return invalidData<DmxFixture>(span, "Fixture 'patterns' must be an array");
             }
             if (fixtureJson["patterns"].size() > MAX_PATTERNS_PER_FIXTURE) {
-                return invalidData<DmxFixture>(
-                    span, fmt::format("Fixture 'patterns' must have at most {} entries; got {}",
-                                      MAX_PATTERNS_PER_FIXTURE, fixtureJson["patterns"].size()));
+                return invalidData<DmxFixture>(span,
+                                               fmt::format("Fixture 'patterns' must have at most {} entries; got {}",
+                                                           MAX_PATTERNS_PER_FIXTURE, fixtureJson["patterns"].size()));
             }
             for (const auto &patternJson : fixtureJson["patterns"]) {
                 FixturePattern p;
@@ -198,9 +196,9 @@ Result<creatures::DmxFixture> Database::fixtureFromJson(json fixtureJson, std::s
                                                    fmt::format("Pattern '{}' missing required 'values' array", p.id));
                 }
                 if (patternJson["values"].size() > MAX_VALUES_PER_PATTERN) {
-                    return invalidData<DmxFixture>(
-                        span, fmt::format("Pattern '{}' has {} values, exceeds max {}", p.id,
-                                          patternJson["values"].size(), MAX_VALUES_PER_PATTERN));
+                    return invalidData<DmxFixture>(span,
+                                                   fmt::format("Pattern '{}' has {} values, exceeds max {}", p.id,
+                                                               patternJson["values"].size(), MAX_VALUES_PER_PATTERN));
                 }
                 for (const auto &valueJson : patternJson["values"]) {
                     if (!valueJson.contains("channel") || !valueJson["channel"].is_string()) {
@@ -233,9 +231,9 @@ Result<creatures::DmxFixture> Database::fixtureFromJson(json fixtureJson, std::s
                 return invalidData<DmxFixture>(span, "Fixture 'bindings' must be an array");
             }
             if (fixtureJson["bindings"].size() > MAX_BINDINGS_PER_FIXTURE) {
-                return invalidData<DmxFixture>(
-                    span, fmt::format("Fixture 'bindings' must have at most {} entries; got {}",
-                                      MAX_BINDINGS_PER_FIXTURE, fixtureJson["bindings"].size()));
+                return invalidData<DmxFixture>(span,
+                                               fmt::format("Fixture 'bindings' must have at most {} entries; got {}",
+                                                           MAX_BINDINGS_PER_FIXTURE, fixtureJson["bindings"].size()));
             }
             static const std::set<std::string> validReasons = {"play",     "playlist",  "ad_hoc",   "idle",
                                                                "disabled", "cancelled", "streaming"};
