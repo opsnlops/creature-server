@@ -430,6 +430,7 @@ add_executable(creature-server
 
         src/server/ws/controller/CreatureController.h
         src/server/ws/controller/DebugController.h
+        src/server/ws/controller/DmxFixtureController.h
         src/server/ws/controller/MetricsController.h
         src/server/ws/controller/SoundController.h
         src/server/ws/controller/StaticController.h
@@ -458,6 +459,8 @@ add_executable(creature-server
         src/server/ws/service/AnimationService.cpp
         src/server/ws/service/CreatureService.h
         src/server/ws/service/CreatureService.cpp
+        src/server/ws/service/DmxFixtureService.h
+        src/server/ws/service/DmxFixtureService.cpp
         src/server/ws/service/MetricsService.h
         src/server/ws/service/MetricsService.cpp
         src/server/ws/service/PlaylistService.h

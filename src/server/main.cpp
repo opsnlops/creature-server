@@ -37,6 +37,7 @@
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
 #include "server/database.h"
+#include "server/ws/service/DmxFixtureService.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
@@ -292,10 +293,11 @@ int main(const int argc, char **argv) {
     creatures::creatureUniverseMap = std::make_shared<creatures::ObjectCache<creatureId_t, universe_t>>();
     debug("Created the creature-to-universe mapping cache");
 
-    // Create the DmxFixture cache and universe mapping (DB hydration arrives in a follow-up commit).
+    // Create the DmxFixture cache and universe mapping, then hydrate from DB.
     creatures::fixtureCache = std::make_shared<creatures::ObjectCache<fixtureId_t, creatures::DmxFixture>>();
     creatures::fixtureUniverseMap = std::make_shared<creatures::ObjectCache<fixtureId_t, universe_t>>();
     debug("Created the DmxFixture cache and universe map");
+    creatures::ws::DmxFixtureService::hydrateFromDatabase();
 
     // Create the sensor data cache
     creatures::sensorDataCache = std::make_shared<creatures::SensorDataCache>();

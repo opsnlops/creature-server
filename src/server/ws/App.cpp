@@ -16,6 +16,7 @@
 #include "controller/AnimationController.h"
 #include "controller/CreatureController.h"
 #include "controller/DebugController.h"
+#include "controller/DmxFixtureController.h"
 #include "controller/MetricsController.h"
 #include "controller/PlaylistController.h"
 #include "controller/SoundController.h"
@@ -62,6 +63,7 @@ void App::run() {
     docEndpoints.append(router->addController(AnimationController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(CreatureController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DebugController::createShared())->getEndpoints());
+    docEndpoints.append(router->addController(DmxFixtureController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(MetricsController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(PlaylistController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(SoundController::createShared())->getEndpoints());
@@ -75,6 +77,7 @@ void App::run() {
     router->addController(AnimationController::createShared());
     router->addController(CreatureController::createShared());
     router->addController(DebugController::createShared());
+    router->addController(DmxFixtureController::createShared());
     router->addController(MetricsController::createShared());
     router->addController(PlaylistController::createShared());
     router->addController(SoundController::createShared());

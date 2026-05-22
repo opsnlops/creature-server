@@ -1,0 +1,398 @@
+
+#include <oatpp/core/Types.hpp>
+
+#include <optional>
+#include <string>
+
+#include <fmt/format.h>
+#include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
+
+#include "exception/exception.h"
+#include "model/DmxFixture.h"
+#include "server/database.h"
+#include "server/ws/dto/FixtureConfigValidationDto.h"
+#include "server/ws/dto/ListDto.h"
+#include "util/JsonParser.h"
+#include "util/ObservabilityManager.h"
+#include "util/Result.h"
+#include "util/cache.h"
+#include "util/helpers.h"
+
+#include "DmxFixtureService.h"
+
+namespace creatures {
+extern std::shared_ptr<Database> db;
+extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<ObjectCache<fixtureId_t, DmxFixture>> fixtureCache;
+extern std::shared_ptr<ObjectCache<fixtureId_t, universe_t>> fixtureUniverseMap;
+} // namespace creatures
+
+namespace creatures ::ws {
+
+using oatpp::web::protocol::http::Status;
+
+oatpp::Object<ListDto<oatpp::Object<creatures::DmxFixtureDto>>>
+DmxFixtureService::getAllFixtures(std::shared_ptr<RequestSpan> parentSpan) {
+
+    if (!creatures::db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("DmxFixtureService.getAllFixtures", parentSpan)
+                    : nullptr;
+
+    auto result = creatures::db->getAllFixtures(span);
+
+    if (!result.isSuccess()) {
+        auto err = result.getError().value();
+        Status status = Status::CODE_500;
+        if (err.getCode() == ServerError::NotFound)
+            status = Status::CODE_404;
+        else if (err.getCode() == ServerError::InvalidData)
+            status = Status::CODE_400;
+        if (span) {
+            span->setError(err.getMessage());
+            span->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+        }
+        OATPP_ASSERT_HTTP(false, status, err.getMessage().c_str())
+    }
+
+    auto fixtures = result.getValue().value();
+    auto items = oatpp::Vector<oatpp::Object<creatures::DmxFixtureDto>>::createShared();
+    for (const auto &fixture : fixtures) {
+        items->emplace_back(creatures::convertToDto(fixture));
+    }
+
+    auto page = ListDto<oatpp::Object<creatures::DmxFixtureDto>>::createShared();
+    page->count = items->size();
+    page->items = items;
+
+    if (span) {
+        span->setAttribute("fixtures.count", static_cast<int64_t>(page->count));
+        span->setSuccess();
+    }
+
+    return page;
+}
+
+oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::getFixture(const oatpp::String &inFixtureId,
+                                                                      std::shared_ptr<RequestSpan> parentSpan) {
+
+    if (!creatures::db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
+    }
+
+    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
+    if (fixtureId.empty()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("DmxFixtureService.getFixture", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("fixture.id", fixtureId);
+    }
+
+    auto result = creatures::db->getFixture(fixtureId, span);
+    if (!result.isSuccess()) {
+        auto err = result.getError().value();
+        Status status = Status::CODE_500;
+        if (err.getCode() == ServerError::NotFound)
+            status = Status::CODE_404;
+        else if (err.getCode() == ServerError::InvalidData)
+            status = Status::CODE_400;
+        if (span) {
+            span->setError(err.getMessage());
+            span->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+        }
+        OATPP_ASSERT_HTTP(false, status, err.getMessage().c_str())
+    }
+    if (!result.getValue().has_value()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database returned no fixture value");
+    }
+
+    auto fixture = result.getValue().value();
+    if (span)
+        span->setSuccess();
+    return creatures::convertToDto(fixture);
+}
+
+oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::upsertFixture(const std::string &jsonFixture,
+                                                                         std::shared_ptr<RequestSpan> parentSpan) {
+
+    if (!creatures::db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("DmxFixtureService.upsertFixture", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("json.size", static_cast<int64_t>(jsonFixture.length()));
+    }
+
+    // Validate before we touch the DB so the user gets a clean 400 instead of cryptic internal errors.
+    auto validateSpan =
+        creatures::observability ? creatures::observability->createChildOperationSpan("validateJson", span) : nullptr;
+    try {
+        auto jsonResult = JsonParser::parseJsonString(jsonFixture, "fixture upsert validation", validateSpan);
+        if (!jsonResult.isSuccess()) {
+            auto err = jsonResult.getError().value();
+            if (validateSpan)
+                validateSpan->setError(err.getMessage());
+            OATPP_ASSERT_HTTP(false, Status::CODE_400, err.getMessage().c_str());
+        }
+        auto jsonObject = jsonResult.getValue().value();
+        auto validation = creatures::db->validateFixtureJson(jsonObject);
+        if (!validation.isSuccess()) {
+            auto err = validation.getError().value();
+            if (validateSpan)
+                validateSpan->setError(err.getMessage());
+            OATPP_ASSERT_HTTP(false, Status::CODE_400, err.getMessage().c_str());
+        }
+    } catch (const nlohmann::json::parse_error &e) {
+        if (validateSpan)
+            validateSpan->recordException(e);
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, e.what());
+    }
+    if (validateSpan)
+        validateSpan->setSuccess();
+
+    auto result = creatures::db->upsertFixture(jsonFixture, span);
+    if (!result.isSuccess()) {
+        auto err = result.getError().value();
+        Status status = Status::CODE_500;
+        if (err.getCode() == ServerError::InvalidData)
+            status = Status::CODE_400;
+        if (span) {
+            span->setError(err.getMessage());
+            span->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+        }
+        OATPP_ASSERT_HTTP(false, status, err.getMessage().c_str())
+    }
+
+    if (!result.getValue().has_value()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database returned no fixture value");
+    }
+
+    auto fixture = result.getValue().value();
+
+    // Mirror the persisted universe assignment (if any) into the runtime map.
+    if (fixture.assigned_universe.has_value()) {
+        creatures::fixtureUniverseMap->put(fixture.id, *fixture.assigned_universe);
+    } else {
+        creatures::fixtureUniverseMap->remove(fixture.id);
+    }
+
+    if (span) {
+        span->setAttribute("fixture.id", fixture.id);
+        span->setAttribute("fixture.name", fixture.name);
+        span->setSuccess();
+    }
+
+    return creatures::convertToDto(fixture);
+}
+
+void DmxFixtureService::deleteFixture(const oatpp::String &inFixtureId, std::shared_ptr<RequestSpan> parentSpan) {
+
+    if (!creatures::db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
+    }
+
+    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
+    if (fixtureId.empty()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("DmxFixtureService.deleteFixture", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("fixture.id", fixtureId);
+    }
+
+    auto result = creatures::db->deleteFixture(fixtureId, span);
+    if (!result.isSuccess()) {
+        auto err = result.getError().value();
+        Status status = Status::CODE_500;
+        if (err.getCode() == ServerError::NotFound)
+            status = Status::CODE_404;
+        else if (err.getCode() == ServerError::InvalidData)
+            status = Status::CODE_400;
+        if (span) {
+            span->setError(err.getMessage());
+        }
+        OATPP_ASSERT_HTTP(false, status, err.getMessage().c_str())
+    }
+
+    creatures::fixtureUniverseMap->remove(fixtureId);
+
+    if (span)
+        span->setSuccess();
+}
+
+oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::setFixtureUniverse(const oatpp::String &inFixtureId,
+                                                                              std::optional<universe_t> universe,
+                                                                              std::shared_ptr<RequestSpan> parentSpan) {
+
+    if (!creatures::db) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
+    }
+
+    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
+    if (fixtureId.empty()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("DmxFixtureService.setFixtureUniverse", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("fixture.id", fixtureId);
+        span->setAttribute("fixture.universe.set", universe.has_value());
+        if (universe.has_value()) {
+            span->setAttribute("fixture.universe", static_cast<int64_t>(*universe));
+        }
+    }
+
+    auto setResult = creatures::db->setFixtureUniverse(fixtureId, universe, span);
+    if (!setResult.isSuccess()) {
+        auto err = setResult.getError().value();
+        Status status = Status::CODE_500;
+        if (err.getCode() == ServerError::NotFound)
+            status = Status::CODE_404;
+        else if (err.getCode() == ServerError::InvalidData)
+            status = Status::CODE_400;
+        if (span) {
+            span->setError(err.getMessage());
+        }
+        OATPP_ASSERT_HTTP(false, status, err.getMessage().c_str())
+    }
+
+    if (universe.has_value()) {
+        creatures::fixtureUniverseMap->put(fixtureId, *universe);
+    } else {
+        creatures::fixtureUniverseMap->remove(fixtureId);
+    }
+
+    // Re-fetch so the response reflects the new state.
+    auto fetched = creatures::db->getFixture(fixtureId, span);
+    if (!fetched.isSuccess()) {
+        auto err = fetched.getError().value();
+        if (span) {
+            span->setError(err.getMessage());
+        }
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, err.getMessage().c_str())
+    }
+
+    if (span)
+        span->setSuccess();
+    return creatures::convertToDto(fetched.getValue().value());
+}
+
+oatpp::Object<FixtureConfigValidationDto>
+DmxFixtureService::validateFixtureConfig(const std::string &jsonFixture, std::shared_ptr<RequestSpan> parentSpan) {
+
+    auto span =
+        creatures::observability
+            ? creatures::observability->createOperationSpan("DmxFixtureService.validateFixtureConfig", parentSpan)
+            : nullptr;
+
+    auto resultDto = FixtureConfigValidationDto::createShared();
+    resultDto->valid = true;
+    resultDto->missing_creature_ids = oatpp::List<oatpp::String>::createShared();
+    resultDto->error_messages = oatpp::List<oatpp::String>::createShared();
+
+    if (!creatures::db) {
+        resultDto->valid = false;
+        resultDto->error_messages->push_back("Database unavailable");
+        if (span)
+            span->setError("Database unavailable");
+        return resultDto;
+    }
+
+    nlohmann::json parsed;
+    try {
+        parsed = nlohmann::json::parse(jsonFixture);
+    } catch (const std::exception &ex) {
+        resultDto->valid = false;
+        resultDto->error_messages->push_back(fmt::format("Invalid JSON: {}", ex.what()).c_str());
+        if (span)
+            span->setError("Invalid JSON");
+        return resultDto;
+    }
+
+    auto parseResult = creatures::Database::parseFixtureJson(parsed, span);
+    if (!parseResult.isSuccess()) {
+        resultDto->valid = false;
+        resultDto->error_messages->push_back(parseResult.getError()->getMessage().c_str());
+        if (span)
+            span->setError(parseResult.getError()->getMessage());
+        return resultDto;
+    }
+    if (!parseResult.getValue().has_value()) {
+        resultDto->valid = false;
+        resultDto->error_messages->push_back("Fixture validation returned no value");
+        return resultDto;
+    }
+
+    auto fixture = parseResult.getValue().value();
+    resultDto->fixture_id = fixture.id.c_str();
+
+    // Soft check: warn (don't fail) when bindings reference creatures that don't currently exist.
+    for (const auto &binding : fixture.bindings) {
+        if (binding.creature_id.empty())
+            continue;
+        auto creatureLookup = creatures::db->getCreature(binding.creature_id, span);
+        if (!creatureLookup.isSuccess()) {
+            resultDto->missing_creature_ids->push_back(binding.creature_id.c_str());
+        }
+    }
+
+    if (span)
+        span->setSuccess();
+    return resultDto;
+}
+
+void DmxFixtureService::hydrateFromDatabase(std::shared_ptr<OperationSpan> parentSpan) {
+    if (!creatures::db) {
+        warn("DmxFixtureService::hydrateFromDatabase called with no database; skipping");
+        return;
+    }
+
+    auto span =
+        creatures::observability
+            ? creatures::observability->createChildOperationSpan("DmxFixtureService.hydrateFromDatabase", parentSpan)
+            : nullptr;
+
+    auto result = creatures::db->getAllFixtures(span);
+    if (!result.isSuccess()) {
+        auto err = result.getError().value();
+        warn("Failed to hydrate fixtures from database: {}", err.getMessage());
+        if (span)
+            span->setError(err.getMessage());
+        return;
+    }
+
+    const auto fixtures = result.getValue().value();
+    for (const auto &fixture : fixtures) {
+        // getAllFixtures already populates fixtureCache. We just need to mirror the universe.
+        if (fixture.assigned_universe.has_value()) {
+            creatures::fixtureUniverseMap->put(fixture.id, *fixture.assigned_universe);
+        }
+    }
+
+    info("Hydrated {} fixtures into cache; {} have assigned universes", fixtures.size(),
+         std::count_if(fixtures.begin(), fixtures.end(),
+                       [](const creatures::DmxFixture &f) { return f.assigned_universe.has_value(); }));
+
+    if (span) {
+        span->setAttribute("fixtures.count", static_cast<int64_t>(fixtures.size()));
+        span->setSuccess();
+    }
+}
+
+} // namespace creatures::ws

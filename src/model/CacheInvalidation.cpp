@@ -13,6 +13,7 @@ const std::string PLAYLIST_CACHE_TYPE = "playlist";
 const std::string SOUND_LIST_CACHE_TYPE = "sound-list";
 const std::string ADHOC_ANIMATION_CACHE_TYPE = "ad-hoc-animation-list";
 const std::string ADHOC_SOUND_CACHE_TYPE = "ad-hoc-sound-list";
+const std::string FIXTURE_CACHE_TYPE = "fixture";
 const std::string UNKNOWN_CACHE_TYPE = "unknown";
 
 std::string toString(const CacheType type) {
@@ -30,6 +31,8 @@ std::string toString(const CacheType type) {
         return ADHOC_ANIMATION_CACHE_TYPE;
     case CacheType::AdHocSoundList:
         return ADHOC_SOUND_CACHE_TYPE;
+    case CacheType::Fixture:
+        return FIXTURE_CACHE_TYPE;
 
     default:
         return UNKNOWN_CACHE_TYPE;
@@ -49,6 +52,8 @@ CacheType cacheTypeFromString(const std::string &cacheTypeString) {
         return CacheType::AdHocAnimationList;
     if (cacheTypeString == ADHOC_SOUND_CACHE_TYPE)
         return CacheType::AdHocSoundList;
+    if (cacheTypeString == FIXTURE_CACHE_TYPE)
+        return CacheType::Fixture;
     return CacheType::Unknown;
 }
 
