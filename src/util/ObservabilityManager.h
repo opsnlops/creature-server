@@ -303,6 +303,20 @@ class OperationSpan {
      */
     [[nodiscard]] opentelemetry::trace::Span *getSpan() const { return span_.get(); }
 
+    /**
+     * Return the trace_id of this span as a lowercase-hex string (32 chars), or empty
+     * string if the span is invalid. Useful for stashing trace context on long-lived
+     * runtime state (e.g. an ActivePattern that outlives the request) so later spans
+     * can be linked back to the originating trace via attributes.
+     */
+    [[nodiscard]] std::string getTraceIdHex() const;
+
+    /**
+     * Return the span_id of this span as a lowercase-hex string (16 chars), or empty
+     * string if the span is invalid.
+     */
+    [[nodiscard]] std::string getSpanIdHex() const;
+
   protected:
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span_;
     opentelemetry::context::Context context_;

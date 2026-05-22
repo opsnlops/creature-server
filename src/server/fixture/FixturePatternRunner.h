@@ -57,6 +57,12 @@ struct ActivePattern {
     uint32_t fadeInMs{0};
     uint32_t fadeOutMs{0};
     uint32_t holdMs{0};
+
+    // Trace context captured at start() time so DMX frames emitted on later ticks can be
+    // linked back in Honeycomb to the originating request span (REST trigger or activity
+    // transition). Both empty for triggers without a parent span. See OTel review P1b.
+    std::string triggerTraceId;
+    std::string triggerSpanId;
 };
 
 /**

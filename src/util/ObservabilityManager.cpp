@@ -805,6 +805,30 @@ void OperationSpan::setSuccess() {
     }
 }
 
+std::string OperationSpan::getTraceIdHex() const {
+    if (!span_)
+        return {};
+    auto ctx = span_->GetContext();
+    if (!ctx.IsValid())
+        return {};
+    constexpr size_t hexLen = 2 * trace_api::TraceId::kSize;
+    char buf[hexLen] = {0};
+    ctx.trace_id().ToLowerBase16(opentelemetry::nostd::span<char, hexLen>{buf, hexLen});
+    return std::string(buf, hexLen);
+}
+
+std::string OperationSpan::getSpanIdHex() const {
+    if (!span_)
+        return {};
+    auto ctx = span_->GetContext();
+    if (!ctx.IsValid())
+        return {};
+    constexpr size_t hexLen = 2 * trace_api::SpanId::kSize;
+    char buf[hexLen] = {0};
+    ctx.span_id().ToLowerBase16(opentelemetry::nostd::span<char, hexLen>{buf, hexLen});
+    return std::string(buf, hexLen);
+}
+
 void OperationSpan::setError(const std::string &errorMessage) {
     if (span_) {
         span_->SetStatus(trace_api::StatusCode::kError, errorMessage);

@@ -83,6 +83,12 @@ bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern
     entry.targetValues = std::move(targetValues);
     entry.phase = FixturePatternPhase::FadeIn;
     entry.creatureId = creatureId;
+    // Capture the originating trace context so later tick spans can link back to the
+    // REST trigger / activity transition that started this pattern.
+    if (parentSpan) {
+        entry.triggerTraceId = parentSpan->getTraceIdHex();
+        entry.triggerSpanId = parentSpan->getSpanIdHex();
+    }
 
     entry.fadeInDoneFrame = entry.startedAtFrame + static_cast<framenum_t>(entry.fadeInMs);
     if (entry.holdMs == 0) {
@@ -306,6 +312,19 @@ bool FixturePatternRunner::tick(framenum_t currentFrame, std::shared_ptr<Operati
         tickSpan->setAttribute("fixture.patterns.fade_out_count", static_cast<int64_t>(fadeOutCount));
         tickSpan->setAttribute("fixture.dmx_events.emitted",
                                static_cast<int64_t>(eventLoop ? toEmit.size() : 0));
+
+        // Surface the trigger trace IDs of the first active pattern that has one. This
+        // gives a single Honeycomb-searchable link back to the originating REST/activity
+        // span. (Multiple originating triggers per tick is rare; if it happens we lose
+        // visibility of the second+ — fine for v1, the tick span is sampled anyway.)
+        for (auto *entry : toEmit) {
+            if (!entry->triggerTraceId.empty()) {
+                tickSpan->setAttribute("trigger.trace_id", entry->triggerTraceId);
+                tickSpan->setAttribute("trigger.span_id", entry->triggerSpanId);
+                tickSpan->setAttribute("trigger.fixture.id", entry->fixtureId);
+                break;
+            }
+        }
     }
 
     // Clean up finished entries.
