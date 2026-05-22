@@ -52,6 +52,17 @@ class DmxFixtureService {
     validateFixtureConfig(const std::string &jsonFixture, std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
+     * Trigger a pattern on a fixture, bypassing the binding match. Useful for ad-hoc UI control
+     * and testing.
+     *
+     * @param stopAfterMs nullopt = pattern holds until externally stopped; otherwise the pattern
+     *                    is told to stop after `*stopAfterMs` milliseconds (fade-out then starts).
+     */
+    static oatpp::Object<creatures::DmxFixtureDto>
+    triggerPattern(const oatpp::String &inFixtureId, const oatpp::String &inPatternId,
+                   std::optional<uint32_t> stopAfterMs, std::shared_ptr<RequestSpan> parentSpan = nullptr);
+
+    /**
      * Load all persisted fixtures into the cache and rebuild `fixtureUniverseMap` from each fixture's
      * `assigned_universe`. Called once at server startup.
      */

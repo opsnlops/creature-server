@@ -162,6 +162,105 @@ This architecture correctly models the physical system:
 - The same creature config works regardless of which universe it's assigned to
 - Universe state is ephemeral (lost on server restart), which is correct behavior
 
+### DMX Fixture Model
+
+**Last Updated:** 2026-05-21
+
+#### What's a DmxFixture?
+
+A `DmxFixture` is a first-class non-Creature DMX device — lights, smoke machines, foggers, etc. Where creatures have **axes** (servo slots), fixtures have **channels** (named DMX byte slots: `red`, `green`, `brightness`, `fog_output`, …). The data model and API are intentionally generic so the same code path serves new device types as needed.
+
+#### Intentional Divergence from Creatures
+
+| Aspect | Creature | DmxFixture |
+|--------|----------|-----------|
+| **Source of truth** | Controller's JSON config file | Server's MongoDB |
+| **Managed by** | Controller pushes config on startup via `/register` | Creature Console Swift app via REST CRUD |
+| **Universe assignment** | Ephemeral (`creatureUniverseMap`, runtime only) | **Persisted** as `assigned_universe` on the fixture document, mirrored to `fixtureUniverseMap` at startup |
+| **`register` endpoint** | Yes (controller bootstrap) | No (no controller in the loop) |
+
+Fixtures are usually stage hardware wired to a fixed DMX address, so losing the universe assignment on every server restart would mean the user manually re-binds every light. Persisting it eliminates that friction.
+
+#### JSON Schema (API contract)
+
+Submitted by the Creature Console Swift app via `POST /api/v1/fixture`. **All IDs are UUIDs** (RFC 4122), never MongoDB OIDs.
+
+```json
+{
+  "id": "8e3a4b5c-1d2f-4e6a-9b0c-7f8e9d0a1b2c",
+  "name": "Stage Left Spot",
+  "type": "light",                          // "light" | "smoke_machine" | "fogger" | "generic"
+  "channel_offset": 500,
+  "assigned_universe": 1,                   // nullable
+  "channels": [
+    { "offset": 0, "name": "red",        "kind": "color_red" },
+    { "offset": 1, "name": "green",      "kind": "color_green" },
+    { "offset": 2, "name": "blue",       "kind": "color_blue" },
+    { "offset": 5, "name": "brightness", "kind": "master_dimmer" }
+  ],
+  "patterns": [
+    {
+      "id": "7d2a3b4c-5e6f-4789-a0b1-c2d3e4f5a6b7",
+      "name": "Red Glow",
+      "values": [{ "channel": "red", "value": 255 }, { "channel": "brightness", "value": 200 }],
+      "fade_in_ms": 250,
+      "fade_out_ms": 500,
+      "hold_ms": 0                          // 0 = hold until external stop
+    }
+  ],
+  "bindings": [
+    {
+      "creature_id": "1a2b3c4d-5e6f-4789-a0b1-c2d3e4f5a6b7",
+      "on_reason":   "ad_hoc",              // null = wildcard
+      "on_state":    "running",             // null = wildcard
+      "pattern_id":  "7d2a3b4c-5e6f-4789-a0b1-c2d3e4f5a6b7"
+    }
+  ]
+}
+```
+
+**Validation rules** (server enforces, 400 on failure): `channel_offset + max(channels[].offset) ≤ 511`; channel names unique; pattern ids unique; pattern `values[].channel` references existing channel; binding `pattern_id` references existing pattern; `on_reason`/`on_state` parse to known enums. `creature_id` is a soft reference — not validated against the creature database.
+
+**Channel `kind` values** (UI hint only; server never branches on them): `color_red`, `color_green`, `color_blue`, `color_white`, `color_amber`, `color_uv`, `master_dimmer`, `strobe`, `pan`, `tilt`, `gobo`, `generic`. New values can be added without server changes.
+
+#### REST Endpoints
+
+```
+GET    /api/v1/fixture                                       list all
+GET    /api/v1/fixture/{fixtureId}                           get one
+POST   /api/v1/fixture                                       create or update
+DELETE /api/v1/fixture/{fixtureId}                           delete
+POST   /api/v1/fixture/validate                              validate without saving
+
+PUT    /api/v1/fixture/{fixtureId}/universe                  body: {universe: UInt32}
+DELETE /api/v1/fixture/{fixtureId}/universe                  clear assignment
+
+POST   /api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger
+                                                             body (optional): {stop_after_ms: UInt32}
+```
+
+#### Two Ways to Control Fixtures
+
+1. **Animation tracks.** `Track` has `fixture_id` alongside `creature_id` — exactly one is set per track. Mixed creature + fixture animations work fine; the playback runner branches on `trackState.fixtureId` and resolves the universe via `fixtureUniverseMap` (independent of the animation session's universe).
+2. **Patterns + bindings.** A `FixturePattern` is a named snapshot of channel values with fade-in / hold / fade-out (`hold_ms=0` means "hold until external stop"). A `FixtureBinding` declaratively says *"when creature X enters activity (reason, state), apply pattern P."* Bindings live on the fixture config — fixtures are self-describing.
+
+#### Runtime Pieces
+
+- **`FixturePatternRunner`** owns `unordered_map<fixtureId_t, ActivePattern>`. `start()` does a **last-wins smooth handoff** (current rendered bytes become the new `startValues` — no DMX snap). `stop()` transitions to FadeOut.
+- **`FixturePatternTickEvent`** is a self-scheduling event that reschedules every **20 ms (~50 Hz)** while any patterns are active. Pauses when the map is empty; re-armed by the dispatcher on the next trigger.
+- **`FixtureBindingDispatcher`** is edge-triggered. Called from `CreatureService::setActivityState` via the `fixtureActivityHook` `std::function`. Tracks `(lastReason, lastState)` per creature so identical re-assertions are no-ops. When a binding starts matching: `runner->start()`. When it stops matching: `runner->stop()`.
+- **`fixtureActivityHook`** decouples `CreatureService` from the fixture subsystem at link time. Main binary installs the hook; tests leave it empty.
+
+#### Files Map
+
+- **Model**: `src/model/DmxFixture.{h,cpp}`, `src/model/Track.{h,cpp}` (with `fixture_id`)
+- **DB**: `src/server/fixture/{helpers,upsert,get,getall}.cpp`
+- **REST**: `src/server/ws/controller/DmxFixtureController.h`, `src/server/ws/service/DmxFixtureService.{h,cpp}`, `src/server/ws/dto/{FixtureConfigValidationDto,SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto}.h`
+- **Runtime**: `src/server/fixture/{FixturePatternRunner,FixturePatternTickEvent,FixtureBindingDispatcher}.{h,cpp}`
+- **Hook**: `src/server/ws/service/FixtureActivityHook.h`
+- **Globals**: `src/server/main.cpp` (`fixtureCache`, `fixtureUniverseMap`, `fixturePatternRunner`, `fixtureBindingDispatcher`, `fixtureActivityHook`)
+- **Collection**: `"fixtures"` in `creature_server` (`FIXTURES_COLLECTION` in `config.h`)
+
 ### Event Loop System
 
 #### Critical Timing Requirements
@@ -263,13 +362,14 @@ Docker-based deployment with multi-architecture support (AMD64/ARM64). GitHub Ac
 
 ## Important Notes for AI Agents
 
-1. **Always require `mouth_slot`** - All creature configurations must include this field (uint8_t)
-2. **Never store universe in Creature model** - Universe is runtime state only, stored in `creatureUniverseMap`
-3. **Controller registration is the entry point** - Controllers must call `/api/v1/creature/register` on startup
-4. **Database is a cache** - Don't rely on database as source of truth for creature configs; controller's JSON file is authoritative
-5. **Universe mapping is runtime-only** - `creatureUniverseMap` is not persisted and that's intentional
-6. **Event loop timing is sacred** - Never modify code that could affect the 1ms event loop interval
-7. **Code formatting matters** - Always use clang-format before committing
+1. **All entity IDs are UUIDs** - `Creature.id`, `Animation.id`, `Track.id`, `DmxFixture.id`, `FixturePattern.id`, etc. are all RFC 4122 UUIDs. This project never uses MongoDB OIDs. Existing comments saying "MongoDB OID" are stale.
+2. **Always require `mouth_slot`** - All creature configurations must include this field (uint8_t)
+3. **Never store universe in Creature model** - Universe is runtime state only for creatures, stored in `creatureUniverseMap`. *Fixtures are different — see DMX Fixture Model section.*
+4. **Controller registration is the entry point for creatures** - Controllers must call `/api/v1/creature/register` on startup. Fixtures do not have a registration step (managed entirely from the Swift app via REST CRUD).
+5. **Creature DB is a cache; fixture DB is the source of truth** - Don't rely on database as source of truth for creature configs (controller's JSON file is). For fixtures, MongoDB is authoritative.
+6. **Track must have exactly one of `creature_id` / `fixture_id`** - Setting both, or neither, is a 400 validation error.
+7. **Event loop timing is sacred** - Never modify code that could affect the 1ms event loop interval
+8. **Code formatting matters** - Always use clang-format before committing
 
 ## Future Work
 

@@ -13,6 +13,8 @@ using json = nlohmann::json;
 
 namespace creatures {
 
+Result<creatures::Track> Database::parseTrackJson(json trackJson) { return trackFromJson(std::move(trackJson)); }
+
 Result<creatures::Track> Database::trackFromJson(json trackJson) {
 
     debug("attempting to create a Track from JSON via trackFromJson()");

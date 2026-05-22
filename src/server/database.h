@@ -154,6 +154,12 @@ class Database {
                                                           std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
+     * Public wrapper around the private `trackFromJson` — exposed for testing the dual-id
+     * (creature_id XOR fixture_id) validation.
+     */
+    static Result<creatures::Track> parseTrackJson(json trackJson);
+
+    /**
      * Ensure supporting indexes (including TTL) for the ad-hoc animation collection exist.
      */
     Result<void> ensureAdHocAnimationIndexes(uint32_t ttlHours);

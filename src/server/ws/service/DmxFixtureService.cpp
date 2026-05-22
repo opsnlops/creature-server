@@ -11,6 +11,10 @@
 #include "exception/exception.h"
 #include "model/DmxFixture.h"
 #include "server/database.h"
+#include "server/eventloop/eventloop.h"
+#include "server/fixture/FixtureBindingDispatcher.h"
+#include "server/fixture/FixturePatternRunner.h"
+#include "server/fixture/FixturePatternTickEvent.h"
 #include "server/ws/dto/FixtureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "util/JsonParser.h"
@@ -26,6 +30,8 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<ObjectCache<fixtureId_t, DmxFixture>> fixtureCache;
 extern std::shared_ptr<ObjectCache<fixtureId_t, universe_t>> fixtureUniverseMap;
+extern std::shared_ptr<FixturePatternRunner> fixturePatternRunner;
+extern std::shared_ptr<EventLoop> eventLoop;
 } // namespace creatures
 
 namespace creatures ::ws {
@@ -355,6 +361,112 @@ DmxFixtureService::validateFixtureConfig(const std::string &jsonFixture, std::sh
     if (span)
         span->setSuccess();
     return resultDto;
+}
+
+oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const oatpp::String &inFixtureId,
+                                                                          const oatpp::String &inPatternId,
+                                                                          std::optional<uint32_t> stopAfterMs,
+                                                                          std::shared_ptr<RequestSpan> parentSpan) {
+
+    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
+    const std::string patternId = inPatternId ? std::string(inPatternId) : "";
+
+    if (fixtureId.empty()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
+    }
+    if (patternId.empty()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "patternId is required");
+    }
+    if (!creatures::fixturePatternRunner) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture pattern runner unavailable");
+    }
+    if (!creatures::fixtureCache) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture cache unavailable");
+    }
+    if (!creatures::fixtureUniverseMap) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture universe map unavailable");
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("DmxFixtureService.triggerPattern", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("fixture.id", fixtureId);
+        span->setAttribute("pattern.id", patternId);
+        if (stopAfterMs.has_value()) {
+            span->setAttribute("trigger.stop_after_ms", static_cast<int64_t>(*stopAfterMs));
+        }
+    }
+
+    // Pull the fixture from cache (falling back to DB).
+    std::shared_ptr<DmxFixture> fixture;
+    try {
+        fixture = creatures::fixtureCache->get(fixtureId);
+    } catch (const std::out_of_range &) {
+        auto dbResult = creatures::db->getFixture(fixtureId, span);
+        if (!dbResult.isSuccess()) {
+            if (span)
+                span->setError(dbResult.getError()->getMessage());
+            OATPP_ASSERT_HTTP(false, Status::CODE_404, dbResult.getError()->getMessage().c_str());
+        }
+        fixture = std::make_shared<DmxFixture>(dbResult.getValue().value());
+        creatures::fixtureCache->put(fixtureId, fixture);
+    }
+
+    const FixturePattern *pattern = fixture->findPatternById(patternId);
+    if (!pattern) {
+        const auto message = fmt::format("Fixture {} has no pattern with id '{}'", fixtureId, patternId);
+        if (span)
+            span->setError(message);
+        OATPP_ASSERT_HTTP(false, Status::CODE_404, message.c_str());
+    }
+
+    if (!creatures::fixtureUniverseMap->contains(fixtureId)) {
+        const auto message =
+            fmt::format("Fixture {} has no assigned_universe; assign one before triggering", fixtureId);
+        if (span)
+            span->setError(message);
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+    }
+    const universe_t universe = *creatures::fixtureUniverseMap->get(fixtureId);
+    const framenum_t currentFrame = creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0;
+
+    if (!creatures::fixturePatternRunner->start(*fixture, *pattern, universe, /*creatureId=*/"", currentFrame)) {
+        const auto message = fmt::format("Failed to start pattern {} on fixture {}", patternId, fixtureId);
+        if (span)
+            span->setError(message);
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, message.c_str());
+    }
+
+    // Arm a tick if there isn't already one pending.
+    if (creatures::fixturePatternRunner->tryArm() && creatures::eventLoop) {
+        auto tickEvent = std::make_shared<FixturePatternTickEvent>(currentFrame);
+        creatures::eventLoop->scheduleEvent(tickEvent);
+    }
+
+    // Schedule the auto-stop if the caller asked for one. We piggyback on the existing stop()
+    // path by scheduling a one-shot lambda event via a small ad-hoc Event subclass below.
+    if (stopAfterMs.has_value() && creatures::eventLoop) {
+        struct AutoStopEvent : EventBase<AutoStopEvent> {
+            std::string fid;
+            std::shared_ptr<FixturePatternRunner> runner;
+            AutoStopEvent(framenum_t f, std::string id, std::shared_ptr<FixturePatternRunner> r)
+                : EventBase(f), fid(std::move(id)), runner(std::move(r)) {}
+            Result<framenum_t> executeImpl() {
+                if (runner)
+                    runner->stop(fid, this->frameNumber);
+                return Result<framenum_t>{this->frameNumber};
+            }
+        };
+        const auto stopFrame = currentFrame + static_cast<framenum_t>(*stopAfterMs);
+        auto stopEvent = std::make_shared<AutoStopEvent>(stopFrame, fixtureId, creatures::fixturePatternRunner);
+        creatures::eventLoop->scheduleEvent(stopEvent);
+    }
+
+    if (span)
+        span->setSuccess();
+
+    return creatures::convertToDto(*fixture);
 }
 
 void DmxFixtureService::hydrateFromDatabase(std::shared_ptr<OperationSpan> parentSpan) {

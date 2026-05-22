@@ -19,6 +19,7 @@
 #include "server/ws/dto/FixtureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/SetFixtureUniverseRequestDto.h"
+#include "server/ws/dto/TriggerFixturePatternRequestDto.h"
 #include "server/ws/service/DmxFixtureService.h"
 #include "util/websocketUtils.h"
 
@@ -251,6 +252,57 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         if (span)
             span->setHttpStatus(200);
         scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
+        return createDtoResponse(Status::CODE_200, result);
+    }
+
+    ENDPOINT_INFO(triggerFixturePattern) {
+        info->summary = "Manually trigger a fixture pattern (bypasses binding match)";
+        info->description = "Fires the pattern directly. Useful for ad-hoc UI control and testing. The fixture must "
+                            "have an assigned universe (`PUT /api/v1/fixture/{id}/universe`).";
+        info->addTag("Fixtures");
+        info->addResponse<Object<creatures::DmxFixtureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->pathParams["fixtureId"].description = "Fixture UUID";
+        info->pathParams["patternId"].description = "Pattern UUID (must exist on the fixture)";
+    }
+    ENDPOINT("POST", "api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger", triggerFixturePattern,
+             PATH(String, fixtureId), PATH(String, patternId),
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        const auto span =
+            creatures::observability
+                ? creatures::observability->createRequestSpan(
+                      "POST /api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger", "POST",
+                      "api/v1/fixture/" + std::string(fixtureId) + "/pattern/" + std::string(patternId) + "/trigger",
+                      extractTraceparent(request))
+                : nullptr;
+        addHttpRequestAttributes(span, request);
+        if (creatures::metrics)
+            creatures::metrics->incrementRestRequestsProcessed();
+        if (span) {
+            span->setAttribute("endpoint", "triggerFixturePattern");
+            span->setAttribute("fixture.id", std::string(fixtureId));
+            span->setAttribute("pattern.id", std::string(patternId));
+        }
+
+        // Body is optional. If present, it must parse cleanly.
+        std::optional<uint32_t> stopAfterMs;
+        const oatpp::String body = request->readBodyToString();
+        if (body && body->size() > 0) {
+            try {
+                const auto parsed = nlohmann::json::parse(std::string(body));
+                if (parsed.contains("stop_after_ms") && !parsed["stop_after_ms"].is_null()) {
+                    stopAfterMs = parsed["stop_after_ms"].get<uint32_t>();
+                }
+            } catch (const std::exception &e) {
+                OATPP_ASSERT_HTTP(false, Status::CODE_400, fmt::format("Invalid trigger body: {}", e.what()).c_str());
+            }
+        }
+
+        const auto result = m_service.triggerPattern(fixtureId, patternId, stopAfterMs, span);
+
+        if (span)
+            span->setHttpStatus(200);
         return createDtoResponse(Status::CODE_200, result);
     }
 

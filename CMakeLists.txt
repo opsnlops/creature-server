@@ -561,10 +561,14 @@ enable_testing()
 
 add_executable(creature-server-test
         tests/model/Creature_test.cpp
+        tests/model/DmxFixture_test.cpp
         tests/model/LogItem_test.cpp
         tests/model/Animation_test.cpp
         tests/model/AnimationMetadata_test.cpp
+        tests/model/Track_dual_id_test.cpp
         tests/runtime/Activity_test.cpp
+        tests/fixture/FixturePatternRunner_test.cpp
+        tests/fixture/FixtureBindingDispatcher_test.cpp
         tests/server/ws/CreatureActivityMessage_test.cpp
         tests/server/ws/CreatureService_streaming_test.cpp
         tests/server/ws/CreatureService_validate_test.cpp
@@ -577,10 +581,13 @@ add_executable(creature-server-test
         src/model/SortBy.h
         src/model/Track.cpp
         src/model/Creature.cpp
+        src/model/DmxFixture.cpp
         src/model/Input.cpp
         src/model/StreamFrame.cpp
         src/model/VirtualStatusLights.cpp
         src/server/creature/helpers.cpp
+        src/server/fixture/helpers.cpp
+        src/server/animation/helpers.cpp
         src/server/ws/service/CreatureService.cpp
         src/server/ws/dto/websocket/MessageTypes.cpp
         src/util/JsonParser.cpp
