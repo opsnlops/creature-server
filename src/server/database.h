@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,7 @@ using json = nlohmann::json;
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
 #include "model/Creature.h"
+#include "model/DmxFixture.h"
 #include "model/Playlist.h"
 #include "model/SortBy.h"
 #include "model/Track.h"
@@ -129,6 +131,28 @@ class Database {
     Result<creatures::Playlist> upsertPlaylist(const std::string &playlistJson,
                                                std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
+    // DMX Fixture stuff
+    Result<creatures::DmxFixture> getFixture(const fixtureId_t &fixtureId,
+                                             const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<json> getFixtureJson(const fixtureId_t &fixtureId,
+                                const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<std::vector<creatures::DmxFixture>>
+    getAllFixtures(const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<creatures::DmxFixture> upsertFixture(const std::string &fixtureJson,
+                                                const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<void> deleteFixture(const fixtureId_t &fixtureId,
+                               const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<void> setFixtureUniverse(const fixtureId_t &fixtureId, std::optional<universe_t> universe,
+                                    const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    static Result<bool> validateFixtureJson(const nlohmann::json &json);
+
+    /**
+     * Public wrapper around the private `fixtureFromJson` for callers that only need to parse + validate
+     * a fixture config (e.g. validate-only endpoints).
+     */
+    static Result<creatures::DmxFixture> parseFixtureJson(json fixtureJson,
+                                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
     /**
      * Ensure supporting indexes (including TTL) for the ad-hoc animation collection exist.
      */
@@ -182,6 +206,9 @@ class Database {
 
     static Result<creatures::Creature> creatureFromJson(json creatureJson,
                                                         std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    static Result<creatures::DmxFixture> fixtureFromJson(json fixtureJson,
+                                                         std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     static Result<creatures::Animation> animationFromJson(json animationJson);
     static Result<creatures::AnimationMetadata> animationMetadataFromJson(json animationMetadataJson);

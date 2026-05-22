@@ -31,6 +31,7 @@
 #define ANIMATIONS_COLLECTION "animations"
 #define PLAYLISTS_COLLECTION "playlists"
 #define ADHOC_ANIMATIONS_COLLECTION "adhoc_animations"
+#define FIXTURES_COLLECTION "fixtures"
 
 #define SOUND_FILE_LOCATION_ENV "SOUND_FILE_LOCATION"
 #define DEFAULT_SOUND_FILE_LOCATION "sounds/"

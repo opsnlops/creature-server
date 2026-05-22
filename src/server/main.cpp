@@ -82,6 +82,19 @@ std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
  */
 std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMap;
 
+/**
+ * Cache of DmxFixtures (lights, smoke machines, foggers, etc.). Unlike creatures, fixtures are
+ * managed entirely from the Creature Console Swift app and the server's MongoDB is the source
+ * of truth. This cache is hydrated from the DB at startup.
+ */
+std::shared_ptr<ObjectCache<fixtureId_t, DmxFixture>> fixtureCache;
+
+/**
+ * Maps fixture IDs to their currently assigned universe. Hydrated at startup from each fixture's
+ * persisted assigned_universe field. Updated whenever the universe assignment changes.
+ */
+std::shared_ptr<ObjectCache<fixtureId_t, universe_t>> fixtureUniverseMap;
+
 std::shared_ptr<GPIO> gpioPins;
 std::shared_ptr<SystemCounters> metrics;
 std::shared_ptr<StatusLights> statusLights;
@@ -278,6 +291,11 @@ int main(const int argc, char **argv) {
     // Create the creature-to-universe mapping cache
     creatures::creatureUniverseMap = std::make_shared<creatures::ObjectCache<creatureId_t, universe_t>>();
     debug("Created the creature-to-universe mapping cache");
+
+    // Create the DmxFixture cache and universe mapping (DB hydration arrives in a follow-up commit).
+    creatures::fixtureCache = std::make_shared<creatures::ObjectCache<fixtureId_t, creatures::DmxFixture>>();
+    creatures::fixtureUniverseMap = std::make_shared<creatures::ObjectCache<fixtureId_t, universe_t>>();
+    debug("Created the DmxFixture cache and universe map");
 
     // Create the sensor data cache
     creatures::sensorDataCache = std::make_shared<creatures::SensorDataCache>();

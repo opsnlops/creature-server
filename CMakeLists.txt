@@ -322,6 +322,7 @@ file(GLOB serverFiles
         src/server/audio/*
         src/server/config/*
         src/server/creature/*
+        src/server/fixture/*
         src/server/eventloop/*
         src/server/eventloop/events/*
         src/server/jobs/*
@@ -376,6 +377,8 @@ add_executable(creature-server
         src/model/CacheInvalidation.cpp
         src/model/Creature.h
         src/model/Creature.cpp
+        src/model/DmxFixture.h
+        src/model/DmxFixture.cpp
         src/model/Input.h
         src/model/Input.cpp
         src/model/LogLevel.h
