@@ -135,9 +135,9 @@ Result<void> Database::setFixtureUniverse(const fixtureId_t &fixtureId, std::opt
     auto span = creatures::observability->createChildOperationSpan("Database.setFixtureUniverse", parentSpan);
     if (span) {
         span->setAttribute("fixture.id", fixtureId);
-        span->setAttribute("fixture.assigned_universe.set", universe.has_value());
+        span->setAttribute("fixture.universe.set", universe.has_value());
         if (universe.has_value()) {
-            span->setAttribute("fixture.assigned_universe", static_cast<int64_t>(*universe));
+            span->setAttribute("fixture.universe", static_cast<int64_t>(*universe));
         }
     }
 
