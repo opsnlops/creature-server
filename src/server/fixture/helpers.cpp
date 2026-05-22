@@ -22,6 +22,17 @@ extern std::shared_ptr<ObservabilityManager> observability;
 
 namespace {
 
+// Hard caps on fixture array sizes. Picked to be comfortably larger than any plausible
+// real fixture (a single device with hundreds of channels or thousands of patterns is not
+// a thing that exists) but small enough to neutralize JSON-bomb DoS attempts. A single
+// 16 MB Mongo document can pack a lot of bindings; without these the validate endpoint
+// is an N-query amplifier (see security review H2).
+constexpr size_t MAX_CHANNELS_PER_FIXTURE = 64;
+constexpr size_t MAX_PATTERNS_PER_FIXTURE = 256;
+constexpr size_t MAX_VALUES_PER_PATTERN = 64;
+constexpr size_t MAX_BINDINGS_PER_FIXTURE = 256;
+
+
 template <typename T> Result<T> invalidData(const std::shared_ptr<OperationSpan> &span, const std::string &message) {
     warn(message);
     if (span) {
@@ -87,12 +98,17 @@ Result<creatures::DmxFixture> Database::fixtureFromJson(json fixtureJson, std::s
             fixture.assigned_universe = fixtureJson["assigned_universe"].get<universe_t>();
         }
 
-        // channels (required, non-empty)
+        // channels (required, non-empty, bounded)
         if (!fixtureJson.contains("channels") || !fixtureJson["channels"].is_array()) {
             return invalidData<DmxFixture>(span, "Missing or non-array field 'channels' in fixture JSON");
         }
         if (fixtureJson["channels"].empty()) {
             return invalidData<DmxFixture>(span, "Fixture 'channels' must be non-empty");
+        }
+        if (fixtureJson["channels"].size() > MAX_CHANNELS_PER_FIXTURE) {
+            return invalidData<DmxFixture>(
+                span, fmt::format("Fixture 'channels' must have at most {} entries; got {}",
+                                  MAX_CHANNELS_PER_FIXTURE, fixtureJson["channels"].size()));
         }
 
         std::set<std::string> seenChannelNames;
@@ -139,11 +155,16 @@ Result<creatures::DmxFixture> Database::fixtureFromJson(json fixtureJson, std::s
                                   fixture.id, fixture.channel_offset, maxOffset));
         }
 
-        // patterns (optional)
+        // patterns (optional, bounded)
         std::set<std::string> seenPatternIds;
         if (fixtureJson.contains("patterns") && !fixtureJson["patterns"].is_null()) {
             if (!fixtureJson["patterns"].is_array()) {
                 return invalidData<DmxFixture>(span, "Fixture 'patterns' must be an array");
+            }
+            if (fixtureJson["patterns"].size() > MAX_PATTERNS_PER_FIXTURE) {
+                return invalidData<DmxFixture>(
+                    span, fmt::format("Fixture 'patterns' must have at most {} entries; got {}",
+                                      MAX_PATTERNS_PER_FIXTURE, fixtureJson["patterns"].size()));
             }
             for (const auto &patternJson : fixtureJson["patterns"]) {
                 FixturePattern p;
@@ -170,6 +191,11 @@ Result<creatures::DmxFixture> Database::fixtureFromJson(json fixtureJson, std::s
                     return invalidData<DmxFixture>(span,
                                                    fmt::format("Pattern '{}' missing required 'values' array", p.id));
                 }
+                if (patternJson["values"].size() > MAX_VALUES_PER_PATTERN) {
+                    return invalidData<DmxFixture>(
+                        span, fmt::format("Pattern '{}' has {} values, exceeds max {}", p.id,
+                                          patternJson["values"].size(), MAX_VALUES_PER_PATTERN));
+                }
                 for (const auto &valueJson : patternJson["values"]) {
                     if (!valueJson.contains("channel") || !valueJson["channel"].is_string()) {
                         return invalidData<DmxFixture>(span, "Pattern value missing 'channel' (string)");
@@ -195,10 +221,15 @@ Result<creatures::DmxFixture> Database::fixtureFromJson(json fixtureJson, std::s
             }
         }
 
-        // bindings (optional)
+        // bindings (optional, bounded)
         if (fixtureJson.contains("bindings") && !fixtureJson["bindings"].is_null()) {
             if (!fixtureJson["bindings"].is_array()) {
                 return invalidData<DmxFixture>(span, "Fixture 'bindings' must be an array");
+            }
+            if (fixtureJson["bindings"].size() > MAX_BINDINGS_PER_FIXTURE) {
+                return invalidData<DmxFixture>(
+                    span, fmt::format("Fixture 'bindings' must have at most {} entries; got {}",
+                                      MAX_BINDINGS_PER_FIXTURE, fixtureJson["bindings"].size()));
             }
             static const std::set<std::string> validReasons = {"play",     "playlist",  "ad_hoc",   "idle",
                                                                "disabled", "cancelled", "streaming"};
