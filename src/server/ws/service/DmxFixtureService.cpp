@@ -496,20 +496,46 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const 
 
     // Schedule the auto-stop if the caller asked for one. We piggyback on the existing stop()
     // path by scheduling a one-shot lambda event via a small ad-hoc Event subclass below.
+    //
+    // Trace linkage: the AutoStopEvent fires ~stop_after_ms later, well after the trigger
+    // request span has ended. Capturing trace_id+span_id from the trigger span at schedule
+    // time lets the AutoStopEvent emit them as `trigger.trace_id` / `trigger.span_id`
+    // attributes when it runs, so Honeycomb can correlate trigger → auto-stop.
     if (stopAfterMs.has_value() && creatures::eventLoop) {
         struct AutoStopEvent : EventBase<AutoStopEvent> {
             std::string fid;
             std::shared_ptr<FixturePatternRunner> runner;
-            AutoStopEvent(framenum_t f, std::string id, std::shared_ptr<FixturePatternRunner> r)
-                : EventBase(f), fid(std::move(id)), runner(std::move(r)) {}
+            std::string triggerTraceId;
+            std::string triggerSpanId;
+            AutoStopEvent(framenum_t f, std::string id, std::shared_ptr<FixturePatternRunner> r, std::string traceId,
+                          std::string spanId)
+                : EventBase(f), fid(std::move(id)), runner(std::move(r)), triggerTraceId(std::move(traceId)),
+                  triggerSpanId(std::move(spanId)) {}
             Result<framenum_t> executeImpl() {
+                auto autoStopSpan = creatures::observability
+                                        ? creatures::observability->createChildOperationSpan(
+                                              "FixturePatternRunner.autoStop", std::shared_ptr<OperationSpan>{})
+                                        : nullptr;
+                if (autoStopSpan) {
+                    autoStopSpan->setAttribute("fixture.id", fid);
+                    if (!triggerTraceId.empty()) {
+                        autoStopSpan->setAttribute("trigger.trace_id", triggerTraceId);
+                        autoStopSpan->setAttribute("trigger.span_id", triggerSpanId);
+                    }
+                }
                 if (runner)
-                    runner->stop(fid, this->frameNumber);
+                    runner->stop(fid, this->frameNumber, autoStopSpan);
+                if (autoStopSpan)
+                    autoStopSpan->setSuccess();
                 return Result<framenum_t>{this->frameNumber};
             }
         };
         const auto stopFrame = currentFrame + static_cast<framenum_t>(*stopAfterMs);
-        auto stopEvent = std::make_shared<AutoStopEvent>(stopFrame, fixtureId, creatures::fixturePatternRunner);
+        // Capture trigger trace context at schedule time — the request span is still live here.
+        const std::string traceId = span ? span->getTraceIdHex() : std::string{};
+        const std::string spanId = span ? span->getSpanIdHex() : std::string{};
+        auto stopEvent = std::make_shared<AutoStopEvent>(stopFrame, fixtureId, creatures::fixturePatternRunner,
+                                                         traceId, spanId);
         creatures::eventLoop->scheduleEvent(stopEvent);
     }
 
