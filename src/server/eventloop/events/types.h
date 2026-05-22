@@ -229,9 +229,11 @@ class PlaybackRunnerEvent : public EventBase<PlaybackRunnerEvent> {
     /**
      * Emit DMX frames for all tracks at the current frame
      *
+     * @param runnerSpan optional sampling span for recording per-track attributes
+     *                   (track.kind, fixture.id, creature.id, etc.) when sampled.
      * @return Success or error
      */
-    Result<framenum_t> emitDmxFrames();
+    Result<framenum_t> emitDmxFrames(std::shared_ptr<class SamplingSpan> runnerSpan = nullptr);
 
     /**
      * Check if all animation tracks have finished

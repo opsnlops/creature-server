@@ -144,7 +144,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
     session_->invokeOnStart();
 
     // Emit DMX frames for all tracks at current frame
-    if (auto dmxResult = emitDmxFrames(); !dmxResult.isSuccess()) {
+    if (auto dmxResult = emitDmxFrames(runnerSpan); !dmxResult.isSuccess()) {
         error("Failed to emit DMX frames: {}", dmxResult.getError()->getMessage());
         if (runnerSpan) {
             runnerSpan->setError(dmxResult.getError()->getMessage());
@@ -257,7 +257,7 @@ void PlaybackRunnerEvent::performTeardown() {
     debug("PlaybackRunnerEvent teardown complete");
 }
 
-Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
+Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames(std::shared_ptr<SamplingSpan> runnerSpan) {
     trace("emitDmxFrames called for frame {}", this->frameNumber);
 
     if (!creatureCache) {
@@ -328,6 +328,12 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
             if (!universePtr) {
                 debug("Fixture {} has no universe assignment; skipping frame {}", trackState.fixtureId,
                       trackState.currentFrameIndex);
+                if (runnerSpan) {
+                    runnerSpan->setAttribute("track.kind", "fixture");
+                    runnerSpan->setAttribute("fixture.id", trackState.fixtureId);
+                    runnerSpan->setAttribute("fixture.frame_skipped", true);
+                    runnerSpan->setAttribute("fixture.skip_reason", "no_assigned_universe");
+                }
                 // Advance anyway so the track eventually finishes; just skip emitting DMX.
                 trackState.currentFrameIndex++;
                 trackState.nextDispatchFrame = this->frameNumber + frameStepForMs(session_->getMsPerFrame());
@@ -336,6 +342,13 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
             targetUniverse = *universePtr;
             channelOffset = fixture->channel_offset;
             targetLabel = fmt::format("fixture {} ({})", fixture->name, trackState.fixtureId);
+            if (runnerSpan) {
+                runnerSpan->setAttribute("track.kind", "fixture");
+                runnerSpan->setAttribute("fixture.id", trackState.fixtureId);
+                runnerSpan->setAttribute("fixture.name", fixture->name);
+                runnerSpan->setAttribute("fixture.universe", static_cast<int64_t>(targetUniverse));
+                runnerSpan->setAttribute("fixture.channel_offset", static_cast<int64_t>(channelOffset));
+            }
         } else {
             // Creature track — original path.
             std::shared_ptr<Creature> creature;
@@ -359,6 +372,12 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
             channelOffset = creature->channel_offset;
             targetUniverse = session_->getUniverse();
             targetLabel = fmt::format("creature {} ({})", creature->name, trackState.creatureId);
+            if (runnerSpan) {
+                runnerSpan->setAttribute("track.kind", "creature");
+                runnerSpan->setAttribute("creature.id", trackState.creatureId);
+                runnerSpan->setAttribute("creature.name", creature->name);
+                runnerSpan->setAttribute("creature.channel_offset", static_cast<int64_t>(channelOffset));
+            }
         }
 
         // Create DMX event for this frame
