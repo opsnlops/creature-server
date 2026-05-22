@@ -246,6 +246,9 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             OATPP_ASSERT_HTTP(false, Status::CODE_400, "Request body must include 'universe'");
         }
         const universe_t universe = static_cast<universe_t>(*body->universe);
+        // E1.31 universes are valid in [1, 63999]. Reject 0 (reserved) and >63999.
+        OATPP_ASSERT_HTTP(universe >= 1 && universe <= 63999, Status::CODE_400,
+                          "universe must be in [1, 63999]");
 
         if (span) {
             span->setAttribute("endpoint", "setFixtureUniverse");

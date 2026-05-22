@@ -93,9 +93,15 @@ Result<creatures::DmxFixture> Database::fixtureFromJson(json fixtureJson, std::s
         }
         fixture.channel_offset = static_cast<uint16_t>(channelOffset);
 
-        // assigned_universe (optional, nullable)
+        // assigned_universe (optional, nullable). E1.31 universes are valid in [1, 63999];
+        // 0 is reserved and values above 63999 are out of spec (security review L1).
         if (fixtureJson.contains("assigned_universe") && !fixtureJson["assigned_universe"].is_null()) {
-            fixture.assigned_universe = fixtureJson["assigned_universe"].get<universe_t>();
+            const auto rawUniverse = fixtureJson["assigned_universe"].get<int64_t>();
+            if (rawUniverse < 1 || rawUniverse > 63999) {
+                return invalidData<DmxFixture>(
+                    span, fmt::format("Fixture 'assigned_universe' must be in [1, 63999]; got {}", rawUniverse));
+            }
+            fixture.assigned_universe = static_cast<universe_t>(rawUniverse);
         }
 
         // channels (required, non-empty, bounded)
