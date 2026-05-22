@@ -1,9 +1,12 @@
 
 #include <oatpp/core/Types.hpp>
 
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -34,6 +37,26 @@ extern std::shared_ptr<ObjectCache<fixtureId_t, universe_t>> fixtureUniverseMap;
 extern std::shared_ptr<FixturePatternRunner> fixturePatternRunner;
 extern std::shared_ptr<EventLoop> eventLoop;
 } // namespace creatures
+
+namespace {
+
+// Per-fixture mutex map for serializing universe assignment ops. Two concurrent
+// PUT /universe calls for the same fixture could land DB writes in order A→B
+// and cache writes in order B→A, leaving the DB and the runtime map disagreeing
+// on which universe to send to. The mutex map ensures (DB write + cache update)
+// is one critical section per fixture.
+std::mutex fixtureUniverseOpMapMutex;
+std::unordered_map<fixtureId_t, std::shared_ptr<std::mutex>> fixtureUniverseOpMutexes;
+
+std::shared_ptr<std::mutex> getUniverseOpMutex(const fixtureId_t &fixtureId) {
+    std::lock_guard<std::mutex> lock(fixtureUniverseOpMapMutex);
+    auto &slot = fixtureUniverseOpMutexes[fixtureId];
+    if (!slot)
+        slot = std::make_shared<std::mutex>();
+    return slot;
+}
+
+} // namespace
 
 namespace creatures ::ws {
 
@@ -264,6 +287,11 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::setFixtureUniverse(co
             span->setAttribute("fixture.universe", static_cast<int64_t>(*universe));
         }
     }
+
+    // Serialize concurrent (DB write + cache update + re-fetch) ops for this fixture
+    // so two racing PUTs can't leave the DB and runtime map disagreeing.
+    auto opMutex = getUniverseOpMutex(fixtureId);
+    std::lock_guard<std::mutex> opLock(*opMutex);
 
     auto setResult = creatures::db->setFixtureUniverse(fixtureId, universe, span);
     if (!setResult.isSuccess()) {
