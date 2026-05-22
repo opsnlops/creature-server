@@ -322,7 +322,10 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
                 fixtureCache->put(trackState.fixtureId, fixture);
             }
 
-            if (!fixtureUniverseMap->contains(trackState.fixtureId)) {
+            // Single locked lookup — a concurrent DELETE /universe between contains/get
+            // would have thrown std::out_of_range on the event-loop thread, which is fatal.
+            const auto universePtr = fixtureUniverseMap->tryGet(trackState.fixtureId);
+            if (!universePtr) {
                 debug("Fixture {} has no universe assignment; skipping frame {}", trackState.fixtureId,
                       trackState.currentFrameIndex);
                 // Advance anyway so the track eventually finishes; just skip emitting DMX.
@@ -330,7 +333,7 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames() {
                 trackState.nextDispatchFrame = this->frameNumber + frameStepForMs(session_->getMsPerFrame());
                 continue;
             }
-            targetUniverse = *fixtureUniverseMap->get(trackState.fixtureId);
+            targetUniverse = *universePtr;
             channelOffset = fixture->channel_offset;
             targetLabel = fmt::format("fixture {} ({})", fixture->name, trackState.fixtureId);
         } else {

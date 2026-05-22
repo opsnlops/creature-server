@@ -42,6 +42,21 @@ template <typename Key, typename Value> class ObjectCache {
         return it->second;
     }
 
+    /**
+     * Lookup-or-null. Returns nullptr if the key is absent, never throws. Prefer this over
+     * the contains() + get() pattern, which has a TOCTOU window where the entry can be
+     * removed between the two calls — `tryGet` collapses both operations into a single
+     * locked section. Returning a shared_ptr keeps the value alive for the caller.
+     */
+    std::shared_ptr<Value> tryGet(const Key &key) const {
+        std::shared_lock lock(mutex_);
+        auto it = map_.find(key);
+        if (it == map_.end()) {
+            return nullptr;
+        }
+        return it->second;
+    }
+
     void remove(const Key &key) {
         std::unique_lock lock(mutex_);
         map_.erase(key);

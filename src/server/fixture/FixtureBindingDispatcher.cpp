@@ -96,11 +96,12 @@ void FixtureBindingDispatcher::onCreatureActivity(const creatureId_t &creatureId
                     warn("Binding on fixture {} references unknown pattern {}", fixture->id, binding.pattern_id);
                     continue;
                 }
-                if (!fixtureUniverseMap || !fixtureUniverseMap->contains(fid)) {
+                const auto universePtr = fixtureUniverseMap ? fixtureUniverseMap->tryGet(fid) : nullptr;
+                if (!universePtr) {
                     debug("Skipping pattern {} on fixture {} — no assigned_universe", binding.pattern_id, fid);
                     continue;
                 }
-                const universe_t universe = *fixtureUniverseMap->get(fid);
+                const universe_t universe = *universePtr;
                 if (fixturePatternRunner->start(*fixture, *pattern, universe, creatureId, currentFrame)) {
                     startedAny = true;
                 }

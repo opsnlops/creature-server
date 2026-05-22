@@ -421,14 +421,18 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const 
         OATPP_ASSERT_HTTP(false, Status::CODE_404, message.c_str());
     }
 
-    if (!creatures::fixtureUniverseMap->contains(fixtureId)) {
+    // Resolve universe via a single locked lookup. The previous contains/get pattern had
+    // a TOCTOU window — a concurrent DELETE /universe between the two calls could throw
+    // std::out_of_range out of the service.
+    const auto universePtr = creatures::fixtureUniverseMap->tryGet(fixtureId);
+    if (!universePtr) {
         const auto message =
             fmt::format("Fixture {} has no assigned_universe; assign one before triggering", fixtureId);
         if (span)
             span->setError(message);
         OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
     }
-    const universe_t universe = *creatures::fixtureUniverseMap->get(fixtureId);
+    const universe_t universe = *universePtr;
     const framenum_t currentFrame = creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0;
 
     if (!creatures::fixturePatternRunner->start(*fixture, *pattern, universe, /*creatureId=*/"", currentFrame)) {
