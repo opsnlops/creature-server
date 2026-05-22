@@ -330,6 +330,53 @@ The project enforces strict compiler warnings:
 
 **Code Formatting**: Always run `clang-format` on modified files. The project includes a `.clang-format` configuration file in the root directory that defines the required formatting style.
 
+### Required PR Reviews
+
+**Every PR must receive two specialized AI reviews before merge.** Run both in parallel — they're independent and a single `Agent` tool call message with two invocations gets them in flight at once.
+
+#### 1. Adversarial security review
+
+Launch a `general-purpose` subagent framed as an **adversarial** reviewer (not a friendly one). Brief it with:
+
+- The commit range under review (`git log --oneline <base>..<head>`).
+- The threat model: local-network attacker, malicious/buggy Swift client, authorized user accidentally causing harm. There is no external auth layer in front of any existing endpoint — flag if NEW endpoints behave worse than existing ones under attack, don't waste cycles on "add OAuth."
+- The new attack surface (REST routes, JSON parsing, BSON writes, runtime caches, event-loop work).
+
+Things the reviewer should actively probe:
+- Input validation gaps in JSON parsing (`get<T>()` vs `value("k", default)`, presence-only vs strict, integer ranges, string length, type confusion).
+- NoSQL/MongoDB injection — are user-supplied strings interpolated into BSON queries? Are JSON fields stored as-is, and could that re-enter a query later?
+- DoS / resource exhaustion — unbounded arrays, unbounded loops, unpaginated reads, event-loop priority-queue growth, far-future scheduled events.
+- TOCTOU and race conditions — concurrent transitions, cache lookups split across `contains`/`get`, multi-threaded global maps.
+- Authorization-style logic bugs — can a fixture/binding/pattern clobber output that should belong to a different creature or universe?
+- Crash vectors — uncaught exceptions on the event-loop thread (these are catastrophic), `std::out_of_range` from `ObjectCache::get`, `nlohmann::json::type_error` paths.
+- Path-parameter values flowing into log lines and span attributes unsanitized.
+
+The reviewer should produce **5–15 findings, sorted by severity** (Critical / High / Medium / Low / Informational), each with: location (file:line), concrete attacker scenario, why it works, and a specific fix (not "add validation" — say which one).
+
+#### 2. OTel / observability review
+
+Launch the `honeycomb:instrumentation-advisor` subagent. Brief it with:
+
+- The commit range under review.
+- The location of the project's instrumentation wrappers (`ObservabilityManager::createRequestSpan` / `createOperationSpan` / `createChildOperationSpan` / `createSamplingSpan`) and the existing **Creature subsystem as the gold-standard baseline** to compare against (`src/server/ws/controller/CreatureController.h`, `src/server/creature/{helpers,upsert,get,getall}.cpp`, `src/server/ws/service/CreatureService.cpp`).
+- High-frequency code paths and whether they should use the `SamplingSpan` infrastructure (see "Event Loop Tracing System" section). Default sampling rate: `0.0005` (0.05%).
+
+Things the reviewer should actively probe:
+- **Span coverage** — every REST endpoint has a request span; every service method has an operation span; every DB call has a child span. Critical untraced paths flagged.
+- **Attribute richness** — Honeycomb's value comes from wide events with high cardinality. UUIDs, names, sizes, counts, enum strings should all be on spans. Anything you'd want to GROUP BY in a query.
+- **Attribute naming consistency** — `dot.separated.lowercase`, semantic conventions for HTTP/DB/error, no two attribute names for the same business concept.
+- **Error recording** — `setError(msg)` + `error.type` + `error.code` + `error.message` + `recordException` on the throw paths.
+- **Span lifecycle / hierarchy** — parent spans threaded through every level, `setSuccess()` on the happy path, no spans accidentally orphaned.
+- **`setHttpStatus` placement** — must be reached on the error path too, not just the success return. The recurring bug pattern in this codebase is `setHttpStatus(200)` after the service call, with no try/catch around it — exception unwinding skips the status set.
+- **High-frequency code** — does it use `createSamplingSpan` with a sensible rate, or is it untraced / over-traced?
+- **Cross-system tracing** — async work (scheduled events, ticks driven by binding dispatcher) should carry trace context back to the originating request span via span links or `trigger.trace_id` / `trigger.span_id` attributes.
+
+The reviewer should produce a report with: one-paragraph health rating, "what's done well" (give credit), **gaps sorted by impact on observability quality** (each with file:line, what's missing, concrete query that's currently unanswerable, suggested fix), cross-cutting recommendations, and a final section on high-frequency-path strategy.
+
+#### When to skip
+
+Skip both reviews only if the diff is purely cosmetic (typos, formatting, comments) or touches no behavior. Version bumps and CMakeLists-only changes do not need either review. Doc-only changes to AGENTS.md or `plan/` do not need either review. Everything else gets both.
+
 ### Observability
 
 Built-in OpenTelemetry integration for traces and metrics. The `ObservabilityManager` handles telemetry configuration and export.
