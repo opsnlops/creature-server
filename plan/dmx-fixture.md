@@ -408,6 +408,23 @@ The server side is shipped (current version: **3.13.0**, deployed to `https://se
 
 The body IS the pattern — `fade_in_ms`, `fade_out_ms`, `hold_ms`, `stop_after_ms` are all optional and default to 0 (snap / hold-forever / no auto-stop). Used by the pattern editor's Fire button so the user can preview unsaved edits without an upsert. Server-side this just constructs an ephemeral `FixturePattern` from the body and hands it to the same runner that handles saved triggers — same validation rules, same live-control preemption, same fade semantics. Nothing is persisted.
 
+**Endpoint shape is final and locked.** Verified against prod by the server-side Claude when this was added. The Swift signature suggested by the conversation that prompted this endpoint:
+
+```swift
+previewFixturePattern(
+    fixtureId: String,
+    values: [(channel: String, value: UInt8)],
+    fadeInMs: UInt32 = 0,
+    fadeOutMs: UInt32 = 0,
+    holdMs: UInt32 = 0,
+    stopAfterMs: UInt32? = nil
+) async throws -> DmxFixture
+```
+
+The editor's Fire button should call this directly with the editor's current local state — no implicit save, no upsert round-trip. After the user explicitly saves, the regular `/trigger` endpoint takes over for firing the saved version.
+
+**Motivating UX problem** this solves: before preview existed, the editor's Fire button called `/trigger`, which fires whatever the server has stored. The user had to Save → close the editor → reopen → Fire to see each edit, because edits live only in the editor's local state until Save. Preview lets the editor stay the source of truth during editing.
+
 **Live control (slider UI)** — `POST /api/v1/fixture/8e3a4b5c.../live`, body:
 
 ```json
