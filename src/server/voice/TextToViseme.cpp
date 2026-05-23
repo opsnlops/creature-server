@@ -23,7 +23,6 @@ bool TextToViseme::loadCmuDict(const std::filesystem::path &dictPath) {
 
     cmuDict_.clear();
     std::string line;
-    size_t lineCount = 0;
 
     while (std::getline(file, line)) {
         // Skip comment lines (start with ;;; in cmudict)
@@ -48,8 +47,7 @@ bool TextToViseme::loadCmuDict(const std::filesystem::path &dictPath) {
         }
 
         // Convert to uppercase for consistent lookup
-        std::transform(word.begin(), word.end(), word.begin(),
-                       [](unsigned char c) { return std::toupper(c); });
+        std::transform(word.begin(), word.end(), word.begin(), [](unsigned char c) { return std::toupper(c); });
 
         // Read phonemes, stripping stress markers (0, 1, 2)
         std::vector<std::string> phonemes;
@@ -70,8 +68,6 @@ bool TextToViseme::loadCmuDict(const std::filesystem::path &dictPath) {
                 cmuDict_[word] = std::move(phonemes);
             }
         }
-
-        lineCount++;
     }
 
     info("Loaded CMU dictionary: {} entries from {}", cmuDict_.size(), dictPath.filename().string());
@@ -101,15 +97,13 @@ std::string TextToViseme::arpabetToViseme(const std::string &phoneme) {
     }
 
     // Velar/glottal/semivowels → D (maximum open, 255)
-    if (phoneme == "K" || phoneme == "G" || phoneme == "NG" || phoneme == "HH" || phoneme == "W" ||
-        phoneme == "Y") {
+    if (phoneme == "K" || phoneme == "G" || phoneme == "NG" || phoneme == "HH" || phoneme == "W" || phoneme == "Y") {
         return "D";
     }
 
     // Alveolar consonants + mid vowels → E (slightly open, 50)
-    if (phoneme == "EH" || phoneme == "ER" || phoneme == "EY" || phoneme == "S" || phoneme == "Z" ||
-        phoneme == "T" || phoneme == "D" || phoneme == "N" || phoneme == "L" || phoneme == "R" ||
-        phoneme == "TH" || phoneme == "DH") {
+    if (phoneme == "EH" || phoneme == "ER" || phoneme == "EY" || phoneme == "S" || phoneme == "Z" || phoneme == "T" ||
+        phoneme == "D" || phoneme == "N" || phoneme == "L" || phoneme == "R" || phoneme == "TH" || phoneme == "DH") {
         return "E";
     }
 

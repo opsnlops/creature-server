@@ -9,9 +9,9 @@
 #include <unistd.h>
 
 #include <base64.hpp>
+#include <curl/curl.h>
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
-#include <curl/curl.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
@@ -157,8 +157,8 @@ bool sslWriteAll(SSL *ssl, const uint8_t *data, size_t len) {
 } // namespace
 
 Result<void> StreamingTTSClient::connectWebSocket(const std::string &host, uint16_t port, const std::string &path,
-                                                   const std::string &apiKey,
-                                                   std::shared_ptr<OperationSpan> parentSpan) {
+                                                  const std::string &apiKey,
+                                                  std::shared_ptr<OperationSpan> parentSpan) {
 
     auto span = creatures::observability->createChildOperationSpan("StreamingTTSClient.connect", parentSpan);
 
@@ -244,16 +244,15 @@ Result<void> StreamingTTSClient::connectWebSocket(const std::string &host, uint1
 
     // Send HTTP upgrade request with xi-api-key header
     // ALPN must be set to http/1.1 above or the server negotiates h2 and rejects the upgrade
-    std::string upgradeRequest = fmt::format(
-        "GET {} HTTP/1.1\r\n"
-        "Host: {}\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        "Sec-WebSocket-Key: {}\r\n"
-        "Sec-WebSocket-Version: 13\r\n"
-        "xi-api-key: {}\r\n"
-        "\r\n",
-        path, host, wsKey, apiKey);
+    std::string upgradeRequest = fmt::format("GET {} HTTP/1.1\r\n"
+                                             "Host: {}\r\n"
+                                             "Upgrade: websocket\r\n"
+                                             "Connection: Upgrade\r\n"
+                                             "Sec-WebSocket-Key: {}\r\n"
+                                             "Sec-WebSocket-Version: 13\r\n"
+                                             "xi-api-key: {}\r\n"
+                                             "\r\n",
+                                             path, host, wsKey, apiKey);
 
     if (!sslWriteAll(conn_->ssl, reinterpret_cast<const uint8_t *>(upgradeRequest.data()), upgradeRequest.size())) {
         std::string msg = "Failed to send WebSocket upgrade request";
@@ -326,9 +325,9 @@ void StreamingTTSClient::sendCloseFrame() {
     sslWriteAll(conn_->ssl, frame.data(), frame.size());
 }
 
-Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::string &outputFormat,
-                                                                 ProgressCallback progressCallback,
-                                                                 std::shared_ptr<OperationSpan> parentSpan) {
+Result<StreamingTTSResult>
+StreamingTTSClient::receiveAllFrames(const std::string &outputFormat, ProgressCallback progressCallback,
+                                     [[maybe_unused]] std::shared_ptr<OperationSpan> parentSpan) {
     if (!conn_ || !conn_->ssl) {
         return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, "Not connected")};
     }
@@ -353,7 +352,8 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
         uint8_t header[2];
         if (!sslReadExact(conn_->ssl, header, 2)) {
             warn("StreamingTTSClient: connection closed reading frame header "
-                 "(after {} frames, {} audio bytes)", wsFrameCount, result.audioData.size());
+                 "(after {} frames, {} audio bytes)",
+                 wsFrameCount, result.audioData.size());
             break;
         }
 
@@ -404,8 +404,8 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
         wsFrameCount++;
         totalBytesReceived += payloadLen;
 
-        debug("StreamingTTSClient: ws frame #{}: opcode={} fin={} masked={} len={} totalBytes={}",
-              wsFrameCount, opcode, fin, masked, payloadLen, totalBytesReceived);
+        debug("StreamingTTSClient: ws frame #{}: opcode={} fin={} masked={} len={} totalBytes={}", wsFrameCount, opcode,
+              fin, masked, payloadLen, totalBytesReceived);
 
         // Handle fragmentation
         if (opcode == 0x00) {
@@ -418,8 +418,8 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
             opcode = fragmentOpcode;
             payload = std::move(fragmentBuffer);
             fragmentBuffer.clear();
-            info("StreamingTTSClient: reassembled {} fragments -> {} bytes (opcode={})",
-                 fragmentCount, payload.size(), opcode);
+            info("StreamingTTSClient: reassembled {} fragments -> {} bytes (opcode={})", fragmentCount, payload.size(),
+                 opcode);
             fragmentOpcode = 0;
             fragmentCount = 0;
         } else if (!fin && (opcode == 0x01 || opcode == 0x02)) {
@@ -443,8 +443,7 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
             bool textHasFinal = text.find("\"isFinal\":true") != std::string::npos;
             info("StreamingTTSClient: text frame #{}: {} bytes, audio={} audioNull={} alignment={} isFinal={} "
                  "first100='{}'",
-                 wsFrameCount, text.size(), textHasAudio, textHasNull, textHasAlign, textHasFinal,
-                 text.substr(0, 100));
+                 wsFrameCount, text.size(), textHasAudio, textHasNull, textHasAlign, textHasFinal, text.substr(0, 100));
 
             try {
                 auto json = nlohmann::json::parse(text);
@@ -452,8 +451,8 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
                 if (json.contains("isFinal") && json["isFinal"].is_boolean() && json["isFinal"].get<bool>()) {
                     info("StreamingTTSClient: isFinal received after {} frames, {} audio chunks ({} bytes), "
                          "{} alignment chunks ({} chars)",
-                         wsFrameCount, audioChunkCount, result.audioData.size(),
-                         alignmentChunkCount, result.charTimings.size());
+                         wsFrameCount, audioChunkCount, result.audioData.size(), alignmentChunkCount,
+                         result.charTimings.size());
                     running = false;
                     break;
                 }
@@ -469,10 +468,9 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
                         } else {
                             try {
                                 auto decoded = base64::from_base64(audioB64);
-                                result.audioData.insert(result.audioData.end(),
-                                                        reinterpret_cast<const uint8_t *>(decoded.data()),
-                                                        reinterpret_cast<const uint8_t *>(decoded.data()) +
-                                                            decoded.size());
+                                result.audioData.insert(
+                                    result.audioData.end(), reinterpret_cast<const uint8_t *>(decoded.data()),
+                                    reinterpret_cast<const uint8_t *>(decoded.data()) + decoded.size());
                                 audioChunkCount++;
                                 info("StreamingTTSClient: audio chunk {}: {} b64 chars -> {} bytes decoded "
                                      "(cumulative: {} bytes)",
@@ -515,8 +513,8 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
                     }
                 }
             } catch (const std::exception &e) {
-                error("StreamingTTSClient: EXCEPTION in frame #{}: {} size={} preview='{}'",
-                      wsFrameCount, e.what(), text.size(), text.substr(0, 200));
+                error("StreamingTTSClient: EXCEPTION in frame #{}: {} size={} preview='{}'", wsFrameCount, e.what(),
+                      text.size(), text.substr(0, 200));
             }
             break;
         }
@@ -561,8 +559,8 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
 
     info("StreamingTTSClient COMPLETE: {} ws frames, {} audio chunks ({} bytes), "
          "{} alignment chunks ({} chars), est {:.2f}s",
-         wsFrameCount, audioChunkCount, result.audioData.size(),
-         alignmentChunkCount, result.charTimings.size(), result.audioDurationSeconds);
+         wsFrameCount, audioChunkCount, result.audioData.size(), alignmentChunkCount, result.charTimings.size(),
+         result.audioDurationSeconds);
 
     if (result.audioData.empty()) {
         error("StreamingTTSClient: ZERO audio bytes received! Review frame log above.");
@@ -572,11 +570,10 @@ Result<StreamingTTSResult> StreamingTTSClient::receiveAllFrames(const std::strin
 }
 
 Result<StreamingTTSResult> StreamingTTSClient::generateSpeech(const std::string &apiKey, const std::string &voiceId,
-                                                               const std::string &modelId, const std::string &text,
-                                                               const std::string &outputFormat, float stability,
-                                                               float similarityBoost,
-                                                               ProgressCallback progressCallback,
-                                                               std::shared_ptr<OperationSpan> parentSpan) {
+                                                              const std::string &modelId, const std::string &text,
+                                                              const std::string &outputFormat, float stability,
+                                                              float similarityBoost, ProgressCallback progressCallback,
+                                                              std::shared_ptr<OperationSpan> parentSpan) {
 
     auto span = creatures::observability->createChildOperationSpan("StreamingTTSClient.generateSpeech", parentSpan);
     if (span) {
@@ -591,9 +588,9 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeech(const std::string 
     }
 
     // Build WebSocket URL path with sync_alignment for character-level timing data
-    std::string path = fmt::format(
-        "/v1/text-to-speech/{}/stream-input?model_id={}&output_format={}&sync_alignment=true", voiceId, modelId,
-        outputFormat);
+    std::string path =
+        fmt::format("/v1/text-to-speech/{}/stream-input?model_id={}&output_format={}&sync_alignment=true", voiceId,
+                    modelId, outputFormat);
 
     // Connect
     auto connectResult = connectWebSocket("api.elevenlabs.io", 443, path, apiKey, span);
@@ -684,14 +681,15 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeech(const std::string 
     return ttsResult;
 }
 
-Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
-    const std::string &apiKey, const std::string &voiceId, const std::string &modelId, const std::string &text,
-    const std::string &outputFormat, float stability, float similarityBoost,
-    const std::vector<std::string> &previousRequestIds, ProgressCallback progressCallback,
-    std::shared_ptr<OperationSpan> parentSpan) {
+Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(const std::string &apiKey, const std::string &voiceId,
+                                                                  const std::string &modelId, const std::string &text,
+                                                                  const std::string &outputFormat, float stability,
+                                                                  float similarityBoost,
+                                                                  const std::vector<std::string> &previousRequestIds,
+                                                                  ProgressCallback progressCallback,
+                                                                  std::shared_ptr<OperationSpan> parentSpan) {
 
-    auto span =
-        creatures::observability->createChildOperationSpan("StreamingTTSClient.generateSpeechREST", parentSpan);
+    auto span = creatures::observability->createChildOperationSpan("StreamingTTSClient.generateSpeechREST", parentSpan);
     if (span) {
         span->setAttribute("voice.id", voiceId);
         span->setAttribute("voice.model", modelId);
@@ -716,9 +714,9 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
     std::string bodyStr = body.dump();
 
     // Build URL
-    std::string url = fmt::format(
-        "https://api.elevenlabs.io/v1/text-to-speech/{}/stream/with-timestamps?output_format={}", voiceId,
-        outputFormat);
+    std::string url =
+        fmt::format("https://api.elevenlabs.io/v1/text-to-speech/{}/stream/with-timestamps?output_format={}", voiceId,
+                    outputFormat);
 
     // Result accumulation — curl callbacks append here
     StreamingTTSResult result;
@@ -758,7 +756,8 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
             while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) {
                 line.pop_back();
             }
-            if (line.empty()) continue;
+            if (line.empty())
+                continue;
 
             try {
                 auto json = nlohmann::json::parse(line);
@@ -770,8 +769,7 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
                         try {
                             auto decoded = base64::from_base64(audioB64);
                             ctx->result->audioData.insert(
-                                ctx->result->audioData.end(),
-                                reinterpret_cast<const uint8_t *>(decoded.data()),
+                                ctx->result->audioData.end(), reinterpret_cast<const uint8_t *>(decoded.data()),
                                 reinterpret_cast<const uint8_t *>(decoded.data()) + decoded.size());
                             (*ctx->chunkCount)++;
                         } catch (...) {
@@ -822,8 +820,7 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
 
         // Look for request-id header (case-insensitive)
         auto lower = header;
-        std::transform(lower.begin(), lower.end(), lower.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
 
         if (lower.find("request-id:") == 0 || lower.find("x-request-id:") == 0) {
             auto colonPos = header.find(':');
@@ -833,8 +830,7 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
                 while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
                     value.erase(value.begin());
                 }
-                while (!value.empty() &&
-                       (value.back() == '\r' || value.back() == '\n' || value.back() == ' ')) {
+                while (!value.empty() && (value.back() == '\r' || value.back() == '\n' || value.back() == ' ')) {
                     value.pop_back();
                 }
                 *ctx->requestId = value;
@@ -852,7 +848,8 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
     CURL *curl = curl_easy_init();
     if (!curl) {
         std::string msg = "Failed to initialize curl";
-        if (span) span->setError(msg);
+        if (span)
+            span->setError(msg);
         return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
     }
 
@@ -883,14 +880,16 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
     if (res != CURLE_OK) {
         std::string msg = fmt::format("ElevenLabs REST TTS curl error: {}", curl_easy_strerror(res));
         error(msg);
-        if (span) span->setError(msg);
+        if (span)
+            span->setError(msg);
         return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
     }
 
     if (httpCode != 200) {
         std::string msg = fmt::format("ElevenLabs REST TTS HTTP {}", httpCode);
         error(msg);
-        if (span) span->setError(msg);
+        if (span)
+            span->setError(msg);
         return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
     }
 
@@ -909,8 +908,7 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(
 
     info("StreamingTTSClient REST complete: {} chunks, {} bytes audio, {} alignment chars, "
          "request_id={}, {:.2f}s estimated",
-         chunkCount, result.audioData.size(), result.charTimings.size(), result.requestId,
-         result.audioDurationSeconds);
+         chunkCount, result.audioData.size(), result.charTimings.size(), result.requestId, result.audioDurationSeconds);
 
     if (span) {
         span->setAttribute("audio.bytes", static_cast<int64_t>(result.audioData.size()));
