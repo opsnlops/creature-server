@@ -79,10 +79,10 @@ This section is the authoritative API contract. The Creature Console Swift app i
 | `name` | string | yes | — | Human-readable display name. Non-empty. |
 | `type` | enum string | yes | — | One of `"light"`, `"smoke_machine"`, `"fogger"`, `"generic"`. Unknown strings parse to `"generic"` with a server warning (be liberal). UI uses this to pick a renderer. |
 | `channel_offset` | uint16 | yes | — | Starting DMX channel within the universe. Range `[0, 511]`. The fixture occupies channels `channel_offset` through `channel_offset + max(channels[].offset)` inclusive. |
-| `assigned_universe` | uint32 \| null | no | `null` | Persisted DMX universe assignment (E1.31 universe number). `null` means the fixture is configured but produces no DMX output. Settable via `PUT /api/v1/fixture/{id}/universe`. |
-| `channels` | array of `FixtureChannel` | yes | — | Non-empty. Defines the addressable channels of this fixture. |
-| `patterns` | array of `FixturePattern` | no | `[]` | Named DMX value snapshots that bindings can trigger. |
-| `bindings` | array of `FixtureBinding` | no | `[]` | Declarative triggers connecting creature activity transitions to patterns on this fixture. |
+| `assigned_universe` | uint32 \| null | no | `null` | Persisted E1.31 universe assignment. Valid range `[1, 63999]` per E1.31 spec — 0 and >63999 are rejected with 400. `null` means the fixture is configured but produces no DMX output. Settable via `PUT /api/v1/fixture/{id}/universe`. |
+| `channels` | array of `FixtureChannel` | yes | — | Non-empty. **Max 64 entries** (anti-DoS cap). Defines the addressable channels of this fixture. |
+| `patterns` | array of `FixturePattern` | no | `[]` | **Max 256 entries.** Named DMX value snapshots that bindings can trigger. |
+| `bindings` | array of `FixtureBinding` | no | `[]` | **Max 256 entries.** Declarative triggers connecting creature activity transitions to patterns on this fixture. |
 
 **Object: `FixtureChannel`**
 
@@ -98,7 +98,7 @@ This section is the authoritative API contract. The Creature Console Swift app i
 |---|---|---|---|---|
 | `id` | string (UUID) | yes | — | Pattern identifier (UUID). Unique within the fixture. Referenced by `FixtureBinding.pattern_id` and by the manual-trigger endpoint. Generated client-side. |
 | `name` | string | yes | — | Display name for the UI. |
-| `values` | array of `FixturePatternValue` | yes | — | Target channel values. Channels not listed are not driven by this pattern (preserve whatever the previous render had). |
+| `values` | array of `FixturePatternValue` | yes | — | **Max 64 entries.** Target channel values. Channels not listed are not driven by this pattern (preserve whatever the previous render had). |
 | `fade_in_ms` | uint32 | no | `0` | Milliseconds to ramp from the channels' current values to the pattern's target values. `0` = snap. |
 | `fade_out_ms` | uint32 | no | `0` | Milliseconds to ramp back to pre-pattern values when the pattern stops. `0` = snap. |
 | `hold_ms` | uint32 | no | `0` | Milliseconds to hold the target values after fade-in. `0` = hold indefinitely until an external stop (e.g. the originating binding's state transitions out). |
@@ -128,8 +128,20 @@ This section is the authoritative API contract. The Creature Console Swift app i
 5. Each `bindings[].pattern_id` references an existing `patterns[].id` on this fixture.
 6. `bindings[].on_reason` / `on_state`, when present, parse to known enum values.
 7. `bindings[]` does not validate `creature_id` existence (soft reference — creatures can be deleted independently).
+8. `assigned_universe`, when present, must be in `[1, 63999]` (E1.31).
+9. Array size caps: `channels[]` ≤ 64, `patterns[]` ≤ 256, `patterns[].values[]` ≤ 64, `bindings[]` ≤ 256.
 
-The validate-only endpoint (`POST /api/v1/fixture/validate`) returns these errors structured for UI display rather than a single 400 string.
+The validate-only endpoint (`POST /api/v1/fixture/validate`) returns these errors structured for UI display rather than a single 400 string. The response also includes `missing_creature_ids[]` — `creature_id`s referenced by bindings that don't exist in the creature collection. Missing creatures are a soft warning, not a failure; the fixture still saves.
+
+**Path-parameter validation** (controllers, returns 400 on failure):
+
+- Any `{fixtureId}` or `{patternId}` in a URL must match RFC 4122 UUID shape (8-4-4-4-12 lowercase hex). Anti-injection guard — keeps malformed strings out of log lines and span attributes. Hit by every endpoint that takes a path param.
+
+**Trigger endpoint constraints** (`POST /api/v1/fixture/{id}/pattern/{pid}/trigger`):
+
+- Body is optional. With no body the pattern runs with its configured fade-in / hold / fade-out and stays held until something else stops it.
+- `stop_after_ms` (UInt32, optional): if set, must be in `(0, 600000]` ms (10 minute cap). `0` rejected; `> 600000` rejected. Server schedules an auto-stop event at `trigger_frame + stop_after_ms`.
+- The fixture must have an `assigned_universe` (set via `PUT /api/v1/fixture/{id}/universe`) or the trigger returns 400. There is no "default universe" fallback.
 
 ### C++ types
 
@@ -279,3 +291,76 @@ Each step is independently mergeable and testable:
 3. `Track.fixture_id` + `PlaybackSession` plumbing + `playback-runner` branch. *(Fixtures in animations.)*
 4. `FixturePatternRunner` + `FixturePatternTickEvent` + `FixtureBindingDispatcher` hook in `setActivityState`. *(Triggers fire.)*
 5. Manual `/trigger` endpoint, tests, AGENTS.md update.
+
+---
+
+## Notes for the Swift Client Implementer
+
+The server side is shipped (current version: **3.11.2**, deployed to `https://server.prod.chirpchirp.dev`). The Swift client should implement the JSON Schema Reference above as its data model. Quick orientation for whoever picks this up next:
+
+### Where to start
+1. Read this plan top-to-bottom — the "JSON Schema Reference" is the canonical API contract.
+2. Cross-reference `AGENTS.md` "DMX Fixture Model" section for a shorter prose summary of intent.
+3. The smoke-test sequence below is a known-working set of payloads.
+
+### Smoke-test payloads (proven against prod)
+
+**Create a fixture** — `POST /api/v1/fixture`, raw JSON body:
+
+```json
+{
+  "id": "8e3a4b5c-1d2f-4e6a-9b0c-7f8e9d0a1b2c",
+  "name": "Stage Left Spot",
+  "type": "light",
+  "channel_offset": 500,
+  "channels": [
+    {"offset": 0, "name": "red",        "kind": "color_red"},
+    {"offset": 1, "name": "green",      "kind": "color_green"},
+    {"offset": 2, "name": "blue",       "kind": "color_blue"},
+    {"offset": 3, "name": "brightness", "kind": "master_dimmer"}
+  ],
+  "patterns": [{
+    "id": "7d2a3b4c-5e6f-4789-a0b1-c2d3e4f5a6b7",
+    "name": "Red Glow",
+    "values": [
+      {"channel": "red",        "value": 255},
+      {"channel": "brightness", "value": 200}
+    ],
+    "fade_in_ms": 250,
+    "fade_out_ms": 500,
+    "hold_ms": 0
+  }],
+  "bindings": []
+}
+```
+
+**Assign a universe** — `PUT /api/v1/fixture/8e3a4b5c.../universe` body `{"universe": 1}` (must be in `[1, 63999]`).
+
+**Trigger a pattern manually** — `POST /api/v1/fixture/8e3a4b5c.../pattern/7d2a3b4c.../trigger`, body either empty or `{"stop_after_ms": 1500}` (must be in `(0, 600000]` if provided).
+
+**Delete** — `DELETE /api/v1/fixture/8e3a4b5c...` returns `{"status":"OK","code":200,"message":"Fixture deleted","session_id":null}`.
+
+### Suggested UI structure
+
+- **Fixture editor**: form-driven, generates a UUID for `id` client-side. Channel/pattern/binding rows are CRUD lists. Use `type` to pick a renderer (color-picker for `light` with red/green/blue channels; just sliders for `generic` / `smoke_machine` / `fogger`).
+- **Universe assignment**: separate from fixture config — a single "Universe" field per fixture row, settable independently. Hitting `PUT /universe` persists it; `null` removes the assignment. After a universe change, listen for `CacheType::Fixture` invalidation broadcasts on the websocket and refresh the local cache.
+- **Manual trigger**: a fire button per pattern on each fixture. Offer "fire for N seconds" (sends `stop_after_ms`) and "fire and hold" (empty body — caller has to fire a separate stop pattern when done; there's no built-in stop endpoint).
+- **Binding editor**: per-fixture list of `{creature_id, on_reason, on_state, pattern_id}`. Use a creature picker (UUID → name from `GET /api/v1/creature`) and a pattern picker scoped to this fixture's patterns.
+- **Validation**: hit `POST /api/v1/fixture/validate` before saving. It returns `{valid: bool, fixture_id: string, missing_creature_ids: string[], error_messages: string[]}` — show `missing_creature_ids` as warnings (binding still saves) and `error_messages` as hard blockers.
+
+### Things the server does that aren't visible from the JSON
+
+- **`channel_offset` + `max(channels[].offset)` must be ≤ 511.** If you let users edit channels freely you'll want a live-validation check that won't let them save an overflowing fixture.
+- **`bindings[].creature_id` is a soft reference.** You can save a binding pointing at a deleted creature; the dispatcher just won't fire. The validate endpoint flags these so you can warn.
+- **`assigned_universe` is persisted** (unlike creatures, where universe is runtime-only). The Swift app does NOT need a "register controller" workflow for fixtures.
+- **Cache invalidation events** are broadcast on the websocket after upsert/delete/universe-change as `{"cache_type": "fixture"}`. Consume these to keep the local cache fresh.
+- **Pattern triggers are fire-and-forget.** The POST returns the fixture's current state; the actual DMX fade is async on the server's event loop.
+
+### Server-side files for cross-reference
+
+If the Swift implementer needs to read the source-of-truth shape:
+
+- `src/model/DmxFixture.h` — struct + DTOs
+- `src/server/fixture/helpers.cpp` — `fixtureFromJson`, the strict validator
+- `src/server/ws/dto/{SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto,FixtureConfigValidationDto}.h` — request/response DTOs
+- `src/server/ws/controller/DmxFixtureController.h` — endpoint contract
