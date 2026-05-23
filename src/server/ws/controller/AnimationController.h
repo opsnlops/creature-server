@@ -17,6 +17,7 @@
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
 #include "server/metrics/counters.h"
+#include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/dto/AdHocAnimationDto.h"
 #include "server/ws/dto/CreateAdHocAnimationRequestDto.h"
 #include "server/ws/dto/JobCreatedDto.h"
@@ -25,13 +26,11 @@
 #include "server/ws/dto/TriggerAdHocAnimationRequestDto.h"
 #include "server/ws/service/AnimationService.h"
 #include "server/ws/service/CreatureService.h"
-#include "server/ws/controller/ControllerUtils.h"
 #include "util/cache.h"
 #include "util/websocketUtils.h"
 #include <nlohmann/json.hpp>
 
 namespace creatures {
-extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<SessionManager> sessionManager;
 extern std::shared_ptr<Configuration> config;
 extern std::shared_ptr<jobs::JobManager> jobManager;
@@ -66,30 +65,17 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/animation", listAllAnimations,
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        // Create a trace span for this request
-        auto span = creatures::observability->createRequestSpan("GET /api/v1/animation", "GET", "api/v1/animation",
-                                                                extractTraceparent(request));
-        addHttpRequestAttributes(span, request); // Add HTTP attributes
-
+    ENDPOINT("GET", "api/v1/animation", listAllAnimations, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("REST call to listAllAnimations");
-        creatures::metrics->incrementRestRequestsProcessed();
-
-        if (span) {
-            span->setAttribute("endpoint.name", "listAllAnimations");
-            span->setAttribute("controller.name", "AnimationController");
-        }
-
-        auto result = m_animationService.listAllAnimations(std::move(span));
-
-        // Record success metrics in the span
-        if (span) {
-            span->setAttribute("animations.count", static_cast<int64_t>(result->count));
-            span->setHttpStatus(200);
-        }
-
-        return createDtoResponse(Status::CODE_200, result);
+        return runEndpoint("GET /api/v1/animation", "GET", "api/v1/animation", "listAllAnimations",
+                           "AnimationController", request, [&](const auto &span) {
+                               auto result = m_animationService.listAllAnimations(span);
+                               if (span) {
+                                   span->setAttribute("animations.count", static_cast<int64_t>(result->count));
+                                   span->setHttpStatus(200);
+                               }
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(listAdHocAnimations) {
@@ -99,25 +85,16 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc", listAdHocAnimations,
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability->createRequestSpan("GET /api/v1/animation/ad-hoc", "GET",
-                                                                "api/v1/animation/ad-hoc",
-                                                                extractTraceparent(request));
-        addHttpRequestAttributes(span, request);
-
-        creatures::metrics->incrementRestRequestsProcessed();
-
-        if (span) {
-            span->setAttribute("endpoint.name", "listAdHocAnimations");
-            span->setAttribute("controller.name", "AnimationController");
-        }
-
-        auto result = m_animationService.listAdHocAnimations(span);
-        if (span) {
-            span->setHttpStatus(200);
-            span->setAttribute("adhoc.count", static_cast<int64_t>(result->count));
-        }
-        return createDtoResponse(Status::CODE_200, result);
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/animation/ad-hoc", "GET", "api/v1/animation/ad-hoc", "listAdHocAnimations",
+                           "AnimationController", request, [&](const auto &span) {
+                               auto result = m_animationService.listAdHocAnimations(span);
+                               if (span) {
+                                   span->setAttribute("adhoc.count", static_cast<int64_t>(result->count));
+                                   span->setHttpStatus(200);
+                               }
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(getAdHocAnimation) {
@@ -130,28 +107,19 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->pathParams["animationId"].description = "Ad-hoc animation ID";
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc/{animationId}", getAdHocAnimation, PATH(String, animationId),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability->createRequestSpan("GET /api/v1/animation/ad-hoc/{animationId}", "GET",
-                                                                "api/v1/animation/ad-hoc/" + std::string(animationId),
-                                                                extractTraceparent(request));
-        addHttpRequestAttributes(span, request);
-
-        creatures::metrics->incrementRestRequestsProcessed();
-
-        if (span) {
-            span->setAttribute("endpoint.name", "getAdHocAnimation");
-            span->setAttribute("controller.name", "AnimationController");
-            span->setAttribute("animation.id", std::string(animationId));
-        }
-
-        auto result = m_animationService.getAdHocAnimation(animationId, span);
-
-        if (span) {
-            span->setAttribute("animation.title", std::string(result->metadata->title));
-            span->setHttpStatus(200);
-        }
-
-        return createDtoResponse(Status::CODE_200, result);
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/animation/ad-hoc/{animationId}", "GET",
+                           "api/v1/animation/ad-hoc/" + std::string(animationId), "getAdHocAnimation",
+                           "AnimationController", request, [&](const auto &span) {
+                               if (span)
+                                   span->setAttribute("animation.id", std::string(animationId));
+                               auto result = m_animationService.getAdHocAnimation(animationId, span);
+                               if (span) {
+                                   span->setAttribute("animation.title", std::string(result->metadata->title));
+                                   span->setHttpStatus(200);
+                               }
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(getAnimation) {
@@ -164,32 +132,19 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->pathParams["animationId"].description = "Animation ID in the form of a MongoDB OID";
     }
     ENDPOINT("GET", "api/v1/animation/{animationId}", getAnimation, PATH(String, animationId),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        // RequestSpan only handles HTTP-level concerns
-        auto span = creatures::observability->createRequestSpan("GET /api/v1/animation/{animationId}", "GET",
-                                                                "api/v1/animation/" + std::string(animationId),
-                                                                extractTraceparent(request));
-        addHttpRequestAttributes(span, request); // Add HTTP attributes
-
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("get animation by ID via REST API: {}", std::string(animationId));
-        creatures::metrics->incrementRestRequestsProcessed();
-
-        if (span) {
-            span->setAttribute("endpoint.name", "getAnimation");
-            span->setAttribute("controller.name", "AnimationController");
-            span->setAttribute("animation.id", std::string(animationId));
-        }
-
-        // The service call will create its own OperationSpan
-        auto result = m_animationService.getAnimation(animationId, span);
-
-        if (span) {
-            // HTTP handler just cares about HTTP success
-            span->setAttribute("animation.title", std::string(result->metadata->title));
-            span->setHttpStatus(200);
-        }
-
-        return createDtoResponse(Status::CODE_200, result);
+        return runEndpoint("GET /api/v1/animation/{animationId}", "GET", "api/v1/animation/" + std::string(animationId),
+                           "getAnimation", "AnimationController", request, [&](const auto &span) {
+                               if (span)
+                                   span->setAttribute("animation.id", std::string(animationId));
+                               auto result = m_animationService.getAnimation(animationId, span);
+                               if (span) {
+                                   span->setAttribute("animation.title", std::string(result->metadata->title));
+                                   span->setHttpStatus(200);
+                               }
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(generateLipSyncForAnimation) {
@@ -205,107 +160,106 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/animation/generate-lipsync", generateLipSyncForAnimation,
              BODY_DTO(Object<creatures::ws::RegenerateLipSyncRequestDto>, requestBody),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation/generate-lipsync", "POST",
-                                                                "api/v1/animation/generate-lipsync",
-                                                                extractTraceparent(request));
-        addHttpRequestAttributes(span, request);
-        creatures::metrics->incrementRestRequestsProcessed();
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "POST /api/v1/animation/generate-lipsync", "POST", "api/v1/animation/generate-lipsync",
+            "generateLipSyncForAnimation", "AnimationController", request,
+            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                if (!requestBody || !requestBody->animation_id || requestBody->animation_id->empty()) {
+                    auto response = StatusDto::createShared();
+                    response->status = "error";
+                    response->code = 400;
+                    response->message = "animation_id is required";
+                    if (span) {
+                        span->setAttribute("error.type", "invalid_request");
+                        span->setHttpStatus(400);
+                    }
+                    return createDtoResponse(Status::CODE_400, response);
+                }
 
-        if (!requestBody || !requestBody->animation_id || requestBody->animation_id->empty()) {
-            auto response = StatusDto::createShared();
-            response->status = "error";
-            response->code = 400;
-            response->message = "animation_id is required";
-            if (span) {
-                span->setAttribute("error.type", "invalid_request");
-                span->setHttpStatus(400);
-            }
-            return createDtoResponse(Status::CODE_400, response);
-        }
+                std::string animationId = std::string(requestBody->animation_id);
+                if (span) {
+                    span->setAttribute("animation.id", animationId);
+                }
 
-        std::string animationId = std::string(requestBody->animation_id);
-        if (span) {
-            span->setAttribute("animation.id", animationId);
-        }
+                auto animationLookupSpan =
+                    creatures::observability->createOperationSpan("AnimationController.getAnimation", span);
+                if (animationLookupSpan) {
+                    animationLookupSpan->setAttribute("animation.id", animationId);
+                }
 
-        auto animationLookupSpan =
-            creatures::observability->createOperationSpan("AnimationController.getAnimation", span);
-        if (animationLookupSpan) {
-            animationLookupSpan->setAttribute("animation.id", animationId);
-        }
+                auto animationResult = creatures::db->getAnimation(animationId, animationLookupSpan);
+                if (!animationResult.isSuccess()) {
+                    auto error = animationResult.getError().value();
+                    auto response = StatusDto::createShared();
+                    response->status = "error";
+                    response->message = error.getMessage();
+                    Status status = Status::CODE_500;
+                    switch (error.getCode()) {
+                    case ServerError::NotFound:
+                        status = Status::CODE_404;
+                        break;
+                    case ServerError::InvalidData:
+                        status = Status::CODE_400;
+                        break;
+                    default:
+                        status = Status::CODE_500;
+                        break;
+                    }
+                    response->code = status.code;
+                    if (span) {
+                        span->setHttpStatus(status.code);
+                        span->setAttribute("error.type", "animation_lookup_failed");
+                    }
+                    return createDtoResponse(status, response);
+                }
+                auto animation = animationResult.getValue().value();
 
-        auto animationResult = creatures::db->getAnimation(animationId, animationLookupSpan);
-        if (!animationResult.isSuccess()) {
-            auto error = animationResult.getError().value();
-            auto response = StatusDto::createShared();
-            response->status = "error";
-            response->message = error.getMessage();
-            Status status = Status::CODE_500;
-            switch (error.getCode()) {
-            case ServerError::NotFound:
-                status = Status::CODE_404;
-                break;
-            case ServerError::InvalidData:
-                status = Status::CODE_400;
-                break;
-            default:
-                status = Status::CODE_500;
-                break;
-            }
-            response->code = status.code;
-            if (span) {
-                span->setHttpStatus(status.code);
-                span->setAttribute("error.type", "animation_lookup_failed");
-            }
-            return createDtoResponse(status, response);
-        }
-        auto animation = animationResult.getValue().value();
+                if (animation.metadata.sound_file.empty()) {
+                    auto response = StatusDto::createShared();
+                    response->status = "error";
+                    response->code = 422;
+                    response->message = "Animation has no sound file configured";
+                    if (span) {
+                        span->setHttpStatus(422);
+                        span->setAttribute("error.type", "missing_sound_file");
+                    }
+                    return createDtoResponse(Status::CODE_422, response);
+                }
 
-        if (animation.metadata.sound_file.empty()) {
-            auto response = StatusDto::createShared();
-            response->status = "error";
-            response->code = 422;
-            response->message = "Animation has no sound file configured";
-            if (span) {
-                span->setHttpStatus(422);
-                span->setAttribute("error.type", "missing_sound_file");
-            }
-            return createDtoResponse(Status::CODE_422, response);
-        }
+                if (!animation.metadata.multitrack_audio) {
+                    auto response = StatusDto::createShared();
+                    response->status = "error";
+                    response->code = 422;
+                    response->message = "Animation audio must be multitrack to generate lip sync";
+                    if (span) {
+                        span->setHttpStatus(422);
+                        span->setAttribute("error.type", "audio_not_multitrack");
+                    }
+                    return createDtoResponse(Status::CODE_422, response);
+                }
 
-        if (!animation.metadata.multitrack_audio) {
-            auto response = StatusDto::createShared();
-            response->status = "error";
-            response->code = 422;
-            response->message = "Animation audio must be multitrack to generate lip sync";
-            if (span) {
-                span->setHttpStatus(422);
-                span->setAttribute("error.type", "audio_not_multitrack");
-            }
-            return createDtoResponse(Status::CODE_422, response);
-        }
+                nlohmann::json jobDetails;
+                jobDetails["animation_id"] = animationId;
 
-        nlohmann::json jobDetails;
-        jobDetails["animation_id"] = animationId;
+                auto jobId = creatures::jobManager->createJob(creatures::jobs::JobType::AnimationLipSync,
+                                                              jobDetails.dump(), span);
+                creatures::jobWorker->queueJob(jobId);
 
-        auto jobId =
-            creatures::jobManager->createJob(creatures::jobs::JobType::AnimationLipSync, jobDetails.dump(), span);
-        creatures::jobWorker->queueJob(jobId);
+                auto response = JobCreatedDto::createShared();
+                response->job_id = jobId;
+                response->job_type = "animation-lip-sync";
+                response->message = fmt::format(
+                    "Lip sync generation job created for animation {}. Monitor job-progress events for updates.",
+                    animationId);
 
-        auto response = JobCreatedDto::createShared();
-        response->job_id = jobId;
-        response->job_type = "animation-lip-sync";
-        response->message = fmt::format(
-            "Lip sync generation job created for animation {}. Monitor job-progress events for updates.", animationId);
+                if (span) {
+                    span->setHttpStatus(202);
+                    span->setAttribute("job.id", jobId);
+                }
 
-        if (span) {
-            span->setHttpStatus(202);
-            span->setAttribute("job.id", jobId);
-            span->setAttribute("success", true);
-        }
-
-        return createDtoResponse(Status::CODE_202, response);
+                return createDtoResponse(Status::CODE_202, response);
+            });
     }
 
     ENDPOINT_INFO(upsertAnimation) {
@@ -315,48 +269,25 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/animation", upsertAnimation,
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        // Span for the upsert operation
-        auto span = creatures::observability->createRequestSpan("POST /api/v1/animation", "POST", "api/v1/animation",
-                                                                extractTraceparent(request));
-        addHttpRequestAttributes(span, request); // Add HTTP attributes
-
+    ENDPOINT("POST", "api/v1/animation", upsertAnimation, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("new animation uploaded via REST API");
-        creatures::metrics->incrementRestRequestsProcessed();
-
-        try {
-            auto requestAsString = std::string(request->readBodyToString());
-            trace("request was: {}", requestAsString);
-
-            if (span) {
-                span->setAttribute("endpoint.name", "upsertAnimation");
-                span->setAttribute("controller.name", "AnimationController");
-                span->setAttribute("request.body_size", static_cast<int64_t>(requestAsString.length()));
-            }
-
-            auto result = m_animationService.upsertAnimation(requestAsString, span);
-
-            if (span) {
-                span->setAttribute("animation.id", std::string(result->id));
-                span->setAttribute("animation.title", std::string(result->metadata->title));
-                span->setHttpStatus(200);
-            }
-
-            // Schedule cache invalidation (this could be traced too!)
-            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
-
-            return createDtoResponse(Status::CODE_200, result);
-
-        } catch (const std::exception &ex) {
-            if (span) {
-                span->recordException(ex);
-                span->setHttpStatus(500);
-            }
-
-            error("Exception in upsertAnimation: {}", ex.what());
-            throw;
-        }
+        return runEndpoint("POST /api/v1/animation", "POST", "api/v1/animation", "upsertAnimation",
+                           "AnimationController", request, [&](const auto &span) {
+                               auto requestAsString = std::string(request->readBodyToString());
+                               trace("request was: {}", requestAsString);
+                               if (span) {
+                                   span->setAttribute("request.body_size",
+                                                      static_cast<int64_t>(requestAsString.length()));
+                               }
+                               auto result = m_animationService.upsertAnimation(requestAsString, span);
+                               if (span) {
+                                   span->setAttribute("animation.id", std::string(result->id));
+                                   span->setAttribute("animation.title", std::string(result->metadata->title));
+                                   span->setHttpStatus(200);
+                               }
+                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(deleteAnimation) {
@@ -369,44 +300,24 @@ class AnimationController : public oatpp::web::server::api::ApiController {
         info->pathParams["animationId"].description = "Animation ID";
     }
     ENDPOINT("DELETE", "api/v1/animation/{animationId}", deleteAnimation, PATH(String, animationId),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span =
-            creatures::observability->createRequestSpan("DELETE /api/v1/animation/{animationId}", "DELETE",
-                                                        fmt::format("api/v1/animation/{}", std::string(animationId)),
-                                                        extractTraceparent(request));
-        addHttpRequestAttributes(span, request);
-
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("delete animation via REST API: {}", std::string(animationId));
-        creatures::metrics->incrementRestRequestsProcessed();
-
-        if (span) {
-            span->setAttribute("endpoint.name", "deleteAnimation");
-            span->setAttribute("controller.name", "AnimationController");
-            span->setAttribute("animation.id", std::string(animationId));
-        }
-
-        try {
-            auto result = m_animationService.deleteAnimation(animationId, span);
-
-            if (span) {
-                span->setHttpStatus(200);
-            }
-
-            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
-            auto broadcastResult = broadcastCacheInvalidationToAllClients(CacheType::Animation);
-            if (!broadcastResult.isSuccess()) {
-                warn("Failed to broadcast animation cache invalidation: {}", broadcastResult.getError()->getMessage());
-            }
-            return createDtoResponse(Status::CODE_200, result);
-        } catch (const std::exception &ex) {
-            if (span) {
-                span->recordException(ex);
-                span->setHttpStatus(500);
-            }
-
-            error("Exception in deleteAnimation: {}", ex.what());
-            throw;
-        }
+        return runEndpoint("DELETE /api/v1/animation/{animationId}", "DELETE",
+                           fmt::format("api/v1/animation/{}", std::string(animationId)), "deleteAnimation",
+                           "AnimationController", request, [&](const auto &span) {
+                               if (span)
+                                   span->setAttribute("animation.id", std::string(animationId));
+                               auto result = m_animationService.deleteAnimation(animationId, span);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
+                               auto broadcastResult = broadcastCacheInvalidationToAllClients(CacheType::Animation);
+                               if (!broadcastResult.isSuccess()) {
+                                   warn("Failed to broadcast animation cache invalidation: {}",
+                                        broadcastResult.getError()->getMessage());
+                               }
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(playStoredAnimation) {
@@ -418,58 +329,37 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/animation/play", playStoredAnimation,
              BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        // The most exciting span - playing an animation!
-        auto span = creatures::observability ? creatures::observability->createRequestSpan(
-                                                   "POST /api/v1/animation/play", "POST", "api/v1/animation/play",
-                                                   extractTraceparent(request))
-                                             : nullptr;
-        addHttpRequestAttributes(span, request); // Add HTTP attributes
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("POST /api/v1/animation/play", "POST", "api/v1/animation/play", "playStoredAnimation",
+                           "AnimationController", request, [&](const auto &span) {
+                               if (!creatures::config || !creatures::db) {
+                                   auto result = creatures::ws::StatusDto::createShared();
+                                   result->status = "error";
+                                   result->code = 500;
+                                   result->message = "Animation play unavailable: server dependencies missing";
+                                   if (span) {
+                                       span->setAttribute("error.type", "missing_dependencies");
+                                       span->setHttpStatus(500);
+                                   }
+                                   return createDtoResponse(Status::CODE_500, result);
+                               }
 
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
+                               if (span) {
+                                   span->setAttribute("animation.id", std::string(requestBody->animation_id));
+                                   span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
+                                   span->setAttribute("reason", "play");
+                               }
 
-        if (!creatures::config || !creatures::db) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 500;
-            result->message = "Animation play unavailable: server dependencies missing";
-            if (span) {
-                span->setAttribute("error.type", "missing_dependencies");
-                span->setHttpStatus(500);
-            }
-            return createDtoResponse(Status::CODE_500, result);
-        }
+                               auto result = m_animationService.playStoredAnimation(
+                                   std::string(requestBody->animation_id), requestBody->universe, "play");
 
-        try {
-            if (span) {
-                span->setAttribute("endpoint.name", "playStoredAnimation");
-                span->setAttribute("controller.name", "AnimationController");
-                span->setAttribute("animation.id", std::string(requestBody->animation_id));
-                span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
-                span->setAttribute("reason", "play");
-            }
+                               if (span) {
+                                   span->setAttribute("result.message", std::string(result->message));
+                                   span->setHttpStatus(200);
+                               }
 
-            auto result = m_animationService.playStoredAnimation(std::string(requestBody->animation_id),
-                                                                 requestBody->universe, "play");
-
-            if (span) {
-                span->setAttribute("result.message", std::string(result->message));
-                span->setHttpStatus(200);
-            }
-
-            return createDtoResponse(Status::CODE_200, result);
-
-        } catch (const std::exception &ex) {
-            if (span) {
-                span->recordException(ex);
-                span->setHttpStatus(500);
-            }
-
-            error("Exception in playStoredAnimation: {}", ex.what());
-            throw;
-        }
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(interruptAnimation) {
@@ -484,116 +374,99 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/animation/interrupt", interruptAnimation,
              BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability
-                        ? creatures::observability->createRequestSpan("POST /api/v1/animation/interrupt", "POST",
-                                                                      "api/v1/animation/interrupt",
-                                                                      extractTraceparent(request))
-                        : nullptr;
-        addHttpRequestAttributes(span, request);
-
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-
-        if (!creatures::config || !creatures::sessionManager) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 500;
-            result->message = "Animation interrupt unavailable: server dependencies missing";
-            if (span) {
-                span->setAttribute("error.type", "missing_dependencies");
-                span->setHttpStatus(500);
-            }
-            return createDtoResponse(Status::CODE_500, result);
-        }
-
-        // Check if cooperative scheduler is enabled
-        if (creatures::config->getAnimationSchedulerType() !=
-            creatures::Configuration::AnimationSchedulerType::Cooperative) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 400;
-            result->message =
-                "Animation interrupts require the cooperative scheduler. Start server with --scheduler cooperative";
-
-            if (span) {
-                span->setAttribute("error.type", "scheduler_not_supported");
-                span->setAttribute("error.message", std::string(result->message));
-                span->setAttribute("scheduler_type", "legacy");
-                span->setHttpStatus(400);
-            }
-
-            error("Interrupt API called with legacy scheduler enabled");
-            return createDtoResponse(Status::CODE_400, result);
-        }
-
-        try {
-            if (span) {
-                span->setAttribute("endpoint.name", "interruptAnimation");
-                span->setAttribute("controller.name", "AnimationController");
-                span->setAttribute("animation.id", std::string(requestBody->animation_id));
-                span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
-                span->setAttribute("resume_playlist", static_cast<bool>(requestBody->resumePlaylist));
-            }
-
-            bool shouldResume = requestBody->resumePlaylist ? true : false;
-            info("REST API: interrupting universe {} with animation {} (resume: {})",
-                 static_cast<uint32_t>(requestBody->universe), std::string(requestBody->animation_id), shouldResume);
-
-            // Get the animation from the database
-            auto animationDto = m_animationService.getAnimation(requestBody->animation_id, span);
-
-            // Convert from oatpp DTO to internal model
-            std::shared_ptr<AnimationDto> animationDtoPtr(animationDto.get(),
-                                                          [](AnimationDto *) {}); // Non-owning shared_ptr
-            auto animation = convertFromDto(animationDtoPtr);
-
-            // Use SessionManager to interrupt
-            auto sessionResult =
-                creatures::sessionManager->interrupt(requestBody->universe, animation, shouldResume, span);
-
-            if (!sessionResult.isSuccess()) {
-                auto errorMsg = sessionResult.getError()->getMessage();
-                error("Failed to interrupt animation: {}", errorMsg);
-
-                if (span) {
-                    span->setAttribute("error.message", errorMsg);
-                    span->setHttpStatus(500);
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "POST /api/v1/animation/interrupt", "POST", "api/v1/animation/interrupt", "interruptAnimation",
+            "AnimationController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                if (!creatures::config || !creatures::sessionManager) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 500;
+                    result->message = "Animation interrupt unavailable: server dependencies missing";
+                    if (span) {
+                        span->setAttribute("error.type", "missing_dependencies");
+                        span->setHttpStatus(500);
+                    }
+                    return createDtoResponse(Status::CODE_500, result);
                 }
 
-                auto result = creatures::ws::StatusDto::createShared();
-                result->status = "error";
-                result->code = 500;
-                result->message = errorMsg.c_str();
+                // Check if cooperative scheduler is enabled
+                if (creatures::config->getAnimationSchedulerType() !=
+                    creatures::Configuration::AnimationSchedulerType::Cooperative) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 400;
+                    result->message = "Animation interrupts require the cooperative scheduler. Start server with "
+                                      "--scheduler cooperative";
 
-                return createDtoResponse(Status::CODE_500, result);
-            }
+                    if (span) {
+                        span->setAttribute("error.type", "scheduler_not_supported");
+                        span->setAttribute("error.message", std::string(result->message));
+                        span->setAttribute("scheduler_type", "legacy");
+                        span->setHttpStatus(400);
+                    }
 
-            // Success!
-            if (span) {
-                span->setAttribute("result.success", true);
-                span->setHttpStatus(200);
-                span->setAttribute("session.id", sessionResult.getValue().value()->getSessionId());
-            }
+                    error("Interrupt API called with legacy scheduler enabled");
+                    return createDtoResponse(Status::CODE_400, result);
+                }
 
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "success";
-            result->code = 200;
-            result->message = "Animation interrupt scheduled successfully";
-            result->session_id = sessionResult.getValue().value()->getSessionId().c_str();
+                {
+                    if (span) {
+                        span->setAttribute("animation.id", std::string(requestBody->animation_id));
+                        span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
+                        span->setAttribute("resume_playlist", static_cast<bool>(requestBody->resumePlaylist));
+                    }
 
-            return createDtoResponse(Status::CODE_200, result);
+                    bool shouldResume = requestBody->resumePlaylist ? true : false;
+                    info("REST API: interrupting universe {} with animation {} (resume: {})",
+                         static_cast<uint32_t>(requestBody->universe), std::string(requestBody->animation_id),
+                         shouldResume);
 
-        } catch (const std::exception &ex) {
-            if (span) {
-                span->recordException(ex);
-                span->setHttpStatus(500);
-            }
+                    // Get the animation from the database
+                    auto animationDto = m_animationService.getAnimation(requestBody->animation_id, span);
 
-            error("Exception in interruptAnimation: {}", ex.what());
-            throw;
-        }
+                    // Convert from oatpp DTO to internal model
+                    std::shared_ptr<AnimationDto> animationDtoPtr(animationDto.get(),
+                                                                  [](AnimationDto *) {}); // Non-owning shared_ptr
+                    auto animation = convertFromDto(animationDtoPtr);
+
+                    // Use SessionManager to interrupt
+                    auto sessionResult =
+                        creatures::sessionManager->interrupt(requestBody->universe, animation, shouldResume, span);
+
+                    if (!sessionResult.isSuccess()) {
+                        auto errorMsg = sessionResult.getError()->getMessage();
+                        error("Failed to interrupt animation: {}", errorMsg);
+
+                        if (span) {
+                            span->setAttribute("error.message", errorMsg);
+                            span->setHttpStatus(500);
+                        }
+
+                        auto result = creatures::ws::StatusDto::createShared();
+                        result->status = "error";
+                        result->code = 500;
+                        result->message = errorMsg.c_str();
+
+                        return createDtoResponse(Status::CODE_500, result);
+                    }
+
+                    // Success!
+                    if (span) {
+                        span->setAttribute("result.success", true);
+                        span->setHttpStatus(200);
+                        span->setAttribute("session.id", sessionResult.getValue().value()->getSessionId());
+                    }
+
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "success";
+                    result->code = 200;
+                    result->message = "Animation interrupt scheduled successfully";
+                    result->session_id = sessionResult.getValue().value()->getSessionId().c_str();
+
+                    return createDtoResponse(Status::CODE_200, result);
+                }
+            });
     }
 
     ENDPOINT_INFO(createAdHocAnimation) {
@@ -607,9 +480,10 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc", createAdHocAnimation,
              BODY_DTO(Object<creatures::ws::CreateAdHocAnimationRequestDto>, requestBody),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return handleAdHocAnimationRequest(requestBody, request, creatures::jobs::JobType::AdHocSpeech, true,
-                                           "POST /api/v1/animation/ad-hoc", "api/v1/animation/ad-hoc");
+                                           "POST /api/v1/animation/ad-hoc", "api/v1/animation/ad-hoc",
+                                           "createAdHocAnimation");
     }
 
     ENDPOINT_INFO(prepareAdHocAnimation) {
@@ -624,9 +498,10 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc/prepare", prepareAdHocAnimation,
              BODY_DTO(Object<creatures::ws::CreateAdHocAnimationRequestDto>, requestBody),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return handleAdHocAnimationRequest(requestBody, request, creatures::jobs::JobType::AdHocSpeechPrepare, false,
-                                           "POST /api/v1/animation/ad-hoc/prepare", "api/v1/animation/ad-hoc/prepare");
+                                           "POST /api/v1/animation/ad-hoc/prepare", "api/v1/animation/ad-hoc/prepare",
+                                           "prepareAdHocAnimation");
     }
 
     ENDPOINT_INFO(playPreparedAdHocAnimation) {
@@ -643,207 +518,204 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc/play", playPreparedAdHocAnimation,
              BODY_DTO(Object<creatures::ws::TriggerAdHocAnimationRequestDto>, requestBody),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability
-                        ? creatures::observability->createRequestSpan("POST /api/v1/animation/ad-hoc/play", "POST",
-                                                                      "api/v1/animation/ad-hoc/play",
-                                                                      extractTraceparent(request))
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "POST /api/v1/animation/ad-hoc/play", "POST", "api/v1/animation/ad-hoc/play", "playPreparedAdHocAnimation",
+            "AnimationController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                if (!creatures::config || !creatures::db || !creatures::sessionManager ||
+                    !creatures::creatureUniverseMap) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 500;
+                    result->message = "Ad-hoc play unavailable: server dependencies missing";
+                    if (span) {
+                        span->setAttribute("error.type", "missing_dependencies");
+                        span->setHttpStatus(500);
+                    }
+                    return createDtoResponse(Status::CODE_500, result);
+                }
+
+                if (creatures::config->getAnimationSchedulerType() !=
+                    creatures::Configuration::AnimationSchedulerType::Cooperative) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 400;
+                    result->message = "Ad-hoc speech requires the cooperative scheduler (--scheduler cooperative)";
+                    if (span) {
+                        span->setAttribute("error.type", "scheduler_not_supported");
+                        span->setHttpStatus(400);
+                    }
+                    return createDtoResponse(Status::CODE_400, result);
+                }
+
+                auto animationId = requestBody->animation_id ? std::string(requestBody->animation_id) : "";
+                bool resumePlaylist =
+                    requestBody->resume_playlist ? static_cast<bool>(requestBody->resume_playlist) : true;
+
+                if (span) {
+                    span->setAttribute("animation.id", animationId);
+                    span->setAttribute("resume_playlist", resumePlaylist);
+                }
+
+                if (animationId.empty()) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 400;
+                    result->message = "animation_id is required";
+                    if (span) {
+                        span->setAttribute("error.type", "invalid_request");
+                        span->setHttpStatus(400);
+                    }
+                    return createDtoResponse(Status::CODE_400, result);
+                }
+
+                auto animationLookupSpan =
+                    creatures::observability
+                        ? creatures::observability->createOperationSpan("AnimationController.getAdHocAnimation", span)
                         : nullptr;
-        addHttpRequestAttributes(span, request);
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
+                if (animationLookupSpan) {
+                    animationLookupSpan->setAttribute("animation.id", animationId);
+                }
 
-        if (!creatures::config || !creatures::db || !creatures::sessionManager || !creatures::creatureUniverseMap) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 500;
-            result->message = "Ad-hoc play unavailable: server dependencies missing";
-            if (span) {
-                span->setAttribute("error.type", "missing_dependencies");
-                span->setHttpStatus(500);
-            }
-            return createDtoResponse(Status::CODE_500, result);
-        }
+                auto animationResult = creatures::db->getAdHocAnimation(animationId, animationLookupSpan);
+                if (!animationResult.isSuccess()) {
+                    auto error = animationResult.getError().value();
+                    auto response = creatures::ws::StatusDto::createShared();
+                    response->status = "error";
+                    response->message = error.getMessage().c_str();
+                    Status status = Status::CODE_500;
+                    switch (error.getCode()) {
+                    case ServerError::NotFound:
+                        status = Status::CODE_404;
+                        break;
+                    case ServerError::InvalidData:
+                        status = Status::CODE_400;
+                        break;
+                    default:
+                        status = Status::CODE_500;
+                        break;
+                    }
+                    response->code = status.code;
+                    if (span) {
+                        span->setHttpStatus(status.code);
+                        span->setAttribute("error.type", "adhoc_animation_lookup_failed");
+                    }
+                    if (animationLookupSpan) {
+                        animationLookupSpan->setError(error.getMessage());
+                    }
+                    return createDtoResponse(status, response);
+                }
 
-        if (creatures::config->getAnimationSchedulerType() !=
-            creatures::Configuration::AnimationSchedulerType::Cooperative) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 400;
-            result->message = "Ad-hoc speech requires the cooperative scheduler (--scheduler cooperative)";
-            if (span) {
-                span->setAttribute("error.type", "scheduler_not_supported");
-                span->setHttpStatus(400);
-            }
-            return createDtoResponse(Status::CODE_400, result);
-        }
+                auto animation = animationResult.getValue().value();
+                if (animationLookupSpan) {
+                    animationLookupSpan->setSuccess();
+                }
+                if (animation.tracks.empty()) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 422;
+                    result->message = "Prepared animation has no tracks";
+                    if (span) {
+                        span->setAttribute("error.type", "empty_animation");
+                        span->setHttpStatus(422);
+                    }
+                    return createDtoResponse(Status::CODE_422, result);
+                }
 
-        auto animationId = requestBody->animation_id ? std::string(requestBody->animation_id) : "";
-        bool resumePlaylist = requestBody->resume_playlist ? static_cast<bool>(requestBody->resume_playlist) : true;
+                const auto &track = animation.tracks.front();
+                auto creatureId = track.creature_id;
+                auto mismatchedTrack =
+                    std::any_of(animation.tracks.begin(), animation.tracks.end(),
+                                [&](const creatures::Track &candidate) { return candidate.creature_id != creatureId; });
+                if (mismatchedTrack) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 422;
+                    result->message = "Prepared animation targets multiple creatures; cannot auto-play.";
+                    if (span) {
+                        span->setAttribute("error.type", "multi_creature_animation");
+                        span->setHttpStatus(422);
+                    }
+                    return createDtoResponse(Status::CODE_422, result);
+                }
 
-        if (span) {
-            span->setAttribute("animation.id", animationId);
-            span->setAttribute("resume_playlist", resumePlaylist);
-        }
+                if (creatureId.empty()) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 500;
+                    result->message = "Prepared animation track is missing creature_id";
+                    if (span) {
+                        span->setAttribute("error.type", "missing_creature_id");
+                        span->setHttpStatus(500);
+                    }
+                    return createDtoResponse(Status::CODE_500, result);
+                }
 
-        if (animationId.empty()) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 400;
-            result->message = "animation_id is required";
-            if (span) {
-                span->setAttribute("error.type", "invalid_request");
-                span->setHttpStatus(400);
-            }
-            return createDtoResponse(Status::CODE_400, result);
-        }
+                universe_t universe;
+                try {
+                    auto universePtr = creatures::creatureUniverseMap->get(creatureId);
+                    universe = *universePtr;
+                } catch (const std::exception &) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 409;
+                    result->message =
+                        fmt::format("Creature {} is not registered with a universe. Is the controller online?",
+                                    creatureId)
+                            .c_str();
+                    if (span) {
+                        span->setAttribute("error.type", "creature_not_registered");
+                        span->setHttpStatus(409);
+                    }
+                    return createDtoResponse(Status::CODE_409, result);
+                }
 
-        auto animationLookupSpan =
-            creatures::observability
-                ? creatures::observability->createOperationSpan("AnimationController.getAdHocAnimation", span)
-                : nullptr;
-        if (animationLookupSpan) {
-            animationLookupSpan->setAttribute("animation.id", animationId);
-        }
+                auto sessionResult =
+                    creatures::sessionManager->interruptIdleOnly(universe, animation, std::string(creatureId), span);
+                if (!sessionResult.isSuccess()) {
+                    auto error = sessionResult.getError().value();
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->message = error.getMessage().c_str();
 
-        auto animationResult = creatures::db->getAdHocAnimation(animationId, animationLookupSpan);
-        if (!animationResult.isSuccess()) {
-            auto error = animationResult.getError().value();
-            auto response = creatures::ws::StatusDto::createShared();
-            response->status = "error";
-            response->message = error.getMessage().c_str();
-            Status status = Status::CODE_500;
-            switch (error.getCode()) {
-            case ServerError::NotFound:
-                status = Status::CODE_404;
-                break;
-            case ServerError::InvalidData:
-                status = Status::CODE_400;
-                break;
-            default:
-                status = Status::CODE_500;
-                break;
-            }
-            response->code = status.code;
-            if (span) {
-                span->setHttpStatus(status.code);
-                span->setAttribute("error.type", "adhoc_animation_lookup_failed");
-            }
-            if (animationLookupSpan) {
-                animationLookupSpan->setError(error.getMessage());
-            }
-            return createDtoResponse(status, response);
-        }
+                    Status status = Status::CODE_500;
+                    switch (error.getCode()) {
+                    case ServerError::Conflict:
+                        status = Status::CODE_409;
+                        break;
+                    case ServerError::InvalidData:
+                        status = Status::CODE_400;
+                        break;
+                    default:
+                        status = Status::CODE_500;
+                        break;
+                    }
 
-        auto animation = animationResult.getValue().value();
-        if (animationLookupSpan) {
-            animationLookupSpan->setSuccess();
-        }
-        if (animation.tracks.empty()) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 422;
-            result->message = "Prepared animation has no tracks";
-            if (span) {
-                span->setAttribute("error.type", "empty_animation");
-                span->setHttpStatus(422);
-            }
-            return createDtoResponse(Status::CODE_422, result);
-        }
+                    result->code = status.code;
+                    if (span) {
+                        span->setAttribute("error.type", "session_interrupt_failed");
+                        span->setHttpStatus(status.code);
+                    }
+                    return createDtoResponse(status, result);
+                }
 
-        const auto &track = animation.tracks.front();
-        auto creatureId = track.creature_id;
-        auto mismatchedTrack =
-            std::any_of(animation.tracks.begin(), animation.tracks.end(),
-                        [&](const creatures::Track &candidate) { return candidate.creature_id != creatureId; });
-        if (mismatchedTrack) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 422;
-            result->message = "Prepared animation targets multiple creatures; cannot auto-play.";
-            if (span) {
-                span->setAttribute("error.type", "multi_creature_animation");
-                span->setHttpStatus(422);
-            }
-            return createDtoResponse(Status::CODE_422, result);
-        }
+                auto response = creatures::ws::StatusDto::createShared();
+                response->status = "ok";
+                response->code = 200;
+                response->message = fmt::format("Triggered ad-hoc animation {} for {} on universe {}", animationId,
+                                                creatureId, universe)
+                                        .c_str();
+                response->session_id = sessionResult.getValue().value()->getSessionId().c_str();
 
-        if (creatureId.empty()) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 500;
-            result->message = "Prepared animation track is missing creature_id";
-            if (span) {
-                span->setAttribute("error.type", "missing_creature_id");
-                span->setHttpStatus(500);
-            }
-            return createDtoResponse(Status::CODE_500, result);
-        }
+                if (span) {
+                    span->setAttribute("creature.id", creatureId);
+                    span->setAttribute("universe", static_cast<int64_t>(universe));
+                    span->setAttribute("session.id", sessionResult.getValue().value()->getSessionId());
+                    span->setHttpStatus(200);
+                }
 
-        universe_t universe;
-        try {
-            auto universePtr = creatures::creatureUniverseMap->get(creatureId);
-            universe = *universePtr;
-        } catch (const std::exception &) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 409;
-            result->message =
-                fmt::format("Creature {} is not registered with a universe. Is the controller online?", creatureId)
-                    .c_str();
-            if (span) {
-                span->setAttribute("error.type", "creature_not_registered");
-                span->setHttpStatus(409);
-            }
-            return createDtoResponse(Status::CODE_409, result);
-        }
-
-        auto sessionResult =
-            creatures::sessionManager->interruptIdleOnly(universe, animation, std::string(creatureId), span);
-        if (!sessionResult.isSuccess()) {
-            auto error = sessionResult.getError().value();
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->message = error.getMessage().c_str();
-
-            Status status = Status::CODE_500;
-            switch (error.getCode()) {
-            case ServerError::Conflict:
-                status = Status::CODE_409;
-                break;
-            case ServerError::InvalidData:
-                status = Status::CODE_400;
-                break;
-            default:
-                status = Status::CODE_500;
-                break;
-            }
-
-            result->code = status.code;
-            if (span) {
-                span->setAttribute("error.type", "session_interrupt_failed");
-                span->setHttpStatus(status.code);
-            }
-            return createDtoResponse(status, result);
-        }
-
-        auto response = creatures::ws::StatusDto::createShared();
-        response->status = "ok";
-        response->code = 200;
-        response->message =
-            fmt::format("Triggered ad-hoc animation {} for {} on universe {}", animationId, creatureId, universe)
-                .c_str();
-        response->session_id = sessionResult.getValue().value()->getSessionId().c_str();
-
-        if (span) {
-            span->setAttribute("creature.id", creatureId);
-            span->setAttribute("universe", static_cast<int64_t>(universe));
-            span->setAttribute("session.id", sessionResult.getValue().value()->getSessionId());
-            span->setHttpStatus(200);
-        }
-
-        return createDtoResponse(Status::CODE_200, response);
+                return createDtoResponse(Status::CODE_200, response);
+            });
     }
 
   private:
@@ -851,151 +723,147 @@ class AnimationController : public oatpp::web::server::api::ApiController {
     handleAdHocAnimationRequest(const oatpp::Object<creatures::ws::CreateAdHocAnimationRequestDto> &requestBody,
                                 const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request,
                                 creatures::jobs::JobType jobType, bool autoPlay, const std::string &spanName,
-                                const std::string &endpointPath) {
+                                const std::string &endpointPath, const std::string &endpointName) {
+        return runEndpoint(
+            spanName, "POST", endpointPath, endpointName, "AnimationController", request,
+            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                if (span) {
+                    span->setAttribute("auto_play", autoPlay);
+                }
 
-        auto span = creatures::observability
-                        ? creatures::observability->createRequestSpan(spanName, "POST", endpointPath,
-                                                                      extractTraceparent(request))
-                        : nullptr;
-        addHttpRequestAttributes(span, request);
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
+                if (!creatures::config || !creatures::db || !creatures::sessionManager) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 500;
+                    result->message = "Ad-hoc request unavailable: server dependencies missing";
+                    if (span) {
+                        span->setAttribute("error.type", "missing_dependencies");
+                        span->setHttpStatus(500);
+                    }
+                    return createDtoResponse(Status::CODE_500, result);
+                }
 
-        if (span) {
-            span->setAttribute("auto_play", autoPlay);
-        }
+                if (creatures::config->getAnimationSchedulerType() !=
+                    creatures::Configuration::AnimationSchedulerType::Cooperative) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 400;
+                    result->message = "Ad-hoc speech requires the cooperative scheduler (--scheduler cooperative)";
+                    if (span) {
+                        span->setAttribute("error.type", "scheduler_not_supported");
+                        span->setHttpStatus(400);
+                    }
+                    return createDtoResponse(Status::CODE_400, result);
+                }
 
-        if (!creatures::config || !creatures::db || !creatures::sessionManager) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 500;
-            result->message = "Ad-hoc request unavailable: server dependencies missing";
-            if (span) {
-                span->setAttribute("error.type", "missing_dependencies");
-                span->setHttpStatus(500);
-            }
-            return createDtoResponse(Status::CODE_500, result);
-        }
+                auto creatureId = requestBody->creature_id ? std::string(requestBody->creature_id) : "";
+                auto text = requestBody->text ? std::string(requestBody->text) : "";
+                bool resumePlaylist =
+                    requestBody->resume_playlist ? static_cast<bool>(requestBody->resume_playlist) : true;
 
-        if (creatures::config->getAnimationSchedulerType() !=
-            creatures::Configuration::AnimationSchedulerType::Cooperative) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 400;
-            result->message = "Ad-hoc speech requires the cooperative scheduler (--scheduler cooperative)";
-            if (span) {
-                span->setAttribute("error.type", "scheduler_not_supported");
-                span->setHttpStatus(400);
-            }
-            return createDtoResponse(Status::CODE_400, result);
-        }
+                if (span) {
+                    span->setAttribute("creature.id", creatureId);
+                    span->setAttribute("text.length", static_cast<int64_t>(text.size()));
+                    span->setAttribute("resume_playlist", resumePlaylist);
+                }
 
-        auto creatureId = requestBody->creature_id ? std::string(requestBody->creature_id) : "";
-        auto text = requestBody->text ? std::string(requestBody->text) : "";
-        bool resumePlaylist = requestBody->resume_playlist ? static_cast<bool>(requestBody->resume_playlist) : true;
+                if (creatureId.empty() || text.empty()) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 400;
+                    result->message = "creature_id and text are required";
+                    if (span) {
+                        span->setAttribute("error.type", "invalid_request");
+                        span->setHttpStatus(400);
+                    }
+                    return createDtoResponse(Status::CODE_400, result);
+                }
 
-        if (span) {
-            span->setAttribute("creature.id", creatureId);
-            span->setAttribute("text.length", static_cast<int64_t>(text.size()));
-            span->setAttribute("resume_playlist", resumePlaylist);
-        }
+                auto creatureLookupSpan =
+                    creatures::observability->createOperationSpan("AnimationController.lookupCreature", span);
+                if (creatureLookupSpan) {
+                    creatureLookupSpan->setAttribute("creature.id", creatureId);
+                }
 
-        if (creatureId.empty() || text.empty()) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 400;
-            result->message = "creature_id and text are required";
-            if (span) {
-                span->setAttribute("error.type", "invalid_request");
-                span->setHttpStatus(400);
-            }
-            return createDtoResponse(Status::CODE_400, result);
-        }
+                auto creatureResult = creatures::db->getCreature(creatureId, creatureLookupSpan);
+                if (!creatureResult.isSuccess()) {
+                    auto error = creatureResult.getError().value();
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->message = error.getMessage().c_str();
+                    Status status = Status::CODE_500;
+                    switch (error.getCode()) {
+                    case ServerError::NotFound:
+                        status = Status::CODE_404;
+                        break;
+                    case ServerError::InvalidData:
+                        status = Status::CODE_400;
+                        break;
+                    default:
+                        status = Status::CODE_500;
+                        break;
+                    }
+                    result->code = status.code;
+                    if (creatureLookupSpan) {
+                        creatureLookupSpan->setError(error.getMessage());
+                        creatureLookupSpan->setAttribute("error.code", static_cast<int64_t>(status.code));
+                    }
+                    if (span) {
+                        span->setAttribute("error.type", "creature_lookup_failed");
+                        span->setHttpStatus(status.code);
+                    }
+                    return createDtoResponse(status, result);
+                }
 
-        auto creatureLookupSpan =
-            creatures::observability->createOperationSpan("AnimationController.lookupCreature", span);
-        if (creatureLookupSpan) {
-            creatureLookupSpan->setAttribute("creature.id", creatureId);
-        }
+                if (creatureLookupSpan) {
+                    creatureLookupSpan->setSuccess();
+                }
 
-        auto creatureResult = creatures::db->getCreature(creatureId, creatureLookupSpan);
-        if (!creatureResult.isSuccess()) {
-            auto error = creatureResult.getError().value();
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->message = error.getMessage().c_str();
-            Status status = Status::CODE_500;
-            switch (error.getCode()) {
-            case ServerError::NotFound:
-                status = Status::CODE_404;
-                break;
-            case ServerError::InvalidData:
-                status = Status::CODE_400;
-                break;
-            default:
-                status = Status::CODE_500;
-                break;
-            }
-            result->code = status.code;
-            if (creatureLookupSpan) {
-                creatureLookupSpan->setError(error.getMessage());
-                creatureLookupSpan->setAttribute("error.code", static_cast<int64_t>(status.code));
-            }
-            if (span) {
-                span->setAttribute("error.type", "creature_lookup_failed");
-                span->setHttpStatus(status.code);
-            }
-            return createDtoResponse(status, result);
-        }
+                const auto creature = creatureResult.getValue().value();
+                if (creature.speech_loop_animation_ids.empty()) {
+                    auto result = creatures::ws::StatusDto::createShared();
+                    result->status = "error";
+                    result->code = 422;
+                    result->message =
+                        fmt::format("{} has no speech_loop_animation_ids configured; ad-hoc speech cannot proceed.",
+                                    creature.name)
+                            .c_str();
+                    if (span) {
+                        span->setAttribute("error.type", "missing_speech_loop_animation_ids");
+                        span->setHttpStatus(422);
+                    }
+                    return createDtoResponse(Status::CODE_422, result);
+                }
 
-        if (creatureLookupSpan) {
-            creatureLookupSpan->setSuccess();
-        }
+                nlohmann::json jobDetails;
+                jobDetails["creature_id"] = creatureId;
+                jobDetails["text"] = text;
+                jobDetails["resume_playlist"] = resumePlaylist;
+                jobDetails["auto_play"] = autoPlay;
 
-        const auto creature = creatureResult.getValue().value();
-        if (creature.speech_loop_animation_ids.empty()) {
-            auto result = creatures::ws::StatusDto::createShared();
-            result->status = "error";
-            result->code = 422;
-            result->message =
-                fmt::format("{} has no speech_loop_animation_ids configured; ad-hoc speech cannot proceed.",
-                            creature.name)
-                    .c_str();
-            if (span) {
-                span->setAttribute("error.type", "missing_speech_loop_animation_ids");
-                span->setHttpStatus(422);
-            }
-            return createDtoResponse(Status::CODE_422, result);
-        }
+                auto jobId = creatures::jobManager->createJob(jobType, jobDetails.dump(), span);
+                creatures::jobWorker->queueJob(jobId);
 
-        nlohmann::json jobDetails;
-        jobDetails["creature_id"] = creatureId;
-        jobDetails["text"] = text;
-        jobDetails["resume_playlist"] = resumePlaylist;
-        jobDetails["auto_play"] = autoPlay;
+                auto response = JobCreatedDto::createShared();
+                response->job_id = jobId;
+                response->job_type = creatures::jobs::toString(jobType).c_str();
+                if (autoPlay) {
+                    response->message = fmt::format(
+                        "Ad-hoc speech job created for '{}'. Listen for job-progress and job-complete messages.",
+                        creatureId);
+                } else {
+                    response->message = fmt::format(
+                        "Prepared ad-hoc speech job created for '{}'. Call /api/v1/animation/ad-hoc/play when ready.",
+                        creatureId);
+                }
 
-        auto jobId = creatures::jobManager->createJob(jobType, jobDetails.dump(), span);
-        creatures::jobWorker->queueJob(jobId);
+                if (span) {
+                    span->setHttpStatus(202);
+                    span->setAttribute("job.id", jobId);
+                }
 
-        auto response = JobCreatedDto::createShared();
-        response->job_id = jobId;
-        response->job_type = creatures::jobs::toString(jobType).c_str();
-        if (autoPlay) {
-            response->message = fmt::format(
-                "Ad-hoc speech job created for '{}'. Listen for job-progress and job-complete messages.", creatureId);
-        } else {
-            response->message = fmt::format(
-                "Prepared ad-hoc speech job created for '{}'. Call /api/v1/animation/ad-hoc/play when ready.",
-                creatureId);
-        }
-
-        if (span) {
-            span->setHttpStatus(202);
-            span->setAttribute("job.id", jobId);
-        }
-
-        return createDtoResponse(Status::CODE_202, response);
+                return createDtoResponse(Status::CODE_202, response);
+            });
     }
 };
 } // namespace creatures::ws

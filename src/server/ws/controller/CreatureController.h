@@ -15,15 +15,10 @@ using json = nlohmann::json;
 #include "server/database.h"
 
 #include "server/metrics/counters.h"
+#include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/dto/IdleToggleDto.h"
 #include "server/ws/dto/RegisterCreatureRequestDto.h"
-#include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/service/CreatureService.h"
-
-namespace creatures {
-extern std::shared_ptr<SystemCounters> metrics;
-extern std::shared_ptr<ObservabilityManager> observability;
-} // namespace creatures
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
 
@@ -50,35 +45,14 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<CreaturesListDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/creature", getAllCreatures,
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        // Create a trace span for this request
-        const auto span =
-            creatures::observability
-                ? creatures::observability->createRequestSpan("GET /api/v1/creature", "GET", "api/v1/creature",
-                                                              extractTraceparent(request))
-                : nullptr;
-        addHttpRequestAttributes(span, request);
-
-        if (creatures::metrics) {
-            if (creatures::metrics) {
-                creatures::metrics->incrementRestRequestsProcessed();
-            }
-        }
-
-        if (span) {
-            span->setAttribute("endpoint.name", "getAllCreatures");
-            span->setAttribute("controller.name", "CreatureController");
-        }
-
-        const auto result = m_creatureService.getAllCreatures(span);
-
-        // Record success metrics in the span
-        if (span) {
-            span->setHttpStatus(200);
-        }
-
-        return createDtoResponse(Status::CODE_200, result);
+    ENDPOINT("GET", "api/v1/creature", getAllCreatures, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/creature", "GET", "api/v1/creature", "getAllCreatures", "CreatureController",
+                           request, [&](const auto &span) {
+                               const auto result = m_creatureService.getAllCreatures(span);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(getCreature) {
@@ -92,33 +66,18 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         info->pathParams["creatureId"].description = "Creature ID in the form of an UUID";
     }
     ENDPOINT("GET", "api/v1/creature/{creatureId}", getCreature, PATH(String, creatureId),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        // RequestSpan only handles HTTP-level concerns
-        const auto span =
-            creatures::observability
-                ? creatures::observability->createRequestSpan("GET /api/v1/creature/{creatureId}", "GET",
-                                                              "api/v1/creature/" + std::string(creatureId),
-                                                              extractTraceparent(request))
-                : nullptr;
-        addHttpRequestAttributes(span, request);
-
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-
-        if (span) {
-            span->setAttribute("endpoint.name", "getCreature");
-            span->setAttribute("controller.name", "CreatureController");
-            span->setAttribute("creature.id", std::string(creatureId));
-        }
-
-        const auto result = m_creatureService.getCreature(creatureId, span);
-
-        if (span) {
-            span->setHttpStatus(200);
-        }
-
-        return createDtoResponse(Status::CODE_200, result);
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        OATPP_ASSERT_HTTP(creatureId && isUuidShape(std::string(creatureId)), Status::CODE_400,
+                          "creatureId must be a UUID");
+        return runEndpoint("GET /api/v1/creature/{creatureId}", "GET", "api/v1/creature/" + std::string(creatureId),
+                           "getCreature", "CreatureController", request, [&](const auto &span) {
+                               if (span)
+                                   span->setAttribute("creature.id", std::string(creatureId));
+                               const auto result = m_creatureService.getCreature(creatureId, span);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(upsertCreature) {
@@ -133,50 +92,25 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/creature", upsertCreature, BODY_STRING(String, body),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        const auto span =
-            creatures::observability
-                ? creatures::observability->createRequestSpan("POST /api/v1/creature", "POST", "api/v1/creature",
-                                                              extractTraceparent(request))
-                : nullptr;
-        addHttpRequestAttributes(span, request);
-
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("Upserting creature via POST /api/v1/creature");
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-
-        try {
-            const auto creatureConfig = std::string(body);
-
-            if (span) {
-                span->setAttribute("endpoint.name", "upsertCreature");
-                span->setAttribute("controller.name", "CreatureController");
-                span->setAttribute("request.body_size", static_cast<int64_t>(creatureConfig.length()));
-            }
-
-            const auto result = m_creatureService.upsertCreature(creatureConfig, span);
-
-            if (span) {
-                span->setAttribute("creature.id", std::string(result->id));
-                span->setAttribute("creature.name", std::string(result->name));
-                span->setHttpStatus(200);
-            }
-
-            // Schedule an event to invalidate the creature cache on the clients
-            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Creature);
-
-            return createDtoResponse(Status::CODE_200, result);
-
-        } catch (const std::exception &ex) {
-            if (span) {
-                span->recordException(ex);
-                span->setHttpStatus(500);
-            }
-
-            error("Exception in upsertCreature: {}", ex.what());
-            throw;
-        }
+        return runEndpoint("POST /api/v1/creature", "POST", "api/v1/creature", "upsertCreature", "CreatureController",
+                           request, [&](const auto &span) {
+                               const auto creatureConfig = std::string(body);
+                               if (span) {
+                                   span->setAttribute("request.body_size",
+                                                      static_cast<int64_t>(creatureConfig.length()));
+                               }
+                               const auto result = m_creatureService.upsertCreature(creatureConfig, span);
+                               if (span) {
+                                   span->setAttribute("creature.id", std::string(result->id));
+                                   span->setAttribute("creature.name", std::string(result->name));
+                                   span->setHttpStatus(200);
+                               }
+                               // Schedule an event to invalidate the creature cache on the clients
+                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Creature);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(validateCreatureConfig) {
@@ -186,30 +120,18 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/creature/validate", validateCreatureConfig, BODY_STRING(String, body),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        auto span = creatures::observability ? creatures::observability->createRequestSpan(
-                                                   "POST /api/v1/creature/validate", "POST", "api/v1/creature/validate",
-                                                   extractTraceparent(request))
-                                             : nullptr;
-        addHttpRequestAttributes(span, request);
-
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-
-        if (span) {
-            span->setAttribute("endpoint.name", "validateCreatureConfig");
-            span->setAttribute("controller.name", "CreatureController");
-            span->setAttribute("request.body_size", static_cast<int64_t>(body ? body->size() : 0));
-        }
-
-        const auto result = m_creatureService.validateCreatureConfig(std::string(body), span);
-
-        if (span) {
-            span->setHttpStatus(200);
-        }
-
-        return createDtoResponse(Status::CODE_200, result);
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("POST /api/v1/creature/validate", "POST", "api/v1/creature/validate",
+                           "validateCreatureConfig", "CreatureController", request, [&](const auto &span) {
+                               if (span) {
+                                   span->setAttribute("request.body_size",
+                                                      static_cast<int64_t>(body ? body->size() : 0));
+                               }
+                               const auto result = m_creatureService.validateCreatureConfig(std::string(body), span);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(setIdleEnabled) {
@@ -220,39 +142,23 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("PATCH", "api/v1/creature/{creatureId}/idle", setIdleEnabled, PATH(String, creatureId),
-             BODY_DTO(Object<IdleToggleDto>, body),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        const auto span =
-            creatures::observability
-                ? creatures::observability->createRequestSpan("PATCH /api/v1/creature/{creatureId}/idle", "PATCH",
-                                                              "api/v1/creature/" + std::string(creatureId) + "/idle",
-                                                              extractTraceparent(request))
-                : nullptr;
-
-        addHttpRequestAttributes(span, request);
-
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-
-        if (span) {
-            span->setAttribute("endpoint.name", "setIdleEnabled");
-            span->setAttribute("controller.name", "CreatureController");
-            span->setAttribute("creature.id", std::string(creatureId));
-        }
-
-        bool enabled = true;
-        if (body && body->enabled != nullptr) {
-            enabled = *body->enabled;
-        }
-
-        const auto result = m_creatureService.setIdleEnabled(creatureId, enabled, span);
-
-        if (span) {
-            span->setHttpStatus(200);
-        }
-
-        return createDtoResponse(Status::CODE_200, result);
+             BODY_DTO(Object<IdleToggleDto>, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        OATPP_ASSERT_HTTP(creatureId && isUuidShape(std::string(creatureId)), Status::CODE_400,
+                          "creatureId must be a UUID");
+        return runEndpoint("PATCH /api/v1/creature/{creatureId}/idle", "PATCH",
+                           "api/v1/creature/" + std::string(creatureId) + "/idle", "setIdleEnabled",
+                           "CreatureController", request, [&](const auto &span) {
+                               if (span)
+                                   span->setAttribute("creature.id", std::string(creatureId));
+                               bool enabled = true;
+                               if (body && body->enabled != nullptr) {
+                                   enabled = *body->enabled;
+                               }
+                               const auto result = m_creatureService.setIdleEnabled(creatureId, enabled, span);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(registerCreature) {
@@ -267,85 +173,61 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/creature/register", registerCreature,
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        const auto span = creatures::observability
-                              ? creatures::observability->createRequestSpan("POST /api/v1/creature/register", "POST",
-                                                                            "api/v1/creature/register",
-                                                                            extractTraceparent(request))
-                              : nullptr;
-
-        addHttpRequestAttributes(span, request);
-
+    ENDPOINT("POST", "api/v1/creature/register", registerCreature, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("----> Controller registering creature with universe assignment");
+        return runEndpoint(
+            "POST /api/v1/creature/register", "POST", "api/v1/creature/register", "registerCreature",
+            "CreatureController", request, [&](const auto &span) {
+                // Read body manually instead of using BODY_STRING macro
+                const oatpp::String body = request->readBodyToString();
 
-        // Read body manually instead of using BODY_STRING macro
-        const oatpp::String body = request->readBodyToString();
+                debug("Raw request body size: {} bytes", body ? body->size() : 0);
+                if (body && body->size() > 0) {
+                    debug("First 200 chars of body: {}",
+                          std::string(body->data(), std::min(200UL, static_cast<size_t>(body->size()))));
+                }
 
-        // Debug: Log the raw request body
-        debug("Raw request body size: {} bytes", body ? body->size() : 0);
-        if (body && body->size() > 0) {
-            debug("First 200 chars of body: {}",
-                  std::string(body->data(), std::min(200UL, static_cast<size_t>(body->size()))));
-        }
+                // Parse the JSON manually for now
+                Object<RegisterCreatureRequestDto> dto;
+                try {
+                    const auto json = nlohmann::json::parse(std::string(body));
+                    dto = RegisterCreatureRequestDto::createShared();
+                    dto->creature_config = json.value("creature_config", "");
+                    dto->universe = json.value("universe", 0);
+                } catch (const std::exception &e) {
+                    const std::string errorMessage = fmt::format("Failed to parse request body: {}", e.what());
+                    error(errorMessage);
+                    if (span) {
+                        span->setAttribute("error.message", errorMessage);
+                        span->setHttpStatus(400);
+                    }
+                    const auto errorDto = StatusDto::createShared();
+                    errorDto->status = "ERROR";
+                    errorDto->code = 400;
+                    errorDto->message = errorMessage.c_str();
+                    return createDtoResponse(Status::CODE_400, errorDto);
+                }
 
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
+                const std::string creatureConfig = std::string(dto->creature_config);
 
-        // Parse the JSON manually for now
-        Object<RegisterCreatureRequestDto> dto;
-        try {
-            const auto json = nlohmann::json::parse(std::string(body));
-            dto = RegisterCreatureRequestDto::createShared();
-            dto->creature_config = json.value("creature_config", "");
-            dto->universe = json.value("universe", 0);
-        } catch (const std::exception &e) {
-            const std::string errorMessage = fmt::format("Failed to parse request body: {}", e.what());
-            error(errorMessage);
-            if (span) {
-                span->setAttribute("error.message", errorMessage);
-                span->setHttpStatus(400);
-            }
-            const auto errorDto = StatusDto::createShared();
-            errorDto->status = "ERROR";
-            errorDto->code = 400;
-            errorDto->message = errorMessage.c_str();
-            return createDtoResponse(Status::CODE_400, errorDto);
-        }
+                if (span) {
+                    span->setAttribute("universe", static_cast<int64_t>(dto->universe));
+                    span->setAttribute("request.body_size", static_cast<int64_t>(creatureConfig.length()));
+                }
 
-        try {
-            const std::string creatureConfig = std::string(dto->creature_config);
+                const auto result = m_creatureService.registerCreature(creatureConfig, dto->universe, span);
 
-            if (span) {
-                span->setAttribute("endpoint.name", "registerCreature");
-                span->setAttribute("controller.name", "CreatureController");
-                span->setAttribute("universe", static_cast<int64_t>(dto->universe));
-                span->setAttribute("request.body_size", static_cast<int64_t>(creatureConfig.length()));
-            }
+                if (span) {
+                    span->setAttribute("creature.id", std::string(result->id));
+                    span->setAttribute("creature.name", std::string(result->name));
+                    span->setHttpStatus(200);
+                }
 
-            const auto result = m_creatureService.registerCreature(creatureConfig, dto->universe, span);
+                // Schedule an event to invalidate the creature cache on the clients
+                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Creature);
 
-            if (span) {
-                span->setAttribute("creature.id", std::string(result->id));
-                span->setAttribute("creature.name", std::string(result->name));
-                span->setHttpStatus(200);
-            }
-
-            // Schedule an event to invalidate the creature cache on the clients
-            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Creature);
-
-            return createDtoResponse(Status::CODE_200, result);
-
-        } catch (const std::exception &ex) {
-            if (span) {
-                span->recordException(ex);
-                span->setHttpStatus(500);
-            }
-
-            error("Exception in registerCreature: {}", ex.what());
-            throw;
-        }
+                return createDtoResponse(Status::CODE_200, result);
+            });
     }
 };
 
