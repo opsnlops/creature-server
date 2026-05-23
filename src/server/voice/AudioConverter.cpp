@@ -11,6 +11,7 @@
 
 #include "server/config.h"
 #include "server/namespace-stuffs.h"
+#include "util/ChildProcess.h"
 #include "util/ObservabilityManager.h"
 
 namespace creatures {
@@ -44,8 +45,8 @@ Result<std::uintmax_t> AudioConverter::convertMp3ToWav(const std::filesystem::pa
     }
 
     if (targetChannel < 1 || targetChannel > RTP_STREAMING_CHANNELS) {
-        std::string errorMsg = fmt::format("Invalid target channel {}. Must be between 1 and {}", targetChannel,
-                                           RTP_STREAMING_CHANNELS);
+        std::string errorMsg =
+            fmt::format("Invalid target channel {}. Must be between 1 and {}", targetChannel, RTP_STREAMING_CHANNELS);
         error(errorMsg);
         if (span)
             span->setError(errorMsg);
@@ -76,7 +77,8 @@ Result<std::uintmax_t> AudioConverter::convertMp3ToWav(const std::filesystem::pa
     int silentIndex = 0;
     filterComplex << "["; // Start with opening bracket
     for (int i = 0; i < RTP_STREAMING_CHANNELS; i++) {
-        if (i > 0) filterComplex << "][";
+        if (i > 0)
+            filterComplex << "][";
 
         if (i == (targetChannel - 1)) {
             filterComplex << "input";
@@ -87,43 +89,38 @@ Result<std::uintmax_t> AudioConverter::convertMp3ToWav(const std::filesystem::pa
     }
     filterComplex << "]amerge=inputs=" << RTP_STREAMING_CHANNELS << "[out]";
 
-    // Build ffmpeg command
-    // -i: input file
-    // -filter_complex: complex audio filter to create multi-channel output
-    // -map: map the output of the filter
-    // -acodec pcm_s16le: 16-bit PCM signed little-endian (not 32-bit float)
-    // -shortest: terminate when the shortest input ends (the actual audio)
-    // -y: overwrite output file
-    std::string ffmpegCommand =
-        fmt::format("\"{}\" -i \"{}\" -filter_complex \"{}\" -map \"[out]\" -acodec pcm_s16le -shortest -y \"{}\" 2>&1",
-                    ffmpegBinaryPath, mp3FilePath.string(), filterComplex.str(), wavFilePath.string());
+    // Build ffmpeg argv. -filter_complex value is passed as a single argv
+    // entry; ffmpeg parses it internally — no shell involved.
+    std::vector<std::string> args = {"-i",
+                                     mp3FilePath.string(),
+                                     "-filter_complex",
+                                     filterComplex.str(),
+                                     "-map",
+                                     "[out]",
+                                     "-acodec",
+                                     "pcm_s16le",
+                                     "-shortest",
+                                     "-y",
+                                     wavFilePath.string()};
 
-    debug("Executing ffmpeg: {}", ffmpegCommand);
+    debug("Executing ffmpeg: {} with {} args (input={}, output={})", ffmpegBinaryPath, args.size(),
+          mp3FilePath.filename().string(), wavFilePath.filename().string());
 
-    // Execute ffmpeg
-    FILE *ffmpegPipe = popen(ffmpegCommand.c_str(), "r");
-    if (!ffmpegPipe) {
-        std::string errorMsg =
-            fmt::format("Failed to execute ffmpeg at {}. Is it installed? errno: {}", ffmpegBinaryPath, errno);
+    auto spawnResult = util::runChildProcess(ffmpegBinaryPath, args, /*mergeStderrToStdout=*/true);
+    if (!spawnResult.isSuccess()) {
+        auto err = spawnResult.getError().value();
+        std::string errorMsg = fmt::format("Failed to execute ffmpeg at {}. Is it installed? Detail: {}",
+                                           ffmpegBinaryPath, err.getMessage());
         error(errorMsg);
         if (span)
             span->setError(errorMsg);
         return Result<std::uintmax_t>{ServerError(ServerError::InternalError, errorMsg)};
     }
+    auto child = spawnResult.getValue().value();
 
-    // Read ffmpeg output for logging
-    std::string ffmpegOutput;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), ffmpegPipe) != nullptr) {
-        ffmpegOutput += buffer;
-    }
-
-    int ffmpegExitCode = pclose(ffmpegPipe);
-    debug("ffmpeg exited with code: {}", ffmpegExitCode);
-
-    if (ffmpegExitCode != 0) {
+    if (child.exitCode != 0) {
         std::string errorMsg =
-            fmt::format("ffmpeg conversion failed with exit code {}.\n\nOutput:\n{}", ffmpegExitCode, ffmpegOutput);
+            fmt::format("ffmpeg conversion failed with exit code {}.\n\nOutput:\n{}", child.exitCode, child.output);
         error(errorMsg);
         if (span)
             span->setError(errorMsg);
@@ -132,8 +129,7 @@ Result<std::uintmax_t> AudioConverter::convertMp3ToWav(const std::filesystem::pa
 
     // Verify WAV file was created and get its size
     if (!std::filesystem::exists(wavFilePath)) {
-        std::string errorMsg =
-            fmt::format("ffmpeg completed but did not create WAV file: {}", wavFilePath.string());
+        std::string errorMsg = fmt::format("ffmpeg completed but did not create WAV file: {}", wavFilePath.string());
         error(errorMsg);
         if (span)
             span->setError(errorMsg);
@@ -154,8 +150,8 @@ Result<std::uintmax_t> AudioConverter::convertMp3ToWav(const std::filesystem::pa
 }
 
 Result<int> AudioConverter::getChannelCount(const std::filesystem::path &audioFilePath,
-                                             const std::string &ffmpegBinaryPath,
-                                             std::shared_ptr<OperationSpan> parentSpan) {
+                                            const std::string &ffmpegBinaryPath,
+                                            std::shared_ptr<OperationSpan> parentSpan) {
 
     auto span = observability->createChildOperationSpan("AudioConverter.getChannelCount", parentSpan);
     if (span) {
@@ -170,29 +166,23 @@ Result<int> AudioConverter::getChannelCount(const std::filesystem::path &audioFi
         return Result<int>{ServerError(ServerError::NotFound, errorMsg)};
     }
 
-    std::string ffmpegCommand =
-        fmt::format("\"{}\" -hide_banner -i \"{}\" -f null - 2>&1", ffmpegBinaryPath, audioFilePath.string());
+    std::vector<std::string> args = {"-hide_banner", "-i", audioFilePath.string(), "-f", "null", "-"};
 
-    FILE *pipe = popen(ffmpegCommand.c_str(), "r");
-    if (!pipe) {
-        std::string errorMsg =
-            fmt::format("Failed to execute ffmpeg at {}. errno: {}", ffmpegBinaryPath, errno);
+    auto spawnResult = util::runChildProcess(ffmpegBinaryPath, args, /*mergeStderrToStdout=*/true);
+    if (!spawnResult.isSuccess()) {
+        auto err = spawnResult.getError().value();
+        std::string errorMsg = fmt::format("Failed to execute ffmpeg at {}: {}", ffmpegBinaryPath, err.getMessage());
         error(errorMsg);
         if (span)
             span->setError(errorMsg);
         return Result<int>{ServerError(ServerError::InternalError, errorMsg)};
     }
+    auto child = spawnResult.getValue().value();
+    const std::string &output = child.output;
 
-    std::string output;
-    char buffer[512];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-    int exitCode = pclose(pipe);
-    if (exitCode != 0) {
+    if (child.exitCode != 0) {
         std::string errorMsg =
-            fmt::format("ffmpeg failed to inspect audio file (exit code {}).\n\nOutput:\n{}", exitCode, output);
+            fmt::format("ffmpeg failed to inspect audio file (exit code {}).\n\nOutput:\n{}", child.exitCode, output);
         error(errorMsg);
         if (span)
             span->setError(errorMsg);
@@ -206,8 +196,7 @@ Result<int> AudioConverter::getChannelCount(const std::filesystem::path &audioFi
         try {
             channelCount = std::stoi(match[1].str());
         } catch (const std::exception &e) {
-            std::string errorMsg =
-                fmt::format("Unable to parse channel count from ffmpeg output: {}", e.what());
+            std::string errorMsg = fmt::format("Unable to parse channel count from ffmpeg output: {}", e.what());
             error(errorMsg);
             if (span)
                 span->setError(errorMsg);
@@ -216,8 +205,7 @@ Result<int> AudioConverter::getChannelCount(const std::filesystem::path &audioFi
     }
 
     if (channelCount <= 0) {
-        std::string errorMsg =
-            fmt::format("Could not determine channel count from ffmpeg output:\n{}", output);
+        std::string errorMsg = fmt::format("Could not determine channel count from ffmpeg output:\n{}", output);
         error(errorMsg);
         if (span)
             span->setError(errorMsg);
@@ -234,8 +222,7 @@ Result<int> AudioConverter::getChannelCount(const std::filesystem::path &audioFi
 
 Result<void> AudioConverter::extractChannelToMono(const std::filesystem::path &sourcePath,
                                                   const std::filesystem::path &outputPath,
-                                                  const std::string &ffmpegBinaryPath,
-                                                  int channelIndex,
+                                                  const std::string &ffmpegBinaryPath, int channelIndex,
                                                   std::shared_ptr<OperationSpan> parentSpan) {
 
     auto span = observability->createChildOperationSpan("AudioConverter.extractChannelToMono", parentSpan);
@@ -254,8 +241,8 @@ Result<void> AudioConverter::extractChannelToMono(const std::filesystem::path &s
     }
 
     if (channelIndex < 1 || channelIndex > RTP_STREAMING_CHANNELS) {
-        std::string errorMsg = fmt::format("Invalid channel index {}. Must be between 1 and {}", channelIndex,
-                                           RTP_STREAMING_CHANNELS);
+        std::string errorMsg =
+            fmt::format("Invalid channel index {}. Must be between 1 and {}", channelIndex, RTP_STREAMING_CHANNELS);
         error(errorMsg);
         if (span)
             span->setError(errorMsg);
@@ -274,31 +261,26 @@ Result<void> AudioConverter::extractChannelToMono(const std::filesystem::path &s
     }
 
     const int ffmpegChannelIndex = channelIndex - 1; // zero-based for pan filter
-    std::string ffmpegCommand =
-        fmt::format("\"{}\" -y -i \"{}\" -filter_complex '[0:a]pan=mono|c0=c{}[aout]' -map '[aout]' -ac 1 \"{}\" 2>&1",
-                    ffmpegBinaryPath, sourcePath.string(), ffmpegChannelIndex, outputPath.string());
+    // ffmpeg parses -filter_complex's value internally; pass it as one argv
+    // entry rather than wrapping it in shell quotes.
+    std::string filter = fmt::format("[0:a]pan=mono|c0=c{}[aout]", ffmpegChannelIndex);
+    std::vector<std::string> args = {"-y",  "-i", sourcePath.string(), "-filter_complex", filter, "-map", "[aout]",
+                                     "-ac", "1",  outputPath.string()};
 
-    FILE *pipe = popen(ffmpegCommand.c_str(), "r");
-    if (!pipe) {
-        std::string errorMsg =
-            fmt::format("Failed to execute ffmpeg at {}. errno: {}", ffmpegBinaryPath, errno);
+    auto spawnResult = util::runChildProcess(ffmpegBinaryPath, args, /*mergeStderrToStdout=*/true);
+    if (!spawnResult.isSuccess()) {
+        auto err = spawnResult.getError().value();
+        std::string errorMsg = fmt::format("Failed to execute ffmpeg at {}: {}", ffmpegBinaryPath, err.getMessage());
         error(errorMsg);
         if (span)
             span->setError(errorMsg);
         return Result<void>{ServerError(ServerError::InternalError, errorMsg)};
     }
+    auto child = spawnResult.getValue().value();
 
-    std::string output;
-    char buffer[512];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-    int exitCode = pclose(pipe);
-    if (exitCode != 0) {
-        std::string errorMsg =
-            fmt::format("ffmpeg failed to extract channel {} (exit code {}).\n\nOutput:\n{}", channelIndex, exitCode,
-                        output);
+    if (child.exitCode != 0) {
+        std::string errorMsg = fmt::format("ffmpeg failed to extract channel {} (exit code {}).\n\nOutput:\n{}",
+                                           channelIndex, child.exitCode, child.output);
         error(errorMsg);
         if (span)
             span->setError(errorMsg);

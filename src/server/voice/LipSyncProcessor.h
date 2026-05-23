@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
@@ -46,9 +47,9 @@ class LipSyncProcessor {
      * @return Result containing the JSON content on success, or error message on failure
      */
     static Result<std::string> generateLipSync(const std::string &soundFile, const std::string &soundsDir,
-                                                const std::string &rhubarbBinaryPath, bool allowOverwrite = false,
-                                                ProgressCallback progressCallback = nullptr,
-                                                std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                               const std::string &rhubarbBinaryPath, bool allowOverwrite = false,
+                                               ProgressCallback progressCallback = nullptr,
+                                               std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
      * Initialize the whisper.cpp lip sync engine.
@@ -67,36 +68,40 @@ class LipSyncProcessor {
      * Generate lip sync using the Rhubarb subprocess (legacy path).
      */
     static Result<std::string> generateWithRhubarb(const std::string &soundFile, const std::string &soundsDir,
-                                                    const std::string &rhubarbBinaryPath, bool allowOverwrite,
-                                                    ProgressCallback progressCallback,
-                                                    std::shared_ptr<OperationSpan> parentSpan);
+                                                   const std::string &rhubarbBinaryPath, bool allowOverwrite,
+                                                   ProgressCallback progressCallback,
+                                                   std::shared_ptr<OperationSpan> parentSpan);
 
     /**
      * Generate lip sync using whisper.cpp (fast path).
      */
     static Result<std::string> generateWithWhisper(const std::string &soundFile, const std::string &soundsDir,
-                                                    bool allowOverwrite, ProgressCallback progressCallback,
-                                                    std::shared_ptr<OperationSpan> parentSpan);
+                                                   bool allowOverwrite, ProgressCallback progressCallback,
+                                                   std::shared_ptr<OperationSpan> parentSpan);
 
     /**
      * Validate the sound file exists and is a WAV file
      */
     static Result<bool> validateSoundFile(const std::filesystem::path &soundFilePath,
-                                           std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
-     * Execute the Rhubarb command and capture output
+     * Execute the Rhubarb binary with the given argv and capture output.
+     *
+     * Args are passed directly to posix_spawn — they are NOT shell-interpreted,
+     * so filenames cannot inject shell metacharacters.
      */
-    static Result<std::string> executeRhubarb(const std::string &command, const std::string &rhubarbBinaryPath,
-                                               std::shared_ptr<OperationSpan> parentSpan = nullptr,
-                                               ProgressCallback progressCallback = nullptr);
+    static Result<std::string> executeRhubarb(const std::string &rhubarbBinaryPath,
+                                              const std::vector<std::string> &args,
+                                              std::shared_ptr<OperationSpan> parentSpan = nullptr,
+                                              ProgressCallback progressCallback = nullptr);
 
     /**
      * Read and process the generated JSON file
      */
     static Result<std::string> readAndProcessJson(const std::filesystem::path &jsonOutputPath,
-                                                   const std::string &soundFile,
-                                                   std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                                  const std::string &soundFile,
+                                                  std::shared_ptr<OperationSpan> parentSpan = nullptr);
 };
 
 } // namespace creatures::voice
