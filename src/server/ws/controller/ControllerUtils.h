@@ -8,7 +8,13 @@
 #include <oatpp/web/protocol/http/Http.hpp>
 #include <oatpp/web/protocol/http/incoming/Request.hpp>
 
+#include "server/metrics/counters.h"
 #include "util/ObservabilityManager.h"
+
+namespace creatures {
+extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<SystemCounters> metrics;
+} // namespace creatures
 
 namespace creatures::ws {
 
@@ -65,6 +71,31 @@ auto withSpanStatus(const std::shared_ptr<creatures::RequestSpan> &span, F &&wor
         }
         throw;
     }
+}
+
+/// One-stop helper that combines the boilerplate every REST endpoint needs:
+/// create the RequestSpan (with traceparent propagation), add HTTP attributes,
+/// stamp endpoint/controller name, bump the REST counter, and wrap the body
+/// in withSpanStatus so error paths are correctly reflected on the span.
+/// `work` receives the span (which may be nullptr) and returns the response.
+template <typename F>
+auto runEndpoint(const std::string &spanName, const std::string &method, const std::string &path,
+                 const std::string &endpointName, const std::string &controllerName,
+                 const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request, F &&work)
+    -> decltype(work(std::declval<const std::shared_ptr<creatures::RequestSpan> &>())) {
+    const auto span =
+        creatures::observability
+            ? creatures::observability->createRequestSpan(spanName, method, path, extractTraceparent(request))
+            : nullptr;
+    addHttpRequestAttributes(span, request);
+    if (creatures::metrics) {
+        creatures::metrics->incrementRestRequestsProcessed();
+    }
+    if (span) {
+        span->setAttribute("endpoint.name", endpointName);
+        span->setAttribute("controller.name", controllerName);
+    }
+    return withSpanStatus(span, [&] { return work(span); });
 }
 
 /// Cheap RFC 4122 UUID shape check. Accepts the canonical 8-4-4-4-12 hex form,
