@@ -11,10 +11,7 @@
 #include "Version.h"
 
 #include "server/metrics/counters.h"
-
-namespace creatures {
-extern std::shared_ptr<SystemCounters> metrics;
-}
+#include "server/ws/controller/ControllerUtils.h"
 
 namespace creatures ::ws {
 
@@ -33,28 +30,29 @@ class StaticController : public oatpp::web::server::api::ApiController {
         return std::make_shared<StaticController>(objectMapper);
     }
 
-    ENDPOINT("GET", "/", root) {
-        const char *html = "<html lang='en'>"
-                           "  <head>"
-                           "    <meta charset=utf-8/>"
-                           "  </head>"
-                           "  <body>"
-                           "    <h1>April's Creature Workshop</h1>"
-                           "    <p>This is the server that controls everything. <a href='swagger/ui'>Checkout the "
-                           "Swagger-UI page</a>!</p>"
-                           "  </body>"
-                           "</html>";
-        auto response = createResponse(Status::CODE_200, html);
-        std::string version = fmt::format("Creature-Server/{}.{}.{}", CREATURE_SERVER_VERSION_MAJOR,
-                                          CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH);
-        response->putHeader(Header::CONTENT_TYPE, "text/html");
-        response->putHeader(Header::SERVER, oatpp::String(version));
-        response->putHeader("All-The-Birds-Sing-Words", oatpp::String("yes"));
-        response->putHeader("And-The-Flowers-Croon", oatpp::String("of course"));
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return response;
+    ENDPOINT("GET", "/", root, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /", "GET", "/", "root", "StaticController", request, [&](const auto &span) {
+            const char *html = "<html lang='en'>"
+                               "  <head>"
+                               "    <meta charset=utf-8/>"
+                               "  </head>"
+                               "  <body>"
+                               "    <h1>April's Creature Workshop</h1>"
+                               "    <p>This is the server that controls everything. <a href='swagger/ui'>Checkout "
+                               "the Swagger-UI page</a>!</p>"
+                               "  </body>"
+                               "</html>";
+            auto response = createResponse(Status::CODE_200, html);
+            std::string version = fmt::format("Creature-Server/{}.{}.{}", CREATURE_SERVER_VERSION_MAJOR,
+                                              CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH);
+            response->putHeader(Header::CONTENT_TYPE, "text/html");
+            response->putHeader(Header::SERVER, oatpp::String(version));
+            response->putHeader("All-The-Birds-Sing-Words", oatpp::String("yes"));
+            response->putHeader("And-The-Flowers-Croon", oatpp::String("of course"));
+            if (span)
+                span->setHttpStatus(200);
+            return response;
+        });
     }
 
     ENDPOINT_INFO(health) {
@@ -63,17 +61,17 @@ class StaticController : public oatpp::web::server::api::ApiController {
 
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/health", health) {
-
-        auto response = StatusDto::createShared();
-        response->status = "OK";
-        response->message = "Server is operational";
-        response->code = 200;
-
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, response);
+    ENDPOINT("GET", "api/v1/health", health, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/health", "GET", "api/v1/health", "health", "StaticController", request,
+                           [&](const auto &span) {
+                               auto response = StatusDto::createShared();
+                               response->status = "OK";
+                               response->message = "Server is operational";
+                               response->code = 200;
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, response);
+                           });
     }
 };
 

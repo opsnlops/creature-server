@@ -28,7 +28,11 @@ std::string JobManager::createJob(JobType type, const std::string &details,
     if (job.span) {
         job.span->setAttribute("job.id", jobId);
         job.span->setAttribute("job.type", toString(type));
-        job.span->setAttribute("job.details", details);
+        // job.details can contain user-supplied speech text. Record length
+        // and a short preview only — the full content is in the job state
+        // for the workers that need it.
+        job.span->setAttribute("job.details_length", static_cast<int64_t>(details.size()));
+        job.span->setAttribute("job.details_preview", details.substr(0, 120));
         job.span->setAttribute("job.status", toString(JobStatus::Queued));
     }
 

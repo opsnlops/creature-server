@@ -12,16 +12,13 @@
 
 #include "server/database.h"
 
+#include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/MakeSoundFileRequestDto.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/VoiceService.h"
 
 #include "server/metrics/counters.h"
-
-namespace creatures {
-extern std::shared_ptr<SystemCounters> metrics;
-}
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
 
@@ -47,11 +44,14 @@ class VoiceController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/voice/list-available", getAllVoices) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_voiceService.getAllVoices());
+    ENDPOINT("GET", "api/v1/voice/list-available", getAllVoices, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/voice/list-available", "GET", "api/v1/voice/list-available", "getAllVoices",
+                           "VoiceController", request, [&](const auto &span) {
+                               const auto result = m_voiceService.getAllVoices();
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(getSubscriptionStatus) {
@@ -63,11 +63,15 @@ class VoiceController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/voice/subscription", getSubscriptionStatus) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_voiceService.getSubscriptionStatus());
+    ENDPOINT("GET", "api/v1/voice/subscription", getSubscriptionStatus,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/voice/subscription", "GET", "api/v1/voice/subscription",
+                           "getSubscriptionStatus", "VoiceController", request, [&](const auto &span) {
+                               const auto result = m_voiceService.getSubscriptionStatus();
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(makeSoundFile) {
@@ -80,17 +84,30 @@ class VoiceController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/voice", makeSoundFile,
-             BODY_DTO(Object<creatures::ws::MakeSoundFileRequestDto>, requestBody)) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
+             BODY_DTO(Object<creatures::ws::MakeSoundFileRequestDto>, requestBody),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("POST /api/v1/voice", "POST", "api/v1/voice", "makeSoundFile", "VoiceController", request,
+                           [&](const auto &span) {
+                               if (span && requestBody) {
+                                   if (requestBody->creature_id) {
+                                       span->setAttribute("creature.id", std::string(requestBody->creature_id));
+                                   }
+                                   if (requestBody->text) {
+                                       const auto text = std::string(requestBody->text);
+                                       span->setAttribute("speech.text_length", static_cast<int64_t>(text.size()));
+                                       span->setAttribute("speech.text_preview", text.substr(0, 60));
+                                   }
+                               }
 
-        auto response = m_voiceService.generateCreatureSpeech(requestBody);
+                               auto response = m_voiceService.generateCreatureSpeech(requestBody);
 
-        // Schedule an event to invalidate the sound list cache on the clients
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
+                               // Schedule an event to invalidate the sound list cache on the clients
+                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
 
-        return createDtoResponse(Status::CODE_200, response);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, response);
+                           });
     }
 };
 

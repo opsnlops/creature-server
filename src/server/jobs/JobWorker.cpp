@@ -552,8 +552,11 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
 
     if (jobState.span) {
         jobState.span->setAttribute("creature.id", creatureId);
-        jobState.span->setAttribute("speech.text", text);
+        // Avoid sending the full user-supplied text to Honeycomb (potential PII,
+        // unbounded cardinality). The length plus a short preview is enough for
+        // debugging.
         jobState.span->setAttribute("speech.text_length", static_cast<int64_t>(text.size()));
+        jobState.span->setAttribute("speech.text_preview", text.substr(0, 60));
         jobState.span->setAttribute("speech.auto_play", autoPlay);
         jobState.span->setAttribute("speech.resume_playlist", resumePlaylist);
     }

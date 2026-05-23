@@ -8,14 +8,10 @@
 
 #include "server/config.h"
 #include "server/metrics/counters.h"
+#include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/dto/StatusDto.h"
 
-#include "server/metrics/counters.h"
 #include "util/websocketUtils.h"
-
-namespace creatures {
-extern std::shared_ptr<SystemCounters> metrics;
-}
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
 
@@ -43,21 +39,23 @@ class DebugController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/debug/cache-invalidate/creature", invalidate_creature) {
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Creature);
-
-        auto statusMessage =
-            fmt::format("Creature cache invalidation scheduled for {} frames from now", CACHE_INVALIDATION_DELAY_TIME);
-        debug(statusMessage);
-
-        auto status = StatusDto::createShared();
-        status->code = 200;
-        status->message = statusMessage;
-        status->status = "OK";
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, status);
+    ENDPOINT("GET", "api/v1/debug/cache-invalidate/creature", invalidate_creature,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/v1/debug/cache-invalidate/creature", "GET", "api/v1/debug/cache-invalidate/creature",
+            "invalidate_creature", "DebugController", request, [&](const auto &span) {
+                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Creature);
+                auto statusMessage = fmt::format("Creature cache invalidation scheduled for {} frames from now",
+                                                 CACHE_INVALIDATION_DELAY_TIME);
+                debug(statusMessage);
+                auto status = StatusDto::createShared();
+                status->code = 200;
+                status->message = statusMessage;
+                status->status = "OK";
+                if (span)
+                    span->setHttpStatus(200);
+                return createDtoResponse(Status::CODE_200, status);
+            });
     }
 
     ENDPOINT_INFO(invalidate_animation) {
@@ -67,22 +65,23 @@ class DebugController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/debug/cache-invalidate/animation", invalidate_animation) {
-
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
-
-        auto statusMessage =
-            fmt::format("Animation cache invalidation scheduled for {} frames from now", CACHE_INVALIDATION_DELAY_TIME);
-        debug(statusMessage);
-
-        auto status = StatusDto::createShared();
-        status->code = 200;
-        status->message = statusMessage;
-        status->status = "OK";
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, status);
+    ENDPOINT("GET", "api/v1/debug/cache-invalidate/animation", invalidate_animation,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/v1/debug/cache-invalidate/animation", "GET", "api/v1/debug/cache-invalidate/animation",
+            "invalidate_animation", "DebugController", request, [&](const auto &span) {
+                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
+                auto statusMessage = fmt::format("Animation cache invalidation scheduled for {} frames from now",
+                                                 CACHE_INVALIDATION_DELAY_TIME);
+                debug(statusMessage);
+                auto status = StatusDto::createShared();
+                status->code = 200;
+                status->message = statusMessage;
+                status->status = "OK";
+                if (span)
+                    span->setHttpStatus(200);
+                return createDtoResponse(Status::CODE_200, status);
+            });
     }
 
     ENDPOINT_INFO(invalidate_playlist) {
@@ -92,22 +91,23 @@ class DebugController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/debug/cache-invalidate/playlist", invalidate_playlist) {
-
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Playlist);
-
-        auto statusMessage =
-            fmt::format("Playlist cache invalidation scheduled for {} frames from now", CACHE_INVALIDATION_DELAY_TIME);
-        debug(statusMessage);
-
-        auto status = StatusDto::createShared();
-        status->code = 200;
-        status->message = statusMessage;
-        status->status = "OK";
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, status);
+    ENDPOINT("GET", "api/v1/debug/cache-invalidate/playlist", invalidate_playlist,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/v1/debug/cache-invalidate/playlist", "GET", "api/v1/debug/cache-invalidate/playlist",
+            "invalidate_playlist", "DebugController", request, [&](const auto &span) {
+                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Playlist);
+                auto statusMessage = fmt::format("Playlist cache invalidation scheduled for {} frames from now",
+                                                 CACHE_INVALIDATION_DELAY_TIME);
+                debug(statusMessage);
+                auto status = StatusDto::createShared();
+                status->code = 200;
+                status->message = statusMessage;
+                status->status = "OK";
+                if (span)
+                    span->setHttpStatus(200);
+                return createDtoResponse(Status::CODE_200, status);
+            });
     }
 
     ENDPOINT_INFO(test_playlist_updates) {
@@ -117,24 +117,24 @@ class DebugController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/debug/playlist/update", test_playlist_updates) {
-
-        PlaylistStatus playlistStatus{};
-        playlistStatus.universe = 42;
-        playlistStatus.playlist = "4b5aa09e-9a61-47e7-86d2-3d8f59ebd9a7";
-        playlistStatus.playing = true;
-        playlistStatus.current_animation = "2241e872-57b3-4fa3-8e76-1c2f517f998d";
-
-        broadcastPlaylistStatusToAllClients(playlistStatus);
-
-        auto status = StatusDto::createShared();
-        status->code = 200;
-        status->message = "Playlist update sent";
-        status->status = "OK";
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, status);
+    ENDPOINT("GET", "api/v1/debug/playlist/update", test_playlist_updates,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/debug/playlist/update", "GET", "api/v1/debug/playlist/update",
+                           "test_playlist_updates", "DebugController", request, [&](const auto &span) {
+                               PlaylistStatus playlistStatus{};
+                               playlistStatus.universe = 42;
+                               playlistStatus.playlist = "4b5aa09e-9a61-47e7-86d2-3d8f59ebd9a7";
+                               playlistStatus.playing = true;
+                               playlistStatus.current_animation = "2241e872-57b3-4fa3-8e76-1c2f517f998d";
+                               broadcastPlaylistStatusToAllClients(playlistStatus);
+                               auto status = StatusDto::createShared();
+                               status->code = 200;
+                               status->message = "Playlist update sent";
+                               status->status = "OK";
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, status);
+                           });
     }
 };
 

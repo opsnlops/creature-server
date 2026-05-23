@@ -930,11 +930,11 @@ std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std
             critical("🚨 FAILED TO CREATE SAMPLING SPAN! Tracer returned null span for: {}", operationName);
             return nullptr;
         }
-        return std::make_shared<SamplingSpan>(span, samplingRate, true, tracer_);
+        return std::make_shared<SamplingSpan>(span, samplingRate, true, tracer_, operationName);
     } else {
         // Return a SamplingSpan with no actual OpenTelemetry span
         opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> nullSpan;
-        return std::make_shared<SamplingSpan>(nullSpan, samplingRate, false, tracer_);
+        return std::make_shared<SamplingSpan>(nullSpan, samplingRate, false, tracer_, operationName);
     }
 }
 
@@ -999,16 +999,18 @@ std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std
             return nullptr;
         }
 
-        return std::make_shared<SamplingSpan>(span, samplingRate, true, tracer_);
+        return std::make_shared<SamplingSpan>(span, samplingRate, true, tracer_, operationName);
     }
 
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> nullSpan;
-    return std::make_shared<SamplingSpan>(nullSpan, samplingRate, false, tracer_);
+    return std::make_shared<SamplingSpan>(nullSpan, samplingRate, false, tracer_, operationName);
 }
 
 SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate,
-                           bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer)
-    : OperationSpan(span), samplingRate_(samplingRate), shouldExport_(shouldExport), tracer_(tracer) {
+                           bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer,
+                           std::string operationName)
+    : OperationSpan(span), samplingRate_(samplingRate), shouldExport_(shouldExport), tracer_(tracer),
+      operationName_(std::move(operationName)) {
 
     // ======================================================================
     // 🚨 INHERITANCE CHECK: Verify SamplingSpan -> OperationSpan works 🚨
@@ -1059,7 +1061,7 @@ void SamplingSpan::setSuccess() {
 void SamplingSpan::setError(const std::string &errorMessage) {
     // If we don't have a span but need to report an error, create one now
     if (!span_ && !shouldExport_ && tracer_) {
-        span_ = tracer_->StartSpan("eventloop.frame");
+        span_ = tracer_->StartSpan(operationName_);
         if (span_) {
             span_->SetAttribute("component", "creature-server");
             span_->SetAttribute("sampling.rate", samplingRate_);
@@ -1082,7 +1084,7 @@ void SamplingSpan::setError(const std::string &errorMessage) {
 void SamplingSpan::forceExport() {
     // If we don't have a span but are forced to export, create one now
     if (!span_ && tracer_) {
-        span_ = tracer_->StartSpan("eventloop.frame");
+        span_ = tracer_->StartSpan(operationName_);
         if (span_) {
             span_->SetAttribute("component", "creature-server");
             span_->SetAttribute("sampling.rate", samplingRate_);
@@ -1124,7 +1126,7 @@ void SamplingSpan::setAttribute(const std::string &key, framenum_t value) {
 void SamplingSpan::recordException(const std::exception &ex) {
     // If we don't have a span but need to report an exception, create one now
     if (!span_ && tracer_) {
-        span_ = tracer_->StartSpan("eventloop.frame");
+        span_ = tracer_->StartSpan(operationName_);
         if (span_) {
             span_->SetAttribute("component", "creature-server");
             span_->SetAttribute("sampling.rate", samplingRate_);

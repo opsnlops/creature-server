@@ -26,7 +26,7 @@ WhisperLipSyncProcessor &WhisperLipSyncProcessor::instance() {
 bool WhisperLipSyncProcessor::isInitialized() const { return initialized_; }
 
 bool WhisperLipSyncProcessor::initialize(const std::filesystem::path &modelPath,
-                                          const std::filesystem::path &cmuDictPath) {
+                                         const std::filesystem::path &cmuDictPath) {
     std::lock_guard<std::mutex> lock(whisperMutex_);
 
     if (initialized_) {
@@ -62,7 +62,7 @@ bool WhisperLipSyncProcessor::initialize(const std::filesystem::path &modelPath,
 }
 
 std::vector<float> WhisperLipSyncProcessor::loadAudioForWhisper(const std::filesystem::path &wavFilePath,
-                                                                 double &audioDuration) {
+                                                                double &audioDuration) {
     audioDuration = 0.0;
 
     std::ifstream file(wavFilePath, std::ios::binary);
@@ -135,7 +135,7 @@ std::vector<float> WhisperLipSyncProcessor::loadAudioForWhisper(const std::files
                 file.read(reinterpret_cast<char *>(&subFormat), 2);
 
                 if (subFormat == 1) { // KSDATAFORMAT_SUBTYPE_PCM
-                    audioFormat = 1; // Treat as regular PCM
+                    audioFormat = 1;  // Treat as regular PCM
                     debug("WAVE_FORMAT_EXTENSIBLE with PCM subformat, {} channels", numChannels);
                 }
 
@@ -194,9 +194,8 @@ std::vector<float> WhisperLipSyncProcessor::loadAudioForWhisper(const std::files
                 size_t idx0 = static_cast<size_t>(srcIdx);
                 size_t idx1 = std::min(idx0 + 1, samplesPerChannel - 1);
                 double frac = srcIdx - static_cast<double>(idx0);
-                resampled[i] =
-                    static_cast<float>((1.0 - frac) * static_cast<double>(monoFloat[idx0]) +
-                                       frac * static_cast<double>(monoFloat[idx1]));
+                resampled[i] = static_cast<float>((1.0 - frac) * static_cast<double>(monoFloat[idx0]) +
+                                                  frac * static_cast<double>(monoFloat[idx1]));
             }
 
             debug("Loaded WAV: {}ch {}Hz {}bit -> mono 16kHz, {} samples, {:.2f}s", numChannels, sampleRate,
@@ -214,7 +213,7 @@ std::vector<float> WhisperLipSyncProcessor::loadAudioForWhisper(const std::files
 }
 
 std::string WhisperLipSyncProcessor::formatAsRhubarbJson(const std::string &soundFile, double duration,
-                                                          const std::vector<RhubarbMouthCue> &mouthCues) {
+                                                         const std::vector<RhubarbMouthCue> &mouthCues) {
     nlohmann::json result;
 
     // Metadata section (matches Rhubarb format)
@@ -235,15 +234,15 @@ std::string WhisperLipSyncProcessor::formatAsRhubarbJson(const std::string &soun
 }
 
 Result<std::string> WhisperLipSyncProcessor::generateLipSync(const std::filesystem::path &wavFilePath,
-                                                              const std::string &transcriptText,
-                                                              ProgressCallback progressCallback,
-                                                              std::shared_ptr<OperationSpan> parentSpan) {
+                                                             const std::string &transcriptText,
+                                                             ProgressCallback progressCallback,
+                                                             std::shared_ptr<OperationSpan> parentSpan) {
     if (!initialized_) {
         return ServerError(ServerError::InternalError, "WhisperLipSyncProcessor not initialized");
     }
 
-    auto span = creatures::observability->createChildOperationSpan("WhisperLipSyncProcessor.generateLipSync",
-                                                                    parentSpan);
+    auto span =
+        creatures::observability->createChildOperationSpan("WhisperLipSyncProcessor.generateLipSync", parentSpan);
     if (span) {
         span->setAttribute("sound.file", wavFilePath.string());
         span->setAttribute("has_transcript", !transcriptText.empty());
@@ -257,8 +256,7 @@ Result<std::string> WhisperLipSyncProcessor::generateLipSync(const std::filesyst
     double audioDuration = 0.0;
     std::vector<float> audioData;
     {
-        auto loadSpan =
-            creatures::observability->createChildOperationSpan("WhisperLipSyncProcessor.loadAudio", span);
+        auto loadSpan = creatures::observability->createChildOperationSpan("WhisperLipSyncProcessor.loadAudio", span);
         if (loadSpan) {
             loadSpan->setAttribute("sound.file", wavFilePath.string());
         }
@@ -312,8 +310,7 @@ Result<std::string> WhisperLipSyncProcessor::generateLipSync(const std::filesyst
             params.initial_prompt = transcriptText.c_str();
         }
 
-        auto inferSpan =
-            creatures::observability->createChildOperationSpan("WhisperLipSyncProcessor.inference", span);
+        auto inferSpan = creatures::observability->createChildOperationSpan("WhisperLipSyncProcessor.inference", span);
 
         int result = whisper_full(whisperCtx_, params, audioData.data(), static_cast<int>(audioData.size()));
 
@@ -461,7 +458,7 @@ Result<std::string> WhisperLipSyncProcessor::generateLipSync(const std::filesyst
 }
 
 Result<std::string> WhisperLipSyncProcessor::transcribe(const std::vector<float> &audioData,
-                                                         std::shared_ptr<OperationSpan> parentSpan) {
+                                                        std::shared_ptr<OperationSpan> parentSpan) {
     if (!initialized_) {
         return ServerError(ServerError::InternalError, "WhisperLipSyncProcessor not initialized");
     }
@@ -492,25 +489,26 @@ Result<std::string> WhisperLipSyncProcessor::transcribe(const std::vector<float>
         params.print_realtime = false;
         params.print_timestamps = false;
         params.language = "en";
-        params.token_timestamps = false;  // Don't need word timestamps for STT
+        params.token_timestamps = false; // Don't need word timestamps for STT
         params.no_context = true;
         params.single_segment = true;
         params.suppress_blank = true;
         params.suppress_nst = true;
 
-        int result = whisper_full(whisperCtx_, params, audioData.data(),
-                                   static_cast<int>(audioData.size()));
+        int result = whisper_full(whisperCtx_, params, audioData.data(), static_cast<int>(audioData.size()));
         if (result != 0) {
             std::string errorMsg = fmt::format("Whisper inference failed: error code {}", result);
-            if (span) span->setError(errorMsg);
+            if (span)
+                span->setError(errorMsg);
             return ServerError(ServerError::InternalError, errorMsg);
         }
 
         int numSegments = whisper_full_n_segments(whisperCtx_);
         for (int i = 0; i < numSegments; i++) {
-            const char* segmentText = whisper_full_get_segment_text(whisperCtx_, i);
+            const char *segmentText = whisper_full_get_segment_text(whisperCtx_, i);
             if (segmentText) {
-                if (!transcript.empty()) transcript += " ";
+                if (!transcript.empty())
+                    transcript += " ";
                 transcript += segmentText;
             }
         }
@@ -527,7 +525,9 @@ Result<std::string> WhisperLipSyncProcessor::transcribe(const std::vector<float>
 
     if (span) {
         span->setAttribute("transcript.length", static_cast<int64_t>(transcript.size()));
-        span->setAttribute("transcript.text", transcript);
+        // Avoid sending the full transcript to Honeycomb; record a short
+        // preview for debugging context.
+        span->setAttribute("transcript.preview", transcript.substr(0, 80));
         span->setSuccess();
     }
 

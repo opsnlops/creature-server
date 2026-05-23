@@ -108,8 +108,12 @@ class StreamingTimeoutEvent : public EventBase<StreamingTimeoutEvent> {
 
 void StreamFrameHandler::processMessage(const oatpp::String &message) {
 
-    // Create a sampling span for this high-frequency operation (uses default 0.01% sampling rate)
-    auto messageSpan = creatures::observability->createSamplingSpan("StreamFrameHandler.processMessage");
+    // Create a sampling span for this high-frequency operation. createSamplingSpan
+    // returns nullptr when ObservabilityManager is uninitialized, so all subsequent
+    // dereferences need to be guarded.
+    auto messageSpan = creatures::observability
+                           ? creatures::observability->createSamplingSpan("StreamFrameHandler.processMessage")
+                           : nullptr;
 
     try {
 
@@ -119,11 +123,17 @@ void StreamFrameHandler::processMessage(const oatpp::String &message) {
 
         auto dto = apiObjectMapper->readFromString<oatpp::Object<creatures::ws::StreamFrameCommandDTO>>(message);
         if (dto) {
-            messageSpan->setAttribute("phase", "processing");
+            if (messageSpan) {
+                messageSpan->setAttribute("phase", "processing");
+            }
             StreamFrame frame = convertFromDto(dto->payload.getPtr() /*, messageSpan */); // This is super fast, no span
-            messageSpan->setAttribute("phase", "streaming");
+            if (messageSpan) {
+                messageSpan->setAttribute("phase", "streaming");
+            }
             stream(frame, messageSpan);
-            messageSpan->setSuccess();
+            if (messageSpan) {
+                messageSpan->setSuccess();
+            }
         } else {
             appLogger->warn("unable to cast an incoming message to 'Notice'");
         }
@@ -132,39 +142,48 @@ void StreamFrameHandler::processMessage(const oatpp::String &message) {
         auto errorMessage = fmt::format("Error (std::bad_cast) while processing '{}' into a StreamFrame message: {} ",
                                         std::string(message), e.what());
         appLogger->warn(errorMessage);
-        messageSpan->recordException(e);
-        messageSpan->setAttribute("error.type", "std::bad_cast");
-        messageSpan->setAttribute("error.message", errorMessage);
-        messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        if (messageSpan) {
+            messageSpan->recordException(e);
+            messageSpan->setAttribute("error.type", "std::bad_cast");
+            messageSpan->setAttribute("error.message", errorMessage);
+            messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        }
     } catch (const std::exception &e) {
         auto errorMessage = fmt::format("Error (std::exception) while processing '{}' into a StreamFrame message: {}",
                                         std::string(message), e.what());
         appLogger->warn(errorMessage);
-        messageSpan->recordException(e);
-        messageSpan->setAttribute("error.type", "std::exception");
-        messageSpan->setAttribute("error.message", errorMessage);
-        messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        if (messageSpan) {
+            messageSpan->recordException(e);
+            messageSpan->setAttribute("error.type", "std::exception");
+            messageSpan->setAttribute("error.message", errorMessage);
+            messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        }
     } catch (...) {
         auto errorMessage = fmt::format("An unknown error happened while processing '{}' into a StreamFrame message",
                                         std::string(message));
         appLogger->warn(errorMessage);
-        messageSpan->setError(errorMessage);
-        messageSpan->setAttribute("error.type", "std::bad_cast");
-        messageSpan->setAttribute("error.message", errorMessage);
-        messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        if (messageSpan) {
+            messageSpan->setError(errorMessage);
+            messageSpan->setAttribute("error.type", "unknown");
+            messageSpan->setAttribute("error.message", errorMessage);
+            messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        }
     }
 }
 
 void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan) {
 
-    // Use the parent sampling span instead of creating a child span for this high-frequency operation
+    // Use the parent sampling span instead of creating a child span for this high-frequency operation.
+    // `span` may be nullptr if observability is uninitialized — guard every dereference.
     auto span = parentSpan;
 
     appLogger->trace("Entered StreamFrameHandler::stream()");
 
     // Cancel any active playback on this universe for the targeted creature (live streaming takes priority)
     creatures::sessionManager->cancelSessionsForCreatures(frame.universe, {frame.creature_id});
-    span->setAttribute("cancelled_session_for_streaming", true);
+    if (span) {
+        span->setAttribute("streaming.preempted_session", true);
+    }
 
     // Also stop any playlist state
     auto playlistState = creatures::sessionManager->getPlaylistState(frame.universe);
@@ -177,17 +196,24 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     std::shared_ptr<Creature> creature;
     try {
         creature = creatureCache->get(frame.creature_id);
-        span->setAttribute("creature_cache.hit", true);
+        if (span) {
+            span->setAttribute("creature_cache.hit", true);
+        }
     } catch (const std::out_of_range &e) {
-        span->setAttribute("creature_cache.hit", false);
+        if (span) {
+            span->setAttribute("creature_cache.hit", false);
+        }
         appLogger->debug(" 🛜  creature {} was not found in the cache. Going to the DB...", frame.creature_id);
 
         // Create a child span specifically for the database fallback operation
-        auto dbFallbackSpan = creatures::observability->createChildOperationSpan(
-            "StreamFrameHandler.creatureCacheMiss", std::static_pointer_cast<OperationSpan>(span));
+        auto dbFallbackSpan =
+            (creatures::observability && span)
+                ? creatures::observability->createChildOperationSpan("StreamFrameHandler.creatureCacheMiss",
+                                                                     std::static_pointer_cast<OperationSpan>(span))
+                : nullptr;
         if (dbFallbackSpan) {
             dbFallbackSpan->setAttribute("creature.id", frame.creature_id);
-            dbFallbackSpan->setAttribute("cache_miss", true);
+            dbFallbackSpan->setAttribute("cache.result", std::string("miss"));
         }
 
         auto result = db->getCreature(frame.creature_id, dbFallbackSpan);
@@ -198,9 +224,11 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
             if (dbFallbackSpan) {
                 dbFallbackSpan->setError(errorMessage);
             }
-            span->setError(errorMessage);
-            span->setAttribute("error.type", "NotFound");
-            span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
+            if (span) {
+                span->setError(errorMessage);
+                span->setAttribute("error.type", "NotFound");
+                span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
+            }
             return;
         }
         creature = std::make_shared<Creature>(result.getValue().value());
@@ -210,16 +238,20 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
             dbFallbackSpan->setAttribute("creature.name", creature->name);
             dbFallbackSpan->setSuccess();
         }
-        span->setAttribute("creature.name", creature->name);
+        if (span) {
+            span->setAttribute("creature.name", creature->name);
+        }
     }
 
     // Make sure it's valid before we go on
     if (!creature) {
         auto errorMessage = fmt::format("Creature {} was not found in the cache or the database", frame.creature_id);
         appLogger->warn(errorMessage);
-        span->setError(errorMessage);
-        span->setAttribute("error.type", "NotFound");
-        span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
+        if (span) {
+            span->setError(errorMessage);
+            span->setAttribute("error.type", "NotFound");
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
+        }
         return;
     }
 
@@ -276,7 +308,9 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
         debug("streamed {} frames", framesStreamed);
     }
 
-    span->setSuccess();
+    if (span) {
+        span->setSuccess();
+    }
 }
 
 } // namespace creatures::ws

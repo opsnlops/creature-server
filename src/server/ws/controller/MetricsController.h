@@ -7,14 +7,9 @@
 #include <oatpp/web/server/api/ApiController.hpp>
 
 #include "server/metrics/counters.h"
+#include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/MetricsService.h"
-
-#include "server/metrics/counters.h"
-
-namespace creatures {
-extern std::shared_ptr<SystemCounters> metrics;
-}
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
 
@@ -43,11 +38,14 @@ class MetricsController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<SystemCountersDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/metric/counters", counters) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_metricsService.getCounters());
+    ENDPOINT("GET", "api/v1/metric/counters", counters, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/metric/counters", "GET", "api/v1/metric/counters", "counters",
+                           "MetricsController", request, [&](const auto &span) {
+                               const auto result = m_metricsService.getCounters();
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 };
 
