@@ -2,38 +2,27 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
-
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
 
-
 namespace creatures {
 
-    class AnimationTest : public ::testing::Test {
-    protected:
-        Animation animation;
+class AnimationTest : public ::testing::Test {
+  protected:
+    Animation animation;
 
-        void SetUp() override {
-            // Setup some initial values
-            animation.id = "anim123";
-            animation.metadata = {
-                    "anim123",
-                    "Dance Party",
-                    20,
-                    "Important notes",
-                    "song.mp3",
-                    100,
-                    true
-            };
-            Track trackData = {
-                    "frame123",
-                    "creature456",
-                    "anim123",
-                    {"base64encodedframe1", "base64encodedframe2"}
-            };
-           animation.tracks.push_back(trackData);
-        }
-    };
+    void SetUp() override {
+        // Setup some initial values
+        animation.id = "anim123";
+        animation.metadata = {"anim123", "Dance Party", 20, "Important notes", "song.mp3", 100, true};
+        Track trackData = {.id = "frame123",
+                           .creature_id = "creature456",
+                           .fixture_id = "",
+                           .animation_id = "anim123",
+                           .frames = {"base64encodedframe1", "base64encodedframe2"}};
+        animation.tracks.push_back(trackData);
+    }
+};
 
 //    TEST_F(AnimationTest, Serialization) {
 //        nlohmann::json j = animation;

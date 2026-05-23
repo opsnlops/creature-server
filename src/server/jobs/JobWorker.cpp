@@ -654,11 +654,10 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
             updateProgress(0.45f);
 
             // Prewarm audio cache in background
-            auto cacheFuture =
-                std::async(std::launch::async, [wp = wavPath, span = jobState.span]() {
-                    debug("Starting background cache prewarm for {}", wp.string());
-                    return prewarmAudioCache(wp, span);
-                });
+            auto cacheFuture = std::async(std::launch::async, [wp = wavPath, span = jobState.span]() {
+                debug("Starting background cache prewarm for {}", wp.string());
+                return prewarmAudioCache(wp, span);
+            });
             auto cacheResult = cacheFuture.get();
             if (!cacheResult.isSuccess()) {
                 warn("Audio cache prewarm failed: {}", cacheResult.getError()->getMessage());
@@ -686,9 +685,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
 
             // Rename files with descriptive names
             auto creatureSlug = slugify(creatureName);
-            auto textSlug = slugify(text);
-            auto ts = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
-            auto baseName = fmt::format("adhoc_{}_{}_{}", creatureSlug, ts, textSlug);
+            auto baseName = fmt::format("adhoc_{}_{}_{}", creatureSlug, timestamp, textSlug);
 
             auto renameIfExists = [&](const std::filesystem::path &oldPath, const std::string &ext) {
                 if (oldPath.empty() || !std::filesystem::exists(oldPath)) {
@@ -716,19 +713,16 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
             transcriptPath = speechAssets.transcriptPath;
 
             // Prewarm audio cache + lip sync in parallel
-            auto cacheFuture =
-                std::async(std::launch::async, [wp = wavPath, span = jobState.span]() {
-                    debug("Starting background cache prewarm for {}", wp.string());
-                    return prewarmAudioCache(wp, span);
-                });
+            auto cacheFuture = std::async(std::launch::async, [wp = wavPath, span = jobState.span]() {
+                debug("Starting background cache prewarm for {}", wp.string());
+                return prewarmAudioCache(wp, span);
+            });
 
-            auto lipSyncProgress = [&, base = 0.2f, range = 0.3f](float p) {
-                updateProgress(base + range * p);
-            };
+            auto lipSyncProgress = [&, base = 0.2f, range = 0.3f](float p) { updateProgress(base + range * p); };
 
-            auto lipSyncResult = voice::LipSyncProcessor::generateLipSync(
-                wavPath.filename().string(), tempDir.string(), config->getRhubarbBinaryPath(), true,
-                lipSyncProgress, jobState.span);
+            auto lipSyncResult = voice::LipSyncProcessor::generateLipSync(wavPath.filename().string(), tempDir.string(),
+                                                                          config->getRhubarbBinaryPath(), true,
+                                                                          lipSyncProgress, jobState.span);
 
             auto cacheResult = cacheFuture.get();
             if (!cacheResult.isSuccess()) {
@@ -747,9 +741,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         // (streaming path outputs generic names)
         if (streamingResult.isSuccess()) {
             auto creatureSlug = slugify(creatureName);
-            auto textSlug = slugify(text);
-            auto ts = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
-            auto baseName = fmt::format("adhoc_{}_{}_{}", creatureSlug, ts, textSlug);
+            auto baseName = fmt::format("adhoc_{}_{}_{}", creatureSlug, timestamp, textSlug);
 
             auto renameFile = [&](std::filesystem::path &path, const std::string &ext) {
                 if (path.empty() || !std::filesystem::exists(path)) {
