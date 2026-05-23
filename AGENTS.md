@@ -238,6 +238,9 @@ DELETE /api/v1/fixture/{fixtureId}/universe                  clear assignment
 POST   /api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger
                                                              body (optional): {stop_after_ms: UInt32}
 
+POST   /api/v1/fixture/{fixtureId}/pattern/preview           fire an ephemeral, not-persisted pattern
+                                                             body: {values, fade_in_ms?, fade_out_ms?, hold_ms?, stop_after_ms?}
+
 POST   /api/v1/fixture/{fixtureId}/live                      body: {values: [{channel, value}], timeout_ms: UInt32}
                                                              slider-driven raw DMX with auto-blackout
 ```
@@ -259,7 +262,7 @@ POST   /api/v1/fixture/{fixtureId}/live                      body: {values: [{ch
 
 - **Model**: `src/model/DmxFixture.{h,cpp}`, `src/model/Track.{h,cpp}` (with `fixture_id`)
 - **DB**: `src/server/fixture/{helpers,upsert,get,getall}.cpp`
-- **REST**: `src/server/ws/controller/DmxFixtureController.h`, `src/server/ws/service/DmxFixtureService.{h,cpp}`, `src/server/ws/dto/{FixtureConfigValidationDto,SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto,SetFixtureLiveRequestDto}.h`
+- **REST**: `src/server/ws/controller/DmxFixtureController.h`, `src/server/ws/service/DmxFixtureService.{h,cpp}`, `src/server/ws/dto/{FixtureConfigValidationDto,SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto,PreviewFixturePatternRequestDto,SetFixtureLiveRequestDto}.h`
 - **Runtime**: `src/server/fixture/{FixturePatternRunner,FixturePatternTickEvent,FixtureBindingDispatcher}.{h,cpp}`
 - **Hook**: `src/server/ws/service/FixtureActivityHook.h`
 - **Globals**: `src/server/main.cpp` (`fixtureCache`, `fixtureUniverseMap`, `fixturePatternRunner`, `fixtureBindingDispatcher`, `fixtureActivityHook`)

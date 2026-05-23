@@ -64,6 +64,26 @@ class DmxFixtureService {
                                                                   std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
+     * Fire a one-shot pattern that is NOT persisted. The pattern is built from the call
+     * arguments and handed to the runner directly. Used by the Creature Console editor
+     * to preview unsaved edits — "Fire" can play whatever's on screen without an upsert.
+     *
+     * Same validation as a saved pattern trigger: every value's channel must exist on the
+     * fixture, the fixture must have an `assigned_universe`, and a live-control session
+     * (if any) preempts.
+     *
+     * @param values        per-channel target values. Channel names must exist on the fixture.
+     * @param fadeInMs      ramp duration to reach targets (0 = snap)
+     * @param fadeOutMs     ramp duration back to pre-pattern values (0 = snap)
+     * @param holdMs        hold duration after fade-in (0 = hold until externally stopped)
+     * @param stopAfterMs   nullopt = hold; otherwise schedule auto-stop. Validated in (0, 600000].
+     */
+    static oatpp::Object<creatures::DmxFixtureDto>
+    previewPattern(const oatpp::String &inFixtureId, const std::vector<std::pair<std::string, uint8_t>> &values,
+                   uint32_t fadeInMs, uint32_t fadeOutMs, uint32_t holdMs, std::optional<uint32_t> stopAfterMs,
+                   std::shared_ptr<RequestSpan> parentSpan = nullptr);
+
+    /**
      * Drive a fixture's channels directly with raw DMX values. Used by slider UIs; the
      * server holds the values until `timeoutMs` elapses, then blacks out the fixture.
      * Live control hard-cancels any active pattern on the fixture and blocks new

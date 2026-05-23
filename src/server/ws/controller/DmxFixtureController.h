@@ -18,6 +18,7 @@
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/dto/FixtureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
+#include "server/ws/dto/PreviewFixturePatternRequestDto.h"
 #include "server/ws/dto/SetFixtureLiveRequestDto.h"
 #include "server/ws/dto/SetFixtureUniverseRequestDto.h"
 #include "server/ws/dto/TriggerFixturePatternRequestDto.h"
@@ -324,6 +325,90 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
 
         return withSpanStatus(span, [&] {
             const auto result = m_service.triggerPattern(fixtureId, patternId, stopAfterMs, span);
+            if (span)
+                span->setHttpStatus(200);
+            return createDtoResponse(Status::CODE_200, result);
+        });
+    }
+
+    ENDPOINT_INFO(previewFixturePattern) {
+        info->summary = "Fire an ephemeral, not-persisted pattern (editor preview)";
+        info->description =
+            "Same runner path as `triggerFixturePattern`, but the pattern is built from the request body instead of "
+            "looked up by id. Intended for the Creature Console pattern editor's Fire button so unsaved edits can be "
+            "previewed without an upsert round-trip. The fixture must have an assigned universe. Live control "
+            "preempts: if a live session is active for this fixture, the preview is refused with a 400.";
+        info->addTag("Fixtures");
+        info->addConsumes<Object<PreviewFixturePatternRequestDto>>("application/json");
+        info->addResponse<Object<creatures::DmxFixtureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->pathParams["fixtureId"].description = "Fixture UUID";
+    }
+    ENDPOINT("POST", "api/v1/fixture/{fixtureId}/pattern/preview", previewFixturePattern, PATH(String, fixtureId),
+             BODY_DTO(Object<PreviewFixturePatternRequestDto>, body),
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
+                          "fixtureId must be a UUID");
+        const auto span =
+            creatures::observability
+                ? creatures::observability->createRequestSpan(
+                      "POST /api/v1/fixture/{fixtureId}/pattern/preview", "POST",
+                      "api/v1/fixture/" + std::string(fixtureId) + "/pattern/preview", extractTraceparent(request))
+                : nullptr;
+        addHttpRequestAttributes(span, request);
+        if (creatures::metrics)
+            creatures::metrics->incrementRestRequestsProcessed();
+        if (span) {
+            span->setAttribute("endpoint.name", "previewFixturePattern");
+            span->setAttribute("fixture.id", std::string(fixtureId));
+        }
+
+        OATPP_ASSERT_HTTP(body, Status::CODE_400, "Request body is required");
+        OATPP_ASSERT_HTTP(body->values, Status::CODE_400, "values array is required");
+        OATPP_ASSERT_HTTP(body->values->size() > 0, Status::CODE_400, "values must contain at least one channel");
+
+        // Unpack DTO to a flat vector for the service.
+        std::vector<std::pair<std::string, uint8_t>> channelValues;
+        channelValues.reserve(body->values->size());
+        for (const auto &v : *body->values) {
+            OATPP_ASSERT_HTTP(v, Status::CODE_400, "values entries must be objects, not null");
+            OATPP_ASSERT_HTTP(v->channel, Status::CODE_400, "values[].channel is required");
+            OATPP_ASSERT_HTTP(v->value, Status::CODE_400, "values[].value is required");
+            channelValues.emplace_back(std::string(v->channel), static_cast<uint8_t>(*v->value));
+        }
+
+        // Optional timing fields default to 0 (snap / hold-forever). stop_after_ms gets the
+        // same cap as triggerFixturePattern — UInt32 max would pin a far-future event on the
+        // event loop's priority queue.
+        const uint32_t fadeInMs = body->fade_in_ms ? static_cast<uint32_t>(*body->fade_in_ms) : 0;
+        const uint32_t fadeOutMs = body->fade_out_ms ? static_cast<uint32_t>(*body->fade_out_ms) : 0;
+        const uint32_t holdMs = body->hold_ms ? static_cast<uint32_t>(*body->hold_ms) : 0;
+        std::optional<uint32_t> stopAfterMs;
+        if (body->stop_after_ms) {
+            const uint32_t raw = static_cast<uint32_t>(*body->stop_after_ms);
+            constexpr uint32_t MAX_STOP_AFTER_MS = 10 * 60 * 1000;
+            if (raw == 0) {
+                OATPP_ASSERT_HTTP(false, Status::CODE_400, "stop_after_ms must be > 0 (omit it to disable auto-stop)");
+            }
+            if (raw > MAX_STOP_AFTER_MS) {
+                OATPP_ASSERT_HTTP(
+                    false, Status::CODE_400,
+                    fmt::format("stop_after_ms must be <= {} ms (10 min); got {}", MAX_STOP_AFTER_MS, raw).c_str());
+            }
+            stopAfterMs = raw;
+        }
+
+        if (span) {
+            span->setAttribute("pattern.preview.value_count", static_cast<int64_t>(channelValues.size()));
+            span->setAttribute("pattern.fade_in_ms", static_cast<int64_t>(fadeInMs));
+            span->setAttribute("pattern.fade_out_ms", static_cast<int64_t>(fadeOutMs));
+            span->setAttribute("pattern.hold_ms", static_cast<int64_t>(holdMs));
+        }
+
+        return withSpanStatus(span, [&] {
+            const auto result =
+                m_service.previewPattern(fixtureId, channelValues, fadeInMs, fadeOutMs, holdMs, stopAfterMs, span);
             if (span)
                 span->setHttpStatus(200);
             return createDtoResponse(Status::CODE_200, result);

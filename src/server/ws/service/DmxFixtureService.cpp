@@ -56,6 +56,42 @@ std::shared_ptr<std::mutex> getUniverseOpMutex(const fixtureId_t &fixtureId) {
     return slot;
 }
 
+// One-shot event that fires `stop_after_ms` after a pattern is triggered, transitioning the
+// pattern into fade-out. Used by both `triggerPattern` and `previewPattern`.
+//
+// Trace linkage: this event fires well after the originating request span has ended.
+// Capturing trace_id+span_id from the trigger span at schedule time lets the AutoStopEvent
+// emit them as `trigger.trace_id` / `trigger.span_id` attributes when it runs, so Honeycomb
+// can correlate trigger → auto-stop.
+struct AutoStopEvent : creatures::EventBase<AutoStopEvent> {
+    fixtureId_t fid;
+    std::shared_ptr<creatures::FixturePatternRunner> runner;
+    std::string triggerTraceId;
+    std::string triggerSpanId;
+    AutoStopEvent(framenum_t f, fixtureId_t id, std::shared_ptr<creatures::FixturePatternRunner> r, std::string traceId,
+                  std::string spanId)
+        : EventBase(f), fid(std::move(id)), runner(std::move(r)), triggerTraceId(std::move(traceId)),
+          triggerSpanId(std::move(spanId)) {}
+    creatures::Result<framenum_t> executeImpl() {
+        auto autoStopSpan = creatures::observability
+                                ? creatures::observability->createChildOperationSpan(
+                                      "FixturePatternRunner.autoStop", std::shared_ptr<creatures::OperationSpan>{})
+                                : nullptr;
+        if (autoStopSpan) {
+            autoStopSpan->setAttribute("fixture.id", fid);
+            if (!triggerTraceId.empty()) {
+                autoStopSpan->setAttribute("trigger.trace_id", triggerTraceId);
+                autoStopSpan->setAttribute("trigger.span_id", triggerSpanId);
+            }
+        }
+        if (runner)
+            runner->stop(fid, this->frameNumber, autoStopSpan);
+        if (autoStopSpan)
+            autoStopSpan->setSuccess();
+        return creatures::Result<framenum_t>{this->frameNumber};
+    }
+};
+
 } // namespace
 
 namespace creatures ::ws {
@@ -494,44 +530,140 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const 
         creatures::eventLoop->scheduleEvent(tickEvent);
     }
 
-    // Schedule the auto-stop if the caller asked for one. We piggyback on the existing stop()
-    // path by scheduling a one-shot lambda event via a small ad-hoc Event subclass below.
-    //
-    // Trace linkage: the AutoStopEvent fires ~stop_after_ms later, well after the trigger
-    // request span has ended. Capturing trace_id+span_id from the trigger span at schedule
-    // time lets the AutoStopEvent emit them as `trigger.trace_id` / `trigger.span_id`
-    // attributes when it runs, so Honeycomb can correlate trigger → auto-stop.
+    // Schedule the auto-stop if the caller asked for one. AutoStopEvent is shared with
+    // previewPattern (see anonymous namespace at top of file).
     if (stopAfterMs.has_value() && creatures::eventLoop) {
-        struct AutoStopEvent : EventBase<AutoStopEvent> {
-            std::string fid;
-            std::shared_ptr<FixturePatternRunner> runner;
-            std::string triggerTraceId;
-            std::string triggerSpanId;
-            AutoStopEvent(framenum_t f, std::string id, std::shared_ptr<FixturePatternRunner> r, std::string traceId,
-                          std::string spanId)
-                : EventBase(f), fid(std::move(id)), runner(std::move(r)), triggerTraceId(std::move(traceId)),
-                  triggerSpanId(std::move(spanId)) {}
-            Result<framenum_t> executeImpl() {
-                auto autoStopSpan = creatures::observability
-                                        ? creatures::observability->createChildOperationSpan(
-                                              "FixturePatternRunner.autoStop", std::shared_ptr<OperationSpan>{})
-                                        : nullptr;
-                if (autoStopSpan) {
-                    autoStopSpan->setAttribute("fixture.id", fid);
-                    if (!triggerTraceId.empty()) {
-                        autoStopSpan->setAttribute("trigger.trace_id", triggerTraceId);
-                        autoStopSpan->setAttribute("trigger.span_id", triggerSpanId);
-                    }
-                }
-                if (runner)
-                    runner->stop(fid, this->frameNumber, autoStopSpan);
-                if (autoStopSpan)
-                    autoStopSpan->setSuccess();
-                return Result<framenum_t>{this->frameNumber};
-            }
-        };
         const auto stopFrame = currentFrame + static_cast<framenum_t>(*stopAfterMs);
         // Capture trigger trace context at schedule time — the request span is still live here.
+        const std::string traceId = span ? span->getTraceIdHex() : std::string{};
+        const std::string spanId = span ? span->getSpanIdHex() : std::string{};
+        auto stopEvent =
+            std::make_shared<AutoStopEvent>(stopFrame, fixtureId, creatures::fixturePatternRunner, traceId, spanId);
+        creatures::eventLoop->scheduleEvent(stopEvent);
+    }
+
+    if (span)
+        span->setSuccess();
+
+    return creatures::convertToDto(*fixture);
+}
+
+oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::previewPattern(
+    const oatpp::String &inFixtureId, const std::vector<std::pair<std::string, uint8_t>> &values, uint32_t fadeInMs,
+    uint32_t fadeOutMs, uint32_t holdMs, std::optional<uint32_t> stopAfterMs, std::shared_ptr<RequestSpan> parentSpan) {
+
+    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
+
+    if (fixtureId.empty()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
+    }
+    if (values.empty()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "values must contain at least one channel");
+    }
+    if (!creatures::fixturePatternRunner) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture pattern runner unavailable");
+    }
+    if (!creatures::fixtureCache) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture cache unavailable");
+    }
+    if (!creatures::fixtureUniverseMap) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture universe map unavailable");
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("DmxFixtureService.previewPattern", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("fixture.id", fixtureId);
+        span->setAttribute("pattern.preview.value_count", static_cast<int64_t>(values.size()));
+        span->setAttribute("pattern.fade_in_ms", static_cast<int64_t>(fadeInMs));
+        span->setAttribute("pattern.fade_out_ms", static_cast<int64_t>(fadeOutMs));
+        span->setAttribute("pattern.hold_ms", static_cast<int64_t>(holdMs));
+        if (stopAfterMs.has_value()) {
+            span->setAttribute("trigger.stop_after_ms", static_cast<int64_t>(*stopAfterMs));
+        }
+    }
+
+    // Resolve the fixture from cache, falling back to DB. Same idiom as triggerPattern.
+    std::shared_ptr<DmxFixture> fixture;
+    try {
+        fixture = creatures::fixtureCache->get(fixtureId);
+    } catch (const std::out_of_range &) {
+        auto dbResult = creatures::db->getFixture(fixtureId, span);
+        if (!dbResult.isSuccess()) {
+            if (span)
+                span->setError(dbResult.getError()->getMessage());
+            OATPP_ASSERT_HTTP(false, Status::CODE_404, dbResult.getError()->getMessage().c_str());
+        }
+        fixture = std::make_shared<DmxFixture>(dbResult.getValue().value());
+        creatures::fixtureCache->put(fixtureId, fixture);
+    }
+
+    // Validate each channel name against the fixture *before* constructing the ephemeral
+    // pattern. The runner's start() also checks, but a clean 400 with the offending channel
+    // name is friendlier to the editor UI than a generic 500.
+    for (const auto &v : values) {
+        if (!fixture->findChannelByName(v.first)) {
+            const auto message = fmt::format("Fixture {} has no channel named '{}'", fixtureId, v.first);
+            if (span) {
+                span->setAttribute("error.channel_name", v.first);
+                span->setError(message);
+            }
+            OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+        }
+    }
+
+    // Resolve universe via a single locked lookup (same TOCTOU concern as triggerPattern).
+    const auto universePtr = creatures::fixtureUniverseMap->tryGet(fixtureId);
+    if (!universePtr) {
+        const auto message =
+            fmt::format("Fixture {} has no assigned_universe; assign one before previewing", fixtureId);
+        if (span)
+            span->setError(message);
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+    }
+    const universe_t universe = *universePtr;
+
+    if (span)
+        span->setAttribute("fixture.universe", static_cast<int64_t>(universe));
+
+    // Build the ephemeral pattern. id/name are present because the struct requires them, but
+    // they never get persisted — this object goes straight into the runner's active-pattern
+    // map keyed by fixture id, not by pattern id. We tag the id with "preview:" purely so a
+    // Honeycomb pivot on `pattern.id` can distinguish preview firings from saved ones.
+    FixturePattern ephemeral;
+    ephemeral.id = "preview:" + fixtureId;
+    ephemeral.name = "preview";
+    ephemeral.values.reserve(values.size());
+    for (const auto &v : values) {
+        FixturePatternValue fpv;
+        fpv.channel = v.first;
+        fpv.value = v.second;
+        ephemeral.values.push_back(fpv);
+    }
+    ephemeral.fade_in_ms = fadeInMs;
+    ephemeral.fade_out_ms = fadeOutMs;
+    ephemeral.hold_ms = holdMs;
+
+    const framenum_t currentFrame = creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0;
+
+    if (!creatures::fixturePatternRunner->start(*fixture, ephemeral, universe, /*creatureId=*/"", currentFrame, span)) {
+        const auto message = fmt::format("Failed to start preview pattern on fixture {}", fixtureId);
+        if (span)
+            span->setError(message);
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+    }
+
+    // Arm a tick if there isn't already one pending.
+    if (creatures::fixturePatternRunner->tryArm() && creatures::eventLoop) {
+        auto tickEvent = std::make_shared<FixturePatternTickEvent>(currentFrame);
+        creatures::eventLoop->scheduleEvent(tickEvent);
+    }
+
+    // Schedule the auto-stop if the caller asked for one. Reuses the namespace-scope
+    // AutoStopEvent (see top of file).
+    if (stopAfterMs.has_value() && creatures::eventLoop) {
+        const auto stopFrame = currentFrame + static_cast<framenum_t>(*stopAfterMs);
         const std::string traceId = span ? span->getTraceIdHex() : std::string{};
         const std::string spanId = span ? span->getSpanIdHex() : std::string{};
         auto stopEvent =

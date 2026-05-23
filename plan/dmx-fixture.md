@@ -196,7 +196,10 @@ This is the contract the Creature Console Swift app codes against.
 - `DELETE /api/v1/fixture/{fixtureId}/universe` — clear the assignment (fixture goes dark until reassigned). The current universe is also visible on the fixture document via `GET /api/v1/fixture/{fixtureId}`, so no dedicated GET endpoint is needed.
 
 **Manual pattern trigger** — for testing and ad-hoc UI control:
-- `POST   /api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger` — manually fire a pattern (skips binding match). Body optional `{stop_after_ms?: number}`.
+- `POST   /api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger` — manually fire a saved pattern (skips binding match). Body optional `{stop_after_ms?: number}`.
+
+**Preview an unsaved pattern** — fire what the editor has on screen without an upsert round-trip:
+- `POST   /api/v1/fixture/{fixtureId}/pattern/preview` — body `{values: [{channel, value}], fade_in_ms?, fade_out_ms?, hold_ms?, stop_after_ms?}`. The pattern is constructed ephemerally from the body and handed to the same runner path as the regular trigger; nothing is persisted. Same validation as a saved pattern (every channel must exist on the fixture; assigned_universe required); live control still preempts.
 
 **Live control (slider UI)** — drive raw DMX values directly with auto-blackout:
 - `POST   /api/v1/fixture/{fixtureId}/live` — body `{values: [{channel: string, value: 0..255}], timeout_ms: UInt32}`. `timeout_ms` is **required**, must be in `(0, 600000]` (10 min cap). The server holds the values until the deadline elapses, then blacks out all channels on this fixture. Channels not named in a call hold their previous live value within the same session (or 0 on the first call). Sending another live call before the deadline extends/replaces the deadline.
@@ -346,7 +349,7 @@ Each step is independently mergeable and testable:
 
 ## Notes for the Swift Client Implementer
 
-The server side is shipped (current version: **3.12.0**, deployed to `https://server.prod.chirpchirp.dev`). The Swift client should implement the JSON Schema Reference above as its data model. Live control was the most recent addition and is verified end-to-end against real hardware (Light 1: `f2d17206-30b5-4018-b939-daa4b22616c6`). Quick orientation for whoever picks this up next:
+The server side is shipped (current version: **3.13.0**, deployed to `https://server.prod.chirpchirp.dev`). The Swift client should implement the JSON Schema Reference above as its data model. Live control and the preview endpoint are the most recent additions; live control is verified end-to-end against real hardware (Light 1: `f2d17206-30b5-4018-b939-daa4b22616c6`). Quick orientation for whoever picks this up next:
 
 ### Where to start
 1. Read this plan top-to-bottom — the "JSON Schema Reference" is the canonical API contract.
@@ -388,6 +391,23 @@ The server side is shipped (current version: **3.12.0**, deployed to `https://se
 
 **Trigger a pattern manually** — `POST /api/v1/fixture/8e3a4b5c.../pattern/7d2a3b4c.../trigger`, body either empty or `{"stop_after_ms": 1500}` (must be in `(0, 600000]` if provided).
 
+**Preview an unsaved pattern** — `POST /api/v1/fixture/8e3a4b5c.../pattern/preview`, body:
+
+```json
+{
+  "values": [
+    { "channel": "red",        "value": 255 },
+    { "channel": "brightness", "value": 200 }
+  ],
+  "fade_in_ms":  250,
+  "fade_out_ms": 500,
+  "hold_ms":     0,
+  "stop_after_ms": 1500
+}
+```
+
+The body IS the pattern — `fade_in_ms`, `fade_out_ms`, `hold_ms`, `stop_after_ms` are all optional and default to 0 (snap / hold-forever / no auto-stop). Used by the pattern editor's Fire button so the user can preview unsaved edits without an upsert. Server-side this just constructs an ephemeral `FixturePattern` from the body and hands it to the same runner that handles saved triggers — same validation rules, same live-control preemption, same fade semantics. Nothing is persisted.
+
 **Live control (slider UI)** — `POST /api/v1/fixture/8e3a4b5c.../live`, body:
 
 ```json
@@ -415,7 +435,8 @@ Pattern for a slider UI: while the user holds a slider, send a live call every ~
 
 - **Fixture editor**: form-driven, generates a UUID for `id` client-side. Channel/pattern/binding rows are CRUD lists. Use `type` to pick a renderer (color-picker for `light` with red/green/blue channels; just sliders for `generic` / `smoke_machine` / `fogger`).
 - **Universe assignment**: separate from fixture config — a single "Universe" field per fixture row, settable independently. Hitting `PUT /universe` persists it; `null` removes the assignment. After a universe change, listen for `CacheType::Fixture` invalidation broadcasts on the websocket and refresh the local cache.
-- **Manual trigger**: a fire button per pattern on each fixture. Offer "fire for N seconds" (sends `stop_after_ms`) and "fire and hold" (empty body — caller has to fire a separate stop pattern when done; there's no built-in stop endpoint).
+- **Manual trigger**: a fire button per saved pattern on each fixture. Offer "fire for N seconds" (sends `stop_after_ms`) and "fire and hold" (empty body — caller has to fire a separate stop pattern when done; there's no built-in stop endpoint).
+- **Pattern editor "Fire" button**: use the preview endpoint instead of trigger. The editor holds local state that may not match the server's saved fixture; preview ships the on-screen pattern straight to the runner so the user sees their unsaved edits play without a save round-trip. After save, the regular trigger endpoint takes over for "fire the saved version."
 - **Live control sliders**: per-channel sliders for ad-hoc lighting. Disable pattern fire buttons on a fixture while the user is actively dragging — pattern triggers are refused by the server during a live session anyway, but disabling them avoids confusing 400s. Re-enable after the deadline elapses (or after the user releases and the auto-blackout fires).
 - **Binding editor**: per-fixture list of `{creature_id, on_reason, on_state, pattern_id}`. Use a creature picker (UUID → name from `GET /api/v1/creature`) and a pattern picker scoped to this fixture's patterns.
 - **Validation**: hit `POST /api/v1/fixture/validate` before saving. It returns `{valid: bool, fixture_id: string, missing_creature_ids: string[], error_messages: string[]}` — show `missing_creature_ids` as warnings (binding still saves) and `error_messages` as hard blockers.
@@ -435,5 +456,5 @@ If the Swift implementer needs to read the source-of-truth shape:
 
 - `src/model/DmxFixture.h` — struct + DTOs
 - `src/server/fixture/helpers.cpp` — `fixtureFromJson`, the strict validator
-- `src/server/ws/dto/{SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto,SetFixtureLiveRequestDto,FixtureConfigValidationDto}.h` — request/response DTOs
+- `src/server/ws/dto/{SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto,PreviewFixturePatternRequestDto,SetFixtureLiveRequestDto,FixtureConfigValidationDto}.h` — request/response DTOs
 - `src/server/ws/controller/DmxFixtureController.h` — endpoint contract
