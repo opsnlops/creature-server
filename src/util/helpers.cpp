@@ -29,8 +29,7 @@ std::string bytesToString(const std::string &id_bytes) {
 
     std::ostringstream oss;
     for (unsigned char c : id_bytes) {
-        oss << std::hex << std::setw(2) << std::setfill('0')
-            << static_cast<int>(c);
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(c);
     }
 
     debug("converted bytes to string: {}", oss.str());
@@ -103,16 +102,14 @@ bsoncxx::oid generateNewOid() { return bsoncxx::oid{}; }
  */
 bsoncxx::oid stringToOid(const std::string &id_string) {
 
-    const size_t expected_length =
-        bsoncxx::oid::k_oid_length * 2; // 12 bytes * 2 characters per byte
+    const size_t expected_length = bsoncxx::oid::k_oid_length * 2; // 12 bytes * 2 characters per byte
 
     // Make sure it's the right length
     if (id_string.size() != expected_length) {
         warn("String is not the right length for an ObjectId: {}", id_string);
-        std::string errorMessage =
-            fmt::format("String is not the right length for an ObjectId. "
-                        "(Given: {}, Expected: {})",
-                        id_string.size(), expected_length);
+        std::string errorMessage = fmt::format("String is not the right length for an ObjectId. "
+                                               "(Given: {}, Expected: {})",
+                                               id_string.size(), expected_length);
         throw creatures::InvalidArgumentException(errorMessage);
     }
 
@@ -129,15 +126,13 @@ bsoncxx::oid stringToOid(const std::string &id_string) {
         bytes.reserve(bsoncxx::oid::k_oid_length);
         for (size_t i = 0; i < expected_length; i += 2) {
             std::string byteString = id_string.substr(i, 2);
-            bytes.push_back(
-                static_cast<char>(std::stoul(byteString, nullptr, 16)));
+            bytes.push_back(static_cast<char>(std::stoul(byteString, nullptr, 16)));
         }
 
         return bsoncxx::oid(bytes.data(), bytes.size());
     } catch (const std::exception &e) {
         warn("Error converting string to ObjectId: {}", e.what());
-        throw creatures::InvalidArgumentException(
-            "Error converting string to ObjectId: " + std::string(e.what()));
+        throw creatures::InvalidArgumentException("Error converting string to ObjectId: " + std::string(e.what()));
     }
 }
 
@@ -184,13 +179,11 @@ std::string oidToString(const bsoncxx::oid &oid) { return oid.to_string(); }
 //        bsoncxx::oid::k_oid_length);
 //    }
 
-bsoncxx::document::value
-stringVectorToBson(const std::vector<std::string> &vector) {
+bsoncxx::document::value stringVectorToBson(const std::vector<std::string> &vector) {
     (void)vector;
     throw InternalError("Not implemented");
 }
-std::vector<std::string>
-stringVectorFromBson(const bsoncxx::document::view &doc) {
+std::vector<std::string> stringVectorFromBson(const bsoncxx::document::view &doc) {
     (void)doc;
     throw InternalError("Not implemented");
 }
@@ -223,17 +216,21 @@ std::string getCurrentTimeISO8601() {
     auto now = std::chrono::system_clock::now();
     auto time_now = std::chrono::system_clock::to_time_t(now);
 
-    // Create a stringstream to store the formatted time
+    // Use gmtime_r instead of gmtime so concurrent callers (HTTP handlers,
+    // log sinks, event loop) don't race on the static buffer gmtime owns.
+    std::tm tmBuf{};
+    gmtime_r(&time_now, &tmBuf);
     std::stringstream ss;
-    ss << std::put_time(std::gmtime(&time_now), "%Y-%m-%dT%H:%M:%SZ");
-
+    ss << std::put_time(&tmBuf, "%Y-%m-%dT%H:%M:%SZ");
     return ss.str();
 }
 
 std::string formatTimeISO8601(std::chrono::system_clock::time_point timePoint) {
     auto timeT = std::chrono::system_clock::to_time_t(timePoint);
+    std::tm tmBuf{};
+    gmtime_r(&timeT, &tmBuf);
     std::stringstream ss;
-    ss << std::put_time(std::gmtime(&timeT), "%Y-%m-%dT%H:%M:%SZ");
+    ss << std::put_time(&tmBuf, "%Y-%m-%dT%H:%M:%SZ");
     return ss.str();
 }
 
@@ -256,8 +253,7 @@ std::string vectorToHexString(const std::vector<uint8_t> &byteVector) {
         if (i != 0) {
             oss << ", ";
         }
-        oss << "0x" << std::hex << std::setw(2) << std::setfill('0')
-            << static_cast<int>(byteVector[i]);
+        oss << "0x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byteVector[i]);
     }
 
     oss << " ]";

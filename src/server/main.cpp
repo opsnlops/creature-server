@@ -37,12 +37,10 @@
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
 #include "server/database.h"
-#include "server/fixture/FixtureBindingDispatcher.h"
-#include "server/fixture/FixturePatternRunner.h"
-#include "server/ws/service/DmxFixtureService.h"
-#include "server/ws/service/FixtureActivityHook.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
+#include "server/fixture/FixtureBindingDispatcher.h"
+#include "server/fixture/FixturePatternRunner.h"
 #include "server/gpio/gpio.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
@@ -51,6 +49,8 @@
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/rtp/MultiOpusRtpServer.h"
 #include "server/sensors/SensorDataCache.h"
+#include "server/ws/service/DmxFixtureService.h"
+#include "server/ws/service/FixtureActivityHook.h"
 #include "util/AudioCache.h"
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
@@ -198,20 +198,25 @@ void cleanupAdHocTempDirectory(uint32_t ttlHours) {
 
 } // namespace
 
-// Signal handler to stop the event loop
-void signal_handler(int signal) {
+// Records which signal was received, so the main loop can log it after
+// returning to a context where spdlog is safe to call (the previous
+// version of this handler called info() directly, which goes through
+// libfmt and spdlog's mutexed sinks — not async-signal-safe, can
+// deadlock if SIGINT lands while the main thread holds a sink mutex).
+std::atomic<int> lastSignalReceived{0};
 
+// Signal handler to stop the event loop. ASYNC-SIGNAL-SAFE: only
+// atomic stores allowed here.
+void signal_handler(int signal) {
     switch (signal) {
     case SIGINT:
-        info("SIGINT! signalling that we should stop the server");
-        creatures::serverShouldRun.store(false);
-        break;
     case SIGTERM:
-        info("SIGTERM! signalling that we should stop the server");
+        lastSignalReceived.store(signal, std::memory_order_relaxed);
         creatures::serverShouldRun.store(false);
         break;
     default:
-        info("signal {} received, ignoring", signal);
+        // Other signals are ignored — record so the main loop can log it.
+        lastSignalReceived.store(signal, std::memory_order_relaxed);
         break;
     }
 }
@@ -414,6 +419,17 @@ int main(const int argc, char **argv) {
     // Wait for the signal handler to know when to stop
     while (creatures::serverShouldRun.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+
+    // Now that we're back in a normal execution context, log the signal
+    // that caused us to stop (the handler itself can't safely call info()).
+    int sig = lastSignalReceived.load(std::memory_order_relaxed);
+    if (sig == SIGINT) {
+        info("SIGINT received, shutting down");
+    } else if (sig == SIGTERM) {
+        info("SIGTERM received, shutting down");
+    } else if (sig != 0) {
+        info("signal {} received, shutting down", sig);
     }
 
     /*

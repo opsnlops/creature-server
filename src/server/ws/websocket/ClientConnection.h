@@ -72,6 +72,12 @@ class ClientConnection : public oatpp::websocket::WebSocket::Listener {
      */
     oatpp::data::stream::BufferOutputStream m_messageBuffer;
 
+    /**
+     * Set when the inbound message has exceeded our size cap and we're
+     * silently consuming the rest of the frames so the buffer doesn't grow.
+     */
+    bool m_bufferOverflowed = false;
+
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
     OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
     OATPP_COMPONENT(std::shared_ptr<creatures::ws::MessageProcessor>, messageProcessor);

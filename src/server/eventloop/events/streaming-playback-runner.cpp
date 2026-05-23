@@ -42,7 +42,7 @@ extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 
 StreamingPlaybackRunnerEvent::StreamingPlaybackRunnerEvent(framenum_t frameNumber,
-                                                            std::shared_ptr<StreamingPlaybackSession> session)
+                                                           std::shared_ptr<StreamingPlaybackSession> session)
     : EventBase(frameNumber), session_(std::move(session)) {}
 
 Result<framenum_t> StreamingPlaybackRunnerEvent::executeImpl() {
@@ -64,8 +64,8 @@ Result<framenum_t> StreamingPlaybackRunnerEvent::executeImpl() {
             runnerSpan = observability->createSamplingSpan("streaming_playback_runner.execute", parentSpan,
                                                            STREAMING_RUNNER_TRACE_SAMPLING);
         } else {
-            runnerSpan = observability->createSamplingSpan("streaming_playback_runner.execute",
-                                                           STREAMING_RUNNER_TRACE_SAMPLING);
+            runnerSpan =
+                observability->createSamplingSpan("streaming_playback_runner.execute", STREAMING_RUNNER_TRACE_SAMPLING);
         }
     }
 
@@ -159,11 +159,11 @@ Result<framenum_t> StreamingPlaybackRunnerEvent::emitDmxFrames() {
             continue; // No data available
         }
 
-        // Look up creature for channel offset
-        std::shared_ptr<Creature> creature;
-        if (creatureCache->contains(creatureId)) {
-            creature = creatureCache->get(creatureId);
-        } else {
+        // Look up creature for channel offset. tryGet collapses the
+        // contains() + get() pair into one locked section, eliminating
+        // the TOCTOU window between the check and the fetch.
+        std::shared_ptr<Creature> creature = creatureCache->tryGet(creatureId);
+        if (!creature) {
             auto creatureResult = db->getCreature(creatureId, nullptr);
             if (!creatureResult.isSuccess()) {
                 error("Creature {} not found during streaming playback", creatureId);

@@ -30,7 +30,7 @@ EventLoop::EventLoop() : eventScheduler(std::make_unique<EventScheduler>()) { de
 
 void EventLoop::start() {
 
-    frameCount = 0;
+    frameCount.store(0, std::memory_order_relaxed);
 
     debug("firing off event loop thread!");
     StoppableThread::start();
@@ -53,12 +53,17 @@ void EventLoop::run() {
         auto samplingRate = config ? config->getEventLoopTraceSampling() : DEFAULT_EVENT_LOOP_TRACE_SAMPLING;
         auto frameSpan = observability ? observability->createSamplingSpan("eventloop.frame", samplingRate) : nullptr;
 
+        // Cache the next frame number locally — every read of frameCount from
+        // the event-loop thread can use this, and cross-thread readers (HTTP
+        // handlers, jobs) get the value via getCurrentFrameNumber/getNextFrameNumber.
+        const auto currentFrame = frameCount.load(std::memory_order_relaxed) + 1;
+
         if (frameSpan) {
-            frameSpan->setAttribute("frame.number", static_cast<int64_t>(frameCount + 1));
+            frameSpan->setAttribute("frame.number", static_cast<int64_t>(currentFrame));
         }
 
-        // Increment the frame counter for this pass
-        frameCount++;
+        // Publish the new frame count for cross-thread readers
+        frameCount.store(currentFrame, std::memory_order_release);
         if (metrics) {
             metrics->incrementTotalFrames();
         }
@@ -74,7 +79,7 @@ void EventLoop::run() {
             {
                 std::unique_lock lock(eventQueueMutex); // Unlocks when it goes out of scope
                 if (!eventScheduler->event_queue.empty() &&
-                    eventScheduler->event_queue.top()->frameNumber <= frameCount) {
+                    eventScheduler->event_queue.top()->frameNumber <= frameCount.load(std::memory_order_relaxed)) {
                     event = eventScheduler->event_queue.top();
                     eventScheduler->event_queue.pop();
                 } else {
@@ -146,9 +151,9 @@ void EventLoop::run() {
     info("👋🏻 event loop stopped");
 }
 
-framenum_t EventLoop::getCurrentFrameNumber() const { return frameCount; }
+framenum_t EventLoop::getCurrentFrameNumber() const { return frameCount.load(std::memory_order_acquire); }
 
-framenum_t EventLoop::getNextFrameNumber() const { return frameCount + 1; }
+framenum_t EventLoop::getNextFrameNumber() const { return frameCount.load(std::memory_order_acquire) + 1; }
 
 uint32_t EventLoop::getQueueSize() const {
     std::lock_guard lock(eventQueueMutex);

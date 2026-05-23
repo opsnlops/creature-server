@@ -190,11 +190,10 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
     for (const auto &track : animation.tracks) {
         creatureId_t creatureId = track.creature_id;
 
-        // Get the creature for this track - check cache first, then DB
-        std::shared_ptr<Creature> creature;
-        if (creatureCache && creatureCache->contains(creatureId)) {
-            creature = creatureCache->get(creatureId);
-        } else {
+        // Get the creature for this track - check cache first, then DB.
+        // tryGet collapses contains() + get() into one locked section.
+        std::shared_ptr<Creature> creature = creatureCache ? creatureCache->tryGet(creatureId) : nullptr;
+        if (!creature) {
             // Not in cache - fetch from database and cache it
             debug("Creature {} not in cache, fetching from database", creatureId);
             auto creatureResult = db->getCreature(creatureId, nullptr);

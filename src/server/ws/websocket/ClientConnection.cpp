@@ -73,10 +73,28 @@ void ClientConnection::onClose(const WebSocket &socket, v_uint16 code, const oat
     appLogger->debug("onClose code={}, message={}", code, std::string(message));
 }
 
+// Cap accumulated inbound message size to bound memory under a hostile
+// client that sends an unbounded multi-frame message. If a client tries
+// to exceed this we drop the buffer and close the connection — the JSON
+// payloads we actually use are well under 64 KiB; 4 MiB is generous.
+static constexpr oatpp::v_io_size MAX_INBOUND_MESSAGE_BYTES = 4ULL * 1024 * 1024;
+
 void ClientConnection::readMessage(const WebSocket &socket, v_uint8 opcode, p_char8 data, oatpp::v_io_size size) {
 
     // Silence the warnings about an unused parameter
     (void)opcode;
+
+    if (m_bufferOverflowed) {
+        // We've already decided to drop this message. Keep ignoring frames
+        // until the terminator (size == 0) and then reset.
+        if (size == 0) {
+            m_messageBuffer.setCurrentPosition(0);
+            m_bufferOverflowed = false;
+            appLogger->warn("Dropped oversized message from client {} (cap={} bytes)", clientId,
+                            MAX_INBOUND_MESSAGE_BYTES);
+        }
+        return;
+    }
 
     if (size == 0) { // message transfer finished
 
@@ -148,6 +166,13 @@ void ClientConnection::readMessage(const WebSocket &socket, v_uint8 opcode, p_ch
         metrics->incrementWebsocketMessagesReceived();
 
     } else if (size > 0) { // message frame received
+        if (m_messageBuffer.getCurrentPosition() + size > MAX_INBOUND_MESSAGE_BYTES) {
+            // Will exceed the cap. Drop everything from this message and
+            // mark overflow so we ignore subsequent frames until size==0.
+            m_bufferOverflowed = true;
+            m_messageBuffer.setCurrentPosition(0);
+            return;
+        }
         m_messageBuffer.writeSimple(data, size);
     }
 }

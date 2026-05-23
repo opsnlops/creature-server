@@ -65,9 +65,12 @@ template <typename Mutex> class CreatureLogSink final : public base_sink<Mutex> 
         // Convert to time_t for easy formatting
         const auto time_t_time = std::chrono::system_clock::to_time_t(time_point);
 
-        // Format the time using std::put_time
+        // Use gmtime_r so concurrent log writes from different threads don't
+        // race on gmtime's static internal buffer.
+        std::tm tmBuf{};
+        gmtime_r(&time_t_time, &tmBuf);
         std::stringstream ss;
-        ss << std::put_time(std::gmtime(&time_t_time), "%Y-%m-%dT%H:%M:%SZ");
+        ss << std::put_time(&tmBuf, "%Y-%m-%dT%H:%M:%SZ");
         return ss.str();
     }
 

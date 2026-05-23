@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -34,7 +35,10 @@ class EventLoop final : public StoppableThread {
     void run() override;
 
   private:
-    framenum_t frameCount = 0;
+    // The event-loop thread writes this each tick; HTTP handlers, jobs, and
+    // other worker threads read it via getCurrentFrameNumber/getNextFrameNumber.
+    // Atomic so the cross-thread reads aren't UB on weakly-ordered hardware.
+    std::atomic<framenum_t> frameCount{0};
 
     std::unique_ptr<EventScheduler> eventScheduler;
     mutable std::mutex eventQueueMutex;

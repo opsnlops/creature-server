@@ -54,10 +54,13 @@ std::string slugify(const std::string &value, std::size_t maxLength = 40) {
                 lastDash = true;
             }
         }
-        if (slug.size() >= maxLength) break;
+        if (slug.size() >= maxLength)
+            break;
     }
-    if (slug.empty()) slug = "speech";
-    if (slug.back() == '-') slug.pop_back();
+    if (slug.empty())
+        slug = "speech";
+    if (slug.back() == '-')
+        slug.pop_back();
     return slug;
 }
 
@@ -66,7 +69,7 @@ std::string slugify(const std::string &value, std::size_t maxLength = 40) {
 // --- StreamingAdHocSession ---
 
 StreamingAdHocSession::StreamingAdHocSession(const std::string &sessionId, const std::string &creatureId,
-                                              bool resumePlaylist, std::shared_ptr<RequestSpan> parentSpan)
+                                             bool resumePlaylist, std::shared_ptr<RequestSpan> parentSpan)
     : sessionId_(sessionId), creatureId_(creatureId), resumePlaylist_(resumePlaylist) {
 
     if (parentSpan && creatures::observability) {
@@ -113,8 +116,8 @@ Result<void> StreamingAdHocSession::start() {
     creature_ = creatureResult.getValue().value();
 
     if (!creatureJson_.contains("voice") || creatureJson_["voice"].is_null()) {
-        return Result<void>{ServerError(ServerError::InvalidData,
-                                         fmt::format("No voice config for creature {}", creatureId_))};
+        return Result<void>{
+            ServerError(ServerError::InvalidData, fmt::format("No voice config for creature {}", creatureId_))};
     }
 
     // Extract voice config
@@ -126,18 +129,16 @@ Result<void> StreamingAdHocSession::start() {
         stability_ = voiceConfig["stability"].get<float>();
         similarityBoost_ = voiceConfig["similarity_boost"].get<float>();
     } catch (const std::exception &e) {
-        return Result<void>{ServerError(ServerError::InvalidData,
-                                         fmt::format("Bad voice config: {}", e.what()))};
+        return Result<void>{ServerError(ServerError::InvalidData, fmt::format("Bad voice config: {}", e.what()))};
     }
 
     // Validate model supports streaming
     static const std::vector<std::string> nonStreamingModels = {"eleven_v3", "eleven_multilingual_v2",
-                                                                 "eleven_monolingual_v1", "eleven_multilingual_v1"};
+                                                                "eleven_monolingual_v1", "eleven_multilingual_v1"};
     for (const auto &blocked : nonStreamingModels) {
         if (modelId_ == blocked) {
-            return Result<void>{ServerError(
-                ServerError::InvalidData,
-                fmt::format("Model '{}' does not support WebSocket streaming.", modelId_))};
+            return Result<void>{ServerError(ServerError::InvalidData,
+                                            fmt::format("Model '{}' does not support WebSocket streaming.", modelId_))};
         }
     }
 
@@ -146,9 +147,8 @@ Result<void> StreamingAdHocSession::start() {
         auto universePtr = creatures::creatureUniverseMap->get(creatureId_);
         universe_ = *universePtr;
     } catch (const std::exception &e) {
-        return Result<void>{ServerError(
-            ServerError::InvalidData,
-            fmt::format("Creature {} is not registered with a universe.", creatureId_))};
+        return Result<void>{ServerError(ServerError::InvalidData,
+                                        fmt::format("Creature {} is not registered with a universe.", creatureId_))};
     }
 
     // Load base animation (reused for all sentences)
@@ -178,7 +178,8 @@ Result<void> StreamingAdHocSession::start() {
     }
 
     msPerFrame_ = baseAnimation_.metadata.milliseconds_per_frame;
-    if (msPerFrame_ == 0) msPerFrame_ = 1;
+    if (msPerFrame_ == 0)
+        msPerFrame_ = 1;
 
     // Load CMU dictionary
     auto cmuDictPath = creatures::config->getCmuDictPath();
@@ -186,8 +187,8 @@ Result<void> StreamingAdHocSession::start() {
         textToViseme_.loadCmuDict(cmuDictPath);
     }
 
-    info("StreamingAdHocSession started: session={}, voice={}, model={}, base_anim={} ({} frames)",
-         sessionId_, voiceId_, modelId_, baseAnimationId, decodedBaseFrames_.size());
+    info("StreamingAdHocSession started: session={}, voice={}, model={}, base_anim={} ({} frames)", sessionId_,
+         voiceId_, modelId_, baseAnimationId, decodedBaseFrames_.size());
 
     if (startSpan) {
         startSpan->setAttribute("voice.id", voiceId_);
@@ -226,156 +227,178 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
     auto creatureName = creature_.name.empty() ? creatureId_ : creature_.name;
     auto timestamp = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
 
-    auto future = std::async(std::launch::async,
-                              [this, text, sentenceIndex, creatureName, timestamp]() -> Result<Animation> {
-                                  auto sentenceSpan = creatures::observability
-                                                          ? creatures::observability->createChildOperationSpan(
-                                                                fmt::format("StreamingAdHocSession.sentence.{}", sentenceIndex),
-                                                                span_)
-                                                          : nullptr;
-                                  if (sentenceSpan) {
-                                      sentenceSpan->setAttribute("sentence.index", static_cast<int64_t>(sentenceIndex));
-                                      sentenceSpan->setAttribute("sentence.text", text);
-                                  }
+    auto future =
+        std::async(std::launch::async, [this, text, sentenceIndex, creatureName, timestamp]() -> Result<Animation> {
+            auto sentenceSpan =
+                creatures::observability
+                    ? creatures::observability->createChildOperationSpan("StreamingAdHocSession.sentence", span_)
+                    : nullptr;
+            if (sentenceSpan) {
+                sentenceSpan->setAttribute("sentence.index", static_cast<int64_t>(sentenceIndex));
+                sentenceSpan->setAttribute("sentence.length", static_cast<int64_t>(text.size()));
+            }
 
-                                  // 1. TTS via REST with previous_request_ids for prosody continuity
-                                  std::vector<std::string> prevIds;
-                                  if (sentenceIndex > 1) {
-                                      auto prevId = requestIdFutures_[sentenceIndex - 2].get();
-                                      if (!prevId.empty()) {
-                                          prevIds.push_back(prevId);
-                                      }
-                                  }
+            // 1. TTS via REST with previous_request_ids for prosody continuity.
+            // Read the previous sentence's request-id future under the lock —
+            // concurrent addText() can be doing push_back() which would invalidate
+            // an iterator-style access; copying the shared_future locally is safe
+            // because shared_future is itself reference-counted.
+            std::vector<std::string> prevIds;
+            if (sentenceIndex > 1) {
+                std::shared_future<std::string> prevRequestIdFuture;
+                {
+                    std::lock_guard<std::mutex> lock(offsetMutex_);
+                    prevRequestIdFuture = requestIdFutures_[sentenceIndex - 2];
+                }
+                auto prevId = prevRequestIdFuture.get();
+                if (!prevId.empty()) {
+                    prevIds.push_back(prevId);
+                }
+            }
 
-                                  StreamingTTSClient client;
-                                  auto ttsResult = client.generateSpeechREST(
-                                      creatures::config->getVoiceApiKey(), voiceId_, modelId_, text, "mp3_44100_192",
-                                      stability_, similarityBoost_, prevIds, nullptr, sentenceSpan);
-                                  if (!ttsResult.isSuccess()) {
-                                      if (sentenceSpan) sentenceSpan->setError(ttsResult.getError()->getMessage());
-                                      // Unblock next sentence's waits
-                                      std::lock_guard<std::mutex> lock(offsetMutex_);
-                                      if (sentenceIndex <= static_cast<int>(offsetPromises_.size())) {
-                                          offsetPromises_[sentenceIndex - 1].set_value(0);
-                                      }
-                                      if (sentenceIndex <= static_cast<int>(requestIdPromises_.size())) {
-                                          requestIdPromises_[sentenceIndex - 1].set_value("");
-                                      }
-                                      return Result<Animation>{ttsResult.getError().value()};
-                                  }
-                                  const auto tts = ttsResult.getValue().value();
+            StreamingTTSClient client;
+            auto ttsResult = client.generateSpeechREST(creatures::config->getVoiceApiKey(), voiceId_, modelId_, text,
+                                                       "mp3_44100_192", stability_, similarityBoost_, prevIds, nullptr,
+                                                       sentenceSpan);
+            if (!ttsResult.isSuccess()) {
+                if (sentenceSpan)
+                    sentenceSpan->setError(ttsResult.getError()->getMessage());
+                // Unblock next sentence's waits
+                std::lock_guard<std::mutex> lock(offsetMutex_);
+                if (sentenceIndex <= static_cast<int>(offsetPromises_.size())) {
+                    offsetPromises_[sentenceIndex - 1].set_value(0);
+                }
+                if (sentenceIndex <= static_cast<int>(requestIdPromises_.size())) {
+                    requestIdPromises_[sentenceIndex - 1].set_value("");
+                }
+                return Result<Animation>{ttsResult.getError().value()};
+            }
+            const auto tts = ttsResult.getValue().value();
 
-                                  // 2. Write MP3 and convert to WAV
-                                  auto tempDir =
-                                      std::filesystem::temp_directory_path() / "creature-adhoc" / sessionId_;
-                                  std::filesystem::create_directories(tempDir);
+            // 2. Write MP3 and convert to WAV
+            auto tempDir = std::filesystem::temp_directory_path() / "creature-adhoc" / sessionId_;
+            std::filesystem::create_directories(tempDir);
 
-                                  auto mp3Path = tempDir / fmt::format("s{}.mp3", sentenceIndex);
-                                  {
-                                      std::ofstream f(mp3Path, std::ios::binary);
-                                      f.write(reinterpret_cast<const char *>(tts.audioData.data()),
-                                              static_cast<std::streamsize>(tts.audioData.size()));
-                                  }
+            auto mp3Path = tempDir / fmt::format("s{}.mp3", sentenceIndex);
+            {
+                std::ofstream f(mp3Path, std::ios::binary);
+                f.write(reinterpret_cast<const char *>(tts.audioData.data()),
+                        static_cast<std::streamsize>(tts.audioData.size()));
+            }
 
-                                  auto wavPath = tempDir / fmt::format("s{}.wav", sentenceIndex);
-                                  auto convertResult = AudioConverter::convertMp3ToWav(
-                                      mp3Path, wavPath, creatures::config->getFfmpegBinaryPath(), audioChannel_,
-                                      48000, sentenceSpan);
-                                  if (!convertResult.isSuccess()) {
-                                      if (sentenceSpan) sentenceSpan->setError(convertResult.getError()->getMessage());
-                                      std::lock_guard<std::mutex> lock(offsetMutex_);
-                                      if (sentenceIndex <= static_cast<int>(offsetPromises_.size())) {
-                                          offsetPromises_[sentenceIndex - 1].set_value(0);
-                                      }
-                                      return Result<Animation>{convertResult.getError().value()};
-                                  }
+            auto wavPath = tempDir / fmt::format("s{}.wav", sentenceIndex);
+            auto convertResult = AudioConverter::convertMp3ToWav(
+                mp3Path, wavPath, creatures::config->getFfmpegBinaryPath(), audioChannel_, 48000, sentenceSpan);
+            if (!convertResult.isSuccess()) {
+                if (sentenceSpan)
+                    sentenceSpan->setError(convertResult.getError()->getMessage());
+                std::lock_guard<std::mutex> lock(offsetMutex_);
+                if (sentenceIndex <= static_cast<int>(offsetPromises_.size())) {
+                    offsetPromises_[sentenceIndex - 1].set_value(0);
+                }
+                return Result<Animation>{convertResult.getError().value()};
+            }
 
-                                  // 3. Opus encoding (parallel across channels)
-                                  creatures::rtp::AudioStreamBuffer::loadFromWavFile(wavPath.string(), sentenceSpan);
+            // 3. Opus encoding (parallel across channels)
+            creatures::rtp::AudioStreamBuffer::loadFromWavFile(wavPath.string(), sentenceSpan);
 
-                                  // 4. Lip sync from alignment
-                                  std::vector<RhubarbMouthCue> mouthCues;
-                                  if (!tts.charTimings.empty()) {
-                                      mouthCues = textToViseme_.charTimingsToMouthCues(tts.charTimings);
-                                  }
-                                  RhubarbSoundData lipSyncData;
-                                  lipSyncData.metadata.soundFile = wavPath.filename().string();
-                                  lipSyncData.metadata.duration = tts.audioDurationSeconds;
-                                  lipSyncData.mouthCues = mouthCues;
+            // 4. Lip sync from alignment
+            std::vector<RhubarbMouthCue> mouthCues;
+            if (!tts.charTimings.empty()) {
+                mouthCues = textToViseme_.charTimingsToMouthCues(tts.charTimings);
+            }
+            RhubarbSoundData lipSyncData;
+            lipSyncData.metadata.soundFile = wavPath.filename().string();
+            lipSyncData.metadata.duration = tts.audioDurationSeconds;
+            lipSyncData.mouthCues = mouthCues;
 
-                                  // 5. Wait for previous sentence's frame offset
-                                  size_t baseOffset = 0;
-                                  if (sentenceIndex > 1) {
-                                      baseOffset = offsetFutures_[sentenceIndex - 2].get();
-                                  }
+            // 5. Wait for previous sentence's frame offset. Same locking
+            // pattern as the request-id read above: copy the future under
+            // the mutex, then block on it.
+            size_t baseOffset = 0;
+            if (sentenceIndex > 1) {
+                std::shared_future<size_t> prevOffsetFuture;
+                {
+                    std::lock_guard<std::mutex> lock(offsetMutex_);
+                    prevOffsetFuture = offsetFutures_[sentenceIndex - 2];
+                }
+                baseOffset = prevOffsetFuture.get();
+            }
 
-                                  // 6. Build animation frames
-                                  size_t targetFrames = std::max<size_t>(
-                                      1, static_cast<size_t>(std::ceil(
-                                             (tts.audioDurationSeconds * 1000.0) / static_cast<double>(msPerFrame_))));
+            // 6. Build animation frames
+            size_t targetFrames = std::max<size_t>(
+                1,
+                static_cast<size_t>(std::ceil((tts.audioDurationSeconds * 1000.0) / static_cast<double>(msPerFrame_))));
 
-                                  SoundDataProcessor processor;
-                                  auto mouthData = processor.processSoundData(lipSyncData, msPerFrame_, targetFrames);
-                                  auto mouthSlot = creature_.mouth_slot;
+            SoundDataProcessor processor;
+            auto mouthData = processor.processSoundData(lipSyncData, msPerFrame_, targetFrames);
+            auto mouthSlot = creature_.mouth_slot;
 
-                                  std::vector<std::string> encodedFrames;
-                                  encodedFrames.reserve(targetFrames);
-                                  for (size_t idx = 0; idx < targetFrames; ++idx) {
-                                      auto frameData =
-                                          decodedBaseFrames_[(baseOffset + idx) % decodedBaseFrames_.size()];
-                                      frameData[mouthSlot] = mouthData[idx];
-                                      std::string raw(reinterpret_cast<const char *>(frameData.data()),
-                                                      frameData.size());
-                                      encodedFrames.push_back(base64::to_base64(raw));
-                                  }
+            // Guard against creature/animation misconfiguration writing past
+            // the frame buffer. Both mouthSlot (creature config) and frame
+            // size (animation data) come from external state.
+            std::vector<std::string> encodedFrames;
+            encodedFrames.reserve(targetFrames);
+            bool sizeWarned = false;
+            for (size_t idx = 0; idx < targetFrames; ++idx) {
+                auto frameData = decodedBaseFrames_[(baseOffset + idx) % decodedBaseFrames_.size()];
+                if (mouthSlot < frameData.size()) {
+                    frameData[mouthSlot] = mouthData[idx];
+                } else if (!sizeWarned) {
+                    warn("StreamingAdHocSession: creature {} mouth_slot {} >= frame size {} — "
+                         "skipping mouth write for sentence {} (further skips silenced)",
+                         creatureId_, mouthSlot, frameData.size(), sentenceIndex);
+                    if (sentenceSpan) {
+                        sentenceSpan->setAttribute("mouth.slot_out_of_range", true);
+                    }
+                    sizeWarned = true;
+                }
+                std::string raw(reinterpret_cast<const char *>(frameData.data()), frameData.size());
+                encodedFrames.push_back(base64::to_base64(raw));
+            }
 
-                                  // 7. Signal next sentence with our ending offset and request ID
-                                  size_t endOffset = (baseOffset + targetFrames) % decodedBaseFrames_.size();
-                                  {
-                                      std::lock_guard<std::mutex> lock(offsetMutex_);
-                                      offsetPromises_[sentenceIndex - 1].set_value(endOffset);
-                                      requestIdPromises_[sentenceIndex - 1].set_value(tts.requestId);
-                                  }
+            // 7. Signal next sentence with our ending offset and request ID
+            size_t endOffset = (baseOffset + targetFrames) % decodedBaseFrames_.size();
+            {
+                std::lock_guard<std::mutex> lock(offsetMutex_);
+                offsetPromises_[sentenceIndex - 1].set_value(endOffset);
+                requestIdPromises_[sentenceIndex - 1].set_value(tts.requestId);
+            }
 
-                                  // 8. Build animation object
-                                  auto textSlug = slugify(tts.alignmentText.empty() ? text : tts.alignmentText);
-                                  Animation animation = baseAnimation_;
-                                  animation.id = util::generateUUID();
-                                  animation.metadata.animation_id = animation.id;
-                                  animation.metadata.title = fmt::format("{} - {} - s{} - {}", creatureName,
-                                                                         timestamp, sentenceIndex, textSlug);
-                                  animation.metadata.sound_file = wavPath.string();
-                                  animation.metadata.note =
-                                      fmt::format("Streaming sentence {}: {}", sentenceIndex, text);
-                                  animation.metadata.number_of_frames =
-                                      static_cast<uint32_t>(encodedFrames.size());
-                                  animation.metadata.multitrack_audio = true;
+            // 8. Build animation object
+            auto textSlug = slugify(tts.alignmentText.empty() ? text : tts.alignmentText);
+            Animation animation = baseAnimation_;
+            animation.id = util::generateUUID();
+            animation.metadata.animation_id = animation.id;
+            animation.metadata.title =
+                fmt::format("{} - {} - s{} - {}", creatureName, timestamp, sentenceIndex, textSlug);
+            animation.metadata.sound_file = wavPath.string();
+            animation.metadata.note = fmt::format("Streaming sentence {}: {}", sentenceIndex, text);
+            animation.metadata.number_of_frames = static_cast<uint32_t>(encodedFrames.size());
+            animation.metadata.multitrack_audio = true;
 
-                                  Track newTrack;
-                                  newTrack.id = util::generateUUID();
-                                  newTrack.creature_id = creatureId_;
-                                  newTrack.animation_id = animation.id;
-                                  newTrack.frames = std::move(encodedFrames);
-                                  animation.tracks = {newTrack};
+            Track newTrack;
+            newTrack.id = util::generateUUID();
+            newTrack.creature_id = creatureId_;
+            newTrack.animation_id = animation.id;
+            newTrack.frames = std::move(encodedFrames);
+            animation.tracks = {newTrack};
 
-                                  // 9. Insert into DB
-                                  creatures::db->insertAdHocAnimation(animation,
-                                                                       std::chrono::system_clock::now(), sentenceSpan);
+            // 9. Insert into DB
+            creatures::db->insertAdHocAnimation(animation, std::chrono::system_clock::now(), sentenceSpan);
 
-                                  if (sentenceSpan) {
-                                      sentenceSpan->setAttribute("animation.id", animation.id);
-                                      sentenceSpan->setAttribute("animation.frames",
-                                                                  static_cast<int64_t>(targetFrames));
-                                      sentenceSpan->setAttribute("base_frame_offset",
-                                                                  static_cast<int64_t>(baseOffset));
-                                      sentenceSpan->setSuccess();
-                                  }
+            if (sentenceSpan) {
+                sentenceSpan->setAttribute("animation.id", animation.id);
+                sentenceSpan->setAttribute("animation.frames", static_cast<int64_t>(targetFrames));
+                sentenceSpan->setAttribute("base_frame_offset", static_cast<int64_t>(baseOffset));
+                sentenceSpan->setSuccess();
+            }
 
-                                  info("Sentence {} animation ready: {} frames, offset {}, {:.2f}s",
-                                       sentenceIndex, targetFrames, baseOffset, tts.audioDurationSeconds);
+            info("Sentence {} animation ready: {} frames, offset {}, {:.2f}s", sentenceIndex, targetFrames, baseOffset,
+                 tts.audioDurationSeconds);
 
-                                  return animation;
-                              });
+            return animation;
+        });
 
     {
         std::lock_guard<std::mutex> lock(futuresMutex_);
@@ -407,9 +430,7 @@ void StreamingAdHocSession::playbackThreadFunc() {
     while (true) {
         // Wait until there's a future to process or we're told to stop
         std::unique_lock<std::mutex> lock(futuresMutex_);
-        playbackCv_.wait(lock, [&] {
-            return nextIndex < sentenceFutures_.size() || finished_.load();
-        });
+        playbackCv_.wait(lock, [&] { return nextIndex < sentenceFutures_.size() || finished_.load(); });
 
         // Process all available futures in order
         while (nextIndex < sentenceFutures_.size()) {
@@ -467,8 +488,8 @@ Result<std::string> StreamingAdHocSession::finish() {
         finishSpan->setAttribute("text.sentences", static_cast<int64_t>(chunksReceived_));
     }
 
-    info("StreamingAdHocSession finishing: session={}, {} sentences, signaling playback thread...",
-         sessionId_, chunksReceived_);
+    info("StreamingAdHocSession finishing: session={}, {} sentences, signaling playback thread...", sessionId_,
+         chunksReceived_);
 
     // Write transcript
     auto tempDir = std::filesystem::temp_directory_path() / "creature-adhoc" / sessionId_;
@@ -504,8 +525,7 @@ Result<std::string> StreamingAdHocSession::finish() {
         finishSpan->setSuccess();
     }
 
-    info("StreamingAdHocSession finished: session={}, {} sentences processed",
-         sessionId_, chunksReceived_);
+    info("StreamingAdHocSession finished: session={}, {} sentences processed", sessionId_, chunksReceived_);
 
     // Return a non-empty string to indicate success; the actual animation IDs
     // were handled by the playback thread
@@ -519,11 +539,11 @@ StreamingAdHocSessionManager &StreamingAdHocSessionManager::instance() {
     return mgr;
 }
 
-std::shared_ptr<StreamingAdHocSession> StreamingAdHocSessionManager::createSession(
-    const std::string &creatureId, bool resumePlaylist, std::shared_ptr<RequestSpan> parentSpan) {
+std::shared_ptr<StreamingAdHocSession>
+StreamingAdHocSessionManager::createSession(const std::string &creatureId, bool resumePlaylist,
+                                            std::shared_ptr<RequestSpan> parentSpan) {
     auto sessionId = util::generateUUID();
-    auto session =
-        std::make_shared<StreamingAdHocSession>(sessionId, creatureId, resumePlaylist, parentSpan);
+    auto session = std::make_shared<StreamingAdHocSession>(sessionId, creatureId, resumePlaylist, parentSpan);
 
     std::lock_guard<std::mutex> lock(mutex_);
     sessions_[sessionId] = session;
