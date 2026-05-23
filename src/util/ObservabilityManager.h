@@ -342,7 +342,8 @@ class OperationSpan {
 class SamplingSpan : public OperationSpan {
   public:
     SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double samplingRate,
-                 bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer = {});
+                 bool shouldExport, opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer = {},
+                 std::string operationName = "sampling");
     ~SamplingSpan();
 
     // No copy, move only
@@ -386,6 +387,10 @@ class SamplingSpan : public OperationSpan {
     double samplingRate_;
     bool shouldExport_;
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer_;
+    // Cached so the late-reify path on error / forceExport / recordException
+    // can name the lazily created span correctly instead of falling back to
+    // a single hardcoded "eventloop.frame".
+    std::string operationName_;
 
     // Allow access to ObservabilityManager for creating error spans
     friend class ObservabilityManager;

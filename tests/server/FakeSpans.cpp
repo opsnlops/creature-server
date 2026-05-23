@@ -41,7 +41,8 @@ std::string OperationSpan::getSpanIdHex() const { return {}; }
 
 SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double /*samplingRate*/,
                            bool /*shouldExport*/,
-                           opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> /*tracer*/)
+                           opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> /*tracer*/,
+                           std::string /*operationName*/)
     : OperationSpan(std::move(span)) {}
 
 SamplingSpan::~SamplingSpan() = default;

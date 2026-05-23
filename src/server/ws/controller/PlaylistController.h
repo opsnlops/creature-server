@@ -12,13 +12,10 @@
 
 #include "model/PlaylistStatus.h"
 #include "server/metrics/counters.h"
+#include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/dto/StartPlaylistRequestDto.h"
 #include "server/ws/dto/StopPlaylistRequestDto.h"
 #include "server/ws/service/PlaylistService.h"
-
-namespace creatures {
-extern std::shared_ptr<SystemCounters> metrics;
-}
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
 
@@ -48,12 +45,15 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/playlist", getAllPlaylists) {
+    ENDPOINT("GET", "api/v1/playlist", getAllPlaylists, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("REST request to get all playlists");
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_playlistService.getAllPlaylists());
+        return runEndpoint("GET /api/v1/playlist", "GET", "api/v1/playlist", "getAllPlaylists", "PlaylistController",
+                           request, [&](const auto &span) {
+                               const auto result = m_playlistService.getAllPlaylists();
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(getPlaylist) {
@@ -67,12 +67,21 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
 
         info->pathParams["playlistId"].description = "Playlist ID in the form of a UUID";
     }
-    ENDPOINT("GET", "api/v1/playlist/id/{playlistId}", getPlaylist, PATH(String, playlistId)) {
+    ENDPOINT("GET", "api/v1/playlist/id/{playlistId}", getPlaylist, PATH(String, playlistId),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("get playlist by ID via REST API: {}", std::string(playlistId));
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_playlistService.getPlaylist(playlistId));
+        OATPP_ASSERT_HTTP(playlistId && isUuidShape(std::string(playlistId)), Status::CODE_400,
+                          "playlistId must be a UUID");
+        return runEndpoint("GET /api/v1/playlist/id/{playlistId}", "GET",
+                           "api/v1/playlist/id/" + std::string(playlistId), "getPlaylist", "PlaylistController",
+                           request, [&](const auto &span) {
+                               if (span)
+                                   span->setAttribute("playlist.id", std::string(playlistId));
+                               const auto result = m_playlistService.getPlaylist(playlistId);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     /**
@@ -91,16 +100,22 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/playlist", upsertPlaylist, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("new playlist uploaded via REST API");
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        auto requestAsString = std::string(request->readBodyToString());
-        trace("request was: {}", requestAsString);
+        return runEndpoint("POST /api/v1/playlist", "POST", "api/v1/playlist", "upsertPlaylist", "PlaylistController",
+                           request, [&](const auto &span) {
+                               auto requestAsString = std::string(request->readBodyToString());
+                               trace("request was: {}", requestAsString);
+                               if (span)
+                                   span->setAttribute("request.body_size",
+                                                      static_cast<int64_t>(requestAsString.size()));
 
-        // Schedule an event to invalidate the playlist cache on the clients
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Playlist);
+                               // Schedule an event to invalidate the playlist cache on the clients
+                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Playlist);
 
-        return createDtoResponse(Status::CODE_200, m_playlistService.upsertPlaylist(requestAsString));
+                               const auto result = m_playlistService.upsertPlaylist(requestAsString);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(startPlaylist) {
@@ -112,12 +127,25 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/playlist/start", startPlaylist,
-             BODY_DTO(Object<StartPlaylistRequestDto>, playlistStartDto)) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_playlistService.startPlaylist(playlistStartDto->universe,
-                                                                                   playlistStartDto->playlist_id));
+             BODY_DTO(Object<StartPlaylistRequestDto>, playlistStartDto),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "POST /api/v1/playlist/start", "POST", "api/v1/playlist/start", "startPlaylist", "PlaylistController",
+            request, [&](const auto &span) {
+                if (span && playlistStartDto) {
+                    if (playlistStartDto->universe) {
+                        span->setAttribute("playlist.universe", static_cast<int64_t>(*playlistStartDto->universe));
+                    }
+                    if (playlistStartDto->playlist_id) {
+                        span->setAttribute("playlist.id", std::string(playlistStartDto->playlist_id));
+                    }
+                }
+                const auto result =
+                    m_playlistService.startPlaylist(playlistStartDto->universe, playlistStartDto->playlist_id);
+                if (span)
+                    span->setHttpStatus(200);
+                return createDtoResponse(Status::CODE_200, result);
+            });
     }
 
     ENDPOINT_INFO(stopPlaylist) {
@@ -128,11 +156,19 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/playlist/stop", stopPlaylist, BODY_DTO(Object<StopPlaylistRequestDto>, stopPlaylistDto)) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_playlistService.stopPlaylist(stopPlaylistDto->universe));
+    ENDPOINT("POST", "api/v1/playlist/stop", stopPlaylist, BODY_DTO(Object<StopPlaylistRequestDto>, stopPlaylistDto),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("POST /api/v1/playlist/stop", "POST", "api/v1/playlist/stop", "stopPlaylist",
+                           "PlaylistController", request, [&](const auto &span) {
+                               if (span && stopPlaylistDto && stopPlaylistDto->universe) {
+                                   span->setAttribute("playlist.universe",
+                                                      static_cast<int64_t>(*stopPlaylistDto->universe));
+                               }
+                               const auto result = m_playlistService.stopPlaylist(stopPlaylistDto->universe);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     // Get the status a universe's playlist
@@ -144,11 +180,19 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/playlist/status/{universe}", playlistStatus, PATH(UInt32, universe)) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_playlistService.playlistStatus(universe));
+    ENDPOINT("GET", "api/v1/playlist/status/{universe}", playlistStatus, PATH(UInt32, universe),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/playlist/status/{universe}", "GET",
+                           "api/v1/playlist/status/" + std::to_string(*universe), "playlistStatus",
+                           "PlaylistController", request, [&](const auto &span) {
+                               if (span && universe) {
+                                   span->setAttribute("playlist.universe", static_cast<int64_t>(*universe));
+                               }
+                               const auto result = m_playlistService.playlistStatus(universe);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     // Get the status of all playlists
@@ -161,11 +205,15 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/playlist/status", getAllPlaylistStatuses) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_playlistService.getAllPlaylistStatuses());
+    ENDPOINT("GET", "api/v1/playlist/status", getAllPlaylistStatuses,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/playlist/status", "GET", "api/v1/playlist/status", "getAllPlaylistStatuses",
+                           "PlaylistController", request, [&](const auto &span) {
+                               const auto result = m_playlistService.getAllPlaylistStatuses();
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 };
 
