@@ -53,6 +53,14 @@ void StreamingTTSClient::disconnect() { conn_.reset(); }
 // WebSocket frame helpers
 namespace {
 
+// Caps on inbound WebSocket payload size. ElevenLabs frames are typically
+// tens of KB (audio chunks) or small JSON; we set a generous per-frame cap
+// to reject malicious / corrupted length fields without crashing. The
+// fragment cap bounds how much we'll accumulate across continuation
+// frames before giving up.
+constexpr uint64_t MAX_FRAME_PAYLOAD_BYTES = 16ULL * 1024 * 1024;   // 16 MiB
+constexpr uint64_t MAX_FRAGMENT_BUFFER_BYTES = 32ULL * 1024 * 1024; // 32 MiB
+
 // Generate a random 4-byte masking key
 std::array<uint8_t, 4> generateMaskingKey() {
     static thread_local std::mt19937 rng(std::random_device{}());
@@ -214,6 +222,21 @@ Result<void> StreamingTTSClient::connectWebSocket(const std::string &host, uint1
         return Result<void>{ServerError(ServerError::InternalError, msg)};
     }
 
+    // Verify server certificates against the system trust store. Without
+    // this, an attacker who can intercept the route to api.elevenlabs.io
+    // gets a working MITM and the ElevenLabs API key in the BOS frame
+    // flows over their link.
+    SSL_CTX_set_min_proto_version(conn_->ctx, TLS1_2_VERSION);
+    SSL_CTX_set_verify(conn_->ctx, SSL_VERIFY_PEER, nullptr);
+    if (!SSL_CTX_set_default_verify_paths(conn_->ctx)) {
+        std::string msg = "SSL_CTX_set_default_verify_paths failed";
+        if (span) {
+            span->setError(msg);
+        }
+        conn_.reset();
+        return Result<void>{ServerError(ServerError::InternalError, msg)};
+    }
+
     // Force HTTP/1.1 via ALPN — ElevenLabs defaults to h2 which doesn't
     // support the classic WebSocket upgrade handshake
     static const unsigned char alpn[] = {8, 'h', 't', 't', 'p', '/', '1', '.', '1'};
@@ -223,8 +246,29 @@ Result<void> StreamingTTSClient::connectWebSocket(const std::string &host, uint1
     SSL_set_fd(conn_->ssl, conn_->sockfd);
     SSL_set_tlsext_host_name(conn_->ssl, host.c_str());
 
+    // Tie hostname verification to the cert's subject / SAN
+    if (!SSL_set1_host(conn_->ssl, host.c_str())) {
+        std::string msg = fmt::format("SSL_set1_host failed for {}", host);
+        if (span) {
+            span->setError(msg);
+        }
+        conn_.reset();
+        return Result<void>{ServerError(ServerError::InternalError, msg)};
+    }
+
     if (SSL_connect(conn_->ssl) <= 0) {
         std::string msg = fmt::format("TLS handshake failed with {}", host);
+        if (span) {
+            span->setError(msg);
+        }
+        conn_.reset();
+        return Result<void>{ServerError(ServerError::InternalError, msg)};
+    }
+
+    long verifyResult = SSL_get_verify_result(conn_->ssl);
+    if (verifyResult != X509_V_OK) {
+        std::string msg =
+            fmt::format("TLS cert verification failed for {}: {}", host, X509_verify_cert_error_string(verifyResult));
         if (span) {
             span->setError(msg);
         }
@@ -380,6 +424,13 @@ StreamingTTSClient::receiveAllFrames(const std::string &outputFormat, ProgressCa
             }
         }
 
+        if (payloadLen > MAX_FRAME_PAYLOAD_BYTES) {
+            warn("StreamingTTSClient: rejecting frame with payloadLen={} (cap={})", payloadLen,
+                 MAX_FRAME_PAYLOAD_BYTES);
+            return Result<StreamingTTSResult>{
+                ServerError(ServerError::InvalidData, "WebSocket frame exceeded size cap")};
+        }
+
         // Masking key (server shouldn't mask, but handle it)
         uint8_t mask[4] = {};
         if (masked) {
@@ -409,6 +460,12 @@ StreamingTTSClient::receiveAllFrames(const std::string &outputFormat, ProgressCa
 
         // Handle fragmentation
         if (opcode == 0x00) {
+            if (fragmentBuffer.size() + payload.size() > MAX_FRAGMENT_BUFFER_BYTES) {
+                warn("StreamingTTSClient: fragment buffer would exceed cap ({} + {} > {})", fragmentBuffer.size(),
+                     payload.size(), MAX_FRAGMENT_BUFFER_BYTES);
+                return Result<StreamingTTSResult>{
+                    ServerError(ServerError::InvalidData, "WebSocket fragment buffer exceeded size cap")};
+            }
             fragmentCount++;
             fragmentBuffer.insert(fragmentBuffer.end(), payload.begin(), payload.end());
             debug("StreamingTTSClient: continuation frame #{}, buffer={} bytes", fragmentCount, fragmentBuffer.size());
