@@ -43,6 +43,10 @@ RUN if [ ! -f /build/creature-server/lib/base64/include/base64.hpp ]; then \
         git clone https://github.com/tobiaslocker/base64.git /build/creature-server/lib/base64; \
     fi
 
+# Use the clang-19 we installed above (without this, CMake picks Debian's default gcc)
+ENV CC=clang-19
+ENV CXX=clang++-19
+
 # Install the externals
 RUN cd /build/creature-server/ && ./build_oatpp.sh
 
