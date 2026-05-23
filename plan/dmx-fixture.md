@@ -346,7 +346,7 @@ Each step is independently mergeable and testable:
 
 ## Notes for the Swift Client Implementer
 
-The server side is shipped (current version: **3.11.2**, deployed to `https://server.prod.chirpchirp.dev`). The Swift client should implement the JSON Schema Reference above as its data model. Quick orientation for whoever picks this up next:
+The server side is shipped (current version: **3.12.0**, deployed to `https://server.prod.chirpchirp.dev`). The Swift client should implement the JSON Schema Reference above as its data model. Live control was the most recent addition and is verified end-to-end against real hardware (Light 1: `f2d17206-30b5-4018-b939-daa4b22616c6`). Quick orientation for whoever picks this up next:
 
 ### Where to start
 1. Read this plan top-to-bottom — the "JSON Schema Reference" is the canonical API contract.
@@ -402,6 +402,13 @@ The server side is shipped (current version: **3.11.2**, deployed to `https://se
 
 Pattern for a slider UI: while the user holds a slider, send a live call every ~250 ms with `timeout_ms: 1000` (a safety margin > your send cadence). When the user releases, either stop sending (server auto-blacks out after the last `timeout_ms` elapses) or send one final call with `timeout_ms: 1` to fade out immediately. Channels not named in a call retain the last value you sent for them in the same session, so you only need to include channels that changed. Live takes over the fixture immediately — any pattern that's running is cancelled hard (no fade-out). While live is active, `/trigger` calls and binding-driven patterns are refused; once the deadline elapses, normal patterns work again.
 
+**Practical notes from the prod smoke test on Light 1** (an RGBW + master_dimmer + strobe fixture):
+
+- **Master dimmer needs to be at 255 to see anything.** Color channels are gated by the master on most real fixtures — set `master_dimmer: 255` in your first live call of a session so the colors are visible. Subsequent calls don't need to repeat it (live holds previous values).
+- **Strobe is annoying.** Always include `{"channel": "strobe", "value": 0}` in your first live call to make sure the channel isn't carrying garbage from a previous source, or skip strobe controls entirely in the slider UI.
+- **Hold time matters for visual confirmation.** Each color needs ~1–2 seconds to register visually. If you flip channels faster than that (sub-100ms), the user will barely see the intermediate colors.
+- **400s are returned cleanly with explanatory `message` fields.** Honor them in the UI — unknown channel name, missing/zero/over-cap `timeout_ms`, empty `values`, and no assigned universe all surface useful errors.
+
 **Delete** — `DELETE /api/v1/fixture/8e3a4b5c...` returns `{"status":"OK","code":200,"message":"Fixture deleted","session_id":null}`.
 
 ### Suggested UI structure
@@ -409,6 +416,7 @@ Pattern for a slider UI: while the user holds a slider, send a live call every ~
 - **Fixture editor**: form-driven, generates a UUID for `id` client-side. Channel/pattern/binding rows are CRUD lists. Use `type` to pick a renderer (color-picker for `light` with red/green/blue channels; just sliders for `generic` / `smoke_machine` / `fogger`).
 - **Universe assignment**: separate from fixture config — a single "Universe" field per fixture row, settable independently. Hitting `PUT /universe` persists it; `null` removes the assignment. After a universe change, listen for `CacheType::Fixture` invalidation broadcasts on the websocket and refresh the local cache.
 - **Manual trigger**: a fire button per pattern on each fixture. Offer "fire for N seconds" (sends `stop_after_ms`) and "fire and hold" (empty body — caller has to fire a separate stop pattern when done; there's no built-in stop endpoint).
+- **Live control sliders**: per-channel sliders for ad-hoc lighting. Disable pattern fire buttons on a fixture while the user is actively dragging — pattern triggers are refused by the server during a live session anyway, but disabling them avoids confusing 400s. Re-enable after the deadline elapses (or after the user releases and the auto-blackout fires).
 - **Binding editor**: per-fixture list of `{creature_id, on_reason, on_state, pattern_id}`. Use a creature picker (UUID → name from `GET /api/v1/creature`) and a pattern picker scoped to this fixture's patterns.
 - **Validation**: hit `POST /api/v1/fixture/validate` before saving. It returns `{valid: bool, fixture_id: string, missing_creature_ids: string[], error_messages: string[]}` — show `missing_creature_ids` as warnings (binding still saves) and `error_messages` as hard blockers.
 
@@ -419,6 +427,7 @@ Pattern for a slider UI: while the user holds a slider, send a live call every ~
 - **`assigned_universe` is persisted** (unlike creatures, where universe is runtime-only). The Swift app does NOT need a "register controller" workflow for fixtures.
 - **Cache invalidation events** are broadcast on the websocket after upsert/delete/universe-change as `{"cache_type": "fixture"}`. Consume these to keep the local cache fresh.
 - **Pattern triggers are fire-and-forget.** The POST returns the fixture's current state; the actual DMX fade is async on the server's event loop.
+- **Live control hard-cancels patterns.** When a `POST /live` lands on a fixture that has an active pattern, the pattern is dropped immediately (no fade-out). New patterns on the same fixture are refused (400) until the live deadline elapses. The Swift client doesn't need to do anything special for this — just be aware that a user dragging sliders preempts everything else on that fixture.
 
 ### Server-side files for cross-reference
 
@@ -426,5 +435,5 @@ If the Swift implementer needs to read the source-of-truth shape:
 
 - `src/model/DmxFixture.h` — struct + DTOs
 - `src/server/fixture/helpers.cpp` — `fixtureFromJson`, the strict validator
-- `src/server/ws/dto/{SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto,FixtureConfigValidationDto}.h` — request/response DTOs
+- `src/server/ws/dto/{SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto,SetFixtureLiveRequestDto,FixtureConfigValidationDto}.h` — request/response DTOs
 - `src/server/ws/controller/DmxFixtureController.h` — endpoint contract
