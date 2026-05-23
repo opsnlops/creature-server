@@ -70,13 +70,14 @@ class SoundController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/sound", getAllSounds) {
-        if (creatures::metrics) {
-            if (creatures::metrics) {
-                creatures::metrics->incrementRestRequestsProcessed();
-            }
-        }
-        return createDtoResponse(Status::CODE_200, m_soundService.getAllSounds());
+    ENDPOINT("GET", "api/v1/sound", getAllSounds, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/sound", "GET", "api/v1/sound", "getAllSounds", "SoundController", request,
+                           [&](const auto &span) {
+                               const auto result = m_soundService.getAllSounds();
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(getAdHocSounds) {
@@ -85,11 +86,14 @@ class SoundController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<AdHocSoundListDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/sound/ad-hoc", getAdHocSounds) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_soundService.getAdHocSounds());
+    ENDPOINT("GET", "api/v1/sound/ad-hoc", getAdHocSounds, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/sound/ad-hoc", "GET", "api/v1/sound/ad-hoc", "getAdHocSounds",
+                           "SoundController", request, [&](const auto &span) {
+                               const auto result = m_soundService.getAdHocSounds();
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(playSound) {
@@ -100,12 +104,18 @@ class SoundController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/sound/play", playSound,
-             BODY_DTO(Object<creatures::ws::PlaySoundRequestDTO>, requestBody)) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
-        return createDtoResponse(Status::CODE_200, m_soundService.playSound(std::string(requestBody->file_name)));
+    ENDPOINT("POST", "api/v1/sound/play", playSound, BODY_DTO(Object<creatures::ws::PlaySoundRequestDTO>, requestBody),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("POST /api/v1/sound/play", "POST", "api/v1/sound/play", "playSound", "SoundController",
+                           request, [&](const auto &span) {
+                               if (span && requestBody && requestBody->file_name) {
+                                   span->setAttribute("sound.file", std::string(requestBody->file_name));
+                               }
+                               const auto result = m_soundService.playSound(std::string(requestBody->file_name));
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(generateLipSyncFromUpload) {
@@ -119,250 +129,233 @@ class SoundController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/sound/generate-lipsync/upload", generateLipSyncFromUpload, BODY_STRING(String, body),
              QUERY(String, filename, "filename"), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-
-        auto span = creatures::observability
-                        ? creatures::observability->createRequestSpan("POST /api/v1/sound/generate-lipsync/upload",
-                                                                      "POST", "api/v1/sound/generate-lipsync/upload",
-                                                                      extractTraceparent(request))
-                        : nullptr;
-
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
         info("REST call to generateLipSyncFromUpload");
-
-        if (span) {
-            span->setAttribute("endpoint.name", "generateLipSyncFromUpload");
-            span->setAttribute("controller.name", "SoundController");
-            span->setAttribute("http.method", "POST");
-            span->setAttribute("http.target", "api/v1/sound/generate-lipsync/upload");
-        }
-
-        if (auto userAgent = request->getHeader("User-Agent"); span && userAgent) {
-            span->setAttribute("http.user_agent", std::string(userAgent));
-        }
-
-        if (!filename) {
-            auto response = StatusDto::createShared();
-            response->status = "Bad Request";
-            response->message = "Query parameter 'filename' is required.";
-            response->code = 400;
-            if (span) {
-                span->setHttpStatus(400);
-                span->setAttribute("error.message", response->message);
-            }
-            return createDtoResponse(Status::CODE_400, response);
-        }
-
-        if (!body) {
-            auto response = StatusDto::createShared();
-            response->status = "Bad Request";
-            response->message = "Request body must contain WAV data.";
-            response->code = 400;
-            if (span) {
-                span->setHttpStatus(400);
-                span->setAttribute("error.message", response->message);
-            }
-            return createDtoResponse(Status::CODE_400, response);
-        }
-
-        std::string wavData = body;
-        if (wavData.empty()) {
-            auto response = StatusDto::createShared();
-            response->status = "Bad Request";
-            response->message = "Uploaded WAV data is empty.";
-            response->code = 400;
-            if (span) {
-                span->setHttpStatus(400);
-                span->setAttribute("error.message", response->message);
-            }
-            return createDtoResponse(Status::CODE_400, response);
-        }
-
-        std::string originalFilename = filename;
-        std::string sanitizedFilename;
-        try {
-            sanitizedFilename = sanitizeFilename(originalFilename);
-        } catch (const std::invalid_argument &ex) {
-            auto response = StatusDto::createShared();
-            response->status = "Bad Request";
-            response->message = ex.what();
-            response->code = 400;
-            if (span) {
-                span->setHttpStatus(400);
-                span->setAttribute("error.message", response->message);
-            }
-            return createDtoResponse(Status::CODE_400, response);
-        }
-
-        if (!sanitizedFilename.ends_with(".wav")) {
-            auto response = StatusDto::createShared();
-            response->status = "Unprocessable Entity";
-            response->message = "Only .wav files are supported for lip sync generation.";
-            response->code = 422;
-            if (span) {
-                span->setHttpStatus(422);
-                span->setAttribute("error.message", response->message);
-            }
-            return createDtoResponse(Status::CODE_422, response);
-        }
-
-        if (span) {
-            span->setAttribute("upload.original_filename", originalFilename);
-            span->setAttribute("upload.sanitized_filename", sanitizedFilename);
-        }
-
-        auto tempRoot = fs::temp_directory_path() / "creature-server" / "lipsync-uploads";
-        auto tempDir = tempRoot / creatures::util::generateUUID();
-
-        std::error_code ec;
-        fs::create_directories(tempDir, ec);
-        if (ec) {
-            auto response = StatusDto::createShared();
-            response->status = "Internal Server Error";
-            response->message = fmt::format("Failed to create temporary directory: {}", ec.message());
-            response->code = 500;
-            if (span) {
-                span->setHttpStatus(500);
-                span->setAttribute("error.message", response->message);
-            }
-            return createDtoResponse(Status::CODE_500, response);
-        }
-
-        struct TempDirCleaner {
-            fs::path path;
-            ~TempDirCleaner() {
-                if (path.empty()) {
-                    return;
+        return runEndpoint(
+            "POST /api/v1/sound/generate-lipsync/upload", "POST", "api/v1/sound/generate-lipsync/upload",
+            "generateLipSyncFromUpload", "SoundController", request, [&](const auto &span) {
+                if (!filename) {
+                    auto response = StatusDto::createShared();
+                    response->status = "Bad Request";
+                    response->message = "Query parameter 'filename' is required.";
+                    response->code = 400;
+                    if (span) {
+                        span->setHttpStatus(400);
+                        span->setAttribute("error.message", response->message);
+                    }
+                    return createDtoResponse(Status::CODE_400, response);
                 }
-                std::error_code cleanupEc;
-                fs::remove_all(path, cleanupEc);
-                if (cleanupEc) {
-                    warn("Failed to clean up temporary lip sync directory {}: {}", path.string(), cleanupEc.message());
+
+                if (!body) {
+                    auto response = StatusDto::createShared();
+                    response->status = "Bad Request";
+                    response->message = "Request body must contain WAV data.";
+                    response->code = 400;
+                    if (span) {
+                        span->setHttpStatus(400);
+                        span->setAttribute("error.message", response->message);
+                    }
+                    return createDtoResponse(Status::CODE_400, response);
                 }
-            }
-        } cleanupGuard{tempDir};
 
-        auto wavPath = tempDir / sanitizedFilename;
-        std::ofstream wavFile(wavPath, std::ios::binary);
-        if (!wavFile.is_open()) {
-            auto response = StatusDto::createShared();
-            response->status = "Internal Server Error";
-            response->message = "Failed to write uploaded WAV file.";
-            response->code = 500;
-            if (span) {
-                span->setHttpStatus(500);
-                span->setAttribute("error.message", response->message);
-            }
-            return createDtoResponse(Status::CODE_500, response);
-        }
+                std::string wavData = body;
+                if (wavData.empty()) {
+                    auto response = StatusDto::createShared();
+                    response->status = "Bad Request";
+                    response->message = "Uploaded WAV data is empty.";
+                    response->code = 400;
+                    if (span) {
+                        span->setHttpStatus(400);
+                        span->setAttribute("error.message", response->message);
+                    }
+                    return createDtoResponse(Status::CODE_400, response);
+                }
 
-        wavFile.write(wavData.data(), static_cast<std::streamsize>(wavData.size()));
-        if (!wavFile.good()) {
-            auto response = StatusDto::createShared();
-            response->status = "Internal Server Error";
-            response->message = "Failed to persist uploaded WAV data.";
-            response->code = 500;
-            if (span) {
-                span->setHttpStatus(500);
-                span->setAttribute("error.message", response->message);
-            }
-            return createDtoResponse(Status::CODE_500, response);
-        }
-        wavFile.close();
+                std::string originalFilename = filename;
+                std::string sanitizedFilename;
+                try {
+                    sanitizedFilename = sanitizeFilename(originalFilename);
+                } catch (const std::invalid_argument &ex) {
+                    auto response = StatusDto::createShared();
+                    response->status = "Bad Request";
+                    response->message = ex.what();
+                    response->code = 400;
+                    if (span) {
+                        span->setHttpStatus(400);
+                        span->setAttribute("error.message", response->message);
+                    }
+                    return createDtoResponse(Status::CODE_400, response);
+                }
 
-        if (span) {
-            span->setAttribute("upload.filename", sanitizedFilename);
-            span->setAttribute("upload.size_bytes", static_cast<int64_t>(wavData.size()));
-            span->setAttribute("upload.temp_path", wavPath.string());
-        }
+                if (!sanitizedFilename.ends_with(".wav")) {
+                    auto response = StatusDto::createShared();
+                    response->status = "Unprocessable Entity";
+                    response->message = "Only .wav files are supported for lip sync generation.";
+                    response->code = 422;
+                    if (span) {
+                        span->setHttpStatus(422);
+                        span->setAttribute("error.message", response->message);
+                    }
+                    return createDtoResponse(Status::CODE_422, response);
+                }
 
-        std::string rhubarbBinaryPath = creatures::config->getRhubarbBinaryPath();
-        if (span) {
-            span->setAttribute("rhubarb.binary", rhubarbBinaryPath);
-        }
+                if (span) {
+                    span->setAttribute("upload.original_filename", originalFilename);
+                    span->setAttribute("upload.sanitized_filename", sanitizedFilename);
+                }
 
-        auto result = voice::LipSyncProcessor::generateLipSync(sanitizedFilename, tempDir.string(), rhubarbBinaryPath,
-                                                               true, nullptr, nullptr);
+                auto tempRoot = fs::temp_directory_path() / "creature-server" / "lipsync-uploads";
+                auto tempDir = tempRoot / creatures::util::generateUUID();
 
-        if (!result.isSuccess()) {
-            auto errorResult = result.getError().value();
-            auto response = StatusDto::createShared();
-            response->status = "Lip Sync Generation Failed";
-            response->message = errorResult.getMessage();
-            int statusCode = serverErrorToStatusCode(errorResult.getCode());
-            response->code = statusCode;
-            auto status = Status::CODE_500;
-            switch (statusCode) {
-            case 400:
-                status = Status::CODE_400;
-                break;
-            case 403:
-                status = Status::CODE_403;
-                break;
-            case 404:
-                status = Status::CODE_404;
-                break;
-            default:
-                status = Status::CODE_500;
-                break;
-            }
+                std::error_code ec;
+                fs::create_directories(tempDir, ec);
+                if (ec) {
+                    auto response = StatusDto::createShared();
+                    response->status = "Internal Server Error";
+                    response->message = fmt::format("Failed to create temporary directory: {}", ec.message());
+                    response->code = 500;
+                    if (span) {
+                        span->setHttpStatus(500);
+                        span->setAttribute("error.message", response->message);
+                    }
+                    return createDtoResponse(Status::CODE_500, response);
+                }
 
-            if (span) {
-                span->setHttpStatus(status.code);
-                span->setAttribute("error.message", errorResult.getMessage());
-            }
+                struct TempDirCleaner {
+                    fs::path path;
+                    ~TempDirCleaner() {
+                        if (path.empty()) {
+                            return;
+                        }
+                        std::error_code cleanupEc;
+                        fs::remove_all(path, cleanupEc);
+                        if (cleanupEc) {
+                            warn("Failed to clean up temporary lip sync directory {}: {}", path.string(),
+                                 cleanupEc.message());
+                        }
+                    }
+                } cleanupGuard{tempDir};
 
-            return createDtoResponse(status, response);
-        }
+                auto wavPath = tempDir / sanitizedFilename;
+                std::ofstream wavFile(wavPath, std::ios::binary);
+                if (!wavFile.is_open()) {
+                    auto response = StatusDto::createShared();
+                    response->status = "Internal Server Error";
+                    response->message = "Failed to write uploaded WAV file.";
+                    response->code = 500;
+                    if (span) {
+                        span->setHttpStatus(500);
+                        span->setAttribute("error.message", response->message);
+                    }
+                    return createDtoResponse(Status::CODE_500, response);
+                }
 
-        auto jsonContent = result.getValue().value();
+                wavFile.write(wavData.data(), static_cast<std::streamsize>(wavData.size()));
+                if (!wavFile.good()) {
+                    auto response = StatusDto::createShared();
+                    response->status = "Internal Server Error";
+                    response->message = "Failed to persist uploaded WAV data.";
+                    response->code = 500;
+                    if (span) {
+                        span->setHttpStatus(500);
+                        span->setAttribute("error.message", response->message);
+                    }
+                    return createDtoResponse(Status::CODE_500, response);
+                }
+                wavFile.close();
 
-        RhubarbSoundData lipSyncData;
-        try {
-            lipSyncData = creatures::RhubarbSoundData::fromJsonString(jsonContent);
-        } catch (const std::exception &e) {
-            auto response = StatusDto::createShared();
-            response->status = "Internal Server Error";
-            response->message = fmt::format("Failed to parse Rhubarb JSON output: {}", e.what());
-            response->code = 500;
-            if (span) {
-                span->setHttpStatus(500);
-                span->setAttribute("error.message", response->message);
-            }
-            return createDtoResponse(Status::CODE_500, response);
-        }
+                if (span) {
+                    span->setAttribute("upload.filename", sanitizedFilename);
+                    span->setAttribute("upload.size_bytes", static_cast<int64_t>(wavData.size()));
+                    span->setAttribute("upload.temp_path", wavPath.string());
+                }
 
-        auto metadataDto = creatures::ws::RhubarbMetadataDto::createShared();
-        metadataDto->soundFile = lipSyncData.metadata.soundFile;
-        metadataDto->duration = lipSyncData.metadata.duration;
+                std::string rhubarbBinaryPath = creatures::config->getRhubarbBinaryPath();
+                if (span) {
+                    span->setAttribute("rhubarb.binary", rhubarbBinaryPath);
+                }
 
-        auto mouthCuesDto = oatpp::List<oatpp::Object<creatures::ws::RhubarbMouthCueDto>>::createShared();
-        for (const auto &cue : lipSyncData.mouthCues) {
-            auto cueDto = creatures::ws::RhubarbMouthCueDto::createShared();
-            cueDto->start = cue.start;
-            cueDto->end = cue.end;
-            cueDto->value = cue.value;
-            mouthCuesDto->push_back(cueDto);
-        }
+                auto result = voice::LipSyncProcessor::generateLipSync(sanitizedFilename, tempDir.string(),
+                                                                       rhubarbBinaryPath, true, nullptr, nullptr);
 
-        auto responseDto = GenerateLipSyncUploadResponseDto::createShared();
-        responseDto->metadata = metadataDto;
-        responseDto->mouthCues = mouthCuesDto;
+                if (!result.isSuccess()) {
+                    auto errorResult = result.getError().value();
+                    auto response = StatusDto::createShared();
+                    response->status = "Lip Sync Generation Failed";
+                    response->message = errorResult.getMessage();
+                    int statusCode = serverErrorToStatusCode(errorResult.getCode());
+                    response->code = statusCode;
+                    auto status = Status::CODE_500;
+                    switch (statusCode) {
+                    case 400:
+                        status = Status::CODE_400;
+                        break;
+                    case 403:
+                        status = Status::CODE_403;
+                        break;
+                    case 404:
+                        status = Status::CODE_404;
+                        break;
+                    default:
+                        status = Status::CODE_500;
+                        break;
+                    }
 
-        auto jsonFilename = fmt::format("{}.json", sanitizedFilename.substr(0, sanitizedFilename.size() - 4));
+                    if (span) {
+                        span->setHttpStatus(status.code);
+                        span->setAttribute("error.message", errorResult.getMessage());
+                    }
 
-        if (span) {
-            span->setHttpStatus(200);
-            span->setAttribute("json.size_bytes", static_cast<int64_t>(jsonContent.size()));
-            span->setAttribute("json.filename", jsonFilename);
-            span->setAttribute("json.mouth_cues", static_cast<int64_t>(lipSyncData.mouthCues.size()));
-        }
+                    return createDtoResponse(status, response);
+                }
 
-        auto response = createDtoResponse(Status::CODE_200, responseDto);
-        response->putHeader("Content-Type", "application/json; charset=utf-8");
-        response->putHeader("Content-Disposition", fmt::format("attachment; filename=\"{}\"", jsonFilename));
-        return response;
+                auto jsonContent = result.getValue().value();
+
+                RhubarbSoundData lipSyncData;
+                try {
+                    lipSyncData = creatures::RhubarbSoundData::fromJsonString(jsonContent);
+                } catch (const std::exception &e) {
+                    auto response = StatusDto::createShared();
+                    response->status = "Internal Server Error";
+                    response->message = fmt::format("Failed to parse Rhubarb JSON output: {}", e.what());
+                    response->code = 500;
+                    if (span) {
+                        span->setHttpStatus(500);
+                        span->setAttribute("error.message", response->message);
+                    }
+                    return createDtoResponse(Status::CODE_500, response);
+                }
+
+                auto metadataDto = creatures::ws::RhubarbMetadataDto::createShared();
+                metadataDto->soundFile = lipSyncData.metadata.soundFile;
+                metadataDto->duration = lipSyncData.metadata.duration;
+
+                auto mouthCuesDto = oatpp::List<oatpp::Object<creatures::ws::RhubarbMouthCueDto>>::createShared();
+                for (const auto &cue : lipSyncData.mouthCues) {
+                    auto cueDto = creatures::ws::RhubarbMouthCueDto::createShared();
+                    cueDto->start = cue.start;
+                    cueDto->end = cue.end;
+                    cueDto->value = cue.value;
+                    mouthCuesDto->push_back(cueDto);
+                }
+
+                auto responseDto = GenerateLipSyncUploadResponseDto::createShared();
+                responseDto->metadata = metadataDto;
+                responseDto->mouthCues = mouthCuesDto;
+
+                auto jsonFilename = fmt::format("{}.json", sanitizedFilename.substr(0, sanitizedFilename.size() - 4));
+
+                if (span) {
+                    span->setHttpStatus(200);
+                    span->setAttribute("json.size_bytes", static_cast<int64_t>(jsonContent.size()));
+                    span->setAttribute("json.filename", jsonFilename);
+                    span->setAttribute("json.mouth_cues", static_cast<int64_t>(lipSyncData.mouthCues.size()));
+                }
+
+                auto response = createDtoResponse(Status::CODE_200, responseDto);
+                response->putHeader("Content-Type", "application/json; charset=utf-8");
+                response->putHeader("Content-Disposition", fmt::format("attachment; filename=\"{}\"", jsonFilename));
+                return response;
+            });
     }
 
     static std::string sanitizeFilename(const std::string &filename) {
@@ -407,102 +400,96 @@ class SoundController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "/api/v1/sound/{filename}", getSound, PATH(String, filename)) {
-
+    ENDPOINT("GET", "/api/v1/sound/{filename}", getSound, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("Request to serve sound file: {}", std::string(filename));
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
+        return runEndpoint("GET /api/v1/sound/{filename}", "GET", "/api/v1/sound/" + std::string(filename), "getSound",
+                           "SoundController", request, [&](const auto &span) {
+                               // Sanitize the filename
+                               std::string safeFilename;
+                               try {
+                                   safeFilename = sanitizeFilename(filename);
+                               } catch (const std::invalid_argument &e) {
+                                   warn("Attempt to serve {} failed: {}", std::string(filename), e.what());
+                                   auto response = StatusDto::createShared();
+                                   response->status = "Forbidden";
+                                   response->message = e.what();
+                                   response->code = 403;
+                                   if (span)
+                                       span->setHttpStatus(403);
+                                   return createDtoResponse(Status::CODE_403, response);
+                               }
 
-        // Sanitize the filename
-        std::string safeFilename;
-        try {
-            safeFilename = sanitizeFilename(filename);
-        } catch (const std::invalid_argument &e) {
+                               // Assemble the path
+                               auto filePath = config->getSoundFileLocation() + "/" + safeFilename;
 
-            warn("Attempt to serve {} failed: {}", std::string(filename), e.what());
+                               // Resolve the canonical path
+                               std::filesystem::path canonicalPath;
+                               std::filesystem::path baseDir;
+                               try {
+                                   canonicalPath = std::filesystem::canonical(filePath);
+                                   baseDir = std::filesystem::canonical(config->getSoundFileLocation());
+                               } catch (const std::filesystem::filesystem_error &e) {
+                                   warn("Attempt to serve {} failed: {}", std::string(filename), e.what());
+                                   auto response = StatusDto::createShared();
+                                   response->status = "Not Found";
+                                   response->message = e.what();
+                                   response->code = 404;
+                                   if (span)
+                                       span->setHttpStatus(404);
+                                   return createDtoResponse(Status::CODE_404, response);
+                               }
 
-            auto response = StatusDto::createShared();
-            response->status = "Forbidden";
-            response->message = e.what();
-            response->code = 403;
-            return createDtoResponse(Status::CODE_403, response);
-        }
+                               // Ensure the resolved path is within the base directory
+                               if (canonicalPath.string().find(baseDir.string()) != 0) {
+                                   warn("Attempt to serve {} failed: {}", std::string(filename),
+                                        "Path traversal attempt.");
+                                   auto response = StatusDto::createShared();
+                                   response->status = "Forbidden";
+                                   response->message = "Forbidden: Path traversal attempt.";
+                                   response->code = 403;
+                                   if (span)
+                                       span->setHttpStatus(403);
+                                   return createDtoResponse(Status::CODE_403, response);
+                               }
 
-        // Assemble the path
-        auto filePath = config->getSoundFileLocation() + "/" + safeFilename;
+                               std::ifstream file(canonicalPath.string(), std::ios::binary | std::ios::ate);
+                               if (!file.is_open()) {
+                                   info("Attempt to serve {} failed: {}", std::string(filename), "Not found.");
+                                   auto response = StatusDto::createShared();
+                                   response->status = "Not Found";
+                                   response->message = "File not found.";
+                                   response->code = 404;
+                                   if (span)
+                                       span->setHttpStatus(404);
+                                   return createDtoResponse(Status::CODE_404, response);
+                               }
 
-        // Resolve the canonical path
-        std::filesystem::path canonicalPath;
-        std::filesystem::path baseDir;
-        try {
-            // Try to resolve canonical paths
-            canonicalPath = std::filesystem::canonical(filePath);
-            baseDir = std::filesystem::canonical(config->getSoundFileLocation());
-        } catch (const std::filesystem::filesystem_error &e) {
+                               std::streamsize fileSize = file.tellg();
+                               file.seekg(0, std::ios::beg);
+                               auto mimeType = getMimeType(filePath);
 
-            warn("Attempt to serve {} failed: {}", std::string(filename), e.what());
+                               std::vector<char> buffer(fileSize);
+                               if (!file.read(buffer.data(), fileSize)) {
+                                   auto response = StatusDto::createShared();
+                                   response->status = "Internal Server Error";
+                                   response->message = "Error reading file.";
+                                   response->code = 500;
+                                   if (span)
+                                       span->setHttpStatus(500);
+                                   return createDtoResponse(Status::CODE_500, response);
+                               }
 
-            auto response = StatusDto::createShared();
-            response->status = "Not Found";
-            response->message = e.what();
-            response->code = 404;
-            return createDtoResponse(Status::CODE_404, response);
-        }
+                               metrics->incrementSoundFilesServed();
+                               info("Serving sound file: {} ({}, {} bytes)", std::string(filename), mimeType, fileSize);
 
-        // Ensure the resolved path is within the base directory
-        if (canonicalPath.string().find(baseDir.string()) != 0) {
-
-            warn("Attempt to serve {} failed: {}", std::string(filename), "Path traversal attempt.");
-
-            auto response = StatusDto::createShared();
-            response->status = "Forbidden";
-            response->message = "Forbidden: Path traversal attempt.";
-            response->code = 403;
-            return createDtoResponse(Status::CODE_403, response);
-        }
-
-        // Open the file
-        std::ifstream file(canonicalPath.string(), std::ios::binary | std::ios::ate);
-        if (!file.is_open()) {
-
-            info("Attempt to serve {} failed: {}", std::string(filename), "Not found.");
-
-            auto response = StatusDto::createShared();
-            response->status = "Not Found";
-            response->message = "File not found.";
-            response->code = 404;
-            return createDtoResponse(Status::CODE_404, response);
-        }
-
-        // Get file size
-        std::streamsize fileSize = file.tellg();
-        file.seekg(0, std::ios::beg); // Go back to the start of the file
-
-        // Get MIME type
-        auto mimeType = getMimeType(filePath);
-
-        // Read file content
-        std::vector<char> buffer(fileSize);
-        if (!file.read(buffer.data(), fileSize)) {
-
-            auto response = StatusDto::createShared();
-            response->status = "Internal Server Error";
-            response->message = "Error reading file.";
-            response->code = 500;
-            return createDtoResponse(Status::CODE_500, response);
-        }
-
-        // Increment metrics and log
-        metrics->incrementSoundFilesServed();
-        info("Serving sound file: {} ({}, {} bytes)", std::string(filename), mimeType, fileSize);
-
-        // Create response
-        auto response =
-            ResponseFactory::createResponse(Status::CODE_200, oatpp::String((const char *)buffer.data(), fileSize));
-        response->putHeader("Content-Type", mimeType.c_str());
-        // content-length is automatically added by oatpp
-        return response;
+                               auto response = ResponseFactory::createResponse(
+                                   Status::CODE_200, oatpp::String((const char *)buffer.data(), fileSize));
+                               response->putHeader("Content-Type", mimeType.c_str());
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return response;
+                           });
     }
 
     ENDPOINT_INFO(getAdHocSound) {
@@ -512,61 +499,66 @@ class SoundController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/sound/ad-hoc/{filename}", getAdHocSound, PATH(String, filename)) {
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
+    ENDPOINT("GET", "api/v1/sound/ad-hoc/{filename}", getAdHocSound, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/sound/ad-hoc/{filename}", "GET", "api/v1/sound/ad-hoc/" + std::string(filename),
+                           "getAdHocSound", "SoundController", request, [&](const auto &span) {
+                               std::string safeFilename;
+                               try {
+                                   safeFilename = sanitizeFilename(filename);
+                               } catch (const std::invalid_argument &e) {
+                                   auto response = StatusDto::createShared();
+                                   response->status = "Forbidden";
+                                   response->message = e.what();
+                                   response->code = 403;
+                                   if (span)
+                                       span->setHttpStatus(403);
+                                   return createDtoResponse(Status::CODE_403, response);
+                               }
 
-        std::string safeFilename;
-        try {
-            safeFilename = sanitizeFilename(filename);
-        } catch (const std::invalid_argument &e) {
-            auto response = StatusDto::createShared();
-            response->status = "Forbidden";
-            response->message = e.what();
-            response->code = 403;
-            return createDtoResponse(Status::CODE_403, response);
-        }
+                               std::string filePath;
+                               try {
+                                   filePath = m_soundService.resolveAdHocSoundPath(safeFilename);
+                               } catch (oatpp::web::protocol::http::HttpError &err) {
+                                   // withSpanStatus catches HttpError and stamps the right code; rethrow.
+                                   throw;
+                               }
 
-        std::string filePath;
-        try {
-            filePath = m_soundService.resolveAdHocSoundPath(safeFilename);
-        } catch (oatpp::web::protocol::http::HttpError &err) {
-            auto info = err.getInfo();
-            auto response = StatusDto::createShared();
-            response->status = std::string(Status(info.status).description);
-            response->message = err.getMessage();
-            response->code = info.status.code;
-            return createDtoResponse(Status(info.status), response);
-        }
+                               std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+                               if (!file.is_open()) {
+                                   auto response = StatusDto::createShared();
+                                   response->status = "Not Found";
+                                   response->message = "File not found.";
+                                   response->code = 404;
+                                   if (span)
+                                       span->setHttpStatus(404);
+                                   return createDtoResponse(Status::CODE_404, response);
+                               }
 
-        std::ifstream file(filePath, std::ios::binary | std::ios::ate);
-        if (!file.is_open()) {
-            auto response = StatusDto::createShared();
-            response->status = "Not Found";
-            response->message = "File not found.";
-            response->code = 404;
-            return createDtoResponse(Status::CODE_404, response);
-        }
+                               std::streamsize fileSize = file.tellg();
+                               file.seekg(0, std::ios::beg);
 
-        std::streamsize fileSize = file.tellg();
-        file.seekg(0, std::ios::beg);
+                               std::vector<char> buffer(fileSize);
+                               if (!file.read(buffer.data(), fileSize)) {
+                                   auto response = StatusDto::createShared();
+                                   response->status = "Internal Server Error";
+                                   response->message = "Error reading file.";
+                                   response->code = 500;
+                                   if (span)
+                                       span->setHttpStatus(500);
+                                   return createDtoResponse(Status::CODE_500, response);
+                               }
 
-        std::vector<char> buffer(fileSize);
-        if (!file.read(buffer.data(), fileSize)) {
-            auto response = StatusDto::createShared();
-            response->status = "Internal Server Error";
-            response->message = "Error reading file.";
-            response->code = 500;
-            return createDtoResponse(Status::CODE_500, response);
-        }
-
-        auto mimeType = getMimeType(filePath);
-        auto response =
-            ResponseFactory::createResponse(Status::CODE_200, oatpp::String((const char *)buffer.data(), fileSize));
-        response->putHeader("Content-Type", mimeType.c_str());
-        response->putHeader("Content-Disposition", "attachment; filename=\"" + safeFilename + "\"");
-        return response;
+                               auto mimeType = getMimeType(filePath);
+                               auto response = ResponseFactory::createResponse(
+                                   Status::CODE_200, oatpp::String((const char *)buffer.data(), fileSize));
+                               response->putHeader("Content-Type", mimeType.c_str());
+                               response->putHeader("Content-Disposition",
+                                                   "attachment; filename=\"" + safeFilename + "\"");
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return response;
+                           });
     }
 
     ENDPOINT_INFO(generateLipSync) {
@@ -579,73 +571,52 @@ class SoundController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("POST", "api/v1/sound/generate-lipsync", generateLipSync,
              BODY_DTO(Object<creatures::ws::GenerateLipSyncRequestDto>, requestBody),
-             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-
-        // Create a trace span for this request
-        const auto span = creatures::observability
-                              ? creatures::observability->createRequestSpan("POST /api/v1/sound/generate-lipsync",
-                                                                            "POST", "api/v1/sound/generate-lipsync",
-                                                                            extractTraceparent(request))
-                              : nullptr;
-
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         info("REST call to generateLipSync (async)");
-        if (creatures::metrics) {
-            creatures::metrics->incrementRestRequestsProcessed();
-        }
+        return runEndpoint(
+            "POST /api/v1/sound/generate-lipsync", "POST", "api/v1/sound/generate-lipsync", "generateLipSync",
+            "SoundController", request, [&](const auto &span) {
+                if (span) {
+                    span->setAttribute("sound.file", std::string(requestBody->sound_file));
+                }
 
-        if (span) {
-            span->setAttribute("endpoint.name", "generateLipSync");
-            span->setAttribute("controller.name", "SoundController");
-            span->setAttribute("http.method", "POST");
-            span->setAttribute("http.target", "api/v1/sound/generate-lipsync");
+                auto soundFile = std::string(requestBody->sound_file);
+                bool allowOverwrite =
+                    requestBody->allow_overwrite ? static_cast<bool>(requestBody->allow_overwrite) : false;
 
-            // Add User-Agent if present
-            if (const auto userAgent = request->getHeader("User-Agent")) {
-                span->setAttribute("http.user_agent", std::string(userAgent));
-            }
+                // Encode details as JSON to include both filename and allow_overwrite flag
+                nlohmann::json jobDetails;
+                jobDetails["sound_file"] = soundFile;
+                jobDetails["allow_overwrite"] = allowOverwrite;
+                const std::string jobDetailsStr = jobDetails.dump();
 
-            // Add request details
-            span->setAttribute("sound.file", std::string(requestBody->sound_file));
-        }
+                debug("Creating lip sync job for sound file: {}, allow_overwrite: {}", soundFile, allowOverwrite);
+                std::string jobId =
+                    creatures::jobManager->createJob(creatures::jobs::JobType::LipSync, jobDetailsStr, span);
+                info("Created lip sync job with ID: {}", jobId);
 
-        auto soundFile = std::string(requestBody->sound_file);
-        bool allowOverwrite = requestBody->allow_overwrite ? static_cast<bool>(requestBody->allow_overwrite) : false;
+                if (span) {
+                    span->setAttribute("job.id", jobId);
+                }
 
-        // Create a job for the lip sync processing
-        // Encode details as JSON to include both filename and allow_overwrite flag
-        nlohmann::json jobDetails;
-        jobDetails["sound_file"] = soundFile;
-        jobDetails["allow_overwrite"] = allowOverwrite;
-        const std::string jobDetailsStr = jobDetails.dump();
+                debug("Queueing job {} for processing", jobId);
+                creatures::jobWorker->queueJob(jobId);
+                info("Job {} queued successfully", jobId);
 
-        debug("Creating lip sync job for sound file: {}, allow_overwrite: {}", soundFile, allowOverwrite);
-        std::string jobId =
-            creatures::jobManager->createJob(creatures::jobs::JobType::LipSync, jobDetailsStr, span);
-        info("Created lip sync job with ID: {}", jobId);
+                const auto response = JobCreatedDto::createShared();
+                response->job_id = jobId;
+                response->job_type = "lip-sync";
+                response->message = fmt::format("Lip sync job created for '{}'. Listen for job-progress and "
+                                                "job-complete WebSocket messages.",
+                                                soundFile);
 
-        if (span) {
-            span->setAttribute("job.id", jobId);
-        }
+                if (span) {
+                    span->setHttpStatus(202);
+                }
 
-        // Queue the job for processing
-        debug("Queueing job {} for processing", jobId);
-        creatures::jobWorker->queueJob(jobId);
-        info("Job {} queued successfully", jobId);
-
-        // Create the response DTO
-        const auto response = JobCreatedDto::createShared();
-        response->job_id = jobId;
-        response->job_type = "lip-sync";
-        response->message = fmt::format(
-            "Lip sync job created for '{}'. Listen for job-progress and job-complete WebSocket messages.", soundFile);
-
-        if (span) {
-            span->setHttpStatus(202);
-            span->setAttribute("success", true);
-        }
-
-        debug("Returning 202 Accepted with job ID: {}", jobId);
-        return createDtoResponse(Status::CODE_202, response);
+                debug("Returning 202 Accepted with job ID: {}", jobId);
+                return createDtoResponse(Status::CODE_202, response);
+            });
     }
 };
 
