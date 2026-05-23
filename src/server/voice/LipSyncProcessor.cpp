@@ -8,6 +8,7 @@
 #include "WhisperLipSyncProcessor.h"
 #include "server/config/Configuration.h"
 #include "server/namespace-stuffs.h"
+#include "util/ChildProcess.h"
 #include "util/ObservabilityManager.h"
 
 namespace fs = std::filesystem;
@@ -19,8 +20,7 @@ extern std::shared_ptr<ObservabilityManager> observability;
 
 namespace creatures::voice {
 
-bool LipSyncProcessor::initializeWhisperEngine(const std::string &whisperModelPath,
-                                                const std::string &cmuDictPath) {
+bool LipSyncProcessor::initializeWhisperEngine(const std::string &whisperModelPath, const std::string &cmuDictPath) {
     if (whisperModelPath.empty()) {
         warn("Whisper model path is empty, whisper engine will not be available");
         return false;
@@ -35,9 +35,9 @@ bool LipSyncProcessor::initializeWhisperEngine(const std::string &whisperModelPa
 }
 
 Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFile, const std::string &soundsDir,
-                                                       const std::string &rhubarbBinaryPath, bool allowOverwrite,
-                                                       ProgressCallback progressCallback,
-                                                       std::shared_ptr<OperationSpan> parentSpan) {
+                                                      const std::string &rhubarbBinaryPath, bool allowOverwrite,
+                                                      ProgressCallback progressCallback,
+                                                      std::shared_ptr<OperationSpan> parentSpan) {
 
     // Dispatch based on configured engine
     std::string engine = config->getLipSyncEngine();
@@ -56,8 +56,8 @@ Result<std::string> LipSyncProcessor::generateLipSync(const std::string &soundFi
 }
 
 Result<std::string> LipSyncProcessor::generateWithWhisper(const std::string &soundFile, const std::string &soundsDir,
-                                                           bool allowOverwrite, ProgressCallback progressCallback,
-                                                           std::shared_ptr<OperationSpan> parentSpan) {
+                                                          bool allowOverwrite, ProgressCallback progressCallback,
+                                                          std::shared_ptr<OperationSpan> parentSpan) {
 
     auto span = observability->createChildOperationSpan("LipSyncProcessor.generateWithWhisper", parentSpan);
     if (span) {
@@ -111,8 +111,8 @@ Result<std::string> LipSyncProcessor::generateWithWhisper(const std::string &sou
     }
 
     // Run whisper lip sync
-    auto result = WhisperLipSyncProcessor::instance().generateLipSync(soundFilePath, transcriptText,
-                                                                       progressCallback, span);
+    auto result =
+        WhisperLipSyncProcessor::instance().generateLipSync(soundFilePath, transcriptText, progressCallback, span);
 
     if (result.isSuccess()) {
         auto jsonContent = result.getValue().value();
@@ -128,9 +128,9 @@ Result<std::string> LipSyncProcessor::generateWithWhisper(const std::string &sou
 }
 
 Result<std::string> LipSyncProcessor::generateWithRhubarb(const std::string &soundFile, const std::string &soundsDir,
-                                                           const std::string &rhubarbBinaryPath, bool allowOverwrite,
-                                                           ProgressCallback progressCallback,
-                                                           std::shared_ptr<OperationSpan> parentSpan) {
+                                                          const std::string &rhubarbBinaryPath, bool allowOverwrite,
+                                                          ProgressCallback progressCallback,
+                                                          std::shared_ptr<OperationSpan> parentSpan) {
 
     debug("LipSyncProcessor::generateWithRhubarb() called for file: {}, allowOverwrite: {}", soundFile, allowOverwrite);
 
@@ -215,28 +215,25 @@ Result<std::string> LipSyncProcessor::generateWithRhubarb(const std::string &sou
 
     if (span) {
         span->setAttribute("rhubarb.binary", rhubarbBinaryPath);
+        span->setAttribute("rhubarb.input_file", soundFilePath.filename().string());
+        span->setAttribute("rhubarb.output_file", jsonOutputPath.filename().string());
     }
 
-    std::string command =
-        fmt::format("{} -f json --machineReadable -o \"{}\"", rhubarbBinaryPath, jsonOutputPath.string());
-    debug("Building Rhubarb command...");
-
-    // Add transcript if available
+    // Build the argv array. Each element is a separate argument; no shell
+    // is involved, so filenames cannot inject metacharacters.
+    std::vector<std::string> args = {"-f", "json", "--machineReadable", "-o", jsonOutputPath.string()};
     if (hasTranscript) {
-        command += fmt::format(" --dialogFile \"{}\"", transcriptPath.string());
+        args.push_back("--dialogFile");
+        args.push_back(transcriptPath.string());
         debug("Added transcript file to command");
     }
+    args.push_back(soundFilePath.string());
 
-    // Add the input WAV file
-    command += fmt::format(" \"{}\"", soundFilePath.string());
-
-    // Redirect stderr to stdout to capture all output (machine-readable JSON goes to stderr)
-    command += " 2>&1";
-
-    info("Executing Rhubarb command: {}", command);
+    info("Executing Rhubarb: {} (with {} args, input={})", rhubarbBinaryPath, args.size(),
+         soundFilePath.filename().string());
 
     // Execute Rhubarb with real-time progress parsing
-    auto executionResult = executeRhubarb(command, rhubarbBinaryPath, span, progressCallback);
+    auto executionResult = executeRhubarb(rhubarbBinaryPath, args, span, progressCallback);
     if (!executionResult.isSuccess()) {
         auto error = executionResult.getError().value();
         if (span) {
@@ -256,9 +253,9 @@ Result<std::string> LipSyncProcessor::generateWithRhubarb(const std::string &sou
     debug("Verifying JSON file was created: {}", jsonOutputPath.string());
     if (!fs::exists(jsonOutputPath)) {
         auto rhubarbOutput = executionResult.getValue().value();
-        std::string errorMsg = fmt::format(
-            "Rhubarb completed but did not create the expected JSON file '{}'.\n\nCommand: {}\n\nOutput:\n{}",
-            jsonOutputPath.filename().string(), command, rhubarbOutput);
+        std::string errorMsg =
+            fmt::format("Rhubarb completed but did not create the expected JSON file '{}'.\n\nOutput:\n{}",
+                        jsonOutputPath.filename().string(), rhubarbOutput);
         error(errorMsg);
         if (span) {
             span->setError(errorMsg);
@@ -300,7 +297,7 @@ Result<std::string> LipSyncProcessor::generateWithRhubarb(const std::string &sou
 }
 
 Result<bool> LipSyncProcessor::validateSoundFile(const std::filesystem::path &soundFilePath,
-                                                  std::shared_ptr<OperationSpan> parentSpan) {
+                                                 std::shared_ptr<OperationSpan> parentSpan) {
 
     auto span = observability->createChildOperationSpan("LipSyncProcessor.validateSoundFile", parentSpan);
     if (span) {
@@ -339,89 +336,71 @@ Result<bool> LipSyncProcessor::validateSoundFile(const std::filesystem::path &so
     return true;
 }
 
-Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &command,
-                                                      const std::string &rhubarbBinaryPath,
-                                                      std::shared_ptr<OperationSpan> parentSpan,
-                                                      ProgressCallback progressCallback) {
+Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &rhubarbBinaryPath,
+                                                     const std::vector<std::string> &args,
+                                                     std::shared_ptr<OperationSpan> parentSpan,
+                                                     ProgressCallback progressCallback) {
 
     auto span = observability->createChildOperationSpan("LipSyncProcessor.executeRhubarb", parentSpan);
     if (span) {
-        span->setAttribute("rhubarb.command", command);
+        span->setAttribute("rhubarb.binary", rhubarbBinaryPath);
         span->setAttribute("rhubarb.machine_readable", true);
+        span->setAttribute("rhubarb.arg_count", static_cast<int64_t>(args.size()));
     }
 
-    std::string commandOutput;
-    int exitCode = 0;
+    // Parse each emitted line as JSON for progress updates, but always
+    // accumulate the raw output into the helper's result so we can
+    // include it in error messages.
+    auto lineCallback = [&](const std::string &line) {
+        if (!progressCallback) {
+            return;
+        }
+        try {
+            std::string trimmed = line;
+            if (!trimmed.empty() && trimmed.back() == '\n') {
+                trimmed.pop_back();
+            }
+            auto json = nlohmann::json::parse(trimmed);
+            if (json.contains("type") && json["type"] == "progress" && json.contains("value")) {
+                float progress = json["value"].get<float>();
+                float scaledProgress = 0.25f + (progress * 0.70f);
+                debug("Rhubarb progress: {:.1f}% (scaled to {:.1f}%)", progress * 100.0f, scaledProgress * 100.0f);
+                progressCallback(scaledProgress);
+                if (span) {
+                    span->setAttribute("rhubarb.progress", static_cast<double>(progress));
+                }
+            }
+        } catch (const nlohmann::json::exception &) {
+            // Not valid JSON or doesn't have expected fields, skip
+        }
+    };
 
     try {
-        debug("Opening pipe to execute Rhubarb...");
-        FILE *pipe = popen(command.c_str(), "r");
-        if (!pipe) {
+        auto spawnResult = util::runChildProcess(rhubarbBinaryPath, args, /*mergeStderrToStdout=*/true, lineCallback);
+        if (!spawnResult.isSuccess()) {
+            auto err = spawnResult.getError().value();
             std::string errorMsg = fmt::format("Failed to execute Rhubarb binary at '{}'. "
                                                "Is it installed and accessible? "
                                                "Check the server configuration (--rhubarb-binary-path or "
-                                               "RHUBARB_BINARY_PATH environment variable). errno: {}",
-                                               rhubarbBinaryPath, errno);
+                                               "RHUBARB_BINARY_PATH environment variable). Detail: {}",
+                                               rhubarbBinaryPath, err.getMessage());
             error(errorMsg);
             if (span) {
                 span->setError(errorMsg);
             }
             return ServerError(ServerError::InternalError, errorMsg);
         }
-        debug("Pipe opened successfully, reading output...");
-
-        // Read and parse machine-readable JSON output line by line
-        char buffer[1024];
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            commandOutput += buffer;
-
-            // Try to parse this line as JSON for progress updates
-            if (progressCallback) {
-                try {
-                    std::string line(buffer);
-                    // Remove trailing newline
-                    if (!line.empty() && line.back() == '\n') {
-                        line.pop_back();
-                    }
-
-                    // Parse JSON line
-                    auto json = nlohmann::json::parse(line);
-
-                    // Check if this is a progress message
-                    if (json.contains("type") && json["type"] == "progress" && json.contains("value")) {
-                        float progress = json["value"].get<float>();
-
-                        // Scale progress to 0.25-0.95 range (leave room for our other steps)
-                        float scaledProgress = 0.25f + (progress * 0.70f);
-
-                        debug("Rhubarb progress: {:.1f}% (scaled to {:.1f}%)", progress * 100.0f,
-                              scaledProgress * 100.0f);
-                        progressCallback(scaledProgress);
-
-                        if (span) {
-                            span->setAttribute("rhubarb.progress", static_cast<double>(progress));
-                        }
-                    }
-                } catch (const nlohmann::json::exception &) {
-                    // Not valid JSON or doesn't have expected fields, skip
-                }
-            }
-        }
-        debug("Command output captured ({} bytes)", commandOutput.length());
-
-        exitCode = pclose(pipe);
-        debug("Rhubarb process exited with code: {}", exitCode);
+        auto child = spawnResult.getValue().value();
+        debug("Rhubarb output captured ({} bytes), exit code {}", child.output.size(), child.exitCode);
 
         if (span) {
-            span->setAttribute("rhubarb.exit_code", static_cast<int64_t>(exitCode));
-            span->setAttribute("rhubarb.output_length", static_cast<int64_t>(commandOutput.length()));
+            span->setAttribute("rhubarb.exit_code", static_cast<int64_t>(child.exitCode));
+            span->setAttribute("rhubarb.output_length", static_cast<int64_t>(child.output.length()));
         }
 
-        // Check if command succeeded
-        if (exitCode != 0) {
-            std::string errorMsg =
-                fmt::format("Rhubarb processing failed with exit code {}.\n\nCommand: {}\n\nOutput:\n{}", exitCode,
-                            command, commandOutput);
+        if (child.exitCode != 0) {
+            std::string errorMsg = fmt::format("Rhubarb processing failed with exit code {}.\n\nOutput:\n{}",
+                                               child.exitCode, child.output);
             error(errorMsg);
             if (span) {
                 span->setError(errorMsg);
@@ -433,11 +412,10 @@ Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &command,
             span->setSuccess();
         }
 
-        return commandOutput;
+        return child.output;
 
     } catch (const std::exception &e) {
-        std::string errorMsg = fmt::format("Exception during Rhubarb execution: {}\n\nCommand: {}\n\nOutput:\n{}",
-                                           e.what(), command, commandOutput);
+        std::string errorMsg = fmt::format("Exception during Rhubarb execution: {}", e.what());
         error(errorMsg);
         if (span) {
             span->setError(errorMsg);
@@ -447,8 +425,8 @@ Result<std::string> LipSyncProcessor::executeRhubarb(const std::string &command,
 }
 
 Result<std::string> LipSyncProcessor::readAndProcessJson(const std::filesystem::path &jsonOutputPath,
-                                                          const std::string &soundFile,
-                                                          std::shared_ptr<OperationSpan> parentSpan) {
+                                                         const std::string &soundFile,
+                                                         std::shared_ptr<OperationSpan> parentSpan) {
 
     auto span = observability->createChildOperationSpan("LipSyncProcessor.readAndProcessJson", parentSpan);
     if (span) {

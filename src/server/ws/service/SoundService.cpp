@@ -22,6 +22,7 @@
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 
+#include "util/ChildProcess.h"
 #include "util/ObservabilityManager.h"
 #include "util/helpers.h"
 
@@ -486,37 +487,33 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::generateLipSync(const oatp
         span->setAttribute("rhubarb.binary", rhubarbBinary);
     }
 
-    std::string command = fmt::format("{} -f json -o \"{}\"", rhubarbBinary, jsonOutputPath.string());
-    debug("Building Rhubarb command...");
-
-    // Add transcript if available
+    // Build the Rhubarb argv. Each filename is its own argv entry, so no
+    // shell is involved and metacharacters in the names can't escape.
+    std::vector<std::string> args = {"-f", "json", "-o", jsonOutputPath.string()};
     if (hasTranscript) {
-        command += fmt::format(" --dialogFile \"{}\"", transcriptPath.string());
+        args.push_back("--dialogFile");
+        args.push_back(transcriptPath.string());
         debug("Added transcript file to command");
     }
+    args.push_back(soundFilePath.string());
 
-    // Add the input WAV file
-    command += fmt::format(" \"{}\"", soundFilePath.string());
-
-    // Redirect stderr to stdout to capture all output
-    command += " 2>&1";
-
-    info("Executing Rhubarb command: {}", command);
+    info("Executing Rhubarb: {} with {} args (input={})", rhubarbBinary, args.size(),
+         soundFilePath.filename().string());
 
     // 6. Execute Rhubarb
     std::string commandOutput;
     int exitCode = 0;
 
     try {
-        debug("Opening pipe to execute Rhubarb...");
-        FILE *pipe = popen(command.c_str(), "r");
-        if (!pipe) {
+        auto spawnResult = util::runChildProcess(rhubarbBinary, args, /*mergeStderrToStdout=*/true);
+        if (!spawnResult.isSuccess()) {
+            auto err = spawnResult.getError().value();
             std::string errorMsg =
                 fmt::format("Failed to execute Rhubarb binary at '{}'. "
                             "Is it installed and accessible? "
                             "Check the server configuration (--rhubarb-binary-path or RHUBARB_BINARY_PATH environment "
-                            "variable). errno: {}",
-                            rhubarbBinary, errno);
+                            "variable). Detail: {}",
+                            rhubarbBinary, err.getMessage());
             error(errorMsg);
             if (span) {
                 span->setError(errorMsg);
@@ -526,28 +523,19 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::generateLipSync(const oatp
             response->message = errorMsg;
             return response;
         }
-        debug("Pipe opened successfully, reading output...");
-
-        // Read command output
-        char buffer[256];
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            commandOutput += buffer;
-        }
-        debug("Command output captured ({} bytes)", commandOutput.length());
-
-        exitCode = pclose(pipe);
-        debug("Rhubarb process exited with code: {}", exitCode);
+        auto child = spawnResult.getValue().value();
+        commandOutput = child.output;
+        exitCode = child.exitCode;
+        debug("Rhubarb exited with code {} ({} bytes of output)", exitCode, commandOutput.size());
 
         if (span) {
             span->setAttribute("rhubarb.exit_code", static_cast<int64_t>(exitCode));
             span->setAttribute("rhubarb.output_length", static_cast<int64_t>(commandOutput.length()));
         }
 
-        // Check if command succeeded
         if (exitCode != 0) {
             std::string errorMsg =
-                fmt::format("Rhubarb processing failed with exit code {}.\n\nCommand: {}\n\nOutput:\n{}", exitCode,
-                            command, commandOutput);
+                fmt::format("Rhubarb processing failed with exit code {}.\n\nOutput:\n{}", exitCode, commandOutput);
             error(errorMsg);
             if (span) {
                 span->setError(errorMsg);
@@ -561,8 +549,8 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::generateLipSync(const oatp
         info("Rhubarb processing completed successfully (exit code 0)");
 
     } catch (const std::exception &e) {
-        std::string errorMsg = fmt::format("Exception during Rhubarb execution: {}\n\nCommand: {}\n\nOutput:\n{}",
-                                           e.what(), command, commandOutput);
+        std::string errorMsg =
+            fmt::format("Exception during Rhubarb execution: {}\n\nOutput:\n{}", e.what(), commandOutput);
         error(errorMsg);
         if (span) {
             span->setError(errorMsg);
@@ -576,9 +564,9 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::generateLipSync(const oatp
     // 7. Verify JSON file was created
     debug("Verifying JSON file was created: {}", jsonOutputPath.string());
     if (!fs::exists(jsonOutputPath)) {
-        std::string errorMsg = fmt::format(
-            "Rhubarb completed but did not create the expected JSON file '{}'.\n\nCommand: {}\n\nOutput:\n{}",
-            jsonOutputPath.filename().string(), command, commandOutput);
+        std::string errorMsg =
+            fmt::format("Rhubarb completed but did not create the expected JSON file '{}'.\n\nOutput:\n{}",
+                        jsonOutputPath.filename().string(), commandOutput);
         error(errorMsg);
         if (span) {
             span->setError(errorMsg);
