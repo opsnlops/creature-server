@@ -2,6 +2,8 @@
 #pragma once
 
 #include <atomic>
+#include <shared_mutex>
+#include <unordered_map>
 #include <vector>
 
 #include <fmt/format.h>
@@ -41,8 +43,16 @@ class E131Server {
   private:
     std::shared_ptr<spdlog::logger> logger;
 
-    // All of our universes
+    // All of our universes. galaxyMutex_ guards both the map structure
+    // and individual entries — the worker thread iterates galaxy at
+    // ~50 Hz while the event loop thread inserts/erases via
+    // setValues/createUniverse/destroyUniverse.
+    mutable std::shared_mutex galaxyMutex_;
     std::unordered_map<uint16_t, std::shared_ptr<Universe>> galaxy = {};
+
+    // Internal version of createUniverse that assumes the caller already
+    // holds galaxyMutex_ exclusively. Used by setValues.
+    void createUniverseLocked(uint16_t universeNumber);
 
     std::thread worker;
 

@@ -91,16 +91,19 @@ void E131Server::start() {
 
     stopRequested.store(false);
 
-    // Start our worker thread
+    // Start our worker thread. NOTE: do NOT detach() — shutdown()
+    // needs to be able to join() to guarantee the worker stops
+    // accessing `galaxy` and `socket` before we close the socket.
     this->worker = std::thread(&E131Server::workerTask, this);
-    worker.detach();
 }
 
 void E131Server::shutdown() {
     logger->info("shutting down the E131Server");
     stopRequested.store(true);
 
-    // Pause for a moment to let the worker thread finish
+    // Wait for the worker thread to actually exit before tearing down
+    // the socket. Previously start() detached the worker, so this join
+    // was a no-op and shutdown raced with workerTask's e131_send call.
     if (worker.joinable())
         worker.join();
 
@@ -111,13 +114,19 @@ void E131Server::shutdown() {
     }
 }
 
-void E131Server::createUniverse(uint16_t universeNumber) {
+void E131Server::createUniverseLocked(uint16_t universeNumber) {
     logger->info("creating universe {}", universeNumber);
     this->galaxy[universeNumber] = std::make_shared<Universe>(logger);
 }
 
+void E131Server::createUniverse(uint16_t universeNumber) {
+    std::unique_lock<std::shared_mutex> lock(galaxyMutex_);
+    createUniverseLocked(universeNumber);
+}
+
 void E131Server::destroyUniverse(uint16_t universeNumber) {
     logger->info("destroying universe {}", universeNumber);
+    std::unique_lock<std::shared_mutex> lock(galaxyMutex_);
     this->galaxy.erase(universeNumber);
 }
 
@@ -139,16 +148,23 @@ void E131Server::setValues(uint16_t universeNumber, uint16_t firstSlot, std::vec
         return;
     }
 
-    auto universe = this->galaxy[universeNumber];
-    if (universe) {
-        universe->setFragment(firstSlot, values);
-        logger->debug("set values starting at slot {} on universe {}", firstSlot, universeNumber);
-    } else {
-        createUniverse(universeNumber);
-        universe = this->galaxy[universeNumber];
-        universe->setFragment(firstSlot, values);
-        logger->debug("created universe {} and set values starting at slot {}", universeNumber, firstSlot);
+    std::shared_ptr<Universe> universe;
+    {
+        std::unique_lock<std::shared_mutex> lock(galaxyMutex_);
+        auto it = galaxy.find(universeNumber);
+        if (it == galaxy.end()) {
+            createUniverseLocked(universeNumber);
+            universe = galaxy[universeNumber];
+            logger->debug("created universe {} and will set values starting at slot {}", universeNumber, firstSlot);
+        } else {
+            universe = it->second;
+        }
     }
+
+    // Universe::setFragment has its own internal mutex, so it's safe
+    // to call without holding galaxyMutex_.
+    universe->setFragment(firstSlot, values);
+    logger->debug("set values starting at slot {} on universe {}", firstSlot, universeNumber);
 }
 
 void E131Server::workerTask() {
@@ -167,10 +183,20 @@ void E131Server::workerTask() {
     auto targetDelta = milliseconds(E131_FRAME_TIME_MS);
     auto nextTargetTime = high_resolution_clock::now() + targetDelta;
 
+    // Reused across iterations to avoid per-tick heap churn; the snapshot
+    // is rebuilt under the galaxy lock on each tick so a writer can't
+    // mutate the map while we iterate it.
+    std::vector<std::pair<uint16_t, std::shared_ptr<Universe>>> snapshot;
+
     while (!stopRequested.load()) {
 
+        {
+            std::shared_lock<std::shared_mutex> lock(galaxyMutex_);
+            snapshot.assign(galaxy.begin(), galaxy.end());
+        }
+
         // Visit all of the universes in the galaxy
-        for (const auto &pair : galaxy) {
+        for (const auto &pair : snapshot) {
             uint16_t universeNumber = pair.first;
             auto universe = pair.second;
 
