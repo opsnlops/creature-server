@@ -584,7 +584,9 @@ DmxFixtureService::setFixtureLive(const oatpp::String &inFixtureId,
                     : nullptr;
     if (span) {
         span->setAttribute("fixture.id", fixtureId);
-        span->setAttribute("fixture.live.value_count", static_cast<int64_t>(channelValues.size()));
+        // Match the runner-span name so "fixture.live.channel_value_count" is one attribute
+        // searchable across both layers, not two with the same meaning under different keys.
+        span->setAttribute("fixture.live.channel_value_count", static_cast<int64_t>(channelValues.size()));
         span->setAttribute("fixture.live.timeout_ms", static_cast<int64_t>(timeoutMs));
     }
 
@@ -614,6 +616,12 @@ DmxFixtureService::setFixtureLive(const oatpp::String &inFixtureId,
     }
     const universe_t universe = *universePtr;
     const framenum_t currentFrame = creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0;
+
+    // Surface universe at the service span so Honeycomb pivots like "all live calls to universe N"
+    // don't have to descend into the runner child span. Also propagates up to the request span
+    // via parent-child attribute inheritance in queries.
+    if (span)
+        span->setAttribute("fixture.universe", static_cast<int64_t>(universe));
 
     if (!creatures::fixturePatternRunner->setLive(*fixture, channelValues, timeoutMs, universe, currentFrame, span)) {
         // setLive logs and annotates the span with the specific error; surface 400 because

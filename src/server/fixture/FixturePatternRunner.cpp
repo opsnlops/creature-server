@@ -291,8 +291,13 @@ bool FixturePatternRunner::setLive(const DmxFixture &fixture,
         // this out explicitly — live is operator-driven and should not negotiate.
         if (active_.erase(fixture.id) > 0) {
             debug("FixturePatternRunner::setLive: fixture {} had active pattern, cancelled", fixture.id);
+            // Annotate the child span for completeness and the parent span so callers can
+            // query "how often does live control preempt a running pattern?" without
+            // descending into runner child spans.
             if (span)
                 span->setAttribute("fixture.live.cancelled_active_pattern", true);
+            if (parentSpan)
+                parentSpan->setAttribute("fixture.live.cancelled_active_pattern", true);
         }
     } else {
         // Existing live session: keep previous values, refresh universe + channelOffset
