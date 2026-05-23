@@ -304,10 +304,8 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames(std::shared_ptr<SamplingSp
                 return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
             }
 
-            std::shared_ptr<DmxFixture> fixture;
-            if (fixtureCache->contains(trackState.fixtureId)) {
-                fixture = fixtureCache->get(trackState.fixtureId);
-            } else {
+            std::shared_ptr<DmxFixture> fixture = fixtureCache->tryGet(trackState.fixtureId);
+            if (!fixture) {
                 debug("Fixture {} not in cache, fetching from database", trackState.fixtureId);
                 auto fixtureResult = db->getFixture(trackState.fixtureId, nullptr);
                 if (!fixtureResult.isSuccess()) {
@@ -348,12 +346,11 @@ Result<framenum_t> PlaybackRunnerEvent::emitDmxFrames(std::shared_ptr<SamplingSp
                 runnerSpan->setAttribute("fixture.channel_offset", static_cast<int64_t>(channelOffset));
             }
         } else {
-            // Creature track — original path.
-            std::shared_ptr<Creature> creature;
+            // Creature track — original path. tryGet collapses contains+get
+            // into a single locked section.
+            std::shared_ptr<Creature> creature = creatureCache->tryGet(trackState.creatureId);
 
-            if (creatureCache->contains(trackState.creatureId)) {
-                creature = creatureCache->get(trackState.creatureId);
-            } else {
+            if (!creature) {
                 debug("Creature {} not in cache, fetching from database", trackState.creatureId);
                 auto creatureResult = db->getCreature(trackState.creatureId, nullptr);
                 if (!creatureResult.isSuccess()) {
