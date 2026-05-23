@@ -58,9 +58,24 @@ class DmxFixtureService {
      * @param stopAfterMs nullopt = pattern holds until externally stopped; otherwise the pattern
      *                    is told to stop after `*stopAfterMs` milliseconds (fade-out then starts).
      */
+    static oatpp::Object<creatures::DmxFixtureDto> triggerPattern(const oatpp::String &inFixtureId,
+                                                                  const oatpp::String &inPatternId,
+                                                                  std::optional<uint32_t> stopAfterMs,
+                                                                  std::shared_ptr<RequestSpan> parentSpan = nullptr);
+
+    /**
+     * Drive a fixture's channels directly with raw DMX values. Used by slider UIs; the
+     * server holds the values until `timeoutMs` elapses, then blacks out the fixture.
+     * Live control hard-cancels any active pattern on the fixture and blocks new
+     * patterns from starting until the live session expires.
+     *
+     * @param channelValues per-channel (name → 0..255) updates. Unknown channel names
+     *                     fail the whole call with 400.
+     * @param timeoutMs    auto-blackout deadline in ms from now. Validated to (0, 600000].
+     */
     static oatpp::Object<creatures::DmxFixtureDto>
-    triggerPattern(const oatpp::String &inFixtureId, const oatpp::String &inPatternId,
-                   std::optional<uint32_t> stopAfterMs, std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    setFixtureLive(const oatpp::String &inFixtureId, const std::vector<std::pair<std::string, uint8_t>> &channelValues,
+                   uint32_t timeoutMs, std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Load all persisted fixtures into the cache and rebuild `fixtureUniverseMap` from each fixture's

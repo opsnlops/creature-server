@@ -36,6 +36,9 @@ void OperationSpan::setAttribute(const std::string & /*key*/, framenum_t /*value
 
 void OperationSpan::recordException(const std::exception & /*ex*/) { statusSet_ = true; }
 
+std::string OperationSpan::getTraceIdHex() const { return {}; }
+std::string OperationSpan::getSpanIdHex() const { return {}; }
+
 SamplingSpan::SamplingSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span, double /*samplingRate*/,
                            bool /*shouldExport*/,
                            opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> /*tracer*/)

@@ -160,9 +160,11 @@ Add `src/model/DmxFixture.h/.cpp` mirroring `Creature.h/.cpp`. Inline the small 
 | `src/server/ws/controller/DmxFixtureController.h` | REST endpoints | `src/server/ws/controller/CreatureController.h` |
 | `src/server/ws/service/DmxFixtureService.{h,cpp}` | Business logic (CRUD + universe assignment) | `src/server/ws/service/CreatureService.{h,cpp}` |
 | `src/server/ws/dto/SetFixtureUniverseRequestDto.h` | `{universe: UInt32}` body for the universe endpoint | (new) |
+| `src/server/ws/dto/TriggerFixturePatternRequestDto.h` | `{stop_after_ms?: UInt32}` body for the manual trigger endpoint | (new) |
+| `src/server/ws/dto/SetFixtureLiveRequestDto.h` | `{values: [{channel, value}], timeout_ms}` body for live control | (new) |
 | `src/server/ws/dto/FixtureConfigValidationDto.h` | Validation response | `CreatureConfigValidationDto.h` |
-| `src/server/fixture/FixturePatternRunner.{h,cpp}` | Active-pattern map + lerp engine | (new) |
-| `src/server/fixture/FixturePatternTickEvent.{h,cpp}` | Eventloop tick (~50 Hz) for fade interpolation | (new) |
+| `src/server/fixture/FixturePatternRunner.{h,cpp}` | Active-pattern map + lerp engine + live-control map | (new) |
+| `src/server/fixture/FixturePatternTickEvent.{h,cpp}` | Eventloop tick (~50 Hz) for fade interpolation + live emit | (new) |
 | `src/server/fixture/FixtureBindingDispatcher.{h,cpp}` | Matches activity transitions → pattern starts | (new) |
 
 ## Existing Files to Modify
@@ -195,6 +197,11 @@ This is the contract the Creature Console Swift app codes against.
 
 **Manual pattern trigger** — for testing and ad-hoc UI control:
 - `POST   /api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger` — manually fire a pattern (skips binding match). Body optional `{stop_after_ms?: number}`.
+
+**Live control (slider UI)** — drive raw DMX values directly with auto-blackout:
+- `POST   /api/v1/fixture/{fixtureId}/live` — body `{values: [{channel: string, value: 0..255}], timeout_ms: UInt32}`. `timeout_ms` is **required**, must be in `(0, 600000]` (10 min cap). The server holds the values until the deadline elapses, then blacks out all channels on this fixture. Channels not named in a call hold their previous live value within the same session (or 0 on the first call). Sending another live call before the deadline extends/replaces the deadline.
+  - **Mutual exclusion with patterns.** Live arriving cancels any active pattern hard (no fade-out). While live is in effect, new patterns are *refused* (`/trigger` and binding-driven starts return false / 400). Once live expires (or the slider window stops sending), normal patterns work again.
+  - **400 cases**: empty `values`, missing/zero/over-cap `timeout_ms`, unknown channel name (whole call fails — no partial application), fixture has no assigned universe.
 
 ## Pattern Execution Engine (the new piece)
 
@@ -253,6 +260,44 @@ A pattern stops when the same `(creatureId, fixture)` binding match resolves to 
 
 **Animation tracks win.** If an animation is currently playing a track targeting `fixture_id`, the runner pauses its output for that fixture (queries `sessionManager` by fixture id). Track completion re-enables the pattern next tick. This avoids the two systems fighting on a per-byte basis.
 
+## Live Control Engine
+
+A second control path alongside patterns, for slider-driven UIs. The runner owns a parallel `unordered_map<fixtureId, ActiveLive>`. Each `ActiveLive` holds the current per-channel byte values, a deadline frame, and trigger trace context.
+
+### `ActiveLive` state per fixture
+```cpp
+struct ActiveLive {
+    fixtureId_t fixtureId;
+    universe_t  universe;
+    uint16_t    channelOffset;
+    uint16_t    channelSpan;
+    std::vector<uint8_t> values;   // current per-channel values (0 on creation)
+    framenum_t  deadlineFrame;     // currentFrame + timeout_ms at last call
+    std::string triggerTraceId;    // captured from REST request span
+    std::string triggerSpanId;
+};
+```
+
+### `setLive()` flow
+
+1. Validate up front, *before* touching the map: timeout > 0, values non-empty, every named channel exists on the fixture. Any unknown channel name is a hard failure with no side effects — guards against partial application from typos in a slider UI.
+2. If no live entry exists for this fixture: create one with all channels seeded to 0, and **hard-cancel any active pattern** for this fixture (`active_.erase` — no fade-out). Operator wins.
+3. If a live entry exists: keep the previous values for channels not named in this call (slider holds the unchanged channels).
+4. Apply the resolved `(offset, value)` updates and refresh `deadlineFrame = currentFrame + timeoutMs`.
+5. Update trigger trace IDs from the parent span so DMX frames emitted later can be linked back to the request in Honeycomb.
+
+### Tick processing (live entries)
+
+For each `ActiveLive`:
+- If `currentFrame >= deadlineFrame`: emit one final blackout frame (zeros across `channelSpan`) and remove the entry. The fixture is now free for patterns again.
+- Otherwise: emit the current `values` as a DMXEvent at `(universe, channelOffset)`.
+
+Live entries keep the tick alive — `tick()` returns `!active_.empty() || !live_.empty()`, so the self-scheduling `FixturePatternTickEvent` re-arms while either kind of work is in flight.
+
+### Precedence: live vs patterns
+
+**Live wins.** `start()` (binding-driven and manual `/trigger`) refuses if a live entry exists for the fixture and returns false / 400. `setLive()` cancels the active pattern hard on first arrival. Once the live deadline elapses, patterns can fire again normally.
+
 ## Backwards Compatibility
 
 - `Track.fixture_id` defaults to empty in C++ structs and DTOs (`info->required = false`); BSON-schemaless docs missing the field decode cleanly.
@@ -266,6 +311,9 @@ A pattern stops when the same `(creatureId, fixture)` binding match resolves to 
 - `fixture_pattern_math_test.cpp` — lerp boundaries: t=0 → startValues; t=fade_in_ms → targetValues; midpoint within ±1; `hold_ms=0` never advances past Hold without explicit stop.
 - `fixture_binding_match_test.cpp` — wildcard semantics (nullopt `on_reason` matches all reasons); both-set requires both match.
 - `track_dual_id_test.cpp` — Track JSON with neither / both of `creature_id`/`fixture_id` is rejected.
+- `tests/fixture/FixturePatternRunner_setLive_test.cpp` — live control validation: success path, rejects empty values / zero timeout / unknown channel name / fixture with no channels; rollback on partial failure (existing session intact, no entry created on fresh failure); subsequent calls extend an existing session. **One test (`RejectsUnknownChannelName`) caught a real bug** during initial implementation — a fresh entry was being created before channel validation, leaving stale state on failure. Now validation happens before any map mutation.
+
+To keep the runner's non-static methods testable without dragging the full event loop into the test target, `tests/server/FakeIdleScheduling.cpp` provides stubs for `EventLoop::scheduleEvent` and `DMXEvent::executeImpl`, and `tests/server/FakeSpans.cpp` stubs `OperationSpan::getTraceIdHex/getSpanIdHex`. The stubs are never invoked by the live-control tests (which only call `setLive`/`hasLive`), but they make the symbols resolvable.
 
 ### End-to-end manual test
 1. `./local_build.sh`, then run the server.
@@ -277,6 +325,7 @@ A pattern stops when the same `(creatureId, fixture)` binding match resolves to 
 7. Confirm: fade-in observed → hold during speech → fade-out after the activity transitions back to `Idle`.
 8. Restart the server and confirm the universe assignment survives (key persistence check).
 9. Hit `POST /api/v1/fixture/{id}/pattern/<red-glow id>/trigger` directly and confirm the pattern fires independently of any creature activity.
+10. **Live control smoke test.** `POST /api/v1/fixture/{id}/live` with `{"values":[{"channel":"red","value":255}],"timeout_ms":3000}` and confirm the red channel goes to 255 in your DMX inspector. Within 3s send another live call with `value: 128` and confirm it drops live. Stop sending; ~3s later the channels should black out. While live is active, `POST /pattern/{pid}/trigger` should return 400 / refuse — once the deadline elapses, the same `/trigger` should fire normally.
 
 ### Build & lint
 - `./local_build.sh` from project root.
@@ -291,6 +340,7 @@ Each step is independently mergeable and testable:
 3. `Track.fixture_id` + `PlaybackSession` plumbing + `playback-runner` branch. *(Fixtures in animations.)*
 4. `FixturePatternRunner` + `FixturePatternTickEvent` + `FixtureBindingDispatcher` hook in `setActivityState`. *(Triggers fire.)*
 5. Manual `/trigger` endpoint, tests, AGENTS.md update.
+6. Live control: `ActiveLive` state + `setLive`/`hasLive` on the runner; `SetFixtureLiveRequestDto`; `DmxFixtureService::setFixtureLive`; `POST /api/v1/fixture/{id}/live` endpoint; unit tests for setLive validation. *(Slider UIs can drive raw DMX.)*
 
 ---
 
@@ -337,6 +387,20 @@ The server side is shipped (current version: **3.11.2**, deployed to `https://se
 **Assign a universe** — `PUT /api/v1/fixture/8e3a4b5c.../universe` body `{"universe": 1}` (must be in `[1, 63999]`).
 
 **Trigger a pattern manually** — `POST /api/v1/fixture/8e3a4b5c.../pattern/7d2a3b4c.../trigger`, body either empty or `{"stop_after_ms": 1500}` (must be in `(0, 600000]` if provided).
+
+**Live control (slider UI)** — `POST /api/v1/fixture/8e3a4b5c.../live`, body:
+
+```json
+{
+  "values": [
+    { "channel": "red",        "value": 255 },
+    { "channel": "brightness", "value": 200 }
+  ],
+  "timeout_ms": 1000
+}
+```
+
+Pattern for a slider UI: while the user holds a slider, send a live call every ~250 ms with `timeout_ms: 1000` (a safety margin > your send cadence). When the user releases, either stop sending (server auto-blacks out after the last `timeout_ms` elapses) or send one final call with `timeout_ms: 1` to fade out immediately. Channels not named in a call retain the last value you sent for them in the same session, so you only need to include channels that changed. Live takes over the fixture immediately — any pattern that's running is cancelled hard (no fade-out). While live is active, `/trigger` calls and binding-driven patterns are refused; once the deadline elapses, normal patterns work again.
 
 **Delete** — `DELETE /api/v1/fixture/8e3a4b5c...` returns `{"status":"OK","code":200,"message":"Fixture deleted","session_id":null}`.
 

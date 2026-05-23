@@ -534,9 +534,100 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const 
         // Capture trigger trace context at schedule time — the request span is still live here.
         const std::string traceId = span ? span->getTraceIdHex() : std::string{};
         const std::string spanId = span ? span->getSpanIdHex() : std::string{};
-        auto stopEvent = std::make_shared<AutoStopEvent>(stopFrame, fixtureId, creatures::fixturePatternRunner,
-                                                         traceId, spanId);
+        auto stopEvent =
+            std::make_shared<AutoStopEvent>(stopFrame, fixtureId, creatures::fixturePatternRunner, traceId, spanId);
         creatures::eventLoop->scheduleEvent(stopEvent);
+    }
+
+    if (span)
+        span->setSuccess();
+
+    return creatures::convertToDto(*fixture);
+}
+
+oatpp::Object<creatures::DmxFixtureDto>
+DmxFixtureService::setFixtureLive(const oatpp::String &inFixtureId,
+                                  const std::vector<std::pair<std::string, uint8_t>> &channelValues, uint32_t timeoutMs,
+                                  std::shared_ptr<RequestSpan> parentSpan) {
+
+    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
+
+    if (fixtureId.empty()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
+    }
+    if (channelValues.empty()) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "values must contain at least one channel");
+    }
+    if (timeoutMs == 0) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "timeout_ms is required and must be > 0");
+    }
+    // Hard cap on the deadline: 10 minutes. Prevents a buggy client from leaving a
+    // light driven for hours if the user closes the slider window.
+    constexpr uint32_t MAX_LIVE_TIMEOUT_MS = 600'000;
+    if (timeoutMs > MAX_LIVE_TIMEOUT_MS) {
+        const auto message = fmt::format("timeout_ms exceeds maximum of {}ms", MAX_LIVE_TIMEOUT_MS);
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+    }
+
+    if (!creatures::fixturePatternRunner) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture pattern runner unavailable");
+    }
+    if (!creatures::fixtureCache) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture cache unavailable");
+    }
+    if (!creatures::fixtureUniverseMap) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture universe map unavailable");
+    }
+
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("DmxFixtureService.setFixtureLive", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("fixture.id", fixtureId);
+        span->setAttribute("fixture.live.value_count", static_cast<int64_t>(channelValues.size()));
+        span->setAttribute("fixture.live.timeout_ms", static_cast<int64_t>(timeoutMs));
+    }
+
+    // Resolve the fixture (cache → DB fallback).
+    std::shared_ptr<DmxFixture> fixture;
+    try {
+        fixture = creatures::fixtureCache->get(fixtureId);
+    } catch (const std::out_of_range &) {
+        auto dbResult = creatures::db->getFixture(fixtureId, span);
+        if (!dbResult.isSuccess()) {
+            if (span)
+                span->setError(dbResult.getError()->getMessage());
+            OATPP_ASSERT_HTTP(false, Status::CODE_404, dbResult.getError()->getMessage().c_str());
+        }
+        fixture = std::make_shared<DmxFixture>(dbResult.getValue().value());
+        creatures::fixtureCache->put(fixtureId, fixture);
+    }
+
+    // Resolve universe via a single locked lookup (same TOCTOU concern as triggerPattern).
+    const auto universePtr = creatures::fixtureUniverseMap->tryGet(fixtureId);
+    if (!universePtr) {
+        const auto message =
+            fmt::format("Fixture {} has no assigned_universe; assign one before live control", fixtureId);
+        if (span)
+            span->setError(message);
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+    }
+    const universe_t universe = *universePtr;
+    const framenum_t currentFrame = creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0;
+
+    if (!creatures::fixturePatternRunner->setLive(*fixture, channelValues, timeoutMs, universe, currentFrame, span)) {
+        // setLive logs and annotates the span with the specific error; surface 400 because
+        // every reason it can fail is caller input (unknown channel name, etc.).
+        const auto message = fmt::format("Failed to apply live control to fixture {} (see server logs)", fixtureId);
+        if (span)
+            span->setError(message);
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+    }
+
+    // Arm a tick if there isn't already one pending — same pattern as triggerPattern.
+    if (creatures::fixturePatternRunner->tryArm() && creatures::eventLoop) {
+        auto tickEvent = std::make_shared<FixturePatternTickEvent>(currentFrame);
+        creatures::eventLoop->scheduleEvent(tickEvent);
     }
 
     if (span)

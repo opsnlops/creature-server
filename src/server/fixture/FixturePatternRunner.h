@@ -66,6 +66,30 @@ struct ActivePattern {
 };
 
 /**
+ * Live-control state for a fixture: raw DMX channel values driven directly by a REST
+ * client (slider UI, etc.), with an auto-blackout deadline so a disconnected client
+ * doesn't leave the light stuck.
+ *
+ * Mutually exclusive with `ActivePattern` for the same fixture — live wins. While an
+ * `ActiveLive` exists, `start()` refuses to install a new pattern; on expiry, the
+ * channels black out and the entry is removed (after which patterns can fire normally).
+ */
+struct ActiveLive {
+    fixtureId_t fixtureId;
+    universe_t universe;
+    uint16_t channelOffset;
+    uint16_t channelSpan;
+    // Current per-channel values. Channels not in any incoming setLive() call default
+    // to 0 on creation and hold their previous value on subsequent calls.
+    std::vector<uint8_t> values;
+    framenum_t deadlineFrame{0};
+    // Trace context from the originating REST request — surfaced on the tick span so
+    // Honeycomb can pivot live frames back to the request that drove them.
+    std::string triggerTraceId;
+    std::string triggerSpanId;
+};
+
+/**
  * Renders fixture patterns into DMX output over time.
  *
  * The runner is passive: it owns the active-pattern map but does no scheduling itself.
@@ -96,6 +120,28 @@ class FixturePatternRunner {
      */
     void stop(const fixtureId_t &fixtureId, framenum_t currentFrame,
               std::shared_ptr<class OperationSpan> parentSpan = nullptr);
+
+    /**
+     * Drive a fixture's channels directly with raw DMX values. Cancels any active
+     * pattern on this fixture immediately (no fade-out). Values for channels not
+     * named in `channelValues` default to 0 on first call and hold their previous
+     * value on subsequent calls within the same live session.
+     *
+     * @param channelValues per-channel (name → 0..255) updates. All channel names
+     *                     must exist on the fixture; otherwise returns false.
+     * @param timeoutMs    auto-blackout deadline in ms from `currentFrame`. Must be > 0;
+     *                     caller is responsible for clamping to a sane ceiling.
+     * @return false if validation failed (unknown channel name, empty values, etc.)
+     */
+    bool setLive(const DmxFixture &fixture, const std::vector<std::pair<std::string, uint8_t>> &channelValues,
+                 uint32_t timeoutMs, universe_t universe, framenum_t currentFrame,
+                 std::shared_ptr<class OperationSpan> parentSpan = nullptr);
+
+    /**
+     * Inspect whether a fixture is currently under live control. Useful for callers
+     * deciding whether a new binding/manual-trigger pattern should be allowed.
+     */
+    bool hasLive(const fixtureId_t &fixtureId) const;
 
     /**
      * Advance all active patterns and schedule one DMXEvent per fixture for the current frame.
@@ -152,6 +198,7 @@ class FixturePatternRunner {
   private:
     mutable std::mutex mapMutex_;
     std::unordered_map<fixtureId_t, ActivePattern> active_;
+    std::unordered_map<fixtureId_t, ActiveLive> live_;
 
     mutable std::mutex armMutex_;
     bool tickArmed_{false};

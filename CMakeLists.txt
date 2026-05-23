@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "3.11.2"
+        VERSION "3.12.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -568,7 +568,9 @@ add_executable(creature-server-test
         tests/model/Track_dual_id_test.cpp
         tests/runtime/Activity_test.cpp
         tests/fixture/FixturePatternRunner_test.cpp
+        tests/fixture/FixturePatternRunner_setLive_test.cpp
         tests/fixture/FixtureBindingDispatcher_test.cpp
+        src/server/fixture/FixturePatternRunner.cpp
         tests/util/SetAttributeOverload_test.cpp
         tests/server/ws/CreatureActivityMessage_test.cpp
         tests/server/ws/CreatureService_streaming_test.cpp

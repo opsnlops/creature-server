@@ -237,12 +237,16 @@ DELETE /api/v1/fixture/{fixtureId}/universe                  clear assignment
 
 POST   /api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger
                                                              body (optional): {stop_after_ms: UInt32}
+
+POST   /api/v1/fixture/{fixtureId}/live                      body: {values: [{channel, value}], timeout_ms: UInt32}
+                                                             slider-driven raw DMX with auto-blackout
 ```
 
-#### Two Ways to Control Fixtures
+#### Three Ways to Control Fixtures
 
 1. **Animation tracks.** `Track` has `fixture_id` alongside `creature_id` — exactly one is set per track. Mixed creature + fixture animations work fine; the playback runner branches on `trackState.fixtureId` and resolves the universe via `fixtureUniverseMap` (independent of the animation session's universe).
 2. **Patterns + bindings.** A `FixturePattern` is a named snapshot of channel values with fade-in / hold / fade-out (`hold_ms=0` means "hold until external stop"). A `FixtureBinding` declaratively says *"when creature X enters activity (reason, state), apply pattern P."* Bindings live on the fixture config — fixtures are self-describing.
+3. **Live control.** `POST /api/v1/fixture/{id}/live` drives channels directly from a slider UI. The server holds the values until `timeout_ms` elapses (≤ 10 min cap), then blacks out. **Live wins**: starting live hard-cancels any active pattern on the fixture (no fade-out), and new patterns are refused while live is in effect. Channels not named in a call retain their previous live value (or 0 on the first call). Caller must always specify `timeout_ms` (no default) — guards against a disconnected client leaving the light stuck.
 
 #### Runtime Pieces
 
@@ -255,7 +259,7 @@ POST   /api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger
 
 - **Model**: `src/model/DmxFixture.{h,cpp}`, `src/model/Track.{h,cpp}` (with `fixture_id`)
 - **DB**: `src/server/fixture/{helpers,upsert,get,getall}.cpp`
-- **REST**: `src/server/ws/controller/DmxFixtureController.h`, `src/server/ws/service/DmxFixtureService.{h,cpp}`, `src/server/ws/dto/{FixtureConfigValidationDto,SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto}.h`
+- **REST**: `src/server/ws/controller/DmxFixtureController.h`, `src/server/ws/service/DmxFixtureService.{h,cpp}`, `src/server/ws/dto/{FixtureConfigValidationDto,SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto,SetFixtureLiveRequestDto}.h`
 - **Runtime**: `src/server/fixture/{FixturePatternRunner,FixturePatternTickEvent,FixtureBindingDispatcher}.{h,cpp}`
 - **Hook**: `src/server/ws/service/FixtureActivityHook.h`
 - **Globals**: `src/server/main.cpp` (`fixtureCache`, `fixtureUniverseMap`, `fixturePatternRunner`, `fixtureBindingDispatcher`, `fixtureActivityHook`)

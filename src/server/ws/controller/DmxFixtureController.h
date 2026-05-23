@@ -18,6 +18,7 @@
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/dto/FixtureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
+#include "server/ws/dto/SetFixtureLiveRequestDto.h"
 #include "server/ws/dto/SetFixtureUniverseRequestDto.h"
 #include "server/ws/dto/TriggerFixturePatternRequestDto.h"
 #include "server/ws/service/DmxFixtureService.h"
@@ -323,6 +324,68 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
 
         return withSpanStatus(span, [&] {
             const auto result = m_service.triggerPattern(fixtureId, patternId, stopAfterMs, span);
+            if (span)
+                span->setHttpStatus(200);
+            return createDtoResponse(Status::CODE_200, result);
+        });
+    }
+
+    ENDPOINT_INFO(setFixtureLive) {
+        info->summary = "Drive a fixture's channels directly with raw DMX values (slider UI)";
+        info->description =
+            "Bypasses patterns and bindings to write per-channel values straight to DMX. Useful for slider-driven "
+            "tuning in the Creature Console. The active pattern (if any) is cancelled immediately on first live call. "
+            "The server holds the values until `timeout_ms` elapses, then blacks out the fixture's channels. New "
+            "patterns cannot start on this fixture until the live session expires. Channels not named in `values` "
+            "hold their previous live value (or default to 0 on the first call).";
+        info->addTag("Fixtures");
+        info->addConsumes<Object<SetFixtureLiveRequestDto>>("application/json");
+        info->addResponse<Object<creatures::DmxFixtureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->pathParams["fixtureId"].description = "Fixture UUID";
+    }
+    ENDPOINT("POST", "api/v1/fixture/{fixtureId}/live", setFixtureLive, PATH(String, fixtureId),
+             BODY_DTO(Object<SetFixtureLiveRequestDto>, body),
+             REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
+        OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
+                          "fixtureId must be a UUID");
+        const auto span = creatures::observability
+                              ? creatures::observability->createRequestSpan(
+                                    "POST /api/v1/fixture/{fixtureId}/live", "POST",
+                                    "api/v1/fixture/" + std::string(fixtureId) + "/live", extractTraceparent(request))
+                              : nullptr;
+        addHttpRequestAttributes(span, request);
+        if (creatures::metrics)
+            creatures::metrics->incrementRestRequestsProcessed();
+        if (span) {
+            span->setAttribute("endpoint.name", "setFixtureLive");
+            span->setAttribute("fixture.id", std::string(fixtureId));
+        }
+
+        OATPP_ASSERT_HTTP(body, Status::CODE_400, "Request body is required");
+        OATPP_ASSERT_HTTP(body->values, Status::CODE_400, "values array is required");
+        OATPP_ASSERT_HTTP(body->values->size() > 0, Status::CODE_400, "values must contain at least one channel");
+        OATPP_ASSERT_HTTP(body->timeout_ms, Status::CODE_400, "timeout_ms is required");
+
+        // Unpack DTO to a flat vector for the service. We surface a clean 400 here for
+        // malformed entries (missing channel name, missing value) so the service doesn't
+        // have to handle DTO-level shape errors.
+        std::vector<std::pair<std::string, uint8_t>> channelValues;
+        channelValues.reserve(body->values->size());
+        for (const auto &v : *body->values) {
+            OATPP_ASSERT_HTTP(v, Status::CODE_400, "values entries must be objects, not null");
+            OATPP_ASSERT_HTTP(v->channel, Status::CODE_400, "values[].channel is required");
+            OATPP_ASSERT_HTTP(v->value, Status::CODE_400, "values[].value is required");
+            channelValues.emplace_back(std::string(v->channel), static_cast<uint8_t>(*v->value));
+        }
+        const uint32_t timeoutMs = *body->timeout_ms;
+
+        if (span)
+            span->setAttribute("fixture.live.value_count", static_cast<int64_t>(channelValues.size()));
+
+        return withSpanStatus(span, [&] {
+            const auto result = m_service.setFixtureLive(fixtureId, channelValues, timeoutMs, span);
             if (span)
                 span->setHttpStatus(200);
             return createDtoResponse(Status::CODE_200, result);
