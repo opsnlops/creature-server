@@ -45,7 +45,11 @@ inline void addHttpRequestAttributes(const std::shared_ptr<creatures::RequestSpa
     if (auto host = request->getHeader("Host")) {
         span->setAttribute("http.host", std::string(host));
     }
-    span->setAttribute("http.flavor", "1.1");
+    // Renamed from http.flavor — that column was inferred as boolean in Honeycomb
+    // by an early write, so every subsequent string ("1.1") landed as `false`. Using
+    // the modern OTel name http.protocol_version (which has no historical type
+    // collision) keeps the value queryable as a string.
+    span->setAttribute("http.protocol_version", "1.1");
 }
 
 /// Wrap an endpoint's work in a try/catch that updates the span's http.status_code on
