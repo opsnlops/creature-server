@@ -427,15 +427,24 @@ Docker-based deployment with multi-architecture support (AMD64/ARM64). GitHub Ac
 
 ## Future Work
 
-### DmxFixture follow-up work
+### Open follow-up work
 
-Items called out by the post-merge security + OTel reviews of the DmxFixture feature that should land in a follow-up PR (none are critical bugs — they're architectural gaps and observability polish):
+Items called out by previous audits that haven't shipped yet. The
+`audit/security-and-observability` series (3.13.1 → 3.13.3) closed
+most of the original audit; what's listed below is what's left, plus
+a few things that surfaced from later work. None of these are
+blocking — each is its own design or scoping decision.
 
-- **Animation-vs-pattern DMX precedence (security H4)**. The plan said "animation tracks win" but it's not implemented. Both `FixturePatternRunner::tick` and `PlaybackRunnerEvent::emitDmxFrames` enqueue DMXEvents to the same loop with no merge step; the on-wire byte is whichever event the loop processes last. A fixture whose `(universe, channel_offset..+span)` overlaps a creature's animation channels can stomp the animation. Same overlap concern applies to live control vs animations (no merge there either — though in practice live control is operator-driven and short-lived). Cheap fix: refuse to `start()` a pattern (or `setLive()`) on a fixture that overlaps an active session's track. Proper fix: per-frame DMXEvent merge with documented priority.
-- ~~**`runEndpoint(...)` helper for controllers (OTel P1c)**.~~ Done in `audit/security-and-observability` (2026-05-23). Helper lives in `src/server/ws/controller/ControllerUtils.h` and is used by Playlist/Voice/Debug/Metrics/Static controllers. The Creature/Animation/Sound/SpeechToText/StreamingAdHoc controllers still use the old explicit pattern with `setHttpStatus(200)` outside try/catch and should be migrated to `runEndpoint` for consistency — see `docs/audit-2026-05-23.md` finding O-H2.
+- **Animation-vs-pattern DMX precedence (DmxFixture security H4)**. The plan said "animation tracks win" but it's not implemented. Both `FixturePatternRunner::tick` and `PlaybackRunnerEvent::emitDmxFrames` enqueue DMXEvents to the same loop with no merge step; the on-wire byte is whichever event the loop processes last. A fixture whose `(universe, channel_offset..+span)` overlaps a creature's animation channels can stomp the animation. Same overlap concern applies to live control vs animations (no merge there either — though in practice live control is operator-driven and short-lived). Cheap fix: refuse to `start()` a pattern (or `setLive()`) on a fixture that overlaps an active session's track. Proper fix: per-frame DMXEvent merge with documented priority.
 - **Pagination on `GET /api/v1/fixture`**. Same as the creature endpoint shape, not urgent on a home network.
-- **`error.type` Honeycomb column is sticky-bool.** Pre-3.11 writes established this as a boolean in Honeycomb's type inference; every string write (e.g. `error.type = "UnknownChannel"`) is now recorded as `false` in the UI. The const char* overload fix is working (other string columns like `error.channel_name` record correctly). Fix needs Honeycomb-side action: delete the column in the dataset schema so it re-types on next write, or rename project-wide to a new attribute key. 40+ call sites — separate PR. ~~`http.flavor`~~ has been renamed to `http.protocol_version` in 3.13.3 (it had the same issue but only one call site, so a rename was easy).
-- **UUID-shape check on path params (security M4)**. Already added on fixture controllers, but the same hardening should apply to the existing creature controller for log-injection resistance.
+- **`error.type` Honeycomb column is sticky-bool.** Pre-3.11 writes established this as a boolean in Honeycomb's type inference; every string write (e.g. `error.type = "UnknownChannel"`) is now recorded as `false` in the UI. The const char* overload fix is working (other string columns like `error.channel_name` record correctly). Fix needs Honeycomb-side action: delete the column in the dataset schema so it re-types on next write, or rename project-wide to a new attribute key. 40+ call sites — separate PR. (The related `http.flavor` sticky-bool was already renamed to `http.protocol_version` in 3.13.3 since it was a single call site.)
+- **Open items from `docs/audit-2026-05-23.md`**: S-H5 (MongoDB pool entry held thread_local), S-H6 (`CreatureRuntimeDto` mutation races), various Medium/Low security and observability polish items, O-H5 (hot-path instrumentation gaps), O-P1..P6 (context-propagation polish), O-A3 (attribute naming conventions). See the audit doc for per-item detail and rationale.
+
+#### Resolved in the 3.13.x series
+
+- ~~`runEndpoint(...)` helper for controllers (OTel P1c)~~ — all 10 controllers migrated by 3.13.2.
+- ~~UUID-shape check on path params (security M4)~~ — landed in 3.13.2 for Creature/Playlist (matching the existing DmxFixture pattern). 3.13.3 also made the assertions visible to tracing.
+- ~~`http.flavor` sticky-bool~~ — renamed to `http.protocol_version` in 3.13.3.
 
 ### Rhubarb Lip Sync Integration
 
