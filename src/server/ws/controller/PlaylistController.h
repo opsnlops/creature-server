@@ -70,11 +70,11 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
     ENDPOINT("GET", "api/v1/playlist/id/{playlistId}", getPlaylist, PATH(String, playlistId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("get playlist by ID via REST API: {}", std::string(playlistId));
-        OATPP_ASSERT_HTTP(playlistId && isUuidShape(std::string(playlistId)), Status::CODE_400,
-                          "playlistId must be a UUID");
         return runEndpoint("GET /api/v1/playlist/id/{playlistId}", "GET",
                            "api/v1/playlist/id/" + std::string(playlistId), "getPlaylist", "PlaylistController",
                            request, [&](const auto &span) {
+                               OATPP_ASSERT_HTTP(playlistId && isUuidShape(std::string(playlistId)), Status::CODE_400,
+                                                 "playlistId must be a UUID");
                                if (span)
                                    span->setAttribute("playlist.id", std::string(playlistId));
                                const auto result = m_playlistService.getPlaylist(playlistId);

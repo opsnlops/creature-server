@@ -67,10 +67,10 @@ class CreatureController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("GET", "api/v1/creature/{creatureId}", getCreature, PATH(String, creatureId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        OATPP_ASSERT_HTTP(creatureId && isUuidShape(std::string(creatureId)), Status::CODE_400,
-                          "creatureId must be a UUID");
         return runEndpoint("GET /api/v1/creature/{creatureId}", "GET", "api/v1/creature/" + std::string(creatureId),
                            "getCreature", "CreatureController", request, [&](const auto &span) {
+                               OATPP_ASSERT_HTTP(creatureId && isUuidShape(std::string(creatureId)), Status::CODE_400,
+                                                 "creatureId must be a UUID");
                                if (span)
                                    span->setAttribute("creature.id", std::string(creatureId));
                                const auto result = m_creatureService.getCreature(creatureId, span);
@@ -143,11 +143,11 @@ class CreatureController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("PATCH", "api/v1/creature/{creatureId}/idle", setIdleEnabled, PATH(String, creatureId),
              BODY_DTO(Object<IdleToggleDto>, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        OATPP_ASSERT_HTTP(creatureId && isUuidShape(std::string(creatureId)), Status::CODE_400,
-                          "creatureId must be a UUID");
         return runEndpoint("PATCH /api/v1/creature/{creatureId}/idle", "PATCH",
                            "api/v1/creature/" + std::string(creatureId) + "/idle", "setIdleEnabled",
                            "CreatureController", request, [&](const auto &span) {
+                               OATPP_ASSERT_HTTP(creatureId && isUuidShape(std::string(creatureId)), Status::CODE_400,
+                                                 "creatureId must be a UUID");
                                if (span)
                                    span->setAttribute("creature.id", std::string(creatureId));
                                bool enabled = true;
