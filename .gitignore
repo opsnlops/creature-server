@@ -4,6 +4,7 @@ bin/
 cmake-*/
 build/
 package/
+out/
 *.DS_Store
 externals/build/
 externals/install/
