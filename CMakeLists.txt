@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "3.15.0"
+        VERSION "3.15.1"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -9,7 +9,7 @@ project(creature-server
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
-#Store warning flags to apply to our targets only (not dependencies)
+#Store warning flags to apply to our targets only(not dependencies)
 set(CREATURE_SERVER_WARNING_FLAGS
     -Wshadow
     -Wall
@@ -116,8 +116,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(argparse)
 
-# nlohmann_json is provided by OpenTelemetry's FetchContent below.
-# Configure it before OTel fetches it.
+#nlohmann_json is provided by OpenTelemetry's FetchContent below.
+#Configure it before OTel fetches it.
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 
 #uvgRTP
@@ -170,12 +170,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(whisper)
 
-#Data files for lip sync: whisper model + CMU dictionary
+#Data files for lip sync : whisper model + CMU dictionary
 #These are downloaded at configure time and installed into the DEB package
 set(CREATURE_DATA_DIR "${CMAKE_BINARY_DIR}/data")
 file(MAKE_DIRECTORY ${CREATURE_DATA_DIR})
 
-#whisper model (base.en, ~150MB) - English-only, fast on CPU with AVX2
+#whisper model(base.en, ~150MB) - English - only, fast on CPU with AVX2
 set(WHISPER_MODEL_FILE "${CREATURE_DATA_DIR}/ggml-base.en.bin")
 if(NOT EXISTS ${WHISPER_MODEL_FILE})
     message(STATUS "Downloading whisper base.en model (~150MB)...")
@@ -195,7 +195,7 @@ else()
     message(STATUS "Whisper model already present: ${WHISPER_MODEL_FILE}")
 endif()
 
-#CMU Pronouncing Dictionary (~4MB, ~134k words with ARPAbet phonemes)
+#CMU Pronouncing Dictionary(~4MB, ~134k words with ARPAbet phonemes)
 set(CMU_DICT_FILE "${CREATURE_DATA_DIR}/cmudict.dict")
 if(NOT EXISTS ${CMU_DICT_FILE})
     message(STATUS "Downloading CMU Pronouncing Dictionary...")
@@ -215,7 +215,7 @@ else()
     message(STATUS "CMU dictionary already present: ${CMU_DICT_FILE}")
 endif()
 
-#Install data files for packaging (DEB)
+#Install data files for packaging(DEB)
 set(CREATURE_INSTALL_DATA_DIR "/usr/share/creature-server/data")
 install(FILES ${WHISPER_MODEL_FILE}
         DESTINATION ${CREATURE_INSTALL_DATA_DIR}
@@ -234,7 +234,7 @@ set(WITH_FUNC_TESTS OFF CACHE BOOL "Disable functional tests" FORCE)
 set(OPENTELEMETRY_INSTALL OFF CACHE BOOL "Disable install" FORCE)
 set(WITH_GTEST OFF CACHE BOOL "Disable gtest in OpenTelemetry" FORCE)
 
-#Use ABI version 2 for span links support (AddLink/AddLinks)
+#Use ABI version 2 for span links support(AddLink / AddLinks)
 set(WITH_ABI_VERSION_1 OFF CACHE BOOL "Disable ABI version 1" FORCE)
 set(WITH_ABI_VERSION_2 ON CACHE BOOL "Enable ABI version 2" FORCE)
 
@@ -285,18 +285,18 @@ add_definitions(
 add_subdirectory(lib/e131_service)
 add_subdirectory(lib/CreatureVoicesLib)
 
-# Umbrella target for the Docker build to pre-compile every heavy FetchContent
-# library before src/ is COPYed into the image. The Dockerfile runs
-# `ninja deps_only` in a stable layer (only invalidated when CMakeLists.txt /
-# cmake/ / lib/ / externals/ change), then copies src/ + tests/ and runs the
-# final `ninja` — which finds all the dep .o files already on disk and only
-# rebuilds the project's own sources. Cuts typical PR build time from ~15 min
-# to ~2 min. See issue #13.
+#Umbrella target for the Docker build to pre - compile every heavy FetchContent
+#library before src / is COPYed into the image.The Dockerfile runs
+# `ninja deps_only` in a stable layer(only invalidated when CMakeLists.txt /
+#cmake / / lib / / externals / change), then copies src / +tests / and runs the
+#final `ninja` — which finds all the dep.o files already on disk and only
+#rebuilds the project's own sources. Cuts typical PR build time from ~15 min
+#to ~2 min.See issue #13.
 #
-# Target names verified against `ninja -t targets all` in an existing build.
-# Header-only libraries (nlohmann_json, argparse) are excluded — nothing to
-# pre-compile. mongoc_static / bson_static are dependencies of mongocxx_static
-# but listed explicitly for clarity in build logs.
+#Target names verified against `ninja - t targets all` in an existing build.
+#Header - only libraries(nlohmann_json, argparse) are excluded — nothing to
+#pre - compile.mongoc_static / bson_static are dependencies of mongocxx_static
+#but listed explicitly for clarity in build logs.
 add_custom_target(deps_only DEPENDS
         mongocxx_static
         mongoc_static
@@ -343,7 +343,7 @@ find_package(SDL2_mixer REQUIRED)
 #OpenSSL for SHA - 256 hashing in audio cache
 find_package(OpenSSL REQUIRED)
 
-#libcurl for HTTP client (ElevenLabs REST API)
+#libcurl for HTTP client(ElevenLabs REST API)
 find_package(CURL REQUIRED)
 
 #Leave a message

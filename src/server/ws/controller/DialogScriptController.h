@@ -19,7 +19,6 @@
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/ws/controller/ControllerUtils.h"
-#include "server/ws/dto/DialogScriptRequestDto.h"
 #include "server/ws/dto/DialogScriptValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
@@ -56,85 +55,43 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
             .count();
     }
 
-    /// Move a parsed UpsertDialogScriptRequestDto into a DialogScript value the
-    /// DB layer accepts. id / timestamps come from the caller (POST stamps them,
-    /// PUT preserves created_at from the existing record).
-    static creatures::DialogScript fromUpsertDto(const oatpp::Object<UpsertDialogScriptRequestDto> &body,
-                                                 const std::string &id, int64_t createdAt, int64_t updatedAt) {
-        creatures::DialogScript script;
-        script.id = id;
-        script.title = body->title ? std::string(*body->title) : std::string{};
-        script.notes = body->notes ? std::string(*body->notes) : std::string{};
-        if (body->turns) {
-            for (const auto &t : *body->turns) {
-                if (!t)
-                    continue;
-                creatures::DialogScriptTurn turn;
-                if (t->creature_id)
-                    turn.creature_id = t->creature_id;
-                if (t->text)
-                    turn.text = t->text;
-                script.turns.push_back(std::move(turn));
-            }
-        }
-        script.created_at = createdAt;
-        script.updated_at = updatedAt;
-        return script;
+    /// Helper for the friendly 400 error envelope. Sets HTTP status on the
+    /// request span and returns a StatusDto-shaped response.
+    template <typename SpanT> std::shared_ptr<OutgoingResponse> bail400(const SpanT &span, const std::string &msg) {
+        auto err = StatusDto::createShared();
+        err->status = "error";
+        err->code = 400;
+        err->message = msg.c_str();
+        if (span)
+            span->setHttpStatus(400);
+        return createDtoResponse(Status::CODE_400, err);
     }
 
-    /// Reject the obvious shape errors before we touch the DB. Returns nullptr
-    /// on success; an HTTP error response otherwise.
-    template <typename SpanT>
-    std::shared_ptr<OutgoingResponse> validateUpsertBody(const oatpp::Object<UpsertDialogScriptRequestDto> &body,
-                                                         const SpanT &span) {
-        auto bail = [&](const char *msg) -> std::shared_ptr<OutgoingResponse> {
-            auto err = StatusDto::createShared();
-            err->status = "error";
-            err->code = 400;
-            err->message = msg;
-            if (span)
-                span->setHttpStatus(400);
-            return createDtoResponse(Status::CODE_400, err);
-        };
-        if (!body) {
-            return bail("Request body is required");
+    /// Build the canonical script JSON from raw client input: parse with
+    /// nlohmann (lenient — extras are silently ignored), then stamp the
+    /// server-managed fields (id / created_at / updated_at) on top. The result
+    /// is what `parseDialogScriptJson` expects.
+    ///
+    /// Using nlohmann instead of `BODY_DTO(UpsertDialogScriptRequestDto, …)`
+    /// matters for client UX: oatpp's strict deserializer rejects any unknown
+    /// field with "[oatpp::parser::json::mapping::Deserializer::readObject()]:
+    /// Error. Unknown field" — leaks implementation paths and doesn't name the
+    /// offending field. Going through nlohmann + parseDialogScriptJson means
+    /// extras are silently dropped (so clients can round-trip a full
+    /// DialogScriptDto) AND structural problems surface with friendly,
+    /// field-specific messages from invalidScriptData (security review S3
+    /// caps live there).
+    static nlohmann::json buildScriptJsonForUpsert(const std::string &rawBody, const std::string &id, int64_t createdAt,
+                                                   int64_t updatedAt) {
+        auto parsed = nlohmann::json::parse(rawBody); // throws on bad JSON; caller catches.
+        if (!parsed.is_object()) {
+            throw std::runtime_error("request body must be a JSON object");
         }
-        // Enforce the same caps as the DB-layer parser so an oversized payload
-        // doesn't get round-tripped through dialogScriptToJson().dump() before
-        // dying (security review S3). Shared constants live in
-        // model/DialogScript.h.
-        if (!body->title || body->title->empty()) {
-            return bail("title is required and must be non-empty");
-        }
-        if (body->title->size() > creatures::MAX_DIALOG_SCRIPT_TITLE) {
-            return bail(
-                fmt::format("title is {} chars; max {}", body->title->size(), creatures::MAX_DIALOG_SCRIPT_TITLE)
-                    .c_str());
-        }
-        if (body->notes && body->notes->size() > creatures::MAX_DIALOG_SCRIPT_NOTES) {
-            return bail(
-                fmt::format("notes is {} chars; max {}", body->notes->size(), creatures::MAX_DIALOG_SCRIPT_NOTES)
-                    .c_str());
-        }
-        if (!body->turns || body->turns->empty()) {
-            return bail("turns is required and must be non-empty");
-        }
-        if (body->turns->size() > creatures::MAX_DIALOG_SCRIPT_TURNS) {
-            return bail(
-                fmt::format("turns has {} entries; max {}", body->turns->size(), creatures::MAX_DIALOG_SCRIPT_TURNS)
-                    .c_str());
-        }
-        for (const auto &t : *body->turns) {
-            if (!t || !t->creature_id || t->creature_id->empty() || !t->text || t->text->empty()) {
-                return bail("every turn must have a non-empty creature_id and text");
-            }
-            if (t->text->size() > creatures::MAX_DIALOG_SCRIPT_TURN_TEXT) {
-                return bail(fmt::format("turn 'text' is {} chars; max {}", t->text->size(),
-                                        creatures::MAX_DIALOG_SCRIPT_TURN_TEXT)
-                                .c_str());
-            }
-        }
-        return nullptr;
+        // Stamp the server-managed fields. Any client-supplied values get overwritten.
+        parsed["id"] = id;
+        parsed["created_at"] = createdAt;
+        parsed["updated_at"] = updatedAt;
+        return parsed;
     }
 
   public:
@@ -222,21 +179,38 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/animation/dialog/script", createDialogScript,
-             BODY_DTO(Object<UpsertDialogScriptRequestDto>, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+    ENDPOINT("POST", "api/v1/animation/dialog/script", createDialogScript, BODY_STRING(String, body),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/dialog/script", "POST", "api/v1/animation/dialog/script", "createDialogScript",
             "DialogScriptController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (auto err = validateUpsertBody(body, span))
-                    return err;
+                if (!body) {
+                    return bail400(span, "Request body is required");
+                }
+                if (span)
+                    span->setAttribute("request.body_size", static_cast<int64_t>(body->size()));
+
                 const auto now = nowMillis();
                 const auto id = util::generateUUID();
-                auto script = fromUpsertDto(body, id, now, now);
-                const auto j = dialogScriptToJson(script);
+                nlohmann::json parsed;
+                try {
+                    parsed = buildScriptJsonForUpsert(std::string(*body), id, now, now);
+                } catch (const nlohmann::json::exception &e) {
+                    return bail400(span, fmt::format("Invalid JSON: {}", e.what()));
+                } catch (const std::exception &e) {
+                    return bail400(span, e.what());
+                }
 
                 auto opSpan = creatures::observability->createChildOperationSpan(
                     "DialogScriptController.createDialogScript", span);
-                auto result = creatures::db->upsertDialogScript(j.dump(), opSpan);
+
+                // Field-level validation (caps, types, UUID shape via invalidScriptData).
+                auto parseResult = creatures::Database::parseDialogScriptJson(parsed, opSpan);
+                if (!parseResult.isSuccess()) {
+                    return bail400(span, parseResult.getError()->getMessage());
+                }
+
+                auto result = creatures::db->upsertDialogScript(parsed.dump(), opSpan);
                 if (!result.isSuccess()) {
                     auto code = result.getError().value().getCode();
                     const bool client = code == creatures::ServerError::InvalidData;
@@ -270,7 +244,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("PUT", "api/v1/animation/dialog/script/{scriptId}", updateDialogScript, PATH(String, scriptId),
-             BODY_DTO(Object<UpsertDialogScriptRequestDto>, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+             BODY_STRING(String, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "PUT /api/v1/animation/dialog/script/{scriptId}", "PUT", "api/v1/animation/dialog/script/{scriptId}",
             "updateDialogScript", "DialogScriptController", request,
@@ -279,8 +253,11 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
                                   "scriptId must be a UUID");
                 if (span)
                     span->setAttribute("script.id", std::string(*scriptId));
-                if (auto err = validateUpsertBody(body, span))
-                    return err;
+                if (!body) {
+                    return bail400(span, "Request body is required");
+                }
+                if (span)
+                    span->setAttribute("request.body_size", static_cast<int64_t>(body->size()));
 
                 auto opSpan = creatures::observability->createChildOperationSpan(
                     "DialogScriptController.updateDialogScript", span);
@@ -300,9 +277,22 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
                 }
                 const auto createdAt = existing.getValue().value().created_at;
 
-                auto script = fromUpsertDto(body, std::string(*scriptId), createdAt, nowMillis());
-                const auto j = dialogScriptToJson(script);
-                auto result = creatures::db->upsertDialogScript(j.dump(), opSpan);
+                nlohmann::json parsed;
+                try {
+                    parsed =
+                        buildScriptJsonForUpsert(std::string(*body), std::string(*scriptId), createdAt, nowMillis());
+                } catch (const nlohmann::json::exception &e) {
+                    return bail400(span, fmt::format("Invalid JSON: {}", e.what()));
+                } catch (const std::exception &e) {
+                    return bail400(span, e.what());
+                }
+
+                auto parseResult = creatures::Database::parseDialogScriptJson(parsed, opSpan);
+                if (!parseResult.isSuccess()) {
+                    return bail400(span, parseResult.getError()->getMessage());
+                }
+
+                auto result = creatures::db->upsertDialogScript(parsed.dump(), opSpan);
                 if (!result.isSuccess()) {
                     auto code = result.getError().value().getCode();
                     const bool client = code == creatures::ServerError::InvalidData;
