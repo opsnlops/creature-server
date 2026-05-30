@@ -28,18 +28,18 @@ Result<creatures::Creature> Database::upsertCreature(const std::string & /*creat
     return Result<creatures::Creature>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
 }
 
-Result<std::string> Database::playStoredAnimation(animationId_t /*animationId*/, universe_t /*universe*/,
-                                                  std::shared_ptr<OperationSpan> /*parentSpan*/) {
+Result<std::string> Database::playStoredAnimation(const animationId_t & /*animationId*/, universe_t /*universe*/,
+                                                  const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
     return Result<std::string>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
 }
 
-Result<nlohmann::json> Database::getAnimationJson(animationId_t /*animationId*/,
-                                                  std::shared_ptr<OperationSpan> /*parentSpan*/) {
+Result<nlohmann::json> Database::getAnimationJson(const animationId_t & /*animationId*/,
+                                                  const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
     return Result<nlohmann::json>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
 }
 
 Result<creatures::Animation> Database::getAnimation(const animationId_t &animationId,
-                                                    std::shared_ptr<OperationSpan> /*parentSpan*/) {
+                                                    const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
     if (animationId == "anim-good") {
         creatures::Animation animation;
         animation.id = animationId;
@@ -82,16 +82,16 @@ Database::listAnimations(creatures::SortBy /*sortBy*/, const std::shared_ptr<Ope
 }
 
 Result<creatures::Animation> Database::upsertAnimation(const std::string & /*animationJson*/,
-                                                       std::shared_ptr<OperationSpan> /*parentSpan*/) {
+                                                       const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
     return Result<creatures::Animation>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
 }
 
 Result<void> Database::deleteAnimation(const animationId_t & /*animationId*/,
-                                       std::shared_ptr<OperationSpan> /*parentSpan*/) {
+                                       const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
     return Result<void>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
 }
 
-Result<nlohmann::json> Database::getCreatureJson(creatureId_t /*creatureId*/,
+Result<nlohmann::json> Database::getCreatureJson(const creatureId_t & /*creatureId*/,
                                                  const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
     return Result<nlohmann::json>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
 }

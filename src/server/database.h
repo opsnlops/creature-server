@@ -57,7 +57,8 @@ class Database {
     Result<std::vector<creatures::Creature>>
     getAllCreatures(creatures::SortBy sortBy, bool ascending,
                     const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
-    Result<json> getCreatureJson(creatureId_t creatureId, const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<json> getCreatureJson(const creatureId_t &creatureId,
+                                 const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
     /**
      * Upsert a creature in the database
@@ -113,14 +114,16 @@ class Database {
      */
 
     // Animation stuff
-    Result<json> getAnimationJson(animationId_t animationId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<json> getAnimationJson(const animationId_t &animationId,
+                                  const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
     Result<creatures::Animation> getAnimation(const animationId_t &animationId,
-                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                              const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
     Result<std::vector<creatures::AnimationMetadata>>
     listAnimations(creatures::SortBy sortBy, const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
     Result<creatures::Animation> upsertAnimation(const std::string &animationJson,
-                                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
-    Result<void> deleteAnimation(const animationId_t &animationId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                                 const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<void> deleteAnimation(const animationId_t &animationId,
+                                 const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
     /// Find an existing permanent Animation rendered from the given DialogScript
     /// (matches on metadata.source_script_id). Returns the matching animation_id
@@ -132,8 +135,8 @@ class Database {
     Result<std::optional<animationId_t>>
     findAnimationIdBySourceScriptId(const std::string &scriptId,
                                     const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
-    Result<std::string> playStoredAnimation(animationId_t animationId, universe_t universe,
-                                            std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<std::string> playStoredAnimation(const animationId_t &animationId, universe_t universe,
+                                            const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
     // Playlist stuff
     Result<json> getPlaylistJson(const playlistId_t &playlistId,

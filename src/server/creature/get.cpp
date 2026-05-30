@@ -37,103 +37,77 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 extern std::shared_ptr<ObservabilityManager> observability;
 
-Result<json> Database::getCreatureJson(creatureId_t creatureId,
-                                       const std::shared_ptr<OperationSpan> &parentSpan) { // Pass by const ref
-    debug("attempting to get a creature's JSON by ID: {}", creatureId);
+// Conforms to docs/database-observability.md (issue #17).
 
-    auto dbSpan =
-        creatures::observability->createChildOperationSpan("Database.getCreatureJson", parentSpan); // Create span
-
+Result<json> Database::getCreatureJson(const creatureId_t &creatureId,
+                                       const std::shared_ptr<OperationSpan> &parentSpan) {
     if (!parentSpan) {
         warn("no parent span provided for Database.getCreatureJson, creating a root span");
     }
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.getCreatureJson", parentSpan);
 
     if (dbSpan) {
         dbSpan->setAttribute("database.collection", CREATURES_COLLECTION);
         dbSpan->setAttribute("database.operation", "find_one");
-        dbSpan->setAttribute("creature.id", creatureId);
         dbSpan->setAttribute("database.system", "mongodb");
         dbSpan->setAttribute("database.name", DB_NAME);
+        dbSpan->setAttribute("creature.id", creatureId);
     }
+
+    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
+        if (dbSpan) {
+            dbSpan->setError(msg);
+            dbSpan->setAttribute("error.type", type);
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
+        }
+    };
+
+    debug("attempting to get a creature's JSON by ID: {}", creatureId);
 
     if (creatureId.empty()) {
-        info("an empty creatureID was passed into getCreatureJson()");
-        if (dbSpan) { // Error handling for span
-            dbSpan->setError("empty creatureID");
-            dbSpan->setAttribute("error.type", "InvalidData");
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-        }
-        return Result<json>{ServerError(ServerError::InvalidData, "unable to get a creature because the id was empty")};
+        std::string errorMessage = "unable to get a creature because the id was empty";
+        info(errorMessage);
+        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        return Result<json>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
-    // Connect to the database
     auto collectionResult = getCollection(CREATURES_COLLECTION);
     if (!collectionResult.isSuccess()) {
-        auto error = collectionResult.getError().value();
-        std::string errorMessage = fmt::format("unable to get the creature collection: {}", error.getMessage());
+        auto err = collectionResult.getError().value();
+        std::string errorMessage = fmt::format("unable to get the creature collection: {}", err.getMessage());
         critical(errorMessage);
-        if (dbSpan) { // Error handling for span
-            dbSpan->setError(errorMessage);
-            dbSpan->setAttribute("error.type", "DatabaseError");
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
-        }
-        return Result<json>{error};
+        setSpanError(errorMessage, "DatabaseError", err.getCode());
+        return Result<json>{err};
     }
     auto collection = collectionResult.getValue().value();
-    debug("collection obtained");
 
-    // Query the database
     std::shared_ptr<OperationSpan> mongoSpan;
     try {
         mongoSpan = creatures::observability->createChildOperationSpan("getCreatureJson.mongoQuery", dbSpan);
-
         auto query = document{} << "id" << creatureId << finalize;
-        std::optional<bsoncxx::document::value> maybe_result;
+        auto maybe_result = collection.find_one(query.view());
+        if (mongoSpan)
+            mongoSpan->setSuccess();
 
-        debug("executing query for creature ID: {}", creatureId);
-        maybe_result = collection.find_one(query.view());
-        debug("query executed for creature ID: {}", creatureId);
-
-        debug("Setting mongoSpan success for creature ID: {}", creatureId);
-        mongoSpan->setSuccess();
-        debug("mongoSpan success set for creature ID: {}", creatureId);
-        // Note: Response size will be calculated after successful JSON conversion
-
-        debug("Checking if result exists for creature ID: {}", creatureId);
         if (!maybe_result) {
             std::string errorMessage = fmt::format("Creature not found: {}", creatureId);
             warn(errorMessage);
-            if (dbSpan) { // Error handling for span
-                dbSpan->setError(errorMessage);
-                dbSpan->setAttribute("error.type", "NotFound");
-                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
-            } else {
-                warn("Database span was not created, cannot set error attributes");
-            }
+            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
             return Result<json>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
-        // Convert the result to JSON using utility
-        debug("Converting BSON document to JSON for creature ID: {}", creatureId);
-        auto convertToJsonSpan =
-            creatures::observability->createChildOperationSpan("getCreatureJson.json::parse", dbSpan);
-
+        auto convertSpan = creatures::observability->createChildOperationSpan("getCreatureJson.bson-to-json", dbSpan);
         auto jsonResult =
-            JsonParser::bsonToJson(maybe_result->view(), fmt::format("creature {}", creatureId), convertToJsonSpan);
+            JsonParser::bsonToJson(maybe_result->view(), fmt::format("creature {}", creatureId), convertSpan);
         if (!jsonResult.isSuccess()) {
-            warn("Failed to convert BSON to JSON for creature ID: {} - {}", creatureId,
-                 jsonResult.getError().value().getMessage());
+            auto err = jsonResult.getError().value();
+            warn("Failed to convert BSON to JSON for creature ID: {} - {}", creatureId, err.getMessage());
+            setSpanError(err.getMessage(), "JsonParsingException", err.getCode());
             return jsonResult;
         }
         json j = jsonResult.getValue().value();
-        debug("Successfully converted BSON to JSON for creature ID: {}, JSON size: {} bytes", creatureId,
-              j.dump().length());
 
-        if (!convertToJsonSpan) {
-            warn("JSON conversion span was not created, cannot set success attributes");
-        }
-
-        if (dbSpan) { // Success for span
+        if (dbSpan) {
             dbSpan->setAttribute("db.response_size_bytes", static_cast<int64_t>(j.dump().length()));
             dbSpan->setSuccess();
         }
@@ -145,12 +119,13 @@ Result<json> Database::getCreatureJson(creatureId_t creatureId,
         critical(errorMessage);
         if (mongoSpan) {
             mongoSpan->recordException(e);
-            mongoSpan->setAttribute("error.message", e.what());
+            mongoSpan->setError(errorMessage);
             mongoSpan->setAttribute("error.type", "MongoDBException");
             mongoSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::DatabaseError));
-        } else {
-            warn("MongoDB span was not created, cannot set error attributes");
         }
+        if (dbSpan)
+            dbSpan->recordException(e);
+        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<json>{ServerError(ServerError::DatabaseError, errorMessage)};
     } catch (const std::exception &e) {
         std::string errorMessage =
@@ -158,23 +133,18 @@ Result<json> Database::getCreatureJson(creatureId_t creatureId,
         critical(errorMessage);
         if (mongoSpan) {
             mongoSpan->recordException(e);
-            mongoSpan->setAttribute("error.type", "StandardException");
-            mongoSpan->setAttribute("error.message", e.what());
-            mongoSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
-        } else {
-            warn("Standard exception caught, cannot set error attributes on mongoSpan");
+            mongoSpan->setError(errorMessage);
         }
+        if (dbSpan)
+            dbSpan->recordException(e);
+        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = fmt::format("Unknown exception caught while finding creature {}", creatureId);
         critical(errorMessage);
-        if (mongoSpan) {
+        if (mongoSpan)
             mongoSpan->setError(errorMessage);
-            mongoSpan->setAttribute("error.type", "UnknownException");
-            mongoSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
-        } else {
-            warn("Unknown exception caught, cannot set error attributes on mongoSpan");
-        }
+        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
@@ -186,72 +156,80 @@ Result<json> Database::getCreatureJson(creatureId_t creatureId,
  * @return the Creature object that was found, or a ServerError if it couldn't be found or looked up
  *
  */
-Result<creatures::Creature>
-Database::getCreature(const creatureId_t &creatureId,
-                      const std::shared_ptr<OperationSpan> &parentSpan) { // Pass by const ref
-
-    auto dbSpan = creatures::observability->createChildOperationSpan("Database.getCreature", parentSpan); // Create span
-
+Result<creatures::Creature> Database::getCreature(const creatureId_t &creatureId,
+                                                  const std::shared_ptr<OperationSpan> &parentSpan) {
+    if (!parentSpan) {
+        warn("no parent span provided for Database.getCreature, creating a root span");
+    }
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.getCreature", parentSpan);
     if (dbSpan) {
+        dbSpan->setAttribute("database.collection", CREATURES_COLLECTION);
+        dbSpan->setAttribute("database.operation", "find_one");
+        dbSpan->setAttribute("database.system", "mongodb");
+        dbSpan->setAttribute("database.name", DB_NAME);
         dbSpan->setAttribute("creature.id", creatureId);
     }
+
+    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
+        if (dbSpan) {
+            dbSpan->setError(msg);
+            dbSpan->setAttribute("error.type", type);
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
+        }
+    };
 
     if (creatureId.empty()) {
         std::string errorMessage = "unable to get a creature because the id was empty";
         warn(errorMessage);
-        if (dbSpan) {
-            dbSpan->setError(errorMessage);
-            dbSpan->setAttribute("error.type", "InvalidData");
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-        } else {
-            warn("Database span was not created, cannot set error attributes");
-        }
+        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
-    // Go to the database and get the creature
     auto jsonSpan = creatures::observability->createChildOperationSpan("getCreature.getCreatureJson", dbSpan);
-    auto creatureJson = getCreatureJson(creatureId, jsonSpan); // Pass span
+    auto creatureJson = getCreatureJson(creatureId, jsonSpan);
     if (!creatureJson.isSuccess()) {
-        auto error = creatureJson.getError().value();
-        std::string errorMessage =
-            fmt::format("unable to get a creature by ID: {}", creatureJson.getError()->getMessage());
+        auto err = creatureJson.getError().value();
+        std::string errorMessage = fmt::format("unable to get a creature by ID: {}", err.getMessage());
         warn(errorMessage);
-        if (jsonSpan) { // Error handling for span
+        std::string etype = "InternalError";
+        if (err.getCode() == ServerError::NotFound)
+            etype = "NotFound";
+        else if (err.getCode() == ServerError::InvalidData)
+            etype = "InvalidData";
+        else if (err.getCode() == ServerError::DatabaseError)
+            etype = "DatabaseError";
+        if (jsonSpan) {
             jsonSpan->setError(errorMessage);
-            jsonSpan->setAttribute("error.type", "DatabaseError");
-            jsonSpan->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
-        } else {
-            warn("JSON span was not created, cannot set error attributes");
+            jsonSpan->setAttribute("error.type", etype);
+            jsonSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        return Result<creatures::Creature>{error};
+        setSpanError(errorMessage, etype, err.getCode());
+        return Result<creatures::Creature>{err};
     }
-    jsonSpan->setSuccess();
-    jsonSpan->setAttribute("json.size_bytes", static_cast<int64_t>(creatureJson.getValue().value().dump().length()));
+    if (jsonSpan)
+        jsonSpan->setSuccess();
 
-    // Covert it to our Creature object if we can
     auto fetchSpan = creatures::observability->createChildOperationSpan("getCreature.creatureFromJson", dbSpan);
     auto result = creatureFromJson(creatureJson.getValue().value(), fetchSpan);
     if (!result.isSuccess()) {
-        auto error = result.getError().value();
-        std::string errorMessage = fmt::format("unable to get a creature by ID: {}", result.getError()->getMessage());
+        auto err = result.getError().value();
+        std::string errorMessage = fmt::format("unable to get a creature by ID: {}", err.getMessage());
         warn(errorMessage);
-        if (fetchSpan) { // Error handling for span
+        if (fetchSpan) {
             fetchSpan->setError(errorMessage);
             fetchSpan->setAttribute("error.type", "DataFormatException");
-            fetchSpan->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
+            fetchSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        return Result<creatures::Creature>{error};
+        setSpanError(errorMessage, "DataFormatException", err.getCode());
+        return Result<creatures::Creature>{err};
     }
-    fetchSpan->setSuccess();
-    fetchSpan->setAttribute("creature.name", result.getValue().value().name);
+    if (fetchSpan)
+        fetchSpan->setSuccess();
 
-    // Create the creature
     auto creature = result.getValue().value();
-
-    // As long as we're here, let's update the cache
     creatureCache->put(creatureId, creature);
-    if (dbSpan) { // Success for span
+    if (dbSpan) {
+        dbSpan->setAttribute("creature.name", creature.name);
         dbSpan->setAttribute("cache.status", "updated");
         dbSpan->setSuccess();
     }
