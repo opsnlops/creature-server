@@ -2,7 +2,7 @@
 
 The conventions every `Database::*` method should follow so Honeycomb traces are queryable, errors are filterable, and the trace structure is uniform across resource families. Established in issue #17. Applies to MongoDB-backed methods in `src/server/{creature,animation,playlist,fixture,script}/`.
 
-> Sweep status (as of 3.15.5): script ✅ fixture 🟡 playlist 🟡 animation 🟡 creature 🟡. Pre-existing methods are brought to the standard opportunistically; new methods land conformant.
+> Sweep status: script ✅ fixture ✅ playlist ✅ animation ✅ creature ✅. All `Database::*` methods conform as of the issue #17 closure. New methods land conformant; check the reviewer checklist at the bottom of this doc.
 
 ---
 
