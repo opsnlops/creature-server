@@ -140,15 +140,14 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController {
     }
 
     /// Pack our internal voice_segments / forced_alignment into the response DTO.
-    static void populateMonoResponse(oatpp::Object<DialogPreviewMonoResponseDto> &dto,
+    static void populateMetaResponse(oatpp::Object<DialogPreviewMetaResponseDto> &dto,
                                      const creatures::voice::CachedGeneration &gen, const std::string &cacheKey,
                                      bool cached) {
         dto->cache_key = cacheKey.c_str();
         dto->generation_id = gen.generationId.c_str();
         dto->cached = cached;
-        dto->audio_base64 =
-            base64::to_base64(std::string(reinterpret_cast<const char *>(gen.audioPcm.data()), gen.audioPcm.size()))
-                .c_str();
+        dto->audio_url =
+            fmt::format("/api/v1/animation/dialog/preview/audio/{}/{}.wav", cacheKey, gen.generationId).c_str();
         dto->audio_format = "pcm_48000";
         dto->sample_rate = 48000;
         dto->duration_seconds = static_cast<double>(gen.audioPcm.size()) / (48000.0 * 2.0); // mono S16
@@ -226,203 +225,304 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController {
         return out;
     }
 
+  private:
+    /// Shared validation for the two POST preview endpoints (/meta and
+    /// /multichannel). Returns nullptr on success; an error response otherwise.
+    template <typename SpanT>
+    std::shared_ptr<OutgoingResponse> validatePreviewBody(const oatpp::Object<DialogPreviewRequestDto> &body,
+                                                          const SpanT &span) {
+        if (!body || !body->turns || body->turns->empty()) {
+            auto err = StatusDto::createShared();
+            err->status = "error";
+            err->code = 400;
+            err->message = "turns must be a non-empty array";
+            if (span)
+                span->setHttpStatus(400);
+            return createDtoResponse(Status::CODE_400, err);
+        }
+        for (const auto &t : *body->turns) {
+            if (!t || !t->creature_id || t->creature_id->empty() || !t->text || t->text->empty()) {
+                auto err = StatusDto::createShared();
+                err->status = "error";
+                err->code = 400;
+                err->message = "every turn must have a non-empty creature_id and text";
+                if (span)
+                    span->setHttpStatus(400);
+                return createDtoResponse(Status::CODE_400, err);
+            }
+        }
+        return nullptr;
+    }
+
+    /// Holds everything an endpoint needs after the shared "resolve creatures
+    /// → find or create a generation" pipeline has run.
+    struct LoadOrGenerateOutcome {
+        // Either set: an HTTP response to return immediately (validation/error path).
+        std::shared_ptr<OutgoingResponse> errorResponse;
+        // Or set (on success):
+        std::optional<creatures::voice::CachedGeneration> generation;
+        std::string cacheKey;
+        std::vector<creatures::voice::DialogInput> inputs;
+        std::unordered_map<std::string, PreviewCreature> resolved;
+        bool cached = false;
+    };
+
+    /// Shared "resolve creatures → check cache → maybe call ElevenLabs" logic.
+    /// Used by both POST /meta and POST /multichannel — both need the cached
+    /// generation, they just package it differently. On failure, sets
+    /// `outcome.errorResponse` and leaves `generation` empty; caller short-
+    /// circuits with that response.
+    template <typename SpanT>
+    LoadOrGenerateOutcome loadOrGenerate(const oatpp::Object<DialogPreviewRequestDto> &body, const SpanT &span,
+                                         const std::shared_ptr<creatures::OperationSpan> &opSpan,
+                                         const char *spanAttrName) {
+        LoadOrGenerateOutcome out;
+
+        auto resolvedResult = resolveCreatures(body->turns, opSpan);
+        if (!resolvedResult.isSuccess()) {
+            auto err = StatusDto::createShared();
+            err->status = "error";
+            err->code = 400;
+            err->message = resolvedResult.getError().value().getMessage().c_str();
+            if (span)
+                span->setHttpStatus(400);
+            out.errorResponse = createDtoResponse(Status::CODE_400, err);
+            return out;
+        }
+        out.resolved = resolvedResult.getValue().value();
+        out.inputs = buildDialogInputs(body->turns, out.resolved);
+        out.cacheKey = creatures::voice::computeCacheKey(out.inputs);
+
+        if (span) {
+            span->setAttribute("dialog.cache_key", out.cacheKey);
+            span->setAttribute("dialog.turns", static_cast<int64_t>(out.inputs.size()));
+            span->setAttribute("dialog.endpoint", spanAttrName);
+        }
+
+        const bool regen = body->regenerate ? static_cast<bool>(*body->regenerate) : false;
+
+        if (body->generation_id && !body->generation_id->empty()) {
+            // Explicit generation_id — load that one specifically. 404 if
+            // it's been cron-cleaned.
+            auto loadResult = creatures::voice::loadGeneration(out.cacheKey, std::string(*body->generation_id));
+            if (!loadResult.isSuccess()) {
+                auto err = StatusDto::createShared();
+                err->status = "error";
+                err->code = 404;
+                err->message = fmt::format("generation '{}' not found (expired or never existed)",
+                                           std::string(*body->generation_id))
+                                   .c_str();
+                if (span)
+                    span->setHttpStatus(404);
+                out.errorResponse = createDtoResponse(Status::CODE_404, err);
+                return out;
+            }
+            out.generation = loadResult.getValue().value();
+            out.cached = true;
+        } else if (!regen) {
+            if (auto latest = creatures::voice::findLatestGeneration(out.cacheKey)) {
+                auto loadResult = creatures::voice::loadGeneration(out.cacheKey, *latest);
+                if (loadResult.isSuccess()) {
+                    out.generation = loadResult.getValue().value();
+                    out.cached = true;
+                }
+                // If the load failed for some odd reason, fall through to
+                // fresh generation — the cache lookup is advisory.
+            }
+        }
+
+        if (!out.generation) {
+            // No usable cache hit (or regenerate requested) — fresh ElevenLabs.
+            creatures::voice::DialogClient client;
+            const std::string apiKey = creatures::config->getVoiceApiKey();
+
+            auto dialogResult = client.generateDialog(apiKey, out.inputs, "pcm_48000", opSpan);
+            if (!dialogResult.isSuccess()) {
+                auto code = dialogResult.getError().value().getCode();
+                auto err = StatusDto::createShared();
+                err->status = "error";
+                err->code = (code == creatures::ServerError::InvalidData) ? 400 : 500;
+                err->message = dialogResult.getError().value().getMessage().c_str();
+                if (span)
+                    span->setHttpStatus(*err->code);
+                out.errorResponse = createDtoResponse(
+                    (code == creatures::ServerError::InvalidData) ? Status::CODE_400 : Status::CODE_500, err);
+                return out;
+            }
+            const auto dialog = dialogResult.getValue().value();
+
+            std::string transcript;
+            for (std::size_t t = 0; t < out.inputs.size(); ++t) {
+                if (t > 0) {
+                    transcript.push_back(' ');
+                }
+                transcript += creatures::voice::DialogClient::stripTags(out.inputs[t].text);
+            }
+            const auto wavBytes = wrapMonoPcmAsWav(dialog.audioData, 48000);
+            auto alignResult = client.forcedAlignment(apiKey, wavBytes, "audio/wav", transcript, opSpan);
+            if (!alignResult.isSuccess()) {
+                auto err = StatusDto::createShared();
+                err->status = "error";
+                err->code = 500;
+                err->message = alignResult.getError().value().getMessage().c_str();
+                if (span)
+                    span->setHttpStatus(500);
+                out.errorResponse = createDtoResponse(Status::CODE_500, err);
+                return out;
+            }
+            creatures::voice::CachedGeneration freshGen;
+            freshGen.generationId = util::generateUUID();
+            freshGen.audioPcm = dialog.audioData;
+            freshGen.voiceSegments = dialog.voiceSegments;
+            freshGen.forcedAlignment = alignResult.getValue().value();
+            freshGen.createdAt = std::chrono::system_clock::now();
+            freshGen.turnsSummary = makeTurnsSummary(out.inputs);
+
+            auto saveResult = creatures::voice::saveGeneration(out.cacheKey, freshGen);
+            if (!saveResult.isSuccess()) {
+                // Generation succeeded but couldn't be persisted — log and
+                // continue; the client still gets the audio.
+                warn("Dialog preview: saveGeneration failed: {}", saveResult.getError().value().getMessage());
+            }
+
+            out.generation = std::move(freshGen);
+            out.cached = false;
+        }
+
+        if (span && out.generation) {
+            span->setAttribute("dialog.generation_id", out.generation->generationId);
+            span->setAttribute("dialog.cached", out.cached);
+        }
+        return out;
+    }
+
   public:
-    ENDPOINT_INFO(submitPreview) {
-        info->summary = "Generate (or return a cached take of) a multi-character dialog preview";
+    ENDPOINT_INFO(submitPreviewMeta) {
+        info->summary = "Generate (or load) a dialog preview and return its metadata + audio URL";
         info->description =
-            "Quick playback of the dialog audio without committing to a full animation. Two output formats: "
-            "'mono' (default) returns JSON with the raw single-channel PCM + voice_segments + forced-alignment "
-            "timing, suitable for UI playback + previewing mouth timing. 'multichannel' returns the actual "
-            "17-channel WAV the show would play, as audio/wav bytes — for downloading into Audacity for "
-            "inspection. Cached on disk by sha256(turns); pass `generation_id` to re-fetch a specific take, "
-            "`regenerate: true` to force a fresh take.";
+            "Returns small JSON: cache_key, generation_id, cached flag, audio_url (GET this for the mono WAV "
+            "ready for an <audio> element), audio_format, sample_rate, duration_seconds, voice_segments, and "
+            "forced-alignment word/char timings. Generates fresh via ElevenLabs if no cache hit (or "
+            "regenerate=true); reuses the latest cached take by default; loads a specific take if generation_id "
+            "is set (404 if expired).";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<DialogPreviewMonoResponseDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<DialogPreviewMetaResponseDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/animation/dialog/preview/meta", submitPreviewMeta,
+             BODY_DTO(Object<DialogPreviewRequestDto>, requestBody),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("POST /api/v1/animation/dialog/preview/meta", "POST", "api/v1/animation/dialog/preview/meta",
+                           "submitPreviewMeta", "DialogPreviewController", request,
+                           [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                               if (auto errResp = validatePreviewBody(requestBody, span))
+                                   return errResp;
+                               auto opSpan = creatures::observability->createChildOperationSpan(
+                                   "DialogPreviewController.submitPreviewMeta", span);
+                               auto outcome = loadOrGenerate(requestBody, span, opSpan, "meta");
+                               if (outcome.errorResponse)
+                                   return outcome.errorResponse;
+
+                               auto dto = DialogPreviewMetaResponseDto::createShared();
+                               populateMetaResponse(dto, *outcome.generation, outcome.cacheKey, outcome.cached);
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return createDtoResponse(Status::CODE_200, dto);
+                           });
+    }
+
+    ENDPOINT_INFO(getPreviewAudio) {
+        info->summary = "Stream the mono WAV for a cached dialog generation";
+        info->description = "Reads the cached mono PCM for {cache_key}/{generation_id}, wraps it in a 44-byte "
+                            "PCM WAV header on the fly, and streams audio/wav back. URL is built from the "
+                            "audio_url field of a /preview/meta response. 404 if the generation isn't cached "
+                            "(never existed or has been cron-swept).";
+        info->addTag("Multi-character Dialog");
+        info->pathParams["cache_key"].description = "Hex sha256 of the turns; from /preview/meta or /preview/lookup.";
+        info->pathParams["generation_id"].description = "UUID of the specific take; from /preview/meta or /lookup.";
+        info->addResponse<oatpp::String>(Status::CODE_200, "audio/wav");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/animation/dialog/preview/audio/{cache_key}/{generation_id}.wav", getPreviewAudio,
+             PATH(oatpp::String, cache_key), PATH(oatpp::String, generation_id),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/animation/dialog/preview/audio/{cache_key}/{generation_id}.wav", "GET",
+                           "api/v1/animation/dialog/preview/audio/{cache_key}/{generation_id}.wav", "getPreviewAudio",
+                           "DialogPreviewController", request,
+                           [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                               const std::string ck = cache_key ? std::string(*cache_key) : std::string();
+                               const std::string gid = generation_id ? std::string(*generation_id) : std::string();
+                               if (ck.empty() || gid.empty()) {
+                                   auto err = StatusDto::createShared();
+                                   err->status = "error";
+                                   err->code = 400;
+                                   err->message = "cache_key and generation_id are required";
+                                   if (span)
+                                       span->setHttpStatus(400);
+                                   return createDtoResponse(Status::CODE_400, err);
+                               }
+                               auto loadResult = creatures::voice::loadGeneration(ck, gid);
+                               if (!loadResult.isSuccess()) {
+                                   auto err = StatusDto::createShared();
+                                   err->status = "not_found";
+                                   err->code = 404;
+                                   err->message = fmt::format("generation '{}/{}' not found", ck, gid).c_str();
+                                   if (span)
+                                       span->setHttpStatus(404);
+                                   return createDtoResponse(Status::CODE_404, err);
+                               }
+                               const auto gen = loadResult.getValue().value();
+                               const auto wavBytes = wrapMonoPcmAsWav(gen.audioPcm, 48000);
+
+                               auto response = oatpp::web::protocol::http::outgoing::ResponseFactory::createResponse(
+                                   Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(wavBytes.data()),
+                                                                   static_cast<v_int32>(wavBytes.size())));
+                               response->putHeader("Content-Type", "audio/wav");
+                               response->putHeader("X-Dialog-Cache-Key", ck.c_str());
+                               response->putHeader("X-Dialog-Generation-Id", gid.c_str());
+                               if (span) {
+                                   span->setAttribute("dialog.cache_key", ck);
+                                   span->setAttribute("dialog.generation_id", gid);
+                                   span->setHttpStatus(200);
+                               }
+                               return response;
+                           });
+    }
+
+    ENDPOINT_INFO(submitPreviewMultichannel) {
+        info->summary = "Generate (or load) a dialog preview and return the assembled 17-channel WAV";
+        info->description = "Same cache semantics as /preview/meta (use generation_id / regenerate flags the same "
+                            "way). Returns audio/wav bytes — the 17-channel WAV the show would play. Suitable for "
+                            "downloading into Audacity (or any 17-channel-aware tool) for inspection. Each "
+                            "creature's audio appears in its `audio_channel` lane; all other lanes are silent.";
+        info->addTag("Multi-character Dialog");
         info->addResponse<oatpp::String>(Status::CODE_200, "audio/wav");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/animation/dialog/preview", submitPreview,
+    ENDPOINT("POST", "api/v1/animation/dialog/preview/multichannel", submitPreviewMultichannel,
              BODY_DTO(Object<DialogPreviewRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
-            "POST /api/v1/animation/dialog/preview", "POST", "api/v1/animation/dialog/preview", "submitPreview",
-            "DialogPreviewController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (!requestBody || !requestBody->turns || requestBody->turns->empty()) {
-                    auto err = StatusDto::createShared();
-                    err->status = "error";
-                    err->code = 400;
-                    err->message = "turns must be a non-empty array";
-                    if (span)
-                        span->setHttpStatus(400);
-                    return createDtoResponse(Status::CODE_400, err);
-                }
-                for (const auto &t : *requestBody->turns) {
-                    if (!t || !t->creature_id || t->creature_id->empty() || !t->text || t->text->empty()) {
-                        auto err = StatusDto::createShared();
-                        err->status = "error";
-                        err->code = 400;
-                        err->message = "every turn must have a non-empty creature_id and text";
-                        if (span)
-                            span->setHttpStatus(400);
-                        return createDtoResponse(Status::CODE_400, err);
-                    }
-                }
-                const std::string format =
-                    requestBody->format ? std::string(*requestBody->format) : std::string("mono");
-                if (format != "mono" && format != "multichannel") {
-                    auto err = StatusDto::createShared();
-                    err->status = "error";
-                    err->code = 400;
-                    err->message = "format must be 'mono' or 'multichannel'";
-                    if (span)
-                        span->setHttpStatus(400);
-                    return createDtoResponse(Status::CODE_400, err);
-                }
+            "POST /api/v1/animation/dialog/preview/multichannel", "POST",
+            "api/v1/animation/dialog/preview/multichannel", "submitPreviewMultichannel", "DialogPreviewController",
+            request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                if (auto errResp = validatePreviewBody(requestBody, span))
+                    return errResp;
+                auto opSpan = creatures::observability->createChildOperationSpan(
+                    "DialogPreviewController.submitPreviewMultichannel", span);
+                auto outcome = loadOrGenerate(requestBody, span, opSpan, "multichannel");
+                if (outcome.errorResponse)
+                    return outcome.errorResponse;
 
-                // Wrap the request span as a child OperationSpan so the DB +
-                // voice helpers (which want OperationSpan, not RequestSpan)
-                // are still traced under this request.
-                auto opSpan =
-                    creatures::observability->createChildOperationSpan("DialogPreviewController.submitPreview", span);
-                auto resolvedResult = resolveCreatures(requestBody->turns, opSpan);
-                if (!resolvedResult.isSuccess()) {
-                    auto err = StatusDto::createShared();
-                    err->status = "error";
-                    err->code = 400;
-                    err->message = resolvedResult.getError().value().getMessage().c_str();
-                    if (span)
-                        span->setHttpStatus(400);
-                    return createDtoResponse(Status::CODE_400, err);
-                }
-                const auto resolved = resolvedResult.getValue().value();
-                const auto inputs = buildDialogInputs(requestBody->turns, resolved);
-                const auto cacheKey = creatures::voice::computeCacheKey(inputs);
-
-                if (span) {
-                    span->setAttribute("dialog.cache_key", cacheKey);
-                    span->setAttribute("dialog.turns", static_cast<int64_t>(inputs.size()));
-                    span->setAttribute("dialog.format", format);
-                }
-
-                // ---- Resolve which cached generation to use, or generate fresh.
-                std::optional<creatures::voice::CachedGeneration> gen;
-                bool wasCached = false;
-                const bool regen = requestBody->regenerate ? static_cast<bool>(*requestBody->regenerate) : false;
-
-                if (requestBody->generation_id && !requestBody->generation_id->empty()) {
-                    // Explicit generation_id — load that one specifically. 404
-                    // if it's been cron-cleaned.
-                    auto loadResult =
-                        creatures::voice::loadGeneration(cacheKey, std::string(*requestBody->generation_id));
-                    if (!loadResult.isSuccess()) {
-                        auto err = StatusDto::createShared();
-                        err->status = "error";
-                        err->code = 404;
-                        err->message = fmt::format("generation '{}' not found (expired or never existed)",
-                                                   std::string(*requestBody->generation_id))
-                                           .c_str();
-                        if (span)
-                            span->setHttpStatus(404);
-                        return createDtoResponse(Status::CODE_404, err);
-                    }
-                    gen = loadResult.getValue().value();
-                    wasCached = true;
-                } else if (!regen) {
-                    if (auto latest = creatures::voice::findLatestGeneration(cacheKey)) {
-                        auto loadResult = creatures::voice::loadGeneration(cacheKey, *latest);
-                        if (loadResult.isSuccess()) {
-                            gen = loadResult.getValue().value();
-                            wasCached = true;
-                        }
-                        // If the load failed for some odd reason, fall through
-                        // to fresh generation — the cache lookup is advisory.
-                    }
-                }
-
-                if (!gen) {
-                    // No usable cache hit (or regenerate requested) — make a
-                    // fresh generation via ElevenLabs.
-                    creatures::voice::DialogClient client;
-                    const std::string apiKey = creatures::config->getVoiceApiKey();
-
-                    auto dialogResult = client.generateDialog(apiKey, inputs, "pcm_48000", opSpan);
-                    if (!dialogResult.isSuccess()) {
-                        auto code = dialogResult.getError().value().getCode();
-                        auto err = StatusDto::createShared();
-                        err->status = "error";
-                        err->code = (code == creatures::ServerError::InvalidData) ? 400 : 500;
-                        err->message = dialogResult.getError().value().getMessage().c_str();
-                        if (span)
-                            span->setHttpStatus(*err->code);
-                        return createDtoResponse(
-                            (code == creatures::ServerError::InvalidData) ? Status::CODE_400 : Status::CODE_500, err);
-                    }
-                    const auto dialog = dialogResult.getValue().value();
-
-                    std::string transcript;
-                    for (std::size_t t = 0; t < inputs.size(); ++t) {
-                        if (t > 0) {
-                            transcript.push_back(' ');
-                        }
-                        transcript += creatures::voice::DialogClient::stripTags(inputs[t].text);
-                    }
-                    // forced-alignment wants a WAV upload; wrap the raw PCM.
-                    const auto wavBytes = wrapMonoPcmAsWav(dialog.audioData, 48000);
-                    auto alignResult = client.forcedAlignment(apiKey, wavBytes, "audio/wav", transcript, opSpan);
-                    if (!alignResult.isSuccess()) {
-                        auto err = StatusDto::createShared();
-                        err->status = "error";
-                        err->code = 500;
-                        err->message = alignResult.getError().value().getMessage().c_str();
-                        if (span)
-                            span->setHttpStatus(500);
-                        return createDtoResponse(Status::CODE_500, err);
-                    }
-                    creatures::voice::CachedGeneration freshGen;
-                    freshGen.generationId = util::generateUUID();
-                    freshGen.audioPcm = dialog.audioData;
-                    freshGen.voiceSegments = dialog.voiceSegments;
-                    freshGen.forcedAlignment = alignResult.getValue().value();
-                    freshGen.createdAt = std::chrono::system_clock::now();
-                    freshGen.turnsSummary = makeTurnsSummary(inputs);
-
-                    auto saveResult = creatures::voice::saveGeneration(cacheKey, freshGen);
-                    if (!saveResult.isSuccess()) {
-                        // Generation succeeded but couldn't be persisted — log
-                        // and continue; the client still gets the audio. (The
-                        // tradeoff: same input later won't be free, but the
-                        // current response is correct.)
-                        warn("Dialog preview: saveGeneration failed: {}", saveResult.getError().value().getMessage());
-                    }
-
-                    gen = std::move(freshGen);
-                    wasCached = false;
-                }
-
-                if (span) {
-                    span->setAttribute("dialog.generation_id", gen->generationId);
-                    span->setAttribute("dialog.cached", wasCached);
-                }
-
-                // ---- Format the response.
-                if (format == "mono") {
-                    auto dto = DialogPreviewMonoResponseDto::createShared();
-                    populateMonoResponse(dto, *gen, cacheKey, wasCached);
-                    if (span)
-                        span->setHttpStatus(200);
-                    return createDtoResponse(Status::CODE_200, dto);
-                }
-
-                // ---- multichannel: build the 17-channel WAV from the cached
-                // generation + creature config and stream it back as audio/wav.
-                // Validate the audio_channel mapping (distinct, in [1,17]) the
-                // same way the writer does — but fail with 400 instead of 500
-                // since this is a caller config problem.
+                // Validate the audio_channel mapping (distinct, in [1,17]).
+                // 400 instead of 500 since this is a caller config problem.
                 std::unordered_set<uint16_t> seenChannels;
                 creatures::voice::VoiceChannelMap voiceToChannel;
-                for (const auto &[cid, c] : resolved) {
+                for (const auto &[cid, c] : outcome.resolved) {
                     if (c.audioChannel < 1 || c.audioChannel > 17) {
                         auto err = StatusDto::createShared();
                         err->status = "error";
@@ -449,12 +549,12 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController {
                     voiceToChannel.emplace(c.voiceId, c.audioChannel);
                 }
 
-                // Run the slice + assembly on the cached PCM + alignment.
                 creatures::voice::DialogResult dr;
-                dr.audioData = gen->audioPcm;
+                dr.audioData = outcome.generation->audioPcm;
                 dr.audioFormat = "pcm_48000";
-                dr.voiceSegments = gen->voiceSegments;
-                auto assembleResult = creatures::voice::assembleChunk(inputs, dr, gen->forcedAlignment, 48000);
+                dr.voiceSegments = outcome.generation->voiceSegments;
+                auto assembleResult =
+                    creatures::voice::assembleChunk(outcome.inputs, dr, outcome.generation->forcedAlignment, 48000);
                 if (!assembleResult.isSuccess()) {
                     auto err = StatusDto::createShared();
                     err->status = "error";
@@ -466,13 +566,13 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController {
                 }
                 const auto assembled = assembleResult.getValue().value();
 
-                // Write to a one-shot temp file under the same dialog-cache
-                // dir so the cron sweep cleans it up. We don't bother caching
-                // the multichannel WAV itself (cheap to rebuild from the
-                // cached generation, and would add a second cache key keyed
-                // on the creature → channel mapping).
+                // One-shot temp file under the dialog-cache dir so the cron
+                // sweep cleans it up. We don't bother caching the multichannel
+                // WAV — cheap to rebuild from the cached generation, and would
+                // need a second cache key keyed on the creature→channel map.
                 const auto wavPath = std::filesystem::temp_directory_path() / "creature-adhoc" / "dialog-cache" /
-                                     cacheKey / fmt::format("{}_multichannel.wav", gen->generationId);
+                                     outcome.cacheKey /
+                                     fmt::format("{}_multichannel.wav", outcome.generation->generationId);
                 std::error_code ec;
                 std::filesystem::create_directories(wavPath.parent_path(), ec);
                 auto writeResult = creatures::voice::writeDialogWav(assembled, voiceToChannel, wavPath, opSpan);
@@ -485,18 +585,14 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController {
                         span->setHttpStatus(500);
                     return createDtoResponse(Status::CODE_500, err);
                 }
-
-                // Read the bytes back to return as the response body. (For a
-                // ~few-second scene this is ~5–50 MiB; fine in memory.)
                 std::ifstream in(wavPath, std::ios::binary);
                 std::vector<char> buf((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-
                 auto response = oatpp::web::protocol::http::outgoing::ResponseFactory::createResponse(
                     Status::CODE_200, oatpp::String(buf.data(), static_cast<v_int32>(buf.size())));
                 response->putHeader("Content-Type", "audio/wav");
-                response->putHeader("X-Dialog-Generation-Id", gen->generationId.c_str());
-                response->putHeader("X-Dialog-Cache-Key", cacheKey.c_str());
-                response->putHeader("X-Dialog-Cached", wasCached ? "true" : "false");
+                response->putHeader("X-Dialog-Generation-Id", outcome.generation->generationId.c_str());
+                response->putHeader("X-Dialog-Cache-Key", outcome.cacheKey.c_str());
+                response->putHeader("X-Dialog-Cached", outcome.cached ? "true" : "false");
                 if (span)
                     span->setHttpStatus(200);
                 return response;

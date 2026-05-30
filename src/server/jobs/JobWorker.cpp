@@ -1149,17 +1149,24 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     }
 
     // Cross-creature checks.
+    //
+    // audio_channel MUST be distinct — the 17-channel WAV interleave writes
+    // each creature's PCM into its lane; two creatures sharing a lane would
+    // silently clobber one. Caught here AND in writeDialogWav as belt+braces.
+    //
+    // mouth_slot does NOT need to be distinct: it's a per-creature local byte
+    // offset into THAT creature's Track frames. Each creature gets its own
+    // Track in the multi-track Animation, and each creature's controller
+    // reads only its own track — so two creatures both having mouth_slot=4
+    // means each writes byte 4 of its OWN frame buffer to its OWN mouth
+    // servo. No collision. (Beaky and Mango both have mouth_slot=4 in
+    // their stored configs.)
     std::unordered_set<uint16_t> seenChannels;
-    std::unordered_set<uint8_t> seenSlots;
     std::unordered_set<std::string> uniqueVoices;
     for (const auto &c : creaturesCache) {
         if (!seenChannels.insert(c.audioChannel).second) {
             return failJob(
                 fmt::format("audio_channel {} is assigned to more than one creature in this scene", c.audioChannel));
-        }
-        if (!seenSlots.insert(c.mouthSlot).second) {
-            return failJob(
-                fmt::format("mouth_slot {} is assigned to more than one creature in this scene", c.mouthSlot));
         }
         uniqueVoices.insert(c.voiceId);
     }
