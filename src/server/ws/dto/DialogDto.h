@@ -124,16 +124,12 @@ class DialogJobResultDto : public oatpp::DTO {
 // Preview / cache surface — POST /api/v1/animation/dialog/preview and friends.
 // ---------------------------------------------------------------------------
 
-/// POST /api/v1/animation/dialog/preview request body.
-///
-/// Same `turns` shape as the full dialog request. The preview endpoint
-/// generates (or reuses a cached take of) the raw dialog audio without
-/// committing to a full animation — useful for UI flows where the author
-/// wants to iterate on a scene's content before deciding to persist it.
+/// Shared request body for the preview endpoints (/preview/meta and
+/// /preview/multichannel). Same `turns` shape as the full dialog request.
 ///
 /// Cache semantics:
 ///   - If `generation_id` is set, the server returns that specific cached
-///     generation (404 if it's expired). Lets the UI page through past takes.
+///     generation (404 if expired). Lets the UI page through past takes.
 ///   - Else if `regenerate` is true, always create a fresh generation.
 ///   - Else: return the latest cached generation for these turns; create a
 ///     fresh one if nothing's cached.
@@ -159,14 +155,6 @@ class DialogPreviewRequestDto : public oatpp::DTO {
         info->required = false;
     }
     DTO_FIELD(Boolean, regenerate);
-
-    DTO_FIELD_INFO(format) {
-        info->description = "'mono' (default) returns the raw single-channel PCM as JSON with audio_base64 + "
-                            "voice_segments + forced_alignment for UI playback. 'multichannel' returns the full "
-                            "17-channel WAV bytes as audio/wav for downloading into Audacity (or wherever).";
-        info->required = false;
-    }
-    DTO_FIELD(String, format);
 };
 
 /// One voice_segments entry on the wire (mirrors creatures::voice::DialogVoiceSegment).
@@ -213,17 +201,20 @@ class DialogPreviewCharTimingDto : public oatpp::DTO {
     DTO_FIELD(Float64, end);
 };
 
-/// Mono-format preview response (HTTP 200 application/json).
-class DialogPreviewMonoResponseDto : public oatpp::DTO {
+/// POST /api/v1/animation/dialog/preview/meta response — metadata only, no
+/// audio bytes. The client fetches the audio separately via
+/// GET /api/v1/animation/dialog/preview/audio/{cache_key}/{generation_id}.wav
+/// (which streams a 48 kHz mono S16 WAV ready for an <audio> element).
+class DialogPreviewMetaResponseDto : public oatpp::DTO {
 
-    DTO_INIT(DialogPreviewMonoResponseDto, DTO)
+    DTO_INIT(DialogPreviewMetaResponseDto, DTO)
 
     DTO_FIELD_INFO(cache_key) { info->description = "sha256(turns) — stable identifier for this exact input."; }
     DTO_FIELD(String, cache_key);
 
     DTO_FIELD_INFO(generation_id) {
-        info->description = "UUID of the specific take being returned. Pass this to POST /dialog (or back to "
-                            "/preview) to address this exact take again.";
+        info->description = "UUID of the specific take being returned. Pass this to POST /dialog (or back to a "
+                            "preview endpoint) to address this exact take again.";
     }
     DTO_FIELD(String, generation_id);
 
@@ -233,11 +224,12 @@ class DialogPreviewMonoResponseDto : public oatpp::DTO {
     }
     DTO_FIELD(Boolean, cached);
 
-    DTO_FIELD_INFO(audio_base64) {
-        info->description = "Mono S16LE PCM @ 48 kHz, base64-encoded. NOT WAV-wrapped — the client should either "
-                            "decode + play directly, or wrap with a 44-byte PCM WAV header for an <audio> element.";
+    DTO_FIELD_INFO(audio_url) {
+        info->description = "Path to GET the WAV-wrapped mono audio for this generation. Suitable for an HTML "
+                            "<audio src=\"\"> element. Survives as long as the generation is in the cache "
+                            "(cron-cleaned).";
     }
-    DTO_FIELD(String, audio_base64);
+    DTO_FIELD(String, audio_url);
 
     DTO_FIELD_INFO(audio_format) { info->description = "Always 'pcm_48000' for v1."; }
     DTO_FIELD(String, audio_format);
