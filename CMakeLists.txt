@@ -285,6 +285,41 @@ add_definitions(
 add_subdirectory(lib/e131_service)
 add_subdirectory(lib/CreatureVoicesLib)
 
+# Umbrella target for the Docker build to pre-compile every heavy FetchContent
+# library before src/ is COPYed into the image. The Dockerfile runs
+# `ninja deps_only` in a stable layer (only invalidated when CMakeLists.txt /
+# cmake/ / lib/ / externals/ change), then copies src/ + tests/ and runs the
+# final `ninja` — which finds all the dep .o files already on disk and only
+# rebuilds the project's own sources. Cuts typical PR build time from ~15 min
+# to ~2 min. See issue #13.
+#
+# Target names verified against `ninja -t targets all` in an existing build.
+# Header-only libraries (nlohmann_json, argparse) are excluded — nothing to
+# pre-compile. mongoc_static / bson_static are dependencies of mongocxx_static
+# but listed explicitly for clarity in build logs.
+add_custom_target(deps_only DEPENDS
+        mongocxx_static
+        mongoc_static
+        bsoncxx_static
+        bson_static
+        fmt
+        spdlog
+        opus
+        uvgrtp
+        whisper
+        ggml
+        opentelemetry_trace
+        opentelemetry_metrics
+        opentelemetry_logs
+        opentelemetry_resources
+        opentelemetry_common
+        opentelemetry_http_client_curl
+        opentelemetry_exporter_otlp_http
+        opentelemetry_exporter_otlp_http_metric
+        gtest_main
+        gmock_main
+)
+
 #Set up a base64 encoder / decoder
 set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
 
@@ -361,6 +396,14 @@ include_directories(
         ${oatpp_INCLUDE_DIRS}
         PRIVATE ${CMAKE_BINARY_DIR}
 )
+
+# Skip the executable + test target definitions when src/ + tests/ aren't
+# present. Lets the Dockerfile do a Phase 1 cmake configure with empty src/
+# (only cmake/ + lib/ + externals/ + CMakeLists.txt + build_oatpp.sh COPYed)
+# to pre-build the deps_only umbrella target in a cacheable layer. Phase 2
+# COPYs src/ + tests/ and re-runs cmake — these blocks then activate and
+# the real build happens against already-compiled deps. See issue #13.
+if (EXISTS ${CMAKE_SOURCE_DIR}/src/server/main.cpp)
 
 add_executable(creature-server
         ${serverFiles}
@@ -554,11 +597,15 @@ install(TARGETS creature-server
         DESTINATION "/bin"
 )
 
+endif() # EXISTS src/server/main.cpp
+
 #
 # Set up testing
 #
 
 enable_testing()
+
+if (EXISTS ${CMAKE_SOURCE_DIR}/tests/server/TestGlobals.cpp)
 
 add_executable(creature-server-test
         tests/model/Creature_test.cpp
@@ -652,6 +699,8 @@ set_property(TARGET creature-server-test PROPERTY FOLDER "tests")
 # Register the test with CTest
 include(GoogleTest)
 gtest_discover_tests(creature-server-test)
+
+endif() # EXISTS tests/server/TestGlobals.cpp
 
 # where to find our CMake modules
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")

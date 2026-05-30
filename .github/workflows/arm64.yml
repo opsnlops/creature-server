@@ -29,3 +29,7 @@ jobs:
           push: true
           target: runtime
           tags: ${{ secrets.DOCKER_LOGIN_USERNAME }}/creature-server:arm64
+          # GHA build cache. Scoped per-arch so amd64 + arm64 don't trample
+          # each other's layer cache. See #13.
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,mode=max,scope=arm64
