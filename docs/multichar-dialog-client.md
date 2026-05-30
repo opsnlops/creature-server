@@ -306,6 +306,21 @@ Tips for the editor:
 
 The server rejects requests that provide both (400) or neither (400). Validation happens up-front; the actual render is async.
 
+### Re-rendering a script overwrites in place (3.15.4+)
+
+When `script_id` is set AND `persistence` is `"permanent"`, the server checks for any previously-rendered Animation for this same script (by `metadata.source_script_id` match) and **reuses that Animation's `id` for the new render**. The old document is overwritten in the DB; you do not get a fresh `animation_id` on each render.
+
+What this means for the client:
+- Cache by `script_id`, not by `animation_id`, when you want "the current rendering of this script."
+- The `animation_id` you got the first time stays valid across re-renders. References to it from playlists / ad-hoc triggers / external links continue to work.
+- The CoW snapshot (`metadata.source_script_turns`) is overwritten too — it always reflects the latest render, not all renders ever.
+- The `job-complete` payload still carries `animation_id`. On a re-render, it equals the previous render's id; on a first render, it's a fresh UUID.
+
+Scope:
+- Inline-turn renders (no `script_id`) → fresh `animation_id` every time. No script to dedupe against.
+- AdHoc renders (`persistence: "adhoc"`) → fresh `animation_id` every time. AdHoc has TTL cleanup; clutter is self-limiting.
+- Pre-3.15.4 servers always created fresh ids regardless of `script_id`. If you're working with a script that was rendered multiple times against an older server, the first 3.15.4 render picks one of those duplicates (whichever Mongo returns first) and reuses its id; subsequent renders are stable.
+
 ### Request shape — `DialogRequest`
 
 ```json
@@ -707,4 +722,7 @@ The resulting Animation will have NO `source_script_id` / `source_script_turns` 
 | 3.14.0 | Multichar dialog feature shipped (inline turns only) |
 | 3.14.1–3.14.4 | Bug fixes during e2e (forced-alignment whitespace, preview URL pattern, mouth_slot validation, buildNeutralFrame bounds) |
 | 3.15.0 | DialogScript CRUD + `script_id` render path + CoW snapshot + validate endpoint |
-| **3.15.1** | **Lenient POST/PUT — accepts round-tripped `DialogScriptDto`; friendly field-level validation errors instead of oatpp internals** |
+| 3.15.1 | Lenient POST/PUT — accepts round-tripped `DialogScriptDto`; friendly field-level validation errors instead of oatpp internals |
+| 3.15.2 | VERSION extracted to `VERSION.txt` so version bumps don't bust the GHA dep cache (closes issue #18). No client-visible behavior change. |
+| 3.15.3 | Dialog silence-fill uses the speech_loop's first frame instead of a computed neutral pose — fixes inverted-motor bug where listening creatures held the wrong rest pose |
+| **3.15.4** | **Re-rendering a script with `persistence: permanent` overwrites the existing animation in place (stable `animation_id` across re-renders).** |
