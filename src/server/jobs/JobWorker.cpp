@@ -1395,19 +1395,26 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     }
     const auto animation = animResult.getValue().value();
 
-    // ---- Persist.
+    // ---- Persist + tell clients to invalidate the affected caches. Matches
+    // the existing patterns: ad-hoc speech invalidates AdHocAnimationList +
+    // AdHocSoundList; lip-sync (which adds a new sound file) invalidates
+    // SoundList; an animation upsert invalidates Animation.
     if (persistence == DialogPersistence::AdHoc) {
         auto insertResult =
             creatures::db->insertAdHocAnimation(animation, std::chrono::system_clock::now(), jobState.span);
         if (!insertResult.isSuccess()) {
             return failJob(fmt::format("insertAdHocAnimation: {}", insertResult.getError().value().getMessage()));
         }
+        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocAnimationList);
+        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
     } else {
         const auto j = animationToJson(animation);
         auto upsertResult = creatures::db->upsertAnimation(j.dump(), jobState.span);
         if (!upsertResult.isSuccess()) {
             return failJob(fmt::format("upsertAnimation: {}", upsertResult.getError().value().getMessage()));
         }
+        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
+        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
     }
     updateProgress(0.95f);
 
