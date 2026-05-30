@@ -39,8 +39,8 @@ extern std::shared_ptr<ObservabilityManager> observability;
  * @param universe which universe to play the animation on
  * @return a status message
  */
-Result<std::string> Database::playStoredAnimation(animationId_t animationId, universe_t universe,
-                                                  std::shared_ptr<OperationSpan> parentSpan) {
+Result<std::string> Database::playStoredAnimation(const animationId_t &animationId, universe_t universe,
+                                                  const std::shared_ptr<OperationSpan> &parentSpan) {
 
     debug("Playing a stored animation {} on universe {}", animationId, universe);
 
@@ -71,9 +71,9 @@ Result<std::string> Database::playStoredAnimation(animationId_t animationId, uni
     // Guard against playing while any involved creature is actively streaming
     for (const auto &track : animation.tracks) {
         if (creatures::ws::CreatureService::isCreatureStreaming(track.creature_id)) {
-            auto error = ServerError(ServerError::Conflict,
-                                     fmt::format("Creature {} is currently streaming; cannot play animation",
-                                                 track.creature_id));
+            auto error = ServerError(
+                ServerError::Conflict,
+                fmt::format("Creature {} is currently streaming; cannot play animation", track.creature_id));
             if (playSpan) {
                 playSpan->setError(error.getMessage());
             }

@@ -35,10 +35,13 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 extern std::shared_ptr<ObservabilityManager> observability;
 
-Result<std::vector<creatures::Creature>>
-Database::getAllCreatures(creatures::SortBy sortBy, bool ascending,
-                          const std::shared_ptr<OperationSpan> &parentSpan) { // Pass by const ref
+// Conforms to docs/database-observability.md (issue #17).
 
+Result<std::vector<creatures::Creature>> Database::getAllCreatures(creatures::SortBy sortBy, bool ascending,
+                                                                   const std::shared_ptr<OperationSpan> &parentSpan) {
+    if (!parentSpan) {
+        warn("no parent span provided for Database.getAllCreatures, creating a root span");
+    }
     auto dbSpan = creatures::observability->createChildOperationSpan("Database.getAllCreatures", parentSpan);
 
     if (dbSpan) {
@@ -95,20 +98,24 @@ Database::getAllCreatures(creatures::SortBy sortBy, bool ascending,
         }
         auto collection = collectionResult.getValue().value();
 
-        // Query the database with sort options
-        auto mongoSpan = creatures::observability->createChildOperationSpan("getAllCreatures::mongo-query", dbSpan);
+        auto mongoSpan = creatures::observability->createChildOperationSpan("getAllCreatures.mongoQuery", dbSpan);
         mongocxx::options::find opts;
         opts.sort(sort_doc.view());
         mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
 
         for (auto doc : cursor) {
             auto creatureSpan =
-                creatures::observability->createChildOperationSpan("getAllCreatures::create-creature", mongoSpan);
+                creatures::observability->createChildOperationSpan("getAllCreatures.create-creature", mongoSpan);
 
-            // Use utility to parse JSON safely
             auto jsonResult = JsonParser::bsonToJson(doc, "creature document", creatureSpan);
             if (!jsonResult.isSuccess()) {
-                continue; // Skip this document and continue with next
+                auto err = jsonResult.getError().value();
+                if (creatureSpan) {
+                    creatureSpan->setError(err.getMessage());
+                    creatureSpan->setAttribute("error.type", "JsonParsingException");
+                    creatureSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+                }
+                continue;
             }
             json j = jsonResult.getValue().value();
 

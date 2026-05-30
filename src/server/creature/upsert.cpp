@@ -43,6 +43,8 @@ namespace document = bsoncxx::document;
  *
  * @return a `Result<creatures::Creature>` the creature that we can return to the client
  */
+// Conforms to docs/database-observability.md (issue #17).
+
 Result<creatures::Creature> Database::upsertCreature(const std::string &creatureJson,
                                                      const std::shared_ptr<OperationSpan> &parentSpan) {
 
@@ -50,133 +52,145 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
         warn("no parent span provided for Database.upsertCreature, creating a root span");
     }
     auto upsertSpan = creatures::observability->createChildOperationSpan("Database.upsertCreature", parentSpan);
+    if (upsertSpan) {
+        upsertSpan->setAttribute("database.collection", CREATURES_COLLECTION);
+        upsertSpan->setAttribute("database.operation", "update_one");
+        upsertSpan->setAttribute("database.system", "mongodb");
+        upsertSpan->setAttribute("database.name", DB_NAME);
+    }
+
+    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
+        if (upsertSpan) {
+            upsertSpan->setError(msg);
+            upsertSpan->setAttribute("error.type", type);
+            upsertSpan->setAttribute("error.code", static_cast<int64_t>(code));
+        }
+    };
 
     info("attempting to upsert a creature in the database");
     try {
-
         auto parseJsonSpan =
-            creatures::observability->createChildOperationSpan("upsertCreature::parse-json", upsertSpan);
-        auto jsonResult = JsonParser::parseJsonString(creatureJson, fmt::format("creature upsert"), parseJsonSpan);
+            creatures::observability->createChildOperationSpan("upsertCreature.parse-json", upsertSpan);
+        auto jsonResult = JsonParser::parseJsonString(creatureJson, "creature upsert", parseJsonSpan);
         if (!jsonResult.isSuccess()) {
-            auto error = jsonResult.getError().value();
-            upsertSpan->setError(error.getMessage());
-            return Result<creatures::Creature>{error};
+            auto err = jsonResult.getError().value();
+            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            return Result<creatures::Creature>{err};
         }
         auto jsonObject = jsonResult.getValue().value();
 
-        // Create the Creature object while we're here
         auto result = creatureFromJson(jsonObject, upsertSpan);
         if (!result.isSuccess()) {
-            auto error = result.getError();
-            auto errorMessage = fmt::format("Error while creating a creature from JSON: {}", error->getMessage());
-            upsertSpan->setError(errorMessage);
-            upsertSpan->setAttribute("error.type", "InvalidData");
-            upsertSpan->setAttribute("error.code", static_cast<int64_t>(error->getCode()));
+            auto err = result.getError().value();
+            auto errorMessage = fmt::format("Error while creating a creature from JSON: {}", err.getMessage());
+            setSpanError(errorMessage, "InvalidData", err.getCode());
             warn(errorMessage);
             return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
         }
         auto creature = result.getValue().value();
+        if (upsertSpan)
+            upsertSpan->setAttribute("creature.id", creature.id);
 
-        debug("validating creature on upsert");
-
-        auto validateSpan =
-            creatures::observability->createChildOperationSpan("upsertCreature::parse-json", upsertSpan);
+        auto validateSpan = creatures::observability->createChildOperationSpan("upsertCreature.validate", upsertSpan);
+        auto failValidation = [&](const std::string &msg) {
+            if (validateSpan) {
+                validateSpan->setError(msg);
+                validateSpan->setAttribute("error.type", "InvalidData");
+                validateSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+            }
+            setSpanError(msg, "InvalidData", ServerError::InvalidData);
+            warn(msg);
+        };
         if (creature.id.empty()) {
             std::string errorMessage = "Creature id is empty";
-            validateSpan->setError(errorMessage);
-            validateSpan->setAttribute("error.type", "InvalidData");
-            validateSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-            warn(errorMessage);
+            failValidation(errorMessage);
             return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
         }
-
         if (creature.name.empty()) {
             std::string errorMessage = "Creature name is empty";
-            validateSpan->setError(errorMessage);
-            validateSpan->setAttribute("error.type", "InvalidData");
-            validateSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-            warn(errorMessage);
+            failValidation(errorMessage);
             return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
         }
-
-        // Note: audio_channel and channel_offset are uint16_t, so they cannot be < 0
-
         if (creature.channel_offset > 511) {
             std::string errorMessage = "Creature channel_offset is greater than 511";
-            validateSpan->setError(errorMessage);
-            validateSpan->setAttribute("error.type", "InvalidData");
-            validateSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-            warn(errorMessage);
+            failValidation(errorMessage);
             return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
         }
-        validateSpan->setSuccess();
+        if (validateSpan)
+            validateSpan->setSuccess();
 
-        // Convert the JSON string into BSON
-        auto bsonSpan = creatures::observability->createChildOperationSpan("upsertCreature::json-to-bson", upsertSpan);
+        auto bsonSpan = creatures::observability->createChildOperationSpan("upsertCreature.json-to-bson", upsertSpan);
         auto bsonResult = JsonParser::jsonStringToBson(creatureJson, fmt::format("creature {}", creature.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
-            auto error = bsonResult.getError().value();
-            upsertSpan->setError(error.getMessage());
-            return Result<creatures::Creature>{error};
+            auto err = bsonResult.getError().value();
+            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            return Result<creatures::Creature>{err};
         }
         auto bsonDoc = bsonResult.getValue().value();
 
         auto collectionSpan =
-            creatures::observability->createChildOperationSpan("upsertCreature::get-collection", upsertSpan);
+            creatures::observability->createChildOperationSpan("upsertCreature.get-collection", upsertSpan);
         auto collectionResult = getCollection(CREATURES_COLLECTION);
         if (!collectionResult.isSuccess()) {
-            auto error = collectionResult.getError().value();
-            std::string errorMessage = fmt::format("database error while getting creature: {}", error.getMessage());
-            collectionSpan->setError(errorMessage);
-            collectionSpan->setAttribute("error.type", "DatabaseError");
-            collectionSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::DatabaseError));
+            auto err = collectionResult.getError().value();
+            std::string errorMessage = fmt::format("database error while getting creature: {}", err.getMessage());
+            if (collectionSpan) {
+                collectionSpan->setError(errorMessage);
+                collectionSpan->setAttribute("error.type", "DatabaseError");
+                collectionSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+            }
+            setSpanError(errorMessage, "DatabaseError", err.getCode());
             warn(errorMessage);
-            return Result<creatures::Creature>{error};
+            return Result<creatures::Creature>{err};
         }
         auto collection = collectionResult.getValue().value();
-        trace("collection located");
-        collectionSpan->setSuccess();
+        if (collectionSpan)
+            collectionSpan->setSuccess();
 
-        auto mongoSpan = creatures::observability->createChildOperationSpan("upsertCreature::mongo", upsertSpan);
+        auto mongoSpan = creatures::observability->createChildOperationSpan("upsertCreature.mongoQuery", upsertSpan);
         auto id = creature.id;
         bsoncxx::builder::stream::document filter_builder;
         filter_builder << "id" << id;
 
-        // Upsert options
         mongocxx::options::update update_options;
         update_options.upsert(true);
 
-        // Upsert operation
         collection.update_one(filter_builder.view(),
                               bsoncxx::builder::stream::document{} << "$set" << bsonDoc.view()
                                                                    << bsoncxx::builder::stream::finalize,
                               update_options);
-        mongoSpan->setSuccess();
+        if (mongoSpan)
+            mongoSpan->setSuccess();
 
-        // Update the cache now that we know it worked
         creatureCache->put(creature.id, creature);
 
         info("Creature upserted in the database: {}", creature.id);
+        if (upsertSpan) {
+            upsertSpan->setAttribute("creature.name", creature.name);
+            upsertSpan->setSuccess();
+        }
         return Result<creatures::Creature>{creature};
 
     } catch (const mongocxx::exception &e) {
         auto errorMessage =
             fmt::format("Error (mongocxx::exception) while upserting a creature in database: {}", e.what());
         error(errorMessage);
-        upsertSpan->recordException(e);
-        upsertSpan->setError(errorMessage);
+        if (upsertSpan)
+            upsertSpan->recordException(e);
+        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<creatures::Creature>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const bsoncxx::exception &e) {
         auto errorMessage =
             fmt::format("Error (bsoncxx::exception) while upserting a creature in database: {}", e.what());
-        upsertSpan->recordException(e);
-        upsertSpan->setError(errorMessage);
         error(errorMessage);
+        if (upsertSpan)
+            upsertSpan->recordException(e);
+        setSpanError(errorMessage, "JsonParsingException", ServerError::InvalidData);
         return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (...) {
         std::string errorMessage = "Unknown error while adding a creature to the database";
-        upsertSpan->setError(errorMessage);
         critical(errorMessage);
+        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
         return Result<creatures::Creature>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
