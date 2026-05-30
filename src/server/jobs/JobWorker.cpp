@@ -1537,9 +1537,31 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     }
     updateProgress(0.85f);
 
+    // ---- Re-render dedupe: if this scene is being rendered FROM a script and
+    // we're writing to the permanent collection, look up any prior animation
+    // produced from this same script. If one exists, reuse its id so the
+    // upsert below overwrites the existing document in place rather than
+    // accumulating duplicates. AdHoc renders skip this — they have TTL and
+    // each render is conceptually a fresh take.
+    std::string existingAnimationId;
+    if (!sourceScriptId.empty() && persistence == DialogPersistence::Permanent) {
+        auto lookup = creatures::db->findAnimationIdBySourceScriptId(sourceScriptId, jobState.span);
+        if (lookup.isSuccess() && lookup.getValue().value().has_value()) {
+            existingAnimationId = lookup.getValue().value().value();
+            info("Dialog job {}: re-rendering existing animation {} for script {}", jobState.jobId, existingAnimationId,
+                 sourceScriptId);
+            if (jobState.span) {
+                jobState.span->setAttribute("animation.reused_id", existingAnimationId);
+            }
+        }
+        // Lookup failures are non-fatal — fall through to fresh-id behavior.
+        // The worst case is one orphaned animation, which is what we had before
+        // this dedupe existed.
+    }
+
     // ---- Build the multi-track Animation.
-    auto animResult =
-        voice::buildDialogAnimation(assembled, creatureInputs, *msPerFrame, animationSoundFile, title, jobState.span);
+    auto animResult = voice::buildDialogAnimation(assembled, creatureInputs, *msPerFrame, animationSoundFile, title,
+                                                  jobState.span, existingAnimationId);
     if (!animResult.isSuccess()) {
         return failJob(animResult.getError().value().getMessage());
     }

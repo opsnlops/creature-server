@@ -121,6 +121,17 @@ class Database {
     Result<creatures::Animation> upsertAnimation(const std::string &animationJson,
                                                  std::shared_ptr<OperationSpan> parentSpan = nullptr);
     Result<void> deleteAnimation(const animationId_t &animationId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /// Find an existing permanent Animation rendered from the given DialogScript
+    /// (matches on metadata.source_script_id). Returns the matching animation_id
+    /// in the optional, or an empty optional if nothing is rendered for this
+    /// script yet. Used by the JobWorker's re-render path so a script's
+    /// previously-rendered Animation gets overwritten in place rather than
+    /// accumulating duplicates (3.15.4+). Only searches the permanent
+    /// collection — adhoc renders are TTL'd and don't dedupe.
+    Result<std::optional<animationId_t>>
+    findAnimationIdBySourceScriptId(const std::string &scriptId,
+                                    const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
     Result<std::string> playStoredAnimation(animationId_t animationId, universe_t universe,
                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
