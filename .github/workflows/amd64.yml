@@ -29,4 +29,9 @@ jobs:
           push: true
           target: runtime
           tags: ${{ secrets.DOCKER_LOGIN_USERNAME }}/creature-server:amd64
+          # GHA build cache. Combined with the split-stage Dockerfile
+          # (deps in a stable layer), typical source-change PRs reuse
+          # cached layers and finish in ~2 min instead of ~15. See #13.
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,mode=max,scope=amd64
   

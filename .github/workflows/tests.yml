@@ -26,8 +26,25 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Build via docker/build-push-action so we can wire up the GitHub
+      # Actions build cache (cache-from / cache-to type=gha). Combined with
+      # the Dockerfile's split-stage layout (deps in their own layer that
+      # only invalidates on CMakeLists.txt / cmake/ / externals/ changes),
+      # a typical source-change PR re-uses the cached deps layer and only
+      # the final `ninja` re-runs — drops ~15 min to ~2 min. See issue #13.
       - name: Build test image
-        run: docker build -f Dockerfile . --target build -t creature-server-buildtest
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: build
+          tags: creature-server-buildtest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Run ctest (skip vendor mongo driver fixtures)
         run: docker run --rm creature-server-buildtest ctest -E "${CTEST_EXCLUDE}" --output-on-failure
