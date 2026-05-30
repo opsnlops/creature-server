@@ -1,7 +1,22 @@
 cmake_minimum_required(VERSION 3.25)
 
+# Project version lives in VERSION.txt at the repo root — NOT inline here —
+# so version bumps don't invalidate the Docker dep-layer cache (issue #18).
+#
+# Local builds: VERSION.txt is always present, picked up normally.
+# Docker Phase 1 (the heavy deps_only build): VERSION.txt is deliberately
+# NOT COPYed yet — the fallback below lets cmake configure succeed with a
+# placeholder so the deps_only target builds against a stable, cacheable
+# layer. Docker Phase 2 COPYs VERSION.txt right before the reconfigure +
+# final build, which picks up the real value for the executable + .deb.
+set(CREATURE_SERVER_VERSION "0.0.0")
+if(EXISTS "${CMAKE_SOURCE_DIR}/VERSION.txt")
+    file(STRINGS "${CMAKE_SOURCE_DIR}/VERSION.txt" CREATURE_SERVER_VERSION LIMIT_COUNT 1)
+    string(STRIP "${CREATURE_SERVER_VERSION}" CREATURE_SERVER_VERSION)
+endif()
+
 project(creature-server
-        VERSION "3.15.1"
+        VERSION "${CREATURE_SERVER_VERSION}"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -349,8 +364,10 @@ find_package(CURL REQUIRED)
 #Leave a message
 message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
 
-#Our source files
-file(GLOB serverFiles
+#Our source files. CONFIGURE_DEPENDS so adding a new .cpp in an existing
+#dir doesn't require editing this file (which would bust the Docker dep cache
+#per issue #18). Adding a brand-new src/server/X/ dir still needs a glob line.
+file(GLOB serverFiles CONFIGURE_DEPENDS
         src/util/*
         src/exception/*
         src/server/*

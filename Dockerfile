@@ -47,6 +47,11 @@ COPY LICENSE README.md CMakeLists.txt build_oatpp.sh /build/creature-server/
 # to COPY src/ wholesale just for one file — that'd defeat the cache split.
 COPY src/server/Version.h.in /build/creature-server/src/server/Version.h.in
 
+# Note: VERSION.txt is deliberately NOT COPYed in Phase 1 — that'd invalidate
+# this layer (and force a deps_only rebuild) on every release. CMakeLists.txt
+# falls back to "0.0.0" when VERSION.txt is absent; the real version is
+# applied in Phase 2 after the deps cache is locked in. See issue #18.
+
 # Clone the base64 lib if not already present (lib/base64 might be in-tree
 # or might need fetching depending on how the workspace was set up).
 RUN if [ ! -f /build/creature-server/lib/base64/include/base64.hpp ]; then \
@@ -77,6 +82,11 @@ RUN cd /build/creature-server/build && ninja -j4 deps_only
 
 COPY src/ /build/creature-server/src
 COPY tests/ /build/creature-server/tests
+
+# Real project version goes here, AFTER the deps_only layer is sealed. The
+# Phase 2 cmake reconfigure below re-reads VERSION.txt and applies it to
+# project() / Version.h / the .deb metadata. See issue #18.
+COPY VERSION.txt /build/creature-server/
 
 # Re-run cmake configure so the file(GLOB) source-list calls re-evaluate
 # against the now-populated src/ tree. (Without this, ninja would still see
