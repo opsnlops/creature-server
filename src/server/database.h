@@ -30,6 +30,7 @@ using json = nlohmann::json;
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
 #include "model/Creature.h"
+#include "model/DialogScript.h"
 #include "model/DmxFixture.h"
 #include "model/Playlist.h"
 #include "model/SortBy.h"
@@ -153,6 +154,26 @@ class Database {
     static Result<creatures::DmxFixture> parseFixtureJson(json fixtureJson,
                                                           std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
+    // Dialog Script stuff — editable, persisted multi-character dialog scenes
+    // (see DialogScriptController). The render endpoint can take a script_id
+    // and snapshot the script's turns onto the resulting Animation.
+    Result<creatures::DialogScript> getDialogScript(const scriptId_t &scriptId,
+                                                    const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<json> getDialogScriptJson(const scriptId_t &scriptId,
+                                     const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<std::vector<creatures::DialogScript>>
+    listDialogScripts(const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<creatures::DialogScript> upsertDialogScript(const std::string &scriptJson,
+                                                       const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<void> deleteDialogScript(const scriptId_t &scriptId,
+                                    const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+
+    /// Parse + validate a DialogScript JSON document without persisting. Server-managed
+    /// fields (`id`, `created_at`, `updated_at`) are tolerated if present but never
+    /// trusted from the client — the controller stamps them.
+    static Result<creatures::DialogScript> parseDialogScriptJson(json scriptJson,
+                                                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
     /**
      * Public wrapper around the private `trackFromJson` — exposed for testing the dual-id
      * (creature_id XOR fixture_id) validation.
@@ -215,6 +236,9 @@ class Database {
 
     static Result<creatures::DmxFixture> fixtureFromJson(json fixtureJson,
                                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    static Result<creatures::DialogScript> dialogScriptFromJson(json scriptJson,
+                                                                std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     static Result<creatures::Animation> animationFromJson(json animationJson);
     static Result<creatures::AnimationMetadata> animationMetadataFromJson(json animationMetadataJson);

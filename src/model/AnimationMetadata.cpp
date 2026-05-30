@@ -29,6 +29,21 @@ AnimationMetadata convertFromDto(const std::shared_ptr<AnimationMetadataDto> &an
     metadata.sound_file = animationMetadataDto->sound_file;
     metadata.number_of_frames = animationMetadataDto->number_of_frames;
     metadata.multitrack_audio = animationMetadataDto->multitrack_audio;
+    if (animationMetadataDto->source_script_id) {
+        metadata.source_script_id = animationMetadataDto->source_script_id;
+    }
+    if (animationMetadataDto->source_script_turns) {
+        for (const auto &td : *animationMetadataDto->source_script_turns) {
+            if (!td)
+                continue;
+            DialogScriptTurn t;
+            if (td->creature_id)
+                t.creature_id = td->creature_id;
+            if (td->text)
+                t.text = td->text;
+            metadata.source_script_turns.push_back(std::move(t));
+        }
+    }
 
     return metadata;
 }
@@ -42,6 +57,19 @@ std::shared_ptr<AnimationMetadataDto> convertToDto(const AnimationMetadata &anim
     metadataDto->sound_file = animationMetadata.sound_file;
     metadataDto->number_of_frames = animationMetadata.number_of_frames;
     metadataDto->multitrack_audio = animationMetadata.multitrack_audio;
+    if (!animationMetadata.source_script_id.empty()) {
+        metadataDto->source_script_id = animationMetadata.source_script_id;
+    }
+    if (!animationMetadata.source_script_turns.empty()) {
+        auto turns = oatpp::List<oatpp::Object<DialogScriptTurnDto>>::createShared();
+        for (const auto &t : animationMetadata.source_script_turns) {
+            auto td = DialogScriptTurnDto::createShared();
+            td->creature_id = t.creature_id;
+            td->text = t.text;
+            turns->push_back(td);
+        }
+        metadataDto->source_script_turns = turns;
+    }
 
     return metadataDto.getPtr();
 }

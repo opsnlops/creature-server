@@ -53,6 +53,16 @@ nlohmann::json animationToJson(const Animation &animation) {
     metadata["sound_file"] = animation.metadata.sound_file;
     metadata["number_of_frames"] = animation.metadata.number_of_frames;
     metadata["multitrack_audio"] = animation.metadata.multitrack_audio;
+    if (!animation.metadata.source_script_id.empty()) {
+        metadata["source_script_id"] = animation.metadata.source_script_id;
+    }
+    if (!animation.metadata.source_script_turns.empty()) {
+        nlohmann::json turns = nlohmann::json::array();
+        for (const auto &t : animation.metadata.source_script_turns) {
+            turns.push_back({{"creature_id", t.creature_id}, {"text", t.text}});
+        }
+        metadata["source_script_turns"] = turns;
+    }
     j["metadata"] = metadata;
 
     nlohmann::json tracks = nlohmann::json::array();

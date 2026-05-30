@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
+#include "model/DialogScript.h"
 #include "server/database.h"
 
 #include "util/Result.h"
@@ -94,6 +95,81 @@ Result<creatures::AnimationMetadata> Database::animationMetadataFromJson(json an
 
         metadata.multitrack_audio = animationMetadataJson["multitrack_audio"];
         debug("multitrack_audio: {}", metadata.multitrack_audio);
+
+        // Optional dialog-script provenance. Both absent for non-dialog
+        // animations and for dialog animations rendered from inline turns.
+        //
+        // This parser is reached from both the trusted ingest path (JobWorker
+        // writing its own snapshot) and the user-facing `/api/v1/animation`
+        // upsert. We MUST validate strictly so a hostile client can't mint an
+        // Animation claiming descent from a fake script, or attach a 100 MB
+        // CoW blob — security review C1. Enforce the same bounds the
+        // DialogScript validator uses.
+        if (animationMetadataJson.contains("source_script_id") &&
+            !animationMetadataJson["source_script_id"].is_null()) {
+            if (!animationMetadataJson["source_script_id"].is_string()) {
+                std::string errorMessage = "AnimationMetadata 'source_script_id' must be a string";
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            const auto sid = animationMetadataJson["source_script_id"].get<std::string>();
+            // Empty is fine — round-trip from a DB doc that never had provenance set.
+            // Non-empty must be UUID-shaped to keep attacker strings out of logs/spans.
+            if (!sid.empty() && !isUuidShape(sid)) {
+                std::string errorMessage = "AnimationMetadata 'source_script_id' must be a UUID";
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            metadata.source_script_id = sid;
+        }
+        if (animationMetadataJson.contains("source_script_turns") &&
+            !animationMetadataJson["source_script_turns"].is_null()) {
+            if (!animationMetadataJson["source_script_turns"].is_array()) {
+                std::string errorMessage = "AnimationMetadata 'source_script_turns' must be an array";
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            const auto &turnsJson = animationMetadataJson["source_script_turns"];
+            if (turnsJson.size() > MAX_DIALOG_SCRIPT_TURNS) {
+                std::string errorMessage = fmt::format("AnimationMetadata 'source_script_turns' has {} entries; max {}",
+                                                       turnsJson.size(), MAX_DIALOG_SCRIPT_TURNS);
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            metadata.source_script_turns.reserve(turnsJson.size());
+            for (const auto &t : turnsJson) {
+                if (!t.is_object()) {
+                    std::string errorMessage = "AnimationMetadata 'source_script_turns' entries must be objects";
+                    warn(errorMessage);
+                    return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+                }
+                DialogScriptTurn turn;
+                if (!t.contains("creature_id") || !t["creature_id"].is_string()) {
+                    std::string errorMessage = "source_script_turns entry missing string 'creature_id'";
+                    warn(errorMessage);
+                    return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+                }
+                turn.creature_id = t["creature_id"].get<std::string>();
+                if (!turn.creature_id.empty() && !isUuidShape(turn.creature_id)) {
+                    std::string errorMessage = "source_script_turns entry 'creature_id' must be a UUID";
+                    warn(errorMessage);
+                    return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+                }
+                if (!t.contains("text") || !t["text"].is_string()) {
+                    std::string errorMessage = "source_script_turns entry missing string 'text'";
+                    warn(errorMessage);
+                    return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+                }
+                turn.text = t["text"].get<std::string>();
+                if (turn.text.size() > MAX_DIALOG_SCRIPT_TURN_TEXT) {
+                    std::string errorMessage = fmt::format("source_script_turns entry 'text' is {} chars; max {}",
+                                                           turn.text.size(), MAX_DIALOG_SCRIPT_TURN_TEXT);
+                    warn(errorMessage);
+                    return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+                }
+                metadata.source_script_turns.push_back(std::move(turn));
+            }
+        }
 
         // Now let's validate it
         if (metadata.animation_id.empty()) {
