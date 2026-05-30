@@ -576,6 +576,16 @@ add_executable(creature-server-test
         tests/server/ws/CreatureActivityMessage_test.cpp
         tests/server/ws/CreatureService_streaming_test.cpp
         tests/server/ws/CreatureService_validate_test.cpp
+        tests/server/voice/DialogClient_stripTags_test.cpp
+        tests/server/voice/DialogPipeline_chunkTurns_test.cpp
+        tests/server/voice/DialogPipeline_assembleChunk_test.cpp
+        tests/server/voice/DialogPipeline_concatChunks_test.cpp
+        tests/server/voice/DialogAnimation_buildNeutralFrame_test.cpp
+        tests/server/voice/DialogWav_test.cpp
+        src/server/voice/DialogAnimation.cpp
+        src/server/voice/DialogClient.cpp
+        src/server/voice/DialogPipeline.cpp
+        src/server/voice/DialogWav.cpp
         tests/server/TestGlobals.cpp
         tests/server/FakeIdleScheduling.cpp
         src/model/Animation.cpp
