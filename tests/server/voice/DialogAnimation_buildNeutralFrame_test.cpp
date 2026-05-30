@@ -79,12 +79,21 @@ TEST(BuildNeutralFrame, RejectsZeroFrameWidth) {
     EXPECT_EQ(result.getError().value().getCode(), creatures::ServerError::InvalidData);
 }
 
-TEST(BuildNeutralFrame, RejectsSlotPastFrameWidth) {
-    // chest's slot is 7 (uses byte 7), so a frameWidth of 7 means writing at
-    // slot 7 would go past the end — that's a misconfiguration.
-    auto result = buildNeutralFrame(beakyCreatureJson(), 7);
-    ASSERT_FALSE(result.isSuccess());
-    EXPECT_EQ(result.getError().value().getCode(), creatures::ServerError::InvalidData);
+TEST(BuildNeutralFrame, SkipsInputsPastFrameWidth) {
+    // Regression: live e2e (2026-05-30) caught Beaky's `chest` input at slot
+    // 7 against a base anim track only 6 bytes wide. The neutral builder
+    // must warn + skip rather than hard-fail — those bytes stay zero, the
+    // controller ignores them since the slot is outside its wire payload.
+    // Mirrors the mouth_slot bounds check at StreamingAdHocSession.cpp:344.
+    auto result = buildNeutralFrame(beakyCreatureJson(), 6);
+    ASSERT_TRUE(result.isSuccess());
+    const auto frame = result.getValue().value();
+    ASSERT_EQ(frame.size(), 6u);
+    // In-range inputs still get their neutral values.
+    EXPECT_EQ(frame[0], 128) << "neck_rotate still in-range";
+    EXPECT_EQ(frame[4], 0) << "beak still in-range";
+    EXPECT_EQ(frame[5], 255) << "body_lean still in-range (inverted min)";
+    // chest (slot 7) doesn't exist in this frame — silently skipped.
 }
 
 TEST(BuildNeutralFrame, InvertedMaxResolvesToZero) {
