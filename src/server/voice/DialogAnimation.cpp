@@ -94,10 +94,15 @@ Result<std::vector<uint8_t>> buildNeutralFrame(const nlohmann::json &creatureJso
             }
         }
         if (slot + width > frameWidth) {
-            return Result<std::vector<uint8_t>>{
-                ServerError(ServerError::InvalidData,
-                            fmt::format("buildNeutralFrame: input '{}' at slot {}+{} would write past frame width {}",
-                                        name, slot, width, frameWidth))};
+            // The base animation's frame buffer doesn't extend to this input.
+            // Happens when a creature config has been widened (more inputs)
+            // since the speech_loop animation was authored. Mirrors the ad-hoc
+            // path's mouth_slot bounds check at StreamingAdHocSession.cpp:344
+            // — warn (not fatal) and skip. The byte stays zero, which the
+            // controller ignores since the slot is outside the wire payload.
+            warn("buildNeutralFrame: input '{}' at slot {}+{} extends past frame width {} — leaving zero", name, slot,
+                 width, frameWidth);
+            continue;
         }
 
         uint8_t value = kDmxCenter;
