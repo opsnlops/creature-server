@@ -925,9 +925,11 @@ namespace {
 
 constexpr uint32_t kDialogSampleRate = 48000;
 
-/// Where the worker writes the assembled 17-channel WAV. metadata.sound_file
-/// on the persisted animation points here; playback reads it from there.
-std::filesystem::path getDialogTempRoot() { return std::filesystem::temp_directory_path() / "creature-dialog"; }
+/// Subdirectory under the server's sound file location where permanent dialog
+/// scenes live. metadata.sound_file stores the relative path under this dir;
+/// playback layers prepend `getSoundFileLocation()` for any non-absolute path
+/// (see LocalSdlAudioTransport.cpp).
+constexpr const char *kPermanentDialogSubdir = "dialog";
 
 /// Wrap raw mono S16LE PCM in a canonical 44-byte PCM WAV header. The dialog
 /// endpoint returns raw PCM (when output_format=pcm_48000); forced-alignment
@@ -1256,14 +1258,34 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     const auto assembled = concatResult.getValue().value();
     updateProgress(0.60f);
 
-    // ---- 17-channel WAV output.
+    // ---- 17-channel WAV output. Route by persistence:
+    //  * AdHoc → ad-hoc temp dir (same place every other ad-hoc audio lives).
+    //    Stored as an absolute path on metadata.sound_file.
+    //  * Permanent → under the server's sound file location, in a `dialog/`
+    //    subdir. Stored as a relative path on metadata.sound_file (playback
+    //    layers prepend getSoundFileLocation() for any non-absolute path).
     std::error_code ec;
-    const auto dialogRoot = getDialogTempRoot();
-    std::filesystem::create_directories(dialogRoot, ec);
-    if (ec) {
-        return failJob(fmt::format("create_directories({}) failed: {}", dialogRoot.string(), ec.message()));
+    std::filesystem::path wavPath;
+    std::string animationSoundFile; // what gets stored on the animation metadata
+    if (persistence == DialogPersistence::AdHoc) {
+        const auto adHocRoot = getAdHocTempRoot();
+        std::filesystem::create_directories(adHocRoot, ec);
+        if (ec) {
+            return failJob(fmt::format("create_directories({}) failed: {}", adHocRoot.string(), ec.message()));
+        }
+        wavPath = adHocRoot / fmt::format("dialog_{}.wav", jobState.jobId);
+        animationSoundFile = wavPath.string(); // absolute — playback uses as-is
+    } else {
+        const auto soundsRoot = std::filesystem::path(creatures::config->getSoundFileLocation());
+        const auto dialogDir = soundsRoot / kPermanentDialogSubdir;
+        std::filesystem::create_directories(dialogDir, ec);
+        if (ec) {
+            return failJob(fmt::format("create_directories({}) failed: {}", dialogDir.string(), ec.message()));
+        }
+        wavPath = dialogDir / fmt::format("{}.wav", jobState.jobId);
+        // Relative path under getSoundFileLocation() — playback resolves it.
+        animationSoundFile = fmt::format("{}/{}.wav", kPermanentDialogSubdir, jobState.jobId);
     }
-    const auto wavPath = dialogRoot / fmt::format("{}.wav", jobState.jobId);
 
     voice::VoiceChannelMap voiceToChannel;
     for (const auto &c : creaturesCache) {
@@ -1367,7 +1389,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
 
     // ---- Build the multi-track Animation.
     auto animResult =
-        voice::buildDialogAnimation(assembled, creatureInputs, *msPerFrame, wavPath.string(), title, jobState.span);
+        voice::buildDialogAnimation(assembled, creatureInputs, *msPerFrame, animationSoundFile, title, jobState.span);
     if (!animResult.isSuccess()) {
         return failJob(animResult.getError().value().getMessage());
     }
@@ -1413,7 +1435,6 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // the framework's string-shaped JobState::result field.
     auto resultDto = ws::DialogJobResultDto::createShared();
     resultDto->animation_id = animation.id.c_str();
-    resultDto->sound_file = wavPath.string().c_str();
     resultDto->number_of_frames = animation.metadata.number_of_frames;
     resultDto->milliseconds_per_frame = animation.metadata.milliseconds_per_frame;
     resultDto->duration_seconds = static_cast<double>(animation.metadata.number_of_frames) *

@@ -83,12 +83,6 @@ class DialogJobResultDto : public oatpp::DTO {
     }
     DTO_FIELD(String, animation_id);
 
-    DTO_FIELD_INFO(sound_file) {
-        info->description = "Path on the server's filesystem to the 48 kHz / S16 / 17-channel WAV that backs this "
-                            "animation. Already referenced in the animation's metadata.sound_file.";
-    }
-    DTO_FIELD(String, sound_file);
-
     DTO_FIELD_INFO(number_of_frames) { info->description = "Total frames in every track of the assembled animation."; }
     DTO_FIELD(UInt32, number_of_frames);
 
