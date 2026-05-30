@@ -79,6 +79,17 @@ class JobWorker : public creatures::StoppableThread {
      * Regenerate lip sync data for an existing animation.
      */
     void handleAnimationLipSyncJob(JobState &jobState);
+
+    /**
+     * Generate a multi-character dialog scene end-to-end:
+     * Text-to-Dialogue + forced-alignment + per-creature slice/timeline
+     * assembly + 17-channel WAV + per-creature Tracks (with neutral-stance
+     * silent turns) + Animation persistence + optional autoplay.
+     *
+     * Details JSON shape: { turns: [{creature_id, text}], persistence:
+     * "adhoc"|"permanent", autoplay: bool, title: string }.
+     */
+    void handleDialogJob(JobState &jobState);
 };
 
 } // namespace creatures::jobs

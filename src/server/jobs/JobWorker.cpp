@@ -23,17 +23,25 @@
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/voice/AudioConverter.h"
+#include "server/voice/DialogAnimation.h"
+#include "server/voice/DialogClient.h"
+#include "server/voice/DialogPipeline.h"
+#include "server/voice/DialogWav.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/RhubarbData.h"
 #include "server/voice/SoundDataProcessor.h"
 #include "server/voice/SpeechGenerationManager.h"
 #include "server/voice/StreamingSpeechGenerationManager.h"
+#include "server/voice/TextToViseme.h"
+#include "server/ws/dto/DialogDto.h"
+
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
 #include "util/helpers.h"
 #include "util/threadName.h"
 #include "util/uuidUtils.h"
 #include "util/websocketUtils.h"
+#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
 namespace creatures {
 extern std::shared_ptr<Configuration> config;
@@ -199,6 +207,10 @@ void JobWorker::processJob(const std::string &jobId) {
         case JobType::AnimationLipSync:
             info("Handling job {} as AnimationLipSync type", jobId);
             handleAnimationLipSyncJob(jobState);
+            break;
+        case JobType::Dialog:
+            info("Handling job {} as Dialog type", jobId);
+            handleDialogJob(jobState);
             break;
         default:
             error("Unknown job type for job {}: {}", jobId, toString(jobState.jobType));
@@ -903,6 +915,518 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
     } catch (const std::exception &e) {
         failJob(e.what());
     }
+}
+
+// ===========================================================================
+// Dialog job handler — runs the Phases 1–4 pipeline end-to-end.
+// ===========================================================================
+
+namespace {
+
+constexpr uint32_t kDialogSampleRate = 48000;
+
+/// Where the worker writes the assembled 17-channel WAV. metadata.sound_file
+/// on the persisted animation points here; playback reads it from there.
+std::filesystem::path getDialogTempRoot() { return std::filesystem::temp_directory_path() / "creature-dialog"; }
+
+/// Wrap raw mono S16LE PCM in a canonical 44-byte PCM WAV header. The dialog
+/// endpoint returns raw PCM (when output_format=pcm_48000); forced-alignment
+/// expects a WAV upload, so we wrap before sending.
+std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate) {
+    std::vector<uint8_t> out;
+    out.reserve(44 + pcm.size());
+    auto u16 = [&](uint16_t v) {
+        out.push_back(static_cast<uint8_t>(v & 0xFF));
+        out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    };
+    auto u32 = [&](uint32_t v) {
+        out.push_back(static_cast<uint8_t>(v & 0xFF));
+        out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        out.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        out.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+    };
+    auto str = [&](const char *s, std::size_t n) {
+        for (std::size_t i = 0; i < n; ++i) {
+            out.push_back(static_cast<uint8_t>(s[i]));
+        }
+    };
+    const uint32_t dataLen = static_cast<uint32_t>(pcm.size());
+    str("RIFF", 4);
+    u32(36 + dataLen);
+    str("WAVE", 4);
+    str("fmt ", 4);
+    u32(16);
+    u16(1); // PCM
+    u16(1); // mono
+    u32(sampleRate);
+    u32(sampleRate * 2); // byte rate (mono, 16-bit)
+    u16(2);              // block align
+    u16(16);             // bits per sample
+    str("data", 4);
+    u32(dataLen);
+    out.insert(out.end(), pcm.begin(), pcm.end());
+    return out;
+}
+
+/// Maximum unique voice IDs per ElevenLabs Text-to-Dialogue submission. The
+/// official cap applies per-call; we enforce per-scene because chunking can't
+/// rescue an over-budget scene without throwing away cross-speaker reactivity.
+constexpr std::size_t kMaxUniqueVoicesPerScene = 10;
+
+/// Internal enum for which animations table the assembled scene gets
+/// persisted into. The details JSON sends a string; we parse to this.
+enum class DialogPersistence {
+    AdHoc,     // TTL collection (insertAdHocAnimation)
+    Permanent, // normal animations collection (upsertAnimation)
+};
+
+/// Resolved per-creature info, cached for the lifetime of one dialog job.
+struct DialogJobCreature {
+    std::string creatureId;
+    nlohmann::json creatureJson; // full stored doc
+    std::string voiceId;
+    uint16_t audioChannel; // 1-based
+    uint8_t mouthSlot;
+    universe_t universe; // looked up from creatureUniverseMap; only used on autoplay
+};
+
+/// Lazy-loaded shared TextToViseme. The CMU dict is multi-MB; one load per
+/// process is enough — every dialog job reuses it. Guarded by the local mutex
+/// so the first concurrent jobs don't both pay the load cost.
+std::shared_ptr<voice::TextToViseme> getDialogTextToViseme() {
+    static std::mutex mu;
+    static std::shared_ptr<voice::TextToViseme> instance;
+    std::lock_guard<std::mutex> lock(mu);
+    if (instance && instance->isLoaded()) {
+        return instance;
+    }
+    auto v = std::make_shared<voice::TextToViseme>();
+    const auto path = creatures::config->getCmuDictPath();
+    if (path.empty() || !v->loadCmuDict(path)) {
+        warn("Dialog job: CMU dict not loaded (path='{}'); viseme cues will fall back to whatever TextToViseme "
+             "produces with an empty dict",
+             path);
+    }
+    instance = v;
+    return instance;
+}
+
+} // namespace
+
+void JobWorker::handleDialogJob(JobState &jobState) {
+    auto broadcastProgress = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobProgressToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast dialog job progress: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto broadcastCompletion = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobCompleteToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast dialog job completion: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto updateProgress = [&](float v) {
+        jobManager_->updateJobProgress(jobState.jobId, v);
+        broadcastProgress(jobState.jobId);
+    };
+    auto failJob = [&](const std::string &msg) {
+        error("Dialog job {} failed: {}", jobState.jobId, msg);
+        if (jobState.span) {
+            jobState.span->setError(msg);
+        }
+        jobManager_->failJob(jobState.jobId, msg);
+        broadcastCompletion(jobState.jobId);
+    };
+
+    // ---- Parse the job details — which is the controller's serialized
+    // DialogRequestDto. Round-trip through oatpp's ObjectMapper so the schema
+    // is enforced on both ends rather than picked apart by hand.
+    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+    oatpp::Object<ws::DialogRequestDto> reqDto;
+    try {
+        reqDto = jsonMapper->readFromString<oatpp::Object<ws::DialogRequestDto>>(jobState.details.c_str());
+    } catch (const std::exception &e) {
+        return failJob(fmt::format("invalid dialog job details: {}", e.what()));
+    }
+    if (!reqDto) {
+        return failJob("dialog job details deserialized to null");
+    }
+    if (!reqDto->turns || reqDto->turns->empty()) {
+        return failJob("dialog job requires a non-empty turns[] array");
+    }
+    if (!reqDto->persistence) {
+        return failJob("dialog job requires persistence ('adhoc' or 'permanent')");
+    }
+
+    std::vector<std::pair<std::string, std::string>> rawTurns;
+    rawTurns.reserve(reqDto->turns->size());
+    for (const auto &t : *reqDto->turns) {
+        if (!t || !t->creature_id || !t->text) {
+            return failJob("each turn must have a non-null creature_id and text");
+        }
+        rawTurns.emplace_back(*t->creature_id, *t->text);
+    }
+
+    DialogPersistence persistence = DialogPersistence::AdHoc;
+    {
+        const std::string pstr = *reqDto->persistence;
+        if (pstr == "adhoc") {
+            persistence = DialogPersistence::AdHoc;
+        } else if (pstr == "permanent") {
+            persistence = DialogPersistence::Permanent;
+        } else {
+            return failJob(fmt::format("unknown persistence '{}' (expected 'adhoc' or 'permanent')", pstr));
+        }
+    }
+    const bool autoplay = reqDto->autoplay ? *reqDto->autoplay : false;
+    std::string title = reqDto->title ? std::string(*reqDto->title) : std::string{};
+    if (title.empty()) {
+        title = fmt::format("Dialog {}", jobState.jobId);
+    }
+
+    if (jobState.span) {
+        jobState.span->setAttribute("dialog.turns", static_cast<int64_t>(rawTurns.size()));
+        jobState.span->setAttribute("dialog.persistence",
+                                    persistence == DialogPersistence::AdHoc ? "adhoc" : "permanent");
+        jobState.span->setAttribute("dialog.autoplay", autoplay);
+    }
+
+    // ---- Resolve every UNIQUE creature in turns. Domain validation runs here
+    // (the controller only checks well-formedness of the DTO).
+    std::vector<DialogJobCreature> creaturesCache;
+    std::unordered_map<std::string, std::size_t> byCreatureId;
+    for (const auto &[cid, _text] : rawTurns) {
+        if (cid.empty()) {
+            return failJob("a turn has empty creature_id");
+        }
+        if (byCreatureId.count(cid)) {
+            continue;
+        }
+        auto jr = creatures::db->getCreatureJson(cid, jobState.span);
+        if (!jr.isSuccess()) {
+            return failJob(fmt::format("creature '{}' lookup failed: {}", cid, jr.getError().value().getMessage()));
+        }
+        const auto cj = jr.getValue().value();
+        if (!cj.contains("voice") || !cj["voice"].is_object() || !cj["voice"].contains("voice_id") ||
+            !cj["voice"]["voice_id"].is_string()) {
+            return failJob(fmt::format("creature '{}' has no voice.voice_id", cid));
+        }
+        if (!cj.contains("audio_channel") || !cj["audio_channel"].is_number()) {
+            return failJob(fmt::format("creature '{}' has no audio_channel", cid));
+        }
+        if (!cj.contains("mouth_slot") || !cj["mouth_slot"].is_number()) {
+            return failJob(fmt::format("creature '{}' has no mouth_slot", cid));
+        }
+        DialogJobCreature c;
+        c.creatureId = cid;
+        c.creatureJson = cj;
+        c.voiceId = cj["voice"]["voice_id"].get<std::string>();
+        c.audioChannel = cj["audio_channel"].get<uint16_t>();
+        c.mouthSlot = cj["mouth_slot"].get<uint8_t>();
+        c.universe = 0;
+        try {
+            auto u = creatures::creatureUniverseMap->get(cid);
+            if (u) {
+                c.universe = *u;
+            }
+        } catch (...) {
+            // Not registered — fine unless autoplay is set; checked below.
+        }
+        byCreatureId.emplace(cid, creaturesCache.size());
+        creaturesCache.push_back(std::move(c));
+    }
+
+    // Cross-creature checks.
+    std::unordered_set<uint16_t> seenChannels;
+    std::unordered_set<uint8_t> seenSlots;
+    std::unordered_set<std::string> uniqueVoices;
+    for (const auto &c : creaturesCache) {
+        if (!seenChannels.insert(c.audioChannel).second) {
+            return failJob(
+                fmt::format("audio_channel {} is assigned to more than one creature in this scene", c.audioChannel));
+        }
+        if (!seenSlots.insert(c.mouthSlot).second) {
+            return failJob(
+                fmt::format("mouth_slot {} is assigned to more than one creature in this scene", c.mouthSlot));
+        }
+        uniqueVoices.insert(c.voiceId);
+    }
+    if (uniqueVoices.size() > kMaxUniqueVoicesPerScene) {
+        return failJob(
+            fmt::format("{} unique voices exceeds per-scene cap of {}", uniqueVoices.size(), kMaxUniqueVoicesPerScene));
+    }
+    if (autoplay) {
+        std::optional<universe_t> common;
+        for (const auto &c : creaturesCache) {
+            auto u = creatures::creatureUniverseMap->get(c.creatureId);
+            if (!u) {
+                return failJob(fmt::format("autoplay requested but creature '{}' is not registered with a universe",
+                                           c.creatureId));
+            }
+            if (!common) {
+                common = *u;
+            } else if (*common != *u) {
+                return failJob(fmt::format("autoplay requires all creatures on one universe ({} != {})",
+                                           static_cast<long long>(*common), static_cast<long long>(*u)));
+            }
+        }
+    }
+    if (jobState.span) {
+        jobState.span->setAttribute("dialog.unique_creatures", static_cast<int64_t>(creaturesCache.size()));
+        jobState.span->setAttribute("dialog.unique_voices", static_cast<int64_t>(uniqueVoices.size()));
+    }
+    updateProgress(0.05f);
+
+    // ---- Build DialogInput list (one per turn, looking up voice_id per
+    // creature) and chunk.
+    std::vector<voice::DialogInput> inputs;
+    inputs.reserve(rawTurns.size());
+    for (const auto &[cid, text] : rawTurns) {
+        const auto &c = creaturesCache[byCreatureId.at(cid)];
+        inputs.push_back({c.voiceId, text});
+    }
+    auto chunksResult = voice::chunkTurns(inputs);
+    if (!chunksResult.isSuccess()) {
+        return failJob(chunksResult.getError().value().getMessage());
+    }
+    const auto chunks = chunksResult.getValue().value();
+    if (jobState.span) {
+        jobState.span->setAttribute("dialog.chunks", static_cast<int64_t>(chunks.size()));
+    }
+
+    // ---- Per-chunk: text-to-dialogue + forced-alignment + assemble.
+    //
+    // Progress: we reserve 0.10..0.55 for these (each chunk gets an equal
+    // slice). On a single-chunk scene (the common case) the bar moves smoothly.
+    voice::DialogClient client;
+    const std::string apiKey = creatures::config->getVoiceApiKey();
+
+    std::vector<voice::DialogAssembled> assembledChunks;
+    assembledChunks.reserve(chunks.size());
+    for (std::size_t ci = 0; ci < chunks.size(); ++ci) {
+        const auto &chunk = chunks[ci];
+        auto chunkSpan =
+            creatures::observability->createChildOperationSpan(fmt::format("DialogJob.chunk.{}", ci), jobState.span);
+
+        auto dialogResult = client.generateDialog(apiKey, chunk, "pcm_48000", chunkSpan);
+        if (!dialogResult.isSuccess()) {
+            return failJob(
+                fmt::format("chunk {} generateDialog: {}", ci, dialogResult.getError().value().getMessage()));
+        }
+        const auto dialog = dialogResult.getValue().value();
+
+        std::string transcript;
+        for (std::size_t t = 0; t < chunk.size(); ++t) {
+            if (t > 0) {
+                transcript.push_back(' ');
+            }
+            transcript += voice::DialogClient::stripTags(chunk[t].text);
+        }
+        const auto wavBytes = wrapMonoPcmAsWav(dialog.audioData, kDialogSampleRate);
+        auto alignResult = client.forcedAlignment(apiKey, wavBytes, "audio/wav", transcript, chunkSpan);
+        if (!alignResult.isSuccess()) {
+            return failJob(
+                fmt::format("chunk {} forcedAlignment: {}", ci, alignResult.getError().value().getMessage()));
+        }
+        const auto alignment = alignResult.getValue().value();
+
+        auto assembleResult = voice::assembleChunk(chunk, dialog, alignment, kDialogSampleRate);
+        if (!assembleResult.isSuccess()) {
+            return failJob(
+                fmt::format("chunk {} assembleChunk: {}", ci, assembleResult.getError().value().getMessage()));
+        }
+        assembledChunks.push_back(assembleResult.getValue().value());
+
+        // Linear progress across chunks within 0.10..0.55.
+        const float frac = static_cast<float>(ci + 1) / static_cast<float>(chunks.size());
+        updateProgress(0.10f + 0.45f * frac);
+    }
+
+    auto concatResult = voice::concatChunks(assembledChunks);
+    if (!concatResult.isSuccess()) {
+        return failJob(concatResult.getError().value().getMessage());
+    }
+    const auto assembled = concatResult.getValue().value();
+    updateProgress(0.60f);
+
+    // ---- 17-channel WAV output.
+    std::error_code ec;
+    const auto dialogRoot = getDialogTempRoot();
+    std::filesystem::create_directories(dialogRoot, ec);
+    if (ec) {
+        return failJob(fmt::format("create_directories({}) failed: {}", dialogRoot.string(), ec.message()));
+    }
+    const auto wavPath = dialogRoot / fmt::format("{}.wav", jobState.jobId);
+
+    voice::VoiceChannelMap voiceToChannel;
+    for (const auto &c : creaturesCache) {
+        voiceToChannel.emplace(c.voiceId, c.audioChannel);
+    }
+    auto wavWriteResult = voice::writeDialogWav(assembled, voiceToChannel, wavPath, jobState.span);
+    if (!wavWriteResult.isSuccess()) {
+        return failJob(wavWriteResult.getError().value().getMessage());
+    }
+    updateProgress(0.70f);
+
+    // ---- Per-creature base body motion + mouth bytes.
+    auto viseme = getDialogTextToViseme();
+    SoundDataProcessor soundProc;
+
+    std::optional<uint32_t> msPerFrame;
+    std::size_t totalFrames = 0;
+
+    std::vector<voice::CreatureTrackInput> creatureInputs;
+    creatureInputs.reserve(assembled.perCreature.size());
+
+    std::mt19937 rng(static_cast<uint32_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
+
+    for (const auto &pc : assembled.perCreature) {
+        const DialogJobCreature *cinfo = nullptr;
+        for (const auto &c : creaturesCache) {
+            if (c.voiceId == pc.voiceId) {
+                cinfo = &c;
+                break;
+            }
+        }
+        if (!cinfo) {
+            return failJob(fmt::format("post-assembly: voice '{}' missing from creature cache", pc.voiceId));
+        }
+
+        if (!cinfo->creatureJson.contains("speech_loop_animation_ids") ||
+            !cinfo->creatureJson["speech_loop_animation_ids"].is_array() ||
+            cinfo->creatureJson["speech_loop_animation_ids"].empty()) {
+            return failJob(fmt::format("creature '{}' has no speech_loop_animation_ids", cinfo->creatureId));
+        }
+        const auto loopIds = cinfo->creatureJson["speech_loop_animation_ids"].get<std::vector<std::string>>();
+        std::uniform_int_distribution<std::size_t> dist(0, loopIds.size() - 1);
+        const auto chosenId = loopIds[dist(rng)];
+
+        auto baseAnimResult = creatures::db->getAnimation(chosenId, jobState.span);
+        if (!baseAnimResult.isSuccess()) {
+            return failJob(fmt::format("creature '{}': load base anim {}: {}", cinfo->creatureId, chosenId,
+                                       baseAnimResult.getError().value().getMessage()));
+        }
+        const auto baseAnim = baseAnimResult.getValue().value();
+
+        if (!msPerFrame) {
+            msPerFrame = baseAnim.metadata.milliseconds_per_frame;
+            if (*msPerFrame == 0) {
+                *msPerFrame = 1; // mirror ad-hoc fallback; avoid divide-by-zero
+            }
+            const double totalMs =
+                static_cast<double>(assembled.totalSamples) * 1000.0 / static_cast<double>(assembled.sampleRate);
+            totalFrames = static_cast<std::size_t>(std::ceil(totalMs / static_cast<double>(*msPerFrame)));
+        } else if (baseAnim.metadata.milliseconds_per_frame != *msPerFrame) {
+            return failJob(fmt::format(
+                "creature '{}': base anim ms/frame {} differs from scene's {}; multi-rate dialog not supported",
+                cinfo->creatureId, baseAnim.metadata.milliseconds_per_frame, *msPerFrame));
+        }
+
+        auto trackIt = std::find_if(baseAnim.tracks.begin(), baseAnim.tracks.end(),
+                                    [&](const Track &t) { return t.creature_id == cinfo->creatureId; });
+        if (trackIt == baseAnim.tracks.end()) {
+            return failJob(
+                fmt::format("creature '{}': base anim {} has no track for this creature", cinfo->creatureId, chosenId));
+        }
+
+        std::vector<std::vector<uint8_t>> baseFrames;
+        baseFrames.reserve(trackIt->frames.size());
+        for (const auto &f : trackIt->frames) {
+            baseFrames.push_back(decodeBase64(f));
+        }
+        if (baseFrames.empty()) {
+            return failJob(
+                fmt::format("creature '{}': base anim {} track has zero frames", cinfo->creatureId, chosenId));
+        }
+
+        RhubarbSoundData snd;
+        snd.metadata.duration = static_cast<double>(assembled.totalSamples) / static_cast<double>(assembled.sampleRate);
+        snd.metadata.soundFile = wavPath.filename().string();
+        snd.mouthCues = viseme->charTimingsToMouthCues(pc.mouth);
+        auto mouthBytes = soundProc.processSoundData(snd, *msPerFrame, totalFrames);
+
+        voice::CreatureTrackInput cti;
+        cti.voiceId = pc.voiceId;
+        cti.creatureId = cinfo->creatureId;
+        cti.creatureJson = cinfo->creatureJson;
+        cti.baseFrames = std::move(baseFrames);
+        cti.mouthBytes = std::move(mouthBytes);
+        creatureInputs.push_back(std::move(cti));
+    }
+    if (!msPerFrame) {
+        return failJob("post-assembly: msPerFrame not set (no creatures had usable base animations)");
+    }
+    updateProgress(0.85f);
+
+    // ---- Build the multi-track Animation.
+    auto animResult =
+        voice::buildDialogAnimation(assembled, creatureInputs, *msPerFrame, wavPath.string(), title, jobState.span);
+    if (!animResult.isSuccess()) {
+        return failJob(animResult.getError().value().getMessage());
+    }
+    const auto animation = animResult.getValue().value();
+
+    // ---- Persist.
+    if (persistence == DialogPersistence::AdHoc) {
+        auto insertResult =
+            creatures::db->insertAdHocAnimation(animation, std::chrono::system_clock::now(), jobState.span);
+        if (!insertResult.isSuccess()) {
+            return failJob(fmt::format("insertAdHocAnimation: {}", insertResult.getError().value().getMessage()));
+        }
+    } else {
+        const auto j = animationToJson(animation);
+        auto upsertResult = creatures::db->upsertAnimation(j.dump(), jobState.span);
+        if (!upsertResult.isSuccess()) {
+            return failJob(fmt::format("upsertAnimation: {}", upsertResult.getError().value().getMessage()));
+        }
+    }
+    updateProgress(0.95f);
+
+    // ---- Optional autoplay. Universe was validated above to be common across
+    // all creatures, so pull it from the first.
+    bool autoplayed = false;
+    if (autoplay && !creaturesCache.empty()) {
+        const auto universe = creaturesCache.front().universe;
+        // interrupt() wants a RequestSpan parent; the worker only has a job
+        // OperationSpan, so pass nullptr (ad-hoc path does the same).
+        auto interruptResult = creatures::sessionManager->interrupt(universe, animation, false, nullptr);
+        if (!interruptResult.isSuccess()) {
+            warn("Dialog job {}: persisted as {} but autoplay interrupt() failed: {}", jobState.jobId, animation.id,
+                 interruptResult.getError().value().getMessage());
+            // Don't fail the job — the animation is safely stored. `autoplayed`
+            // stays false so the client can tell why playback didn't fire.
+        } else {
+            info("Dialog job {}: autoplay interrupted universe {} with animation {}", jobState.jobId, universe,
+                 animation.id);
+            autoplayed = true;
+        }
+    }
+
+    // ---- Success. Build the typed result DTO and let oatpp serialize it for
+    // the framework's string-shaped JobState::result field.
+    auto resultDto = ws::DialogJobResultDto::createShared();
+    resultDto->animation_id = animation.id.c_str();
+    resultDto->sound_file = wavPath.string().c_str();
+    resultDto->number_of_frames = animation.metadata.number_of_frames;
+    resultDto->milliseconds_per_frame = animation.metadata.milliseconds_per_frame;
+    resultDto->duration_seconds = static_cast<double>(animation.metadata.number_of_frames) *
+                                  static_cast<double>(animation.metadata.milliseconds_per_frame) / 1000.0;
+    resultDto->persistence = (persistence == DialogPersistence::AdHoc) ? "adhoc" : "permanent";
+    resultDto->autoplayed = autoplayed;
+    jobManager_->completeJob(jobState.jobId, jsonMapper->writeToString(resultDto)->c_str());
+    if (jobState.span) {
+        jobState.span->setAttribute("dialog.animation_id", animation.id);
+        jobState.span->setSuccess();
+    }
+    info("Dialog job {} succeeded: animation_id={}", jobState.jobId, animation.id);
+    broadcastCompletion(jobState.jobId);
 }
 
 } // namespace creatures::jobs
