@@ -645,7 +645,6 @@ add_executable(creature-server-test
         tests/server/voice/DialogPipeline_chunkTurns_test.cpp
         tests/server/voice/DialogPipeline_assembleChunk_test.cpp
         tests/server/voice/DialogPipeline_concatChunks_test.cpp
-        tests/server/voice/DialogAnimation_buildNeutralFrame_test.cpp
         tests/server/voice/DialogWav_test.cpp
         tests/server/voice/DialogCache_test.cpp
         src/server/voice/DialogAnimation.cpp

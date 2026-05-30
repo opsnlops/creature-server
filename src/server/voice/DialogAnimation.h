@@ -52,28 +52,6 @@ struct CreatureTrackInput {
     std::vector<uint8_t> mouthBytes;
 };
 
-/// Compute a creature's neutral pose frame: one DMX byte per slot in the
-/// frame, with each input set to its motor's resting position.
-///
-/// Resolution rule (matches the controller's input → pulse conversion):
-/// - For each input in `creatureJson["inputs"]`: look up the matching motor
-///   by `motor.id == input.name`.
-/// - default_position → DMX value: "center" → 128, "min" → 0, "max" → 255.
-/// - motor.inverted flips min ↔ max (DMX 255 → physical min for inverted
-///   motors), so for an inverted motor with default "min", the neutral byte
-///   is 255; for an inverted motor with default "max", it's 0. "center" is
-///   always 128 regardless.
-/// - Inputs without a matching motor (parts of the rig the controller knows
-///   about but the server doesn't motor-model) default to 128.
-/// - Slots not covered by any input stay 0 (frame is zero-initialized).
-///
-/// `frameWidth` is the size of the per-frame byte buffer — pass the width
-/// of the base animation's frames so the neutral frame matches.
-///
-/// Returns InvalidData if creatureJson is missing inputs[], or if any input's
-/// slot + width would write past frameWidth.
-Result<std::vector<uint8_t>> buildNeutralFrame(const nlohmann::json &creatureJson, std::size_t frameWidth);
-
 /// Build the multi-creature Animation for a finished dialog scene.
 ///
 /// Output: one Animation with N Tracks (one per creature), each Track holding

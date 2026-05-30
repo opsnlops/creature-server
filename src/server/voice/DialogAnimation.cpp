@@ -22,110 +22,10 @@ namespace creatures::voice {
 
 namespace {
 
-constexpr uint8_t kDmxMin = 0;
-constexpr uint8_t kDmxMax = 255;
-constexpr uint8_t kDmxCenter = 128;
-
 /// How many extra frames the body keeps moving after a creature stops voicing,
-/// before snapping to neutral. Keeps the body from looking jerky at end-of-turn.
-/// At a typical 20ms/frame this is ~100ms of release tail.
+/// before snapping back to the idle pose. Keeps the body from looking jerky at
+/// end-of-turn. At a typical 20ms/frame this is ~100ms of release tail.
 constexpr std::size_t kBodyTailFrames = 5;
-
-/// Resolve "min" / "max" / "center" + an inverted flag to a DMX byte. Matches
-/// the controller's input → pulse rule (inverted motors map DMX 255 to their
-/// physical min). Unknown strings return std::nullopt so the caller can decide
-/// whether to fail or default.
-std::optional<uint8_t> resolveDefaultDmx(const std::string &def, bool inverted) {
-    if (def == "center") {
-        return kDmxCenter;
-    }
-    if (def == "min") {
-        return inverted ? kDmxMax : kDmxMin;
-    }
-    if (def == "max") {
-        return inverted ? kDmxMin : kDmxMax;
-    }
-    return std::nullopt;
-}
-
-} // namespace
-
-Result<std::vector<uint8_t>> buildNeutralFrame(const nlohmann::json &creatureJson, std::size_t frameWidth) {
-    if (!creatureJson.contains("inputs") || !creatureJson["inputs"].is_array()) {
-        return Result<std::vector<uint8_t>>{
-            ServerError(ServerError::InvalidData, "buildNeutralFrame: creature JSON missing inputs[] array")};
-    }
-    if (frameWidth == 0) {
-        return Result<std::vector<uint8_t>>{
-            ServerError(ServerError::InvalidData, "buildNeutralFrame: frameWidth must be > 0")};
-    }
-
-    // Index motors by id so input lookup is O(1) per input. Motors[] may be
-    // absent for some creature types (e.g. fixtures) — that just means every
-    // input falls through to the 128/center default, which is a fine policy
-    // for a config that doesn't model rest positions.
-    std::unordered_map<std::string, const nlohmann::json *> motorById;
-    if (creatureJson.contains("motors") && creatureJson["motors"].is_array()) {
-        for (const auto &m : creatureJson["motors"]) {
-            if (!m.is_object() || !m.contains("id") || !m["id"].is_string()) {
-                continue;
-            }
-            motorById.emplace(m["id"].get<std::string>(), &m);
-        }
-    }
-
-    std::vector<uint8_t> frame(frameWidth, 0);
-    for (const auto &in : creatureJson["inputs"]) {
-        if (!in.is_object() || !in.contains("name") || !in.contains("slot")) {
-            continue;
-        }
-        const std::string name = in["name"].get<std::string>();
-        const auto slotJson = in["slot"];
-        if (!slotJson.is_number_integer() && !slotJson.is_number_unsigned()) {
-            continue;
-        }
-        const auto slot = slotJson.get<std::size_t>();
-        // width defaults to 1 if the field is missing or zero.
-        std::size_t width = 1;
-        if (in.contains("width") && in["width"].is_number()) {
-            const auto w = in["width"].get<int64_t>();
-            if (w > 0) {
-                width = static_cast<std::size_t>(w);
-            }
-        }
-        if (slot + width > frameWidth) {
-            // The base animation's frame buffer doesn't extend to this input.
-            // Happens when a creature config has been widened (more inputs)
-            // since the speech_loop animation was authored. Mirrors the ad-hoc
-            // path's mouth_slot bounds check at StreamingAdHocSession.cpp:344
-            // — warn (not fatal) and skip. The byte stays zero, which the
-            // controller ignores since the slot is outside the wire payload.
-            warn("buildNeutralFrame: input '{}' at slot {}+{} extends past frame width {} — leaving zero", name, slot,
-                 width, frameWidth);
-            continue;
-        }
-
-        uint8_t value = kDmxCenter;
-        if (auto it = motorById.find(name); it != motorById.end()) {
-            const auto &m = *it->second;
-            const bool inverted = m.value("inverted", false);
-            const std::string def = m.value("default_position", std::string{"center"});
-            if (auto resolved = resolveDefaultDmx(def, inverted)) {
-                value = *resolved;
-            } else {
-                warn("buildNeutralFrame: unknown default_position '{}' for motor '{}' — using center", def, name);
-            }
-        }
-        // Width-N inputs (e.g. multi-byte channels) all get the same neutral
-        // byte — fine for the common width=1 case and a safe default elsewhere.
-        for (std::size_t i = 0; i < width; ++i) {
-            frame[slot + i] = value;
-        }
-    }
-    return frame;
-}
-
-namespace {
 
 /// Match `assembled.perCreature` (indexed by voiceId) to `creatureInputs`
 /// (also indexed by voiceId). Returns the parallel index from creatureInputs
@@ -286,18 +186,16 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
                  input.creatureId, mouthSlot, frameWidth);
         }
 
-        // Neutral pose — used for every frame this creature isn't speaking.
-        auto neutralResult = buildNeutralFrame(input.creatureJson, frameWidth);
-        if (!neutralResult.isSuccess()) {
-            auto err = neutralResult.getError().value();
-            std::string msg =
-                fmt::format("buildDialogAnimation: creature '{}': {}", input.creatureId, err.getMessage());
-            error(msg);
-            if (span)
-                span->setError(msg);
-            return Result<Animation>{err};
-        }
-        const auto neutralFrame = neutralResult.getValue().value();
+        // Idle pose for this creature when she's NOT speaking — use the first
+        // frame of her own speech_loop animation. Earlier we tried to compute
+        // a neutral frame from the creature's motor config (default_position +
+        // inverted), but that re-derived "what is idle?" from a config the
+        // author already encoded into the speech_loop itself, and got the
+        // inverted-motor convention subtly wrong (3.15.3 fix: Beaky's
+        // body_lean stuck high = leaning forward, when the speech_loop's idle
+        // pose has it low = upright). The speech_loop's frame 0 is the
+        // authoritative idle pose by construction.
+        const auto &idleFrame = input.baseFrames.front();
 
         // Derive speakingAt[] from mouthBytes: any non-zero byte = a viseme
         // shape (A/B/C/D/E/F = 5..255), zero = rest (X). Then extend each
@@ -320,7 +218,9 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
         // Build the Track. Speaking frames use the base body motion advanced
         // by a per-creature counter so motion stays continuous across the
         // creature's own turns (body picks up where it left off, not where
-        // the global frame index points). Silent frames are the neutral pose.
+        // the global frame index points). Silent frames freeze on the
+        // speech_loop's first frame (idleFrame) so the listening creature
+        // holds her correct idle pose without inventing one from motor config.
         Track track;
         track.id = util::generateUUID();
         track.creature_id = input.creatureId;
@@ -339,7 +239,7 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
                 ++speakingCounter;
                 ++speakingFrameCount;
             } else {
-                frame = neutralFrame;
+                frame = idleFrame;
             }
             std::string raw(reinterpret_cast<const char *>(frame.data()), frame.size());
             track.frames.push_back(base64::to_base64(raw));
