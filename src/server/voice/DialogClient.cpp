@@ -83,9 +83,33 @@ Result<DialogResult> DialogClient::generateDialog(const std::string &apiKey, con
 
     if (inputs.empty()) {
         std::string msg = "generateDialog requires at least one input turn";
+        error(msg);
         if (span)
             span->setError(msg);
         return Result<DialogResult>{ServerError(ServerError::InvalidData, msg)};
+    }
+    if (inputs.size() > dialog_limits::kMaxDialogInputs) {
+        std::string msg =
+            fmt::format("generateDialog: {} turns exceeds cap of {}", inputs.size(), dialog_limits::kMaxDialogInputs);
+        error(msg);
+        if (span)
+            span->setError(msg);
+        return Result<DialogResult>{ServerError(ServerError::InvalidData, msg)};
+    }
+    {
+        std::size_t totalChars = 0;
+        for (const auto &in : inputs) {
+            totalChars += in.text.size();
+        }
+        if (totalChars > dialog_limits::kMaxDialogTotalChars) {
+            std::string msg =
+                fmt::format("generateDialog: total text {} chars exceeds per-call cap of {} (chunkTurns first?)",
+                            totalChars, dialog_limits::kMaxDialogTotalChars);
+            error(msg);
+            if (span)
+                span->setError(msg);
+            return Result<DialogResult>{ServerError(ServerError::InvalidData, msg)};
+        }
     }
 
     // Build the request body. Text-to-dialogue is eleven_v3-only (other models
@@ -138,8 +162,11 @@ Result<DialogResult> DialogClient::generateDialog(const std::string &apiKey, con
     nlohmann::json json;
     try {
         json = nlohmann::json::parse(respBuf);
-    } catch (const nlohmann::json::exception &e) {
-        std::string msg = fmt::format("ElevenLabs dialog: response was not valid JSON: {}", e.what());
+    } catch (const std::exception &e) {
+        // Widened to std::exception so std::bad_alloc (from a pathological /
+        // huge JSON, even one within the kMaxResponseBytes cap) doesn't
+        // escape this function and crash the worker thread.
+        std::string msg = fmt::format("ElevenLabs dialog: response parse failed: {}", e.what());
         error(msg);
         if (span)
             span->setError(msg);
@@ -255,12 +282,30 @@ Result<ForcedAlignmentResult> DialogClient::forcedAlignment(const std::string &a
 
     if (audio.empty()) {
         std::string msg = "forcedAlignment requires non-empty audio";
+        error(msg);
+        if (span)
+            span->setError(msg);
+        return Result<ForcedAlignmentResult>{ServerError(ServerError::InvalidData, msg)};
+    }
+    if (audio.size() > dialog_limits::kMaxForcedAlignmentAudioBytes) {
+        std::string msg = fmt::format("forcedAlignment: audio {} bytes exceeds cap of {}", audio.size(),
+                                      dialog_limits::kMaxForcedAlignmentAudioBytes);
+        error(msg);
         if (span)
             span->setError(msg);
         return Result<ForcedAlignmentResult>{ServerError(ServerError::InvalidData, msg)};
     }
     if (transcript.empty()) {
         std::string msg = "forcedAlignment requires non-empty transcript";
+        error(msg);
+        if (span)
+            span->setError(msg);
+        return Result<ForcedAlignmentResult>{ServerError(ServerError::InvalidData, msg)};
+    }
+    if (transcript.size() > dialog_limits::kMaxForcedAlignmentTranscriptBytes) {
+        std::string msg = fmt::format("forcedAlignment: transcript {} bytes exceeds cap of {}", transcript.size(),
+                                      dialog_limits::kMaxForcedAlignmentTranscriptBytes);
+        error(msg);
         if (span)
             span->setError(msg);
         return Result<ForcedAlignmentResult>{ServerError(ServerError::InvalidData, msg)};
@@ -303,8 +348,10 @@ Result<ForcedAlignmentResult> DialogClient::forcedAlignment(const std::string &a
     nlohmann::json json;
     try {
         json = nlohmann::json::parse(respBuf);
-    } catch (const nlohmann::json::exception &e) {
-        std::string msg = fmt::format("ElevenLabs forced-alignment: response was not valid JSON: {}", e.what());
+    } catch (const std::exception &e) {
+        // Widened to std::exception so std::bad_alloc doesn't escape. See
+        // generateDialog for the same rationale.
+        std::string msg = fmt::format("ElevenLabs forced-alignment: response parse failed: {}", e.what());
         error(msg);
         if (span)
             span->setError(msg);
@@ -357,12 +404,16 @@ Result<ForcedAlignmentResult> DialogClient::forcedAlignment(const std::string &a
         return Result<ForcedAlignmentResult>{ServerError(ServerError::InternalError, msg)};
     }
 
-    info("Forced alignment complete: {} words, {} chars, loss={:.3f}", fa.words.size(), fa.characters.size(), fa.loss);
+    info("Forced alignment complete: {} words, {} chars, loss={:.3f}, request_id={}", fa.words.size(),
+         fa.characters.size(), fa.loss, call.requestId());
 
     if (span) {
         span->setAttribute("forced_alignment.words", static_cast<int64_t>(fa.words.size()));
         span->setAttribute("forced_alignment.chars", static_cast<int64_t>(fa.characters.size()));
         span->setAttribute("forced_alignment.loss", fa.loss);
+        // Captured by ElevenLabsCall for every endpoint; surface it so ElevenLabs
+        // support can correlate a failing alignment with the same trace.
+        span->setAttribute("request_id", call.requestId());
         span->setSuccess();
     }
     return fa;

@@ -11,6 +11,37 @@
 
 namespace creatures::voice {
 
+/// Per-call input bounds. These are belt-and-braces caps to prevent a
+/// misbehaving (or compromised) caller from OOM'ing the server by handing
+/// in arbitrarily-large inputs that we'd then buffer and ship to ElevenLabs.
+/// They sit well above any realistic legitimate request: scenes top out
+/// around the 1800-char chunk limit; alignment audio is typically a 90-second
+/// PCM blob (~17 MiB).
+namespace dialog_limits {
+
+/// Audio buffer cap for forced-alignment, in bytes. ~50 MiB easily covers
+/// 5 minutes of 48 kHz S16 mono (~28 MiB).
+inline constexpr std::size_t kMaxForcedAlignmentAudioBytes = 50ULL * 1024 * 1024;
+
+/// Transcript cap for forced-alignment, in bytes. ~100 KiB is two orders of
+/// magnitude above any plausible per-call transcript (single chunk = 1800
+/// chars; pre-chunked scenes shouldn't even reach forced-alignment).
+inline constexpr std::size_t kMaxForcedAlignmentTranscriptBytes = 100ULL * 1024;
+
+/// Maximum number of turns in a single Text-to-Dialogue submission. The
+/// upstream limit is ~10 unique voice IDs; this cap is on TURNS (a single
+/// scene may interleave the same voices many times). 64 leaves headroom.
+inline constexpr std::size_t kMaxDialogInputs = 64;
+
+/// Maximum total characters across all turns in a single Text-to-Dialogue
+/// submission. Sits at the API's ~2000-char ceiling — chunkTurns enforces a
+/// lower cap on its own, but generateDialog can be called directly, and a
+/// caller that bypassed chunkTurns would have its request rejected upstream
+/// anyway. Fail-fast.
+inline constexpr std::size_t kMaxDialogTotalChars = 2000;
+
+} // namespace dialog_limits
+
 /// One turn of a multi-character dialog submission.
 struct DialogInput {
     std::string voiceId;
