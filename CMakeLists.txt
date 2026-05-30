@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(creature-server
-        VERSION "3.14.4"
+        VERSION "3.15.0"
         DESCRIPTION "Server for April's Creatures"
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
@@ -366,6 +366,7 @@ file(GLOB serverFiles
         src/server/logging/*
         src/server/metrics/*
         src/server/playlist/*
+        src/server/script/*
         src/server/voice/*
         src/server/watchdog/*
         src/model/*

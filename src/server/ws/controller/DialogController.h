@@ -10,6 +10,7 @@
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "model/DialogScript.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobState.h"
 #include "server/jobs/JobWorker.h"
@@ -66,43 +67,51 @@ class DialogController : public oatpp::web::server::api::ApiController {
                 // the worker — failing fast on cheap stuff keeps the client
                 // from having to wait + poll for the obvious "you forgot
                 // turns[]" case.
+                auto bail400 = [&](const char *msg) -> std::shared_ptr<OutgoingResponse> {
+                    auto err = StatusDto::createShared();
+                    err->status = "error";
+                    err->code = 400;
+                    err->message = msg;
+                    if (span)
+                        span->setHttpStatus(400);
+                    return createDtoResponse(Status::CODE_400, err);
+                };
                 if (!requestBody) {
-                    auto err = StatusDto::createShared();
-                    err->status = "error";
-                    err->code = 400;
-                    err->message = "request body required";
-                    if (span)
-                        span->setHttpStatus(400);
-                    return createDtoResponse(Status::CODE_400, err);
+                    return bail400("request body required");
                 }
-                if (!requestBody->turns || requestBody->turns->empty()) {
-                    auto err = StatusDto::createShared();
-                    err->status = "error";
-                    err->code = 400;
-                    err->message = "turns must be a non-empty array";
-                    if (span)
-                        span->setHttpStatus(400);
-                    return createDtoResponse(Status::CODE_400, err);
+                const bool hasTurns = requestBody->turns && !requestBody->turns->empty();
+                const bool hasScriptId = requestBody->script_id && !requestBody->script_id->empty();
+                if (hasTurns && hasScriptId) {
+                    return bail400("provide either turns or script_id, not both");
+                }
+                if (!hasTurns && !hasScriptId) {
+                    return bail400("turns must be a non-empty array (or provide script_id to render a saved script)");
+                }
+                if (hasScriptId && !isUuidShape(std::string(*requestBody->script_id))) {
+                    return bail400("script_id must be a UUID");
                 }
                 if (!requestBody->persistence ||
                     (*requestBody->persistence != "adhoc" && *requestBody->persistence != "permanent")) {
-                    auto err = StatusDto::createShared();
-                    err->status = "error";
-                    err->code = 400;
-                    err->message = "persistence must be 'adhoc' or 'permanent'";
-                    if (span)
-                        span->setHttpStatus(400);
-                    return createDtoResponse(Status::CODE_400, err);
+                    return bail400("persistence must be 'adhoc' or 'permanent'");
                 }
-                for (const auto &t : *requestBody->turns) {
-                    if (!t || !t->creature_id || t->creature_id->empty() || !t->text || t->text->empty()) {
-                        auto err = StatusDto::createShared();
-                        err->status = "error";
-                        err->code = 400;
-                        err->message = "every turn must have a non-empty creature_id and text";
-                        if (span)
-                            span->setHttpStatus(400);
-                        return createDtoResponse(Status::CODE_400, err);
+                if (hasTurns) {
+                    // Same caps the saved-script path enforces. Without them the inline
+                    // path is the easier amplification target for a JSON bomb (security
+                    // review S1). Shared constants live in model/DialogScript.h.
+                    if (requestBody->turns->size() > creatures::MAX_DIALOG_SCRIPT_TURNS) {
+                        return bail400(fmt::format("turns has {} entries; max {}", requestBody->turns->size(),
+                                                   creatures::MAX_DIALOG_SCRIPT_TURNS)
+                                           .c_str());
+                    }
+                    for (const auto &t : *requestBody->turns) {
+                        if (!t || !t->creature_id || t->creature_id->empty() || !t->text || t->text->empty()) {
+                            return bail400("every turn must have a non-empty creature_id and text");
+                        }
+                        if (t->text->size() > creatures::MAX_DIALOG_SCRIPT_TURN_TEXT) {
+                            return bail400(fmt::format("turn 'text' is {} chars; max {}", t->text->size(),
+                                                       creatures::MAX_DIALOG_SCRIPT_TURN_TEXT)
+                                               .c_str());
+                        }
                     }
                 }
 
@@ -127,7 +136,12 @@ class DialogController : public oatpp::web::server::api::ApiController {
                 }
 
                 if (span) {
-                    span->setAttribute("dialog.turns", static_cast<int64_t>(requestBody->turns->size()));
+                    if (hasTurns) {
+                        span->setAttribute("dialog.turns", static_cast<int64_t>(requestBody->turns->size()));
+                    }
+                    if (hasScriptId) {
+                        span->setAttribute("dialog.script_id", std::string(*requestBody->script_id));
+                    }
                     span->setAttribute("dialog.persistence", std::string(*requestBody->persistence));
                     span->setAttribute("dialog.autoplay",
                                        requestBody->autoplay ? static_cast<bool>(*requestBody->autoplay) : false);
@@ -145,10 +159,16 @@ class DialogController : public oatpp::web::server::api::ApiController {
                 auto response = JobCreatedDto::createShared();
                 response->job_id = jobId.c_str();
                 response->job_type = "dialog";
-                response->message = fmt::format("Dialog job created with {} turn(s). Listen for job-progress and "
-                                                "job-complete WebSocket messages on this job_id.",
-                                                requestBody->turns->size())
-                                        .c_str();
+                response->message =
+                    hasScriptId
+                        ? fmt::format("Dialog job created from script {}. Listen for job-progress and job-complete "
+                                      "WebSocket messages on this job_id.",
+                                      std::string(*requestBody->script_id))
+                              .c_str()
+                        : fmt::format("Dialog job created with {} turn(s). Listen for job-progress and "
+                                      "job-complete WebSocket messages on this job_id.",
+                                      requestBody->turns->size())
+                              .c_str();
                 return createDtoResponse(Status::CODE_202, response);
             });
     }

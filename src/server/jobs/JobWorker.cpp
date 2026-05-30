@@ -1061,20 +1061,54 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     if (!reqDto) {
         return failJob("dialog job details deserialized to null");
     }
-    if (!reqDto->turns || reqDto->turns->empty()) {
-        return failJob("dialog job requires a non-empty turns[] array");
+    const bool hasInlineTurns = reqDto->turns && !reqDto->turns->empty();
+    const bool hasScriptId = reqDto->script_id && !reqDto->script_id->empty();
+    if (hasInlineTurns && hasScriptId) {
+        return failJob("dialog job got both turns[] and script_id — controller should have rejected this");
+    }
+    if (!hasInlineTurns && !hasScriptId) {
+        return failJob("dialog job requires turns[] or script_id");
     }
     if (!reqDto->persistence) {
         return failJob("dialog job requires persistence ('adhoc' or 'permanent')");
     }
 
     std::vector<std::pair<std::string, std::string>> rawTurns;
-    rawTurns.reserve(reqDto->turns->size());
-    for (const auto &t : *reqDto->turns) {
-        if (!t || !t->creature_id || !t->text) {
-            return failJob("each turn must have a non-null creature_id and text");
+    // Provenance for the rendered Animation. Empty when rendering from inline
+    // turns (no script to point at); populated when loading from a script.
+    std::string sourceScriptId;
+    std::vector<creatures::DialogScriptTurn> sourceScriptTurns;
+    if (hasScriptId) {
+        // Re-validate at the trust boundary even though the controller already did —
+        // the worker rehydrates from a serialized blob and may eventually be fed
+        // from non-controller sources (retry, cron). Keeps attacker strings out of
+        // log lines and span attributes (security review S2).
+        const std::string requestedScriptId(*reqDto->script_id);
+        if (!isUuidShape(requestedScriptId)) {
+            return failJob("script_id is not a UUID");
         }
-        rawTurns.emplace_back(*t->creature_id, *t->text);
+        auto sr = creatures::db->getDialogScript(requestedScriptId, jobState.span);
+        if (!sr.isSuccess()) {
+            return failJob(fmt::format("script_id lookup failed: {}", sr.getError().value().getMessage()));
+        }
+        const auto script = sr.getValue().value();
+        if (script.turns.empty()) {
+            return failJob(fmt::format("script_id '{}' has no turns", script.id));
+        }
+        rawTurns.reserve(script.turns.size());
+        for (const auto &t : script.turns) {
+            rawTurns.emplace_back(t.creature_id, t.text);
+        }
+        sourceScriptId = script.id;
+        sourceScriptTurns = script.turns;
+    } else {
+        rawTurns.reserve(reqDto->turns->size());
+        for (const auto &t : *reqDto->turns) {
+            if (!t || !t->creature_id || !t->text) {
+                return failJob("each turn must have a non-null creature_id and text");
+            }
+            rawTurns.emplace_back(*t->creature_id, *t->text);
+        }
     }
 
     DialogPersistence persistence = DialogPersistence::AdHoc;
@@ -1101,6 +1135,10 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         jobState.span->setAttribute("dialog.persistence",
                                     persistence == DialogPersistence::AdHoc ? "adhoc" : "permanent");
         jobState.span->setAttribute("dialog.autoplay", autoplay);
+        if (!sourceScriptId.empty()) {
+            jobState.span->setAttribute("dialog.script_id", sourceScriptId);
+            jobState.span->setAttribute("dialog.script_turns", static_cast<int64_t>(sourceScriptTurns.size()));
+        }
     }
 
     // ---- Resolve every UNIQUE creature in turns. Domain validation runs here
@@ -1110,6 +1148,12 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     for (const auto &[cid, _text] : rawTurns) {
         if (cid.empty()) {
             return failJob("a turn has empty creature_id");
+        }
+        // Pre-filter through isUuidShape so non-UUID creature_id (which can never
+        // resolve anyway) doesn't reach DB queries / log lines / span attributes
+        // unsanitized (security review S4).
+        if (!isUuidShape(cid)) {
+            return failJob("a turn has a creature_id that is not a UUID");
         }
         if (byCreatureId.count(cid)) {
             continue;
@@ -1499,7 +1543,19 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     if (!animResult.isSuccess()) {
         return failJob(animResult.getError().value().getMessage());
     }
-    const auto animation = animResult.getValue().value();
+    auto animation = animResult.getValue().value();
+
+    // Stamp the script provenance onto the Animation metadata. Soft pointer
+    // (source_script_id) lets the UI offer "edit this script"; the CoW
+    // snapshot (source_script_turns) preserves what the script said at render
+    // time so an edit-then-delete doesn't orphan the animation's history.
+    if (!sourceScriptId.empty()) {
+        animation.metadata.source_script_id = sourceScriptId;
+        animation.metadata.source_script_turns = sourceScriptTurns;
+        if (jobState.span) {
+            jobState.span->setAttribute("animation.source_script_id", sourceScriptId);
+        }
+    }
 
     // ---- Persist + tell clients to invalidate the affected caches. Matches
     // the existing patterns: ad-hoc speech invalidates AdHocAnimationList +

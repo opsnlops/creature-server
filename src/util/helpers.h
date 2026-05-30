@@ -1,12 +1,14 @@
 
 #pragma once
 
+#include <cctype>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 // Disable shadow warnings for MongoDB C++ driver headers (third-party code)
 #pragma GCC diagnostic push
@@ -61,6 +63,27 @@ std::string oidToString(const bsoncxx::oid &oid);
  * @return
  */
 bsoncxx::document::value stringVectorToBson(const std::vector<std::string> &vector);
+
+/// Cheap RFC 4122 UUID shape check. Accepts the canonical 8-4-4-4-12 hex form,
+/// case-insensitive. Doesn't validate version/variant bits — just shape. Used
+/// at trust boundaries to keep attacker-controlled strings out of log lines,
+/// span attributes, and DB queries (security review M4).
+inline bool isUuidShape(std::string_view s) {
+    if (s.size() != 36)
+        return false;
+    constexpr int dashPositions[] = {8, 13, 18, 23};
+    for (int pos : dashPositions) {
+        if (s[pos] != '-')
+            return false;
+    }
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        if (i == 8 || i == 13 || i == 18 || i == 23)
+            continue;
+        if (!std::isxdigit(static_cast<unsigned char>(s[i])))
+            return false;
+    }
+    return true;
+}
 
 /**
  * Convert a BSON array to a vector of strings

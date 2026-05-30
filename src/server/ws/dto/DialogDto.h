@@ -41,10 +41,19 @@ class DialogRequestDto : public oatpp::DTO {
 
     DTO_FIELD_INFO(turns) {
         info->description = "The ordered list of turns in the scene. Order matters — it's both the speaking order "
-                            "and the order ElevenLabs uses for cross-speaker reactivity.";
-        info->required = true;
+                            "and the order ElevenLabs uses for cross-speaker reactivity. EITHER turns OR script_id "
+                            "must be provided; not both.";
+        info->required = false;
     }
     DTO_FIELD(List<Object<DialogTurnDto>>, turns);
+
+    DTO_FIELD_INFO(script_id) {
+        info->description = "UUID of a saved DialogScript to render. When provided, the server loads the script and "
+                            "uses its turns; the resulting Animation carries a soft pointer + copy-on-write snapshot "
+                            "of the script's turns in its metadata. Mutually exclusive with inline 'turns'.";
+        info->required = false;
+    }
+    DTO_FIELD(String, script_id);
 
     DTO_FIELD_INFO(persistence) {
         info->description = "Where the assembled animation gets stored. 'adhoc' = expiring TTL collection (good for "
