@@ -17,6 +17,7 @@
 #include "controller/CreatureController.h"
 #include "controller/DebugController.h"
 #include "controller/DialogController.h"
+#include "controller/DialogPreviewController.h"
 #include "controller/DmxFixtureController.h"
 #include "controller/MetricsController.h"
 #include "controller/PlaylistController.h"
@@ -71,6 +72,7 @@ void App::run() {
     docEndpoints.append(router->addController(SpeechToTextController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(StreamingAdHocController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DialogController::createShared())->getEndpoints());
+    docEndpoints.append(router->addController(DialogPreviewController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(StaticController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(VoiceController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(WebSocketController::createShared())->getEndpoints());

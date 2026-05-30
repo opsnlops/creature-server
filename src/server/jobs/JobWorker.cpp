@@ -24,6 +24,7 @@
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/voice/AudioConverter.h"
 #include "server/voice/DialogAnimation.h"
+#include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
 #include "server/voice/DialogPipeline.h"
 #include "server/voice/DialogWav.h"
@@ -1089,6 +1090,8 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     }
     const bool autoplay = reqDto->autoplay ? *reqDto->autoplay : false;
     std::string title = reqDto->title ? std::string(*reqDto->title) : std::string{};
+    const std::string requestedGenerationId =
+        reqDto->generation_id ? std::string(*reqDto->generation_id) : std::string{};
     if (title.empty()) {
         title = fmt::format("Dialog {}", jobState.jobId);
     }
@@ -1217,29 +1220,125 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         auto chunkSpan =
             creatures::observability->createChildOperationSpan(fmt::format("DialogJob.chunk.{}", ci), jobState.span);
 
-        auto dialogResult = client.generateDialog(apiKey, chunk, "pcm_48000", chunkSpan);
-        if (!dialogResult.isSuccess()) {
-            return failJob(
-                fmt::format("chunk {} generateDialog: {}", ci, dialogResult.getError().value().getMessage()));
+        // ---- Cache lookup, before paying for ElevenLabs.
+        // Resolution order:
+        //   1. If the request named a specific generation_id, look ONLY for
+        //      that. Stale (cron-cleaned) → log + fall through to fresh.
+        //   2. Else, return the latest cached generation matching this chunk's
+        //      turns, if any.
+        //   3. Else, call ElevenLabs and save the result for next time.
+        // The cache key is per-CHUNK. Multi-chunk scenes get per-chunk benefit
+        // (a chunk with identical text/voices to a prior run hits the cache
+        // even if the surrounding chunks differ).
+        const auto cacheKey = voice::computeCacheKey(chunk);
+        if (chunkSpan) {
+            chunkSpan->setAttribute("dialog.cache_key", cacheKey);
         }
-        const auto dialog = dialogResult.getValue().value();
 
-        std::string transcript;
-        for (std::size_t t = 0; t < chunk.size(); ++t) {
-            if (t > 0) {
-                transcript.push_back(' ');
+        std::vector<uint8_t> chunkAudio;
+        std::vector<voice::DialogVoiceSegment> chunkSegments;
+        voice::ForcedAlignmentResult chunkAlignment;
+        bool cacheHit = false;
+
+        // Only honor the explicit generation_id on a SINGLE-chunk scene —
+        // for multi-chunk scenes the id would only match one chunk's cache
+        // anyway, and we don't want to confuse the user about which chunk
+        // got reused.
+        const bool useExplicitId = !requestedGenerationId.empty() && chunks.size() == 1;
+        if (useExplicitId) {
+            auto loadResult = voice::loadGeneration(cacheKey, requestedGenerationId);
+            if (loadResult.isSuccess()) {
+                auto gen = loadResult.getValue().value();
+                chunkAudio = std::move(gen.audioPcm);
+                chunkSegments = std::move(gen.voiceSegments);
+                chunkAlignment = std::move(gen.forcedAlignment);
+                cacheHit = true;
+                info("Dialog job {}: chunk {} using requested generation_id={}", jobState.jobId, ci,
+                     requestedGenerationId);
+            } else {
+                warn("Dialog job {}: requested generation_id={} not in cache for this chunk — regenerating",
+                     jobState.jobId, requestedGenerationId);
             }
-            transcript += voice::DialogClient::stripTags(chunk[t].text);
         }
-        const auto wavBytes = wrapMonoPcmAsWav(dialog.audioData, kDialogSampleRate);
-        auto alignResult = client.forcedAlignment(apiKey, wavBytes, "audio/wav", transcript, chunkSpan);
-        if (!alignResult.isSuccess()) {
-            return failJob(
-                fmt::format("chunk {} forcedAlignment: {}", ci, alignResult.getError().value().getMessage()));
+        if (!cacheHit) {
+            if (auto latest = voice::findLatestGeneration(cacheKey)) {
+                auto loadResult = voice::loadGeneration(cacheKey, *latest);
+                if (loadResult.isSuccess()) {
+                    auto gen = loadResult.getValue().value();
+                    chunkAudio = std::move(gen.audioPcm);
+                    chunkSegments = std::move(gen.voiceSegments);
+                    chunkAlignment = std::move(gen.forcedAlignment);
+                    cacheHit = true;
+                    info("Dialog job {}: chunk {} reusing latest cached generation_id={}", jobState.jobId, ci, *latest);
+                }
+            }
         }
-        const auto alignment = alignResult.getValue().value();
 
-        auto assembleResult = voice::assembleChunk(chunk, dialog, alignment, kDialogSampleRate);
+        if (!cacheHit) {
+            auto dialogResult = client.generateDialog(apiKey, chunk, "pcm_48000", chunkSpan);
+            if (!dialogResult.isSuccess()) {
+                return failJob(
+                    fmt::format("chunk {} generateDialog: {}", ci, dialogResult.getError().value().getMessage()));
+            }
+            const auto dialog = dialogResult.getValue().value();
+
+            std::string transcript;
+            for (std::size_t t = 0; t < chunk.size(); ++t) {
+                if (t > 0) {
+                    transcript.push_back(' ');
+                }
+                transcript += voice::DialogClient::stripTags(chunk[t].text);
+            }
+            const auto wavBytes = wrapMonoPcmAsWav(dialog.audioData, kDialogSampleRate);
+            auto alignResult = client.forcedAlignment(apiKey, wavBytes, "audio/wav", transcript, chunkSpan);
+            if (!alignResult.isSuccess()) {
+                return failJob(
+                    fmt::format("chunk {} forcedAlignment: {}", ci, alignResult.getError().value().getMessage()));
+            }
+            chunkAudio = dialog.audioData;
+            chunkSegments = dialog.voiceSegments;
+            chunkAlignment = alignResult.getValue().value();
+
+            // Save back to the cache so a future run with the same chunk hits.
+            voice::CachedGeneration freshGen;
+            freshGen.generationId = util::generateUUID();
+            freshGen.audioPcm = chunkAudio;
+            freshGen.voiceSegments = chunkSegments;
+            freshGen.forcedAlignment = chunkAlignment;
+            freshGen.createdAt = std::chrono::system_clock::now();
+            {
+                std::string s;
+                for (const auto &i : chunk) {
+                    if (!s.empty()) {
+                        s.push_back(' ');
+                    }
+                    s += voice::DialogClient::stripTags(i.text);
+                    if (s.size() >= 80) {
+                        s.resize(80);
+                        s += "…";
+                        break;
+                    }
+                }
+                freshGen.turnsSummary = std::move(s);
+            }
+            auto saveResult = voice::saveGeneration(cacheKey, freshGen);
+            if (!saveResult.isSuccess()) {
+                // Don't fail the job; just lose the next-time cache benefit.
+                warn("Dialog job {}: chunk {} saveGeneration failed: {}", jobState.jobId, ci,
+                     saveResult.getError().value().getMessage());
+            }
+        }
+        if (chunkSpan) {
+            chunkSpan->setAttribute("dialog.cache_hit", cacheHit);
+        }
+
+        // Reassemble the DialogResult shape that assembleChunk expects.
+        voice::DialogResult dialog;
+        dialog.audioData = std::move(chunkAudio);
+        dialog.audioFormat = "pcm_48000";
+        dialog.voiceSegments = std::move(chunkSegments);
+
+        auto assembleResult = voice::assembleChunk(chunk, dialog, chunkAlignment, kDialogSampleRate);
         if (!assembleResult.isSuccess()) {
             return failJob(
                 fmt::format("chunk {} assembleChunk: {}", ci, assembleResult.getError().value().getMessage()));
