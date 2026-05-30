@@ -143,6 +143,20 @@ ninja
 - **Missing dependencies**: CMake FetchContent will download them automatically
 - **Linker warnings about duplicates**: Safe to ignore (known issue with how dependencies are linked)
 
+### Bumping the Version
+
+Every deployable commit must bump the patch version — Debian packages can't collide and the apt repo rejects re-uploaded `.deb`s with a previously-used version. The version lives in **`VERSION.txt`** at the repo root, NOT in `CMakeLists.txt`. Bump it like:
+
+```bash
+echo "3.15.4" > VERSION.txt
+```
+
+That's the only file to touch. CMakeLists.txt reads `VERSION.txt` via `file(STRINGS …)` and feeds it into `project(VERSION …)`, which propagates into `Version.h` and the cpack-generated `.deb` filename.
+
+Why a separate file: the Dockerfile's Phase 1 (the heavy FetchContent deps build) deliberately does NOT COPY `VERSION.txt`, so a version bump doesn't bust the dep-layer cache. A patch-bump-only commit is a ~2-minute CI run instead of ~15. See issue #18 + the comment block at the top of `CMakeLists.txt`.
+
+If you're adding a new src/server/X/ directory, that DOES need a `CMakeLists.txt` edit (one new line under `file(GLOB serverFiles …)`) and will bust the Phase 1 cache one time. Adding a new .cpp inside an EXISTING globbed dir uses `CONFIGURE_DEPENDS` and doesn't need a CMake edit.
+
 ## Session Continuity Notes
 
 ### Context for Next Session
