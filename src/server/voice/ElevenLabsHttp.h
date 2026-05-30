@@ -27,6 +27,17 @@
 
 namespace creatures::voice::elevenlabs_http {
 
+/// Hard cap on response body size, to bound memory if upstream goes haywire
+/// or a hostile node-in-the-middle returns a huge payload. ~100 MiB easily
+/// covers the largest legitimate dialog response (a 90-second 48kHz PCM
+/// blob is ~17 MiB; base64 inflates by ~1.33x).
+inline constexpr std::size_t kMaxResponseBytes = 100ULL * 1024 * 1024;
+
+/// How many bytes of an HTTP-error response body to record on a span. Spans
+/// are persisted + searchable in Honeycomb, so we keep just a preview here;
+/// the full body still goes to the stdout log for server-side debugging.
+inline constexpr std::size_t kBodyPreviewMax = 512;
+
 /// Header callback that captures the request-id (or x-request-id) value into
 /// the std::string pointed to by `userdata`. Case-insensitive match.
 inline size_t captureRequestIdHeader(char *data, size_t size, size_t nmemb, void *userdata) {
@@ -55,9 +66,17 @@ inline size_t captureRequestIdHeader(char *data, size_t size, size_t nmemb, void
 }
 
 /// Append-to-std::string write callback for one-shot JSON responses.
+///
+/// Hard-caps the buffer at kMaxResponseBytes. Returning a value less than the
+/// bytes delivered tells libcurl to abort the transfer with CURLE_WRITE_ERROR,
+/// which propagates as our standard "curl error" path — no OOM risk from a
+/// runaway upstream.
 inline size_t appendToString(char *data, size_t size, size_t nmemb, void *userdata) {
     auto *buf = static_cast<std::string *>(userdata);
     const size_t totalBytes = size * nmemb;
+    if (buf->size() + totalBytes > kMaxResponseBytes) {
+        return 0; // signal curl to abort
+    }
     buf->append(data, totalBytes);
     return totalBytes;
 }
@@ -81,6 +100,13 @@ class ElevenLabsCall {
         if (!curl_) {
             return;
         }
+        // Defense in depth — libcurl defaults are safe but make verification
+        // explicit so a future build/link change (linked against a stripped
+        // libcurl, or a refactor that touches these options) can't silently
+        // downgrade TLS. Mirrors the explicit verification on the WebSocket
+        // path in StreamingTTSClient.
+        curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYHOST, 2L);
         addHeader(fmt::format("xi-api-key: {}", apiKey));
         curl_easy_setopt(curl_, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl_, CURLOPT_HEADERFUNCTION, &captureRequestIdHeader);
@@ -143,11 +169,19 @@ class ElevenLabsCall {
 /// Map curl rc + http code into a Result<T> error, or std::nullopt on HTTP 200.
 ///
 /// - curl rc != OK → InternalError (DNS, connect, timeout, TLS, ...)
-/// - HTTP 400 → InvalidData (the caller's request was malformed)
-/// - any other non-200 → InternalError (upstream failure)
+/// - HTTP 4xx → InvalidData (caller-side or upstream-configuration problem)
+/// - HTTP 5xx or other non-200 → InternalError (upstream failure)
 ///
-/// `whatFailed` prefixes the error message ("ElevenLabs dialog"); `bodyForLog`
-/// is appended to non-200 errors so we capture the API's complaint in the log.
+/// `whatFailed` is a short label ("ElevenLabs dialog"). `bodyForLog` is the
+/// full upstream response body — we log it verbatim to stdout for server-side
+/// debugging, set a truncated `http.response.body_preview` span attribute, but
+/// the Result<T> error message returned to callers is generic ("ElevenLabs
+/// dialog HTTP 4xx") — never includes the upstream body. The upstream body
+/// is attacker-influenceable (a caller's text often round-trips through 4xx
+/// errors), and downstream layers (OATPP_ASSERT_HTTP) propagate Result error
+/// messages verbatim to HTTP clients, so leaking it would surface a request-
+/// side echo plus any incidental upstream metadata (request IDs, quota info,
+/// reverse-proxy debug pages) to whoever called our API.
 template <typename T>
 std::optional<Result<T>> checkResponse(CURLcode rc, long httpCode, const std::string &whatFailed,
                                        const std::string &bodyForLog, const std::shared_ptr<OperationSpan> &span) {
@@ -160,13 +194,22 @@ std::optional<Result<T>> checkResponse(CURLcode rc, long httpCode, const std::st
         return Result<T>{ServerError(ServerError::InternalError, msg)};
     }
     if (httpCode != 200) {
-        std::string msg = fmt::format("{} HTTP {}: {}", whatFailed, httpCode, bodyForLog);
-        error(msg);
+        // Full body — stdout only (server-side, not surfaced anywhere else).
+        error("{} HTTP {}: {}", whatFailed, httpCode, bodyForLog);
+        // Span gets the status code (queryable in Honeycomb) and a truncated
+        // preview (debuggable). Trace ID + the log line above let on-call get
+        // the full body without it sitting in a permanent span attribute.
         if (span) {
-            span->setError(msg);
+            span->setAttribute("http.response.status_code", static_cast<int64_t>(httpCode));
+            if (!bodyForLog.empty()) {
+                span->setAttribute("http.response.body_preview", bodyForLog.substr(0, kBodyPreviewMax));
+            }
+            span->setError(fmt::format("{} HTTP {}", whatFailed, httpCode));
         }
-        const auto code = (httpCode == 400) ? ServerError::InvalidData : ServerError::InternalError;
-        return Result<T>{ServerError(code, msg)};
+        // Generic message — no upstream body, no echoed client input.
+        std::string clientMsg = fmt::format("{} HTTP {}", whatFailed, httpCode);
+        const auto code = (httpCode >= 400 && httpCode < 500) ? ServerError::InvalidData : ServerError::InternalError;
+        return Result<T>{ServerError(code, clientMsg)};
     }
     return std::nullopt;
 }
