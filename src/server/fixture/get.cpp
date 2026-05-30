@@ -37,25 +37,34 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObjectCache<fixtureId_t, DmxFixture>> fixtureCache;
 extern std::shared_ptr<ObservabilityManager> observability;
 
+// Conforms to docs/database-observability.md (issue #17).
+
 Result<json> Database::getFixtureJson(const fixtureId_t &fixtureId, const std::shared_ptr<OperationSpan> &parentSpan) {
+    if (!parentSpan) {
+        warn("no parent span provided for Database.getFixtureJson, creating a root span");
+    }
     auto dbSpan = creatures::observability->createChildOperationSpan("Database.getFixtureJson", parentSpan);
 
     if (dbSpan) {
         dbSpan->setAttribute("database.collection", FIXTURES_COLLECTION);
         dbSpan->setAttribute("database.operation", "find_one");
-        dbSpan->setAttribute("fixture.id", fixtureId);
         dbSpan->setAttribute("database.system", "mongodb");
         dbSpan->setAttribute("database.name", DB_NAME);
+        dbSpan->setAttribute("fixture.id", fixtureId);
     }
+
+    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
+        if (dbSpan) {
+            dbSpan->setError(msg);
+            dbSpan->setAttribute("error.type", type);
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
+        }
+    };
 
     if (fixtureId.empty()) {
         std::string errorMessage = "unable to get a fixture because the id was empty";
         info(errorMessage);
-        if (dbSpan) {
-            dbSpan->setError(errorMessage);
-            dbSpan->setAttribute("error.type", "InvalidData");
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-        }
+        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<json>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -64,11 +73,7 @@ Result<json> Database::getFixtureJson(const fixtureId_t &fixtureId, const std::s
         auto err = collectionResult.getError().value();
         std::string errorMessage = fmt::format("unable to get the fixture collection: {}", err.getMessage());
         critical(errorMessage);
-        if (dbSpan) {
-            dbSpan->setError(errorMessage);
-            dbSpan->setAttribute("error.type", "DatabaseError");
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
-        }
+        setSpanError(errorMessage, "DatabaseError", err.getCode());
         return Result<json>{err};
     }
     auto collection = collectionResult.getValue().value();
@@ -79,25 +84,23 @@ Result<json> Database::getFixtureJson(const fixtureId_t &fixtureId, const std::s
 
         auto query = document{} << "id" << fixtureId << finalize;
         auto maybe_result = collection.find_one(query.view());
-        mongoSpan->setSuccess();
+        if (mongoSpan)
+            mongoSpan->setSuccess();
 
         if (!maybe_result) {
             std::string errorMessage = fmt::format("Fixture not found: {}", fixtureId);
             warn(errorMessage);
-            if (dbSpan) {
-                dbSpan->setError(errorMessage);
-                dbSpan->setAttribute("error.type", "NotFound");
-                dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
-            }
+            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
             return Result<json>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
-        auto convertSpan = creatures::observability->createChildOperationSpan("getFixtureJson.json::parse", dbSpan);
+        auto convertSpan = creatures::observability->createChildOperationSpan("getFixtureJson.bson-to-json", dbSpan);
         auto jsonResult =
             JsonParser::bsonToJson(maybe_result->view(), fmt::format("fixture {}", fixtureId), convertSpan);
         if (!jsonResult.isSuccess()) {
-            warn("Failed to convert BSON to JSON for fixture ID: {} - {}", fixtureId,
-                 jsonResult.getError().value().getMessage());
+            auto err = jsonResult.getError().value();
+            warn("Failed to convert BSON to JSON for fixture ID: {} - {}", fixtureId, err.getMessage());
+            setSpanError(err.getMessage(), "JsonParsingException", err.getCode());
             return jsonResult;
         }
         json j = jsonResult.getValue().value();
@@ -114,9 +117,13 @@ Result<json> Database::getFixtureJson(const fixtureId_t &fixtureId, const std::s
         critical(errorMessage);
         if (mongoSpan) {
             mongoSpan->recordException(e);
+            mongoSpan->setError(errorMessage);
             mongoSpan->setAttribute("error.type", "MongoDBException");
             mongoSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::DatabaseError));
         }
+        if (dbSpan)
+            dbSpan->recordException(e);
+        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<json>{ServerError(ServerError::DatabaseError, errorMessage)};
     } catch (const std::exception &e) {
         std::string errorMessage =
@@ -124,37 +131,51 @@ Result<json> Database::getFixtureJson(const fixtureId_t &fixtureId, const std::s
         critical(errorMessage);
         if (mongoSpan) {
             mongoSpan->recordException(e);
-            mongoSpan->setAttribute("error.type", "StandardException");
+            mongoSpan->setError(errorMessage);
+            mongoSpan->setAttribute("error.type", "std::exception");
             mongoSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
         }
+        if (dbSpan)
+            dbSpan->recordException(e);
+        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = fmt::format("Unknown exception caught while finding fixture {}", fixtureId);
         critical(errorMessage);
-        if (mongoSpan) {
+        if (mongoSpan)
             mongoSpan->setError(errorMessage);
-        }
+        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
 
 Result<creatures::DmxFixture> Database::getFixture(const fixtureId_t &fixtureId,
                                                    const std::shared_ptr<OperationSpan> &parentSpan) {
-
+    if (!parentSpan) {
+        warn("no parent span provided for Database.getFixture, creating a root span");
+    }
     auto dbSpan = creatures::observability->createChildOperationSpan("Database.getFixture", parentSpan);
 
     if (dbSpan) {
+        dbSpan->setAttribute("database.collection", FIXTURES_COLLECTION);
+        dbSpan->setAttribute("database.operation", "find_one");
+        dbSpan->setAttribute("database.system", "mongodb");
+        dbSpan->setAttribute("database.name", DB_NAME);
         dbSpan->setAttribute("fixture.id", fixtureId);
     }
+
+    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
+        if (dbSpan) {
+            dbSpan->setError(msg);
+            dbSpan->setAttribute("error.type", type);
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
+        }
+    };
 
     if (fixtureId.empty()) {
         std::string errorMessage = "unable to get a fixture because the id was empty";
         warn(errorMessage);
-        if (dbSpan) {
-            dbSpan->setError(errorMessage);
-            dbSpan->setAttribute("error.type", "InvalidData");
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-        }
+        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<DmxFixture>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -162,30 +183,40 @@ Result<creatures::DmxFixture> Database::getFixture(const fixtureId_t &fixtureId,
     auto fixtureJson = getFixtureJson(fixtureId, jsonSpan);
     if (!fixtureJson.isSuccess()) {
         auto err = fixtureJson.getError().value();
-        std::string errorMessage =
-            fmt::format("unable to get a fixture by ID: {}", fixtureJson.getError()->getMessage());
+        std::string errorMessage = fmt::format("unable to get a fixture by ID: {}", err.getMessage());
         warn(errorMessage);
+        std::string etype = "InternalError";
+        if (err.getCode() == ServerError::NotFound)
+            etype = "NotFound";
+        else if (err.getCode() == ServerError::InvalidData)
+            etype = "InvalidData";
+        else if (err.getCode() == ServerError::DatabaseError)
+            etype = "DatabaseError";
         if (jsonSpan) {
             jsonSpan->setError(errorMessage);
             jsonSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
+        setSpanError(errorMessage, etype, err.getCode());
         return Result<DmxFixture>{err};
     }
-    jsonSpan->setSuccess();
+    if (jsonSpan)
+        jsonSpan->setSuccess();
 
     auto fetchSpan = creatures::observability->createChildOperationSpan("getFixture.fixtureFromJson", dbSpan);
     auto result = fixtureFromJson(fixtureJson.getValue().value(), fetchSpan);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
-        std::string errorMessage = fmt::format("unable to get a fixture by ID: {}", result.getError()->getMessage());
+        std::string errorMessage = fmt::format("unable to get a fixture by ID: {}", err.getMessage());
         warn(errorMessage);
         if (fetchSpan) {
             fetchSpan->setError(errorMessage);
             fetchSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
+        setSpanError(errorMessage, "InvalidData", err.getCode());
         return Result<DmxFixture>{err};
     }
-    fetchSpan->setSuccess();
+    if (fetchSpan)
+        fetchSpan->setSuccess();
 
     auto fixture = result.getValue().value();
     fixtureCache->put(fixtureId, fixture);

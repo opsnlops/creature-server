@@ -388,6 +388,8 @@ Skip both reviews only if the diff is purely cosmetic (typos, formatting, commen
 
 Built-in OpenTelemetry integration for traces and metrics. The `ObservabilityManager` handles telemetry configuration and export.
 
+**Database method standard:** every `Database::*` method follows a canonical pattern for span structure, attributes, and error envelope so Honeycomb traces are queryable across resource families. See [`docs/database-observability.md`](docs/database-observability.md) for the full spec + reviewer checklist. Tracked in issue #17.
+
 ## Key Libraries and Conventions
 
 ### Custom Libraries
