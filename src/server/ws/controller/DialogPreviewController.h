@@ -445,15 +445,23 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController {
         info->addResponse<oatpp::String>(Status::CODE_200, "audio/wav");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/animation/dialog/preview/audio/{cache_key}/{generation_id}.wav", getPreviewAudio,
-             PATH(oatpp::String, cache_key), PATH(oatpp::String, generation_id),
-             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("GET /api/v1/animation/dialog/preview/audio/{cache_key}/{generation_id}.wav", "GET",
-                           "api/v1/animation/dialog/preview/audio/{cache_key}/{generation_id}.wav", "getPreviewAudio",
+    // oatpp's URL Pattern matcher only checks parts at `/` boundaries — a
+    // literal suffix after a path variable (`{var}.wav`) is parsed but never
+    // matches. So we make the whole last segment one variable (`{filename}`)
+    // and strip the `.wav` server-side.
+    ENDPOINT("GET", "api/v1/animation/dialog/preview/audio/{cache_key}/{filename}", getPreviewAudio,
+             PATH(String, cache_key), PATH(String, filename), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/animation/dialog/preview/audio/{cache_key}/{filename}", "GET",
+                           "api/v1/animation/dialog/preview/audio/{cache_key}/{filename}", "getPreviewAudio",
                            "DialogPreviewController", request,
                            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
                                const std::string ck = cache_key ? std::string(*cache_key) : std::string();
-                               const std::string gid = generation_id ? std::string(*generation_id) : std::string();
+                               std::string gid = filename ? std::string(*filename) : std::string();
+                               // Accept either {id} or {id}.wav (preferred for
+                               // browser save-as / Content-Type sniffing).
+                               if (gid.size() > 4 && gid.compare(gid.size() - 4, 4, ".wav") == 0) {
+                                   gid.resize(gid.size() - 4);
+                               }
                                if (ck.empty() || gid.empty()) {
                                    auto err = StatusDto::createShared();
                                    err->status = "error";
