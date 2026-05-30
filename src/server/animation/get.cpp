@@ -484,4 +484,88 @@ Result<creatures::Animation> Database::getAnimation(const animationId_t &animati
 
     return Result<creatures::Animation>{animation};
 }
+
+Result<std::optional<animationId_t>>
+Database::findAnimationIdBySourceScriptId(const std::string &scriptId,
+                                          const std::shared_ptr<OperationSpan> &parentSpan) {
+    auto dbSpan =
+        creatures::observability->createChildOperationSpan("Database.findAnimationIdBySourceScriptId", parentSpan);
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
+        dbSpan->setAttribute("database.operation", "find_one");
+        dbSpan->setAttribute("database.system", "mongodb");
+        dbSpan->setAttribute("database.name", DB_NAME);
+        dbSpan->setAttribute("script.id", scriptId);
+    }
+
+    if (scriptId.empty()) {
+        if (dbSpan)
+            dbSpan->setSuccess();
+        return Result<std::optional<animationId_t>>{std::optional<animationId_t>{}};
+    }
+
+    auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+    if (!collectionResult.isSuccess()) {
+        auto err = collectionResult.getError().value();
+        if (dbSpan)
+            dbSpan->setError(err.getMessage());
+        return Result<std::optional<animationId_t>>{err};
+    }
+    auto collection = collectionResult.getValue().value();
+
+    try {
+        // Project just `id` — we don't need the (potentially large) tracks blob
+        // for a dedupe check.
+        auto filter = bsoncxx::builder::stream::document{} << "metadata.source_script_id" << scriptId
+                                                           << bsoncxx::builder::stream::finalize;
+        auto projection = bsoncxx::builder::stream::document{} << "id" << 1 << "_id" << 0
+                                                               << bsoncxx::builder::stream::finalize;
+        mongocxx::options::find opts;
+        opts.projection(projection.view());
+
+        auto maybe = collection.find_one(filter.view(), opts);
+        if (!maybe) {
+            if (dbSpan) {
+                dbSpan->setAttribute("dedupe.found", false);
+                dbSpan->setSuccess();
+            }
+            return Result<std::optional<animationId_t>>{std::optional<animationId_t>{}};
+        }
+
+        auto view = maybe->view();
+        auto idElem = view["id"];
+        if (!idElem || idElem.type() != bsoncxx::type::k_utf8) {
+            warn("findAnimationIdBySourceScriptId: matching doc has no string 'id' field — ignoring");
+            if (dbSpan)
+                dbSpan->setSuccess();
+            return Result<std::optional<animationId_t>>{std::optional<animationId_t>{}};
+        }
+        std::string foundId{idElem.get_string().value.data(), idElem.get_string().value.size()};
+        if (dbSpan) {
+            dbSpan->setAttribute("dedupe.found", true);
+            dbSpan->setAttribute("animation.id", foundId);
+            dbSpan->setSuccess();
+        }
+        return Result<std::optional<animationId_t>>{std::optional<animationId_t>{std::move(foundId)}};
+
+    } catch (const mongocxx::exception &e) {
+        std::string msg =
+            fmt::format("MongoDB error finding animation by source_script_id '{}': {}", scriptId, e.what());
+        error(msg);
+        if (dbSpan) {
+            dbSpan->recordException(e);
+            dbSpan->setError(msg);
+        }
+        return Result<std::optional<animationId_t>>{ServerError(ServerError::DatabaseError, msg)};
+    } catch (const std::exception &e) {
+        std::string msg = fmt::format("Error finding animation by source_script_id '{}': {}", scriptId, e.what());
+        error(msg);
+        if (dbSpan) {
+            dbSpan->recordException(e);
+            dbSpan->setError(msg);
+        }
+        return Result<std::optional<animationId_t>>{ServerError(ServerError::InternalError, msg)};
+    }
+}
+
 } // namespace creatures

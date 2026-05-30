@@ -63,13 +63,15 @@ Result<std::vector<std::size_t>> matchVoices(const DialogAssembled &assembled,
 Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
                                        const std::vector<CreatureTrackInput> &creatureInputs, uint32_t msPerFrame,
                                        const std::string &soundFilePath, const std::string &title,
-                                       std::shared_ptr<OperationSpan> parentSpan) {
+                                       std::shared_ptr<OperationSpan> parentSpan,
+                                       const std::string &existingAnimationId) {
     auto span = creatures::observability->createChildOperationSpan("DialogAnimation.buildDialogAnimation", parentSpan);
     if (span) {
         span->setAttribute("animation.title", title);
         span->setAttribute("animation.sound_file", soundFilePath);
         span->setAttribute("animation.ms_per_frame", static_cast<int64_t>(msPerFrame));
         span->setAttribute("animation.creatures", static_cast<int64_t>(assembled.perCreature.size()));
+        span->setAttribute("animation.reuse_id", !existingAnimationId.empty());
     }
 
     if (msPerFrame == 0) {
@@ -128,7 +130,11 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
     }
 
     Animation animation;
-    animation.id = util::generateUUID();
+    // Re-render path: keep the existing animation_id so the DB upsert overwrites
+    // the previous render in place (script.id is the script, animation.id is
+    // the rendered artifact; one script → one animation, the latest one wins).
+    // Fresh render: brand-new UUID.
+    animation.id = existingAnimationId.empty() ? util::generateUUID() : existingAnimationId;
     animation.metadata.animation_id = animation.id;
     animation.metadata.title = title;
     animation.metadata.milliseconds_per_frame = msPerFrame;

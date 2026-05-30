@@ -73,9 +73,15 @@ struct CreatureTrackInput {
 /// in the Rhubarb mapping is 0; A/B/C/D/E/F are all non-zero.) A small post-
 /// roll keeps the body motion running for a few frames after the last cue,
 /// so the body doesn't snap to neutral the instant a turn ends.
+/// If `existingAnimationId` is non-empty, the produced Animation reuses it
+/// (and every track's animation_id) so the resulting upsert overwrites the
+/// existing document in place. This is what powers "re-render a script" —
+/// the script's previously-rendered animation keeps its stable id, only the
+/// content changes (3.15.4+). Empty = fresh UUID, classic behavior.
 Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
                                        const std::vector<CreatureTrackInput> &creatureInputs, uint32_t msPerFrame,
                                        const std::string &soundFilePath, const std::string &title,
-                                       std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                       std::shared_ptr<OperationSpan> parentSpan = nullptr,
+                                       const std::string &existingAnimationId = std::string{});
 
 } // namespace creatures::voice
