@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <cstring>
 #include <netdb.h>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <sys/socket.h>
@@ -738,6 +739,166 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeech(const std::string 
     return ttsResult;
 }
 
+// ---------------------------------------------------------------------------
+// Shared HTTP plumbing for the ElevenLabs REST endpoints (generateSpeechREST,
+// generateDialogue, forcedAlignment). All three share the same envelope —
+// xi-api-key auth, request-id capture, curl rc + http-code → Result<T> mapping
+// — so it lives in this anon namespace; each method below still owns its own
+// content-type / body / response-parsing logic.
+// ---------------------------------------------------------------------------
+namespace {
+
+/// Header callback that captures the request-id (or x-request-id) value into
+/// the std::string pointed to by `userdata`. Case-insensitive match.
+size_t captureRequestIdHeader(char *data, size_t size, size_t nmemb, void *userdata) {
+    auto *requestId = static_cast<std::string *>(userdata);
+    const size_t totalBytes = size * nmemb;
+    std::string header(data, totalBytes);
+
+    std::string lower = header;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (lower.find("request-id:") == 0 || lower.find("x-request-id:") == 0) {
+        const auto colonPos = header.find(':');
+        if (colonPos != std::string::npos) {
+            std::string value = header.substr(colonPos + 1);
+            while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+                value.erase(value.begin());
+            }
+            while (!value.empty() && (value.back() == '\r' || value.back() == '\n' || value.back() == ' ')) {
+                value.pop_back();
+            }
+            *requestId = value;
+        }
+    }
+    return totalBytes;
+}
+
+/// Append-to-std::string write callback for one-shot JSON responses.
+size_t appendToString(char *data, size_t size, size_t nmemb, void *userdata) {
+    auto *buf = static_cast<std::string *>(userdata);
+    const size_t totalBytes = size * nmemb;
+    buf->append(data, totalBytes);
+    return totalBytes;
+}
+
+/// RAII wrapper for an ElevenLabs HTTP call.
+///
+/// Owns the curl easy handle, the headers list, and (optionally) the MIME body —
+/// all freed in the destructor regardless of how the call site exits. Pre-wires
+/// the standard xi-api-key auth header and the request-id capture callback so
+/// every call site gets those for free. The two TTS endpoints actually use the
+/// captured request-id; forced-alignment ignores it (the cost of always wiring
+/// the header callback is one trivial branch per response header line).
+///
+/// Call sites still own the request-specific bits — Content-Type, body
+/// (POSTFIELDS or MIMEPOST via createMime()), write callback, and timeout — so
+/// the file stays readable about what each request actually sends and parses.
+class ElevenLabsCall {
+  public:
+    ElevenLabsCall(const std::string &apiKey, const std::string &url) {
+        curl_ = curl_easy_init();
+        if (!curl_) {
+            return;
+        }
+        addHeader(fmt::format("xi-api-key: {}", apiKey));
+        curl_easy_setopt(curl_, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl_, CURLOPT_HEADERFUNCTION, &captureRequestIdHeader);
+        curl_easy_setopt(curl_, CURLOPT_HEADERDATA, &requestId_);
+    }
+
+    ~ElevenLabsCall() {
+        if (mime_) {
+            curl_mime_free(mime_);
+        }
+        if (headers_) {
+            curl_slist_free_all(headers_);
+        }
+        if (curl_) {
+            curl_easy_cleanup(curl_);
+        }
+    }
+
+    ElevenLabsCall(const ElevenLabsCall &) = delete;
+    ElevenLabsCall &operator=(const ElevenLabsCall &) = delete;
+    ElevenLabsCall(ElevenLabsCall &&) = delete;
+    ElevenLabsCall &operator=(ElevenLabsCall &&) = delete;
+
+    [[nodiscard]] bool initOk() const { return curl_ != nullptr; }
+    [[nodiscard]] CURL *handle() const { return curl_; }
+    [[nodiscard]] const std::string &requestId() const { return requestId_; }
+
+    void addHeader(const std::string &header) { headers_ = curl_slist_append(headers_, header.c_str()); }
+
+    /// Create + own a curl_mime against this handle. Returns the handle so the
+    /// caller can add parts. Ownership stays with this wrapper (freed in dtor).
+    curl_mime *createMime() {
+        mime_ = curl_mime_init(curl_);
+        return mime_;
+    }
+
+    /// Execute. Applies any added headers and the MIME body if one was created,
+    /// then performs the request. On return, `httpCode` is set from the response;
+    /// the return value is the curl rc.
+    CURLcode perform(long &httpCode) {
+        if (headers_) {
+            curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers_);
+        }
+        if (mime_) {
+            curl_easy_setopt(curl_, CURLOPT_MIMEPOST, mime_);
+        }
+        const CURLcode rc = curl_easy_perform(curl_);
+        httpCode = 0;
+        curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &httpCode);
+        return rc;
+    }
+
+  private:
+    CURL *curl_ = nullptr;
+    curl_slist *headers_ = nullptr;
+    curl_mime *mime_ = nullptr;
+    std::string requestId_;
+};
+
+/// Map curl rc + http code into a Result<T> error, or std::nullopt on HTTP 200.
+///
+/// - curl rc != OK → InternalError (DNS, connect, timeout, TLS, ...)
+/// - HTTP 400 → InvalidData (the caller's request was malformed)
+/// - any other non-200 → InternalError (upstream failure)
+///
+/// `whatFailed` prefixes the error message ("ElevenLabs dialogue"); `bodyForLog`
+/// is appended to non-200 errors so we capture the API's complaint in the log.
+template <typename T>
+std::optional<Result<T>> checkElevenLabsResponse(CURLcode rc, long httpCode, const std::string &whatFailed,
+                                                 const std::string &bodyForLog,
+                                                 const std::shared_ptr<OperationSpan> &span) {
+    if (rc != CURLE_OK) {
+        std::string msg = fmt::format("{} curl error: {}", whatFailed, curl_easy_strerror(rc));
+        error(msg);
+        if (span) {
+            span->setError(msg);
+        }
+        return Result<T>{ServerError(ServerError::InternalError, msg)};
+    }
+    if (httpCode != 200) {
+        std::string msg = fmt::format("{} HTTP {}: {}", whatFailed, httpCode, bodyForLog);
+        error(msg);
+        if (span) {
+            span->setError(msg);
+        }
+        const auto code = (httpCode == 400) ? ServerError::InvalidData : ServerError::InternalError;
+        return Result<T>{ServerError(code, msg)};
+    }
+    return std::nullopt;
+}
+
+/// Sentinel that means "no body to log" — used when the upstream body is the
+/// streaming NDJSON which we've already consumed and trimmed.
+constexpr const char *kNoBodyForLog = "";
+
+} // namespace
+
 Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(const std::string &apiKey, const std::string &voiceId,
                                                                   const std::string &modelId, const std::string &text,
                                                                   const std::string &outputFormat, float stability,
@@ -864,90 +1025,32 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(const std::str
         return totalBytes;
     };
 
-    // Curl header callback: capture request-id
-    struct HeaderContext {
-        std::string *requestId;
-    };
-    HeaderContext headerCtx{&result.requestId};
-
-    auto headerCallback = [](char *data, size_t size, size_t nmemb, void *userdata) -> size_t {
-        auto *ctx = static_cast<HeaderContext *>(userdata);
-        size_t totalBytes = size * nmemb;
-        std::string header(data, totalBytes);
-
-        // Look for request-id header (case-insensitive)
-        auto lower = header;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
-
-        if (lower.find("request-id:") == 0 || lower.find("x-request-id:") == 0) {
-            auto colonPos = header.find(':');
-            if (colonPos != std::string::npos) {
-                auto value = header.substr(colonPos + 1);
-                // Trim whitespace and newlines
-                while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
-                    value.erase(value.begin());
-                }
-                while (!value.empty() && (value.back() == '\r' || value.back() == '\n' || value.back() == ' ')) {
-                    value.pop_back();
-                }
-                *ctx->requestId = value;
-            }
-        }
-
-        return totalBytes;
-    };
-
     if (progressCallback) {
         progressCallback(0.10f);
     }
 
-    // Execute request with curl
-    CURL *curl = curl_easy_init();
-    if (!curl) {
+    ElevenLabsCall call(apiKey, url);
+    if (!call.initOk()) {
         std::string msg = "Failed to initialize curl";
         if (span)
             span->setError(msg);
         return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
     }
-
-    struct curl_slist *headers = nullptr;
-    headers = curl_slist_append(headers, fmt::format("xi-api-key: {}", apiKey).c_str());
-    headers = curl_slist_append(headers, "Content-Type: application/json");
-    headers = curl_slist_append(headers, "Accept: text/event-stream");
-
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, bodyStr.c_str());
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+    call.addHeader("Content-Type: application/json");
+    call.addHeader("Accept: text/event-stream");
+    curl_easy_setopt(call.handle(), CURLOPT_POSTFIELDS, bodyStr.c_str());
+    curl_easy_setopt(call.handle(), CURLOPT_WRITEFUNCTION,
                      static_cast<size_t (*)(char *, size_t, size_t, void *)>(writeCallback));
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &writeCtx);
-    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION,
-                     static_cast<size_t (*)(char *, size_t, size_t, void *)>(headerCallback));
-    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &headerCtx);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-
-    CURLcode res = curl_easy_perform(curl);
+    curl_easy_setopt(call.handle(), CURLOPT_WRITEDATA, &writeCtx);
+    curl_easy_setopt(call.handle(), CURLOPT_TIMEOUT, 30L);
 
     long httpCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    const CURLcode res = call.perform(httpCode);
+    result.requestId = call.requestId();
 
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        std::string msg = fmt::format("ElevenLabs REST TTS curl error: {}", curl_easy_strerror(res));
-        error(msg);
-        if (span)
-            span->setError(msg);
-        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
-    }
-
-    if (httpCode != 200) {
-        std::string msg = fmt::format("ElevenLabs REST TTS HTTP {}", httpCode);
-        error(msg);
-        if (span)
-            span->setError(msg);
-        return Result<StreamingTTSResult>{ServerError(ServerError::InternalError, msg)};
+    if (auto err =
+            checkElevenLabsResponse<StreamingTTSResult>(res, httpCode, "ElevenLabs REST TTS", kNoBodyForLog, span)) {
+        return *err;
     }
 
     // Process any remaining data in the line buffer
@@ -1032,46 +1135,6 @@ std::string StreamingTTSClient::stripTags(const std::string &text) {
     return collapsed;
 }
 
-namespace {
-
-/// Common header-callback factory: capture request-id from the response headers
-/// and stash it into the given std::string. Same casing rules the existing
-/// generateSpeechREST path uses.
-size_t captureRequestIdHeader(char *data, size_t size, size_t nmemb, void *userdata) {
-    auto *requestId = static_cast<std::string *>(userdata);
-    const size_t totalBytes = size * nmemb;
-    std::string header(data, totalBytes);
-
-    std::string lower = header;
-    std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-    if (lower.find("request-id:") == 0 || lower.find("x-request-id:") == 0) {
-        const auto colonPos = header.find(':');
-        if (colonPos != std::string::npos) {
-            std::string value = header.substr(colonPos + 1);
-            while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
-                value.erase(value.begin());
-            }
-            while (!value.empty() && (value.back() == '\r' || value.back() == '\n' || value.back() == ' ')) {
-                value.pop_back();
-            }
-            *requestId = value;
-        }
-    }
-    return totalBytes;
-}
-
-/// Append-to-std::string write callback for one-shot JSON responses.
-size_t appendToString(char *data, size_t size, size_t nmemb, void *userdata) {
-    auto *buf = static_cast<std::string *>(userdata);
-    const size_t totalBytes = size * nmemb;
-    buf->append(data, totalBytes);
-    return totalBytes;
-}
-
-} // namespace
-
 Result<DialogueResult> StreamingTTSClient::generateDialogue(const std::string &apiKey,
                                                             const std::vector<DialogueInput> &inputs,
                                                             const std::string &outputFormat,
@@ -1110,59 +1173,35 @@ Result<DialogueResult> StreamingTTSClient::generateDialogue(const std::string &a
     const std::string url =
         fmt::format("https://api.elevenlabs.io/v1/text-to-dialogue/with-timestamps?output_format={}", outputFormat);
 
-    // ---- Execute the request. Single-blob JSON response (NOT newline-delimited),
-    // so we accumulate to a string and parse once at the end.
+    // Single-blob JSON response (NOT newline-delimited), so we accumulate to a
+    // string and parse once at the end.
     std::string respBuf;
     DialogueResult result;
     result.audioFormat = outputFormat;
 
-    CURL *curl = curl_easy_init();
-    if (!curl) {
+    ElevenLabsCall call(apiKey, url);
+    if (!call.initOk()) {
         std::string msg = "Failed to initialize curl";
         if (span)
             span->setError(msg);
         return Result<DialogueResult>{ServerError(ServerError::InternalError, msg)};
     }
-
-    struct curl_slist *headers = nullptr;
-    headers = curl_slist_append(headers, fmt::format("xi-api-key: {}", apiKey).c_str());
-    headers = curl_slist_append(headers, "Content-Type: application/json");
-    headers = curl_slist_append(headers, "Accept: application/json");
-
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, bodyStr.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(bodyStr.size()));
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &appendToString);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &respBuf);
-    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &captureRequestIdHeader);
-    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result.requestId);
+    call.addHeader("Content-Type: application/json");
+    call.addHeader("Accept: application/json");
+    curl_easy_setopt(call.handle(), CURLOPT_POSTFIELDS, bodyStr.c_str());
+    curl_easy_setopt(call.handle(), CURLOPT_POSTFIELDSIZE, static_cast<long>(bodyStr.size()));
+    curl_easy_setopt(call.handle(), CURLOPT_WRITEFUNCTION, &appendToString);
+    curl_easy_setopt(call.handle(), CURLOPT_WRITEDATA, &respBuf);
     // Dialogue is slow — eleven_v3 with forced-alignment downstream is the bottleneck.
     // 90s gives headroom for ~2000-char scenes without leaving the call open forever.
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 90L);
+    curl_easy_setopt(call.handle(), CURLOPT_TIMEOUT, 90L);
 
-    const CURLcode res = curl_easy_perform(curl);
     long httpCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    const CURLcode res = call.perform(httpCode);
+    result.requestId = call.requestId();
 
-    if (res != CURLE_OK) {
-        std::string msg = fmt::format("ElevenLabs dialogue curl error: {}", curl_easy_strerror(res));
-        error(msg);
-        if (span)
-            span->setError(msg);
-        return Result<DialogueResult>{ServerError(ServerError::InternalError, msg)};
-    }
-    if (httpCode != 200) {
-        std::string msg = fmt::format("ElevenLabs dialogue HTTP {}: {}", httpCode, respBuf);
-        error(msg);
-        if (span)
-            span->setError(msg);
-        // 400 = client problem (bad inputs, unsupported model, char count exceeded);
-        // anything else we treat as upstream failure.
-        const auto code = (httpCode == 400) ? ServerError::InvalidData : ServerError::InternalError;
-        return Result<DialogueResult>{ServerError(code, msg)};
+    if (auto err = checkElevenLabsResponse<DialogueResult>(res, httpCode, "ElevenLabs dialogue", respBuf, span)) {
+        return *err;
     }
 
     // ---- Parse the response.
@@ -1298,17 +1337,18 @@ Result<ForcedAlignmentResult> StreamingTTSClient::forcedAlignment(const std::str
         return Result<ForcedAlignmentResult>{ServerError(ServerError::InvalidData, msg)};
     }
 
-    CURL *curl = curl_easy_init();
-    if (!curl) {
+    ElevenLabsCall call(apiKey, "https://api.elevenlabs.io/v1/forced-alignment");
+    if (!call.initOk()) {
         std::string msg = "Failed to initialize curl";
         if (span)
             span->setError(msg);
         return Result<ForcedAlignmentResult>{ServerError(ServerError::InternalError, msg)};
     }
+    call.addHeader("Accept: application/json");
 
-    // Use curl's MIME API to build the multipart form cleanly.
-    curl_mime *mime = curl_mime_init(curl);
-
+    // Multipart body via curl's MIME API. Content-Type is set automatically by
+    // CURLOPT_MIMEPOST (it includes the boundary), so we don't add one ourselves.
+    curl_mime *mime = call.createMime();
     curl_mimepart *filePart = curl_mime_addpart(mime);
     curl_mime_name(filePart, "file");
     curl_mime_filename(filePart, "audio.wav");
@@ -1319,40 +1359,17 @@ Result<ForcedAlignmentResult> StreamingTTSClient::forcedAlignment(const std::str
     curl_mime_name(textPart, "text");
     curl_mime_data(textPart, transcript.data(), transcript.size());
 
-    struct curl_slist *headers = nullptr;
-    headers = curl_slist_append(headers, fmt::format("xi-api-key: {}", apiKey).c_str());
-    headers = curl_slist_append(headers, "Accept: application/json");
-
     std::string respBuf;
-    curl_easy_setopt(curl, CURLOPT_URL, "https://api.elevenlabs.io/v1/forced-alignment");
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &appendToString);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &respBuf);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 90L);
+    curl_easy_setopt(call.handle(), CURLOPT_WRITEFUNCTION, &appendToString);
+    curl_easy_setopt(call.handle(), CURLOPT_WRITEDATA, &respBuf);
+    curl_easy_setopt(call.handle(), CURLOPT_TIMEOUT, 90L);
 
-    const CURLcode res = curl_easy_perform(curl);
     long httpCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    const CURLcode res = call.perform(httpCode);
 
-    curl_mime_free(mime);
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        std::string msg = fmt::format("ElevenLabs forced-alignment curl error: {}", curl_easy_strerror(res));
-        error(msg);
-        if (span)
-            span->setError(msg);
-        return Result<ForcedAlignmentResult>{ServerError(ServerError::InternalError, msg)};
-    }
-    if (httpCode != 200) {
-        std::string msg = fmt::format("ElevenLabs forced-alignment HTTP {}: {}", httpCode, respBuf);
-        error(msg);
-        if (span)
-            span->setError(msg);
-        const auto code = (httpCode == 400) ? ServerError::InvalidData : ServerError::InternalError;
-        return Result<ForcedAlignmentResult>{ServerError(code, msg)};
+    if (auto err = checkElevenLabsResponse<ForcedAlignmentResult>(res, httpCode, "ElevenLabs forced-alignment", respBuf,
+                                                                  span)) {
+        return *err;
     }
 
     nlohmann::json json;
