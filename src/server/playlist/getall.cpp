@@ -23,12 +23,28 @@ namespace creatures {
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability;
 
-Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(std::shared_ptr<OperationSpan> parentSpan) {
+// Conforms to docs/database-observability.md (issue #17).
 
+Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(const std::shared_ptr<OperationSpan> &parentSpan) {
     if (!parentSpan) {
-        parentSpan = observability->createOperationSpan("get_all_playlists");
+        warn("no parent span provided for Database.getAllPlaylists, creating a root span");
     }
-    auto span = observability->createChildOperationSpan("playlists.get_all_playlists", parentSpan);
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.getAllPlaylists", parentSpan);
+
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", PLAYLISTS_COLLECTION);
+        dbSpan->setAttribute("database.operation", "find");
+        dbSpan->setAttribute("database.system", "mongodb");
+        dbSpan->setAttribute("database.name", DB_NAME);
+    }
+
+    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
+        if (dbSpan) {
+            dbSpan->setError(msg);
+            dbSpan->setAttribute("error.type", type);
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
+        }
+    };
 
     debug("attempting to get all of the playlists");
 
@@ -37,23 +53,19 @@ Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(std::shared_p
     try {
         auto collectionResult = getCollection(PLAYLISTS_COLLECTION);
         if (!collectionResult.isSuccess()) {
-            auto error = collectionResult.getError().value();
+            auto err = collectionResult.getError().value();
             std::string errorMessage =
-                fmt::format("database error while getting all of the playlists: {}", error.getMessage());
+                fmt::format("database error while getting all of the playlists: {}", err.getMessage());
             warn(errorMessage);
-            span->setError(errorMessage);
-            return Result<std::vector<creatures::Playlist>>{error};
+            setSpanError(errorMessage, "DatabaseError", err.getCode());
+            return Result<std::vector<creatures::Playlist>>{err};
         }
-
-        auto dbSpan = observability->createChildOperationSpan("playlists.get_all_playlists_db", span);
         auto collection = collectionResult.getValue().value();
-        trace("collection obtained");
 
+        auto mongoSpan = creatures::observability->createChildOperationSpan("getAllPlaylists.mongoQuery", dbSpan);
         document query_doc{};
         document projection_doc{};
         document sort_doc{};
-
-        // Only sort by name
         sort_doc << "name" << 1;
 
         mongocxx::options::find findOptions{};
@@ -62,60 +74,83 @@ Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(std::shared_p
 
         mongocxx::cursor cursor = collection.find(query_doc.view(), findOptions);
 
-        // Go Mongo, go! 🎉
         for (auto &&doc : cursor) {
+            auto playlistSpan =
+                creatures::observability->createChildOperationSpan("getAllPlaylists.create-playlist", mongoSpan);
 
-            // Safe JSON conversion using JsonParser utility
-            auto jsonResult = JsonParser::bsonToJson(doc, "playlist document", dbSpan);
+            auto jsonResult = JsonParser::bsonToJson(doc, "playlist document", playlistSpan);
             if (!jsonResult.isSuccess()) {
-                warn("Skipping playlist document due to JSON conversion error");
-                continue; // Skip this document and continue with next
+                auto err = jsonResult.getError().value();
+                if (playlistSpan) {
+                    playlistSpan->setError(err.getMessage());
+                    playlistSpan->setAttribute("error.type", "JsonParsingException");
+                    playlistSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+                }
+                continue;
             }
             nlohmann::json json_doc = jsonResult.getValue().value();
-            debug("Playlist JSON converted successfully");
 
-            // Create the playlist from JSON
-            auto playlistResult = playlistFromJson(json_doc, dbSpan);
+            auto playlistResult = playlistFromJson(json_doc, playlistSpan);
             if (!playlistResult.isSuccess()) {
-                std::string errorMessage = fmt::format("Unable to parse the JSON in the database to Playlist: {}",
-                                                       playlistResult.getError()->getMessage());
+                auto err = playlistResult.getError().value();
+                std::string errorMessage = fmt::format("Unable to parse playlist JSON: {}", err.getMessage());
                 warn(errorMessage);
-                dbSpan->setError(errorMessage);
+                if (playlistSpan) {
+                    playlistSpan->setError(errorMessage);
+                    playlistSpan->setAttribute("error.type", "DataFormatException");
+                    playlistSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+                }
+                setSpanError(errorMessage, "DataFormatException", err.getCode());
                 return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::InvalidData, errorMessage)};
             }
 
             auto playlist = playlistResult.getValue().value();
             playlists.push_back(playlist);
-            debug("found {}", playlist.name);
+            if (playlistSpan) {
+                playlistSpan->setAttribute("playlist.id", playlist.id);
+                playlistSpan->setAttribute("playlist.name", playlist.name);
+                playlistSpan->setSuccess();
+            }
         }
-        dbSpan->setAttribute("playlists_found", static_cast<uint64_t>(playlists.size()));
-        dbSpan->setSuccess();
+        if (mongoSpan) {
+            mongoSpan->setAttribute("playlists.count", static_cast<int64_t>(playlists.size()));
+            mongoSpan->setSuccess();
+        }
     } catch (const DataFormatException &e) {
         std::string errorMessage = fmt::format("Failed to get all playlists: {}", e.what());
         warn(errorMessage);
-        span->recordException(e);
+        if (dbSpan)
+            dbSpan->recordException(e);
+        setSpanError(errorMessage, "DataFormatException", ServerError::InvalidData);
         return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (const mongocxx::exception &e) {
         std::string errorMessage = fmt::format("MongoDB Exception while loading the playlists: {}", e.what());
         critical(errorMessage);
-        span->recordException(e);
+        if (dbSpan)
+            dbSpan->recordException(e);
+        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const bsoncxx::exception &e) {
-        std::string errorMessage = fmt::format("BSON error while attempting to load all the playlists: {}", e.what());
+        std::string errorMessage = fmt::format("BSON error while loading the playlists: {}", e.what());
         critical(errorMessage);
-        span->recordException(e);
+        if (dbSpan)
+            dbSpan->recordException(e);
+        setSpanError(errorMessage, "JsonParsingException", ServerError::InternalError);
         return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
-    // Return a 404 if nothing as found
     if (playlists.empty()) {
-        std::string errorMessage = fmt::format("No playlists found");
+        std::string errorMessage = "No playlists found";
         warn(errorMessage);
-        span->setError(errorMessage);
+        setSpanError(errorMessage, "NotFound", ServerError::NotFound);
         return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::NotFound, errorMessage)};
     }
 
-    info("done loading all the playlists");
+    if (dbSpan) {
+        dbSpan->setAttribute("playlists.count", static_cast<int64_t>(playlists.size()));
+        dbSpan->setSuccess();
+    }
+    info("done loading {} playlists", playlists.size());
     return Result<std::vector<creatures::Playlist>>{playlists};
 }
 

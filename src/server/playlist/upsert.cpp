@@ -29,93 +29,125 @@ namespace creatures {
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability;
 
-Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlistJson,
-                                                     std::shared_ptr<OperationSpan> parentSpan) {
+// Conforms to docs/database-observability.md (issue #17).
 
+Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlistJson,
+                                                     const std::shared_ptr<OperationSpan> &parentSpan) {
     if (!parentSpan) {
-        parentSpan = observability->createOperationSpan("upset_playlist_operation");
+        warn("no parent span provided for Database.upsertPlaylist, creating a root span");
     }
-    auto span = observability->createChildOperationSpan("upsert_playlist", parentSpan);
+    auto upsertSpan = creatures::observability->createChildOperationSpan("Database.upsertPlaylist", parentSpan);
+    if (upsertSpan) {
+        upsertSpan->setAttribute("database.collection", PLAYLISTS_COLLECTION);
+        upsertSpan->setAttribute("database.operation", "update_one");
+        upsertSpan->setAttribute("database.system", "mongodb");
+        upsertSpan->setAttribute("database.name", DB_NAME);
+    }
+
+    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
+        if (upsertSpan) {
+            upsertSpan->setError(msg);
+            upsertSpan->setAttribute("error.type", type);
+            upsertSpan->setAttribute("error.code", static_cast<int64_t>(code));
+        }
+    };
 
     debug("upserting a playlist in the database");
 
     try {
-        auto jsonSpan = observability->createChildOperationSpan("upsert_playlist.json", span);
+        auto jsonSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.parse-json", upsertSpan);
         auto jsonResult = JsonParser::parseJsonString(playlistJson, "playlist upsert", jsonSpan);
         if (!jsonResult.isSuccess()) {
-            auto error = jsonResult.getError().value();
-            span->setError(error.getMessage());
-            return Result<creatures::Playlist>{error};
+            auto err = jsonResult.getError().value();
+            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            return Result<creatures::Playlist>{err};
         }
         auto jsonObject = jsonResult.getValue().value();
 
-        auto playlistResult = playlistFromJson(jsonObject, span);
+        auto playlistResult = playlistFromJson(jsonObject, upsertSpan);
         if (!playlistResult.isSuccess()) {
-            auto error = playlistResult.getError();
-            std::string errorMessage =
-                fmt::format("Error while creating a playlist from JSON: {}", error->getMessage());
+            auto err = playlistResult.getError().value();
+            std::string errorMessage = fmt::format("Error while creating a playlist from JSON: {}", err.getMessage());
             warn(errorMessage);
-            jsonSpan->setError(errorMessage);
+            setSpanError(errorMessage, "InvalidData", err.getCode());
             return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
         }
         auto playlist = playlistResult.getValue().value();
-        jsonSpan->setSuccess();
-
-        // Now go save it in Mongo
-        auto dbSpan = observability->createChildOperationSpan("upset_playlist.db");
-        auto collectionResult = getCollection(PLAYLISTS_COLLECTION);
-        if (!collectionResult.isSuccess()) {
-            auto error = collectionResult.getError().value();
-            std::string errorMessage = fmt::format("database error upserting a playlist: {}", error.getMessage());
-            warn(errorMessage);
-            dbSpan->setError(errorMessage);
-            return Result<creatures::Playlist>{error};
+        if (upsertSpan) {
+            upsertSpan->setAttribute("playlist.id", playlist.id);
         }
-        auto collection = collectionResult.getValue().value();
-        trace("collection obtained");
 
-        // Convert the JSON string into BSON
-        auto bsonSpan = observability->createChildOperationSpan("upsert_playlist.bson", span);
+        auto bsonSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.json-to-bson", upsertSpan);
         auto bsonResult = JsonParser::jsonStringToBson(playlistJson, fmt::format("playlist {}", playlist.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
-            auto error = bsonResult.getError().value();
-            span->setError(error.getMessage());
-            return Result<creatures::Playlist>{error};
+            auto err = bsonResult.getError().value();
+            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            return Result<creatures::Playlist>{err};
         }
         auto bsonDoc = bsonResult.getValue().value();
 
+        auto collectionSpan =
+            creatures::observability->createChildOperationSpan("upsertPlaylist.get-collection", upsertSpan);
+        auto collectionResult = getCollection(PLAYLISTS_COLLECTION);
+        if (!collectionResult.isSuccess()) {
+            auto err = collectionResult.getError().value();
+            std::string errorMessage = fmt::format("database error upserting a playlist: {}", err.getMessage());
+            warn(errorMessage);
+            if (collectionSpan) {
+                collectionSpan->setError(errorMessage);
+                collectionSpan->setAttribute("error.type", "DatabaseError");
+                collectionSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+            }
+            setSpanError(errorMessage, "DatabaseError", err.getCode());
+            return Result<creatures::Playlist>{err};
+        }
+        auto collection = collectionResult.getValue().value();
+        if (collectionSpan)
+            collectionSpan->setSuccess();
+
+        auto mongoSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.mongoQuery", upsertSpan);
         bsoncxx::builder::stream::document filter_builder;
         filter_builder << "id" << playlist.id;
 
-        // Upsert options
         mongocxx::options::update update_options;
         update_options.upsert(true);
 
-        // Upsert operation
         collection.update_one(filter_builder.view(),
                               bsoncxx::builder::stream::document{} << "$set" << bsonDoc.view()
                                                                    << bsoncxx::builder::stream::finalize,
                               update_options);
+        if (mongoSpan)
+            mongoSpan->setSuccess();
 
         info("Playlist upserted in the database: {}", playlist.id);
-        dbSpan->setAttribute("playlist_id", playlist.id);
-        dbSpan->setSuccess();
-        span->setSuccess();
+        if (upsertSpan) {
+            upsertSpan->setAttribute("playlist.name", playlist.name);
+            upsertSpan->setAttribute("playlist.number_of_items", static_cast<int64_t>(playlist.number_of_items));
+            upsertSpan->setSuccess();
+        }
         return Result<creatures::Playlist>{playlist};
 
     } catch (const mongocxx::exception &e) {
-        error("Error (mongocxx::exception) while upserting a playlist in database: {}", e.what());
-        span->recordException(e);
-        return Result<creatures::Playlist>{ServerError(ServerError::InternalError, e.what())};
+        std::string errorMessage =
+            fmt::format("Error (mongocxx::exception) while upserting a playlist in database: {}", e.what());
+        error(errorMessage);
+        if (upsertSpan)
+            upsertSpan->recordException(e);
+        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        return Result<creatures::Playlist>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const bsoncxx::exception &e) {
-        error("Error (bsoncxx::exception) while upserting a playlist in database: {}", e.what());
-        span->recordException(e);
-        return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, e.what())};
+        std::string errorMessage =
+            fmt::format("Error (bsoncxx::exception) while upserting a playlist in database: {}", e.what());
+        error(errorMessage);
+        if (upsertSpan)
+            upsertSpan->recordException(e);
+        setSpanError(errorMessage, "JsonParsingException", ServerError::InvalidData);
+        return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (...) {
-        std::string error_message = "Unknown error while upserting a playlist in the database";
-        critical(error_message);
-        span->setError(error_message);
-        return Result<creatures::Playlist>{ServerError(ServerError::InternalError, error_message)};
+        std::string errorMessage = "Unknown error while upserting a playlist in the database";
+        critical(errorMessage);
+        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        return Result<creatures::Playlist>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
 

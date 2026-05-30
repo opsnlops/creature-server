@@ -17,131 +17,192 @@
 #include "server/namespace-stuffs.h"
 
 using bsoncxx::builder::stream::document;
+using bsoncxx::builder::stream::finalize;
 
 namespace creatures {
 
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability;
 
-Result<json> Database::getPlaylistJson(playlistId_t playlistId, std::shared_ptr<OperationSpan> parentSpan) {
+// Conforms to docs/database-observability.md (issue #17).
 
+Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
+                                       const std::shared_ptr<OperationSpan> &parentSpan) {
     if (!parentSpan) {
-        parentSpan = observability->createOperationSpan("playlist.without_parent");
+        warn("no parent span provided for Database.getPlaylistJson, creating a root span");
     }
-    auto span = observability->createChildOperationSpan("playlist.get_playlist_json", parentSpan);
-    span->setAttribute("playlist_id", playlistId);
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.getPlaylistJson", parentSpan);
+
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", PLAYLISTS_COLLECTION);
+        dbSpan->setAttribute("database.operation", "find_one");
+        dbSpan->setAttribute("database.system", "mongodb");
+        dbSpan->setAttribute("database.name", DB_NAME);
+        dbSpan->setAttribute("playlist.id", playlistId);
+    }
+
+    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
+        if (dbSpan) {
+            dbSpan->setError(msg);
+            dbSpan->setAttribute("error.type", type);
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
+        }
+    };
 
     debug("attempting to get the JSON for a playlist by ID: {}", playlistId);
 
     if (playlistId.empty()) {
-        std::string errorMessage = fmt::format("an empty playlistId was passed into getPlaylistJson()");
+        std::string errorMessage = "unable to get a playlist because the id was empty";
         info(errorMessage);
-        span->setError(errorMessage);
-        return Result<json>{ServerError(ServerError::InvalidData, "unable to get a playlist because the id was empty")};
+        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        return Result<json>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
-    auto dbSpan = observability->createChildOperationSpan("playlist.get_playlist_json.database");
+    auto collectionResult = getCollection(PLAYLISTS_COLLECTION);
+    if (!collectionResult.isSuccess()) {
+        auto err = collectionResult.getError().value();
+        std::string errorMessage = fmt::format("database error while getting a playlist: {}", err.getMessage());
+        warn(errorMessage);
+        setSpanError(errorMessage, "DatabaseError", err.getCode());
+        return Result<json>{err};
+    }
+    auto collection = collectionResult.getValue().value();
+
+    std::shared_ptr<OperationSpan> mongoSpan;
     try {
-        bsoncxx::builder::stream::document filter_builder;
-        filter_builder << "id" << playlistId;
+        mongoSpan = creatures::observability->createChildOperationSpan("getPlaylistJson.mongoQuery", dbSpan);
 
-        // Search for the document
-        auto collectionResult = getCollection(PLAYLISTS_COLLECTION);
-        if (!collectionResult.isSuccess()) {
-            auto error = collectionResult.getError().value();
-            std::string errorMessage = fmt::format("database error while getting a playlist: {}", error.getMessage());
+        auto filter = document{} << "id" << playlistId << finalize;
+        auto maybe_result = collection.find_one(filter.view());
+        if (mongoSpan)
+            mongoSpan->setSuccess();
+
+        if (!maybe_result) {
+            std::string errorMessage = fmt::format("Playlist not found: {}", playlistId);
             warn(errorMessage);
-            dbSpan->setError(errorMessage);
-            return Result<json>{error};
-        }
-        auto collection = collectionResult.getValue().value();
-        auto maybe_result = collection.find_one(filter_builder.view());
-
-        // Check if the document was found
-        if (maybe_result) {
-            // Convert BSON document to JSON using utility
-            debug("Found playlist document, starting BSON to JSON conversion for playlist {}", playlistId);
-            bsoncxx::document::view view = maybe_result->view();
-
-            debug("Getting BSON document view for playlist {}", playlistId);
-            auto jsonResult = JsonParser::bsonToJson(view, fmt::format("playlist {}", playlistId), dbSpan);
-            if (!jsonResult.isSuccess()) {
-                auto error = jsonResult.getError().value();
-                warn("Failed to convert BSON to JSON for playlist {}: {}", playlistId, error.getMessage());
-                span->setError(error.getMessage());
-                return jsonResult;
-            }
-            debug("BSON document converted to JSON string for playlist {} (length: {})", playlistId,
-                  jsonResult.getValue().value().dump().length());
-            nlohmann::json json_result = jsonResult.getValue().value();
-
-            debug("JSON parsing successful for playlist {}", playlistId);
-            dbSpan->setSuccess();
-            span->setSuccess();
-            return Result<json>{json_result};
-        } else {
-            std::string errorMessage = fmt::format("no playlist id '{}' found", playlistId);
-            warn(errorMessage);
-            dbSpan->setError(errorMessage);
+            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
             return Result<json>{ServerError(ServerError::NotFound, errorMessage)};
         }
+
+        auto convertSpan = creatures::observability->createChildOperationSpan("getPlaylistJson.bson-to-json", dbSpan);
+        auto jsonResult =
+            JsonParser::bsonToJson(maybe_result->view(), fmt::format("playlist {}", playlistId), convertSpan);
+        if (!jsonResult.isSuccess()) {
+            auto err = jsonResult.getError().value();
+            warn("Failed to convert BSON to JSON for playlist {}: {}", playlistId, err.getMessage());
+            setSpanError(err.getMessage(), "JsonParsingException", err.getCode());
+            return jsonResult;
+        }
+        nlohmann::json j = jsonResult.getValue().value();
+
+        if (dbSpan) {
+            dbSpan->setAttribute("db.response_size_bytes", static_cast<int64_t>(j.dump().length()));
+            dbSpan->setSuccess();
+        }
+        return Result<json>{j};
+
     } catch (const mongocxx::exception &e) {
-        std::string errorMessage = fmt::format("a MongoDB error happened while loading a playlist by ID: {}", e.what());
+        std::string errorMessage = fmt::format("MongoDB error while loading playlist {}: {}", playlistId, e.what());
         critical(errorMessage);
-        dbSpan->recordException(e);
+        if (mongoSpan) {
+            mongoSpan->recordException(e);
+            mongoSpan->setError(errorMessage);
+        }
+        if (dbSpan)
+            dbSpan->recordException(e);
+        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        return Result<json>{ServerError(ServerError::DatabaseError, errorMessage)};
+    } catch (const std::exception &e) {
+        std::string errorMessage = fmt::format("Error while loading playlist {}: {}", playlistId, e.what());
+        critical(errorMessage);
+        if (dbSpan)
+            dbSpan->recordException(e);
+        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
-        std::string errorMessage = fmt::format("An unknown error happened while loading a playlist by ID");
+        std::string errorMessage = fmt::format("Unknown error while loading playlist {}", playlistId);
         critical(errorMessage);
-        dbSpan->setError(errorMessage);
+        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
 
 Result<creatures::Playlist> Database::getPlaylist(const playlistId_t &playlistId,
-                                                  std::shared_ptr<OperationSpan> parentSpan) {
-
+                                                  const std::shared_ptr<OperationSpan> &parentSpan) {
     if (!parentSpan) {
-        parentSpan = observability->createOperationSpan("playlist.without_parent");
+        warn("no parent span provided for Database.getPlaylist, creating a root span");
     }
-    auto span = observability->createChildOperationSpan("playlist.get_playlist", parentSpan);
-    span->setAttribute("playlist_id", playlistId);
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.getPlaylist", parentSpan);
+
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", PLAYLISTS_COLLECTION);
+        dbSpan->setAttribute("database.operation", "find_one");
+        dbSpan->setAttribute("database.system", "mongodb");
+        dbSpan->setAttribute("database.name", DB_NAME);
+        dbSpan->setAttribute("playlist.id", playlistId);
+    }
+
+    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
+        if (dbSpan) {
+            dbSpan->setError(msg);
+            dbSpan->setAttribute("error.type", type);
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
+        }
+    };
 
     if (playlistId.empty()) {
         std::string errorMessage = "unable to get a playlist because the id was empty";
         warn(errorMessage);
-        span->setError(errorMessage);
+        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
-    // Go to the database and get the playlist's raw JSON
-    auto playlistJson = getPlaylistJson(playlistId, span);
+    auto jsonSpan = creatures::observability->createChildOperationSpan("getPlaylist.getPlaylistJson", dbSpan);
+    auto playlistJson = getPlaylistJson(playlistId, jsonSpan);
     if (!playlistJson.isSuccess()) {
-        auto error = playlistJson.getError().value();
-        std::string errorMessage =
-            fmt::format("unable to get a playlist by ID: {}", playlistJson.getError()->getMessage());
+        auto err = playlistJson.getError().value();
+        std::string errorMessage = fmt::format("unable to get a playlist by ID: {}", err.getMessage());
         warn(errorMessage);
-        span->setError(errorMessage);
-        return Result<creatures::Playlist>{error};
+        std::string etype = "InternalError";
+        if (err.getCode() == ServerError::NotFound)
+            etype = "NotFound";
+        else if (err.getCode() == ServerError::InvalidData)
+            etype = "InvalidData";
+        else if (err.getCode() == ServerError::DatabaseError)
+            etype = "DatabaseError";
+        if (jsonSpan) {
+            jsonSpan->setError(errorMessage);
+            jsonSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+        }
+        setSpanError(errorMessage, etype, err.getCode());
+        return Result<creatures::Playlist>{err};
     }
+    if (jsonSpan)
+        jsonSpan->setSuccess();
 
-    // Covert it to an Playlist object (if possible)
-    debug("Starting playlist JSON to object conversion for playlist {}", playlistId);
-    auto result = playlistFromJson(playlistJson.getValue().value(), span);
+    auto fetchSpan = creatures::observability->createChildOperationSpan("getPlaylist.playlistFromJson", dbSpan);
+    auto result = playlistFromJson(playlistJson.getValue().value(), fetchSpan);
     if (!result.isSuccess()) {
-        auto error = result.getError().value();
-        std::string errorMessage = fmt::format("unable to get a playlist by ID: {}", result.getError()->getMessage());
+        auto err = result.getError().value();
+        std::string errorMessage = fmt::format("unable to get a playlist by ID: {}", err.getMessage());
         warn(errorMessage);
-        span->setError(errorMessage);
-        return Result<creatures::Playlist>{error};
+        if (fetchSpan) {
+            fetchSpan->setError(errorMessage);
+            fetchSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+        }
+        setSpanError(errorMessage, "InvalidData", err.getCode());
+        return Result<creatures::Playlist>{err};
     }
-    debug("Successfully converted playlist JSON to object for playlist {}", playlistId);
+    if (fetchSpan)
+        fetchSpan->setSuccess();
 
-    // Create the playlist
     auto playlist = result.getValue().value();
-    span->setAttribute("playlist_name", playlist.name);
-    span->setAttribute("playlist_number_of_items", playlist.number_of_items);
-    span->setSuccess();
+    if (dbSpan) {
+        dbSpan->setAttribute("playlist.name", playlist.name);
+        dbSpan->setAttribute("playlist.number_of_items", static_cast<int64_t>(playlist.number_of_items));
+        dbSpan->setSuccess();
+    }
     return Result<creatures::Playlist>{playlist};
 }
+
 } // namespace creatures

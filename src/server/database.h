@@ -136,12 +136,14 @@ class Database {
                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     // Playlist stuff
-    Result<json> getPlaylistJson(playlistId_t playlistId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
-    Result<std::vector<creatures::Playlist>> getAllPlaylists(std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<json> getPlaylistJson(const playlistId_t &playlistId,
+                                 const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<std::vector<creatures::Playlist>>
+    getAllPlaylists(const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
     Result<creatures::Playlist> getPlaylist(const playlistId_t &playlistId,
-                                            std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                            const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
     Result<creatures::Playlist> upsertPlaylist(const std::string &playlistJson,
-                                               std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                               const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
     // DMX Fixture stuff
     Result<creatures::DmxFixture> getFixture(const fixtureId_t &fixtureId,
