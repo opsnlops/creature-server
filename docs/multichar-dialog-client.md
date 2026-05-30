@@ -112,9 +112,9 @@ Everything is JSON over HTTP. The render endpoint is async — see the [WebSocke
 | `created_at` | int64 | server-managed | Wall-clock ms since Unix epoch when first persisted. |
 | `updated_at` | int64 | server-managed | Wall-clock ms since Unix epoch of the most recent edit. |
 
-### `UpsertDialogScriptRequest`
+### POST / PUT request shape
 
-What POST and PUT actually accept on the wire. Just the editable fields:
+The canonical, minimal shape POST and PUT accept is just the editable fields:
 
 ```json
 {
@@ -126,7 +126,9 @@ What POST and PUT actually accept on the wire. Just the editable fields:
 }
 ```
 
-Any `id`, `created_at`, or `updated_at` the client sends is **ignored** (they're server-managed). Don't bother stripping them client-side; the DTO just won't see them.
+**Round-tripping a full `DialogScriptDto` is also fine.** As of 3.15.1 the endpoints are lenient: any extra fields the client sends — including `id`, `created_at`, `updated_at` — are silently ignored and overwritten with server-managed values. So you can fetch a script with GET, edit `title`/`notes`/`turns`, and PUT the whole thing back without stripping anything client-side.
+
+(Pre-3.15.1: the endpoints used a strict deserializer that 400'd with `[oatpp::parser::json::mapping::Deserializer::readObject()]: Error. Unknown field`. If you see that, the server is older — upgrade or strip the read-only fields client-side.)
 
 ### `DialogScriptValidation` (response from `/validate`)
 
@@ -704,4 +706,5 @@ The resulting Animation will have NO `source_script_id` / `source_script_turns` 
 |---|---|
 | 3.14.0 | Multichar dialog feature shipped (inline turns only) |
 | 3.14.1–3.14.4 | Bug fixes during e2e (forced-alignment whitespace, preview URL pattern, mouth_slot validation, buildNeutralFrame bounds) |
-| **3.15.0** | **DialogScript CRUD + `script_id` render path + CoW snapshot + validate endpoint** |
+| 3.15.0 | DialogScript CRUD + `script_id` render path + CoW snapshot + validate endpoint |
+| **3.15.1** | **Lenient POST/PUT — accepts round-tripped `DialogScriptDto`; friendly field-level validation errors instead of oatpp internals** |
