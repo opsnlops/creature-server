@@ -226,6 +226,49 @@ TEST(AssembleChunk, MouthTimingsAreShiftedOntoTheTightenedTimeline) {
     EXPECT_GE(out.perCreature[0].mouth.front().startTimeMs, 0.0);
 }
 
+TEST(AssembleChunk, HandlesElevenLabsInterleavedWhitespaceWordTokens) {
+    // Regression: live testing on 2026-05-30 revealed that ElevenLabs forced-
+    // alignment returns words[] with inter-word whitespace tokens interleaved
+    // (a 4-word turn comes back as 7 entries: "Beaky," " " "are" " " "you"
+    // " " "awake?"). assembleChunk must filter those out before counting,
+    // matching show.py's `if w["text"].strip() != ""` pre-filter. Without
+    // the filter the wordCursor advances past spaces and consumes the wrong
+    // word entries, mis-bracketing turn audio.
+    std::vector<int16_t> pcm(static_cast<std::size_t>(5.0 * kSR), 0);
+    fillRange(pcm, 0.0, 1.0, 1000);
+    fillRange(pcm, 1.5, 2.5, 2000);
+    DialogResult dr;
+    dr.audioData = packPcm(pcm);
+
+    // Two turns, 2 words each, with interleaved space tokens (mimics real
+    // ElevenLabs FA output shape).
+    ForcedAlignmentResult fa;
+    fa.words = {
+        word("Beaky,", 0.0, 0.5), word(" ", 0.5, 0.55), word("hello", 0.55, 1.0),  word(" ", 1.0, 1.5),
+        word("Hi", 1.5, 2.0),     word(" ", 2.0, 2.05), word("Mango.", 2.05, 2.5),
+    };
+    fa.characters = {charT("B", 0.0, 0.1),  charT("e", 0.1, 0.2),  charT("a", 0.2, 0.3),  charT("k", 0.3, 0.4),
+                     charT("y", 0.4, 0.45), charT(",", 0.45, 0.5), charT(" ", 0.5, 0.55), charT("h", 0.55, 0.6),
+                     charT("e", 0.6, 0.65), charT("l", 0.65, 0.7), charT("l", 0.7, 0.75), charT("o", 0.75, 1.0),
+                     charT(" ", 1.0, 1.5), // inter-turn separator
+                     charT("H", 1.5, 1.7),  charT("i", 1.7, 2.0),  charT(" ", 2.0, 2.05), charT("M", 2.05, 2.1),
+                     charT("a", 2.1, 2.15), charT("n", 2.15, 2.2), charT("g", 2.2, 2.4),  charT("o", 2.4, 2.45),
+                     charT(".", 2.45, 2.5)};
+    std::vector<DialogInput> turns{{"voice-A", "Beaky, hello"}, {"voice-B", "Hi Mango."}};
+
+    auto r = assembleChunk(turns, dr, fa, kSR);
+    ASSERT_TRUE(r.isSuccess()) << (r.getError() ? r.getError().value().getMessage() : "");
+    const auto out = r.getValue().value();
+    ASSERT_EQ(out.perCreature.size(), 2u);
+
+    // Voice-A's mouth should include the full first turn's chars ("Beaky,
+    // hello" = 12 chars including the comma + space). If the word filter were
+    // missing, the cursor math would mis-bracket and we'd skip chars or
+    // grab the inter-turn separator into the wrong turn.
+    ASSERT_EQ(out.perCreature[0].mouth.size(), 12u);
+    ASSERT_EQ(out.perCreature[1].mouth.size(), 9u); // "Hi Mango."
+}
+
 TEST(AssembleChunk, FailsCleanlyWhenForcedAlignmentRunsOutOfWords) {
     std::vector<int16_t> pcm(static_cast<std::size_t>(2.0 * kSR), 0);
     fillRange(pcm, 0.0, 1.0, 1000);

@@ -134,6 +134,19 @@ Result<DialogAssembled> assembleChunk(const std::vector<DialogInput> &turns, con
         return idx;
     };
 
+    // ElevenLabs forced-alignment returns words[] with the inter-word
+    // whitespace tokens INTERLEAVED as separate entries (a 4-word turn comes
+    // back as 7 entries: "Beaky," " " "are" " " "you" " " "awake?"). show.py
+    // filters those out before consuming; do the same here so the wordCursor
+    // math indexes real words.
+    std::vector<const ForcedAlignmentWord *> spokenWords;
+    spokenWords.reserve(alignment.words.size());
+    for (const auto &w : alignment.words) {
+        if (countWords(w.text) > 0) { // non-whitespace token
+            spokenWords.push_back(&w);
+        }
+    }
+
     std::size_t wordCursor = 0;
     std::size_t charCursor = 0;
     for (std::size_t i = 0; i < turns.size(); ++i) {
@@ -146,14 +159,14 @@ Result<DialogAssembled> assembleChunk(const std::vector<DialogInput> &turns, con
                 ServerError::InvalidData,
                 fmt::format("assembleChunk: turn {} has no words after tag stripping: '{}'", i, turn.text))};
         }
-        if (wordCursor + k > alignment.words.size()) {
+        if (wordCursor + k > spokenWords.size()) {
             return Result<DialogAssembled>{ServerError(
                 ServerError::InvalidData,
                 fmt::format("assembleChunk: forced alignment ran out of words at turn {} (need {} more, have {})", i, k,
-                            alignment.words.size() - wordCursor))};
+                            spokenWords.size() - wordCursor))};
         }
-        const auto &wFirst = alignment.words[wordCursor];
-        const auto &wLast = alignment.words[wordCursor + k - 1];
+        const auto &wFirst = *spokenWords[wordCursor];
+        const auto &wLast = *spokenWords[wordCursor + k - 1];
         wordCursor += k;
 
         TurnInfo ti;
@@ -191,9 +204,10 @@ Result<DialogAssembled> assembleChunk(const std::vector<DialogInput> &turns, con
     // Drift checks — warn but don't fail. show.py's same posture: a small
     // off-by-one means the mouth tracks slightly off in one turn, not a
     // pipeline crash.
-    if (wordCursor != alignment.words.size()) {
-        warn("assembleChunk: word cursor drift — consumed {} of {} forced-alignment words", wordCursor,
-             alignment.words.size());
+    if (wordCursor != spokenWords.size()) {
+        warn("assembleChunk: word cursor drift — consumed {} of {} spoken-word forced-alignment entries (raw "
+             "alignment had {} tokens including whitespace)",
+             wordCursor, spokenWords.size(), alignment.words.size());
     }
     if (charCursor != alignment.characters.size()) {
         warn("assembleChunk: char cursor drift — consumed {} of {} forced-alignment characters", charCursor,
