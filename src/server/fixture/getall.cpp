@@ -35,8 +35,12 @@ extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObjectCache<fixtureId_t, DmxFixture>> fixtureCache;
 extern std::shared_ptr<ObservabilityManager> observability;
 
-Result<std::vector<creatures::DmxFixture>> Database::getAllFixtures(const std::shared_ptr<OperationSpan> &parentSpan) {
+// Conforms to docs/database-observability.md (issue #17).
 
+Result<std::vector<creatures::DmxFixture>> Database::getAllFixtures(const std::shared_ptr<OperationSpan> &parentSpan) {
+    if (!parentSpan) {
+        warn("no parent span provided for Database.getAllFixtures, creating a root span");
+    }
     auto dbSpan = creatures::observability->createChildOperationSpan("Database.getAllFixtures", parentSpan);
 
     if (dbSpan) {
@@ -45,6 +49,14 @@ Result<std::vector<creatures::DmxFixture>> Database::getAllFixtures(const std::s
         dbSpan->setAttribute("database.system", "mongodb");
         dbSpan->setAttribute("database.name", DB_NAME);
     }
+
+    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
+        if (dbSpan) {
+            dbSpan->setError(msg);
+            dbSpan->setAttribute("error.type", type);
+            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
+        }
+    };
 
     info("attempting to get all of the DmxFixtures");
 
@@ -60,26 +72,28 @@ Result<std::vector<creatures::DmxFixture>> Database::getAllFixtures(const std::s
             auto err = collectionResult.getError().value();
             std::string errorMessage = fmt::format("unable to get the fixture collection: {}", err.getMessage());
             critical(errorMessage);
-            if (dbSpan) {
-                dbSpan->setError(errorMessage);
-                dbSpan->setAttribute("error.type", "DatabaseError");
-                dbSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
-            }
+            setSpanError(errorMessage, "DatabaseError", err.getCode());
             return Result<std::vector<DmxFixture>>{err};
         }
         auto collection = collectionResult.getValue().value();
 
-        auto mongoSpan = creatures::observability->createChildOperationSpan("getAllFixtures::mongo-query", dbSpan);
+        auto mongoSpan = creatures::observability->createChildOperationSpan("getAllFixtures.mongoQuery", dbSpan);
         mongocxx::options::find opts;
         opts.sort(sort_doc.view());
         mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
 
         for (auto doc : cursor) {
             auto fixtureSpan =
-                creatures::observability->createChildOperationSpan("getAllFixtures::create-fixture", mongoSpan);
+                creatures::observability->createChildOperationSpan("getAllFixtures.create-fixture", mongoSpan);
 
             auto jsonResult = JsonParser::bsonToJson(doc, "fixture document", fixtureSpan);
             if (!jsonResult.isSuccess()) {
+                auto err = jsonResult.getError().value();
+                if (fixtureSpan) {
+                    fixtureSpan->setError(err.getMessage());
+                    fixtureSpan->setAttribute("error.type", "JsonParsingException");
+                    fixtureSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+                }
                 continue;
             }
             json j = jsonResult.getValue().value();
@@ -93,19 +107,24 @@ Result<std::vector<creatures::DmxFixture>> Database::getAllFixtures(const std::s
                 if (fixtureSpan) {
                     fixtureSpan->setError(errorMessage);
                     fixtureSpan->setAttribute("error.type", "DataFormatException");
-                    fixtureSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+                    fixtureSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
                 }
+                setSpanError(errorMessage, "DataFormatException", err.getCode());
                 return Result<std::vector<DmxFixture>>{err};
             }
             fixtureList.push_back(result.getValue().value());
             fixtureCache->put(result.getValue().value().id, result.getValue().value());
 
-            fixtureSpan->setAttribute("fixture.id", result.getValue().value().id);
-            fixtureSpan->setAttribute("fixture.name", result.getValue().value().name);
-            fixtureSpan->setSuccess();
+            if (fixtureSpan) {
+                fixtureSpan->setAttribute("fixture.id", result.getValue().value().id);
+                fixtureSpan->setAttribute("fixture.name", result.getValue().value().name);
+                fixtureSpan->setSuccess();
+            }
         }
-        mongoSpan->setAttribute("fixtures.count", static_cast<int64_t>(fixtureList.size()));
-        mongoSpan->setSuccess();
+        if (mongoSpan) {
+            mongoSpan->setAttribute("fixtures.count", static_cast<int64_t>(fixtureList.size()));
+            mongoSpan->setSuccess();
+        }
 
         debug("found {} fixtures", fixtureList.size());
         if (dbSpan) {
@@ -118,37 +137,29 @@ Result<std::vector<creatures::DmxFixture>> Database::getAllFixtures(const std::s
         std::string errorMessage =
             fmt::format("Data format error while trying to get all of the fixtures: {}", e.what());
         error(errorMessage);
-        if (dbSpan) {
+        if (dbSpan)
             dbSpan->recordException(e);
-            dbSpan->setAttribute("error.type", "DataFormatException");
-            dbSpan->setError(errorMessage);
-        }
+        setSpanError(errorMessage, "DataFormatException", ServerError::InternalError);
         return Result<std::vector<DmxFixture>>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const DatabaseError &e) {
         std::string errorMessage =
             fmt::format("A database error happened while getting all of the fixtures: {}", e.what());
         error(errorMessage);
-        if (dbSpan) {
+        if (dbSpan)
             dbSpan->recordException(e);
-            dbSpan->setAttribute("error.type", "DatabaseError");
-            dbSpan->setError(errorMessage);
-        }
+        setSpanError(errorMessage, "DatabaseError", ServerError::DatabaseError);
         return Result<std::vector<DmxFixture>>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const std::exception &e) {
         std::string errorMessage = fmt::format("Failed to get all fixtures: {}", e.what());
         error(errorMessage);
-        if (dbSpan) {
+        if (dbSpan)
             dbSpan->recordException(e);
-            dbSpan->setAttribute("error.type", "std::exception");
-            dbSpan->setError(errorMessage);
-        }
+        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
         return Result<std::vector<DmxFixture>>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = "Failed to get all fixtures: unknown error";
         error(errorMessage);
-        if (dbSpan) {
-            dbSpan->setError(errorMessage);
-        }
+        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
         return Result<std::vector<DmxFixture>>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
