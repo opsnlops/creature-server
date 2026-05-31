@@ -16,6 +16,7 @@
 #include "server/database.h"
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/FixtureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/PreviewFixturePatternRequestDto.h"
@@ -34,7 +35,8 @@ extern std::shared_ptr<ObservabilityManager> observability;
 
 namespace creatures ::ws {
 
-class DmxFixtureController : public oatpp::web::server::api::ApiController {
+class DmxFixtureController : public oatpp::web::server::api::ApiController,
+                             public HttpResponseHelpers<DmxFixtureController> {
   public:
     DmxFixtureController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper))
         : oatpp::web::server::api::ApiController(objectMapper) {}
@@ -102,8 +104,9 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         }
 
         return withSpanStatus(span, [&] {
-            OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
-                              "fixtureId must be a UUID");
+            if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
+                return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
+            }
             const auto result = m_service.getFixture(fixtureId, span);
             if (span)
                 span->setHttpStatus(200);
@@ -170,17 +173,14 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         }
 
         return withSpanStatus(span, [&] {
-            OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
-                              "fixtureId must be a UUID");
+            if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
+                return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
+            }
             m_service.deleteFixture(fixtureId, span);
             if (span)
                 span->setHttpStatus(200);
             scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
-            const auto ok = StatusDto::createShared();
-            ok->status = "OK";
-            ok->code = 200;
-            ok->message = "Fixture deleted";
-            return createDtoResponse(Status::CODE_200, ok);
+            return okStatus(span, Status::CODE_200, "Fixture deleted");
         });
     }
 
@@ -242,13 +242,17 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         }
 
         return withSpanStatus(span, [&] {
-            OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
-                              "fixtureId must be a UUID");
-            OATPP_ASSERT_HTTP(body && body->universe != nullptr, Status::CODE_400,
-                              "Request body must include 'universe'");
+            if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
+                return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
+            }
+            if (!body || body->universe == nullptr) {
+                return bailHttp(span, Status::CODE_400, "Request body must include 'universe'");
+            }
             const universe_t universe = static_cast<universe_t>(*body->universe);
             // E1.31 universes are valid in [1, 63999]. Reject 0 (reserved) and >63999.
-            OATPP_ASSERT_HTTP(universe >= 1 && universe <= 63999, Status::CODE_400, "universe must be in [1, 63999]");
+            if (universe < 1 || universe > 63999) {
+                return bailHttp(span, Status::CODE_400, "universe must be in [1, 63999]");
+            }
             if (span)
                 span->setAttribute("fixture.universe", static_cast<int64_t>(universe));
             const auto result = m_service.setFixtureUniverse(fixtureId, std::optional<universe_t>{universe}, span);
@@ -290,34 +294,39 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         }
 
         return withSpanStatus(span, [&] {
-            OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
-                              "fixtureId must be a UUID");
-            OATPP_ASSERT_HTTP(patternId && isUuidShape(std::string(patternId)), Status::CODE_400,
-                              "patternId must be a UUID");
+            if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
+                return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
+            }
+            if (!patternId || !isUuidShape(std::string(patternId))) {
+                return bailHttp(span, Status::CODE_400, "patternId must be a UUID");
+            }
 
             // Body is optional. If present, it must parse cleanly.
             std::optional<uint32_t> stopAfterMs;
             const oatpp::String body = request->readBodyToString();
             if (body && body->size() > 0) {
+                nlohmann::json parsed;
                 try {
-                    const auto parsed = nlohmann::json::parse(std::string(body));
-                    if (parsed.contains("stop_after_ms") && !parsed["stop_after_ms"].is_null()) {
-                        const auto raw = parsed["stop_after_ms"].get<uint32_t>();
-                        // Cap at 10 minutes. UInt32 max would schedule ~50 days of stuck DMX
-                        // and a far-future AutoStopEvent pinned in the event-loop priority
-                        // queue. Reject 0 explicitly — "stop immediately" is a footgun.
-                        constexpr uint32_t MAX_STOP_AFTER_MS = 10 * 60 * 1000;
-                        OATPP_ASSERT_HTTP(raw != 0, Status::CODE_400,
-                                          "stop_after_ms must be > 0 (omit it to disable auto-stop)");
-                        OATPP_ASSERT_HTTP(
-                            raw <= MAX_STOP_AFTER_MS, Status::CODE_400,
-                            fmt::format("stop_after_ms must be <= {} ms (10 min); got {}", MAX_STOP_AFTER_MS, raw)
-                                .c_str());
-                        stopAfterMs = raw;
-                    }
+                    parsed = nlohmann::json::parse(std::string(body));
                 } catch (const nlohmann::json::exception &e) {
-                    OATPP_ASSERT_HTTP(false, Status::CODE_400,
-                                      fmt::format("Invalid trigger body: {}", e.what()).c_str());
+                    return bailHttp(span, Status::CODE_400, fmt::format("Invalid trigger body: {}", e.what()));
+                }
+                if (parsed.contains("stop_after_ms") && !parsed["stop_after_ms"].is_null()) {
+                    const auto raw = parsed["stop_after_ms"].get<uint32_t>();
+                    // Cap at 10 minutes. UInt32 max would schedule ~50 days of stuck DMX
+                    // and a far-future AutoStopEvent pinned in the event-loop priority
+                    // queue. Reject 0 explicitly — "stop immediately" is a footgun.
+                    constexpr uint32_t MAX_STOP_AFTER_MS = 10 * 60 * 1000;
+                    if (raw == 0) {
+                        return bailHttp(span, Status::CODE_400,
+                                        "stop_after_ms must be > 0 (omit it to disable auto-stop)");
+                    }
+                    if (raw > MAX_STOP_AFTER_MS) {
+                        return bailHttp(
+                            span, Status::CODE_400,
+                            fmt::format("stop_after_ms must be <= {} ms (10 min); got {}", MAX_STOP_AFTER_MS, raw));
+                    }
+                    stopAfterMs = raw;
                 }
             }
 
@@ -360,19 +369,32 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         }
 
         return withSpanStatus(span, [&] {
-            OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
-                              "fixtureId must be a UUID");
-            OATPP_ASSERT_HTTP(body, Status::CODE_400, "Request body is required");
-            OATPP_ASSERT_HTTP(body->values, Status::CODE_400, "values array is required");
-            OATPP_ASSERT_HTTP(body->values->size() > 0, Status::CODE_400, "values must contain at least one channel");
+            if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
+                return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
+            }
+            if (!body) {
+                return bailHttp(span, Status::CODE_400, "Request body is required");
+            }
+            if (!body->values) {
+                return bailHttp(span, Status::CODE_400, "values array is required");
+            }
+            if (body->values->size() == 0) {
+                return bailHttp(span, Status::CODE_400, "values must contain at least one channel");
+            }
 
             // Unpack DTO to a flat vector for the service.
             std::vector<std::pair<std::string, uint8_t>> channelValues;
             channelValues.reserve(body->values->size());
             for (const auto &v : *body->values) {
-                OATPP_ASSERT_HTTP(v, Status::CODE_400, "values entries must be objects, not null");
-                OATPP_ASSERT_HTTP(v->channel, Status::CODE_400, "values[].channel is required");
-                OATPP_ASSERT_HTTP(v->value, Status::CODE_400, "values[].value is required");
+                if (!v) {
+                    return bailHttp(span, Status::CODE_400, "values entries must be objects, not null");
+                }
+                if (!v->channel) {
+                    return bailHttp(span, Status::CODE_400, "values[].channel is required");
+                }
+                if (!v->value) {
+                    return bailHttp(span, Status::CODE_400, "values[].value is required");
+                }
                 channelValues.emplace_back(std::string(v->channel), static_cast<uint8_t>(*v->value));
             }
 
@@ -386,11 +408,14 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             if (body->stop_after_ms) {
                 const uint32_t raw = static_cast<uint32_t>(*body->stop_after_ms);
                 constexpr uint32_t MAX_STOP_AFTER_MS = 10 * 60 * 1000;
-                OATPP_ASSERT_HTTP(raw != 0, Status::CODE_400,
-                                  "stop_after_ms must be > 0 (omit it to disable auto-stop)");
-                OATPP_ASSERT_HTTP(
-                    raw <= MAX_STOP_AFTER_MS, Status::CODE_400,
-                    fmt::format("stop_after_ms must be <= {} ms (10 min); got {}", MAX_STOP_AFTER_MS, raw).c_str());
+                if (raw == 0) {
+                    return bailHttp(span, Status::CODE_400, "stop_after_ms must be > 0 (omit it to disable auto-stop)");
+                }
+                if (raw > MAX_STOP_AFTER_MS) {
+                    return bailHttp(
+                        span, Status::CODE_400,
+                        fmt::format("stop_after_ms must be <= {} ms (10 min); got {}", MAX_STOP_AFTER_MS, raw));
+                }
                 stopAfterMs = raw;
             }
 
@@ -441,12 +466,21 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         }
 
         return withSpanStatus(span, [&] {
-            OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
-                              "fixtureId must be a UUID");
-            OATPP_ASSERT_HTTP(body, Status::CODE_400, "Request body is required");
-            OATPP_ASSERT_HTTP(body->values, Status::CODE_400, "values array is required");
-            OATPP_ASSERT_HTTP(body->values->size() > 0, Status::CODE_400, "values must contain at least one channel");
-            OATPP_ASSERT_HTTP(body->timeout_ms, Status::CODE_400, "timeout_ms is required");
+            if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
+                return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
+            }
+            if (!body) {
+                return bailHttp(span, Status::CODE_400, "Request body is required");
+            }
+            if (!body->values) {
+                return bailHttp(span, Status::CODE_400, "values array is required");
+            }
+            if (body->values->size() == 0) {
+                return bailHttp(span, Status::CODE_400, "values must contain at least one channel");
+            }
+            if (!body->timeout_ms) {
+                return bailHttp(span, Status::CODE_400, "timeout_ms is required");
+            }
 
             // Unpack DTO to a flat vector for the service. We surface a clean 400 here for
             // malformed entries (missing channel name, missing value) so the service doesn't
@@ -454,9 +488,15 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
             std::vector<std::pair<std::string, uint8_t>> channelValues;
             channelValues.reserve(body->values->size());
             for (const auto &v : *body->values) {
-                OATPP_ASSERT_HTTP(v, Status::CODE_400, "values entries must be objects, not null");
-                OATPP_ASSERT_HTTP(v->channel, Status::CODE_400, "values[].channel is required");
-                OATPP_ASSERT_HTTP(v->value, Status::CODE_400, "values[].value is required");
+                if (!v) {
+                    return bailHttp(span, Status::CODE_400, "values entries must be objects, not null");
+                }
+                if (!v->channel) {
+                    return bailHttp(span, Status::CODE_400, "values[].channel is required");
+                }
+                if (!v->value) {
+                    return bailHttp(span, Status::CODE_400, "values[].value is required");
+                }
                 channelValues.emplace_back(std::string(v->channel), static_cast<uint8_t>(*v->value));
             }
             const uint32_t timeoutMs = *body->timeout_ms;
@@ -495,8 +535,9 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController {
         }
 
         return withSpanStatus(span, [&] {
-            OATPP_ASSERT_HTTP(fixtureId && isUuidShape(std::string(fixtureId)), Status::CODE_400,
-                              "fixtureId must be a UUID");
+            if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
+                return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
+            }
             const auto result = m_service.setFixtureUniverse(fixtureId, std::nullopt, span);
             if (span)
                 span->setHttpStatus(200);

@@ -16,6 +16,7 @@
 #include "server/jobs/JobWorker.h"
 #include "server/namespace-stuffs.h"
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/DialogDto.h"
 #include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/StatusDto.h"
@@ -36,7 +37,7 @@ namespace creatures::ws {
 /// pipeline runs on the worker thread; clients receive progress + completion
 /// updates over the existing WebSocket job-progress stream. There is no GET
 /// status endpoint — the job system is push-based.
-class DialogController : public oatpp::web::server::api::ApiController {
+class DialogController : public oatpp::web::server::api::ApiController, public HttpResponseHelpers<DialogController> {
   public:
     DialogController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper)) : ApiController(objectMapper) {}
 
@@ -67,50 +68,43 @@ class DialogController : public oatpp::web::server::api::ApiController {
                 // the worker — failing fast on cheap stuff keeps the client
                 // from having to wait + poll for the obvious "you forgot
                 // turns[]" case.
-                auto bail400 = [&](const char *msg) -> std::shared_ptr<OutgoingResponse> {
-                    auto err = StatusDto::createShared();
-                    err->status = "error";
-                    err->code = 400;
-                    err->message = msg;
-                    if (span)
-                        span->setHttpStatus(400);
-                    return createDtoResponse(Status::CODE_400, err);
-                };
                 if (!requestBody) {
-                    return bail400("request body required");
+                    return bailHttp(span, Status::CODE_400, "request body required");
                 }
                 const bool hasTurns = requestBody->turns && !requestBody->turns->empty();
                 const bool hasScriptId = requestBody->script_id && !requestBody->script_id->empty();
                 if (hasTurns && hasScriptId) {
-                    return bail400("provide either turns or script_id, not both");
+                    return bailHttp(span, Status::CODE_400, "provide either turns or script_id, not both");
                 }
                 if (!hasTurns && !hasScriptId) {
-                    return bail400("turns must be a non-empty array (or provide script_id to render a saved script)");
+                    return bailHttp(span, Status::CODE_400,
+                                    "turns must be a non-empty array (or provide script_id to render a saved script)");
                 }
                 if (hasScriptId && !isUuidShape(std::string(*requestBody->script_id))) {
-                    return bail400("script_id must be a UUID");
+                    return bailHttp(span, Status::CODE_400, "script_id must be a UUID");
                 }
                 if (!requestBody->persistence ||
                     (*requestBody->persistence != "adhoc" && *requestBody->persistence != "permanent")) {
-                    return bail400("persistence must be 'adhoc' or 'permanent'");
+                    return bailHttp(span, Status::CODE_400, "persistence must be 'adhoc' or 'permanent'");
                 }
                 if (hasTurns) {
                     // Same caps the saved-script path enforces. Without them the inline
                     // path is the easier amplification target for a JSON bomb (security
                     // review S1). Shared constants live in model/DialogScript.h.
                     if (requestBody->turns->size() > creatures::MAX_DIALOG_SCRIPT_TURNS) {
-                        return bail400(fmt::format("turns has {} entries; max {}", requestBody->turns->size(),
-                                                   creatures::MAX_DIALOG_SCRIPT_TURNS)
-                                           .c_str());
+                        return bailHttp(span, Status::CODE_400,
+                                        fmt::format("turns has {} entries; max {}", requestBody->turns->size(),
+                                                    creatures::MAX_DIALOG_SCRIPT_TURNS));
                     }
                     for (const auto &t : *requestBody->turns) {
                         if (!t || !t->creature_id || t->creature_id->empty() || !t->text || t->text->empty()) {
-                            return bail400("every turn must have a non-empty creature_id and text");
+                            return bailHttp(span, Status::CODE_400,
+                                            "every turn must have a non-empty creature_id and text");
                         }
                         if (t->text->size() > creatures::MAX_DIALOG_SCRIPT_TURN_TEXT) {
-                            return bail400(fmt::format("turn 'text' is {} chars; max {}", t->text->size(),
-                                                       creatures::MAX_DIALOG_SCRIPT_TURN_TEXT)
-                                               .c_str());
+                            return bailHttp(span, Status::CODE_400,
+                                            fmt::format("turn 'text' is {} chars; max {}", t->text->size(),
+                                                        creatures::MAX_DIALOG_SCRIPT_TURN_TEXT));
                         }
                     }
                 }
@@ -124,15 +118,11 @@ class DialogController : public oatpp::web::server::api::ApiController {
                 try {
                     detailsStr = jsonMapper->writeToString(requestBody)->c_str();
                 } catch (const std::exception &e) {
-                    auto err = StatusDto::createShared();
-                    err->status = "error";
-                    err->code = 500;
-                    err->message = fmt::format("failed to serialize request body: {}", e.what()).c_str();
                     if (span) {
                         span->setError(e.what());
-                        span->setHttpStatus(500);
                     }
-                    return createDtoResponse(Status::CODE_500, err);
+                    return bailHttp(span, Status::CODE_500,
+                                    fmt::format("failed to serialize request body: {}", e.what()));
                 }
 
                 if (span) {

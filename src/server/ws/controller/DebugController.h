@@ -9,6 +9,7 @@
 #include "server/config.h"
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/StatusDto.h"
 
 #include "util/websocketUtils.h"
@@ -17,7 +18,7 @@
 
 namespace creatures ::ws {
 
-class DebugController : public oatpp::web::server::api::ApiController {
+class DebugController : public oatpp::web::server::api::ApiController, public HttpResponseHelpers<DebugController> {
   public:
     DebugController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper))
         : oatpp::web::server::api::ApiController(objectMapper) {}
@@ -48,13 +49,7 @@ class DebugController : public oatpp::web::server::api::ApiController {
                 auto statusMessage = fmt::format("Creature cache invalidation scheduled for {} frames from now",
                                                  CACHE_INVALIDATION_DELAY_TIME);
                 debug(statusMessage);
-                auto status = StatusDto::createShared();
-                status->code = 200;
-                status->message = statusMessage;
-                status->status = "OK";
-                if (span)
-                    span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, status);
+                return okStatus(span, Status::CODE_200, statusMessage);
             });
     }
 
@@ -74,13 +69,7 @@ class DebugController : public oatpp::web::server::api::ApiController {
                 auto statusMessage = fmt::format("Animation cache invalidation scheduled for {} frames from now",
                                                  CACHE_INVALIDATION_DELAY_TIME);
                 debug(statusMessage);
-                auto status = StatusDto::createShared();
-                status->code = 200;
-                status->message = statusMessage;
-                status->status = "OK";
-                if (span)
-                    span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, status);
+                return okStatus(span, Status::CODE_200, statusMessage);
             });
     }
 
@@ -100,13 +89,7 @@ class DebugController : public oatpp::web::server::api::ApiController {
                 auto statusMessage = fmt::format("Playlist cache invalidation scheduled for {} frames from now",
                                                  CACHE_INVALIDATION_DELAY_TIME);
                 debug(statusMessage);
-                auto status = StatusDto::createShared();
-                status->code = 200;
-                status->message = statusMessage;
-                status->status = "OK";
-                if (span)
-                    span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, status);
+                return okStatus(span, Status::CODE_200, statusMessage);
             });
     }
 
@@ -127,13 +110,7 @@ class DebugController : public oatpp::web::server::api::ApiController {
                                playlistStatus.playing = true;
                                playlistStatus.current_animation = "2241e872-57b3-4fa3-8e76-1c2f517f998d";
                                broadcastPlaylistStatusToAllClients(playlistStatus);
-                               auto status = StatusDto::createShared();
-                               status->code = 200;
-                               status->message = "Playlist update sent";
-                               status->status = "OK";
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, status);
+                               return okStatus(span, Status::CODE_200, "Playlist update sent");
                            });
     }
 };

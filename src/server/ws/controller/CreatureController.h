@@ -16,15 +16,18 @@ using json = nlohmann::json;
 
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/IdleToggleDto.h"
 #include "server/ws/dto/RegisterCreatureRequestDto.h"
+#include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/CreatureService.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
 
 namespace creatures ::ws {
 
-class CreatureController : public oatpp::web::server::api::ApiController {
+class CreatureController : public oatpp::web::server::api::ApiController,
+                           public HttpResponseHelpers<CreatureController> {
   public:
     CreatureController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper))
         : oatpp::web::server::api::ApiController(objectMapper) {}
@@ -69,8 +72,9 @@ class CreatureController : public oatpp::web::server::api::ApiController {
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/creature/{creatureId}", "GET", "api/v1/creature/" + std::string(creatureId),
                            "getCreature", "CreatureController", request, [&](const auto &span) {
-                               OATPP_ASSERT_HTTP(creatureId && isUuidShape(std::string(creatureId)), Status::CODE_400,
-                                                 "creatureId must be a UUID");
+                               if (!creatureId || !isUuidShape(std::string(creatureId))) {
+                                   return bailHttp(span, Status::CODE_400, "creatureId must be a UUID");
+                               }
                                if (span)
                                    span->setAttribute("creature.id", std::string(creatureId));
                                const auto result = m_creatureService.getCreature(creatureId, span);
@@ -146,8 +150,9 @@ class CreatureController : public oatpp::web::server::api::ApiController {
         return runEndpoint("PATCH /api/v1/creature/{creatureId}/idle", "PATCH",
                            "api/v1/creature/" + std::string(creatureId) + "/idle", "setIdleEnabled",
                            "CreatureController", request, [&](const auto &span) {
-                               OATPP_ASSERT_HTTP(creatureId && isUuidShape(std::string(creatureId)), Status::CODE_400,
-                                                 "creatureId must be a UUID");
+                               if (!creatureId || !isUuidShape(std::string(creatureId))) {
+                                   return bailHttp(span, Status::CODE_400, "creatureId must be a UUID");
+                               }
                                if (span)
                                    span->setAttribute("creature.id", std::string(creatureId));
                                bool enabled = true;
@@ -199,13 +204,8 @@ class CreatureController : public oatpp::web::server::api::ApiController {
                     error(errorMessage);
                     if (span) {
                         span->setAttribute("error.message", errorMessage);
-                        span->setHttpStatus(400);
                     }
-                    const auto errorDto = StatusDto::createShared();
-                    errorDto->status = "ERROR";
-                    errorDto->code = 400;
-                    errorDto->message = errorMessage.c_str();
-                    return createDtoResponse(Status::CODE_400, errorDto);
+                    return bailHttp(span, Status::CODE_400, errorMessage);
                 }
 
                 const std::string creatureConfig = std::string(dto->creature_config);
