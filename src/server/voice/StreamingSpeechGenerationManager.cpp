@@ -32,7 +32,7 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
     }
 
     auto span = creatures::observability->createChildOperationSpan("StreamingSpeechGenerationManager.generate",
-                                                                    request.parentSpan);
+                                                                   request.parentSpan);
     if (span) {
         span->setAttribute("creature.id", request.creatureId);
         span->setAttribute("text.length", static_cast<int64_t>(request.text.size()));
@@ -76,8 +76,7 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
         auto creatureModel = creatureResult.getValue().value();
 
         if (!creatureJson.contains("voice") || creatureJson["voice"].is_null()) {
-            std::string errorMsg =
-                fmt::format("No voice configuration found for creature {}", request.creatureId);
+            std::string errorMsg = fmt::format("No voice configuration found for creature {}", request.creatureId);
             if (span) {
                 span->setError(errorMsg);
             }
@@ -105,16 +104,14 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
         // and will return 403. The creature's voice config must use a streaming-compatible
         // model like eleven_turbo_v2_5 or eleven_flash_v2_5.
         static const std::vector<std::string> nonStreamingModels = {"eleven_v3", "eleven_multilingual_v2",
-                                                                     "eleven_monolingual_v1",
-                                                                     "eleven_multilingual_v1"};
+                                                                    "eleven_monolingual_v1", "eleven_multilingual_v1"};
         for (const auto &blocked : nonStreamingModels) {
             if (modelId == blocked) {
-                std::string errorMsg = fmt::format(
-                    "Creature '{}' is configured with model '{}' which does not support "
-                    "WebSocket streaming. Change the creature's voice model to "
-                    "'eleven_turbo_v2_5' or 'eleven_flash_v2_5' in the creature config, "
-                    "then try again.",
-                    request.creatureId, modelId);
+                std::string errorMsg = fmt::format("Creature '{}' is configured with model '{}' which does not support "
+                                                   "WebSocket streaming. Change the creature's voice model to "
+                                                   "'eleven_turbo_v2_5' or 'eleven_flash_v2_5' in the creature config, "
+                                                   "then try again.",
+                                                   request.creatureId, modelId);
                 warn(errorMsg);
                 if (span) {
                     span->setError(errorMsg);
@@ -135,9 +132,8 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
 
         // Call ElevenLabs streaming API
         StreamingTTSClient client;
-        auto ttsResult =
-            client.generateSpeech(creatures::config->getVoiceApiKey(), voiceId, modelId, request.text, outputFormat,
-                                   stability, similarityBoost, nullptr, span);
+        auto ttsResult = client.generateSpeech(creatures::config->getVoiceApiKey(), voiceId, modelId, request.text,
+                                               outputFormat, stability, similarityBoost, nullptr, span);
 
         if (!ttsResult.isSuccess()) {
             auto error = ttsResult.getError().value();
@@ -204,8 +200,7 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
         std::vector<RhubarbMouthCue> mouthCues;
         if (!ttsData.charTimings.empty()) {
             mouthCues = textToViseme.charTimingsToMouthCues(ttsData.charTimings);
-            info("Generated {} mouth cues from {} alignment characters", mouthCues.size(),
-                 ttsData.charTimings.size());
+            info("Generated {} mouth cues from {} alignment characters", mouthCues.size(), ttsData.charTimings.size());
         } else {
             // Fallback: no alignment data, generate basic cues from text
             warn("No alignment data from ElevenLabs, generating basic lip sync from text timing");

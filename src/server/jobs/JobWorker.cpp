@@ -22,7 +22,6 @@
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
-#include "server/voice/AudioConverter.h"
 #include "server/voice/DialogAnimation.h"
 #include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
@@ -34,6 +33,7 @@
 #include "server/voice/SpeechGenerationManager.h"
 #include "server/voice/StreamingSpeechGenerationManager.h"
 #include "server/voice/TextToViseme.h"
+#include "server/voice/WavFileReader.h"
 #include "server/ws/dto/DialogDto.h"
 
 #include "util/ObservabilityManager.h"
@@ -309,8 +309,9 @@ void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
         return;
     }
 
-    auto channelCountResult =
-        voice::AudioConverter::getChannelCount(audioPath, config->getFfmpegBinaryPath(), jobState.span);
+    // Pure-C++ WAV header read — we control the format, no ffmpeg needed
+    // (issue #12 Phase B).
+    auto channelCountResult = voice::readWavChannelCount(audioPath);
     if (!channelCountResult.isSuccess()) {
         failJob(channelCountResult.getError()->getMessage());
         return;
@@ -396,8 +397,7 @@ void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
         trackStageProgress(0.05);
 
         auto extractResult =
-            voice::AudioConverter::extractChannelToMono(audioPath, monoPath, config->getFfmpegBinaryPath(),
-                                                        static_cast<int>(creature.audio_channel), jobState.span);
+            voice::extractChannelToMonoWav(audioPath, monoPath, static_cast<int>(creature.audio_channel));
         if (!extractResult.isSuccess()) {
             failJob(extractResult.getError()->getMessage());
             return;

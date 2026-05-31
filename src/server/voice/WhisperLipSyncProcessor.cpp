@@ -117,10 +117,11 @@ std::vector<float> WhisperLipSyncProcessor::loadAudioForWhisper(const std::files
             file.read(reinterpret_cast<char *>(&blockAlign), 2);
             file.read(reinterpret_cast<char *>(&bitsPerSample), 2);
 
-            // Handle WAVE_FORMAT_EXTENSIBLE (0xFFFE / 65534)
-            // ffmpeg outputs this for multi-channel WAVs. The actual format
-            // is in the SubFormat GUID at the end of the extended header.
-            // For our purposes, if bitsPerSample is 16, it's PCM data.
+            // Handle WAVE_FORMAT_EXTENSIBLE (0xFFFE / 65534). Older multi-
+            // channel WAVs we produced via ffmpeg landed in this format; new
+            // ones go through voice::writePcmToMultichannelWav and use plain
+            // PCM (0x0001), but we still handle both for back-compat with
+            // pre-3.16.0 sound files on disk.
             if (audioFormat == 0xFFFE && chunkSize > 16) {
                 // Read cbSize (2 bytes), validBitsPerSample (2 bytes), channelMask (4 bytes)
                 uint16_t cbSize = 0;
