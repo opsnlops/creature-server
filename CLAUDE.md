@@ -157,6 +157,53 @@ Why a separate file: the Dockerfile's Phase 1 (the heavy FetchContent deps build
 
 If you're adding a new src/server/X/ directory, that DOES need a `CMakeLists.txt` edit (one new line under `file(GLOB serverFiles …)`) and will bust the Phase 1 cache one time. Adding a new .cpp inside an EXISTING globbed dir uses `CONFIGURE_DEPENDS` and doesn't need a CMake edit.
 
+### Building .debs locally (faster than GHA)
+
+GHA's Debian-package job takes ~15–25 min per arch. The local Docker build, reusing the same GHA cache, lands in roughly the same wall-clock but **runs in parallel with GHA** so the first one to finish unblocks the deploy. On April's M3 with plenty of RAM both archs can build at once.
+
+**Prereqs:** Docker Desktop running (Rosetta enabled for amd64 cross-build speed).
+
+**The full flow** (from project root, after `VERSION.txt` is bumped and the change is at least staged locally — the Docker context is whatever's on disk, not what's committed):
+
+```bash
+# Start both builds in parallel. The --cache-from scopes MUST match the
+# GHA workflow (see .github/workflows/debian-package.yml) so the cached
+# heavy deps layer gets pulled. Without this, every build is ~15 min cold.
+docker buildx build --platform linux/amd64 --target package \
+    --cache-from type=gha,scope=package-ubuntu-24.04 \
+    -t creature-server-pkg-amd64 --load . &
+
+docker buildx build --platform linux/arm64 --target package \
+    --cache-from type=gha,scope=package-ubuntu-24.04-arm \
+    -t creature-server-pkg-arm64 --load . &
+
+wait
+
+# Extract each .deb out of its image. The Dockerfile's `package` stage
+# leaves the .deb at /package/ inside the image.
+for arch in amd64 arm64; do
+    docker rm -f temp-$arch 2>/dev/null
+    docker create --name temp-$arch creature-server-pkg-$arch
+    mkdir -p /tmp/pkg-$arch
+    docker cp temp-$arch:/package/. /tmp/pkg-$arch/
+    docker rm temp-$arch
+    mv /tmp/pkg-$arch/*.deb out/debs/
+    rmdir /tmp/pkg-$arch
+done
+
+ls -la out/debs/ | tail -3   # confirm the new .debs landed
+```
+
+**Notes:**
+- `out/debs/` is gitignored — that's the canonical drop site so the deploy script can find them.
+- The `--target package` flag stops the build at the package stage; we don't need the runtime stage locally.
+- `--load` materializes the image into the local Docker daemon so `docker create` can pull files out.
+- Filename format is `creature-server_<version>-<unix-timestamp>_<arch>.deb` — cpack generates the timestamp suffix automatically. Two builds back-to-back of the same version produce two distinct filenames, which the apt repo accepts.
+- **First build after adding a new `src/server/X/` directory:** Phase 1 Docker cache busts once. Expect ~15 min for that build; subsequent ones return to ~2–5 min.
+- **If a build errors out:** check that `docker buildx` is set up (`docker buildx ls` should show a `*` next to the active builder). On a fresh machine: `docker buildx create --use`.
+
+To run only one arch (e.g. amd64-only because that's all the server needs right now), drop the arm64 lines.
+
 ## Session Continuity Notes
 
 ### Context for Next Session
