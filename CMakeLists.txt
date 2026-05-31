@@ -646,6 +646,7 @@ add_executable(creature-server-test
         tests/server/ws/HttpResponseHelpers_test.cpp
         tests/server/storyboard/StoryboardParse_test.cpp
         tests/server/storage/Storage_test.cpp
+        tests/server/storage/StoragePublishers_test.cpp
         src/server/storage/Storage.cpp
         src/server/config/Configuration.cpp
         tests/server/FakeWebsocketUtils.cpp

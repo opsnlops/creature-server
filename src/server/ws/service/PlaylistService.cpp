@@ -8,6 +8,7 @@
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/metrics/counters.h"
+#include "server/storage/Storage.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/service/CreatureService.h"
 #include "util/JsonParser.h"
@@ -241,8 +242,9 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-    logger->debug("passing the upsert request off to the database");
-    auto result = db->upsertPlaylist(playlistJson, span);
+    logger->debug("passing the upsert request off to the storage facade");
+    // Facade pairs the upsert + Playlist cache invalidation.
+    auto result = creatures::storage::publishPlaylist(playlistJson, span);
 
     // If there's an error, let the client know
     if (!result.isSuccess()) {

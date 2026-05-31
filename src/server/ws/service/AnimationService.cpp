@@ -8,6 +8,7 @@
 #include "server/animation/SessionManager.h"
 #include "server/config/Configuration.h"
 #include "server/database.h"
+#include "server/storage/Storage.h"
 
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
@@ -366,8 +367,9 @@ oatpp::Object<creatures::AnimationDto> AnimationService::upsertAnimation(const s
         validationSpan->setSuccess();
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-    appLogger->debug("passing the upsert request off to the database");
-    auto result = db->upsertAnimation(jsonAnimation, serviceSpan);
+    appLogger->debug("passing the upsert request off to the storage facade");
+    // Facade pairs the upsert + Animation/SoundList cache invalidations.
+    auto result = creatures::storage::publishAnimation(jsonAnimation, serviceSpan);
 
     // If there's an error, let the client know
     if (!result.isSuccess()) {
@@ -418,7 +420,7 @@ oatpp::Object<creatures::ws::StatusDto> AnimationService::deleteAnimation(const 
     oatpp::String errorMessage;
     Status status = Status::CODE_200;
 
-    auto result = db->deleteAnimation(animationIdStr, span);
+    auto result = creatures::storage::deleteAnimation(animationIdStr, span);
     if (!result.isSuccess()) {
         auto serverError = result.getError().value();
         switch (serverError.getCode()) {

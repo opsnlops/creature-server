@@ -19,6 +19,7 @@
 #include "server/fixture/FixtureBindingDispatcher.h"
 #include "server/fixture/FixturePatternRunner.h"
 #include "server/fixture/FixturePatternTickEvent.h"
+#include "server/storage/Storage.h"
 #include "server/ws/dto/FixtureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "util/JsonParser.h"
@@ -227,7 +228,9 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::upsertFixture(const s
     if (validateSpan)
         validateSpan->setSuccess();
 
-    auto result = creatures::db->upsertFixture(jsonFixture, span);
+    // Storage facade pairs the upsert + Fixture cache invalidation so the
+    // controller can't fire the DB call without the broadcast (issue #11).
+    auto result = creatures::storage::publishFixture(jsonFixture, span);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
         Status status = Status::CODE_500;
@@ -280,7 +283,7 @@ void DmxFixtureService::deleteFixture(const oatpp::String &inFixtureId, std::sha
         span->setAttribute("fixture.id", fixtureId);
     }
 
-    auto result = creatures::db->deleteFixture(fixtureId, span);
+    auto result = creatures::storage::deleteFixture(fixtureId, span);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
         Status status = Status::CODE_500;
@@ -329,7 +332,7 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::setFixtureUniverse(co
     auto opMutex = getUniverseOpMutex(fixtureId);
     std::lock_guard<std::mutex> opLock(*opMutex);
 
-    auto setResult = creatures::db->setFixtureUniverse(fixtureId, universe, span);
+    auto setResult = creatures::storage::setFixtureUniverse(fixtureId, universe, span);
     if (!setResult.isSuccess()) {
         auto err = setResult.getError().value();
         Status status = Status::CODE_500;

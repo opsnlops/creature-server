@@ -8,6 +8,7 @@
 
 #include "server/config.h"
 #include "server/metrics/counters.h"
+#include "server/storage/Storage.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/StatusDto.h"
@@ -45,7 +46,7 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
         return runEndpoint(
             "GET /api/v1/debug/cache-invalidate/creature", "GET", "api/v1/debug/cache-invalidate/creature",
             "invalidate_creature", "DebugController", request, [&](const auto &span) {
-                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Creature);
+                creatures::storage::broadcastCacheInvalidation(CacheType::Creature);
                 auto statusMessage = fmt::format("Creature cache invalidation scheduled for {} frames from now",
                                                  CACHE_INVALIDATION_DELAY_TIME);
                 debug(statusMessage);
@@ -65,7 +66,7 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
         return runEndpoint(
             "GET /api/v1/debug/cache-invalidate/animation", "GET", "api/v1/debug/cache-invalidate/animation",
             "invalidate_animation", "DebugController", request, [&](const auto &span) {
-                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
+                creatures::storage::broadcastCacheInvalidation(CacheType::Animation);
                 auto statusMessage = fmt::format("Animation cache invalidation scheduled for {} frames from now",
                                                  CACHE_INVALIDATION_DELAY_TIME);
                 debug(statusMessage);
@@ -85,7 +86,7 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
         return runEndpoint(
             "GET /api/v1/debug/cache-invalidate/playlist", "GET", "api/v1/debug/cache-invalidate/playlist",
             "invalidate_playlist", "DebugController", request, [&](const auto &span) {
-                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Playlist);
+                creatures::storage::broadcastCacheInvalidation(CacheType::Playlist);
                 auto statusMessage = fmt::format("Playlist cache invalidation scheduled for {} frames from now",
                                                  CACHE_INVALIDATION_DELAY_TIME);
                 debug(statusMessage);

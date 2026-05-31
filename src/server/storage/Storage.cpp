@@ -111,6 +111,26 @@ Result<void> atomicWrite(const std::filesystem::path &target, std::span<const st
     return Result<void>{};
 }
 
+// Shared template for the publisher pattern: call a db->* method, fire the
+// invalidation(s) only on success, return the underlying Result. Used by
+// every publishX / deleteX / republishAnimation function below.
+//
+// The invalidation MUST NOT fire on failure — the contract is "this is a
+// successful publish/delete event," and clients refreshing on a failed call
+// would just re-fetch the unchanged data, which is wasteful but worse: it
+// could mask transient state.
+template <typename DbCall, typename... Caches> auto runPublisher(const char *opName, DbCall &&call, Caches... caches) {
+    using ResultType = std::invoke_result_t<DbCall>;
+    if (!creatures::db) {
+        return ResultType{ServerError(ServerError::InternalError, fmt::format("storage::{}: db unavailable", opName))};
+    }
+    auto result = call();
+    if (result.isSuccess()) {
+        (scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, caches), ...);
+    }
+    return result;
+}
+
 } // namespace
 
 Result<std::filesystem::path> root(Persistence persistence) {
@@ -175,47 +195,97 @@ Result<StoragePath> writeSoundFile(Persistence persistence, std::string filename
 
 Result<creatures::Animation> publishAnimation(const std::string &animationJson,
                                               std::shared_ptr<OperationSpan> parentSpan) {
-    if (!creatures::db) {
-        return Result<creatures::Animation>{
-            ServerError(ServerError::InternalError, "storage::publishAnimation: db unavailable")};
-    }
-    auto result = creatures::db->upsertAnimation(animationJson, parentSpan);
-    if (!result.isSuccess()) {
-        return result;
-    }
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
-    return result;
+    return runPublisher(
+        "publishAnimation", [&] { return creatures::db->upsertAnimation(animationJson, parentSpan); },
+        CacheType::Animation, CacheType::SoundList);
 }
 
 Result<void> publishAdHocAnimation(const creatures::Animation &animation, std::shared_ptr<OperationSpan> parentSpan) {
-    if (!creatures::db) {
-        return Result<void>{ServerError(ServerError::InternalError, "storage::publishAdHocAnimation: db unavailable")};
-    }
-    auto result = creatures::db->insertAdHocAnimation(animation, std::chrono::system_clock::now(), parentSpan);
-    if (!result.isSuccess()) {
-        return result;
-    }
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocAnimationList);
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
-    return result;
+    return runPublisher(
+        "publishAdHocAnimation",
+        [&] { return creatures::db->insertAdHocAnimation(animation, std::chrono::system_clock::now(), parentSpan); },
+        CacheType::AdHocAnimationList, CacheType::AdHocSoundList);
 }
 
 Result<creatures::Animation> republishAnimation(const std::string &animationJson,
                                                 std::shared_ptr<OperationSpan> parentSpan) {
-    if (!creatures::db) {
-        return Result<creatures::Animation>{
-            ServerError(ServerError::InternalError, "storage::republishAnimation: db unavailable")};
-    }
-    auto result = creatures::db->upsertAnimation(animationJson, parentSpan);
-    if (!result.isSuccess()) {
-        return result;
-    }
     // Animation only — no SoundList invalidation because the sound file
     // reference didn't change (the lipsync handler mutates tracks in-place
     // on the existing animation's existing sound).
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
-    return result;
+    return runPublisher(
+        "republishAnimation", [&] { return creatures::db->upsertAnimation(animationJson, parentSpan); },
+        CacheType::Animation);
+}
+
+Result<creatures::Creature> publishCreature(const std::string &creatureJson,
+                                            std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "publishCreature", [&] { return creatures::db->upsertCreature(creatureJson, parentSpan); },
+        CacheType::Creature);
+}
+
+Result<creatures::DmxFixture> publishFixture(const std::string &fixtureJson,
+                                             std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "publishFixture", [&] { return creatures::db->upsertFixture(fixtureJson, parentSpan); }, CacheType::Fixture);
+}
+
+Result<void> deleteFixture(const fixtureId_t &fixtureId, std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "deleteFixture", [&] { return creatures::db->deleteFixture(fixtureId, parentSpan); }, CacheType::Fixture);
+}
+
+Result<void> setFixtureUniverse(const fixtureId_t &fixtureId, std::optional<universe_t> universe,
+                                std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "setFixtureUniverse", [&] { return creatures::db->setFixtureUniverse(fixtureId, universe, parentSpan); },
+        CacheType::Fixture);
+}
+
+Result<creatures::Playlist> publishPlaylist(const std::string &playlistJson,
+                                            std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "publishPlaylist", [&] { return creatures::db->upsertPlaylist(playlistJson, parentSpan); },
+        CacheType::Playlist);
+}
+
+Result<creatures::DialogScript> publishDialogScript(const std::string &scriptJson,
+                                                    std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "publishDialogScript", [&] { return creatures::db->upsertDialogScript(scriptJson, parentSpan); },
+        CacheType::DialogScriptList);
+}
+
+Result<void> deleteDialogScript(const scriptId_t &scriptId, std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "deleteDialogScript", [&] { return creatures::db->deleteDialogScript(scriptId, parentSpan); },
+        CacheType::DialogScriptList);
+}
+
+Result<creatures::Storyboard> publishStoryboard(const std::string &storyboardJson,
+                                                std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "publishStoryboard", [&] { return creatures::db->upsertStoryboard(storyboardJson, parentSpan); },
+        CacheType::StoryboardList);
+}
+
+Result<void> deleteStoryboard(const storyboardId_t &storyboardId, std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "deleteStoryboard", [&] { return creatures::db->deleteStoryboard(storyboardId, parentSpan); },
+        CacheType::StoryboardList);
+}
+
+Result<void> deleteAnimation(const animationId_t &animationId, std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "deleteAnimation", [&] { return creatures::db->deleteAnimation(animationId, parentSpan); },
+        CacheType::Animation);
+}
+
+void broadcastCacheInvalidation(CacheType type) {
+    // No DB call to pair with — explicit standalone broadcast. The name
+    // signals "this is a deliberate manual case" so a reader can tell at a
+    // glance it's not a forgotten pairing.
+    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, type);
 }
 
 std::filesystem::path resolveSoundPath(const std::string &stored) {

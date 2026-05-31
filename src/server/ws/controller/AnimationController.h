@@ -254,7 +254,8 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                    span->setAttribute("animation.title", std::string(result->metadata->title));
                                    span->setHttpStatus(200);
                                }
-                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
+                               // AnimationService.upsertAnimation goes through storage::publishAnimation,
+                               // which fires Animation + SoundList invalidations on success (issue #11 PR #21).
                                return createDtoResponse(Status::CODE_200, result);
                            });
     }
@@ -279,7 +280,10 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                auto result = m_animationService.deleteAnimation(animationId, span);
                                if (span)
                                    span->setHttpStatus(200);
-                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
+                               // AnimationService.deleteAnimation goes through storage::deleteAnimation,
+                               // which fires the Animation invalidation on success (issue #11 PR #21).
+                               // The broadcast-now (vs scheduled-on-event-loop) call below is kept as a
+                               // belt-and-suspenders for delete since the deletion is irreversible.
                                auto broadcastResult = broadcastCacheInvalidationToAllClients(CacheType::Animation);
                                if (!broadcastResult.isSuccess()) {
                                    warn("Failed to broadcast animation cache invalidation: {}",

@@ -11,6 +11,7 @@
 #include <model/Voice.h>
 
 #include "server/database.h"
+#include "server/storage/Storage.h"
 
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/dto/ListDto.h"
@@ -101,8 +102,12 @@ class VoiceController : public oatpp::web::server::api::ApiController {
 
                                auto response = m_voiceService.generateCreatureSpeech(requestBody);
 
-                               // Schedule an event to invalidate the sound list cache on the clients
-                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
+                               // VoiceService.generateCreatureSpeech writes a sound file via the
+                               // CreatureVoicesLib HTTP plumbing — that path doesn't go through
+                               // the storage facade's writeSoundFile (yet), so we fire the
+                               // invalidation explicitly here as a "manual" case. Migrating the
+                               // underlying write to writeSoundFile would absorb this.
+                               creatures::storage::broadcastCacheInvalidation(CacheType::SoundList);
 
                                if (span)
                                    span->setHttpStatus(200);

@@ -2,6 +2,10 @@
 // implementation pulls in the full websocket dependency tree (event loop,
 // PlaylistStatus convertToDto, JobState serialization, etc.) which is
 // overkill for unit tests that just need the symbols to link.
+//
+// scheduleCacheInvalidationEvent records into a thread-local log so storage-
+// publisher tests can assert that the right CacheTypes fire (and that NO
+// invalidation fires on a failed publish). Production code ignores the log.
 
 #include <vector>
 
@@ -13,9 +17,18 @@
 
 namespace creatures {
 
-void scheduleCacheInvalidationEvent(framenum_t /*frameOffset*/, CacheType /*type*/) {
-    // no-op
-}
+namespace {
+thread_local std::vector<CacheType> g_invalidationLog;
+} // namespace
+
+namespace testing {
+
+const std::vector<CacheType> &scheduledInvalidationsForTesting() { return g_invalidationLog; }
+void clearScheduledInvalidationsForTesting() { g_invalidationLog.clear(); }
+
+} // namespace testing
+
+void scheduleCacheInvalidationEvent(framenum_t /*frameOffset*/, CacheType type) { g_invalidationLog.push_back(type); }
 
 Result<bool> broadcastNoticeToAllClients(const std::string & /*message*/) { return Result<bool>{true}; }
 
