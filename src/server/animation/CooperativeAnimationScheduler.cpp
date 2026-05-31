@@ -26,6 +26,7 @@
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/rtp/MultiOpusRtpServer.h"
 #include "server/runtime/Activity.h"
+#include "server/storage/Storage.h"
 #include "server/ws/service/CreatureService.h"
 #include "util/ObservabilityManager.h"
 
@@ -39,20 +40,10 @@ extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 extern std::shared_ptr<SessionManager> sessionManager;
 
-namespace {
-
-std::filesystem::path resolveSoundFilePath(const std::string &soundFile) {
-    if (soundFile.empty()) {
-        return {};
-    }
-    std::filesystem::path path(soundFile);
-    if (path.is_absolute()) {
-        return path;
-    }
-    return std::filesystem::path(config->getSoundFileLocation()) / path;
-}
-
-} // namespace
+// resolveSoundFilePath was a private helper that joined relative paths under
+// the permanent sound root. Replaced by creatures::storage::resolveSoundPath
+// in the storage facade (issue #11) so every reader of stored sound paths
+// uses the same logic.
 
 Result<std::shared_ptr<PlaybackSession>>
 CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const Animation &animation,
@@ -218,7 +209,7 @@ Result<void> CooperativeAnimationScheduler::loadAudioBuffer(const Animation &ani
     }
 
     // Build full path to sound file
-    std::filesystem::path soundFilePath = resolveSoundFilePath(animation.metadata.sound_file);
+    std::filesystem::path soundFilePath = creatures::storage::resolveSoundPath(animation.metadata.sound_file);
 
     debug("Loading audio buffer from: {}", soundFilePath.string());
 

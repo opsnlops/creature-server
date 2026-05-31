@@ -22,6 +22,7 @@
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
+#include "server/storage/Storage.h"
 #include "util/cache.h"
 #include "util/helpers.h"
 #include "util/uuidUtils.h"
@@ -379,8 +380,10 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
             newTrack.frames = std::move(encodedFrames);
             animation.tracks = {newTrack};
 
-            // 9. Insert into DB
-            creatures::db->insertAdHocAnimation(animation, std::chrono::system_clock::now(), sentenceSpan);
+            // 9. Insert into DB. Storage facade pairs the insert + invalidations
+            // so each sentence's clients learn about the new artifact ASAP
+            // (issue #11).
+            creatures::storage::publishAdHocAnimation(animation, sentenceSpan);
 
             if (sentenceSpan) {
                 sentenceSpan->setAttribute("animation.id", animation.id);
@@ -503,8 +506,8 @@ Result<std::string> StreamingAdHocSession::finish() {
         playbackThread_.join();
     }
 
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocAnimationList);
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
+    // No invalidations fired here — each sentence's publishAdHocAnimation above
+    // already invalidates AdHocAnimationList + AdHocSoundList as the chunk lands.
 
     // Determine the last animation ID
     std::string lastAnimationId;

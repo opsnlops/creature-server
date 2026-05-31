@@ -22,6 +22,7 @@
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
+#include "server/storage/Storage.h"
 #include "server/voice/DialogAnimation.h"
 #include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
@@ -57,10 +58,10 @@ namespace creatures::jobs {
 
 namespace {
 
-std::filesystem::path getAdHocTempRoot() { return std::filesystem::temp_directory_path() / "creature-adhoc"; }
-std::filesystem::path getAnimationLipSyncTempRoot() {
-    return std::filesystem::temp_directory_path() / "creature-lipsync";
-}
+// getAdHocTempRoot + getAnimationLipSyncTempRoot used to live here as anon-
+// namespace helpers (the latter for the lipsync handler, the former for ad-hoc
+// speech + the dialog handler). All callers migrated to the storage facade in
+// issue #11 — see creatures::storage::{root, allocateSoundPath}.
 
 std::string slugify(const std::string &value, std::size_t maxLength = 40) {
     std::string slug;
@@ -322,8 +323,15 @@ void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
         return;
     }
 
-    auto tempRoot = getAnimationLipSyncTempRoot();
-    auto tempDir = tempRoot / jobState.jobId;
+    // Per-job scratch dir under temp/creature-lipsync/<jobId>/. Cleaned up by
+    // TempDirGuard below at job end (these are intermediate extraction WAVs,
+    // not artifacts that need to outlive the job).
+    auto scratchRootResult = creatures::storage::root(creatures::storage::Persistence::JobScratch);
+    if (!scratchRootResult.isSuccess()) {
+        failJob(fmt::format("Unable to access lipsync scratch root: {}", scratchRootResult.getError()->getMessage()));
+        return;
+    }
+    auto tempDir = scratchRootResult.getValue().value() / jobState.jobId;
     std::error_code tempEc;
     std::filesystem::create_directories(tempDir, tempEc);
     if (tempEc) {
@@ -426,14 +434,14 @@ void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
         trackStageProgress(0.95);
     }
 
+    // republishAnimation fires Animation invalidation only (no SoundList —
+    // we only mutated existing tracks; the sound file reference is unchanged).
     auto animationJson = animationToJson(animation);
-    auto upsertResult = db->upsertAnimation(animationJson.dump(), jobState.span);
+    auto upsertResult = creatures::storage::republishAnimation(animationJson.dump(), jobState.span);
     if (!upsertResult.isSuccess()) {
         failJob(upsertResult.getError()->getMessage());
         return;
     }
-
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
     updateProgress(0.98f);
 
     nlohmann::json resultJson;
@@ -621,8 +629,15 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
     try {
         updateProgress(0.05f);
 
-        auto tempRoot = getAdHocTempRoot();
-        auto tempDir = tempRoot / jobState.jobId;
+        // Per-job ad-hoc dir under temp/creature-adhoc/<jobId>/. Files written
+        // here outlive the job (referenced from metadata.sound_file) and get
+        // cleaned by the existing TTL sweep, not by the job itself.
+        auto adHocRootResult = creatures::storage::root(creatures::storage::Persistence::AdHoc);
+        if (!adHocRootResult.isSuccess()) {
+            failJob(fmt::format("Unable to access ad-hoc root: {}", adHocRootResult.getError()->getMessage()));
+            return;
+        }
+        auto tempDir = adHocRootResult.getValue().value() / jobState.jobId;
         std::error_code ec;
         std::filesystem::create_directories(tempDir, ec);
         if (ec) {
@@ -868,14 +883,13 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         newTrack.frames = std::move(encodedFrames);
         adHocAnimation.tracks = {newTrack};
 
-        auto createdAt = std::chrono::system_clock::now();
-        auto insertResult = db->insertAdHocAnimation(adHocAnimation, createdAt, jobState.span);
+        // Storage facade pairs the DB insert + AdHocAnimationList + AdHocSoundList
+        // invalidations so this handler can't forget any of the three (issue #11).
+        auto insertResult = creatures::storage::publishAdHocAnimation(adHocAnimation, jobState.span);
         if (!insertResult.isSuccess()) {
             failJob(insertResult.getError()->getMessage());
             return;
         }
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocAnimationList);
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
         updateProgress(0.85f);
 
         nlohmann::json completionJson;
@@ -1408,34 +1422,24 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     const auto assembled = concatResult.getValue().value();
     updateProgress(0.60f);
 
-    // ---- 17-channel WAV output. Route by persistence:
-    //  * AdHoc → ad-hoc temp dir (same place every other ad-hoc audio lives).
-    //    Stored as an absolute path on metadata.sound_file.
-    //  * Permanent → under the server's sound file location, in a `dialog/`
-    //    subdir. Stored as a relative path on metadata.sound_file (playback
-    //    layers prepend getSoundFileLocation() for any non-absolute path).
-    std::error_code ec;
-    std::filesystem::path wavPath;
-    std::string animationSoundFile; // what gets stored on the animation metadata
-    if (persistence == DialogPersistence::AdHoc) {
-        const auto adHocRoot = getAdHocTempRoot();
-        std::filesystem::create_directories(adHocRoot, ec);
-        if (ec) {
-            return failJob(fmt::format("create_directories({}) failed: {}", adHocRoot.string(), ec.message()));
-        }
-        wavPath = adHocRoot / fmt::format("dialog_{}.wav", jobState.jobId);
-        animationSoundFile = wavPath.string(); // absolute — playback uses as-is
-    } else {
-        const auto soundsRoot = std::filesystem::path(creatures::config->getSoundFileLocation());
-        const auto dialogDir = soundsRoot / kPermanentDialogSubdir;
-        std::filesystem::create_directories(dialogDir, ec);
-        if (ec) {
-            return failJob(fmt::format("create_directories({}) failed: {}", dialogDir.string(), ec.message()));
-        }
-        wavPath = dialogDir / fmt::format("{}.wav", jobState.jobId);
-        // Relative path under getSoundFileLocation() — playback resolves it.
-        animationSoundFile = fmt::format("{}/{}.wav", kPermanentDialogSubdir, jobState.jobId);
+    // ---- 17-channel WAV output. The storage facade owns the path math AND
+    // the absolute-vs-relative metadata convention (Permanent stores relative,
+    // AdHoc stores absolute) so this handler doesn't reinvent it.
+    const auto wavBucket = persistence == DialogPersistence::AdHoc ? creatures::storage::Persistence::AdHoc
+                                                                   : creatures::storage::Persistence::Permanent;
+    const auto wavFilename = persistence == DialogPersistence::AdHoc ? fmt::format("dialog_{}.wav", jobState.jobId)
+                                                                     : fmt::format("{}.wav", jobState.jobId);
+    std::optional<std::string> wavSubdir;
+    if (persistence == DialogPersistence::Permanent) {
+        wavSubdir = std::string(kPermanentDialogSubdir);
     }
+    auto wavPathResult = creatures::storage::allocateSoundPath(wavBucket, wavFilename, wavSubdir);
+    if (!wavPathResult.isSuccess()) {
+        return failJob(fmt::format("allocateSoundPath: {}", wavPathResult.getError()->getMessage()));
+    }
+    const auto wavStoragePath = wavPathResult.getValue().value();
+    const auto wavPath = wavStoragePath.absolute;
+    const auto animationSoundFile = wavStoragePath.forMetadata;
 
     voice::VoiceChannelMap voiceToChannel;
     for (const auto &c : creaturesCache) {
@@ -1579,26 +1583,20 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         }
     }
 
-    // ---- Persist + tell clients to invalidate the affected caches. Matches
-    // the existing patterns: ad-hoc speech invalidates AdHocAnimationList +
-    // AdHocSoundList; lip-sync (which adds a new sound file) invalidates
-    // SoundList; an animation upsert invalidates Animation.
+    // ---- Persist via the storage facade so the right cache invalidations
+    // fire automatically per persistence (AdHoc → AdHocAnimationList+AdHocSoundList,
+    // Permanent → Animation+SoundList). Per issue #11 we can't forget any of them.
     if (persistence == DialogPersistence::AdHoc) {
-        auto insertResult =
-            creatures::db->insertAdHocAnimation(animation, std::chrono::system_clock::now(), jobState.span);
+        auto insertResult = creatures::storage::publishAdHocAnimation(animation, jobState.span);
         if (!insertResult.isSuccess()) {
-            return failJob(fmt::format("insertAdHocAnimation: {}", insertResult.getError().value().getMessage()));
+            return failJob(fmt::format("publishAdHocAnimation: {}", insertResult.getError().value().getMessage()));
         }
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocAnimationList);
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
     } else {
         const auto j = animationToJson(animation);
-        auto upsertResult = creatures::db->upsertAnimation(j.dump(), jobState.span);
+        auto upsertResult = creatures::storage::publishAnimation(j.dump(), jobState.span);
         if (!upsertResult.isSuccess()) {
-            return failJob(fmt::format("upsertAnimation: {}", upsertResult.getError().value().getMessage()));
+            return failJob(fmt::format("publishAnimation: {}", upsertResult.getError().value().getMessage()));
         }
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Animation);
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
     }
     updateProgress(0.95f);
 

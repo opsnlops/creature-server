@@ -14,6 +14,7 @@
 #include "server/eventloop/events/types.h"
 
 #include "server/config/Configuration.h"
+#include "server/storage/Storage.h"
 
 #include "model/Sound.h"
 #include "server/database.h"
@@ -305,8 +306,9 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
         OATPP_ASSERT_HTTP(false, Status::CODE_500, "Sound event loop unavailable");
     }
 
-    // Fill out the full path to the file
-    std::string fullFilePath = config->getSoundFileLocation() + "/" + inSoundFile;
+    // Resolve via the storage facade: absolute paths pass through; relative
+    // ones join under the permanent sound root.
+    std::string fullFilePath = creatures::storage::resolveSoundPath(inSoundFile).string();
     debug("using sound file name: {}", fullFilePath);
 
     // Make sure the file exists and is readable

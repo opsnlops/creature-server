@@ -384,6 +384,7 @@ file(GLOB serverFiles CONFIGURE_DEPENDS
         src/server/metrics/*
         src/server/playlist/*
         src/server/script/*
+        src/server/storage/*
         src/server/storyboard/*
         src/server/voice/*
         src/server/watchdog/*
@@ -644,6 +645,10 @@ add_executable(creature-server-test
         tests/server/ws/CreatureService_validate_test.cpp
         tests/server/ws/HttpResponseHelpers_test.cpp
         tests/server/storyboard/StoryboardParse_test.cpp
+        tests/server/storage/Storage_test.cpp
+        src/server/storage/Storage.cpp
+        src/server/config/Configuration.cpp
+        tests/server/FakeWebsocketUtils.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
         tests/server/voice/DialogPipeline_chunkTurns_test.cpp
         tests/server/voice/DialogPipeline_assembleChunk_test.cpp
