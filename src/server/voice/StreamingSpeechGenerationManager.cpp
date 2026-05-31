@@ -12,7 +12,7 @@
 #include "server/config/Configuration.h"
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
-#include "server/voice/AudioConverter.h"
+#include "server/voice/PcmWavWriter.h"
 
 namespace creatures {
 extern std::shared_ptr<creatures::voice::CreatureVoices> voiceService;
@@ -129,8 +129,9 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
             span->setAttribute("audio.channel", static_cast<int64_t>(audioChannel));
         }
 
-        // MP3 is universally available across ElevenLabs plans
-        std::string outputFormat = "mp3_44100_192";
+        // Raw mono 48 kHz S16 PCM straight from ElevenLabs (Pro plan; issue
+        // #12). Skips the MP3 → ffmpeg decode round-trip the old path needed.
+        std::string outputFormat = "pcm_48000";
 
         // Call ElevenLabs streaming API
         StreamingTTSClient client;
@@ -166,23 +167,27 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
         // Convert audio to 17-channel WAV
         auto wavPath = outputDir / "speech.wav";
 
-        if (outputFormat == "pcm_44100") {
-            auto writeResult = writePcmToMultichannelWav(ttsData.audioData, wavPath, audioChannel, 48000);
-            if (!writeResult.isSuccess()) {
-                if (span) {
-                    span->setError(writeResult.getError()->getMessage());
-                }
-                return Result<StreamingSpeechResult>{writeResult.getError().value()};
+        // PCM only as of #12 — decodeMp3ToMultichannelWav was retired with
+        // AudioConverter; if a future caller needs MP3 it'd have to bring a
+        // decoder back. Treating any non-pcm format here as a setup bug
+        // rather than silently failing later.
+        if (outputFormat.rfind("pcm_", 0) != 0) {
+            std::string errorMsg =
+                fmt::format("StreamingSpeechGenerationManager: only pcm_* output formats are supported "
+                            "(got '{}'). See issue #12.",
+                            outputFormat);
+            error(errorMsg);
+            if (span) {
+                span->setError(errorMsg);
             }
-        } else {
-            // MP3 format - need to decode first via ffmpeg
-            auto decodeResult = decodeMp3ToMultichannelWav(ttsData.audioData, wavPath, audioChannel, span);
-            if (!decodeResult.isSuccess()) {
-                if (span) {
-                    span->setError(decodeResult.getError()->getMessage());
-                }
-                return Result<StreamingSpeechResult>{decodeResult.getError().value()};
+            return Result<StreamingSpeechResult>{ServerError(ServerError::InvalidData, errorMsg)};
+        }
+        auto writeResult = writePcmToMultichannelWav(ttsData.audioData, wavPath, audioChannel, 48000);
+        if (!writeResult.isSuccess()) {
+            if (span) {
+                span->setError(writeResult.getError()->getMessage());
             }
+            return Result<StreamingSpeechResult>{writeResult.getError().value()};
         }
 
         // Convert alignment data to lip sync cues using TextToViseme
@@ -279,120 +284,9 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
     }
 }
 
-Result<size_t> StreamingSpeechGenerationManager::writePcmToMultichannelWav(const std::vector<uint8_t> &pcmData,
-                                                                           const std::filesystem::path &wavPath,
-                                                                           uint16_t audioChannel,
-                                                                           uint32_t sampleRate) {
-    // PCM data is mono 16-bit, we need to place it in a 17-channel WAV
-    const uint16_t totalChannels = RTP_STREAMING_CHANNELS;
-    const uint16_t bitsPerSample = 16;
-    const uint16_t bytesPerSample = bitsPerSample / 8;
-
-    // Number of samples per channel
-    size_t monoSamples = pcmData.size() / bytesPerSample;
-
-    // Total data size: monoSamples * totalChannels * bytesPerSample
-    size_t dataSize = monoSamples * totalChannels * bytesPerSample;
-
-    std::ofstream file(wavPath, std::ios::binary);
-    if (!file.is_open()) {
-        return Result<size_t>{ServerError(ServerError::InternalError,
-                                           fmt::format("Cannot create WAV file: {}", wavPath.string()))};
-    }
-
-    // RIFF header
-    uint32_t fileSize = static_cast<uint32_t>(36 + dataSize);
-    file.write("RIFF", 4);
-    file.write(reinterpret_cast<const char *>(&fileSize), 4);
-    file.write("WAVE", 4);
-
-    // fmt chunk
-    file.write("fmt ", 4);
-    uint32_t fmtSize = 16;
-    file.write(reinterpret_cast<const char *>(&fmtSize), 4);
-    uint16_t audioFormat = 1; // PCM
-    file.write(reinterpret_cast<const char *>(&audioFormat), 2);
-    file.write(reinterpret_cast<const char *>(&totalChannels), 2);
-    file.write(reinterpret_cast<const char *>(&sampleRate), 4);
-    uint32_t byteRate = sampleRate * totalChannels * bytesPerSample;
-    file.write(reinterpret_cast<const char *>(&byteRate), 4);
-    uint16_t blockAlign = totalChannels * bytesPerSample;
-    file.write(reinterpret_cast<const char *>(&blockAlign), 2);
-    file.write(reinterpret_cast<const char *>(&bitsPerSample), 2);
-
-    // data chunk
-    file.write("data", 4);
-    auto dataSizeU32 = static_cast<uint32_t>(dataSize);
-    file.write(reinterpret_cast<const char *>(&dataSizeU32), 4);
-
-    // Write interleaved samples: silence on all channels except target
-    // Channel index is 0-based, audioChannel is 1-based
-    uint16_t targetIdx = audioChannel - 1;
-    int16_t silence = 0;
-
-    const auto *monoPtr = reinterpret_cast<const int16_t *>(pcmData.data());
-    for (size_t i = 0; i < monoSamples; ++i) {
-        for (uint16_t ch = 0; ch < totalChannels; ++ch) {
-            if (ch == targetIdx) {
-                file.write(reinterpret_cast<const char *>(&monoPtr[i]), 2);
-            } else {
-                file.write(reinterpret_cast<const char *>(&silence), 2);
-            }
-        }
-    }
-
-    file.close();
-
-    size_t totalSize = 44 + dataSize; // 44 byte header + data
-    debug("Written 17-channel WAV: {} samples on channel {}, {} bytes total", monoSamples, audioChannel, totalSize);
-
-    return totalSize;
-}
-
-Result<size_t> StreamingSpeechGenerationManager::decodeMp3ToMultichannelWav(
-    const std::vector<uint8_t> &mp3Data, const std::filesystem::path &wavPath, uint16_t audioChannel,
-    std::shared_ptr<OperationSpan> parentSpan) {
-
-    auto span = creatures::observability->createChildOperationSpan(
-        "StreamingSpeechGenerationManager.decodeMp3ToWav", parentSpan);
-
-    // Write MP3 to temp file
-    auto mp3TempPath = wavPath;
-    mp3TempPath.replace_extension(".tmp.mp3");
-
-    {
-        std::ofstream mp3File(mp3TempPath, std::ios::binary);
-        if (!mp3File.is_open()) {
-            std::string msg = fmt::format("Cannot create temp MP3 file: {}", mp3TempPath.string());
-            if (span) {
-                span->setError(msg);
-            }
-            return Result<size_t>{ServerError(ServerError::InternalError, msg)};
-        }
-        mp3File.write(reinterpret_cast<const char *>(mp3Data.data()), static_cast<std::streamsize>(mp3Data.size()));
-    }
-
-    // Use AudioConverter to convert MP3 → 17-channel WAV
-    auto convertResult = AudioConverter::convertMp3ToWav(mp3TempPath, wavPath,
-                                                          creatures::config->getFfmpegBinaryPath(), audioChannel,
-                                                          48000, span);
-
-    // Clean up temp MP3
-    std::error_code ec;
-    std::filesystem::remove(mp3TempPath, ec);
-
-    if (!convertResult.isSuccess()) {
-        if (span) {
-            span->setError(convertResult.getError()->getMessage());
-        }
-        return convertResult;
-    }
-
-    if (span) {
-        span->setSuccess();
-    }
-
-    return convertResult;
-}
+// writePcmToMultichannelWav + decodeMp3ToMultichannelWav moved out as part
+// of issue #12. The first is now a free function in PcmWavWriter.h that all
+// MP3-replacing call sites share; the MP3 decode path was retired with
+// AudioConverter (Phase C of #12).
 
 } // namespace creatures::voice

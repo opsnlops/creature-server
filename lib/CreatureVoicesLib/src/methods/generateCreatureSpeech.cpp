@@ -94,17 +94,19 @@ namespace creatures::voice {
         transcriptFile.close();
 
 
-        // If we've made it this far, we're good to go. Let's generate the MP3 sound file.
-        // Note: Caller (VoiceService) is responsible for converting to WAV if needed.
-        auto soundFilePath = fileSavePath / fmt::format("{}.mp3", fileBaseName);
+        // We request raw mono 48 kHz S16 PCM (`pcm_48000`) from ElevenLabs and
+        // write it to disk as a `.pcm` file. The caller wraps it into the
+        // canonical 17-channel WAV via voice::writePcmToMultichannelWav.
+        // Switched from `mp3_44100_192` + ffmpeg post-processing as part of
+        // issue #12 — needs an ElevenLabs Pro subscription, which is the only
+        // tier that offers PCM.
+        auto soundFilePath = fileSavePath / fmt::format("{}.pcm", fileBaseName);
         debug("Generating speech for creature: {} to file {}", speechRequest.creature_name, soundFilePath.string());
 
-
-
-        const std::string url = fmt::format("/v1/text-to-speech/{}?output_format=mp3_44100_192", speechRequest.voice_id);
+        const std::string url = fmt::format("/v1/text-to-speech/{}?output_format=pcm_48000", speechRequest.voice_id);
         auto curlHandle = createCurlHandle(url);
         curlHandle.addHeader("Content-Type: application/json");
-        curlHandle.addHeader("Accept: audio/mpeg");
+        curlHandle.addHeader("Accept: audio/pcm");
 
         // Create the JSON request according to the API
         json requestJson = {
@@ -150,7 +152,7 @@ namespace creatures::voice {
         debug("done! sound file written to {}", soundFilePath.string());
 
         CreatureSpeechResponse response;
-        response.sound_file_name = fmt::format("{}.mp3", fileBaseName);
+        response.sound_file_name = fmt::format("{}.pcm", fileBaseName);
         response.transcript_file_name = fmt::format("{}.txt", fileBaseName);
         response.sound_file_size = httpResponse.size();
         response.success = true;

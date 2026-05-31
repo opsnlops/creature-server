@@ -5,10 +5,12 @@
 #include <system_error>
 #include <utility>
 
+#include <fstream>
+
 #include "exception/exception.h"
 #include "server/config/Configuration.h"
 #include "server/database.h"
-#include "server/voice/AudioConverter.h"
+#include "server/voice/PcmWavWriter.h"
 #include "spdlog/spdlog.h"
 #include <fmt/format.h>
 
@@ -166,34 +168,57 @@ Result<SpeechGenerationResult> SpeechGenerationManager::generate(const SpeechGen
             }
             return Result<SpeechGenerationResult>{ServerError(serverCode, error.getMessage())};
         }
-        auto mp3Data = mp3Result.getValue().value();
+        auto pcmMetadata = mp3Result.getValue().value();
 
-        auto mp3Path = outputDir / mp3Data.sound_file_name;
-        auto wavPath = mp3Path;
+        // Generated file is now raw PCM (`.pcm`, mono S16 LE @ 48 kHz) — see
+        // generateCreatureSpeech.cpp / issue #12. We wrap it into the canonical
+        // 17-channel WAV in-process; no ffmpeg involved.
+        auto pcmPath = outputDir / pcmMetadata.sound_file_name;
+        auto wavPath = pcmPath;
         wavPath.replace_extension(".wav");
-        auto transcriptPath = outputDir / mp3Data.transcript_file_name;
+        auto transcriptPath = outputDir / pcmMetadata.transcript_file_name;
 
         auto convertSpan =
             creatures::observability->createChildOperationSpan("SpeechGenerationManager.convertToWav", span);
         if (convertSpan) {
             convertSpan->setAttribute("audio.target_channel", static_cast<int64_t>(audioChannel));
         }
-        auto conversion = AudioConverter::convertMp3ToWav(mp3Path, wavPath, creatures::config->getFfmpegBinaryPath(),
-                                                          audioChannel, 48000, convertSpan);
+
+        std::vector<uint8_t> pcmBytes;
+        {
+            std::ifstream in(pcmPath, std::ios::binary | std::ios::ate);
+            if (!in.is_open()) {
+                std::string errorMessage = fmt::format("Cannot read PCM file at {}", pcmPath.string());
+                if (convertSpan)
+                    convertSpan->setError(errorMessage);
+                if (span)
+                    span->setError(errorMessage);
+                return Result<SpeechGenerationResult>{ServerError(ServerError::InternalError, errorMessage)};
+            }
+            const auto size = static_cast<std::size_t>(in.tellg());
+            pcmBytes.resize(size);
+            in.seekg(0, std::ios::beg);
+            in.read(reinterpret_cast<char *>(pcmBytes.data()), static_cast<std::streamsize>(size));
+        }
+
+        auto conversion = writePcmToMultichannelWav(pcmBytes, wavPath, audioChannel, 48000);
         if (!conversion.isSuccess()) {
             auto error = conversion.getError().value();
-            if (span) {
+            if (convertSpan)
+                convertSpan->setError(error.getMessage());
+            if (span)
                 span->setError(error.getMessage());
-            }
             return Result<SpeechGenerationResult>{error};
         }
+        if (convertSpan)
+            convertSpan->setSuccess();
 
         SpeechGenerationResult result;
         result.response.success = true;
         result.response.sound_file_name = wavPath.filename().string();
-        result.response.transcript_file_name = mp3Data.transcript_file_name;
+        result.response.transcript_file_name = pcmMetadata.transcript_file_name;
         result.response.sound_file_size = conversion.getValue().value();
-        result.mp3Path = mp3Path;
+        result.mp3Path = pcmPath; // field name is legacy — now holds the .pcm path
         result.wavPath = wavPath;
         result.transcriptPath = transcriptPath;
         result.audioChannel = audioChannel;
