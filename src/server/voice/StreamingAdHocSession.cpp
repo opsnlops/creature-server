@@ -12,7 +12,7 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
-#include "AudioConverter.h"
+#include "PcmWavWriter.h"
 #include "RhubarbData.h"
 #include "SoundDataProcessor.h"
 #include "model/Animation.h"
@@ -257,8 +257,10 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
             }
 
             StreamingTTSClient client;
+            // Request raw mono 48 kHz S16 PCM directly (issue #12). The
+            // 17-channel WAV is wrapped in-process below; no ffmpeg decode hop.
             auto ttsResult = client.generateSpeechREST(creatures::config->getVoiceApiKey(), voiceId_, modelId_, text,
-                                                       "mp3_44100_192", stability_, similarityBoost_, prevIds, nullptr,
+                                                       "pcm_48000", stability_, similarityBoost_, prevIds, nullptr,
                                                        sentenceSpan);
             if (!ttsResult.isSuccess()) {
                 if (sentenceSpan)
@@ -275,20 +277,14 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
             }
             const auto tts = ttsResult.getValue().value();
 
-            // 2. Write MP3 and convert to WAV
+            // 2. Wrap raw PCM into a 17-channel WAV (in-process; previously
+            // ffmpeg via AudioConverter::convertMp3ToWav). See issue #12.
             auto tempDir = std::filesystem::temp_directory_path() / "creature-adhoc" / sessionId_;
             std::filesystem::create_directories(tempDir);
 
-            auto mp3Path = tempDir / fmt::format("s{}.mp3", sentenceIndex);
-            {
-                std::ofstream f(mp3Path, std::ios::binary);
-                f.write(reinterpret_cast<const char *>(tts.audioData.data()),
-                        static_cast<std::streamsize>(tts.audioData.size()));
-            }
-
             auto wavPath = tempDir / fmt::format("s{}.wav", sentenceIndex);
-            auto convertResult = AudioConverter::convertMp3ToWav(
-                mp3Path, wavPath, creatures::config->getFfmpegBinaryPath(), audioChannel_, 48000, sentenceSpan);
+            auto convertResult =
+                writePcmToMultichannelWav(tts.audioData, wavPath, audioChannel_, 48000);
             if (!convertResult.isSuccess()) {
                 if (sentenceSpan)
                     sentenceSpan->setError(convertResult.getError()->getMessage());

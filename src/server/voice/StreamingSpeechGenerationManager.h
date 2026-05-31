@@ -80,35 +80,9 @@ class StreamingSpeechGenerationManager {
      */
     static Result<StreamingSpeechResult> generate(const SpeechGenerationRequest &request);
 
-  private:
-    /**
-     * Write raw PCM audio data into a 17-channel WAV file.
-     *
-     * Places the audio on the creature's specific channel with silence
-     * on all other channels, matching the format produced by AudioConverter.
-     *
-     * @param pcmData Raw PCM audio data (mono, 48kHz, 16-bit)
-     * @param wavPath Output WAV file path
-     * @param audioChannel Target channel (1-16, or 17 for BGM)
-     * @param sampleRate Sample rate in Hz
-     * @return Size of the written file, or error
-     */
-    static Result<size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmData,
-                                                     const std::filesystem::path &wavPath, uint16_t audioChannel,
-                                                     uint32_t sampleRate);
-
-    /**
-     * Decode MP3 data to PCM using ffmpeg, then write to multichannel WAV.
-     *
-     * @param mp3Data Raw MP3 audio data
-     * @param wavPath Output WAV file path
-     * @param audioChannel Target channel
-     * @param parentSpan Observability span
-     * @return Size of the written file, or error
-     */
-    static Result<size_t> decodeMp3ToMultichannelWav(const std::vector<uint8_t> &mp3Data,
-                                                      const std::filesystem::path &wavPath, uint16_t audioChannel,
-                                                      std::shared_ptr<OperationSpan> parentSpan);
+    // writePcmToMultichannelWav lives in voice::PcmWavWriter as a free
+    // function (extracted #12). decodeMp3ToMultichannelWav was retired with
+    // the MP3-via-ffmpeg pipeline.
 };
 
 } // namespace creatures::voice
