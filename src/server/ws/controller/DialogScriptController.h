@@ -19,6 +19,7 @@
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/DialogScriptValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
@@ -38,7 +39,8 @@ namespace creatures::ws {
 /// multi-character dialog scenes. POST /api/v1/animation/dialog can take a
 /// `script_id` and the worker snapshots the script's turns onto the rendered
 /// Animation (soft pointer + CoW).
-class DialogScriptController : public oatpp::web::server::api::ApiController {
+class DialogScriptController : public oatpp::web::server::api::ApiController,
+                               public HttpResponseHelpers<DialogScriptController> {
   public:
     DialogScriptController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper))
         : ApiController(objectMapper) {}
@@ -53,18 +55,6 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
                    std::chrono::system_clock::now().time_since_epoch())
             .count();
-    }
-
-    /// Helper for the friendly 400 error envelope. Sets HTTP status on the
-    /// request span and returns a StatusDto-shaped response.
-    template <typename SpanT> std::shared_ptr<OutgoingResponse> bail400(const SpanT &span, const std::string &msg) {
-        auto err = StatusDto::createShared();
-        err->status = "error";
-        err->code = 400;
-        err->message = msg.c_str();
-        if (span)
-            span->setHttpStatus(400);
-        return createDtoResponse(Status::CODE_400, err);
     }
 
     /// Build the canonical script JSON from raw client input: parse with
@@ -111,13 +101,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
                                    "DialogScriptController.listDialogScripts", span);
                                auto result = creatures::db->listDialogScripts(opSpan);
                                if (!result.isSuccess()) {
-                                   auto err = StatusDto::createShared();
-                                   err->status = "error";
-                                   err->code = 500;
-                                   err->message = result.getError().value().getMessage().c_str();
-                                   if (span)
-                                       span->setHttpStatus(500);
-                                   return createDtoResponse(Status::CODE_500, err);
+                                   return bailFromServerError(span, result.getError().value());
                                }
                                const auto scripts = result.getValue().value();
                                auto list = ListDto<Object<DialogScriptDto>>::createShared();
@@ -146,23 +130,16 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
             "GET /api/v1/animation/dialog/script/{scriptId}", "GET", "api/v1/animation/dialog/script/{scriptId}",
             "getDialogScript", "DialogScriptController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                OATPP_ASSERT_HTTP(scriptId && isUuidShape(std::string(*scriptId)), Status::CODE_400,
-                                  "scriptId must be a UUID");
+                if (!scriptId || !isUuidShape(std::string(*scriptId))) {
+                    return bailHttp(span, Status::CODE_400, "scriptId must be a UUID");
+                }
                 if (span)
                     span->setAttribute("script.id", std::string(*scriptId));
                 auto opSpan =
                     creatures::observability->createChildOperationSpan("DialogScriptController.getDialogScript", span);
                 auto result = creatures::db->getDialogScript(std::string(*scriptId), opSpan);
                 if (!result.isSuccess()) {
-                    auto code = result.getError().value().getCode();
-                    const bool notFound = code == creatures::ServerError::NotFound;
-                    auto err = StatusDto::createShared();
-                    err->status = notFound ? "not_found" : "error";
-                    err->code = notFound ? 404 : 500;
-                    err->message = result.getError().value().getMessage().c_str();
-                    if (span)
-                        span->setHttpStatus(notFound ? 404 : 500);
-                    return createDtoResponse(notFound ? Status::CODE_404 : Status::CODE_500, err);
+                    return bailFromServerError(span, result.getError().value());
                 }
                 if (span)
                     span->setHttpStatus(200);
@@ -185,7 +162,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
             "POST /api/v1/animation/dialog/script", "POST", "api/v1/animation/dialog/script", "createDialogScript",
             "DialogScriptController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
                 if (!body) {
-                    return bail400(span, "Request body is required");
+                    return bailHttp(span, Status::CODE_400, "Request body is required");
                 }
                 if (span)
                     span->setAttribute("request.body_size", static_cast<int64_t>(body->size()));
@@ -196,9 +173,9 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
                 try {
                     parsed = buildScriptJsonForUpsert(std::string(*body), id, now, now);
                 } catch (const nlohmann::json::exception &e) {
-                    return bail400(span, fmt::format("Invalid JSON: {}", e.what()));
+                    return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
                 } catch (const std::exception &e) {
-                    return bail400(span, e.what());
+                    return bailHttp(span, Status::CODE_400, e.what());
                 }
 
                 auto opSpan = creatures::observability->createChildOperationSpan(
@@ -207,20 +184,12 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
                 // Field-level validation (caps, types, UUID shape via invalidScriptData).
                 auto parseResult = creatures::Database::parseDialogScriptJson(parsed, opSpan);
                 if (!parseResult.isSuccess()) {
-                    return bail400(span, parseResult.getError()->getMessage());
+                    return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
                 }
 
                 auto result = creatures::db->upsertDialogScript(parsed.dump(), opSpan);
                 if (!result.isSuccess()) {
-                    auto code = result.getError().value().getCode();
-                    const bool client = code == creatures::ServerError::InvalidData;
-                    auto err = StatusDto::createShared();
-                    err->status = "error";
-                    err->code = client ? 400 : 500;
-                    err->message = result.getError().value().getMessage().c_str();
-                    if (span)
-                        span->setHttpStatus(client ? 400 : 500);
-                    return createDtoResponse(client ? Status::CODE_400 : Status::CODE_500, err);
+                    return bailFromServerError(span, result.getError().value());
                 }
                 scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, creatures::CacheType::DialogScriptList);
                 if (span) {
@@ -249,12 +218,13 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
             "PUT /api/v1/animation/dialog/script/{scriptId}", "PUT", "api/v1/animation/dialog/script/{scriptId}",
             "updateDialogScript", "DialogScriptController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                OATPP_ASSERT_HTTP(scriptId && isUuidShape(std::string(*scriptId)), Status::CODE_400,
-                                  "scriptId must be a UUID");
+                if (!scriptId || !isUuidShape(std::string(*scriptId))) {
+                    return bailHttp(span, Status::CODE_400, "scriptId must be a UUID");
+                }
                 if (span)
                     span->setAttribute("script.id", std::string(*scriptId));
                 if (!body) {
-                    return bail400(span, "Request body is required");
+                    return bailHttp(span, Status::CODE_400, "Request body is required");
                 }
                 if (span)
                     span->setAttribute("request.body_size", static_cast<int64_t>(body->size()));
@@ -265,15 +235,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
                 // Must exist — PUT replaces, not creates-via-id.
                 auto existing = creatures::db->getDialogScript(std::string(*scriptId), opSpan);
                 if (!existing.isSuccess()) {
-                    auto code = existing.getError().value().getCode();
-                    const bool notFound = code == creatures::ServerError::NotFound;
-                    auto err = StatusDto::createShared();
-                    err->status = notFound ? "not_found" : "error";
-                    err->code = notFound ? 404 : 500;
-                    err->message = existing.getError().value().getMessage().c_str();
-                    if (span)
-                        span->setHttpStatus(notFound ? 404 : 500);
-                    return createDtoResponse(notFound ? Status::CODE_404 : Status::CODE_500, err);
+                    return bailFromServerError(span, existing.getError().value());
                 }
                 const auto createdAt = existing.getValue().value().created_at;
 
@@ -282,27 +244,19 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
                     parsed =
                         buildScriptJsonForUpsert(std::string(*body), std::string(*scriptId), createdAt, nowMillis());
                 } catch (const nlohmann::json::exception &e) {
-                    return bail400(span, fmt::format("Invalid JSON: {}", e.what()));
+                    return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
                 } catch (const std::exception &e) {
-                    return bail400(span, e.what());
+                    return bailHttp(span, Status::CODE_400, e.what());
                 }
 
                 auto parseResult = creatures::Database::parseDialogScriptJson(parsed, opSpan);
                 if (!parseResult.isSuccess()) {
-                    return bail400(span, parseResult.getError()->getMessage());
+                    return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
                 }
 
                 auto result = creatures::db->upsertDialogScript(parsed.dump(), opSpan);
                 if (!result.isSuccess()) {
-                    auto code = result.getError().value().getCode();
-                    const bool client = code == creatures::ServerError::InvalidData;
-                    auto err = StatusDto::createShared();
-                    err->status = "error";
-                    err->code = client ? 400 : 500;
-                    err->message = result.getError().value().getMessage().c_str();
-                    if (span)
-                        span->setHttpStatus(client ? 400 : 500);
-                    return createDtoResponse(client ? Status::CODE_400 : Status::CODE_500, err);
+                    return bailFromServerError(span, result.getError().value());
                 }
                 scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, creatures::CacheType::DialogScriptList);
                 if (span)
@@ -422,33 +376,20 @@ class DialogScriptController : public oatpp::web::server::api::ApiController {
         return runEndpoint("DELETE /api/v1/animation/dialog/script/{scriptId}", "DELETE",
                            "api/v1/animation/dialog/script/{scriptId}", "deleteDialogScript", "DialogScriptController",
                            request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                               OATPP_ASSERT_HTTP(scriptId && isUuidShape(std::string(*scriptId)), Status::CODE_400,
-                                                 "scriptId must be a UUID");
+                               if (!scriptId || !isUuidShape(std::string(*scriptId))) {
+                                   return bailHttp(span, Status::CODE_400, "scriptId must be a UUID");
+                               }
                                if (span)
                                    span->setAttribute("script.id", std::string(*scriptId));
                                auto opSpan = creatures::observability->createChildOperationSpan(
                                    "DialogScriptController.deleteDialogScript", span);
                                auto result = creatures::db->deleteDialogScript(std::string(*scriptId), opSpan);
                                if (!result.isSuccess()) {
-                                   auto code = result.getError().value().getCode();
-                                   const bool notFound = code == creatures::ServerError::NotFound;
-                                   auto err = StatusDto::createShared();
-                                   err->status = notFound ? "not_found" : "error";
-                                   err->code = notFound ? 404 : 500;
-                                   err->message = result.getError().value().getMessage().c_str();
-                                   if (span)
-                                       span->setHttpStatus(notFound ? 404 : 500);
-                                   return createDtoResponse(notFound ? Status::CODE_404 : Status::CODE_500, err);
+                                   return bailFromServerError(span, result.getError().value());
                                }
                                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME,
                                                               creatures::CacheType::DialogScriptList);
-                               auto ok = StatusDto::createShared();
-                               ok->status = "OK";
-                               ok->code = 200;
-                               ok->message = "DialogScript deleted";
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, ok);
+                               return okStatus(span, Status::CODE_200, "DialogScript deleted");
                            });
     }
 };

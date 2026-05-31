@@ -13,6 +13,7 @@
 #include "model/PlaylistStatus.h"
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/StartPlaylistRequestDto.h"
 #include "server/ws/dto/StopPlaylistRequestDto.h"
 #include "server/ws/service/PlaylistService.h"
@@ -21,7 +22,8 @@
 
 namespace creatures ::ws {
 
-class PlaylistController : public oatpp::web::server::api::ApiController {
+class PlaylistController : public oatpp::web::server::api::ApiController,
+                           public HttpResponseHelpers<PlaylistController> {
   public:
     PlaylistController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper))
         : oatpp::web::server::api::ApiController(objectMapper) {}
@@ -73,8 +75,9 @@ class PlaylistController : public oatpp::web::server::api::ApiController {
         return runEndpoint("GET /api/v1/playlist/id/{playlistId}", "GET",
                            "api/v1/playlist/id/" + std::string(playlistId), "getPlaylist", "PlaylistController",
                            request, [&](const auto &span) {
-                               OATPP_ASSERT_HTTP(playlistId && isUuidShape(std::string(playlistId)), Status::CODE_400,
-                                                 "playlistId must be a UUID");
+                               if (!playlistId || !isUuidShape(std::string(playlistId))) {
+                                   return bailHttp(span, Status::CODE_400, "playlistId must be a UUID");
+                               }
                                if (span)
                                    span->setAttribute("playlist.id", std::string(playlistId));
                                const auto result = m_playlistService.getPlaylist(playlistId);

@@ -8,6 +8,7 @@
 #include "server/namespace-stuffs.h"
 #include "server/voice/StreamingAdHocSession.h"
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/dto/StreamingAdHocDto.h"
 
@@ -19,7 +20,8 @@ extern std::shared_ptr<Configuration> config;
 
 namespace creatures::ws {
 
-class StreamingAdHocController : public oatpp::web::server::api::ApiController {
+class StreamingAdHocController : public oatpp::web::server::api::ApiController,
+                                 public HttpResponseHelpers<StreamingAdHocController> {
   public:
     StreamingAdHocController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper))
         : oatpp::web::server::api::ApiController(objectMapper) {}
@@ -48,13 +50,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController {
                                    requestBody->resume_playlist != nullptr ? *requestBody->resume_playlist : true;
 
                                if (!creatureId || creatureId->empty()) {
-                                   auto result = StatusDto::createShared();
-                                   result->status = "error";
-                                   result->code = 400;
-                                   result->message = "creature_id is required";
-                                   if (span)
-                                       span->setHttpStatus(400);
-                                   return createDtoResponse(Status::CODE_400, result);
+                                   return bailHttp(span, Status::CODE_400, "creature_id is required");
                                }
 
                                auto &mgr = creatures::voice::StreamingAdHocSessionManager::instance();
@@ -63,15 +59,10 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController {
                                auto startResult = session->start();
                                if (!startResult.isSuccess()) {
                                    mgr.removeSession(session->getSessionId());
-                                   auto result = StatusDto::createShared();
-                                   result->status = "error";
-                                   result->code = 500;
-                                   result->message = startResult.getError()->getMessage().c_str();
                                    if (span) {
                                        span->setError(startResult.getError()->getMessage());
-                                       span->setHttpStatus(500);
                                    }
-                                   return createDtoResponse(Status::CODE_500, result);
+                                   return bailFromServerError(span, startResult.getError().value());
                                }
 
                                auto response = StreamingAdHocStartResponseDto::createShared();
@@ -105,38 +96,21 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController {
                                auto text = requestBody->text;
 
                                if (!sessionId || sessionId->empty() || !text || text->empty()) {
-                                   auto result = StatusDto::createShared();
-                                   result->status = "error";
-                                   result->code = 400;
-                                   result->message = "session_id and text are required";
-                                   if (span)
-                                       span->setHttpStatus(400);
-                                   return createDtoResponse(Status::CODE_400, result);
+                                   return bailHttp(span, Status::CODE_400, "session_id and text are required");
                                }
 
                                auto &mgr = creatures::voice::StreamingAdHocSessionManager::instance();
                                auto session = mgr.getSession(sessionId->c_str());
                                if (!session) {
-                                   auto result = StatusDto::createShared();
-                                   result->status = "error";
-                                   result->code = 404;
-                                   result->message = "Session not found";
-                                   if (span)
-                                       span->setHttpStatus(404);
-                                   return createDtoResponse(Status::CODE_404, result);
+                                   return bailHttp(span, Status::CODE_404, "Session not found");
                                }
 
                                auto addResult = session->addText(text->c_str());
                                if (!addResult.isSuccess()) {
-                                   auto result = StatusDto::createShared();
-                                   result->status = "error";
-                                   result->code = 500;
-                                   result->message = addResult.getError()->getMessage().c_str();
                                    if (span) {
                                        span->setError(addResult.getError()->getMessage());
-                                       span->setHttpStatus(500);
                                    }
-                                   return createDtoResponse(Status::CODE_500, result);
+                                   return bailFromServerError(span, addResult.getError().value());
                                }
 
                                auto response = StreamingAdHocTextResponseDto::createShared();
@@ -172,25 +146,13 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController {
                                auto sessionId = requestBody->session_id;
 
                                if (!sessionId || sessionId->empty()) {
-                                   auto result = StatusDto::createShared();
-                                   result->status = "error";
-                                   result->code = 400;
-                                   result->message = "session_id is required";
-                                   if (span)
-                                       span->setHttpStatus(400);
-                                   return createDtoResponse(Status::CODE_400, result);
+                                   return bailHttp(span, Status::CODE_400, "session_id is required");
                                }
 
                                auto &mgr = creatures::voice::StreamingAdHocSessionManager::instance();
                                auto session = mgr.getSession(sessionId->c_str());
                                if (!session) {
-                                   auto result = StatusDto::createShared();
-                                   result->status = "error";
-                                   result->code = 404;
-                                   result->message = "Session not found";
-                                   if (span)
-                                       span->setHttpStatus(404);
-                                   return createDtoResponse(Status::CODE_404, result);
+                                   return bailHttp(span, Status::CODE_404, "Session not found");
                                }
 
                                auto finishResult = session->finish();
@@ -201,15 +163,10 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController {
                                mgr.removeSession(sessionId->c_str());
 
                                if (!finishResult.isSuccess()) {
-                                   auto result = StatusDto::createShared();
-                                   result->status = "error";
-                                   result->code = 500;
-                                   result->message = finishResult.getError()->getMessage().c_str();
                                    if (span) {
                                        span->setError(finishResult.getError()->getMessage());
-                                       span->setHttpStatus(500);
                                    }
-                                   return createDtoResponse(Status::CODE_500, result);
+                                   return bailFromServerError(span, finishResult.getError().value());
                                }
 
                                auto animationId = finishResult.getValue().value();

@@ -31,6 +31,7 @@
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/RhubarbData.h"
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
 #include "util/Result.h"
 #include "util/uuidUtils.h"
 
@@ -48,7 +49,7 @@ extern std::shared_ptr<jobs::JobWorker> jobWorker;
 
 namespace creatures ::ws {
 
-class SoundController : public oatpp::web::server::api::ApiController {
+class SoundController : public oatpp::web::server::api::ApiController, public HttpResponseHelpers<SoundController> {
   public:
     SoundController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper)) : ApiController(objectMapper) {}
 
@@ -134,40 +135,16 @@ class SoundController : public oatpp::web::server::api::ApiController {
             "POST /api/v1/sound/generate-lipsync/upload", "POST", "api/v1/sound/generate-lipsync/upload",
             "generateLipSyncFromUpload", "SoundController", request, [&](const auto &span) {
                 if (!filename) {
-                    auto response = StatusDto::createShared();
-                    response->status = "Bad Request";
-                    response->message = "Query parameter 'filename' is required.";
-                    response->code = 400;
-                    if (span) {
-                        span->setHttpStatus(400);
-                        span->setAttribute("error.message", response->message);
-                    }
-                    return createDtoResponse(Status::CODE_400, response);
+                    return bailHttp(span, Status::CODE_400, "Query parameter 'filename' is required.");
                 }
 
                 if (!body) {
-                    auto response = StatusDto::createShared();
-                    response->status = "Bad Request";
-                    response->message = "Request body must contain WAV data.";
-                    response->code = 400;
-                    if (span) {
-                        span->setHttpStatus(400);
-                        span->setAttribute("error.message", response->message);
-                    }
-                    return createDtoResponse(Status::CODE_400, response);
+                    return bailHttp(span, Status::CODE_400, "Request body must contain WAV data.");
                 }
 
                 std::string wavData = body;
                 if (wavData.empty()) {
-                    auto response = StatusDto::createShared();
-                    response->status = "Bad Request";
-                    response->message = "Uploaded WAV data is empty.";
-                    response->code = 400;
-                    if (span) {
-                        span->setHttpStatus(400);
-                        span->setAttribute("error.message", response->message);
-                    }
-                    return createDtoResponse(Status::CODE_400, response);
+                    return bailHttp(span, Status::CODE_400, "Uploaded WAV data is empty.");
                 }
 
                 std::string originalFilename = filename;
@@ -175,27 +152,11 @@ class SoundController : public oatpp::web::server::api::ApiController {
                 try {
                     sanitizedFilename = sanitizeFilename(originalFilename);
                 } catch (const std::invalid_argument &ex) {
-                    auto response = StatusDto::createShared();
-                    response->status = "Bad Request";
-                    response->message = ex.what();
-                    response->code = 400;
-                    if (span) {
-                        span->setHttpStatus(400);
-                        span->setAttribute("error.message", response->message);
-                    }
-                    return createDtoResponse(Status::CODE_400, response);
+                    return bailHttp(span, Status::CODE_400, ex.what());
                 }
 
                 if (!sanitizedFilename.ends_with(".wav")) {
-                    auto response = StatusDto::createShared();
-                    response->status = "Unprocessable Entity";
-                    response->message = "Only .wav files are supported for lip sync generation.";
-                    response->code = 422;
-                    if (span) {
-                        span->setHttpStatus(422);
-                        span->setAttribute("error.message", response->message);
-                    }
-                    return createDtoResponse(Status::CODE_422, response);
+                    return bailHttp(span, Status::CODE_422, "Only .wav files are supported for lip sync generation.");
                 }
 
                 if (span) {
@@ -209,15 +170,8 @@ class SoundController : public oatpp::web::server::api::ApiController {
                 std::error_code ec;
                 fs::create_directories(tempDir, ec);
                 if (ec) {
-                    auto response = StatusDto::createShared();
-                    response->status = "Internal Server Error";
-                    response->message = fmt::format("Failed to create temporary directory: {}", ec.message());
-                    response->code = 500;
-                    if (span) {
-                        span->setHttpStatus(500);
-                        span->setAttribute("error.message", response->message);
-                    }
-                    return createDtoResponse(Status::CODE_500, response);
+                    return bailHttp(span, Status::CODE_500,
+                                    fmt::format("Failed to create temporary directory: {}", ec.message()));
                 }
 
                 struct TempDirCleaner {
@@ -238,28 +192,12 @@ class SoundController : public oatpp::web::server::api::ApiController {
                 auto wavPath = tempDir / sanitizedFilename;
                 std::ofstream wavFile(wavPath, std::ios::binary);
                 if (!wavFile.is_open()) {
-                    auto response = StatusDto::createShared();
-                    response->status = "Internal Server Error";
-                    response->message = "Failed to write uploaded WAV file.";
-                    response->code = 500;
-                    if (span) {
-                        span->setHttpStatus(500);
-                        span->setAttribute("error.message", response->message);
-                    }
-                    return createDtoResponse(Status::CODE_500, response);
+                    return bailHttp(span, Status::CODE_500, "Failed to write uploaded WAV file.");
                 }
 
                 wavFile.write(wavData.data(), static_cast<std::streamsize>(wavData.size()));
                 if (!wavFile.good()) {
-                    auto response = StatusDto::createShared();
-                    response->status = "Internal Server Error";
-                    response->message = "Failed to persist uploaded WAV data.";
-                    response->code = 500;
-                    if (span) {
-                        span->setHttpStatus(500);
-                        span->setAttribute("error.message", response->message);
-                    }
-                    return createDtoResponse(Status::CODE_500, response);
+                    return bailHttp(span, Status::CODE_500, "Failed to persist uploaded WAV data.");
                 }
                 wavFile.close();
 
@@ -278,34 +216,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
                                                                        rhubarbBinaryPath, true, nullptr, nullptr);
 
                 if (!result.isSuccess()) {
-                    auto errorResult = result.getError().value();
-                    auto response = StatusDto::createShared();
-                    response->status = "Lip Sync Generation Failed";
-                    response->message = errorResult.getMessage();
-                    int statusCode = serverErrorToStatusCode(errorResult.getCode());
-                    response->code = statusCode;
-                    auto status = Status::CODE_500;
-                    switch (statusCode) {
-                    case 400:
-                        status = Status::CODE_400;
-                        break;
-                    case 403:
-                        status = Status::CODE_403;
-                        break;
-                    case 404:
-                        status = Status::CODE_404;
-                        break;
-                    default:
-                        status = Status::CODE_500;
-                        break;
-                    }
-
-                    if (span) {
-                        span->setHttpStatus(status.code);
-                        span->setAttribute("error.message", errorResult.getMessage());
-                    }
-
-                    return createDtoResponse(status, response);
+                    return bailFromServerError(span, result.getError().value());
                 }
 
                 auto jsonContent = result.getValue().value();
@@ -314,15 +225,8 @@ class SoundController : public oatpp::web::server::api::ApiController {
                 try {
                     lipSyncData = creatures::RhubarbSoundData::fromJsonString(jsonContent);
                 } catch (const std::exception &e) {
-                    auto response = StatusDto::createShared();
-                    response->status = "Internal Server Error";
-                    response->message = fmt::format("Failed to parse Rhubarb JSON output: {}", e.what());
-                    response->code = 500;
-                    if (span) {
-                        span->setHttpStatus(500);
-                        span->setAttribute("error.message", response->message);
-                    }
-                    return createDtoResponse(Status::CODE_500, response);
+                    return bailHttp(span, Status::CODE_500,
+                                    fmt::format("Failed to parse Rhubarb JSON output: {}", e.what()));
                 }
 
                 auto metadataDto = creatures::ws::RhubarbMetadataDto::createShared();
@@ -411,13 +315,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
                                    safeFilename = sanitizeFilename(filename);
                                } catch (const std::invalid_argument &e) {
                                    warn("Attempt to serve {} failed: {}", std::string(filename), e.what());
-                                   auto response = StatusDto::createShared();
-                                   response->status = "Forbidden";
-                                   response->message = e.what();
-                                   response->code = 403;
-                                   if (span)
-                                       span->setHttpStatus(403);
-                                   return createDtoResponse(Status::CODE_403, response);
+                                   return bailHttp(span, Status::CODE_403, e.what());
                                }
 
                                // Assemble the path
@@ -431,38 +329,20 @@ class SoundController : public oatpp::web::server::api::ApiController {
                                    baseDir = std::filesystem::canonical(config->getSoundFileLocation());
                                } catch (const std::filesystem::filesystem_error &e) {
                                    warn("Attempt to serve {} failed: {}", std::string(filename), e.what());
-                                   auto response = StatusDto::createShared();
-                                   response->status = "Not Found";
-                                   response->message = e.what();
-                                   response->code = 404;
-                                   if (span)
-                                       span->setHttpStatus(404);
-                                   return createDtoResponse(Status::CODE_404, response);
+                                   return bailHttp(span, Status::CODE_404, e.what());
                                }
 
                                // Ensure the resolved path is within the base directory
                                if (canonicalPath.string().find(baseDir.string()) != 0) {
                                    warn("Attempt to serve {} failed: {}", std::string(filename),
                                         "Path traversal attempt.");
-                                   auto response = StatusDto::createShared();
-                                   response->status = "Forbidden";
-                                   response->message = "Forbidden: Path traversal attempt.";
-                                   response->code = 403;
-                                   if (span)
-                                       span->setHttpStatus(403);
-                                   return createDtoResponse(Status::CODE_403, response);
+                                   return bailHttp(span, Status::CODE_403, "Forbidden: Path traversal attempt.");
                                }
 
                                std::ifstream file(canonicalPath.string(), std::ios::binary | std::ios::ate);
                                if (!file.is_open()) {
                                    info("Attempt to serve {} failed: {}", std::string(filename), "Not found.");
-                                   auto response = StatusDto::createShared();
-                                   response->status = "Not Found";
-                                   response->message = "File not found.";
-                                   response->code = 404;
-                                   if (span)
-                                       span->setHttpStatus(404);
-                                   return createDtoResponse(Status::CODE_404, response);
+                                   return bailHttp(span, Status::CODE_404, "File not found.");
                                }
 
                                std::streamsize fileSize = file.tellg();
@@ -471,13 +351,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
 
                                std::vector<char> buffer(fileSize);
                                if (!file.read(buffer.data(), fileSize)) {
-                                   auto response = StatusDto::createShared();
-                                   response->status = "Internal Server Error";
-                                   response->message = "Error reading file.";
-                                   response->code = 500;
-                                   if (span)
-                                       span->setHttpStatus(500);
-                                   return createDtoResponse(Status::CODE_500, response);
+                                   return bailHttp(span, Status::CODE_500, "Error reading file.");
                                }
 
                                metrics->incrementSoundFilesServed();
@@ -507,13 +381,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
                                try {
                                    safeFilename = sanitizeFilename(filename);
                                } catch (const std::invalid_argument &e) {
-                                   auto response = StatusDto::createShared();
-                                   response->status = "Forbidden";
-                                   response->message = e.what();
-                                   response->code = 403;
-                                   if (span)
-                                       span->setHttpStatus(403);
-                                   return createDtoResponse(Status::CODE_403, response);
+                                   return bailHttp(span, Status::CODE_403, e.what());
                                }
 
                                std::string filePath;
@@ -526,13 +394,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
 
                                std::ifstream file(filePath, std::ios::binary | std::ios::ate);
                                if (!file.is_open()) {
-                                   auto response = StatusDto::createShared();
-                                   response->status = "Not Found";
-                                   response->message = "File not found.";
-                                   response->code = 404;
-                                   if (span)
-                                       span->setHttpStatus(404);
-                                   return createDtoResponse(Status::CODE_404, response);
+                                   return bailHttp(span, Status::CODE_404, "File not found.");
                                }
 
                                std::streamsize fileSize = file.tellg();
@@ -540,13 +402,7 @@ class SoundController : public oatpp::web::server::api::ApiController {
 
                                std::vector<char> buffer(fileSize);
                                if (!file.read(buffer.data(), fileSize)) {
-                                   auto response = StatusDto::createShared();
-                                   response->status = "Internal Server Error";
-                                   response->message = "Error reading file.";
-                                   response->code = 500;
-                                   if (span)
-                                       span->setHttpStatus(500);
-                                   return createDtoResponse(Status::CODE_500, response);
+                                   return bailHttp(span, Status::CODE_500, "Error reading file.");
                                }
 
                                auto mimeType = getMimeType(filePath);

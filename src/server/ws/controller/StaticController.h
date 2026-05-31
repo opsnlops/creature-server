@@ -12,12 +12,14 @@
 
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
+#include "server/ws/dto/StatusDto.h"
 
 namespace creatures ::ws {
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
 
-class StaticController : public oatpp::web::server::api::ApiController {
+class StaticController : public oatpp::web::server::api::ApiController, public HttpResponseHelpers<StaticController> {
   public:
     StaticController(const std::shared_ptr<ObjectMapper> &objectMapper)
         : oatpp::web::server::api::ApiController(objectMapper) {}
@@ -63,15 +65,7 @@ class StaticController : public oatpp::web::server::api::ApiController {
     }
     ENDPOINT("GET", "api/v1/health", health, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/health", "GET", "api/v1/health", "health", "StaticController", request,
-                           [&](const auto &span) {
-                               auto response = StatusDto::createShared();
-                               response->status = "OK";
-                               response->message = "Server is operational";
-                               response->code = 200;
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, response);
-                           });
+                           [&](const auto &span) { return okStatus(span, Status::CODE_200, "Server is operational"); });
     }
 };
 

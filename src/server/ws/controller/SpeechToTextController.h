@@ -9,6 +9,7 @@
 #include "server/namespace-stuffs.h"
 #include "server/voice/WhisperLipSyncProcessor.h"
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/SpeechToTextDto.h"
 #include "server/ws/dto/StatusDto.h"
 
@@ -16,7 +17,8 @@
 
 namespace creatures::ws {
 
-class SpeechToTextController : public oatpp::web::server::api::ApiController {
+class SpeechToTextController : public oatpp::web::server::api::ApiController,
+                               public HttpResponseHelpers<SpeechToTextController> {
   public:
     SpeechToTextController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper))
         : oatpp::web::server::api::ApiController(objectMapper) {}
@@ -45,15 +47,11 @@ class SpeechToTextController : public oatpp::web::server::api::ApiController {
                 auto startTime = std::chrono::steady_clock::now();
 
                 if (!body || body->empty()) {
-                    auto result = StatusDto::createShared();
-                    result->status = "error";
-                    result->code = 400;
-                    result->message = "Request body is empty — send raw 16kHz mono float32 PCM audio";
                     if (span) {
                         span->setError("Empty body");
-                        span->setHttpStatus(400);
                     }
-                    return createDtoResponse(Status::CODE_400, result);
+                    return bailHttp(span, Status::CODE_400,
+                                    "Request body is empty — send raw 16kHz mono float32 PCM audio");
                 }
 
                 // Interpret the body as raw float32 samples
@@ -61,15 +59,11 @@ class SpeechToTextController : public oatpp::web::server::api::ApiController {
                 auto bodySize = body->size();
 
                 if (bodySize % sizeof(float) != 0) {
-                    auto result = StatusDto::createShared();
-                    result->status = "error";
-                    result->code = 400;
-                    result->message = "Body size is not a multiple of 4 bytes (expected float32 PCM)";
                     if (span) {
                         span->setError("Invalid body size");
-                        span->setHttpStatus(400);
                     }
-                    return createDtoResponse(Status::CODE_400, result);
+                    return bailHttp(span, Status::CODE_400,
+                                    "Body size is not a multiple of 4 bytes (expected float32 PCM)");
                 }
 
                 size_t numSamples = bodySize / sizeof(float);
@@ -95,15 +89,10 @@ class SpeechToTextController : public oatpp::web::server::api::ApiController {
                 double elapsedMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
 
                 if (!transcribeResult.isSuccess()) {
-                    auto result = StatusDto::createShared();
-                    result->status = "error";
-                    result->code = 500;
-                    result->message = transcribeResult.getError()->getMessage().c_str();
                     if (span) {
                         span->setError(transcribeResult.getError()->getMessage());
-                        span->setHttpStatus(500);
                     }
-                    return createDtoResponse(Status::CODE_500, result);
+                    return bailFromServerError(span, transcribeResult.getError().value());
                 }
 
                 auto transcript = transcribeResult.getValue().value();

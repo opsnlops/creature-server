@@ -1,6 +1,8 @@
 
 #include "ErrorHandler.h"
 
+#include "server/ws/controller/HttpResponseHelpers.h"
+
 namespace creatures ::ws {
 
 ErrorHandler::ErrorHandler(const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &objectMapper)
@@ -10,7 +12,10 @@ std::shared_ptr<ErrorHandler::OutgoingResponse>
 ErrorHandler::handleError(const Status &status, const oatpp::String &message, const Headers &headers) {
 
     auto error = StatusDto::createShared();
-    error->status = "ERROR";
+    // Lowercase "error" matches the controller-side bailHttp helper. Issue
+    // #16 standardized on lowercase vocabulary so OATPP_ASSERT_HTTP paths and
+    // explicit bailHttp returns produce byte-identical envelopes on the wire.
+    error->status = STATUS_ERROR;
 
     // Check if this is a deserialization error (should be 400, not 500)
     Status actualStatus = status;

@@ -641,6 +641,7 @@ add_executable(creature-server-test
         tests/server/ws/CreatureActivityMessage_test.cpp
         tests/server/ws/CreatureService_streaming_test.cpp
         tests/server/ws/CreatureService_validate_test.cpp
+        tests/server/ws/HttpResponseHelpers_test.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
         tests/server/voice/DialogPipeline_chunkTurns_test.cpp
         tests/server/voice/DialogPipeline_assembleChunk_test.cpp
