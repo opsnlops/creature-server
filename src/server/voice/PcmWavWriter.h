@@ -25,8 +25,7 @@ namespace creatures::voice {
 /// @param sampleRate  written into the WAV header; pass the source's actual
 ///                    rate (48000 for `pcm_48000`)
 /// @return total bytes written (header + data) on success
-Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmData,
-                                              const std::filesystem::path &wavPath, uint16_t audioChannel,
-                                              uint32_t sampleRate);
+Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmData, const std::filesystem::path &wavPath,
+                                              uint16_t audioChannel, uint32_t sampleRate);
 
 } // namespace creatures::voice

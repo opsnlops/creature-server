@@ -76,12 +76,6 @@ void Configuration::setRhubarbBinaryPath(std::string _rhubarbBinaryPath) {
     this->rhubarbBinaryPath = std::move(_rhubarbBinaryPath);
 }
 
-std::string Configuration::getFfmpegBinaryPath() const { return this->ffmpegBinaryPath; }
-
-void Configuration::setFfmpegBinaryPath(std::string _ffmpegBinaryPath) {
-    this->ffmpegBinaryPath = std::move(_ffmpegBinaryPath);
-}
-
 // Observability Configuration
 
 double Configuration::getEventLoopTraceSampling() const { return this->eventLoopTraceSampling; }
@@ -128,8 +122,6 @@ void Configuration::setCmuDictPath(std::string _cmuDictPath) { this->cmuDictPath
 
 std::string Configuration::getLipSyncEngine() const { return this->lipSyncEngine; }
 
-void Configuration::setLipSyncEngine(std::string _lipSyncEngine) {
-    this->lipSyncEngine = std::move(_lipSyncEngine);
-}
+void Configuration::setLipSyncEngine(std::string _lipSyncEngine) { this->lipSyncEngine = std::move(_lipSyncEngine); }
 
 } // namespace creatures

@@ -60,9 +60,6 @@
 #define RHUBARB_BINARY_PATH_ENV "RHUBARB_BINARY_PATH"
 #define DEFAULT_RHUBARB_BINARY_PATH "/usr/bin/rhubarb"
 
-#define FFMPEG_BINARY_PATH_ENV "FFMPEG_BINARY_PATH"
-#define DEFAULT_FFMPEG_BINARY_PATH "/usr/bin/ffmpeg"
-
 #define WHISPER_MODEL_PATH_ENV "WHISPER_MODEL_PATH"
 #define DEFAULT_WHISPER_MODEL_PATH "/usr/share/creature-server/data/ggml-base.en.bin"
 

@@ -17,7 +17,6 @@
 #include "util/ObservabilityManager.h"
 
 #include "VoiceService.h"
-#include "server/voice/AudioConverter.h"
 #include "server/voice/SpeechGenerationManager.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/MakeSoundFileRequestDto.h"

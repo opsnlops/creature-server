@@ -223,7 +223,7 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
         requestIdFutures_.push_back(requestIdPromises_.back().get_future().share());
     }
 
-    // Kick off full pipeline (TTS + ffmpeg + Opus + animation build) in background.
+    // Kick off full pipeline (TTS + WAV wrap + Opus + animation build) in background.
     auto creatureName = creature_.name.empty() ? creatureId_ : creature_.name;
     auto timestamp = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
 
@@ -259,9 +259,9 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
             StreamingTTSClient client;
             // Request raw mono 48 kHz S16 PCM directly (issue #12). The
             // 17-channel WAV is wrapped in-process below; no ffmpeg decode hop.
-            auto ttsResult = client.generateSpeechREST(creatures::config->getVoiceApiKey(), voiceId_, modelId_, text,
-                                                       "pcm_48000", stability_, similarityBoost_, prevIds, nullptr,
-                                                       sentenceSpan);
+            auto ttsResult =
+                client.generateSpeechREST(creatures::config->getVoiceApiKey(), voiceId_, modelId_, text, "pcm_48000",
+                                          stability_, similarityBoost_, prevIds, nullptr, sentenceSpan);
             if (!ttsResult.isSuccess()) {
                 if (sentenceSpan)
                     sentenceSpan->setError(ttsResult.getError()->getMessage());
@@ -283,8 +283,7 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
             std::filesystem::create_directories(tempDir);
 
             auto wavPath = tempDir / fmt::format("s{}.wav", sentenceIndex);
-            auto convertResult =
-                writePcmToMultichannelWav(tts.audioData, wavPath, audioChannel_, 48000);
+            auto convertResult = writePcmToMultichannelWav(tts.audioData, wavPath, audioChannel_, 48000);
             if (!convertResult.isSuccess()) {
                 if (sentenceSpan)
                     sentenceSpan->setError(convertResult.getError()->getMessage());
