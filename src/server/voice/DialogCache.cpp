@@ -17,15 +17,24 @@
 #include <openssl/evp.h>
 
 #include "server/namespace-stuffs.h"
+#include "server/storage/Storage.h"
 
 namespace creatures::voice {
 
 namespace {
 
-/// Root of the on-disk dialog cache. Lives under the ad-hoc temp tree so the
-/// existing cron sweep cleans up old generations automatically — no TTL/LRU
-/// bookkeeping in-process.
+/// Root of the on-disk dialog cache. Delegated to the storage facade
+/// (Persistence::GenerationCache) so there's one place in the codebase that
+/// owns "where do bytes live?" (issue #11). The existing cron sweep keeps
+/// working — it cleans by directory, not by who wrote it.
 std::filesystem::path dialogCacheRoot() {
+    auto r = creatures::storage::root(creatures::storage::Persistence::GenerationCache);
+    if (r.isSuccess()) {
+        return r.getValue().value();
+    }
+    // Fallback to the path the facade would have computed if root() failed
+    // to mkdir. Same directory the cron sweeps, so loaders still find existing
+    // files even in this degraded state.
     return std::filesystem::temp_directory_path() / "creature-adhoc" / "dialog-cache";
 }
 

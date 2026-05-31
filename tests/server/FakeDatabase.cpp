@@ -86,6 +86,12 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string & /*ani
     return Result<creatures::Animation>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
 }
 
+Result<void> Database::insertAdHocAnimation(const creatures::Animation & /*animation*/,
+                                            std::chrono::system_clock::time_point /*createdAt*/,
+                                            std::shared_ptr<OperationSpan> /*parentSpan*/) {
+    return Result<void>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
+}
+
 Result<void> Database::deleteAnimation(const animationId_t & /*animationId*/,
                                        const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
     return Result<void>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};

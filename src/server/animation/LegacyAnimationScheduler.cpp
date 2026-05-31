@@ -21,6 +21,7 @@
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 #include "server/metrics/counters.h"
+#include "server/storage/Storage.h"
 
 #include "server/namespace-stuffs.h"
 #include "util/ObservabilityManager.h"
@@ -36,24 +37,9 @@ extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 
-namespace {
-
-std::filesystem::path resolveSoundFilePath(const std::string &soundFile) {
-    if (soundFile.empty()) {
-        return {};
-    }
-    std::filesystem::path path(soundFile);
-    if (path.is_absolute()) {
-        return path;
-    }
-    if (!config) {
-        warn("Legacy scheduler: config unavailable when resolving sound file path");
-        return path;
-    }
-    return std::filesystem::path(config->getSoundFileLocation()) / path;
-}
-
-} // namespace
+// resolveSoundFilePath was a private helper that joined relative paths under
+// the permanent sound root. Replaced by creatures::storage::resolveSoundPath
+// in the storage facade (issue #11).
 
 /**
  * Schedules an animation on a given creature using the legacy bulk-scheduling approach
@@ -169,7 +155,7 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
     // Look and see if there's an audio file to play with this animation
     if (!animation.metadata.sound_file.empty()) {
 
-        auto soundFilePath = resolveSoundFilePath(animation.metadata.sound_file);
+        auto soundFilePath = creatures::storage::resolveSoundPath(animation.metadata.sound_file);
         debug("using sound file name: {}", soundFilePath.string());
 
         auto playSoundEvent = std::make_shared<MusicEvent>(startingFrame, soundFilePath.string());

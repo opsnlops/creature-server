@@ -15,6 +15,7 @@
 #include "server/config/Configuration.h"
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
+#include "server/storage/Storage.h"
 #include "spdlog/spdlog.h"
 
 namespace creatures {
@@ -50,10 +51,7 @@ Result<void> LocalSdlAudioTransport::start(std::shared_ptr<PlaybackSession> sess
         return Result<void>{ServerError(ServerError::InvalidData, "No sound file in animation")};
     }
 
-    std::filesystem::path soundFilePath(animation.metadata.sound_file);
-    if (!soundFilePath.is_absolute()) {
-        soundFilePath = std::filesystem::path(config->getSoundFileLocation()) / soundFilePath;
-    }
+    std::filesystem::path soundFilePath = creatures::storage::resolveSoundPath(animation.metadata.sound_file);
 
     // Spawn audio thread
     shouldStop_ = false;
