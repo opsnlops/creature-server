@@ -18,6 +18,7 @@
 #include "server/config.h"
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
+#include "server/storage/Storage.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/DialogScriptValidationDto.h"
@@ -187,11 +188,10 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
                 }
 
-                auto result = creatures::db->upsertDialogScript(parsed.dump(), opSpan);
+                auto result = creatures::storage::publishDialogScript(parsed.dump(), opSpan);
                 if (!result.isSuccess()) {
                     return bailFromServerError(span, result.getError().value());
                 }
-                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, creatures::CacheType::DialogScriptList);
                 if (span) {
                     span->setAttribute("script.id", result.getValue().value().id);
                     span->setHttpStatus(201);
@@ -254,11 +254,10 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
                 }
 
-                auto result = creatures::db->upsertDialogScript(parsed.dump(), opSpan);
+                auto result = creatures::storage::publishDialogScript(parsed.dump(), opSpan);
                 if (!result.isSuccess()) {
                     return bailFromServerError(span, result.getError().value());
                 }
-                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, creatures::CacheType::DialogScriptList);
                 if (span)
                     span->setHttpStatus(200);
                 return createDtoResponse(Status::CODE_200, creatures::convertToDto(result.getValue().value()));
@@ -383,12 +382,10 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                                    span->setAttribute("script.id", std::string(*scriptId));
                                auto opSpan = creatures::observability->createChildOperationSpan(
                                    "DialogScriptController.deleteDialogScript", span);
-                               auto result = creatures::db->deleteDialogScript(std::string(*scriptId), opSpan);
+                               auto result = creatures::storage::deleteDialogScript(std::string(*scriptId), opSpan);
                                if (!result.isSuccess()) {
                                    return bailFromServerError(span, result.getError().value());
                                }
-                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME,
-                                                              creatures::CacheType::DialogScriptList);
                                return okStatus(span, Status::CODE_200, "DialogScript deleted");
                            });
     }

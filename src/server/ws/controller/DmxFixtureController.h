@@ -145,7 +145,6 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                 span->setAttribute("fixture.id", std::string(result->id));
                 span->setHttpStatus(200);
             }
-            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
             return createDtoResponse(Status::CODE_200, result);
         });
     }
@@ -179,7 +178,6 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
             m_service.deleteFixture(fixtureId, span);
             if (span)
                 span->setHttpStatus(200);
-            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
             return okStatus(span, Status::CODE_200, "Fixture deleted");
         });
     }
@@ -258,7 +256,6 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
             const auto result = m_service.setFixtureUniverse(fixtureId, std::optional<universe_t>{universe}, span);
             if (span)
                 span->setHttpStatus(200);
-            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
             return createDtoResponse(Status::CODE_200, result);
         });
     }
@@ -541,7 +538,6 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
             const auto result = m_service.setFixtureUniverse(fixtureId, std::nullopt, span);
             if (span)
                 span->setHttpStatus(200);
-            scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Fixture);
             return createDtoResponse(Status::CODE_200, result);
         });
     }

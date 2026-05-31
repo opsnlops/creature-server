@@ -8,6 +8,12 @@
 #include <string>
 
 #include "model/Animation.h"
+#include "model/CacheInvalidation.h"
+#include "model/Creature.h"
+#include "model/DialogScript.h"
+#include "model/DmxFixture.h"
+#include "model/Playlist.h"
+#include "model/Storyboard.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
@@ -114,5 +120,62 @@ struct StoragePath {
 // are joined under the Permanent root. The inverse of the `forMetadata` rule
 // in StoragePath.
 [[nodiscard]] std::filesystem::path resolveSoundPath(const std::string &stored);
+
+// =============================================================================
+// DB-only publishers — each pairs the db->* call with the matching cache
+// invalidation so callers can't fire one without the other (issue #11
+// expansion: same footgun as the file-storage publishers, just at the
+// DB-only mutation layer).
+// =============================================================================
+
+// upsertCreature + CacheType::Creature
+[[nodiscard]] Result<creatures::Creature> publishCreature(const std::string &creatureJson,
+                                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// upsertFixture + CacheType::Fixture
+[[nodiscard]] Result<creatures::DmxFixture> publishFixture(const std::string &fixtureJson,
+                                                           std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// deleteFixture + CacheType::Fixture
+[[nodiscard]] Result<void> deleteFixture(const fixtureId_t &fixtureId,
+                                         std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// setFixtureUniverse + CacheType::Fixture (universe assignment changes
+// fixture state visible to clients; clients refresh fixtures).
+[[nodiscard]] Result<void> setFixtureUniverse(const fixtureId_t &fixtureId, std::optional<universe_t> universe,
+                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// upsertPlaylist + CacheType::Playlist
+[[nodiscard]] Result<creatures::Playlist> publishPlaylist(const std::string &playlistJson,
+                                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// upsertDialogScript + CacheType::DialogScriptList
+[[nodiscard]] Result<creatures::DialogScript> publishDialogScript(const std::string &scriptJson,
+                                                                  std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// deleteDialogScript + CacheType::DialogScriptList
+[[nodiscard]] Result<void> deleteDialogScript(const scriptId_t &scriptId,
+                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// upsertStoryboard + CacheType::StoryboardList
+[[nodiscard]] Result<creatures::Storyboard> publishStoryboard(const std::string &storyboardJson,
+                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// deleteStoryboard + CacheType::StoryboardList
+[[nodiscard]] Result<void> deleteStoryboard(const storyboardId_t &storyboardId,
+                                            std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// deleteAnimation + CacheType::Animation. (publishAnimation /
+// republishAnimation already exist for the write side from the original
+// PR #20; this completes the Animation CRUD surface.)
+[[nodiscard]] Result<void> deleteAnimation(const animationId_t &animationId,
+                                           std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// Explicit standalone broadcast — for the rare cases where the underlying
+// mutation happened outside our process (e.g. debug refresh buttons) or
+// where a paired publisher doesn't apply. Same wire effect as the
+// invalidation fired inside publishX, just named so it's obvious this is
+// a deliberate manual case rather than a forgotten pairing.
+void broadcastCacheInvalidation(CacheType type);
 
 } // namespace creatures::storage

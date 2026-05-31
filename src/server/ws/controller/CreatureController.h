@@ -111,8 +111,8 @@ class CreatureController : public oatpp::web::server::api::ApiController,
                                    span->setAttribute("creature.name", std::string(result->name));
                                    span->setHttpStatus(200);
                                }
-                               // Schedule an event to invalidate the creature cache on the clients
-                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Creature);
+                               // CreatureService.upsertCreature goes through storage::publishCreature,
+                               // which fires the Creature invalidation on success (issue #11 PR #21).
                                return createDtoResponse(Status::CODE_200, result);
                            });
     }
@@ -223,8 +223,8 @@ class CreatureController : public oatpp::web::server::api::ApiController,
                     span->setHttpStatus(200);
                 }
 
-                // Schedule an event to invalidate the creature cache on the clients
-                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Creature);
+                // CreatureService.registerCreature → ... → storage::publishCreature
+                // fires the Creature invalidation on success (issue #11 PR #21).
 
                 return createDtoResponse(Status::CODE_200, result);
             });

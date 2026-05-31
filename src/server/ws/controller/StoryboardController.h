@@ -18,6 +18,7 @@
 #include "server/config.h"
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
+#include "server/storage/Storage.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/StatusDto.h"
@@ -192,11 +193,10 @@ class StoryboardController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
                 }
 
-                auto result = creatures::db->upsertStoryboard(parsed.dump(), opSpan);
+                auto result = creatures::storage::publishStoryboard(parsed.dump(), opSpan);
                 if (!result.isSuccess()) {
                     return bailFromServerError(span, result.getError().value());
                 }
-                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, creatures::CacheType::StoryboardList);
                 if (span) {
                     span->setAttribute("storyboard.id", result.getValue().value().id);
                     span->setHttpStatus(201);
@@ -258,11 +258,10 @@ class StoryboardController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
                 }
 
-                auto result = creatures::db->upsertStoryboard(parsed.dump(), opSpan);
+                auto result = creatures::storage::publishStoryboard(parsed.dump(), opSpan);
                 if (!result.isSuccess()) {
                     return bailFromServerError(span, result.getError().value());
                 }
-                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, creatures::CacheType::StoryboardList);
                 if (span)
                     span->setHttpStatus(200);
                 return jsonResponse(Status::CODE_200, creatures::storyboardToJson(result.getValue().value()));
@@ -279,24 +278,22 @@ class StoryboardController : public oatpp::web::server::api::ApiController,
     }
     ENDPOINT("DELETE", "api/v1/storyboard/{storyboardId}", deleteStoryboard, PATH(String, storyboardId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint(
-            "DELETE /api/v1/storyboard/{storyboardId}", "DELETE", "api/v1/storyboard/{storyboardId}",
-            "deleteStoryboard", "StoryboardController", request,
-            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (!storyboardId || !isUuidShape(std::string(*storyboardId))) {
-                    return bailHttp(span, Status::CODE_400, "storyboardId must be a UUID");
-                }
-                if (span)
-                    span->setAttribute("storyboard.id", std::string(*storyboardId));
-                auto opSpan =
-                    creatures::observability->createChildOperationSpan("StoryboardController.deleteStoryboard", span);
-                auto result = creatures::db->deleteStoryboard(std::string(*storyboardId), opSpan);
-                if (!result.isSuccess()) {
-                    return bailFromServerError(span, result.getError().value());
-                }
-                scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, creatures::CacheType::StoryboardList);
-                return okStatus(span, Status::CODE_200, "Storyboard deleted");
-            });
+        return runEndpoint("DELETE /api/v1/storyboard/{storyboardId}", "DELETE", "api/v1/storyboard/{storyboardId}",
+                           "deleteStoryboard", "StoryboardController", request,
+                           [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                               if (!storyboardId || !isUuidShape(std::string(*storyboardId))) {
+                                   return bailHttp(span, Status::CODE_400, "storyboardId must be a UUID");
+                               }
+                               if (span)
+                                   span->setAttribute("storyboard.id", std::string(*storyboardId));
+                               auto opSpan = creatures::observability->createChildOperationSpan(
+                                   "StoryboardController.deleteStoryboard", span);
+                               auto result = creatures::storage::deleteStoryboard(std::string(*storyboardId), opSpan);
+                               if (!result.isSuccess()) {
+                                   return bailFromServerError(span, result.getError().value());
+                               }
+                               return okStatus(span, Status::CODE_200, "Storyboard deleted");
+                           });
     }
 };
 

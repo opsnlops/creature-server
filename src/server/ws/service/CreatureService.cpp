@@ -21,6 +21,7 @@
 #include "server/config.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
+#include "server/storage/Storage.h"
 #include "server/ws/service/FixtureActivityHook.h"
 #include "util/Result.h"
 #include "util/cache.h"
@@ -526,8 +527,9 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
         validationSpan->setSuccess();
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-    logger->debug("passing the upsert request off to the database");
-    auto result = db->upsertCreature(jsonCreature, serviceSpan);
+    logger->debug("passing the upsert request off to the storage facade");
+    // Facade pairs the upsert + Creature cache invalidation atomically.
+    auto result = creatures::storage::publishCreature(jsonCreature, serviceSpan);
 
     // If there's an error, let the client know
     if (!result.isSuccess()) {

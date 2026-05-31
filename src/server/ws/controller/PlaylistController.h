@@ -111,9 +111,8 @@ class PlaylistController : public oatpp::web::server::api::ApiController,
                                    span->setAttribute("request.body_size",
                                                       static_cast<int64_t>(requestAsString.size()));
 
-                               // Schedule an event to invalidate the playlist cache on the clients
-                               scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::Playlist);
-
+                               // PlaylistService.upsertPlaylist goes through storage::publishPlaylist,
+                               // which fires the Playlist invalidation on success (issue #11 PR #21).
                                const auto result = m_playlistService.upsertPlaylist(requestAsString);
                                if (span)
                                    span->setHttpStatus(200);
