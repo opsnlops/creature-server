@@ -20,6 +20,7 @@ enum class CacheType {
     AdHocSoundList,
     Fixture,
     DialogScriptList,
+    StoryboardList,
     Unknown,
 };
 
