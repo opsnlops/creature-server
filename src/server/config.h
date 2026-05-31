@@ -33,6 +33,7 @@
 #define ADHOC_ANIMATIONS_COLLECTION "adhoc_animations"
 #define FIXTURES_COLLECTION "fixtures"
 #define DIALOG_SCRIPTS_COLLECTION "dialog_scripts"
+#define STORYBOARDS_COLLECTION "storyboards"
 
 #define SOUND_FILE_LOCATION_ENV "SOUND_FILE_LOCATION"
 #define DEFAULT_SOUND_FILE_LOCATION "sounds/"

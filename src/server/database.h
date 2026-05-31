@@ -34,6 +34,7 @@ using json = nlohmann::json;
 #include "model/DmxFixture.h"
 #include "model/Playlist.h"
 #include "model/SortBy.h"
+#include "model/Storyboard.h"
 #include "model/Track.h"
 #include "server/namespace-stuffs.h"
 #include "util/ObservabilityManager.h"
@@ -190,6 +191,26 @@ class Database {
     static Result<creatures::DialogScript> parseDialogScriptJson(json scriptJson,
                                                                  std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
+    // Storyboard stuff — client-driven CRUD of opaque storyboard documents
+    // (see StoryboardController). The server is a dumb persistence layer:
+    // it stores tiles[].action verbatim and never interprets it. See
+    // creature-console/docs/storyboard-server-contract.md.
+    Result<creatures::Storyboard> getStoryboard(const storyboardId_t &storyboardId,
+                                                const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<std::vector<creatures::Storyboard>>
+    listStoryboards(const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<creatures::Storyboard> upsertStoryboard(const std::string &storyboardJson,
+                                                   const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<void> deleteStoryboard(const storyboardId_t &storyboardId,
+                                  const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+
+    /// Parse + validate a Storyboard JSON document without persisting. Server-managed
+    /// fields (`id`, `created_at`, `updated_at`) are tolerated if present but never
+    /// trusted from the client — the controller stamps them. tiles[].action is treated
+    /// as opaque (object check only, no key introspection).
+    static Result<creatures::Storyboard> parseStoryboardJson(json storyboardJson,
+                                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
     /**
      * Public wrapper around the private `trackFromJson` — exposed for testing the dual-id
      * (creature_id XOR fixture_id) validation.
@@ -255,6 +276,9 @@ class Database {
 
     static Result<creatures::DialogScript> dialogScriptFromJson(json scriptJson,
                                                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    static Result<creatures::Storyboard> storyboardFromJson(json storyboardJson,
+                                                            std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     static Result<creatures::Animation> animationFromJson(json animationJson);
     static Result<creatures::AnimationMetadata> animationMetadataFromJson(json animationMetadataJson);

@@ -384,6 +384,7 @@ file(GLOB serverFiles CONFIGURE_DEPENDS
         src/server/metrics/*
         src/server/playlist/*
         src/server/script/*
+        src/server/storyboard/*
         src/server/voice/*
         src/server/watchdog/*
         src/model/*
@@ -642,6 +643,7 @@ add_executable(creature-server-test
         tests/server/ws/CreatureService_streaming_test.cpp
         tests/server/ws/CreatureService_validate_test.cpp
         tests/server/ws/HttpResponseHelpers_test.cpp
+        tests/server/storyboard/StoryboardParse_test.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
         tests/server/voice/DialogPipeline_chunkTurns_test.cpp
         tests/server/voice/DialogPipeline_assembleChunk_test.cpp
@@ -666,9 +668,11 @@ add_executable(creature-server-test
         src/model/Input.cpp
         src/model/StreamFrame.cpp
         src/model/VirtualStatusLights.cpp
+        src/model/Storyboard.cpp
         src/server/creature/helpers.cpp
         src/server/fixture/helpers.cpp
         src/server/animation/helpers.cpp
+        src/server/storyboard/helpers.cpp
         src/server/ws/service/CreatureService.cpp
         src/server/ws/dto/websocket/MessageTypes.cpp
         src/util/JsonParser.cpp
