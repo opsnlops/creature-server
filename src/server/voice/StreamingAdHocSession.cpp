@@ -23,6 +23,7 @@
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/storage/Storage.h"
+#include "server/voice/SpeechTrackBuilder.h"
 #include "util/cache.h"
 #include "util/helpers.h"
 #include "util/uuidUtils.h"
@@ -152,35 +153,18 @@ Result<void> StreamingAdHocSession::start() {
                                         fmt::format("Creature {} is not registered with a universe.", creatureId_))};
     }
 
-    // Load base animation (reused for all sentences)
-    if (creature_.speech_loop_animation_ids.empty()) {
-        return Result<void>{ServerError(ServerError::InvalidData, "No speech_loop_animation_ids configured")};
-    }
-
+    // Resolve speech-loop base frames via the shared helper (issue #15).
+    // Returns the decoded body track + the base animation's id + ms-per-frame.
     std::mt19937 rng(static_cast<uint32_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
-    std::uniform_int_distribution<std::size_t> dist(0, creature_.speech_loop_animation_ids.size() - 1);
-    auto baseAnimationId = creature_.speech_loop_animation_ids[dist(rng)];
-
-    auto baseAnimResult = creatures::db->getAnimation(baseAnimationId, startSpan);
-    if (!baseAnimResult.isSuccess()) {
-        return Result<void>{baseAnimResult.getError().value()};
+    auto resolveResult = resolveSpeechBaseFrames(creature_, *creatures::db, rng, startSpan);
+    if (!resolveResult.isSuccess()) {
+        return Result<void>{resolveResult.getError().value()};
     }
-    baseAnimation_ = baseAnimResult.getValue().value();
-
-    auto trackIt = std::find_if(baseAnimation_.tracks.begin(), baseAnimation_.tracks.end(),
-                                [&](const Track &t) { return t.creature_id == creatureId_; });
-    if (trackIt == baseAnimation_.tracks.end()) {
-        return Result<void>{ServerError(ServerError::InvalidData, "No track for creature in speech loop animation")};
-    }
-
-    decodedBaseFrames_.reserve(trackIt->frames.size());
-    for (const auto &frame : trackIt->frames) {
-        decodedBaseFrames_.push_back(decodeBase64(frame));
-    }
-
-    msPerFrame_ = baseAnimation_.metadata.milliseconds_per_frame;
-    if (msPerFrame_ == 0)
-        msPerFrame_ = 1;
+    auto resolved = resolveResult.getValue().value();
+    decodedBaseFrames_ = std::move(resolved.baseFrames);
+    baseAnimation_ = std::move(resolved.baseAnimation);
+    const std::string baseAnimationId = resolved.baseAnimationId;
+    msPerFrame_ = resolved.baseMsPerFrame == 0 ? 1u : resolved.baseMsPerFrame;
 
     // Load CMU dictionary
     auto cmuDictPath = creatures::config->getCmuDictPath();
@@ -328,33 +312,27 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
 
             SoundDataProcessor processor;
             auto mouthData = processor.processSoundData(lipSyncData, msPerFrame_, targetFrames);
-            auto mouthSlot = creature_.mouth_slot;
 
-            // Guard against creature/animation misconfiguration writing past
-            // the frame buffer. Both mouthSlot (creature config) and frame
-            // size (animation data) come from external state.
-            std::vector<std::string> encodedFrames;
-            encodedFrames.reserve(targetFrames);
-            bool sizeWarned = false;
-            for (size_t idx = 0; idx < targetFrames; ++idx) {
-                auto frameData = decodedBaseFrames_[(baseOffset + idx) % decodedBaseFrames_.size()];
-                if (mouthSlot < frameData.size()) {
-                    frameData[mouthSlot] = mouthData[idx];
-                } else if (!sizeWarned) {
-                    warn("StreamingAdHocSession: creature {} mouth_slot {} >= frame size {} — "
-                         "skipping mouth write for sentence {} (further skips silenced)",
-                         creatureId_, mouthSlot, frameData.size(), sentenceIndex);
-                    if (sentenceSpan) {
-                        sentenceSpan->setAttribute("mouth.slot_out_of_range", true);
-                    }
-                    sizeWarned = true;
-                }
-                std::string raw(reinterpret_cast<const char *>(frameData.data()), frameData.size());
-                encodedFrames.push_back(base64::to_base64(raw));
+            // Shared frame-build via the speech track builder (issue #15).
+            // mouth_slot bounds check + body cycle + mouth-byte insertion all
+            // live in one place now.
+            SpeechTrackInput trackInput;
+            trackInput.baseFrames = decodedBaseFrames_;
+            trackInput.mouthBytes = mouthData;
+            trackInput.mouthSlot = creature_.mouth_slot;
+            trackInput.totalFrames = targetFrames;
+            trackInput.creatureId = creatureId_;
+            trackInput.animationId = ""; // stamped onto the Animation below
+            SpeechTrackOptions trackOptions;
+            trackOptions.startOffset = baseOffset;
+            auto trackResult = buildSpeechTrack(trackInput, trackOptions, sentenceSpan);
+            if (!trackResult.isSuccess()) {
+                return Result<Animation>{trackResult.getError().value()};
             }
+            const std::size_t endOffset = trackResult.getValue()->endOffset;
+            std::vector<std::string> encodedFrames = std::move(trackResult.getValue()->track.frames);
 
             // 7. Signal next sentence with our ending offset and request ID
-            size_t endOffset = (baseOffset + targetFrames) % decodedBaseFrames_.size();
             {
                 std::lock_guard<std::mutex> lock(offsetMutex_);
                 offsetPromises_[sentenceIndex - 1].set_value(endOffset);
