@@ -12,6 +12,7 @@
 #include <fmt/format.h>
 
 #include "server/namespace-stuffs.h"
+#include "server/voice/SpeechTrackBuilder.h"
 #include "util/uuidUtils.h"
 
 namespace creatures {
@@ -147,113 +148,57 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
     for (std::size_t pcIdx = 0; pcIdx < assembled.perCreature.size(); ++pcIdx) {
         const auto &input = creatureInputs[matched[pcIdx]];
 
-        // Frame width comes from the base animation — every base frame must
-        // be the same width or the modular loop below would shift mouth_slot
-        // mid-scene.
-        if (input.baseFrames.empty()) {
-            std::string msg = fmt::format("buildDialogAnimation: creature '{}' has no baseFrames", input.creatureId);
-            error(msg);
-            if (span)
-                span->setError(msg);
-            return Result<Animation>{ServerError(ServerError::InvalidData, msg)};
-        }
-        const std::size_t frameWidth = input.baseFrames.front().size();
-        if (frameWidth == 0) {
-            std::string msg =
-                fmt::format("buildDialogAnimation: creature '{}' baseFrames[0] is empty", input.creatureId);
-            error(msg);
-            if (span)
-                span->setError(msg);
-            return Result<Animation>{ServerError(ServerError::InvalidData, msg)};
-        }
-        for (std::size_t f = 1; f < input.baseFrames.size(); ++f) {
-            if (input.baseFrames[f].size() != frameWidth) {
-                std::string msg =
-                    fmt::format("buildDialogAnimation: creature '{}' baseFrames[{}] width {} != baseFrames[0] width {}",
-                                input.creatureId, f, input.baseFrames[f].size(), frameWidth);
-                error(msg);
-                if (span)
-                    span->setError(msg);
-                return Result<Animation>{ServerError(ServerError::InvalidData, msg)};
-            }
-        }
-
-        // mouth_slot from the creature config — bounds-check against the base
-        // frame width once here (rather than per-frame), and skip the write if
-        // out of range. Mirrors the ad-hoc path's defensive behavior at
-        // StreamingAdHocSession.cpp:344-355.
+        // Resolve mouth_slot from the creature JSON. The shared builder
+        // bounds-checks against the frame width and skips the write if out
+        // of range — the canonical Beaky-chest defensive guard (3.14.4 fix).
         std::size_t mouthSlot = std::numeric_limits<std::size_t>::max();
         if (input.creatureJson.contains("mouth_slot") && input.creatureJson["mouth_slot"].is_number()) {
             mouthSlot = input.creatureJson["mouth_slot"].get<std::size_t>();
         }
-        const bool mouthSlotInRange = mouthSlot < frameWidth;
-        if (!mouthSlotInRange) {
-            warn("buildDialogAnimation: creature '{}' mouth_slot {} >= frame width {} — mouth byte will not be written",
-                 input.creatureId, mouthSlot, frameWidth);
-        }
 
-        // Idle pose for this creature when she's NOT speaking — use the first
-        // frame of her own speech_loop animation. Earlier we tried to compute
-        // a neutral frame from the creature's motor config (default_position +
-        // inverted), but that re-derived "what is idle?" from a config the
-        // author already encoded into the speech_loop itself, and got the
-        // inverted-motor convention subtly wrong (3.15.3 fix: Beaky's
-        // body_lean stuck high = leaning forward, when the speech_loop's idle
-        // pose has it low = upright). The speech_loop's frame 0 is the
-        // authoritative idle pose by construction.
-        const auto &idleFrame = input.baseFrames.front();
-
-        // Derive speakingAt[] from mouthBytes: any non-zero byte = a viseme
-        // shape (A/B/C/D/E/F = 5..255), zero = rest (X). Then extend each
-        // speaking run forward by kBodyTailFrames so the body doesn't snap
-        // to neutral the instant a turn ends. Pre-roll is implicit — the
-        // first mouth byte of a turn already lands at the start of the body
-        // motion, which is the natural onset.
-        std::vector<bool> speakingAt(totalFrames, false);
-        std::size_t lastActive = std::numeric_limits<std::size_t>::max();
-        for (std::size_t f = 0; f < totalFrames; ++f) {
-            const bool active = (f < input.mouthBytes.size()) && (input.mouthBytes[f] != 0);
-            if (active) {
-                lastActive = f;
-                speakingAt[f] = true;
-            } else if (lastActive != std::numeric_limits<std::size_t>::max() && f - lastActive <= kBodyTailFrames) {
-                speakingAt[f] = true;
-            }
-        }
-
-        // Build the Track. Speaking frames use the base body motion advanced
-        // by a per-creature counter so motion stays continuous across the
-        // creature's own turns (body picks up where it left off, not where
-        // the global frame index points). Silent frames freeze on the
-        // speech_loop's first frame (idleFrame) so the listening creature
-        // holds her correct idle pose without inventing one from motor config.
-        Track track;
-        track.id = util::generateUUID();
-        track.creature_id = input.creatureId;
-        track.animation_id = animation.id;
-        track.frames.reserve(totalFrames);
-
-        std::size_t speakingCounter = 0;
-        std::size_t speakingFrameCount = 0;
-        for (std::size_t f = 0; f < totalFrames; ++f) {
-            std::vector<uint8_t> frame;
-            if (speakingAt[f]) {
-                frame = input.baseFrames[speakingCounter % input.baseFrames.size()];
-                if (mouthSlotInRange && f < input.mouthBytes.size()) {
-                    frame[mouthSlot] = input.mouthBytes[f];
+        // Frame-width consistency check stays here — it's input validation on
+        // the per-creature data passed to us by the caller, not part of the
+        // per-frame assembly the builder owns.
+        if (!input.baseFrames.empty()) {
+            const std::size_t frameWidth = input.baseFrames.front().size();
+            for (std::size_t f = 1; f < input.baseFrames.size(); ++f) {
+                if (input.baseFrames[f].size() != frameWidth) {
+                    std::string msg = fmt::format(
+                        "buildDialogAnimation: creature '{}' baseFrames[{}] width {} != baseFrames[0] width {}",
+                        input.creatureId, f, input.baseFrames[f].size(), frameWidth);
+                    error(msg);
+                    if (span)
+                        span->setError(msg);
+                    return Result<Animation>{ServerError(ServerError::InvalidData, msg)};
                 }
-                ++speakingCounter;
-                ++speakingFrameCount;
-            } else {
-                frame = idleFrame;
             }
-            std::string raw(reinterpret_cast<const char *>(frame.data()), frame.size());
-            track.frames.push_back(base64::to_base64(raw));
+        }
+
+        // Build the per-creature track via the shared builder (issue #15).
+        // dialogIdleMode + kBodyTailFrames carry the dialog-specific behavior:
+        // silent frames freeze on baseFrames[0] (the speech-loop's idle pose,
+        // not a re-derived neutral — see 3.15.3) and each speaking run
+        // extends forward by kBodyTailFrames so the body doesn't snap to
+        // neutral the instant a turn ends.
+        SpeechTrackInput trackInput;
+        trackInput.baseFrames = input.baseFrames;
+        trackInput.mouthBytes = input.mouthBytes;
+        trackInput.mouthSlot = mouthSlot;
+        trackInput.totalFrames = totalFrames;
+        trackInput.creatureId = input.creatureId;
+        trackInput.animationId = animation.id;
+        SpeechTrackOptions trackOptions;
+        trackOptions.dialogIdleMode = true;
+        trackOptions.bodyTailFrames = kBodyTailFrames;
+        auto trackResult = buildSpeechTrack(trackInput, trackOptions, span);
+        if (!trackResult.isSuccess()) {
+            return Result<Animation>{trackResult.getError().value()};
         }
         debug("buildDialogAnimation: creature '{}' (voice '{}'): {} total frames, {} speaking, {} silent",
-              input.creatureId, input.voiceId, totalFrames, speakingFrameCount, totalFrames - speakingFrameCount);
+              input.creatureId, input.voiceId, totalFrames, trackResult.getValue()->speakingFrameCount,
+              totalFrames - trackResult.getValue()->speakingFrameCount);
 
-        animation.tracks.push_back(std::move(track));
+        animation.tracks.push_back(std::move(trackResult.getValue()->track));
     }
 
     info("buildDialogAnimation: built animation '{}' for {} creatures, {} frames ({:.2f}s) @ {}ms/frame", animation.id,

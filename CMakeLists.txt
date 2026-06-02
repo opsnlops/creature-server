@@ -651,6 +651,8 @@ add_executable(creature-server-test
         src/server/config/Configuration.cpp
         tests/server/FakeWebsocketUtils.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
+        tests/server/voice/SpeechTrackBuilder_test.cpp
+        src/server/voice/SpeechTrackBuilder.cpp
         tests/server/voice/DialogPipeline_chunkTurns_test.cpp
         tests/server/voice/DialogPipeline_assembleChunk_test.cpp
         tests/server/voice/DialogPipeline_concatChunks_test.cpp

@@ -32,6 +32,7 @@
 #include "server/voice/RhubarbData.h"
 #include "server/voice/SoundDataProcessor.h"
 #include "server/voice/SpeechGenerationManager.h"
+#include "server/voice/SpeechTrackBuilder.h"
 #include "server/voice/StreamingSpeechGenerationManager.h"
 #include "server/voice/TextToViseme.h"
 #include "server/voice/WavFileReader.h"
@@ -804,52 +805,18 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
             return;
         }
 
+        // Shared speech-loop resolution via the helper (issue #15). Picks a
+        // random speech_loop_animation_ids entry, loads the animation, finds
+        // the per-creature track, decodes + validates frame widths.
         std::mt19937 rng(static_cast<uint32_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
-        std::uniform_int_distribution<std::size_t> dist(0, creature.speech_loop_animation_ids.size() - 1);
-        auto baseAnimationId = creature.speech_loop_animation_ids[dist(rng)];
-
-        auto baseAnimationResult = db->getAnimation(baseAnimationId, jobState.span);
-        if (!baseAnimationResult.isSuccess()) {
-            failJob(fmt::format("Unable to load speech loop animation '{}' for creature '{}': {}", baseAnimationId,
-                                creatureName, baseAnimationResult.getError()->getMessage()));
+        auto resolveResult = voice::resolveSpeechBaseFrames(creature, *db, rng, jobState.span);
+        if (!resolveResult.isSuccess()) {
+            failJob(resolveResult.getError()->getMessage());
             return;
         }
-        auto baseAnimation = baseAnimationResult.getValue().value();
-
-        auto trackIt = std::find_if(baseAnimation.tracks.begin(), baseAnimation.tracks.end(),
-                                    [&](const Track &track) { return track.creature_id == creatureId; });
-        if (trackIt == baseAnimation.tracks.end()) {
-            failJob(fmt::format("Speech loop animation '{}' does not have a track for creature '{}'. "
-                                "Add a track for '{}' to this animation, or remove it from the creature's "
-                                "speech_loop_animation_ids list.",
-                                baseAnimation.metadata.title, creatureName, creatureName));
-            return;
-        }
-        const auto &baseTrack = *trackIt;
-
-        if (baseTrack.frames.empty()) {
-            failJob(fmt::format("Speech loop track for '{}' in animation '{}' has no frames", creatureName,
-                                baseAnimation.metadata.title));
-            return;
-        }
-
-        std::vector<std::vector<uint8_t>> decodedFrames;
-        decodedFrames.reserve(baseTrack.frames.size());
-        for (const auto &frame : baseTrack.frames) {
-            decodedFrames.push_back(decodeBase64(frame));
-        }
-
-        const auto frameWidth = decodedFrames.front().size();
-        const auto mouthSlot = creature.mouth_slot;
-        if (mouthSlot >= frameWidth) {
-            failJob(fmt::format("Mouth slot {} out of bounds for frame width {}", mouthSlot, frameWidth));
-            return;
-        }
-
-        uint32_t msPerFrame = baseAnimation.metadata.milliseconds_per_frame;
-        if (msPerFrame == 0) {
-            msPerFrame = 1;
-        }
+        auto resolved = resolveResult.getValue().value();
+        Animation baseAnimation = std::move(resolved.baseAnimation);
+        uint32_t msPerFrame = resolved.baseMsPerFrame == 0 ? 1u : resolved.baseMsPerFrame;
 
         size_t targetFrames = std::max<size_t>(
             1,
@@ -858,30 +825,29 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         SoundDataProcessor processor;
         auto mouthData = processor.processSoundData(rhubarbData, msPerFrame, targetFrames);
 
-        std::vector<std::string> encodedFrames;
-        encodedFrames.reserve(targetFrames);
-        for (size_t idx = 0; idx < targetFrames; ++idx) {
-            auto frameData = decodedFrames[idx % decodedFrames.size()];
-            frameData[mouthSlot] = mouthData[idx];
-            std::string raw(reinterpret_cast<const char *>(frameData.data()), frameData.size());
-            encodedFrames.push_back(base64::to_base64(raw));
-        }
-
+        // Shared frame-build via the speech track builder (issue #15).
         Animation adHocAnimation = baseAnimation;
         adHocAnimation.id = util::generateUUID();
         adHocAnimation.metadata.animation_id = adHocAnimation.id;
         adHocAnimation.metadata.title = fmt::format("{} - {} - {}", creatureName, timestamp, textSlug);
         adHocAnimation.metadata.sound_file = wavPath.string();
         adHocAnimation.metadata.note = fmt::format("Ad-hoc speech generated from text: {}", text);
-        adHocAnimation.metadata.number_of_frames = static_cast<uint32_t>(encodedFrames.size());
+        adHocAnimation.metadata.number_of_frames = static_cast<uint32_t>(targetFrames);
         adHocAnimation.metadata.multitrack_audio = true;
 
-        Track newTrack;
-        newTrack.id = util::generateUUID();
-        newTrack.creature_id = creatureId;
-        newTrack.animation_id = adHocAnimation.id;
-        newTrack.frames = std::move(encodedFrames);
-        adHocAnimation.tracks = {newTrack};
+        voice::SpeechTrackInput trackInput;
+        trackInput.baseFrames = resolved.baseFrames;
+        trackInput.mouthBytes = mouthData;
+        trackInput.mouthSlot = creature.mouth_slot;
+        trackInput.totalFrames = targetFrames;
+        trackInput.creatureId = creatureId;
+        trackInput.animationId = adHocAnimation.id;
+        auto trackResult = voice::buildSpeechTrack(trackInput, {}, jobState.span);
+        if (!trackResult.isSuccess()) {
+            failJob(trackResult.getError()->getMessage());
+            return;
+        }
+        adHocAnimation.tracks = {std::move(trackResult.getValue()->track)};
 
         // Storage facade pairs the DB insert + AdHocAnimationList + AdHocSoundList
         // invalidations so this handler can't forget any of the three (issue #11).
