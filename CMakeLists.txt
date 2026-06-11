@@ -663,6 +663,8 @@ add_executable(creature-server-test
         tests/server/voice/DialogPipeline_concatChunks_test.cpp
         tests/server/voice/DialogWav_test.cpp
         tests/server/voice/DialogCache_test.cpp
+        tests/server/audio/MonoWavDownmixer_test.cpp
+        src/server/audio/MonoWavDownmixer.cpp
         src/server/voice/DialogAnimation.cpp
         src/server/voice/DialogCache.cpp
         src/server/voice/DialogClient.cpp

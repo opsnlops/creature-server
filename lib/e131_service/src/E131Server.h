@@ -28,7 +28,12 @@ class E131Server {
     E131Server() = default;
     ~E131Server() = default;
 
-    void init(uint16_t _networkDevice, std::string _version);
+    /**
+     * @param _networkDevice interface index to send multicast on
+     * @param _version server version string (used in the source name)
+     * @param _localOnly keep sACN frames on this host (multicast TTL 0); used by travel mode
+     */
+    void init(uint16_t _networkDevice, std::string _version, bool _localOnly = false);
     void start();
     void shutdown();
 

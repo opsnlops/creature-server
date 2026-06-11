@@ -64,6 +64,9 @@ class Configuration {
     /** @return Current audio mode (local playback or RTP streaming) */
     AudioMode getAudioMode() const;
 
+    /** @return True if running in travel mode (server + controllers on one host) */
+    bool getTravelMode() const;
+
     /** @return True if RTP packets should be fragmented for standard MTU networks */
     bool getRtpFragmentPackets() const;
 
@@ -142,6 +145,9 @@ class Configuration {
     /** @param _mode Audio mode to use (local playback or RTP streaming) */
     void setAudioMode(AudioMode _mode);
 
+    /** @param _travelMode Whether to run in travel mode */
+    void setTravelMode(bool _travelMode);
+
     /** @param _fragmentPackets Whether to enable RTP packet fragmentation */
     void setRtpFragmentPackets(bool _fragmentPackets);
 
@@ -193,6 +199,9 @@ class Configuration {
 
     /** Audio mode for playback */
     AudioMode audioMode = AudioMode::Local; ///< Default to local playback
+
+    /** Travel mode: server and controllers share one host; audio is downmixed to mono */
+    bool travelMode = DEFAULT_TRAVEL_MODE;
 
     /** Whether to fragment RTP packets for standard MTU networks (WiFi, etc.) */
     bool rtpFragmentPackets = DEFAULT_RTP_FRAGMENT_PACKETS;
