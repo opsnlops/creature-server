@@ -65,6 +65,7 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/mongodb/mongo-c-driver.git
   GIT_TAG        1.30.4
   GIT_SHALLOW    TRUE
+  EXCLUDE_FROM_ALL   # keep the driver's install() rules (headers, .a, cmake configs, .pc) out of our .deb
 )
 
 #Fetch MongoDB C++ driver
@@ -73,6 +74,7 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/mongodb/mongo-cxx-driver.git
   GIT_TAG        r3.11.0
   GIT_SHALLOW    TRUE
+  EXCLUDE_FROM_ALL   # keep the driver's install() rules out of our .deb
 )
 
 #Build both drivers
@@ -140,6 +142,7 @@ FetchContent_Declare(
   uvgrtp
   GIT_REPOSITORY https://github.com/ultravideo/uvgRTP.git
   GIT_TAG        v3.1.6
+  EXCLUDE_FROM_ALL   # keep uvgRTP's install() rules out of our .deb (issue: opus/uvgrtp headers collided with creature-controller)
 )
 FetchContent_MakeAvailable(uvgrtp)
 
@@ -154,6 +157,7 @@ FetchContent_Declare(
         opus
         GIT_REPOSITORY  https://github.com/xiph/opus.git
         GIT_TAG         v1.5.2
+        EXCLUDE_FROM_ALL   # keep Opus' install() rules (headers, .a, cmake configs, .pc) out of our .deb
 )
 FetchContent_MakeAvailable(opus)
 #Optimise Opus even when the rest of the build is Debug
@@ -182,6 +186,7 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/ggerganov/whisper.cpp.git
         GIT_TAG v1.7.5
         GIT_SHALLOW TRUE
+        EXCLUDE_FROM_ALL   # keep whisper.cpp + ggml install() rules (headers, .a) out of our .deb
 )
 FetchContent_MakeAvailable(whisper)
 
