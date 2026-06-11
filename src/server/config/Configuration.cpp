@@ -46,6 +46,10 @@ Configuration::AudioMode Configuration::getAudioMode() const { return this->audi
 
 void Configuration::setAudioMode(const Configuration::AudioMode _mode) { this->audioMode = _mode; }
 
+bool Configuration::getTravelMode() const { return this->travelMode; }
+
+void Configuration::setTravelMode(const bool _travelMode) { this->travelMode = _travelMode; }
+
 bool Configuration::getRtpFragmentPackets() const { return this->rtpFragmentPackets; }
 
 void Configuration::setRtpFragmentPackets(const bool _fragmentPackets) { this->rtpFragmentPackets = _fragmentPackets; }

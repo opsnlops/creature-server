@@ -12,6 +12,7 @@
 #include <SDL_mixer.h>
 #include <spdlog/spdlog.h>
 
+#include "server/audio/TravelMonoAudioTransport.h"
 #include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/eventloop/eventloop.h"
@@ -151,6 +152,20 @@ Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> par
     }
 
     debug("Starting local audio playback for: {}", filePath);
+
+    // Travel mode plays a mono downmix via plain SDL; SDL_mixer can't make sense
+    // of the 17-channel animation tracks.
+    if (config->getTravelMode()) {
+        std::thread([filePath = this->filePath, span] {
+            TravelMonoAudioTransport::playFileBlocking(filePath, nullptr);
+            if (span) {
+                span->setSuccess();
+            }
+        }).detach();
+
+        // Return immediately - the music plays in the background
+        return Result{this->frameNumber};
+    }
 
     const bool hasGpio = gpioPins != nullptr;
     const bool hasMetrics = metrics != nullptr;
