@@ -196,24 +196,18 @@ set(CREATURE_DATA_DIR "${CMAKE_BINARY_DIR}/data")
 file(MAKE_DIRECTORY ${CREATURE_DATA_DIR})
 
 #whisper model(base.en, ~150MB) - English - only, fast on CPU with AVX2
+#EXPECTED_HASH verifies the file on every configure: a matching file on disk
+#skips the download, a truncated one is re-fetched, and a bad transfer is a
+#fatal configure error. Without it, a partial download once shipped inside the
+#arm64 .deb because the Docker layer cache froze the truncated file.
 set(WHISPER_MODEL_FILE "${CREATURE_DATA_DIR}/ggml-base.en.bin")
-if(NOT EXISTS ${WHISPER_MODEL_FILE})
-    message(STATUS "Downloading whisper base.en model (~150MB)...")
-    file(DOWNLOAD
-        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
-        ${WHISPER_MODEL_FILE}
-        SHOW_PROGRESS
-        STATUS WHISPER_DL_STATUS
-    )
-    list(GET WHISPER_DL_STATUS 0 WHISPER_DL_CODE)
-    if(NOT WHISPER_DL_CODE EQUAL 0)
-        message(WARNING "Failed to download whisper model: ${WHISPER_DL_STATUS}")
-    else()
-        message(STATUS "Whisper model downloaded to ${WHISPER_MODEL_FILE}")
-    endif()
-else()
-    message(STATUS "Whisper model already present: ${WHISPER_MODEL_FILE}")
-endif()
+message(STATUS "Verifying whisper base.en model (downloads ~150MB if missing)...")
+file(DOWNLOAD
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+    ${WHISPER_MODEL_FILE}
+    SHOW_PROGRESS
+    EXPECTED_HASH SHA256=a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002
+)
 
 #CMU Pronouncing Dictionary(~4MB, ~134k words with ARPAbet phonemes)
 set(CMU_DICT_FILE "${CREATURE_DATA_DIR}/cmudict.dict")
