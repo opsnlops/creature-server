@@ -17,6 +17,7 @@
 #include "server/audio/AudioTransport.h"
 #include "server/audio/LocalSdlAudioTransport.h"
 #include "server/audio/RtpAudioTransport.h"
+#include "server/audio/TravelMonoAudioTransport.h"
 #include "server/config/Configuration.h"
 #include "server/creature-server.h"
 #include "server/eventloop/eventloop.h"
@@ -119,13 +120,17 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
 
     // Load audio buffer if animation has sound
     if (!animation.metadata.sound_file.empty()) {
-        auto loadResult = loadAudioBuffer(animation, session, scheduleSpan);
-        if (!loadResult.isSuccess()) {
-            error("Failed to load audio buffer: {}", loadResult.getError()->getMessage());
-            if (scheduleSpan) {
-                scheduleSpan->setError(loadResult.getError()->getMessage());
+        // Only the RTP transport reads the pre-encoded buffer; the local transports
+        // load the WAV themselves, so skip the 17-channel Opus encode otherwise.
+        if (config && config->getAudioMode() == Configuration::AudioMode::RTP) {
+            auto loadResult = loadAudioBuffer(animation, session, scheduleSpan);
+            if (!loadResult.isSuccess()) {
+                error("Failed to load audio buffer: {}", loadResult.getError()->getMessage());
+                if (scheduleSpan) {
+                    scheduleSpan->setError(loadResult.getError()->getMessage());
+                }
+                return Result<std::shared_ptr<PlaybackSession>>{loadResult.getError().value()};
             }
-            return Result<std::shared_ptr<PlaybackSession>>{loadResult.getError().value()};
         }
 
         // Create audio transport
@@ -249,10 +254,15 @@ CooperativeAnimationScheduler::createAudioTransport(std::shared_ptr<PlaybackSess
     if (audioMode == Configuration::AudioMode::RTP) {
         debug("Creating RTP audio transport");
         return std::make_shared<RtpAudioTransport>(rtpServer);
-    } else {
-        debug("Creating local SDL audio transport");
-        return std::make_shared<LocalSdlAudioTransport>();
     }
+
+    if (config->getTravelMode()) {
+        debug("Creating travel mono audio transport");
+        return std::make_shared<TravelMonoAudioTransport>();
+    }
+
+    debug("Creating local SDL audio transport");
+    return std::make_shared<LocalSdlAudioTransport>();
 }
 
 void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<PlaybackSession> session,

@@ -142,6 +142,17 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     audioMode.add_argument("--rtp-audio").help("use RTP audio streaming").default_value(false).implicit_value(true);
 
+    /*
+     * Travel mode collapses the whole rig onto one host: the server and the controllers
+     * all run on the same Pi. It forces local audio (with a mono downmix of the
+     * 17-channel WAVs) and keeps sACN multicast from leaving the host. The HTTP and
+     * websocket server still binds 0.0.0.0 so the console can attach over the network.
+     */
+    program.add_argument("--travel-mode")
+        .help("single-host mode: host-local sACN, mono downmixed audio on the local sound device")
+        .default_value(environmentToInt(TRAVEL_MODE_ENV, DEFAULT_TRAVEL_MODE) == 1)
+        .implicit_value(true);
+
     program.add_argument("--scheduler")
         .help("animation scheduler to use: 'cooperative' (default, recommended) or 'legacy' (fallback)")
         .default_value(std::string("cooperative"))
@@ -190,6 +201,23 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     if (program.get<bool>("--list-network-devices")) {
         listNetworkDevices();
         std::exit(0);
+    }
+
+    // Travel mode? Validate it before the audio mode is decided since it forces local audio.
+    auto travelMode = program.get<bool>("--travel-mode");
+    if (travelMode) {
+        if (program.get<bool>("--rtp-audio")) {
+            std::cerr << "Error: --travel-mode and --rtp-audio cannot be used together. Travel mode plays\n"
+                         "a mono downmix on the local sound device."
+                      << std::endl;
+            std::exit(1);
+        }
+        if (program.get<std::string>("--scheduler") == "legacy") {
+            std::cerr << "Error: --travel-mode requires the cooperative scheduler (the default)" << std::endl;
+            std::exit(1);
+        }
+        config->setTravelMode(true);
+        info("travel mode enabled: host-local sACN, mono downmixed local audio");
     }
 
     // What audio mode are we using?
@@ -274,7 +302,14 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     auto soundChannels = program.get<int>("-c");
     debug("read sound channels {} from command line", soundChannels);
-    if (soundChannels > 0) {
+    if (travelMode) {
+        // The downmixer renders everything to mono in travel mode
+        if (program.is_used("-c") && soundChannels != 1) {
+            warn("ignoring --sound-channels {} in travel mode; audio is downmixed to mono", soundChannels);
+        }
+        config->setSoundChannels(1);
+        debug("travel mode: sound channels forced to 1 (mono)");
+    } else if (soundChannels > 0) {
         config->setSoundChannels(soundChannels);
         debug("set our sound channels to {}", soundChannels);
     }

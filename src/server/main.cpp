@@ -398,7 +398,7 @@ int main(const int argc, char **argv) {
 
     // Bring the E131Server online
     creatures::e131Server = std::make_shared<creatures::e131::E131Server>();
-    creatures::e131Server->init(creatures::config->getNetworkDevice(), version);
+    creatures::e131Server->init(creatures::config->getNetworkDevice(), version, creatures::config->getTravelMode());
     creatures::e131Server->start();
 
     // TODO: Remove this, this is just for debugging. Universe 1000 is "production."

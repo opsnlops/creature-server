@@ -1,7 +1,9 @@
 
 #include <algorithm>
+#include <netinet/in.h>
 #include <pthread.h>
 #include <stdexcept>
+#include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
 
@@ -17,7 +19,7 @@ extern "C" {
 
 namespace creatures::e131 {
 
-void E131Server::init(uint16_t _networkDevice, std::string _version) {
+void E131Server::init(uint16_t _networkDevice, std::string _version, bool _localOnly) {
 
     // Get our logger going
     logger = spdlog::stdout_color_mt("E131Server");
@@ -66,6 +68,32 @@ void E131Server::init(uint16_t _networkDevice, std::string _version) {
         close(socket);
         socket = -1;
         throw std::runtime_error("Failed to configure multicast interface");
+    }
+
+    if (_localOnly) {
+        // Travel mode: TTL 0 keeps the frames from ever leaving this host, but the
+        // kernel's multicast loopback path still delivers them to local group members
+        // on the sending interface. Both values must be u_char (macOS requires it,
+        // Linux accepts it).
+        const unsigned char ttl = 0;
+        if (setsockopt(socket, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) {
+            logger->critical("unable to set IP_MULTICAST_TTL=0: {}", strerror(errno));
+            close(socket);
+            socket = -1;
+            throw std::runtime_error("Failed to set multicast TTL for local-only sACN");
+        }
+
+        // Loopback delivery defaults to on; set it explicitly so travel mode can't be
+        // broken by a surprising system default.
+        const unsigned char loop = 1;
+        if (setsockopt(socket, IPPROTO_IP, IP_MULTICAST_LOOP, &loop, sizeof(loop)) < 0) {
+            logger->critical("unable to set IP_MULTICAST_LOOP=1: {}", strerror(errno));
+            close(socket);
+            socket = -1;
+            throw std::runtime_error("Failed to enable multicast loopback for local-only sACN");
+        }
+
+        logger->info("local-only sACN: multicast TTL=0, frames will not leave this host");
     }
 
     // Create our CID

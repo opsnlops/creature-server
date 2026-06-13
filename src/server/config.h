@@ -52,6 +52,11 @@
 #define AUDIO_MODE_ENV "AUDIO_MODE"
 // The default is defined in the Configuration class
 
+// Travel mode: server + controllers all on one host. Forces local audio with a
+// mono downmix and keeps sACN multicast on-host (TTL 0).
+#define TRAVEL_MODE_ENV "TRAVEL_MODE"
+#define DEFAULT_TRAVEL_MODE 0
+
 #define NETWORK_DEVICE_NAME_ENV "NETWORK_DEVICE_NAME"
 #define DEFAULT_NETWORK_DEVICE_NAME "eth0"
 
