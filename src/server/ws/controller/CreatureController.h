@@ -7,6 +7,7 @@
 
 #include "oatpp/core/Types.hpp"
 #include "oatpp/web/protocol/http/Http.hpp"
+#include "oatpp/web/protocol/http/outgoing/ResponseFactory.hpp"
 #include "oatpp/web/server/AsyncHttpConnectionHandler.hpp"
 
 #include <nlohmann/json.hpp>
@@ -22,6 +23,11 @@ using json = nlohmann::json;
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/CreatureService.h"
 
+namespace creatures {
+extern std::shared_ptr<Database> db;
+extern std::shared_ptr<ObservabilityManager> observability;
+} // namespace creatures
+
 #include OATPP_CODEGEN_BEGIN(ApiController)
 
 namespace creatures ::ws {
@@ -34,6 +40,18 @@ class CreatureController : public oatpp::web::server::api::ApiController,
 
   private:
     CreatureService m_creatureService;
+
+    /// Send raw JSON back with application/json, bypassing the DTO serializer so
+    /// every stored field survives the round trip (mirrors
+    /// StoryboardController::jsonResponse). Used by the export endpoint, which
+    /// needs to emit the database document verbatim for disaster recovery.
+    std::shared_ptr<OutgoingResponse> jsonResponse(const Status &status, const nlohmann::json &body) {
+        const auto bodyStr = body.dump(2);
+        auto response = oatpp::web::protocol::http::outgoing::ResponseFactory::createResponse(
+            status, oatpp::String(bodyStr.c_str()));
+        response->putHeader("Content-Type", "application/json; charset=utf-8");
+        return response;
+    }
 
   public:
     static std::shared_ptr<CreatureController> createShared(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>,
@@ -81,6 +99,48 @@ class CreatureController : public oatpp::web::server::api::ApiController,
                                if (span)
                                    span->setHttpStatus(200);
                                return createDtoResponse(Status::CODE_200, result);
+                           });
+    }
+
+    ENDPOINT_INFO(exportCreature) {
+        info->summary = "Export a creature's raw stored JSON config (disaster recovery)";
+        info->description =
+            "Returns the creature's configuration exactly as stored in the database, with Mongo's internal "
+            "_id stripped, so it can be dropped back onto a replaced controller's JSON file or re-POSTed to "
+            "/api/v1/creature. Bypasses the DTO serializer so every stored field survives the round trip — "
+            "use this to recover a creature config when its controller's Pi is lost.";
+        info->addTag("Creatures");
+
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+
+        info->pathParams["creatureId"].description = "Creature ID in the form of an UUID";
+    }
+    ENDPOINT("GET", "api/v1/creature/{creatureId}/export", exportCreature, PATH(String, creatureId),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/creature/{creatureId}/export", "GET",
+                           "api/v1/creature/" + std::string(creatureId) + "/export", "exportCreature",
+                           "CreatureController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                               if (!creatureId || !isUuidShape(std::string(creatureId))) {
+                                   return bailHttp(span, Status::CODE_400, "creatureId must be a UUID");
+                               }
+                               if (span)
+                                   span->setAttribute("creature.id", std::string(creatureId));
+                               auto opSpan = creatures::observability->createChildOperationSpan(
+                                   "CreatureController.exportCreature", span);
+                               auto result = creatures::db->getCreatureJson(std::string(creatureId), opSpan);
+                               if (!result.isSuccess()) {
+                                   return bailFromServerError(span, result.getError().value());
+                               }
+                               // Strip Mongo's internal _id so the export matches the original controller JSON
+                               // and POSTs straight back to /api/v1/creature.
+                               auto creatureJson = result.getValue().value();
+                               creatureJson.erase("_id");
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return jsonResponse(Status::CODE_200, creatureJson);
                            });
     }
 
