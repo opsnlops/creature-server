@@ -7,6 +7,10 @@ on:
     branches: [ "main" ]
 
 env:
+  # docker/build-push-action uploads a .dockerbuild build-record artifact per
+  # run by default. They're only consumed by the buildx history debug UI and
+  # piled up (hundreds) against the Actions storage quota. Disable the upload.
+  DOCKER_BUILD_RECORD_UPLOAD: false
   CTEST_EXCLUDE: >-
     mongoc/fixtures/fake_kms_provider_server/start|
     mongoc/CMake/bare-bson-import|
