@@ -197,6 +197,16 @@ void ObservabilityManager::initializeMetricInstruments() {
     sensorPowerGauge_ = meter_->CreateDoubleUpDownCounter("creature_server_sensor_power",
                                                           "Current power reading for each power sensor", "watts");
 
+    // Dynamixel servo telemetry gauges (one series per servo, keyed by dxl.id)
+    dynamixelTemperatureGauge_ = meter_->CreateDoubleUpDownCounter(
+        "creature_server_dynamixel_temperature", "Current temperature for each Dynamixel servo", "fahrenheit");
+
+    dynamixelLoadGauge_ = meter_->CreateDoubleUpDownCounter(
+        "creature_server_dynamixel_load", "Current present load for each Dynamixel servo (raw, signed)", "load");
+
+    dynamixelVoltageGauge_ = meter_->CreateDoubleUpDownCounter(
+        "creature_server_dynamixel_voltage", "Current input voltage for each Dynamixel servo", "volts");
+
     debug("All metric instruments initialized successfully");
 }
 
@@ -425,6 +435,58 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
 
     if (!allSensorData.empty()) {
         debug("Exported sensor metrics for {} creatures to OTel", allSensorData.size());
+    }
+
+    // Export Dynamixel servo telemetry (separate cache slot, one series per servo)
+    auto allDynamixelData = sensorDataCache->getAllDynamixelData();
+
+    static std::unordered_map<std::string, double> lastDynamixelTemperatureValues;
+    static std::unordered_map<std::string, double> lastDynamixelLoadValues;
+    static std::unordered_map<std::string, double> lastDynamixelVoltageValues;
+
+    for (const auto &[creatureId, dynamixelData] : allDynamixelData) {
+        for (const auto &reading : dynamixelData.dynamixelReadings) {
+            // Attributes identify the creature and the specific servo on its bus
+            std::unordered_map<std::string, std::string> servoAttributes;
+            servoAttributes["creature.id"] = creatureId;
+            servoAttributes["creature.name"] = dynamixelData.creatureName;
+            servoAttributes["dxl.id"] = std::to_string(reading.dxlId);
+
+            // Unique key per (creature, servo) for delta tracking
+            std::string servoKey = creatureId + ":" + std::to_string(reading.dxlId);
+
+            if (dynamixelTemperatureGauge_) {
+                double lastTemp = lastDynamixelTemperatureValues[servoKey];
+                double tempDelta = reading.temperatureF - lastTemp;
+                if (tempDelta != 0.0) {
+                    dynamixelTemperatureGauge_->Add(tempDelta, servoAttributes);
+                    lastDynamixelTemperatureValues[servoKey] = reading.temperatureF;
+                }
+            }
+
+            if (dynamixelLoadGauge_) {
+                double currentLoad = static_cast<double>(reading.presentLoad);
+                double lastLoad = lastDynamixelLoadValues[servoKey];
+                double loadDelta = currentLoad - lastLoad;
+                if (loadDelta != 0.0) {
+                    dynamixelLoadGauge_->Add(loadDelta, servoAttributes);
+                    lastDynamixelLoadValues[servoKey] = currentLoad;
+                }
+            }
+
+            if (dynamixelVoltageGauge_) {
+                double lastVoltage = lastDynamixelVoltageValues[servoKey];
+                double voltageDelta = reading.voltageV - lastVoltage;
+                if (voltageDelta != 0.0) {
+                    dynamixelVoltageGauge_->Add(voltageDelta, servoAttributes);
+                    lastDynamixelVoltageValues[servoKey] = reading.voltageV;
+                }
+            }
+        }
+    }
+
+    if (!allDynamixelData.empty()) {
+        debug("Exported Dynamixel metrics for {} creatures to OTel", allDynamixelData.size());
     }
 }
 

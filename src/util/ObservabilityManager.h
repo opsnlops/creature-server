@@ -176,6 +176,11 @@ class ObservabilityManager {
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> sensorCurrentGauge_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> sensorPowerGauge_;
 
+    // Dynamixel servo telemetry gauges - keyed per servo (dxl.id)
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelTemperatureGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelLoadGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelVoltageGauge_;
+
     bool initialized_;
 
     /**

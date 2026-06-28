@@ -549,6 +549,10 @@ add_executable(creature-server
         src/server/ws/messaging/SensorReportHandler.cpp
         src/server/ws/messaging/SensorReportCommandDTO.h
 
+        src/server/ws/messaging/DynamixelSensorReportHandler.h
+        src/server/ws/messaging/DynamixelSensorReportHandler.cpp
+        src/server/ws/messaging/DynamixelSensorReportCommandDTO.h
+
         src/server/sensors/SensorDataCache.h
         src/server/sensors/SensorDataCache.cpp
         src/util/ObservabilityManager.h

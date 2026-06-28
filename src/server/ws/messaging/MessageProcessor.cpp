@@ -7,6 +7,7 @@
 
 #include "server/ws/dto/websocket/MessageTypes.h"
 
+#include "DynamixelSensorReportHandler.h"
 #include "MessageProcessor.h"
 #include "NoticeMessageHandler.h"
 #include "SensorReportHandler.h"
@@ -31,6 +32,10 @@ MessageProcessor::MessageProcessor() {
 
     handlers[toString(MessageType::MotorSensorReport)] = std::make_unique<creatures::ws::SensorReportHandler>();
     appLogger->debug("added the handler for {}", toString(MessageType::MotorSensorReport));
+
+    handlers[toString(MessageType::DynamixelSensorReport)] =
+        std::make_unique<creatures::ws::DynamixelSensorReportHandler>();
+    appLogger->debug("added the handler for {}", toString(MessageType::DynamixelSensorReport));
 
     // Log how many we have total
     appLogger->info("{} message handler{} registered", handlers.size(), handlers.size() != 1 ? "s" : "");
