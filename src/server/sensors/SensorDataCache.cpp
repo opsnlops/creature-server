@@ -30,9 +30,37 @@ void SensorDataCache::updateSensorData(creatureId_t creatureId, const std::strin
     };
 }
 
+void SensorDataCache::updateDynamixelData(creatureId_t creatureId, const std::string &creatureName,
+                                          const std::vector<DynamixelSensorReading> &dynamixelReadings) {
+    std::lock_guard<std::mutex> lock(cacheMutex_);
+
+    auto now = std::chrono::system_clock::now();
+
+    // Stamp each reading with the current time
+    std::vector<DynamixelSensorReading> timestampedReadings;
+    timestampedReadings.reserve(dynamixelReadings.size());
+    for (const auto &reading : dynamixelReadings) {
+        DynamixelSensorReading timestamped = reading;
+        timestamped.lastUpdate = now;
+        timestampedReadings.push_back(timestamped);
+    }
+
+    dynamixelData_[creatureId] = {
+        .creatureId = creatureId,
+        .creatureName = creatureName,
+        .dynamixelReadings = std::move(timestampedReadings),
+        .lastUpdate = now,
+    };
+}
+
 std::unordered_map<creatureId_t, CreatureSensorData> SensorDataCache::getAllSensorData() const {
     std::lock_guard<std::mutex> lock(cacheMutex_);
     return sensorData_;
+}
+
+std::unordered_map<creatureId_t, CreatureDynamixelData> SensorDataCache::getAllDynamixelData() const {
+    std::lock_guard<std::mutex> lock(cacheMutex_);
+    return dynamixelData_;
 }
 
 std::optional<CreatureSensorData> SensorDataCache::getSensorData(creatureId_t creatureId) const {
@@ -67,6 +95,16 @@ void SensorDataCache::removeStaleData(int timeoutSeconds) {
             it = sensorData_.erase(it);
         } else {
             ++it;
+        }
+    }
+
+    auto dxlIt = dynamixelData_.begin();
+    while (dxlIt != dynamixelData_.end()) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - dxlIt->second.lastUpdate);
+        if (elapsed.count() > timeoutSeconds) {
+            dxlIt = dynamixelData_.erase(dxlIt);
+        } else {
+            ++dxlIt;
         }
     }
 }

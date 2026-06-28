@@ -26,6 +26,8 @@ std::string toString(MessageType type) {
         return "board-sensor-report";
     case MessageType::MotorSensorReport:
         return "motor-sensor-report";
+    case MessageType::DynamixelSensorReport:
+        return "dynamixel-sensor-report";
     case MessageType::CacheInvalidation:
         return "cache-invalidation";
     case MessageType::PlaylistStatus:

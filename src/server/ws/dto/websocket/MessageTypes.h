@@ -15,6 +15,7 @@ enum class MessageType {
     UpsertCreature,
     BoardSensorReport,
     MotorSensorReport,
+    DynamixelSensorReport,
     CacheInvalidation,
     PlaylistStatus,
     JobProgress,
