@@ -38,10 +38,12 @@ struct CreatureSensorData {
  * Individual Dynamixel servo telemetry reading
  */
 struct DynamixelSensorReading {
-    uint32_t dxlId;      // Dynamixel servo ID on the bus
-    double temperatureF; // Servo temperature in Fahrenheit
-    int32_t presentLoad; // Present load (raw, signed)
-    double voltageV;     // Input voltage in volts
+    uint32_t dxlId;          // Dynamixel servo ID on the bus
+    double temperatureF;     // Servo temperature in Fahrenheit
+    int32_t presentLoad;     // Present load (raw, signed)
+    double voltageV;         // Input voltage in volts
+    int32_t presentPosition; // Raw encoder position (0-4095 for XC430-class servos)
+    bool hasPosition;        // False on older firmware that omits present_position
     std::chrono::system_clock::time_point lastUpdate;
 };
 

@@ -84,6 +84,11 @@ void DynamixelSensorReportHandler::processMessage(const oatpp::String &message) 
                             motorDto->temperature_f ? static_cast<double>(motorDto->temperature_f) : 0.0;
                         reading.presentLoad = motorDto->present_load ? static_cast<int32_t>(motorDto->present_load) : 0;
                         reading.voltageV = motorDto->voltage_v ? static_cast<double>(motorDto->voltage_v) : 0.0;
+                        // present_position is absent on older firmware; only treat it as present
+                        // when the field actually arrived in the payload
+                        reading.hasPosition = static_cast<bool>(motorDto->present_position);
+                        reading.presentPosition =
+                            reading.hasPosition ? static_cast<int32_t>(motorDto->present_position) : 0;
                         dynamixelReadings.push_back(reading);
                     }
                 }
