@@ -30,6 +30,11 @@ class DynamixelSensorReadingDTO : public oatpp::DTO {
 
     DTO_FIELD_INFO(voltage_v) { info->description = "Input voltage in volts"; }
     DTO_FIELD(Float64, voltage_v);
+
+    DTO_FIELD_INFO(present_position) {
+        info->description = "Raw encoder position (0-4095 for XC430-class servos); absent on older firmware";
+    }
+    DTO_FIELD(Int32, present_position);
 };
 
 /**

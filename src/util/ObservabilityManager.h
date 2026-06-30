@@ -180,6 +180,7 @@ class ObservabilityManager {
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelTemperatureGauge_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelLoadGauge_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelVoltageGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelPositionGauge_;
 
     bool initialized_;
 

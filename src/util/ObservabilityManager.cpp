@@ -207,6 +207,9 @@ void ObservabilityManager::initializeMetricInstruments() {
     dynamixelVoltageGauge_ = meter_->CreateDoubleUpDownCounter(
         "creature_server_dynamixel_voltage", "Current input voltage for each Dynamixel servo", "volts");
 
+    dynamixelPositionGauge_ = meter_->CreateDoubleUpDownCounter(
+        "creature_server_dynamixel_position", "Current raw encoder position for each Dynamixel servo", "ticks");
+
     debug("All metric instruments initialized successfully");
 }
 
@@ -443,6 +446,7 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
     static std::unordered_map<std::string, double> lastDynamixelTemperatureValues;
     static std::unordered_map<std::string, double> lastDynamixelLoadValues;
     static std::unordered_map<std::string, double> lastDynamixelVoltageValues;
+    static std::unordered_map<std::string, double> lastDynamixelPositionValues;
 
     for (const auto &[creatureId, dynamixelData] : allDynamixelData) {
         for (const auto &reading : dynamixelData.dynamixelReadings) {
@@ -480,6 +484,18 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
                 if (voltageDelta != 0.0) {
                     dynamixelVoltageGauge_->Add(voltageDelta, servoAttributes);
                     lastDynamixelVoltageValues[servoKey] = reading.voltageV;
+                }
+            }
+
+            // Position is only reported by newer firmware; skip it entirely when absent
+            // so older servos don't emit a misleading 0.
+            if (dynamixelPositionGauge_ && reading.hasPosition) {
+                double currentPosition = static_cast<double>(reading.presentPosition);
+                double lastPosition = lastDynamixelPositionValues[servoKey];
+                double positionDelta = currentPosition - lastPosition;
+                if (positionDelta != 0.0) {
+                    dynamixelPositionGauge_->Add(positionDelta, servoAttributes);
+                    lastDynamixelPositionValues[servoKey] = currentPosition;
                 }
             }
         }
