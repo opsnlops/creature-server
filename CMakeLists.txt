@@ -678,6 +678,7 @@ add_executable(creature-server-test
         tests/server/voice/DialogWav_test.cpp
         tests/server/voice/IxmlWriter_test.cpp
         src/server/voice/IxmlWriter.cpp
+        src/server/voice/IxmlReader.cpp
         tests/server/voice/DialogCache_test.cpp
         tests/server/audio/MonoWavDownmixer_test.cpp
         tests/server/audio/OggOpusWriter_test.cpp

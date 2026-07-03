@@ -10,6 +10,7 @@
 
 #include "server/voice/DialogPipeline.h"
 #include "server/voice/DialogWav.h"
+#include "server/voice/IxmlReader.h"
 #include "server/voice/IxmlWriter.h"
 #include "util/ObservabilityManager.h"
 
@@ -242,6 +243,34 @@ TEST_F(DialogWavTest, EmbedsIxmlProvenanceChunkAfterData) {
     EXPECT_NE(text.find("Mongo &amp; &quot;friends&quot;"), std::string::npos);
     EXPECT_NE(text.find("gen-1,gen-2"), std::string::npos);
     EXPECT_NE(text.find("<NAME>Beaky</NAME>"), std::string::npos);
+}
+
+TEST_F(DialogWavTest, ReadsBackEmbeddedIxml) {
+    auto assembled = twoVoiceFixture(4);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+
+    creatures::voice::DialogWavProvenance prov;
+    prov.sourceScriptId = "script-xyz";
+    prov.title = "Round Trip";
+    prov.tracks = {{1, "Beaky"}, {2, "Pip"}, {17, "BGM"}};
+    prov.script = {{"Beaky", "one"}, {"Pip", "two & <three>"}};
+
+    auto r = writeDialogWav(assembled, m, tmpPath_, nullptr, &prov);
+    ASSERT_TRUE(r.isSuccess());
+
+    // The reader returns exactly the document the writer embedded.
+    auto readBack = creatures::voice::readIxmlChunk(tmpPath_);
+    ASSERT_TRUE(readBack.has_value());
+    EXPECT_EQ(*readBack, creatures::voice::buildDialogIxml(prov));
+}
+
+TEST_F(DialogWavTest, ReadIxmlReturnsNulloptWhenAbsent) {
+    auto assembled = twoVoiceFixture(4);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+    auto r = writeDialogWav(assembled, m, tmpPath_); // no provenance
+    ASSERT_TRUE(r.isSuccess());
+
+    EXPECT_FALSE(creatures::voice::readIxmlChunk(tmpPath_).has_value());
 }
 
 TEST_F(DialogWavTest, MapEntriesForAbsentVoicesAreIgnored) {

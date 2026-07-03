@@ -30,6 +30,7 @@
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
 #include "server/metrics/counters.h"
+#include "server/voice/IxmlReader.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/RhubarbData.h"
 #include "server/ws/controller/ControllerUtils.h"
@@ -482,6 +483,63 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     span->setAttribute("share.bytes", static_cast<int64_t>(oggBytes.size()));
                     span->setHttpStatus(200);
                 }
+                return response;
+            });
+    }
+
+    ENDPOINT_INFO(getSoundProvenance) {
+        info->summary = "Return the embedded iXML provenance of a dialog sound file";
+        info->description = "Dialog renders carry an iXML chunk with the source script id, generation ids, "
+                            "channel/track layout, and the full rendered script text (issue #47). Returns the "
+                            "raw iXML (BWFXML) document. 404 if the sound has no embedded provenance.";
+        info->addTag("Sounds");
+        info->addResponse<String>(Status::CODE_200, "application/xml");
+        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/sound/provenance/{filename}", getSoundProvenance, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/v1/sound/provenance/{filename}", "GET", "api/v1/sound/provenance/" + std::string(filename),
+            "getSoundProvenance", "SoundController", request, [&](const auto &span) {
+                std::string safeFilename;
+                try {
+                    safeFilename = sanitizeFilename(filename);
+                } catch (const std::invalid_argument &e) {
+                    return bailHttp(span, Status::CODE_403, e.what());
+                }
+
+                // Permanent store first (dialog/ renders are where provenance lives),
+                // then ad-hoc — same resolution rules as getShareableSound.
+                std::string sourcePath;
+                try {
+                    sourcePath = m_soundService.resolvePermanentSoundPath(safeFilename);
+                } catch (oatpp::web::protocol::http::HttpError &) {
+                    // fall through to ad-hoc
+                }
+                if (sourcePath.empty()) {
+                    try {
+                        sourcePath = m_soundService.resolveAdHocSoundPath(safeFilename);
+                    } catch (oatpp::web::protocol::http::HttpError &) {
+                        return bailHttp(span, Status::CODE_404,
+                                        fmt::format("Sound '{}' was not found in the sound store or the ad-hoc store",
+                                                    safeFilename));
+                    }
+                }
+
+                auto ixml = creatures::voice::readIxmlChunk(sourcePath);
+                if (!ixml) {
+                    return bailHttp(span, Status::CODE_404,
+                                    fmt::format("Sound '{}' has no embedded provenance", safeFilename));
+                }
+
+                if (span) {
+                    span->setAttribute("sound.source_path", sourcePath);
+                    span->setAttribute("provenance.bytes", static_cast<int64_t>(ixml->size()));
+                    span->setHttpStatus(200);
+                }
+                auto response = ResponseFactory::createResponse(Status::CODE_200, oatpp::String(ixml->c_str()));
+                response->putHeader("Content-Type", "application/xml; charset=utf-8");
                 return response;
             });
     }
