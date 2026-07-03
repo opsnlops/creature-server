@@ -68,4 +68,40 @@ Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmDat
     return totalSize;
 }
 
+std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate) {
+    std::vector<uint8_t> out;
+    out.reserve(44 + pcm.size());
+    auto u16 = [&](uint16_t v) {
+        out.push_back(static_cast<uint8_t>(v & 0xFF));
+        out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    };
+    auto u32 = [&](uint32_t v) {
+        out.push_back(static_cast<uint8_t>(v & 0xFF));
+        out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        out.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        out.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+    };
+    auto str = [&](const char *s, std::size_t n) {
+        for (std::size_t i = 0; i < n; ++i) {
+            out.push_back(static_cast<uint8_t>(s[i]));
+        }
+    };
+    const uint32_t dataLen = static_cast<uint32_t>(pcm.size());
+    str("RIFF", 4);
+    u32(36 + dataLen);
+    str("WAVE", 4);
+    str("fmt ", 4);
+    u32(16);
+    u16(1); // PCM
+    u16(1); // mono
+    u32(sampleRate);
+    u32(sampleRate * 2); // byte rate (mono S16)
+    u16(2);              // block align
+    u16(16);             // bits per sample
+    str("data", 4);
+    u32(dataLen);
+    out.insert(out.end(), pcm.begin(), pcm.end());
+    return out;
+}
+
 } // namespace creatures::voice

@@ -677,8 +677,11 @@ add_executable(creature-server-test
         tests/server/voice/DialogCache_test.cpp
         tests/server/audio/MonoWavDownmixer_test.cpp
         tests/server/audio/OggOpusWriter_test.cpp
+        tests/server/voice/DialogPreviewAssembly_test.cpp
         src/server/audio/MonoWavDownmixer.cpp
         src/server/audio/OggOpusWriter.cpp
+        src/server/voice/DialogPreviewAssembly.cpp
+        src/server/voice/PcmWavWriter.cpp
         src/server/voice/DialogAnimation.cpp
         src/server/voice/DialogCache.cpp
         src/server/voice/DialogClient.cpp
