@@ -213,7 +213,13 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_404, fmt::format("generation '{}/{}' not found", ck, gid));
                 }
                 const auto gen = loadResult.getValue().value();
-                const auto wavBytes = creatures::voice::wrapMonoPcmAsWav(gen.audioPcm, 48000);
+                // Embed provenance (#50). Drop the track list — this is a mono
+                // file, so a 17-track layout would misdescribe it; the script text
+                // and ids still travel.
+                auto monoProv = gen.provenance;
+                monoProv.tracks.clear();
+                const auto wavBytes =
+                    creatures::voice::wrapMonoPcmAsWav(gen.audioPcm, 48000, monoProv.empty() ? nullptr : &monoProv);
 
                 auto response = oatpp::web::protocol::http::outgoing::ResponseFactory::createResponse(
                     Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(wavBytes.data()),
@@ -268,7 +274,29 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 std::vector<int16_t> samples(gen.audioPcm.size() / sizeof(int16_t));
                 std::memcpy(samples.data(), gen.audioPcm.data(), samples.size() * sizeof(int16_t));
 
-                auto oggResult = creatures::audio::encodeMonoToOggOpus(samples, creatures::audio::kShareableSampleRate);
+                // Mirror provenance (#50) into OpusTags: title, script id, and the
+                // full script text as DESCRIPTION.
+                creatures::audio::OggComments comments;
+                const auto &prov = gen.provenance;
+                if (!prov.title.empty()) {
+                    comments.emplace_back("TITLE", prov.title);
+                }
+                if (!prov.sourceScriptId.empty()) {
+                    comments.emplace_back("SOURCE_SCRIPT_ID", prov.sourceScriptId);
+                }
+                if (!prov.script.empty()) {
+                    std::string scriptText;
+                    for (std::size_t i = 0; i < prov.script.size(); ++i) {
+                        if (i > 0) {
+                            scriptText += '\n';
+                        }
+                        scriptText += prov.script[i].speaker + ": " + prov.script[i].text;
+                    }
+                    comments.emplace_back("DESCRIPTION", scriptText);
+                }
+
+                auto oggResult = creatures::audio::encodeMonoToOggOpus(
+                    samples, creatures::audio::kShareableSampleRate, creatures::audio::kShareableOpusBitrate, comments);
                 if (!oggResult.isSuccess()) {
                     return bailHttp(span, Status::CODE_500, oggResult.getError().value().getMessage());
                 }

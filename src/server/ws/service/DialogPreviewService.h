@@ -37,6 +37,7 @@ class DialogPreviewService {
     struct PreviewCreature {
         std::string creatureId;
         std::string voiceId;
+        std::string name;      // display name, for embedded provenance (#50)
         uint16_t audioChannel; // 1-based; used only for multichannel export
     };
 

@@ -52,6 +52,20 @@ TEST(IxmlWriter, DocumentContainsAllFields) {
     EXPECT_NE(xml.find("Pip: Hi!"), std::string::npos);
 }
 
+TEST(IxmlWriter, OmitsTrackListWhenNoTracks) {
+    // A mono export carries provenance without a track list (a 17-track list
+    // would misdescribe a 1-channel file).
+    DialogWavProvenance p;
+    p.title = "Mono Take";
+    p.script = {{"Beaky", "hi"}};
+    const auto xml = buildDialogIxml(p);
+    EXPECT_EQ(xml.find("<TRACK_LIST>"), std::string::npos);
+    EXPECT_EQ(xml.find("<TRACK_COUNT>"), std::string::npos);
+    // The rest of the document is still there.
+    EXPECT_NE(xml.find("Beaky: hi"), std::string::npos);
+    EXPECT_NE(xml.find("Mono Take"), std::string::npos);
+}
+
 TEST(IxmlWriter, EscapesXmlMetacharacters) {
     DialogWavProvenance p;
     p.script = {{"A&B", "he said <\"hi\"> & 'bye'"}};

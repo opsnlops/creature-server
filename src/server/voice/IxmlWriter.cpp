@@ -66,18 +66,22 @@ std::string buildDialogIxml(const DialogWavProvenance &provenance) {
     }
     xml += "  <NOTE>" + xmlEscape(note) + "</NOTE>\n";
 
-    // TRACK_LIST: which creature (or BGM) is on which interleaved channel.
-    xml += "  <TRACK_LIST>\n";
-    xml += "    <TRACK_COUNT>" + std::to_string(provenance.tracks.size()) + "</TRACK_COUNT>\n";
-    for (const auto &t : provenance.tracks) {
-        const auto ch = std::to_string(t.channel);
-        xml += "    <TRACK>";
-        xml += "<CHANNEL_INDEX>" + ch + "</CHANNEL_INDEX>";
-        xml += "<NAME>" + xmlEscape(t.name) + "</NAME>";
-        xml += "<INTERLEAVE_INDEX>" + ch + "</INTERLEAVE_INDEX>";
-        xml += "</TRACK>\n";
+    // TRACK_LIST: which creature (or BGM) is on which interleaved channel. Only
+    // emitted when there are tracks — a mono export carries provenance without a
+    // multi-track list that would misdescribe a single-channel file.
+    if (!provenance.tracks.empty()) {
+        xml += "  <TRACK_LIST>\n";
+        xml += "    <TRACK_COUNT>" + std::to_string(provenance.tracks.size()) + "</TRACK_COUNT>\n";
+        for (const auto &t : provenance.tracks) {
+            const auto ch = std::to_string(t.channel);
+            xml += "    <TRACK>";
+            xml += "<CHANNEL_INDEX>" + ch + "</CHANNEL_INDEX>";
+            xml += "<NAME>" + xmlEscape(t.name) + "</NAME>";
+            xml += "<INTERLEAVE_INDEX>" + ch + "</INTERLEAVE_INDEX>";
+            xml += "</TRACK>\n";
+        }
+        xml += "  </TRACK_LIST>\n";
     }
-    xml += "  </TRACK_LIST>\n";
 
     // USER: the private provenance block — script id, title, generations, full text.
     xml += "  <USER>\n";

@@ -1,5 +1,7 @@
 
+#include <algorithm>
 #include <cstdint>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <fmt/format.h>
@@ -21,6 +23,52 @@ extern std::shared_ptr<ObservabilityManager> observability;
 } // namespace creatures
 
 namespace creatures ::ws {
+
+namespace {
+
+/// Assemble the embedded provenance for a preview generation (#50) from the
+/// resolved creatures and the turns, so editor exports of this take can carry
+/// the source script, channel layout, and full script text. Mirrors what the
+/// permanent-render path stamps, sourced from the preview's own data.
+creatures::voice::DialogWavProvenance
+buildPreviewProvenance(const std::vector<creatures::voice::DialogInput> &inputs,
+                       const std::unordered_map<std::string, DialogPreviewService::PreviewCreature> &resolved,
+                       const std::string &generationId, const std::string &scriptId, const std::string &title) {
+    creatures::voice::DialogWavProvenance p;
+    p.sourceScriptId = scriptId;
+    p.title = title;
+    if (!generationId.empty()) {
+        p.generationIds = {generationId};
+    }
+
+    // voiceId → display name, for speaker labels and the track list.
+    std::unordered_map<std::string, std::string> nameByVoice;
+    for (const auto &[cid, c] : resolved) {
+        nameByVoice[c.voiceId] = c.name.empty() ? cid : c.name;
+    }
+
+    // Tracks: each creature on its 1-based channel (sorted) + the BGM lane (17).
+    for (const auto &[cid, c] : resolved) {
+        if (c.audioChannel >= 1 && c.audioChannel <= 16) {
+            p.tracks.push_back({c.audioChannel, c.name.empty() ? cid : c.name});
+        }
+    }
+    std::sort(p.tracks.begin(), p.tracks.end(),
+              [](const creatures::voice::DialogTrackInfo &a, const creatures::voice::DialogTrackInfo &b) {
+                  return a.channel < b.channel;
+              });
+    p.tracks.push_back({17, "BGM"});
+
+    // Script: speaker name (resolved via voiceId) + text, in turn order.
+    p.script.reserve(inputs.size());
+    for (const auto &in : inputs) {
+        auto it = nameByVoice.find(in.voiceId);
+        p.script.push_back({it != nameByVoice.end() ? it->second : in.voiceId, in.text});
+    }
+    return p;
+}
+
+} // namespace
 
 creatures::Result<std::unordered_map<std::string, DialogPreviewService::PreviewCreature>>
 DialogPreviewService::resolveCreatures(const oatpp::List<oatpp::Object<DialogTurnDto>> &turns,
@@ -46,6 +94,7 @@ DialogPreviewService::resolveCreatures(const oatpp::List<oatpp::Object<DialogTur
         PreviewCreature pc;
         pc.creatureId = cid;
         pc.voiceId = cj["voice"]["voice_id"].get<std::string>();
+        pc.name = cj.value("name", std::string{});
         pc.audioChannel =
             cj.contains("audio_channel") && cj["audio_channel"].is_number() ? cj["audio_channel"].get<uint16_t>() : 0;
         resolved.emplace(cid, std::move(pc));
@@ -351,6 +400,29 @@ DialogPreviewService::loadOrGenerate(const oatpp::Object<DialogPreviewRequestDto
         out.cached = false;
     }
 
+    // Stamp provenance (#50) so editor exports of this take carry the script.
+    // Built from the preview's own resolved creatures + turns. Held in memory
+    // for the 17-channel export (which uses `out` directly); persisted to the
+    // cache sidecar so the mono/Ogg export endpoints — which load only by id —
+    // can read it back. Skip the (json-only) persist if the generation already
+    // carried provenance from a prior run.
+    {
+        // The preview request carries only turns — no saved script id/title (those
+        // arrive at render time). So provenance here is the track layout + script
+        // text + generation id.
+        const bool alreadyPersisted = !out.generation.provenance.empty();
+        out.generation.provenance = buildPreviewProvenance(out.inputs, out.resolved, out.generation.generationId,
+                                                           /*scriptId=*/"", /*title=*/"");
+        if (!alreadyPersisted && !out.generation.provenance.empty()) {
+            auto r = creatures::voice::updateGenerationProvenance(out.cacheKey, out.generation.generationId,
+                                                                  out.generation.provenance);
+            if (!r.isSuccess()) {
+                warn("Dialog preview: persisting provenance for {}/{} failed: {}", out.cacheKey,
+                     out.generation.generationId, r.getError().value().getMessage());
+            }
+        }
+    }
+
     if (opSpan) {
         opSpan->setAttribute("dialog.generation_id", out.generation.generationId);
         opSpan->setAttribute("dialog.cached", out.cached);
@@ -392,7 +464,9 @@ DialogPreviewService::exportMultichannel(const PreviewOutcome &outcome, const st
 
     std::error_code ec;
     std::filesystem::create_directories(wavPath.parent_path(), ec);
-    auto writeResult = creatures::voice::writeDialogWav(assembled, voiceToChannel, wavPath, opSpan);
+    const auto &prov = outcome.generation.provenance;
+    auto writeResult =
+        creatures::voice::writeDialogWav(assembled, voiceToChannel, wavPath, opSpan, prov.empty() ? nullptr : &prov);
     if (!writeResult.isSuccess()) {
         return creatures::Result<void>{writeResult.getError().value()};
     }
