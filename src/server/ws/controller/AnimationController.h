@@ -13,6 +13,7 @@
 #include "server/animation/SessionManager.h"
 #include "server/config.h"
 #include "server/config/Configuration.h"
+#include "server/creature/UniverseResolver.h"
 #include "server/database.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
@@ -537,42 +538,48 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_422, "Prepared animation has no tracks");
                 }
 
-                const auto &track = animation.tracks.front();
-                auto creatureId = track.creature_id;
-                auto mismatchedTrack =
-                    std::any_of(animation.tracks.begin(), animation.tracks.end(),
-                                [&](const creatures::Track &candidate) { return candidate.creature_id != creatureId; });
-                if (mismatchedTrack) {
-                    if (span) {
-                        span->setAttribute("error.type", "multi_creature_animation");
+                // Every unique creature the animation targets, in track order. Multi-creature
+                // animations (rendered dialogs) are fine as long as all of their creatures
+                // resolve to one universe — the same rule the dialog render's autoplay uses.
+                std::vector<creatureId_t> targetCreatures;
+                for (const auto &candidate : animation.tracks) {
+                    if (candidate.creature_id.empty()) {
+                        if (span) {
+                            span->setAttribute("error.type", "missing_creature_id");
+                        }
+                        return bailHttp(span, Status::CODE_500, "Prepared animation track is missing creature_id");
                     }
-                    return bailHttp(span, Status::CODE_422,
-                                    "Prepared animation targets multiple creatures; cannot auto-play.");
+                    if (std::find(targetCreatures.begin(), targetCreatures.end(), candidate.creature_id) ==
+                        targetCreatures.end()) {
+                        targetCreatures.push_back(candidate.creature_id);
+                    }
                 }
 
-                if (creatureId.empty()) {
-                    if (span) {
-                        span->setAttribute("error.type", "missing_creature_id");
+                auto universeResult = creatures::resolveCommonUniverse(targetCreatures);
+                if (!universeResult.isSuccess()) {
+                    const auto error = universeResult.getError().value();
+                    switch (error.getCode()) {
+                    case ServerError::Conflict:
+                        if (span) {
+                            span->setAttribute("error.type", "creature_not_registered");
+                        }
+                        return bailHttp(span, Status::CODE_409, error.getMessage());
+                    case ServerError::InvalidData:
+                        if (span) {
+                            span->setAttribute("error.type", "multi_universe_animation");
+                        }
+                        return bailHttp(span, Status::CODE_422, error.getMessage());
+                    default:
+                        if (span) {
+                            span->setAttribute("error.type", "universe_resolution_failed");
+                        }
+                        return bailHttp(span, Status::CODE_500, error.getMessage());
                     }
-                    return bailHttp(span, Status::CODE_500, "Prepared animation track is missing creature_id");
                 }
-
-                universe_t universe;
-                try {
-                    auto universePtr = creatures::creatureUniverseMap->get(creatureId);
-                    universe = *universePtr;
-                } catch (const std::exception &) {
-                    if (span) {
-                        span->setAttribute("error.type", "creature_not_registered");
-                    }
-                    return bailHttp(
-                        span, Status::CODE_409,
-                        fmt::format("Creature {} is not registered with a universe. Is the controller online?",
-                                    creatureId));
-                }
+                const universe_t universe = universeResult.getValue().value();
 
                 auto sessionResult =
-                    creatures::sessionManager->interruptIdleOnly(universe, animation, std::string(creatureId), span);
+                    creatures::sessionManager->interruptIdleOnly(universe, animation, targetCreatures, span);
                 if (!sessionResult.isSuccess()) {
                     if (span) {
                         span->setAttribute("error.type", "session_interrupt_failed");
@@ -584,13 +591,13 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                 auto response = creatures::ws::StatusDto::createShared();
                 response->status = STATUS_OK;
                 response->code = 200;
-                response->message = fmt::format("Triggered ad-hoc animation {} for {} on universe {}", animationId,
-                                                creatureId, universe)
+                response->message = fmt::format("Triggered ad-hoc animation {} for {} creature(s) on universe {}",
+                                                animationId, targetCreatures.size(), universe)
                                         .c_str();
                 response->session_id = sessionResult.getValue().value()->getSessionId().c_str();
 
                 if (span) {
-                    span->setAttribute("creature.id", creatureId);
+                    span->setAttribute("creature.ids", creatures::joinStrings(targetCreatures, ","));
                     span->setAttribute("universe", static_cast<int64_t>(universe));
                     span->setAttribute("session.id", sessionResult.getValue().value()->getSessionId());
                     span->setHttpStatus(200);

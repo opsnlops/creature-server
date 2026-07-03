@@ -19,6 +19,7 @@
 #include "server/animation/SessionManager.h"
 #include "server/config.h"
 #include "server/config/Configuration.h"
+#include "server/creature/UniverseResolver.h"
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
@@ -1199,19 +1200,14 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             fmt::format("{} unique voices exceeds per-scene cap of {}", uniqueVoices.size(), kMaxUniqueVoicesPerScene));
     }
     if (autoplay) {
-        std::optional<universe_t> common;
+        std::vector<creatureId_t> autoplayCreatures;
+        autoplayCreatures.reserve(creaturesCache.size());
         for (const auto &c : creaturesCache) {
-            auto u = creatures::creatureUniverseMap->get(c.creatureId);
-            if (!u) {
-                return failJob(fmt::format("autoplay requested but creature '{}' is not registered with a universe",
-                                           c.creatureId));
-            }
-            if (!common) {
-                common = *u;
-            } else if (*common != *u) {
-                return failJob(fmt::format("autoplay requires all creatures on one universe ({} != {})",
-                                           static_cast<long long>(*common), static_cast<long long>(*u)));
-            }
+            autoplayCreatures.push_back(c.creatureId);
+        }
+        auto universeResult = creatures::resolveCommonUniverse(autoplayCreatures);
+        if (!universeResult.isSuccess()) {
+            return failJob(fmt::format("autoplay requested but {}", universeResult.getError().value().getMessage()));
         }
     }
     if (jobState.span) {
