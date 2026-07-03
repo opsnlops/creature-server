@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <unordered_set>
 
@@ -13,6 +14,7 @@
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
 
+#include "server/audio/SoundPathResolver.h"
 #include "server/config/Configuration.h"
 #include "server/storage/Storage.h"
 
@@ -96,7 +98,11 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
 
     try {
         if (fs::exists(path) && fs::is_directory(path)) {
-            for (const auto &entry : fs::directory_iterator(path)) {
+            // Recursive so sounds in subdirectories — notably permanent dialog
+            // renders under dialog/ — are listed too (issue #46). The emitted
+            // file_name stays the basename, which the resolver looks up by walking
+            // the tree, so the client contract is unchanged.
+            for (const auto &entry : fs::recursive_directory_iterator(path)) {
                 const auto &filepath = entry.path();
                 if (fs::is_regular_file(entry.status())) {
                     std::string extension = filepath.extension().string();
@@ -252,32 +258,44 @@ std::string SoundService::resolveAdHocSoundPath(const std::string &filename, std
         OATPP_ASSERT_HTTP(false, Status::CODE_404, "No ad-hoc sounds available");
     }
 
-    try {
-        for (const auto &entry : fs::recursive_directory_iterator(root)) {
-            if (!entry.is_regular_file()) {
-                continue;
-            }
-            if (entry.path().filename() == filename) {
-                auto canonicalRoot = fs::canonical(root);
-                auto canonicalFile = fs::canonical(entry.path());
-                if (canonicalFile.string().find(canonicalRoot.string()) != 0) {
-                    break;
-                }
-                if (span) {
-                    span->setAttribute("adhoc_sound.path", canonicalFile.string());
-                }
-                return canonicalFile.string();
-            }
-        }
-    } catch (const std::exception &e) {
+    if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
         if (span) {
-            span->setError(e.what());
+            span->setAttribute("adhoc_sound.path", *found);
         }
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, e.what());
+        return *found;
     }
 
     OATPP_ASSERT_HTTP(false, Status::CODE_404,
                       fmt::format("Ad-hoc sound '{}' not found in {}", filename, root.string()).c_str());
+}
+
+std::string SoundService::resolvePermanentSoundPath(const std::string &filename,
+                                                    std::shared_ptr<RequestSpan> parentSpan) {
+    if (!isSafeFilename(filename)) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, "Invalid filename");
+    }
+    if (!config) {
+        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Sound configuration unavailable");
+    }
+
+    auto span =
+        creatures::observability
+            ? creatures::observability->createOperationSpan("SoundService.resolvePermanentSoundPath", parentSpan)
+            : nullptr;
+
+    const fs::path root = config->getSoundFileLocation();
+
+    // Top-level first, then a recursive basename search so dialog/ renders and any
+    // other subdir'd sound resolve too (issue #46).
+    if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
+        if (span) {
+            span->setAttribute("sound.path", *found);
+        }
+        return *found;
+    }
+
+    OATPP_ASSERT_HTTP(false, Status::CODE_404,
+                      fmt::format("Sound '{}' not found in {}", filename, root.string()).c_str());
 }
 
 /**

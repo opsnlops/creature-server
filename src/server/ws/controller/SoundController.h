@@ -320,28 +320,12 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                                    return bailHttp(span, Status::CODE_403, e.what());
                                }
 
-                               // Assemble the path
-                               auto filePath = config->getSoundFileLocation() + "/" + safeFilename;
+                               // Resolve via the service: top-level first, then a recursive
+                               // basename search so dialog/ renders resolve too (#46). Throws
+                               // an HTTP error (404/400) that withSpanStatus stamps.
+                               std::string canonicalPath = m_soundService.resolvePermanentSoundPath(safeFilename);
 
-                               // Resolve the canonical path
-                               std::filesystem::path canonicalPath;
-                               std::filesystem::path baseDir;
-                               try {
-                                   canonicalPath = std::filesystem::canonical(filePath);
-                                   baseDir = std::filesystem::canonical(config->getSoundFileLocation());
-                               } catch (const std::filesystem::filesystem_error &e) {
-                                   warn("Attempt to serve {} failed: {}", std::string(filename), e.what());
-                                   return bailHttp(span, Status::CODE_404, e.what());
-                               }
-
-                               // Ensure the resolved path is within the base directory
-                               if (canonicalPath.string().find(baseDir.string()) != 0) {
-                                   warn("Attempt to serve {} failed: {}", std::string(filename),
-                                        "Path traversal attempt.");
-                                   return bailHttp(span, Status::CODE_403, "Forbidden: Path traversal attempt.");
-                               }
-
-                               std::ifstream file(canonicalPath.string(), std::ios::binary | std::ios::ate);
+                               std::ifstream file(canonicalPath, std::ios::binary | std::ios::ate);
                                if (!file.is_open()) {
                                    info("Attempt to serve {} failed: {}", std::string(filename), "Not found.");
                                    return bailHttp(span, Status::CODE_404, "File not found.");
@@ -349,7 +333,7 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
 
                                std::streamsize fileSize = file.tellg();
                                file.seekg(0, std::ios::beg);
-                               auto mimeType = getMimeType(filePath);
+                               auto mimeType = getMimeType(canonicalPath);
 
                                std::vector<char> buffer(fileSize);
                                if (!file.read(buffer.data(), fileSize)) {
@@ -443,18 +427,13 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     return bailHttp(span, Status::CODE_403, e.what());
                 }
 
-                // Permanent store first, then the ad-hoc bucket — same resolution rules
-                // as getSound / getAdHocSound.
+                // Permanent store first (top-level, then a recursive basename search
+                // so dialog/ renders resolve — #46), then the ad-hoc bucket. Same
+                // resolution rules as getSound / getAdHocSound.
                 std::string sourcePath;
                 try {
-                    auto canonicalPath =
-                        std::filesystem::canonical(config->getSoundFileLocation() + "/" + safeFilename);
-                    auto baseDir = std::filesystem::canonical(config->getSoundFileLocation());
-                    if (canonicalPath.string().find(baseDir.string()) != 0) {
-                        return bailHttp(span, Status::CODE_403, "Forbidden: Path traversal attempt.");
-                    }
-                    sourcePath = canonicalPath.string();
-                } catch (const std::filesystem::filesystem_error &) {
+                    sourcePath = m_soundService.resolvePermanentSoundPath(safeFilename);
+                } catch (oatpp::web::protocol::http::HttpError &) {
                     // Not in the permanent store; fall through to ad-hoc.
                 }
                 if (sourcePath.empty()) {
