@@ -28,6 +28,7 @@
 #include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
 #include "server/voice/DialogPipeline.h"
+#include "server/voice/DialogPreviewAssembly.h"
 #include "server/voice/DialogWav.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/RhubarbData.h"
@@ -913,45 +914,6 @@ constexpr uint32_t kDialogSampleRate = 48000;
 /// (see LocalSdlAudioTransport.cpp).
 constexpr const char *kPermanentDialogSubdir = "dialog";
 
-/// Wrap raw mono S16LE PCM in a canonical 44-byte PCM WAV header. The dialog
-/// endpoint returns raw PCM (when output_format=pcm_48000); forced-alignment
-/// expects a WAV upload, so we wrap before sending.
-std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate) {
-    std::vector<uint8_t> out;
-    out.reserve(44 + pcm.size());
-    auto u16 = [&](uint16_t v) {
-        out.push_back(static_cast<uint8_t>(v & 0xFF));
-        out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
-    };
-    auto u32 = [&](uint32_t v) {
-        out.push_back(static_cast<uint8_t>(v & 0xFF));
-        out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
-        out.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
-        out.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
-    };
-    auto str = [&](const char *s, std::size_t n) {
-        for (std::size_t i = 0; i < n; ++i) {
-            out.push_back(static_cast<uint8_t>(s[i]));
-        }
-    };
-    const uint32_t dataLen = static_cast<uint32_t>(pcm.size());
-    str("RIFF", 4);
-    u32(36 + dataLen);
-    str("WAVE", 4);
-    str("fmt ", 4);
-    u32(16);
-    u16(1); // PCM
-    u16(1); // mono
-    u32(sampleRate);
-    u32(sampleRate * 2); // byte rate (mono, 16-bit)
-    u16(2);              // block align
-    u16(16);             // bits per sample
-    str("data", 4);
-    u32(dataLen);
-    out.insert(out.end(), pcm.begin(), pcm.end());
-    return out;
-}
-
 /// Maximum unique voice IDs per ElevenLabs Text-to-Dialogue submission. The
 /// official cap applies per-call; we enforce per-scene because chunking can't
 /// rescue an over-budget scene without throwing away cross-speaker reactivity.
@@ -1302,58 +1264,15 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         }
 
         if (!cacheHit) {
-            auto dialogResult = client.generateDialog(apiKey, chunk, "pcm_48000", chunkSpan);
-            if (!dialogResult.isSuccess()) {
-                return failJob(
-                    fmt::format("chunk {} generateDialog: {}", ci, dialogResult.getError().value().getMessage()));
+            // Shared generate → align → cache block (also used by the preview paths).
+            auto genResult = voice::generateChunkWithAlignment(client, apiKey, chunk, cacheKey, chunkSpan);
+            if (!genResult.isSuccess()) {
+                return failJob(fmt::format("chunk {}: {}", ci, genResult.getError().value().getMessage()));
             }
-            const auto dialog = dialogResult.getValue().value();
-
-            std::string transcript;
-            for (std::size_t t = 0; t < chunk.size(); ++t) {
-                if (t > 0) {
-                    transcript.push_back(' ');
-                }
-                transcript += voice::DialogClient::stripTags(chunk[t].text);
-            }
-            const auto wavBytes = wrapMonoPcmAsWav(dialog.audioData, kDialogSampleRate);
-            auto alignResult = client.forcedAlignment(apiKey, wavBytes, "audio/wav", transcript, chunkSpan);
-            if (!alignResult.isSuccess()) {
-                return failJob(
-                    fmt::format("chunk {} forcedAlignment: {}", ci, alignResult.getError().value().getMessage()));
-            }
-            chunkAudio = dialog.audioData;
-            chunkSegments = dialog.voiceSegments;
-            chunkAlignment = alignResult.getValue().value();
-
-            // Save back to the cache so a future run with the same chunk hits.
-            voice::CachedGeneration freshGen;
-            freshGen.generationId = util::generateUUID();
-            freshGen.audioPcm = chunkAudio;
-            freshGen.voiceSegments = chunkSegments;
-            freshGen.forcedAlignment = chunkAlignment;
-            freshGen.createdAt = std::chrono::system_clock::now();
-            {
-                std::string s;
-                for (const auto &i : chunk) {
-                    if (!s.empty()) {
-                        s.push_back(' ');
-                    }
-                    s += voice::DialogClient::stripTags(i.text);
-                    if (s.size() >= 80) {
-                        s.resize(80);
-                        s += "…";
-                        break;
-                    }
-                }
-                freshGen.turnsSummary = std::move(s);
-            }
-            auto saveResult = voice::saveGeneration(cacheKey, freshGen);
-            if (!saveResult.isSuccess()) {
-                // Don't fail the job; just lose the next-time cache benefit.
-                warn("Dialog job {}: chunk {} saveGeneration failed: {}", jobState.jobId, ci,
-                     saveResult.getError().value().getMessage());
-            }
+            auto gen = genResult.getValue().value();
+            chunkAudio = std::move(gen.audioPcm);
+            chunkSegments = std::move(gen.voiceSegments);
+            chunkAlignment = std::move(gen.forcedAlignment);
         }
         if (chunkSpan) {
             chunkSpan->setAttribute("dialog.cache_hit", cacheHit);

@@ -27,7 +27,9 @@
 #include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
 #include "server/voice/DialogPipeline.h"
+#include "server/voice/DialogPreviewAssembly.h"
 #include "server/voice/DialogWav.h"
+#include "server/voice/PcmWavWriter.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/DialogDto.h"
@@ -191,43 +193,6 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
     }
 
     /// Wrap raw mono S16LE PCM in a canonical 44-byte PCM WAV header.
-    /// Duplicate of JobWorker.cpp's helper; will be deduped when the
-    /// storage facade lands (issue #11).
-    static std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate) {
-        std::vector<uint8_t> out;
-        out.reserve(44 + pcm.size());
-        auto u16 = [&](uint16_t v) {
-            out.push_back(static_cast<uint8_t>(v & 0xFF));
-            out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
-        };
-        auto u32 = [&](uint32_t v) {
-            out.push_back(static_cast<uint8_t>(v & 0xFF));
-            out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
-            out.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
-            out.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
-        };
-        auto str = [&](const char *s, std::size_t n) {
-            for (std::size_t i = 0; i < n; ++i) {
-                out.push_back(static_cast<uint8_t>(s[i]));
-            }
-        };
-        const uint32_t dataLen = static_cast<uint32_t>(pcm.size());
-        str("RIFF", 4);
-        u32(36 + dataLen);
-        str("WAVE", 4);
-        str("fmt ", 4);
-        u32(16);
-        u16(1); // PCM
-        u16(1); // mono
-        u32(sampleRate);
-        u32(sampleRate * 2); // byte rate (mono S16)
-        u16(2);              // block align
-        u16(16);             // bits per sample
-        str("data", 4);
-        u32(dataLen);
-        out.insert(out.end(), pcm.begin(), pcm.end());
-        return out;
-    }
 
   private:
     /// Shared validation for the two POST preview endpoints (/meta and
@@ -314,47 +279,76 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
         }
 
         if (!out.generation) {
-            // No usable cache hit (or regenerate requested) — fresh ElevenLabs.
+            // No usable cache hit (or regenerate requested) — fresh ElevenLabs. Long
+            // scenes are split at turn boundaries (the per-call ~2000-char API cap is
+            // real); each chunk is cached under its own key — the SAME entries the
+            // render job reads, so render-after-preview reuses the auditioned audio.
             creatures::voice::DialogClient client;
             const std::string apiKey = creatures::config->getVoiceApiKey();
 
-            auto dialogResult = client.generateDialog(apiKey, out.inputs, "pcm_48000", opSpan);
-            if (!dialogResult.isSuccess()) {
-                out.errorResponse = bailFromServerError(span, dialogResult.getError().value());
+            auto chunksResult = creatures::voice::chunkTurns(out.inputs);
+            if (!chunksResult.isSuccess()) {
+                out.errorResponse = bailHttp(span, Status::CODE_422, chunksResult.getError().value().getMessage());
                 return out;
             }
-            const auto dialog = dialogResult.getValue().value();
+            const auto chunks = chunksResult.getValue().value();
+            if (span) {
+                span->setAttribute("dialog.chunks", static_cast<int64_t>(chunks.size()));
+            }
 
-            std::string transcript;
-            for (std::size_t t = 0; t < out.inputs.size(); ++t) {
-                if (t > 0) {
-                    transcript.push_back(' ');
+            if (chunks.size() == 1) {
+                auto genResult =
+                    creatures::voice::generateChunkWithAlignment(client, apiKey, out.inputs, out.cacheKey, opSpan);
+                if (!genResult.isSuccess()) {
+                    out.errorResponse = bailFromServerError(span, genResult.getError().value());
+                    return out;
                 }
-                transcript += creatures::voice::DialogClient::stripTags(out.inputs[t].text);
-            }
-            const auto wavBytes = wrapMonoPcmAsWav(dialog.audioData, 48000);
-            auto alignResult = client.forcedAlignment(apiKey, wavBytes, "audio/wav", transcript, opSpan);
-            if (!alignResult.isSuccess()) {
-                out.errorResponse = bailFromServerError(span, alignResult.getError().value());
-                return out;
-            }
-            creatures::voice::CachedGeneration freshGen;
-            freshGen.generationId = util::generateUUID();
-            freshGen.audioPcm = dialog.audioData;
-            freshGen.voiceSegments = dialog.voiceSegments;
-            freshGen.forcedAlignment = alignResult.getValue().value();
-            freshGen.createdAt = std::chrono::system_clock::now();
-            freshGen.turnsSummary = makeTurnsSummary(out.inputs);
+                out.generation = genResult.getValue().value();
+                out.cached = false;
+            } else {
+                std::vector<creatures::voice::CachedGeneration> chunkGens;
+                std::vector<std::size_t> turnCounts;
+                chunkGens.reserve(chunks.size());
+                turnCounts.reserve(chunks.size());
+                bool allChunksCached = true;
 
-            auto saveResult = creatures::voice::saveGeneration(out.cacheKey, freshGen);
-            if (!saveResult.isSuccess()) {
-                // Generation succeeded but couldn't be persisted — log and
-                // continue; the client still gets the audio.
-                warn("Dialog preview: saveGeneration failed: {}", saveResult.getError().value().getMessage());
-            }
+                for (const auto &chunk : chunks) {
+                    const auto chunkKey = creatures::voice::computeCacheKey(chunk);
+                    std::optional<creatures::voice::CachedGeneration> chunkGen;
+                    if (!regen) {
+                        if (auto latest = creatures::voice::findLatestGeneration(chunkKey)) {
+                            auto loadResult = creatures::voice::loadGeneration(chunkKey, *latest);
+                            if (loadResult.isSuccess()) {
+                                chunkGen = loadResult.getValue().value();
+                            }
+                        }
+                    }
+                    if (!chunkGen) {
+                        allChunksCached = false;
+                        auto genResult =
+                            creatures::voice::generateChunkWithAlignment(client, apiKey, chunk, chunkKey, opSpan);
+                        if (!genResult.isSuccess()) {
+                            out.errorResponse = bailFromServerError(span, genResult.getError().value());
+                            return out;
+                        }
+                        chunkGen = genResult.getValue().value();
+                    }
+                    chunkGens.push_back(std::move(*chunkGen));
+                    turnCounts.push_back(chunk.size());
+                }
 
-            out.generation = std::move(freshGen);
-            out.cached = false;
+                auto merged = creatures::voice::mergeChunkGenerations(chunkGens, turnCounts);
+                merged.turnsSummary = makeTurnsSummary(out.inputs);
+
+                auto saveResult = creatures::voice::saveGeneration(out.cacheKey, merged);
+                if (!saveResult.isSuccess()) {
+                    warn("Dialog preview: saveGeneration (merged) failed: {}",
+                         saveResult.getError().value().getMessage());
+                }
+
+                out.generation = std::move(merged);
+                out.cached = allChunksCached;
+            }
         }
 
         if (span && out.generation) {
@@ -438,7 +432,7 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_404, fmt::format("generation '{}/{}' not found", ck, gid));
                 }
                 const auto gen = loadResult.getValue().value();
-                const auto wavBytes = wrapMonoPcmAsWav(gen.audioPcm, 48000);
+                const auto wavBytes = creatures::voice::wrapMonoPcmAsWav(gen.audioPcm, 48000);
 
                 auto response = oatpp::web::protocol::http::outgoing::ResponseFactory::createResponse(
                     Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(wavBytes.data()),
