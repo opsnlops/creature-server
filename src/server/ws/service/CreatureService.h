@@ -88,6 +88,13 @@ class CreatureService {
     static void incrementIdleStopped(const std::vector<creatureId_t> &creatureIds);
 
     /**
+     * Resolve a creature's display name for user-facing messages. Checks the runtime
+     * name cache, falls back to the database, and finally to the raw id — never fails.
+     * May hit the database on a cache miss, so don't call it while holding other locks.
+     */
+    static std::string resolveCreatureName(const creatureId_t &creatureId);
+
+    /**
      * Start idle playback for a creature if it's idle-enabled and available.
      *
      * @return true if an idle animation was scheduled
