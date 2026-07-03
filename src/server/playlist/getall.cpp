@@ -38,14 +38,6 @@ Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(const std::sh
         dbSpan->setAttribute("database.name", DB_NAME);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     debug("attempting to get all of the playlists");
 
     std::vector<creatures::Playlist> playlists;
@@ -57,7 +49,7 @@ Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(const std::sh
             std::string errorMessage =
                 fmt::format("database error while getting all of the playlists: {}", err.getMessage());
             warn(errorMessage);
-            setSpanError(errorMessage, "DatabaseError", err.getCode());
+            recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<std::vector<creatures::Playlist>>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -100,7 +92,7 @@ Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(const std::sh
                     playlistSpan->setAttribute("error.type", "DataFormatException");
                     playlistSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
                 }
-                setSpanError(errorMessage, "DataFormatException", err.getCode());
+                recordSpanError(dbSpan, errorMessage, "DataFormatException", err.getCode());
                 return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::InvalidData, errorMessage)};
             }
 
@@ -121,28 +113,28 @@ Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(const std::sh
         warn(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "DataFormatException", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "DataFormatException", ServerError::InvalidData);
         return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (const mongocxx::exception &e) {
         std::string errorMessage = fmt::format("MongoDB Exception while loading the playlists: {}", e.what());
         critical(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(dbSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const bsoncxx::exception &e) {
         std::string errorMessage = fmt::format("BSON error while loading the playlists: {}", e.what());
         critical(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "JsonParsingException", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "JsonParsingException", ServerError::InternalError);
         return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
     if (playlists.empty()) {
         std::string errorMessage = "No playlists found";
         warn(errorMessage);
-        setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+        recordSpanError(dbSpan, errorMessage, "NotFound", ServerError::NotFound);
         return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::NotFound, errorMessage)};
     }
 

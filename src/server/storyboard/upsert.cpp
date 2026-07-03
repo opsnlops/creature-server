@@ -15,6 +15,7 @@
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "util/JsonParser.h"
+#include "util/ObservabilityManager.h"
 #include "util/Result.cpp"
 #include "util/helpers.h"
 
@@ -45,14 +46,6 @@ Result<creatures::Storyboard> Database::upsertStoryboard(const std::string &stor
         upsertSpan->setAttribute("database.name", DB_NAME);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (upsertSpan) {
-            upsertSpan->setError(msg);
-            upsertSpan->setAttribute("error.type", type);
-            upsertSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     info("attempting to upsert a Storyboard in the database");
     try {
 
@@ -61,7 +54,7 @@ Result<creatures::Storyboard> Database::upsertStoryboard(const std::string &stor
         auto jsonResult = JsonParser::parseJsonString(storyboardJson, "storyboard upsert", parseJsonSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<Storyboard>{err};
         }
         auto jsonObject = jsonResult.getValue().value();
@@ -70,7 +63,7 @@ Result<creatures::Storyboard> Database::upsertStoryboard(const std::string &stor
         if (!storyboardResult.isSuccess()) {
             auto err = storyboardResult.getError().value();
             auto errorMessage = fmt::format("Error while creating a Storyboard from JSON: {}", err.getMessage());
-            setSpanError(errorMessage, "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, errorMessage, "InvalidData", err.getCode());
             warn(errorMessage);
             return Result<Storyboard>{ServerError(ServerError::InvalidData, errorMessage)};
         }
@@ -89,7 +82,7 @@ Result<creatures::Storyboard> Database::upsertStoryboard(const std::string &stor
             JsonParser::jsonStringToBson(storyboardJson, fmt::format("storyboard {}", storyboard.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
             auto err = bsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<Storyboard>{err};
         }
         auto bsonDoc = bsonResult.getValue().value();
@@ -106,7 +99,7 @@ Result<creatures::Storyboard> Database::upsertStoryboard(const std::string &stor
                 collectionSpan->setAttribute("error.type", "DatabaseError");
                 collectionSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
             }
-            setSpanError(errorMessage, "DatabaseError", err.getCode());
+            recordSpanError(upsertSpan, errorMessage, "DatabaseError", err.getCode());
             warn(errorMessage);
             return Result<Storyboard>{err};
         }
@@ -146,7 +139,7 @@ Result<creatures::Storyboard> Database::upsertStoryboard(const std::string &stor
         if (upsertSpan) {
             upsertSpan->recordException(e);
         }
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(upsertSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<Storyboard>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const bsoncxx::exception &e) {
         auto errorMessage =
@@ -155,12 +148,12 @@ Result<creatures::Storyboard> Database::upsertStoryboard(const std::string &stor
         if (upsertSpan) {
             upsertSpan->recordException(e);
         }
-        setSpanError(errorMessage, "JsonParsingException", ServerError::InvalidData);
+        recordSpanError(upsertSpan, errorMessage, "JsonParsingException", ServerError::InvalidData);
         return Result<Storyboard>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (...) {
         std::string errorMessage = "Unknown error while adding a storyboard to the database";
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(upsertSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<Storyboard>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
@@ -179,18 +172,10 @@ Result<void> Database::deleteStoryboard(const storyboardId_t &storyboardId,
         span->setAttribute("storyboard.id", storyboardId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (span) {
-            span->setError(msg);
-            span->setAttribute("error.type", type);
-            span->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     if (storyboardId.empty()) {
         std::string errorMessage = "deleteStoryboard called with empty storyboardId";
         warn(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(span, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<void>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -198,7 +183,7 @@ Result<void> Database::deleteStoryboard(const storyboardId_t &storyboardId,
         auto collectionResult = getCollection(STORYBOARDS_COLLECTION);
         if (!collectionResult.isSuccess()) {
             auto err = collectionResult.getError().value();
-            setSpanError(err.getMessage(), "DatabaseError", err.getCode());
+            recordSpanError(span, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -214,7 +199,7 @@ Result<void> Database::deleteStoryboard(const storyboardId_t &storyboardId,
         if (!result || result->deleted_count() == 0) {
             std::string errorMessage = fmt::format("Storyboard {} not found while deleting", storyboardId);
             warn(errorMessage);
-            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+            recordSpanError(span, errorMessage, "NotFound", ServerError::NotFound);
             return Result<void>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
@@ -228,12 +213,12 @@ Result<void> Database::deleteStoryboard(const storyboardId_t &storyboardId,
         if (span) {
             span->recordException(e);
         }
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(span, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<void>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = fmt::format("Unknown error while deleting storyboard {}", storyboardId);
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(span, errorMessage, "std::exception", ServerError::InternalError);
         return Result<void>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }

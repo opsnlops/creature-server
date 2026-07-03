@@ -48,18 +48,10 @@ Result<json> Database::getDialogScriptJson(const scriptId_t &scriptId,
         dbSpan->setAttribute("script.id", scriptId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     if (scriptId.empty()) {
         std::string errorMessage = "unable to get a dialog script because the id was empty";
         info(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<json>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -68,7 +60,7 @@ Result<json> Database::getDialogScriptJson(const scriptId_t &scriptId,
         auto err = collectionResult.getError().value();
         std::string errorMessage = fmt::format("unable to get the dialog scripts collection: {}", err.getMessage());
         critical(errorMessage);
-        setSpanError(errorMessage, "DatabaseError", err.getCode());
+        recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
         return Result<json>{err};
     }
     auto collection = collectionResult.getValue().value();
@@ -85,7 +77,7 @@ Result<json> Database::getDialogScriptJson(const scriptId_t &scriptId,
         if (!maybe_result) {
             std::string errorMessage = fmt::format("Dialog script not found: {}", scriptId);
             warn(errorMessage);
-            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+            recordSpanError(dbSpan, errorMessage, "NotFound", ServerError::NotFound);
             return Result<json>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
@@ -96,7 +88,7 @@ Result<json> Database::getDialogScriptJson(const scriptId_t &scriptId,
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
             warn("Failed to convert BSON to JSON for dialog script ID: {} - {}", scriptId, err.getMessage());
-            setSpanError(err.getMessage(), "JsonParsingException", err.getCode());
+            recordSpanError(dbSpan, err.getMessage(), "JsonParsingException", err.getCode());
             return jsonResult;
         }
         json j = jsonResult.getValue().value();
@@ -118,7 +110,7 @@ Result<json> Database::getDialogScriptJson(const scriptId_t &scriptId,
         if (dbSpan) {
             dbSpan->recordException(e);
         }
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(dbSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<json>{ServerError(ServerError::DatabaseError, errorMessage)};
     } catch (const std::exception &e) {
         std::string errorMessage =
@@ -131,7 +123,7 @@ Result<json> Database::getDialogScriptJson(const scriptId_t &scriptId,
         if (dbSpan) {
             dbSpan->recordException(e);
         }
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = fmt::format("Unknown exception caught while finding dialog script {}", scriptId);
@@ -139,7 +131,7 @@ Result<json> Database::getDialogScriptJson(const scriptId_t &scriptId,
         if (mongoSpan) {
             mongoSpan->setError(errorMessage);
         }
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
@@ -159,18 +151,10 @@ Result<creatures::DialogScript> Database::getDialogScript(const scriptId_t &scri
         dbSpan->setAttribute("script.id", scriptId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     if (scriptId.empty()) {
         std::string errorMessage = "unable to get a dialog script because the id was empty";
         warn(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<DialogScript>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -189,7 +173,7 @@ Result<creatures::DialogScript> Database::getDialogScript(const scriptId_t &scri
             etype = "InvalidData";
         else if (err.getCode() == ServerError::DatabaseError)
             etype = "DatabaseError";
-        setSpanError(errorMessage, etype, err.getCode());
+        recordSpanError(dbSpan, errorMessage, etype, err.getCode());
         return Result<DialogScript>{err};
     }
     if (jsonSpan)
@@ -201,7 +185,7 @@ Result<creatures::DialogScript> Database::getDialogScript(const scriptId_t &scri
         auto err = result.getError().value();
         std::string errorMessage = fmt::format("unable to get a dialog script by ID: {}", err.getMessage());
         warn(errorMessage);
-        setSpanError(errorMessage, "InvalidData", err.getCode());
+        recordSpanError(dbSpan, errorMessage, "InvalidData", err.getCode());
         return Result<DialogScript>{err};
     }
     if (fetchSpan)

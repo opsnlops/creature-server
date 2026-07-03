@@ -46,14 +46,6 @@ Database::listDialogScripts(const std::shared_ptr<OperationSpan> &parentSpan) {
         dbSpan->setAttribute("database.name", DB_NAME);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     info("attempting to list all DialogScripts");
 
     auto scriptList = std::vector<DialogScript>{};
@@ -69,7 +61,7 @@ Database::listDialogScripts(const std::shared_ptr<OperationSpan> &parentSpan) {
             auto err = collectionResult.getError().value();
             std::string errorMessage = fmt::format("unable to get the dialog scripts collection: {}", err.getMessage());
             critical(errorMessage);
-            setSpanError(errorMessage, "DatabaseError", err.getCode());
+            recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<std::vector<DialogScript>>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -106,7 +98,7 @@ Database::listDialogScripts(const std::shared_ptr<OperationSpan> &parentSpan) {
                     scriptSpan->setAttribute("error.type", "DataFormatException");
                     scriptSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
                 }
-                setSpanError(errorMessage, "DataFormatException", err.getCode());
+                recordSpanError(dbSpan, errorMessage, "DataFormatException", err.getCode());
                 return Result<std::vector<DialogScript>>{err};
             }
             scriptList.push_back(result.getValue().value());
@@ -134,12 +126,12 @@ Database::listDialogScripts(const std::shared_ptr<OperationSpan> &parentSpan) {
         if (dbSpan) {
             dbSpan->recordException(e);
         }
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<std::vector<DialogScript>>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = "Failed to list dialog scripts: unknown error";
         error(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<std::vector<DialogScript>>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }

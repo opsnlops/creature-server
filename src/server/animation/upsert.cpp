@@ -12,6 +12,7 @@
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "util/JsonParser.h"
+#include "util/ObservabilityManager.h"
 #include "util/helpers.h"
 
 #include "model/Animation.h"
@@ -48,14 +49,6 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         upsertSpan->setAttribute("database.name", DB_NAME);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (upsertSpan) {
-            upsertSpan->setError(msg);
-            upsertSpan->setAttribute("error.type", type);
-            upsertSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     debug("upserting an animation in the database");
     try {
         auto parseJsonSpan =
@@ -63,7 +56,7 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         auto jsonResult = JsonParser::parseJsonString(animationJson, "animation upsert", parseJsonSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<creatures::Animation>{err};
         }
         auto jsonObject = jsonResult.getValue().value();
@@ -80,7 +73,7 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
                 validateSpan->setAttribute("error.type", "InvalidData");
                 validateSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
             }
-            setSpanError(errorMessage, "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, errorMessage, "InvalidData", err.getCode());
             return Result<creatures::Animation>{ServerError(ServerError::InvalidData, errorMessage)};
         }
         auto animation = animationResult.getValue().value();
@@ -94,7 +87,7 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
             JsonParser::jsonStringToBson(animationJson, fmt::format("animation {}", animation.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
             auto err = bsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<creatures::Animation>{err};
         }
         auto bsonDoc = bsonResult.getValue().value();
@@ -111,7 +104,7 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
                 collectionSpan->setAttribute("error.type", "DatabaseError");
                 collectionSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
             }
-            setSpanError(errorMessage, "DatabaseError", err.getCode());
+            recordSpanError(upsertSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<creatures::Animation>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -148,7 +141,7 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         error(errorMessage);
         if (upsertSpan)
             upsertSpan->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(upsertSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<creatures::Animation>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const bsoncxx::exception &e) {
         std::string errorMessage =
@@ -156,7 +149,7 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         error(errorMessage);
         if (upsertSpan)
             upsertSpan->recordException(e);
-        setSpanError(errorMessage, "JsonParsingException", ServerError::InvalidData);
+        recordSpanError(upsertSpan, errorMessage, "JsonParsingException", ServerError::InvalidData);
         return Result<creatures::Animation>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (const nlohmann::json::exception &e) {
         std::string errorMessage =
@@ -164,12 +157,12 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         error(errorMessage);
         if (upsertSpan)
             upsertSpan->recordException(e);
-        setSpanError(errorMessage, "JsonParsingException", ServerError::InvalidData);
+        recordSpanError(upsertSpan, errorMessage, "JsonParsingException", ServerError::InvalidData);
         return Result<creatures::Animation>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (...) {
         std::string errorMessage = "Unknown error while upserting an animation in the database";
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(upsertSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<creatures::Animation>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
@@ -188,20 +181,12 @@ Result<void> Database::deleteAnimation(const animationId_t &animationId,
         dbSpan->setAttribute("animation.id", animationId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     debug("request received to delete animation {}", animationId);
 
     if (animationId.empty()) {
         std::string errorMessage = "Animation id cannot be empty when deleting";
         warn(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<void>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -213,7 +198,7 @@ Result<void> Database::deleteAnimation(const animationId_t &animationId,
     if (!animationResult.isSuccess()) {
         auto err = animationResult.getError().value();
         std::string etype = (err.getCode() == ServerError::NotFound) ? "NotFound" : "InvalidData";
-        setSpanError(err.getMessage(), etype, err.getCode());
+        recordSpanError(dbSpan, err.getMessage(), etype, err.getCode());
         return Result<void>{err};
     }
     auto animation = animationResult.getValue().value();
@@ -226,7 +211,7 @@ Result<void> Database::deleteAnimation(const animationId_t &animationId,
     if (!collectionResult.isSuccess()) {
         auto err = collectionResult.getError().value();
         warn("Failed to get animations collection while deleting {}: {}", animationId, err.getMessage());
-        setSpanError(err.getMessage(), "DatabaseError", err.getCode());
+        recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
         return Result<void>{err};
     }
     auto collection = collectionResult.getValue().value();
@@ -243,7 +228,7 @@ Result<void> Database::deleteAnimation(const animationId_t &animationId,
         if (!result || result->deleted_count() == 0) {
             std::string errorMessage = fmt::format("Animation {} not found while attempting delete", animationId);
             warn(errorMessage);
-            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+            recordSpanError(dbSpan, errorMessage, "NotFound", ServerError::NotFound);
             return Result<void>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
@@ -260,7 +245,7 @@ Result<void> Database::deleteAnimation(const animationId_t &animationId,
         error(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(dbSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<void>{ServerError(ServerError::DatabaseError, errorMessage)};
     } catch (const std::exception &e) {
         std::string errorMessage =
@@ -268,12 +253,12 @@ Result<void> Database::deleteAnimation(const animationId_t &animationId,
         error(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<void>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = fmt::format("Unknown error while deleting animation {}", animationId);
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<void>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
@@ -293,14 +278,6 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation &animatio
         dbSpan->setAttribute("animation.id", animation.id);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     try {
         auto animationJson = animationToJson(animation);
         auto jsonString = animationJson.dump();
@@ -310,7 +287,7 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation &animatio
             JsonParser::jsonStringToBson(jsonString, fmt::format("adhoc animation {}", animation.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
             auto err = bsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(dbSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<void>{err};
         }
         auto bsonDoc = bsonResult.getValue().value();
@@ -318,7 +295,7 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation &animatio
         auto collectionResult = getCollection(ADHOC_ANIMATIONS_COLLECTION);
         if (!collectionResult.isSuccess()) {
             auto err = collectionResult.getError().value();
-            setSpanError(err.getMessage(), "DatabaseError", err.getCode());
+            recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -348,7 +325,7 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation &animatio
         error(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "std::exception", ServerError::DatabaseError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::DatabaseError);
         return Result<void>{ServerError(ServerError::DatabaseError, errorMessage)};
     }
 }
@@ -365,19 +342,11 @@ Result<std::vector<AdHocAnimationRecord>> Database::listAdHocAnimations(std::sha
         dbSpan->setAttribute("database.name", DB_NAME);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     try {
         auto collectionResult = getCollection(ADHOC_ANIMATIONS_COLLECTION);
         if (!collectionResult.isSuccess()) {
             auto err = collectionResult.getError().value();
-            setSpanError(err.getMessage(), "DatabaseError", err.getCode());
+            recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<std::vector<AdHocAnimationRecord>>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -394,14 +363,14 @@ Result<std::vector<AdHocAnimationRecord>> Database::listAdHocAnimations(std::sha
             auto jsonResult = JsonParser::bsonToJson(doc, "adhoc animation list", mongoSpan);
             if (!jsonResult.isSuccess()) {
                 auto err = jsonResult.getError().value();
-                setSpanError(err.getMessage(), "JsonParsingException", err.getCode());
+                recordSpanError(dbSpan, err.getMessage(), "JsonParsingException", err.getCode());
                 return Result<std::vector<AdHocAnimationRecord>>{err};
             }
 
             auto animationResult = animationFromJson(jsonResult.getValue().value());
             if (!animationResult.isSuccess()) {
                 auto err = animationResult.getError().value();
-                setSpanError(err.getMessage(), "DataFormatException", err.getCode());
+                recordSpanError(dbSpan, err.getMessage(), "DataFormatException", err.getCode());
                 return Result<std::vector<AdHocAnimationRecord>>{err};
             }
 
@@ -434,7 +403,7 @@ Result<std::vector<AdHocAnimationRecord>> Database::listAdHocAnimations(std::sha
         error(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "std::exception", ServerError::DatabaseError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::DatabaseError);
         return Result<std::vector<AdHocAnimationRecord>>{ServerError(ServerError::DatabaseError, errorMessage)};
     }
 }
@@ -453,19 +422,11 @@ Result<creatures::Animation> Database::getAdHocAnimation(const animationId_t &an
         dbSpan->setAttribute("animation.id", animationId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     try {
         auto collectionResult = getCollection(ADHOC_ANIMATIONS_COLLECTION);
         if (!collectionResult.isSuccess()) {
             auto err = collectionResult.getError().value();
-            setSpanError(err.getMessage(), "DatabaseError", err.getCode());
+            recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<creatures::Animation>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -485,7 +446,7 @@ Result<creatures::Animation> Database::getAdHocAnimation(const animationId_t &an
 
         if (!docOpt) {
             std::string errorMessage = fmt::format("Ad-hoc animation {} not found", animationId);
-            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+            recordSpanError(dbSpan, errorMessage, "NotFound", ServerError::NotFound);
             return Result<creatures::Animation>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
@@ -493,14 +454,14 @@ Result<creatures::Animation> Database::getAdHocAnimation(const animationId_t &an
         auto jsonResult = JsonParser::bsonToJson(docOpt->view(), "adhoc animation get", convertSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
-            setSpanError(err.getMessage(), "JsonParsingException", err.getCode());
+            recordSpanError(dbSpan, err.getMessage(), "JsonParsingException", err.getCode());
             return Result<creatures::Animation>{err};
         }
 
         auto animationResult = animationFromJson(jsonResult.getValue().value());
         if (!animationResult.isSuccess()) {
             auto err = animationResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(dbSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<creatures::Animation>{err};
         }
 
@@ -518,7 +479,7 @@ Result<creatures::Animation> Database::getAdHocAnimation(const animationId_t &an
         error(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "std::exception", ServerError::DatabaseError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::DatabaseError);
         return Result<creatures::Animation>{ServerError(ServerError::DatabaseError, errorMessage)};
     }
 }

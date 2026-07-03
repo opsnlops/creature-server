@@ -44,14 +44,6 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         upsertSpan->setAttribute("database.name", DB_NAME);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (upsertSpan) {
-            upsertSpan->setError(msg);
-            upsertSpan->setAttribute("error.type", type);
-            upsertSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     debug("upserting a playlist in the database");
 
     try {
@@ -59,7 +51,7 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         auto jsonResult = JsonParser::parseJsonString(playlistJson, "playlist upsert", jsonSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<creatures::Playlist>{err};
         }
         auto jsonObject = jsonResult.getValue().value();
@@ -69,7 +61,7 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
             auto err = playlistResult.getError().value();
             std::string errorMessage = fmt::format("Error while creating a playlist from JSON: {}", err.getMessage());
             warn(errorMessage);
-            setSpanError(errorMessage, "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, errorMessage, "InvalidData", err.getCode());
             return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
         }
         auto playlist = playlistResult.getValue().value();
@@ -81,7 +73,7 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         auto bsonResult = JsonParser::jsonStringToBson(playlistJson, fmt::format("playlist {}", playlist.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
             auto err = bsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<creatures::Playlist>{err};
         }
         auto bsonDoc = bsonResult.getValue().value();
@@ -98,7 +90,7 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
                 collectionSpan->setAttribute("error.type", "DatabaseError");
                 collectionSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
             }
-            setSpanError(errorMessage, "DatabaseError", err.getCode());
+            recordSpanError(upsertSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<creatures::Playlist>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -133,7 +125,7 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         error(errorMessage);
         if (upsertSpan)
             upsertSpan->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(upsertSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<creatures::Playlist>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const bsoncxx::exception &e) {
         std::string errorMessage =
@@ -141,12 +133,12 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         error(errorMessage);
         if (upsertSpan)
             upsertSpan->recordException(e);
-        setSpanError(errorMessage, "JsonParsingException", ServerError::InvalidData);
+        recordSpanError(upsertSpan, errorMessage, "JsonParsingException", ServerError::InvalidData);
         return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (...) {
         std::string errorMessage = "Unknown error while upserting a playlist in the database";
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(upsertSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<creatures::Playlist>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }

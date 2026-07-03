@@ -15,6 +15,7 @@
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "util/JsonParser.h"
+#include "util/ObservabilityManager.h"
 #include "util/Result.cpp"
 #include "util/cache.h"
 #include "util/helpers.h"
@@ -47,14 +48,6 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
         upsertSpan->setAttribute("database.name", DB_NAME);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (upsertSpan) {
-            upsertSpan->setError(msg);
-            upsertSpan->setAttribute("error.type", type);
-            upsertSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     info("attempting to upsert a DmxFixture in the database");
     try {
 
@@ -62,7 +55,7 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
         auto jsonResult = JsonParser::parseJsonString(fixtureJson, "fixture upsert", parseJsonSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<DmxFixture>{err};
         }
         auto jsonObject = jsonResult.getValue().value();
@@ -71,7 +64,7 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
         if (!fixtureResult.isSuccess()) {
             auto err = fixtureResult.getError().value();
             auto errorMessage = fmt::format("Error while creating a fixture from JSON: {}", err.getMessage());
-            setSpanError(errorMessage, "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, errorMessage, "InvalidData", err.getCode());
             warn(errorMessage);
             return Result<DmxFixture>{ServerError(ServerError::InvalidData, errorMessage)};
         }
@@ -86,7 +79,7 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
         auto bsonResult = JsonParser::jsonStringToBson(fixtureJson, fmt::format("fixture {}", fixture.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
             auto err = bsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<DmxFixture>{err};
         }
         auto bsonDoc = bsonResult.getValue().value();
@@ -102,7 +95,7 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
                 collectionSpan->setAttribute("error.type", "DatabaseError");
                 collectionSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::DatabaseError));
             }
-            setSpanError(errorMessage, "DatabaseError", err.getCode());
+            recordSpanError(upsertSpan, errorMessage, "DatabaseError", err.getCode());
             warn(errorMessage);
             return Result<DmxFixture>{err};
         }
@@ -149,7 +142,7 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
         error(errorMessage);
         if (upsertSpan)
             upsertSpan->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(upsertSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<DmxFixture>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const bsoncxx::exception &e) {
         auto errorMessage =
@@ -157,12 +150,12 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
         error(errorMessage);
         if (upsertSpan)
             upsertSpan->recordException(e);
-        setSpanError(errorMessage, "JsonParsingException", ServerError::InvalidData);
+        recordSpanError(upsertSpan, errorMessage, "JsonParsingException", ServerError::InvalidData);
         return Result<DmxFixture>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (...) {
         std::string errorMessage = "Unknown error while adding a fixture to the database";
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(upsertSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<DmxFixture>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
@@ -185,18 +178,10 @@ Result<void> Database::setFixtureUniverse(const fixtureId_t &fixtureId, std::opt
         }
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (span) {
-            span->setError(msg);
-            span->setAttribute("error.type", type);
-            span->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     if (fixtureId.empty()) {
         std::string errorMessage = "setFixtureUniverse called with empty fixtureId";
         warn(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(span, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<void>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -204,7 +189,7 @@ Result<void> Database::setFixtureUniverse(const fixtureId_t &fixtureId, std::opt
         auto collectionResult = getCollection(FIXTURES_COLLECTION);
         if (!collectionResult.isSuccess()) {
             auto err = collectionResult.getError().value();
-            setSpanError(err.getMessage(), "DatabaseError", err.getCode());
+            recordSpanError(span, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -229,7 +214,7 @@ Result<void> Database::setFixtureUniverse(const fixtureId_t &fixtureId, std::opt
         if (!result || result->matched_count() == 0) {
             std::string errorMessage = fmt::format("Fixture {} not found while setting universe", fixtureId);
             warn(errorMessage);
-            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+            recordSpanError(span, errorMessage, "NotFound", ServerError::NotFound);
             return Result<void>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
@@ -243,12 +228,12 @@ Result<void> Database::setFixtureUniverse(const fixtureId_t &fixtureId, std::opt
         error(errorMessage);
         if (span)
             span->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(span, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<void>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = "Unknown error while setting fixture universe";
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(span, errorMessage, "std::exception", ServerError::InternalError);
         return Result<void>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
@@ -266,18 +251,10 @@ Result<void> Database::deleteFixture(const fixtureId_t &fixtureId, const std::sh
         span->setAttribute("fixture.id", fixtureId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (span) {
-            span->setError(msg);
-            span->setAttribute("error.type", type);
-            span->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     if (fixtureId.empty()) {
         std::string errorMessage = "deleteFixture called with empty fixtureId";
         warn(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(span, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<void>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -285,7 +262,7 @@ Result<void> Database::deleteFixture(const fixtureId_t &fixtureId, const std::sh
         auto collectionResult = getCollection(FIXTURES_COLLECTION);
         if (!collectionResult.isSuccess()) {
             auto err = collectionResult.getError().value();
-            setSpanError(err.getMessage(), "DatabaseError", err.getCode());
+            recordSpanError(span, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -301,7 +278,7 @@ Result<void> Database::deleteFixture(const fixtureId_t &fixtureId, const std::sh
         if (!result || result->deleted_count() == 0) {
             std::string errorMessage = fmt::format("Fixture {} not found while deleting", fixtureId);
             warn(errorMessage);
-            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+            recordSpanError(span, errorMessage, "NotFound", ServerError::NotFound);
             return Result<void>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
@@ -316,12 +293,12 @@ Result<void> Database::deleteFixture(const fixtureId_t &fixtureId, const std::sh
         error(errorMessage);
         if (span)
             span->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(span, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<void>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = fmt::format("Unknown error while deleting fixture {}", fixtureId);
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(span, errorMessage, "std::exception", ServerError::InternalError);
         return Result<void>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }

@@ -54,20 +54,12 @@ Result<json> Database::getCreatureJson(const creatureId_t &creatureId,
         dbSpan->setAttribute("creature.id", creatureId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     debug("attempting to get a creature's JSON by ID: {}", creatureId);
 
     if (creatureId.empty()) {
         std::string errorMessage = "unable to get a creature because the id was empty";
         info(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<json>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -76,7 +68,7 @@ Result<json> Database::getCreatureJson(const creatureId_t &creatureId,
         auto err = collectionResult.getError().value();
         std::string errorMessage = fmt::format("unable to get the creature collection: {}", err.getMessage());
         critical(errorMessage);
-        setSpanError(errorMessage, "DatabaseError", err.getCode());
+        recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
         return Result<json>{err};
     }
     auto collection = collectionResult.getValue().value();
@@ -92,7 +84,7 @@ Result<json> Database::getCreatureJson(const creatureId_t &creatureId,
         if (!maybe_result) {
             std::string errorMessage = fmt::format("Creature not found: {}", creatureId);
             warn(errorMessage);
-            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+            recordSpanError(dbSpan, errorMessage, "NotFound", ServerError::NotFound);
             return Result<json>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
@@ -102,7 +94,7 @@ Result<json> Database::getCreatureJson(const creatureId_t &creatureId,
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
             warn("Failed to convert BSON to JSON for creature ID: {} - {}", creatureId, err.getMessage());
-            setSpanError(err.getMessage(), "JsonParsingException", err.getCode());
+            recordSpanError(dbSpan, err.getMessage(), "JsonParsingException", err.getCode());
             return jsonResult;
         }
         json j = jsonResult.getValue().value();
@@ -125,7 +117,7 @@ Result<json> Database::getCreatureJson(const creatureId_t &creatureId,
         }
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(dbSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<json>{ServerError(ServerError::DatabaseError, errorMessage)};
     } catch (const std::exception &e) {
         std::string errorMessage =
@@ -137,14 +129,14 @@ Result<json> Database::getCreatureJson(const creatureId_t &creatureId,
         }
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = fmt::format("Unknown exception caught while finding creature {}", creatureId);
         critical(errorMessage);
         if (mongoSpan)
             mongoSpan->setError(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
@@ -170,18 +162,10 @@ Result<creatures::Creature> Database::getCreature(const creatureId_t &creatureId
         dbSpan->setAttribute("creature.id", creatureId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     if (creatureId.empty()) {
         std::string errorMessage = "unable to get a creature because the id was empty";
         warn(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -203,7 +187,7 @@ Result<creatures::Creature> Database::getCreature(const creatureId_t &creatureId
             jsonSpan->setAttribute("error.type", etype);
             jsonSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        setSpanError(errorMessage, etype, err.getCode());
+        recordSpanError(dbSpan, errorMessage, etype, err.getCode());
         return Result<creatures::Creature>{err};
     }
     if (jsonSpan)
@@ -220,7 +204,7 @@ Result<creatures::Creature> Database::getCreature(const creatureId_t &creatureId
             fetchSpan->setAttribute("error.type", "DataFormatException");
             fetchSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        setSpanError(errorMessage, "DataFormatException", err.getCode());
+        recordSpanError(dbSpan, errorMessage, "DataFormatException", err.getCode());
         return Result<creatures::Creature>{err};
     }
     if (fetchSpan)
