@@ -40,14 +40,6 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
         dbSpan->setAttribute("animation.sort_by", static_cast<int64_t>(sortBy));
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     debug("attempting to list all of the animations");
 
     std::vector<creatures::AnimationMetadata> animations;
@@ -71,7 +63,7 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
             std::string errorMessage =
                 fmt::format("database error while listing all of the animations: {}", err.getMessage());
             warn(errorMessage);
-            setSpanError(errorMessage, "DatabaseError", err.getCode());
+            recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<std::vector<creatures::AnimationMetadata>>{err};
         }
         auto collection = collectionResult.getValue().value();
@@ -142,28 +134,28 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
         warn(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "DataFormatException", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "DataFormatException", ServerError::InvalidData);
         return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (const mongocxx::exception &e) {
         std::string errorMessage = fmt::format("MongoDB Exception while loading animation: {}", e.what());
         critical(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(dbSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const bsoncxx::exception &e) {
         std::string errorMessage = fmt::format("BSON error while attempting to load animations: {}", e.what());
         critical(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "JsonParsingException", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "JsonParsingException", ServerError::InternalError);
         return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
     if (animations.empty()) {
         std::string errorMessage = "No animations found";
         warn(errorMessage);
-        setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+        recordSpanError(dbSpan, errorMessage, "NotFound", ServerError::NotFound);
         return Result<std::vector<creatures::AnimationMetadata>>{ServerError(ServerError::NotFound, errorMessage)};
     }
 

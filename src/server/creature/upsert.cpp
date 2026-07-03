@@ -16,6 +16,7 @@
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "util/JsonParser.h"
+#include "util/ObservabilityManager.h"
 #include "util/Result.cpp"
 #include "util/cache.h"
 #include "util/helpers.h"
@@ -59,14 +60,6 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
         upsertSpan->setAttribute("database.name", DB_NAME);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (upsertSpan) {
-            upsertSpan->setError(msg);
-            upsertSpan->setAttribute("error.type", type);
-            upsertSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     info("attempting to upsert a creature in the database");
     try {
         auto parseJsonSpan =
@@ -74,7 +67,7 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
         auto jsonResult = JsonParser::parseJsonString(creatureJson, "creature upsert", parseJsonSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<creatures::Creature>{err};
         }
         auto jsonObject = jsonResult.getValue().value();
@@ -83,7 +76,7 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
         if (!result.isSuccess()) {
             auto err = result.getError().value();
             auto errorMessage = fmt::format("Error while creating a creature from JSON: {}", err.getMessage());
-            setSpanError(errorMessage, "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, errorMessage, "InvalidData", err.getCode());
             warn(errorMessage);
             return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
         }
@@ -98,7 +91,7 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
                 validateSpan->setAttribute("error.type", "InvalidData");
                 validateSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
             }
-            setSpanError(msg, "InvalidData", ServerError::InvalidData);
+            recordSpanError(upsertSpan, msg, "InvalidData", ServerError::InvalidData);
             warn(msg);
         };
         if (creature.id.empty()) {
@@ -123,7 +116,7 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
         auto bsonResult = JsonParser::jsonStringToBson(creatureJson, fmt::format("creature {}", creature.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
             auto err = bsonResult.getError().value();
-            setSpanError(err.getMessage(), "InvalidData", err.getCode());
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<creatures::Creature>{err};
         }
         auto bsonDoc = bsonResult.getValue().value();
@@ -139,7 +132,7 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
                 collectionSpan->setAttribute("error.type", "DatabaseError");
                 collectionSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
             }
-            setSpanError(errorMessage, "DatabaseError", err.getCode());
+            recordSpanError(upsertSpan, errorMessage, "DatabaseError", err.getCode());
             warn(errorMessage);
             return Result<creatures::Creature>{err};
         }
@@ -177,7 +170,7 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
         error(errorMessage);
         if (upsertSpan)
             upsertSpan->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(upsertSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<creatures::Creature>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (const bsoncxx::exception &e) {
         auto errorMessage =
@@ -185,12 +178,12 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
         error(errorMessage);
         if (upsertSpan)
             upsertSpan->recordException(e);
-        setSpanError(errorMessage, "JsonParsingException", ServerError::InvalidData);
+        recordSpanError(upsertSpan, errorMessage, "JsonParsingException", ServerError::InvalidData);
         return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
     } catch (...) {
         std::string errorMessage = "Unknown error while adding a creature to the database";
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(upsertSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<creatures::Creature>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }

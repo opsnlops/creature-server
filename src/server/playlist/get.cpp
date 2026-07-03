@@ -41,20 +41,12 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
         dbSpan->setAttribute("playlist.id", playlistId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     debug("attempting to get the JSON for a playlist by ID: {}", playlistId);
 
     if (playlistId.empty()) {
         std::string errorMessage = "unable to get a playlist because the id was empty";
         info(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<json>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -63,7 +55,7 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
         auto err = collectionResult.getError().value();
         std::string errorMessage = fmt::format("database error while getting a playlist: {}", err.getMessage());
         warn(errorMessage);
-        setSpanError(errorMessage, "DatabaseError", err.getCode());
+        recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
         return Result<json>{err};
     }
     auto collection = collectionResult.getValue().value();
@@ -80,7 +72,7 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
         if (!maybe_result) {
             std::string errorMessage = fmt::format("Playlist not found: {}", playlistId);
             warn(errorMessage);
-            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+            recordSpanError(dbSpan, errorMessage, "NotFound", ServerError::NotFound);
             return Result<json>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
@@ -90,7 +82,7 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
             warn("Failed to convert BSON to JSON for playlist {}: {}", playlistId, err.getMessage());
-            setSpanError(err.getMessage(), "JsonParsingException", err.getCode());
+            recordSpanError(dbSpan, err.getMessage(), "JsonParsingException", err.getCode());
             return jsonResult;
         }
         nlohmann::json j = jsonResult.getValue().value();
@@ -110,19 +102,19 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
         }
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(dbSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<json>{ServerError(ServerError::DatabaseError, errorMessage)};
     } catch (const std::exception &e) {
         std::string errorMessage = fmt::format("Error while loading playlist {}: {}", playlistId, e.what());
         critical(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = fmt::format("Unknown error while loading playlist {}", playlistId);
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
@@ -142,18 +134,10 @@ Result<creatures::Playlist> Database::getPlaylist(const playlistId_t &playlistId
         dbSpan->setAttribute("playlist.id", playlistId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     if (playlistId.empty()) {
         std::string errorMessage = "unable to get a playlist because the id was empty";
         warn(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -174,7 +158,7 @@ Result<creatures::Playlist> Database::getPlaylist(const playlistId_t &playlistId
             jsonSpan->setError(errorMessage);
             jsonSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        setSpanError(errorMessage, etype, err.getCode());
+        recordSpanError(dbSpan, errorMessage, etype, err.getCode());
         return Result<creatures::Playlist>{err};
     }
     if (jsonSpan)
@@ -190,7 +174,7 @@ Result<creatures::Playlist> Database::getPlaylist(const playlistId_t &playlistId
             fetchSpan->setError(errorMessage);
             fetchSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        setSpanError(errorMessage, "InvalidData", err.getCode());
+        recordSpanError(dbSpan, errorMessage, "InvalidData", err.getCode());
         return Result<creatures::Playlist>{err};
     }
     if (fetchSpan)

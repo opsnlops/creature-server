@@ -11,6 +11,7 @@
 #include "server/creature-server.h"
 #include "server/database.h"
 #include "util/JsonParser.h"
+#include "util/ObservabilityManager.h"
 #include "util/helpers.h"
 
 #include "server/namespace-stuffs.h"
@@ -42,20 +43,12 @@ Result<json> Database::getAnimationJson(const animationId_t &animationId,
         dbSpan->setAttribute("animation.id", animationId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     debug("attempting to get the JSON for an animation by ID: {}", animationId);
 
     if (animationId.empty()) {
         std::string errorMessage = "unable to get an animation because the id was empty";
         info(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<json>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -65,7 +58,7 @@ Result<json> Database::getAnimationJson(const animationId_t &animationId,
         std::string errorMessage =
             fmt::format("Database error while attempting to get an animation by ID: {}", err.getMessage());
         warn(errorMessage);
-        setSpanError(errorMessage, "DatabaseError", err.getCode());
+        recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
         return Result<json>{err};
     }
     auto collection = collectionResult.getValue().value();
@@ -83,7 +76,7 @@ Result<json> Database::getAnimationJson(const animationId_t &animationId,
         if (!maybe_result) {
             std::string errorMessage = fmt::format("no animation id '{}' found", animationId);
             warn(errorMessage);
-            setSpanError(errorMessage, "NotFound", ServerError::NotFound);
+            recordSpanError(dbSpan, errorMessage, "NotFound", ServerError::NotFound);
             return Result<json>{ServerError(ServerError::NotFound, errorMessage)};
         }
 
@@ -93,7 +86,7 @@ Result<json> Database::getAnimationJson(const animationId_t &animationId,
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
             warn("Failed to convert BSON to JSON for animation {}: {}", animationId, err.getMessage());
-            setSpanError(err.getMessage(), "JsonParsingException", err.getCode());
+            recordSpanError(dbSpan, err.getMessage(), "JsonParsingException", err.getCode());
             return jsonResult;
         }
         nlohmann::json j = jsonResult.getValue().value();
@@ -120,7 +113,7 @@ Result<json> Database::getAnimationJson(const animationId_t &animationId,
         }
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "MongoDBException", ServerError::DatabaseError);
+        recordSpanError(dbSpan, errorMessage, "MongoDBException", ServerError::DatabaseError);
         return Result<json>{ServerError(ServerError::DatabaseError, errorMessage)};
     } catch (const nlohmann::json::exception &e) {
         std::string errorMessage =
@@ -128,12 +121,12 @@ Result<json> Database::getAnimationJson(const animationId_t &animationId,
         critical(errorMessage);
         if (dbSpan)
             dbSpan->recordException(e);
-        setSpanError(errorMessage, "JsonParsingException", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "JsonParsingException", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     } catch (...) {
         std::string errorMessage = fmt::format("Unknown error while loading animation {}", animationId);
         critical(errorMessage);
-        setSpanError(errorMessage, "std::exception", ServerError::InternalError);
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<json>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
@@ -152,18 +145,10 @@ Result<creatures::Animation> Database::getAnimation(const animationId_t &animati
         dbSpan->setAttribute("animation.id", animationId);
     }
 
-    auto setSpanError = [&](const std::string &msg, const std::string &type, ServerError::Code code) {
-        if (dbSpan) {
-            dbSpan->setError(msg);
-            dbSpan->setAttribute("error.type", type);
-            dbSpan->setAttribute("error.code", static_cast<int64_t>(code));
-        }
-    };
-
     if (animationId.empty()) {
         std::string errorMessage = "unable to get an animation because the id was empty";
         warn(errorMessage);
-        setSpanError(errorMessage, "InvalidData", ServerError::InvalidData);
+        recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<creatures::Animation>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -184,7 +169,7 @@ Result<creatures::Animation> Database::getAnimation(const animationId_t &animati
             jsonSpan->setError(errorMessage);
             jsonSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        setSpanError(errorMessage, etype, err.getCode());
+        recordSpanError(dbSpan, errorMessage, etype, err.getCode());
         return Result<creatures::Animation>{err};
     }
     if (jsonSpan)
@@ -201,7 +186,7 @@ Result<creatures::Animation> Database::getAnimation(const animationId_t &animati
             fetchSpan->setAttribute("error.type", "InvalidData");
             fetchSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        setSpanError(errorMessage, "InvalidData", err.getCode());
+        recordSpanError(dbSpan, errorMessage, "InvalidData", err.getCode());
         return Result<creatures::Animation>{err};
     }
     if (fetchSpan)

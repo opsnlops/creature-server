@@ -23,6 +23,7 @@
 #pragma GCC diagnostic pop
 
 #include "server/namespace-stuffs.h"
+#include "util/Result.h"
 
 namespace creatures {
 
@@ -405,5 +406,17 @@ class SamplingSpan : public OperationSpan {
 // Convenience macro for creating request spans
 #define CREATE_REQUEST_SPAN(observability_manager, method, url)                                                        \
     auto span = observability_manager->createRequestSpan(method + " " + url, method, url)
+
+/// Record an error on a span (message + error.type + error.code attributes) — the one
+/// shared implementation of the pattern previously copy-pasted as a `setSpanError`
+/// lambda in every database helper. Safe to call with a null span.
+inline void recordSpanError(const std::shared_ptr<OperationSpan> &span, const std::string &msg, const std::string &type,
+                            ServerError::Code code) {
+    if (span) {
+        span->setError(msg);
+        span->setAttribute("error.type", type);
+        span->setAttribute("error.code", static_cast<int64_t>(code));
+    }
+}
 
 } // namespace creatures
