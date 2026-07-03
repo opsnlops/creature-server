@@ -49,7 +49,8 @@ void writeU32LE(std::ostream &os, uint32_t v) {
 } // namespace
 
 Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannelMap &voiceToChannel,
-                            const std::filesystem::path &outPath, std::shared_ptr<OperationSpan> parentSpan) {
+                            const std::filesystem::path &outPath, std::shared_ptr<OperationSpan> parentSpan,
+                            const DialogWavProvenance *provenance) {
     auto span = creatures::observability->createChildOperationSpan("DialogWav.writeDialogWav", parentSpan);
     if (span) {
         span->setAttribute("wav.path", outPath.string());
@@ -148,6 +149,24 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     }
     const auto dataBytes = static_cast<std::uint32_t>(dataBytes64);
 
+    // ---- Optional iXML provenance chunk (issue #47). Built up front so its
+    // size can be folded into the RIFF container size. Appended after `data`;
+    // every server-side reader honors the `data` size and ignores trailing
+    // chunks. If a (near-4 GiB) scene would overflow the 32-bit RIFF size field
+    // once the chunk is added, we drop the metadata rather than fail the render —
+    // the audio is what matters — and log it.
+    std::vector<uint8_t> ixmlChunk;
+    if (provenance && !provenance->empty()) {
+        ixmlChunk = makeIxmlChunk(buildDialogIxml(*provenance));
+        const std::uint64_t withIxml = 36ull + dataBytes64 + ixmlChunk.size();
+        if (withIxml > std::numeric_limits<std::uint32_t>::max()) {
+            warn("writeDialogWav: scene too large to also carry a {}-byte iXML chunk; writing without provenance",
+                 ixmlChunk.size());
+            ixmlChunk.clear();
+        }
+    }
+    const auto riffChunkSize = static_cast<std::uint32_t>(36 + dataBytes + ixmlChunk.size());
+
     // ---- Interleave: build the full output buffer in memory.
     //
     // Walk the timeline once. For each sample t, write 17 lanes back-to-back;
@@ -172,9 +191,10 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
         return Result<void>{ServerError(ServerError::InternalError, msg)};
     }
 
-    // Canonical 44-byte PCM WAV header.
+    // Canonical 44-byte PCM WAV header. The RIFF size covers the fmt + data
+    // chunks and any trailing iXML chunk.
     out.write("RIFF", 4);
-    writeU32LE(out, static_cast<std::uint32_t>(36 + dataBytes));
+    writeU32LE(out, riffChunkSize);
     out.write("WAVE", 4);
     out.write("fmt ", 4);
     writeU32LE(out, 16); // PCM fmt chunk size
@@ -192,6 +212,11 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     out.write(reinterpret_cast<const char *>(interleaved.data()),
               static_cast<std::streamsize>(interleaved.size() * sizeof(int16_t)));
 
+    // Trailing iXML provenance chunk, if any (#47).
+    if (!ixmlChunk.empty()) {
+        out.write(reinterpret_cast<const char *>(ixmlChunk.data()), static_cast<std::streamsize>(ixmlChunk.size()));
+    }
+
     out.flush();
     if (!out) {
         std::string msg = fmt::format("writeDialogWav: write or flush failed for {}", outPath.string());
@@ -206,9 +231,10 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
          assembled.totalSamples, lanes.size(), durationS, dataBytes);
 
     if (span) {
-        span->setAttribute("wav.bytes", static_cast<int64_t>(kWavHeaderBytes + dataBytes));
+        span->setAttribute("wav.bytes", static_cast<int64_t>(kWavHeaderBytes + dataBytes + ixmlChunk.size()));
         span->setAttribute("wav.duration_s", durationS);
         span->setAttribute("wav.lanes_used", static_cast<int64_t>(lanes.size()));
+        span->setAttribute("wav.ixml_bytes", static_cast<int64_t>(ixmlChunk.size()));
         span->setSuccess();
     }
     return Result<void>{};

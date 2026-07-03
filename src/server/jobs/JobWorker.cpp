@@ -1222,8 +1222,13 @@ void JobWorker::handleDialogJob(JobState &jobState) {
 
     std::vector<voice::DialogAssembled> assembledChunks;
     assembledChunks.reserve(chunks.size());
+    // The ElevenLabs generation id actually used for each chunk (cache hit or
+    // fresh), for the WAV's embedded provenance (#47).
+    std::vector<std::string> generationIds;
+    generationIds.reserve(chunks.size());
     for (std::size_t ci = 0; ci < chunks.size(); ++ci) {
         const auto &chunk = chunks[ci];
+        std::string chunkGenerationId;
         auto chunkSpan =
             creatures::observability->createChildOperationSpan(fmt::format("DialogJob.chunk.{}", ci), jobState.span);
 
@@ -1256,6 +1261,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             auto loadResult = voice::loadGeneration(cacheKey, requestedGenerationId);
             if (loadResult.isSuccess()) {
                 auto gen = loadResult.getValue().value();
+                chunkGenerationId = gen.generationId;
                 chunkAudio = std::move(gen.audioPcm);
                 chunkSegments = std::move(gen.voiceSegments);
                 chunkAlignment = std::move(gen.forcedAlignment);
@@ -1272,6 +1278,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                 auto loadResult = voice::loadGeneration(cacheKey, *latest);
                 if (loadResult.isSuccess()) {
                     auto gen = loadResult.getValue().value();
+                    chunkGenerationId = gen.generationId;
                     chunkAudio = std::move(gen.audioPcm);
                     chunkSegments = std::move(gen.voiceSegments);
                     chunkAlignment = std::move(gen.forcedAlignment);
@@ -1288,6 +1295,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                 return failJob(fmt::format("chunk {}: {}", ci, genResult.getError().value().getMessage()));
             }
             auto gen = genResult.getValue().value();
+            chunkGenerationId = gen.generationId;
             chunkAudio = std::move(gen.audioPcm);
             chunkSegments = std::move(gen.voiceSegments);
             chunkAlignment = std::move(gen.forcedAlignment);
@@ -1295,6 +1303,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         if (chunkSpan) {
             chunkSpan->setAttribute("dialog.cache_hit", cacheHit);
         }
+        generationIds.push_back(chunkGenerationId);
 
         // Reassemble the DialogResult shape that assembleChunk expects.
         voice::DialogResult dialog;
@@ -1344,7 +1353,46 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     for (const auto &c : creaturesCache) {
         voiceToChannel.emplace(c.voiceId, c.audioChannel);
     }
-    auto wavWriteResult = voice::writeDialogWav(assembled, voiceToChannel, wavPath, jobState.span);
+
+    // Build embedded provenance for permanent renders so an otherwise anonymous
+    // dialog/<uuid>.wav can be traced back to its script (#47). Ad-hoc and
+    // preview WAVs stay lean (nullptr below). This is a point-in-time snapshot,
+    // mirroring animation.metadata.source_script_turns.
+    voice::DialogWavProvenance provenance;
+    if (persistence == DialogPersistence::Permanent) {
+        provenance.sourceScriptId = sourceScriptId;
+        provenance.title = title;
+        provenance.generationIds = generationIds;
+
+        // creature_id → display name for the track list and speaker labels.
+        std::unordered_map<std::string, std::string> nameById;
+        for (const auto &c : creaturesCache) {
+            const std::string name = c.creatureJson.value("name", std::string{});
+            nameById.emplace(c.creatureId, name.empty() ? c.creatureId : name);
+        }
+
+        // Track list: each creature on its 1-based audio channel (sorted), plus
+        // the reserved BGM lane. Creatures validate to 1..16, so 17 is always BGM.
+        for (const auto &c : creaturesCache) {
+            provenance.tracks.push_back({c.audioChannel, nameById.at(c.creatureId)});
+        }
+        std::sort(
+            provenance.tracks.begin(), provenance.tracks.end(),
+            [](const voice::DialogTrackInfo &a, const voice::DialogTrackInfo &b) { return a.channel < b.channel; });
+        provenance.tracks.push_back({static_cast<uint16_t>(RTP_STREAMING_CHANNELS), "BGM"});
+
+        // Script snapshot: rawTurns is exactly what was rendered (a copy of the
+        // saved script's turns when rendering from one), resolved to names.
+        provenance.script.reserve(rawTurns.size());
+        for (const auto &[cid, text] : rawTurns) {
+            const auto it = nameById.find(cid);
+            provenance.script.push_back({it != nameById.end() ? it->second : cid, text});
+        }
+    }
+
+    const bool embedProvenance = persistence == DialogPersistence::Permanent && !provenance.empty();
+    auto wavWriteResult = voice::writeDialogWav(assembled, voiceToChannel, wavPath, jobState.span,
+                                                embedProvenance ? &provenance : nullptr);
     if (!wavWriteResult.isSuccess()) {
         return failJob(wavWriteResult.getError().value().getMessage());
     }

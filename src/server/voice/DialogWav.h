@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "DialogPipeline.h"
+#include "server/voice/IxmlWriter.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
@@ -47,7 +48,13 @@ using VoiceChannelMap = std::unordered_map<std::string, uint16_t>;
 ///
 /// On success, the file at `outPath` is suitable for direct hand-off to
 /// AudioStreamBuffer::loadFromWavFile.
+///
+/// If `provenance` is non-null and non-empty, an iXML chunk describing the
+/// scene's script and channel layout is appended after the `data` chunk (issue
+/// #47). Every server-side WAV reader walks chunks and honors the declared
+/// `data` size, so the trailing chunk is invisible to playback and downmix.
 Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannelMap &voiceToChannel,
-                            const std::filesystem::path &outPath, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                            const std::filesystem::path &outPath, std::shared_ptr<OperationSpan> parentSpan = nullptr,
+                            const DialogWavProvenance *provenance = nullptr);
 
 } // namespace creatures::voice
