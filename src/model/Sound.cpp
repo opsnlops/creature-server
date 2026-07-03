@@ -17,6 +17,7 @@ Sound convertSoundFromDto(const std::shared_ptr<SoundDto> &soundDto) {
     sound.script = soundDto->script ? std::string(soundDto->script) : std::string();
     sound.generationIds = soundDto->generation_ids ? std::string(soundDto->generation_ids) : std::string();
     sound.hasEmbeddedScript = soundDto->has_embedded_script.getValue(false);
+    sound.hasEmbeddedLipsync = soundDto->has_embedded_lipsync.getValue(false);
 
     return sound;
 }
@@ -32,6 +33,7 @@ oatpp::Object<SoundDto> convertSoundToDto(const Sound &sound) {
     soundDto->script = sound.script;
     soundDto->generation_ids = sound.generationIds;
     soundDto->has_embedded_script = sound.hasEmbeddedScript;
+    soundDto->has_embedded_lipsync = sound.hasEmbeddedLipsync;
 
     return soundDto;
 }

@@ -15,11 +15,12 @@ struct Sound {
     std::string transcript;
     std::string lipsync;
     // Embedded iXML provenance (dialog renders). Empty / false for plain sounds.
-    std::string title;              // human scene title, for display instead of a UUID
-    std::string sourceScriptId;     // links back to the dialog script, if any
-    std::string script;             // the full readable dialog text, if embedded
-    std::string generationIds;      // comma-separated ElevenLabs generation ids, if embedded
-    bool hasEmbeddedScript = false; // true when the file carries iXML script text
+    std::string title;               // human scene title, for display instead of a UUID
+    std::string sourceScriptId;      // links back to the dialog script, if any
+    std::string script;              // the full readable dialog text, if embedded
+    std::string generationIds;       // comma-separated ElevenLabs generation ids, if embedded
+    bool hasEmbeddedScript = false;  // true when the file carries iXML script text
+    bool hasEmbeddedLipsync = false; // true when the file carries iXML lip-sync (mouth cues)
 };
 
 #include OATPP_CODEGEN_BEGIN(DTO)
@@ -85,6 +86,13 @@ class SoundDto : public oatpp::DTO {
         info->required = false;
     }
     DTO_FIELD(String, generation_ids);
+
+    DTO_FIELD_INFO(has_embedded_lipsync) {
+        info->description = "True when the file carries embedded (iXML) lip-sync — per-creature mouth cues derived "
+                            "from the ElevenLabs alignment.";
+        info->required = false;
+    }
+    DTO_FIELD(Boolean, has_embedded_lipsync);
 };
 
 #include OATPP_CODEGEN_END(DTO)

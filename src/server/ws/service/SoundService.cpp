@@ -159,6 +159,7 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
                                 sound.generationIds =
                                     creatures::voice::extractIxmlField(*ixml, "GENERATION_IDS").value_or("");
                                 sound.hasEmbeddedScript = !sound.script.empty();
+                                sound.hasEmbeddedLipsync = ixml->find("<LIPSYNC>") != std::string::npos;
                             }
                         }
 

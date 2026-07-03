@@ -1,6 +1,7 @@
 #include "server/voice/IxmlWriter.h"
 
 #include <cstddef>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -117,6 +118,31 @@ std::string buildDialogIxml(const DialogWavProvenance &provenance, int totalChan
         script += provenance.script[i].speaker + ": " + provenance.script[i].text;
     }
     xml += "    <DIALOG_SCRIPT>" + xmlEscape(script) + "</DIALOG_SCRIPT>\n";
+
+    // LIPSYNC: per-creature mouth cues (derived from ElevenLabs alignment, #53).
+    // A private block only creature-console reads. Cues are packed compactly as
+    // "start end shape;start end shape;..." (seconds to 3 decimals).
+    if (!provenance.lipsync.empty()) {
+        xml += "    <LIPSYNC>\n";
+        for (const auto &lt : provenance.lipsync) {
+            std::string cues;
+            cues.reserve(lt.cues.size() * 16);
+            for (std::size_t i = 0; i < lt.cues.size(); ++i) {
+                if (i > 0) {
+                    cues += ';';
+                }
+                char buf[48];
+                std::snprintf(buf, sizeof(buf), "%.3f %.3f ", lt.cues[i].start, lt.cues[i].end);
+                cues += buf;
+                cues += lt.cues[i].shape;
+            }
+            xml += "      <TRACK><CHANNEL_INDEX>" + std::to_string(lt.channel) + "</CHANNEL_INDEX>";
+            xml += "<NAME>" + xmlEscape(lt.name) + "</NAME>";
+            xml += "<CUES>" + xmlEscape(cues) + "</CUES></TRACK>\n";
+        }
+        xml += "    </LIPSYNC>\n";
+    }
+
     xml += "  </USER>\n";
 
     xml += "</BWFXML>\n";

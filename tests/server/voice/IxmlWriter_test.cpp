@@ -7,6 +7,7 @@
 #include "server/voice/IxmlWriter.h"
 
 using creatures::voice::buildDialogIxml;
+using creatures::voice::DialogLipsyncTrack;
 using creatures::voice::DialogWavProvenance;
 using creatures::voice::makeIxmlChunk;
 
@@ -88,6 +89,27 @@ TEST(IxmlWriter, OmitsTrackListWhenNoTracks) {
     // The rest of the document is still there.
     EXPECT_NE(xml.find("Beaky: hi"), std::string::npos);
     EXPECT_NE(xml.find("Mono Take"), std::string::npos);
+}
+
+TEST(IxmlWriter, EmitsLipsyncBlockWithPackedCues) {
+    DialogWavProvenance p;
+    DialogLipsyncTrack track;
+    track.channel = 1;
+    track.name = "Beaky";
+    track.cues = {{0.0, 0.12, "B"}, {0.12, 0.25, "A"}, {0.25, 0.4, "X"}};
+    p.lipsync = {track};
+
+    const auto xml = buildDialogIxml(p);
+    EXPECT_NE(xml.find("<LIPSYNC>"), std::string::npos);
+    EXPECT_NE(xml.find("<CHANNEL_INDEX>1</CHANNEL_INDEX><NAME>Beaky</NAME>"), std::string::npos);
+    // Cues packed as "start end shape;..." with 3-decimal seconds.
+    EXPECT_NE(xml.find("<CUES>0.000 0.120 B;0.120 0.250 A;0.250 0.400 X</CUES>"), std::string::npos);
+}
+
+TEST(IxmlWriter, OmitsLipsyncBlockWhenAbsent) {
+    DialogWavProvenance p;
+    p.script = {{"Beaky", "hi"}};
+    EXPECT_EQ(buildDialogIxml(p).find("<LIPSYNC>"), std::string::npos);
 }
 
 TEST(IxmlWriter, EscapesXmlMetacharacters) {
