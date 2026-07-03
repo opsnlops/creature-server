@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <vector>
 
+#include "server/voice/IxmlWriter.h"
 #include "util/Result.h"
 
 namespace creatures::voice {
@@ -31,6 +32,11 @@ Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmDat
 /// Wrap raw mono S16 LE PCM in a canonical 44-byte mono WAV header, in memory.
 /// The one shared implementation of the helper previously duplicated in
 /// DialogPreviewController and JobWorker (issue #11).
-std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate);
+///
+/// If `provenance` is non-null and non-empty, an iXML chunk describing the
+/// scene's script is appended after the `data` chunk (#50). Readers that walk
+/// chunks and honor the `data` size ignore it, so playback is unaffected.
+std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate,
+                                      const DialogWavProvenance *provenance = nullptr);
 
 } // namespace creatures::voice

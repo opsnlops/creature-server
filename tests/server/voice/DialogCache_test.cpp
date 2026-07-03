@@ -14,6 +14,7 @@
 using creatures::voice::CachedGeneration;
 using creatures::voice::computeCacheKey;
 using creatures::voice::DialogInput;
+using creatures::voice::DialogWavProvenance;
 using creatures::voice::findLatestGeneration;
 using creatures::voice::ForcedAlignmentChar;
 using creatures::voice::ForcedAlignmentResult;
@@ -21,6 +22,7 @@ using creatures::voice::ForcedAlignmentWord;
 using creatures::voice::listGenerations;
 using creatures::voice::loadGeneration;
 using creatures::voice::saveGeneration;
+using creatures::voice::updateGenerationProvenance;
 
 namespace {
 
@@ -115,6 +117,74 @@ TEST(DialogCacheSaveLoad, RoundTripsAllFields) {
     EXPECT_DOUBLE_EQ(out.forcedAlignment.words[0].endSeconds, 0.5);
     ASSERT_EQ(out.forcedAlignment.characters.size(), 2u);
     EXPECT_EQ(out.forcedAlignment.characters[0].text, "h");
+}
+
+TEST(DialogCacheSaveLoad, RoundTripsProvenance) {
+    CacheScope scope;
+    std::vector<DialogInput> turns{turn("voice-prov", "DialogCacheSaveLoad-RoundTripsProvenance")};
+    const auto key = computeCacheKey(turns);
+    scope.track(key);
+
+    CachedGeneration in = sampleGen("gen-prov-1");
+    in.provenance.sourceScriptId = "script-42";
+    in.provenance.title = "Provenance Scene";
+    in.provenance.generationIds = {"gen-prov-1"};
+    in.provenance.tracks = {{1, "Beaky"}, {2, "Pip"}, {17, "BGM"}};
+    in.provenance.script = {{"Beaky", "hello & <friends>"}, {"Pip", "web scale"}};
+    ASSERT_TRUE(saveGeneration(key, in).isSuccess());
+
+    auto loadRes = loadGeneration(key, "gen-prov-1");
+    ASSERT_TRUE(loadRes.isSuccess());
+    const auto loaded = loadRes.getValue().value();
+    const auto &p = loaded.provenance;
+    EXPECT_EQ(p.sourceScriptId, "script-42");
+    EXPECT_EQ(p.title, "Provenance Scene");
+    EXPECT_EQ(p.generationIds, std::vector<std::string>{"gen-prov-1"});
+    ASSERT_EQ(p.tracks.size(), 3u);
+    EXPECT_EQ(p.tracks[0].channel, 1);
+    EXPECT_EQ(p.tracks[0].name, "Beaky");
+    EXPECT_EQ(p.tracks[2].name, "BGM");
+    ASSERT_EQ(p.script.size(), 2u);
+    EXPECT_EQ(p.script[0].speaker, "Beaky");
+    EXPECT_EQ(p.script[0].text, "hello & <friends>"); // raw text; JSON handles escaping
+}
+
+TEST(DialogCacheUpdateProvenance, RewritesJsonAndLeavesAudioIntact) {
+    CacheScope scope;
+    std::vector<DialogInput> turns{turn("voice-upd", "DialogCacheUpdateProvenance-RewritesJson")};
+    const auto key = computeCacheKey(turns);
+    scope.track(key);
+
+    // Save with no provenance (mirrors a generation cached before provenance is known).
+    CachedGeneration in = sampleGen("gen-upd-1", {9, 8, 7, 6, 5, 4});
+    ASSERT_TRUE(saveGeneration(key, in).isSuccess());
+    ASSERT_TRUE(loadGeneration(key, "gen-upd-1").getValue().value().provenance.script.empty());
+
+    DialogWavProvenance prov;
+    prov.title = "Stamped Later";
+    prov.script = {{"Beaky", "added after the fact"}};
+    ASSERT_TRUE(updateGenerationProvenance(key, "gen-upd-1", prov).isSuccess());
+
+    const auto reloaded = loadGeneration(key, "gen-upd-1");
+    ASSERT_TRUE(reloaded.isSuccess());
+    EXPECT_EQ(reloaded.getValue().value().provenance.title, "Stamped Later");
+    ASSERT_EQ(reloaded.getValue().value().provenance.script.size(), 1u);
+    EXPECT_EQ(reloaded.getValue().value().provenance.script[0].text, "added after the fact");
+    // Audio untouched by the json-only update.
+    EXPECT_EQ(reloaded.getValue().value().audioPcm, in.audioPcm);
+}
+
+TEST(DialogCacheUpdateProvenance, NotFoundForMissingGeneration) {
+    CacheScope scope;
+    std::vector<DialogInput> turns{turn("v", "DialogCacheUpdateProvenance-NotFound")};
+    const auto key = computeCacheKey(turns);
+    scope.track(key);
+
+    DialogWavProvenance prov;
+    prov.title = "x";
+    auto res = updateGenerationProvenance(key, "no-such-gen", prov);
+    ASSERT_FALSE(res.isSuccess());
+    EXPECT_EQ(res.getError().value().getCode(), creatures::ServerError::NotFound);
 }
 
 TEST(DialogCacheLoad, NotFoundOnMissingGeneration) {

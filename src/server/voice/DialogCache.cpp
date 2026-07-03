@@ -188,6 +188,58 @@ ForcedAlignmentResult forcedAlignmentFromJson(const nlohmann::json &j) {
     return fa;
 }
 
+nlohmann::json provenanceToJson(const DialogWavProvenance &p) {
+    // Build the object with explicit assignment rather than a brace-init list:
+    // nlohmann's initializer-list constructor mis-parses array-valued entries
+    // (they came back empty on round-trip).
+    nlohmann::json j;
+    j["source_script_id"] = p.sourceScriptId;
+    j["title"] = p.title;
+    j["generation_ids"] = p.generationIds;
+
+    auto tracks = nlohmann::json::array();
+    for (const auto &t : p.tracks) {
+        nlohmann::json tj;
+        tj["channel"] = static_cast<int>(t.channel);
+        tj["name"] = t.name;
+        tracks.push_back(std::move(tj));
+    }
+    j["tracks"] = std::move(tracks);
+
+    auto script = nlohmann::json::array();
+    for (const auto &line : p.script) {
+        nlohmann::json lj;
+        lj["speaker"] = line.speaker;
+        lj["text"] = line.text;
+        script.push_back(std::move(lj));
+    }
+    j["script"] = std::move(script);
+    return j;
+}
+
+DialogWavProvenance provenanceFromJson(const nlohmann::json &j) {
+    DialogWavProvenance p;
+    if (!j.is_object()) {
+        return p;
+    }
+    p.sourceScriptId = j.value("source_script_id", std::string{});
+    p.title = j.value("title", std::string{});
+    if (j.contains("generation_ids") && j["generation_ids"].is_array()) {
+        p.generationIds = j["generation_ids"].get<std::vector<std::string>>();
+    }
+    if (j.contains("tracks") && j["tracks"].is_array()) {
+        for (const auto &t : j["tracks"]) {
+            p.tracks.push_back({t.value("channel", uint16_t{0}), t.value("name", std::string{})});
+        }
+    }
+    if (j.contains("script") && j["script"].is_array()) {
+        for (const auto &line : j["script"]) {
+            p.script.push_back({line.value("speaker", std::string{}), line.value("text", std::string{})});
+        }
+    }
+    return p;
+}
+
 /// Read a whole file into a byte vector. Empty vector on failure.
 std::vector<uint8_t> readBinary(const std::filesystem::path &p) {
     std::ifstream in(p, std::ios::binary);
@@ -301,6 +353,9 @@ Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::
     if (meta.contains("forced_alignment")) {
         gen.forcedAlignment = forcedAlignmentFromJson(meta["forced_alignment"]);
     }
+    if (meta.contains("provenance")) {
+        gen.provenance = provenanceFromJson(meta["provenance"]);
+    }
     gen.audioPcm = std::move(audio);
     return gen;
 }
@@ -354,6 +409,7 @@ Result<void> saveGeneration(const std::string &cacheKey, const CachedGeneration 
     meta["turns_summary"] = gen.turnsSummary;
     meta["voice_segments"] = voiceSegmentsToJson(gen.voiceSegments);
     meta["forced_alignment"] = forcedAlignmentToJson(gen.forcedAlignment);
+    meta["provenance"] = provenanceToJson(gen.provenance);
 
     {
         std::ofstream out(jsonTmp, std::ios::trunc);
@@ -391,6 +447,56 @@ Result<void> saveGeneration(const std::string &cacheKey, const CachedGeneration 
 
     debug("DialogCache: saved generation {}/{} ({} audio bytes, {} segments, {} words)", cacheKey, gen.generationId,
           gen.audioPcm.size(), gen.voiceSegments.size(), gen.forcedAlignment.words.size());
+    return Result<void>{};
+}
+
+Result<void> updateGenerationProvenance(const std::string &cacheKey, const std::string &generationId,
+                                        const DialogWavProvenance &provenance) {
+    const auto jsonFile = jsonPath(cacheKey, generationId);
+    std::error_code ec;
+    if (!std::filesystem::exists(jsonFile, ec) || ec) {
+        return Result<void>{
+            ServerError(ServerError::NotFound, fmt::format("DialogCache: {} does not exist", jsonFile.string()))};
+    }
+
+    nlohmann::json meta;
+    {
+        std::ifstream in(jsonFile);
+        if (!in) {
+            return Result<void>{
+                ServerError(ServerError::InternalError, fmt::format("DialogCache: open {} failed", jsonFile.string()))};
+        }
+        try {
+            in >> meta;
+        } catch (const std::exception &e) {
+            return Result<void>{ServerError(ServerError::InvalidData, fmt::format("DialogCache: parse {} failed: {}",
+                                                                                  jsonFile.string(), e.what()))};
+        }
+    }
+
+    meta["provenance"] = provenanceToJson(provenance);
+
+    const auto jsonTmp = jsonFile.string() + ".tmp";
+    {
+        std::ofstream out(jsonTmp, std::ios::trunc);
+        if (!out) {
+            return Result<void>{
+                ServerError(ServerError::InternalError, fmt::format("DialogCache: open {} for write failed", jsonTmp))};
+        }
+        out << meta.dump(2);
+        out.flush();
+        if (!out) {
+            std::filesystem::remove(jsonTmp, ec);
+            return Result<void>{
+                ServerError(ServerError::InternalError, fmt::format("DialogCache: write {} failed", jsonTmp))};
+        }
+    }
+    std::filesystem::rename(jsonTmp, jsonFile, ec);
+    if (ec) {
+        std::filesystem::remove(jsonTmp, ec);
+        return Result<void>{ServerError(ServerError::InternalError,
+                                        fmt::format("DialogCache: rename {} → {} failed", jsonTmp, jsonFile.string()))};
+    }
     return Result<void>{};
 }
 

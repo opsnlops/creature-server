@@ -48,8 +48,17 @@ class SoundService {
     /**
      * Resolve the absolute path for an ad-hoc sound filename.
      */
-    std::string resolveAdHocSoundPath(const std::string &filename,
-                                      std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    std::string resolveAdHocSoundPath(const std::string &filename, std::shared_ptr<RequestSpan> parentSpan = nullptr);
+
+    /**
+     * Resolve the absolute path for a permanent-store sound by basename.
+     *
+     * Tries a top-level file first, then walks the permanent sound tree so that
+     * sounds living in subdirectories (e.g. dialog/ renders) resolve too (#46).
+     * Throws an HTTP 404 if nothing matches, 400 for an unsafe filename.
+     */
+    std::string resolvePermanentSoundPath(const std::string &filename,
+                                          std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Generate lip sync data for a sound file using Rhubarb Lip Sync

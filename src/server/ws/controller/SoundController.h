@@ -30,6 +30,7 @@
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
 #include "server/metrics/counters.h"
+#include "server/voice/IxmlReader.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/RhubarbData.h"
 #include "server/ws/controller/ControllerUtils.h"
@@ -320,28 +321,12 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                                    return bailHttp(span, Status::CODE_403, e.what());
                                }
 
-                               // Assemble the path
-                               auto filePath = config->getSoundFileLocation() + "/" + safeFilename;
+                               // Resolve via the service: top-level first, then a recursive
+                               // basename search so dialog/ renders resolve too (#46). Throws
+                               // an HTTP error (404/400) that withSpanStatus stamps.
+                               std::string canonicalPath = m_soundService.resolvePermanentSoundPath(safeFilename);
 
-                               // Resolve the canonical path
-                               std::filesystem::path canonicalPath;
-                               std::filesystem::path baseDir;
-                               try {
-                                   canonicalPath = std::filesystem::canonical(filePath);
-                                   baseDir = std::filesystem::canonical(config->getSoundFileLocation());
-                               } catch (const std::filesystem::filesystem_error &e) {
-                                   warn("Attempt to serve {} failed: {}", std::string(filename), e.what());
-                                   return bailHttp(span, Status::CODE_404, e.what());
-                               }
-
-                               // Ensure the resolved path is within the base directory
-                               if (canonicalPath.string().find(baseDir.string()) != 0) {
-                                   warn("Attempt to serve {} failed: {}", std::string(filename),
-                                        "Path traversal attempt.");
-                                   return bailHttp(span, Status::CODE_403, "Forbidden: Path traversal attempt.");
-                               }
-
-                               std::ifstream file(canonicalPath.string(), std::ios::binary | std::ios::ate);
+                               std::ifstream file(canonicalPath, std::ios::binary | std::ios::ate);
                                if (!file.is_open()) {
                                    info("Attempt to serve {} failed: {}", std::string(filename), "Not found.");
                                    return bailHttp(span, Status::CODE_404, "File not found.");
@@ -349,7 +334,7 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
 
                                std::streamsize fileSize = file.tellg();
                                file.seekg(0, std::ios::beg);
-                               auto mimeType = getMimeType(filePath);
+                               auto mimeType = getMimeType(canonicalPath);
 
                                std::vector<char> buffer(fileSize);
                                if (!file.read(buffer.data(), fileSize)) {
@@ -443,18 +428,13 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     return bailHttp(span, Status::CODE_403, e.what());
                 }
 
-                // Permanent store first, then the ad-hoc bucket — same resolution rules
-                // as getSound / getAdHocSound.
+                // Permanent store first (top-level, then a recursive basename search
+                // so dialog/ renders resolve — #46), then the ad-hoc bucket. Same
+                // resolution rules as getSound / getAdHocSound.
                 std::string sourcePath;
                 try {
-                    auto canonicalPath =
-                        std::filesystem::canonical(config->getSoundFileLocation() + "/" + safeFilename);
-                    auto baseDir = std::filesystem::canonical(config->getSoundFileLocation());
-                    if (canonicalPath.string().find(baseDir.string()) != 0) {
-                        return bailHttp(span, Status::CODE_403, "Forbidden: Path traversal attempt.");
-                    }
-                    sourcePath = canonicalPath.string();
-                } catch (const std::filesystem::filesystem_error &) {
+                    sourcePath = m_soundService.resolvePermanentSoundPath(safeFilename);
+                } catch (oatpp::web::protocol::http::HttpError &) {
                     // Not in the permanent store; fall through to ad-hoc.
                 }
                 if (sourcePath.empty()) {
@@ -478,7 +458,23 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                 }
                 const auto mono = monoResult.getValue().value();
 
-                auto oggResult = creatures::audio::encodeMonoToOggOpus(mono.samples, mono.sampleRate);
+                // Mirror any embedded dialog provenance into the Ogg's OpusTags so a
+                // shared .ogg also carries where it came from (#47). Non-WAV sources
+                // and WAVs without an iXML chunk simply contribute no comments.
+                creatures::audio::OggComments comments;
+                if (auto ixml = creatures::voice::readIxmlChunk(sourcePath)) {
+                    const auto addTag = [&](const char *key, const char *tag) {
+                        if (auto v = creatures::voice::extractIxmlField(*ixml, tag); v && !v->empty()) {
+                            comments.emplace_back(key, *v);
+                        }
+                    };
+                    addTag("TITLE", "TITLE");
+                    addTag("SOURCE_SCRIPT_ID", "SOURCE_SCRIPT_ID");
+                    addTag("DESCRIPTION", "DIALOG_SCRIPT");
+                }
+
+                auto oggResult = creatures::audio::encodeMonoToOggOpus(
+                    mono.samples, mono.sampleRate, creatures::audio::kShareableOpusBitrate, comments);
                 if (!oggResult.isSuccess()) {
                     const auto error = oggResult.getError().value();
                     const auto status =
@@ -503,6 +499,63 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     span->setAttribute("share.bytes", static_cast<int64_t>(oggBytes.size()));
                     span->setHttpStatus(200);
                 }
+                return response;
+            });
+    }
+
+    ENDPOINT_INFO(getSoundProvenance) {
+        info->summary = "Return the embedded iXML provenance of a dialog sound file";
+        info->description = "Dialog renders carry an iXML chunk with the source script id, generation ids, "
+                            "channel/track layout, and the full rendered script text (issue #47). Returns the "
+                            "raw iXML (BWFXML) document. 404 if the sound has no embedded provenance.";
+        info->addTag("Sounds");
+        info->addResponse<String>(Status::CODE_200, "application/xml");
+        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/sound/provenance/{filename}", getSoundProvenance, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/v1/sound/provenance/{filename}", "GET", "api/v1/sound/provenance/" + std::string(filename),
+            "getSoundProvenance", "SoundController", request, [&](const auto &span) {
+                std::string safeFilename;
+                try {
+                    safeFilename = sanitizeFilename(filename);
+                } catch (const std::invalid_argument &e) {
+                    return bailHttp(span, Status::CODE_403, e.what());
+                }
+
+                // Permanent store first (dialog/ renders are where provenance lives),
+                // then ad-hoc — same resolution rules as getShareableSound.
+                std::string sourcePath;
+                try {
+                    sourcePath = m_soundService.resolvePermanentSoundPath(safeFilename);
+                } catch (oatpp::web::protocol::http::HttpError &) {
+                    // fall through to ad-hoc
+                }
+                if (sourcePath.empty()) {
+                    try {
+                        sourcePath = m_soundService.resolveAdHocSoundPath(safeFilename);
+                    } catch (oatpp::web::protocol::http::HttpError &) {
+                        return bailHttp(span, Status::CODE_404,
+                                        fmt::format("Sound '{}' was not found in the sound store or the ad-hoc store",
+                                                    safeFilename));
+                    }
+                }
+
+                auto ixml = creatures::voice::readIxmlChunk(sourcePath);
+                if (!ixml) {
+                    return bailHttp(span, Status::CODE_404,
+                                    fmt::format("Sound '{}' has no embedded provenance", safeFilename));
+                }
+
+                if (span) {
+                    span->setAttribute("sound.source_path", sourcePath);
+                    span->setAttribute("provenance.bytes", static_cast<int64_t>(ixml->size()));
+                    span->setHttpStatus(200);
+                }
+                auto response = ResponseFactory::createResponse(Status::CODE_200, oatpp::String(ixml->c_str()));
+                response->putHeader("Content-Type", "application/xml; charset=utf-8");
                 return response;
             });
     }

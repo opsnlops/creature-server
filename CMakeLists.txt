@@ -676,12 +676,19 @@ add_executable(creature-server-test
         tests/server/voice/DialogPipeline_assembleChunk_test.cpp
         tests/server/voice/DialogPipeline_concatChunks_test.cpp
         tests/server/voice/DialogWav_test.cpp
+        tests/server/voice/PcmWavWriter_test.cpp
+        tests/server/voice/IxmlWriter_test.cpp
+        tests/server/voice/IxmlReader_test.cpp
+        src/server/voice/IxmlWriter.cpp
+        src/server/voice/IxmlReader.cpp
         tests/server/voice/DialogCache_test.cpp
         tests/server/audio/MonoWavDownmixer_test.cpp
         tests/server/audio/OggOpusWriter_test.cpp
+        tests/server/audio/SoundPathResolver_test.cpp
         tests/server/voice/DialogPreviewAssembly_test.cpp
         src/server/audio/MonoWavDownmixer.cpp
         src/server/audio/OggOpusWriter.cpp
+        src/server/audio/SoundPathResolver.cpp
         src/server/voice/DialogPreviewAssembly.cpp
         src/server/voice/PcmWavWriter.cpp
         src/server/voice/DialogAnimation.cpp

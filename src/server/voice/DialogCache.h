@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "DialogClient.h"
+#include "server/voice/IxmlWriter.h"
 #include "util/Result.h"
 
 namespace creatures::voice {
@@ -43,6 +44,10 @@ struct CachedGeneration {
     /// Short human-readable summary of the input — e.g. first ~80 chars of
     /// the concatenated turn text — for debugging directory listings.
     std::string turnsSummary;
+    /// Script provenance (source script id, title, track layout, full script
+    /// text) so editor exports of this generation can embed it (#50). Empty for
+    /// generations created before this was added.
+    DialogWavProvenance provenance;
 };
 
 /// Index entry returned by listGenerations.
@@ -76,5 +81,13 @@ Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::
 /// .tmp + rename so an interrupted save can never leave a half-written file
 /// that loadGeneration would mistake for valid.
 Result<void> saveGeneration(const std::string &cacheKey, const CachedGeneration &gen);
+
+/// Update just the `provenance` block in an existing generation's `.json`
+/// sidecar, leaving the (much larger) `.pcm` untouched (#50). Used to stamp
+/// provenance onto a generation whose audio was already cached — the audio is
+/// saved deep in the generate path before provenance is known. Written via
+/// .tmp + rename. NotFound if the generation's json doesn't exist.
+Result<void> updateGenerationProvenance(const std::string &cacheKey, const std::string &generationId,
+                                        const DialogWavProvenance &provenance);
 
 } // namespace creatures::voice

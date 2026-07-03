@@ -68,9 +68,17 @@ Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmDat
     return totalSize;
 }
 
-std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate) {
+std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate,
+                                      const DialogWavProvenance *provenance) {
+    // Optional iXML provenance chunk (#50), appended after `data`. Built up front
+    // so its size folds into the RIFF container size.
+    std::vector<uint8_t> ixmlChunk;
+    if (provenance && !provenance->empty()) {
+        ixmlChunk = makeIxmlChunk(buildDialogIxml(*provenance));
+    }
+
     std::vector<uint8_t> out;
-    out.reserve(44 + pcm.size());
+    out.reserve(44 + pcm.size() + ixmlChunk.size());
     auto u16 = [&](uint16_t v) {
         out.push_back(static_cast<uint8_t>(v & 0xFF));
         out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
@@ -88,7 +96,7 @@ std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t 
     };
     const uint32_t dataLen = static_cast<uint32_t>(pcm.size());
     str("RIFF", 4);
-    u32(36 + dataLen);
+    u32(static_cast<uint32_t>(36 + dataLen + ixmlChunk.size()));
     str("WAVE", 4);
     str("fmt ", 4);
     u32(16);
@@ -101,6 +109,7 @@ std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t 
     str("data", 4);
     u32(dataLen);
     out.insert(out.end(), pcm.begin(), pcm.end());
+    out.insert(out.end(), ixmlChunk.begin(), ixmlChunk.end());
     return out;
 }
 

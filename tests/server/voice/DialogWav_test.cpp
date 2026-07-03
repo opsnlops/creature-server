@@ -6,8 +6,12 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include "server/voice/DialogPipeline.h"
 #include "server/voice/DialogWav.h"
+#include "server/voice/IxmlReader.h"
+#include "server/voice/IxmlWriter.h"
 #include "util/ObservabilityManager.h"
 
 #include "../TestGlobals.h"
@@ -182,6 +186,91 @@ TEST_F(DialogWavTest, RejectsMismatchedPcmLength) {
     VoiceChannelMap m = {{"voice-A", 1}};
     auto r = writeDialogWav(a, m, tmpPath_);
     ASSERT_FALSE(r.isSuccess());
+}
+
+TEST_F(DialogWavTest, WithoutProvenanceWritesNoTrailingChunk) {
+    // The default (nullptr provenance) path is byte-for-byte the canonical file:
+    // header + data and nothing after it.
+    auto assembled = twoVoiceFixture(4);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+    auto r = writeDialogWav(assembled, m, tmpPath_);
+    ASSERT_TRUE(r.isSuccess());
+
+    auto bytes = readFile(tmpPath_);
+    const uint32_t dataBytes = 4u * 17 * 2;
+    EXPECT_EQ(bytes.size(), 44u + dataBytes);
+    EXPECT_EQ(readU32LE(bytes, 4), 36u + dataBytes) << "RIFF size with no extra chunk";
+}
+
+TEST_F(DialogWavTest, EmbedsIxmlProvenanceChunkAfterData) {
+    auto assembled = twoVoiceFixture(4);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+
+    creatures::voice::DialogWavProvenance prov;
+    prov.sourceScriptId = "script-123";
+    prov.title = "Web Scale <Parrots>"; // metachars exercise XML escaping
+    prov.generationIds = {"gen-1", "gen-2"};
+    prov.tracks = {{1, "Beaky"}, {2, "Pip"}, {17, "BGM"}};
+    prov.script = {{"Beaky", "Mongo & \"friends\""}, {"Pip", "web scale!"}};
+
+    auto r = writeDialogWav(assembled, m, tmpPath_, nullptr, &prov);
+    ASSERT_TRUE(r.isSuccess()) << (r.getError() ? r.getError().value().getMessage() : "");
+
+    auto bytes = readFile(tmpPath_);
+    const uint32_t dataBytes = 4u * 17 * 2;
+
+    // Audio is untouched: the data chunk size and its payload are unchanged, so
+    // every SDL/readWavInfo consumer still reads exactly the same samples.
+    ASSERT_TRUE(std::memcmp(&bytes[36], "data", 4) == 0);
+    EXPECT_EQ(readU32LE(bytes, 40), dataBytes);
+
+    // An iXML chunk follows the data payload.
+    const std::size_t ixmlIdOffset = 44 + dataBytes;
+    ASSERT_GE(bytes.size(), ixmlIdOffset + 8);
+    EXPECT_TRUE(std::memcmp(&bytes[ixmlIdOffset], "iXML", 4) == 0);
+    const uint32_t payloadSize = readU32LE(bytes, ixmlIdOffset + 4);
+    const uint32_t pad = payloadSize % 2;
+    EXPECT_EQ(bytes.size(), ixmlIdOffset + 8 + payloadSize + pad);
+
+    // RIFF outer size covers fmt + data + the whole iXML chunk (header + payload + pad).
+    EXPECT_EQ(readU32LE(bytes, 4), 36u + dataBytes + 8 + payloadSize + pad);
+
+    // The provenance is human-findable in the payload, XML-escaped.
+    const std::string text(bytes.begin(), bytes.end());
+    EXPECT_NE(text.find("<BWFXML>"), std::string::npos);
+    EXPECT_NE(text.find("script-123"), std::string::npos);
+    EXPECT_NE(text.find("Web Scale &lt;Parrots&gt;"), std::string::npos);
+    EXPECT_NE(text.find("Mongo &amp; &quot;friends&quot;"), std::string::npos);
+    EXPECT_NE(text.find("gen-1,gen-2"), std::string::npos);
+    EXPECT_NE(text.find("<NAME>Beaky</NAME>"), std::string::npos);
+}
+
+TEST_F(DialogWavTest, ReadsBackEmbeddedIxml) {
+    auto assembled = twoVoiceFixture(4);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+
+    creatures::voice::DialogWavProvenance prov;
+    prov.sourceScriptId = "script-xyz";
+    prov.title = "Round Trip";
+    prov.tracks = {{1, "Beaky"}, {2, "Pip"}, {17, "BGM"}};
+    prov.script = {{"Beaky", "one"}, {"Pip", "two & <three>"}};
+
+    auto r = writeDialogWav(assembled, m, tmpPath_, nullptr, &prov);
+    ASSERT_TRUE(r.isSuccess());
+
+    // The reader returns exactly the document the writer embedded.
+    auto readBack = creatures::voice::readIxmlChunk(tmpPath_);
+    ASSERT_TRUE(readBack.has_value());
+    EXPECT_EQ(*readBack, creatures::voice::buildDialogIxml(prov));
+}
+
+TEST_F(DialogWavTest, ReadIxmlReturnsNulloptWhenAbsent) {
+    auto assembled = twoVoiceFixture(4);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+    auto r = writeDialogWav(assembled, m, tmpPath_); // no provenance
+    ASSERT_TRUE(r.isSuccess());
+
+    EXPECT_FALSE(creatures::voice::readIxmlChunk(tmpPath_).has_value());
 }
 
 TEST_F(DialogWavTest, MapEntriesForAbsentVoicesAreIgnored) {
