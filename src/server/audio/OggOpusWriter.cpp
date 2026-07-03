@@ -47,15 +47,21 @@ std::vector<uint8_t> buildOpusHead(uint16_t preSkip, uint32_t inputSampleRate) {
     return head;
 }
 
-// RFC 7845 §5.2 comment header, no user comments.
-std::vector<uint8_t> buildOpusTags() {
+// RFC 7845 §5.2 comment header, with optional user comments written as the
+// Vorbis-comment "KEY=VALUE" convention.
+std::vector<uint8_t> buildOpusTags(const OggComments &comments) {
     std::vector<uint8_t> tags;
     const std::string magic = "OpusTags";
     tags.insert(tags.end(), magic.begin(), magic.end());
     const std::string vendor = "creature-server";
     appendLE32(tags, static_cast<uint32_t>(vendor.size()));
     tags.insert(tags.end(), vendor.begin(), vendor.end());
-    appendLE32(tags, 0); // comment count
+    appendLE32(tags, static_cast<uint32_t>(comments.size()));
+    for (const auto &[key, value] : comments) {
+        const std::string entry = key + "=" + value;
+        appendLE32(tags, static_cast<uint32_t>(entry.size()));
+        tags.insert(tags.end(), entry.begin(), entry.end());
+    }
     return tags;
 }
 
@@ -76,7 +82,8 @@ struct OggStreamGuard {
 
 } // namespace
 
-Result<std::vector<uint8_t>> encodeMonoToOggOpus(const std::vector<int16_t> &samples, int sampleRate, int bitrate) {
+Result<std::vector<uint8_t>> encodeMonoToOggOpus(const std::vector<int16_t> &samples, int sampleRate, int bitrate,
+                                                 const OggComments &comments) {
 
     if (samples.empty()) {
         return Result<std::vector<uint8_t>>{
@@ -124,7 +131,7 @@ Result<std::vector<uint8_t>> encodeMonoToOggOpus(const std::vector<int16_t> &sam
         appendPage(out, page);
     }
 
-    auto tags = buildOpusTags();
+    auto tags = buildOpusTags(comments);
     ogg_packet tagsPacket{};
     tagsPacket.packet = tags.data();
     tagsPacket.bytes = static_cast<long>(tags.size());

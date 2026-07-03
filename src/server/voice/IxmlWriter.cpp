@@ -79,9 +79,10 @@ std::string buildDialogIxml(const DialogWavProvenance &provenance) {
     }
     xml += "  </TRACK_LIST>\n";
 
-    // USER: the private provenance block — script id, generations, full text.
+    // USER: the private provenance block — script id, title, generations, full text.
     xml += "  <USER>\n";
     xml += "    <SOURCE_SCRIPT_ID>" + xmlEscape(provenance.sourceScriptId) + "</SOURCE_SCRIPT_ID>\n";
+    xml += "    <TITLE>" + xmlEscape(provenance.title) + "</TITLE>\n";
     xml += "    <GENERATION_IDS>" + xmlEscape(joinGenerationIds(provenance.generationIds)) + "</GENERATION_IDS>\n";
 
     std::string script;

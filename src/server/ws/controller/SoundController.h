@@ -458,7 +458,23 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                 }
                 const auto mono = monoResult.getValue().value();
 
-                auto oggResult = creatures::audio::encodeMonoToOggOpus(mono.samples, mono.sampleRate);
+                // Mirror any embedded dialog provenance into the Ogg's OpusTags so a
+                // shared .ogg also carries where it came from (#47). Non-WAV sources
+                // and WAVs without an iXML chunk simply contribute no comments.
+                creatures::audio::OggComments comments;
+                if (auto ixml = creatures::voice::readIxmlChunk(sourcePath)) {
+                    const auto addTag = [&](const char *key, const char *tag) {
+                        if (auto v = creatures::voice::extractIxmlField(*ixml, tag); v && !v->empty()) {
+                            comments.emplace_back(key, *v);
+                        }
+                    };
+                    addTag("TITLE", "TITLE");
+                    addTag("SOURCE_SCRIPT_ID", "SOURCE_SCRIPT_ID");
+                    addTag("DESCRIPTION", "DIALOG_SCRIPT");
+                }
+
+                auto oggResult = creatures::audio::encodeMonoToOggOpus(
+                    mono.samples, mono.sampleRate, creatures::audio::kShareableOpusBitrate, comments);
                 if (!oggResult.isSuccess()) {
                     const auto error = oggResult.getError().value();
                     const auto status =

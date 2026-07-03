@@ -677,6 +677,7 @@ add_executable(creature-server-test
         tests/server/voice/DialogPipeline_concatChunks_test.cpp
         tests/server/voice/DialogWav_test.cpp
         tests/server/voice/IxmlWriter_test.cpp
+        tests/server/voice/IxmlReader_test.cpp
         src/server/voice/IxmlWriter.cpp
         src/server/voice/IxmlReader.cpp
         tests/server/voice/DialogCache_test.cpp

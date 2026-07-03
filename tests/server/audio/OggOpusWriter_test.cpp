@@ -67,6 +67,20 @@ TEST(OggOpusWriter, RejectsEmptyInput) {
     EXPECT_EQ(creatures::ServerError::InvalidData, result.getError().value().getCode());
 }
 
+TEST(OggOpusWriter, EmbedsUserCommentsInOpusTags) {
+    const auto samples = makeSine(440.0, 0.1);
+    creatures::audio::OggComments comments = {
+        {"TITLE", "Web Scale"}, {"SOURCE_SCRIPT_ID", "script-9"}, {"DESCRIPTION", "Beaky: hi\nPip: bye"}};
+    auto result = encodeMonoToOggOpus(samples, kShareableSampleRate, creatures::audio::kShareableOpusBitrate, comments);
+    ASSERT_TRUE(result.isSuccess());
+    const auto bytes = result.getValue().value();
+
+    EXPECT_TRUE(containsBytes(bytes, "OpusTags"));
+    EXPECT_TRUE(containsBytes(bytes, "TITLE=Web Scale"));
+    EXPECT_TRUE(containsBytes(bytes, "SOURCE_SCRIPT_ID=script-9"));
+    EXPECT_TRUE(containsBytes(bytes, "DESCRIPTION=Beaky: hi\nPip: bye"));
+}
+
 TEST(OggOpusWriter, HandlesInputShorterThanOneFrame) {
     // 5ms of audio — less than the 20ms frame; the tail-padding path.
     const auto samples = makeSine(440.0, 0.005);

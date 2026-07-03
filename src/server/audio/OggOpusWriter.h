@@ -2,11 +2,18 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "util/Result.h"
 
 namespace creatures::audio {
+
+/// User comments to embed in the Ogg's OpusTags header, as (key, value) pairs
+/// written `KEY=VALUE` per the Vorbis-comment convention. Used to mirror dialog
+/// provenance (TITLE, DESCRIPTION, SOURCE_SCRIPT_ID) into a shared .ogg (#47).
+using OggComments = std::vector<std::pair<std::string, std::string>>;
 
 /// Bitrate for shareable sound exports. 96 kbps mono Opus is transparent for our
 /// content while turning a multi-megabyte WAV into something chat-app sized.
@@ -30,6 +37,6 @@ inline constexpr int kShareableSampleRate = 48000;
  * @return the bytes of a playable .ogg file, or an error
  */
 Result<std::vector<uint8_t>> encodeMonoToOggOpus(const std::vector<int16_t> &samples, int sampleRate,
-                                                 int bitrate = kShareableOpusBitrate);
+                                                 int bitrate = kShareableOpusBitrate, const OggComments &comments = {});
 
 } // namespace creatures::audio
