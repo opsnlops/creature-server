@@ -17,6 +17,7 @@
 #include "server/audio/SoundPathResolver.h"
 #include "server/config/Configuration.h"
 #include "server/storage/Storage.h"
+#include "server/voice/IxmlReader.h"
 
 #include "model/Sound.h"
 #include "server/database.h"
@@ -144,6 +145,22 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
                         }
 
                         Sound sound{filename, (uint32_t)size, transcript, lipsync};
+
+                        // Surface embedded iXML provenance (dialog renders) so the list can
+                        // show a real title and flag readable script text instead of a bare
+                        // UUID. Reading the chunk skips the (large) audio data — it seeks
+                        // past it — so this stays cheap even for big files.
+                        if (extension == ".wav") {
+                            if (auto ixml = creatures::voice::readIxmlChunk(filepath)) {
+                                sound.title = creatures::voice::extractIxmlField(*ixml, "TITLE").value_or("");
+                                sound.sourceScriptId =
+                                    creatures::voice::extractIxmlField(*ixml, "SOURCE_SCRIPT_ID").value_or("");
+                                sound.script = creatures::voice::extractIxmlField(*ixml, "DIALOG_SCRIPT").value_or("");
+                                sound.generationIds =
+                                    creatures::voice::extractIxmlField(*ixml, "GENERATION_IDS").value_or("");
+                                sound.hasEmbeddedScript = !sound.script.empty();
+                            }
+                        }
 
                         logger->debug("Adding sound file: {} ({})", sound.fileName, sound.size);
                         soundList->emplace_back(creatures::convertSoundToDto(sound));
