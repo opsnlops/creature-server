@@ -11,6 +11,15 @@ This file provides Claude Code-specific guidance and workflow tips for this repo
 3. **Test command**: `cd build && ./creature-server-test`
 4. **Code format**: Always run `clang-format` on modified C++ files
 
+## Workflow
+
+### GitHub Issues for Features and Bugs (Required)
+**When starting work on a feature or bug, open a GitHub Issue first** (`gh issue create`) and use it for tracking and notes — GitHub Issues play the role Jira does on a professional team:
+- Capture the symptom, investigation notes, and root cause in the issue as you learn them — the issue is the durable record of *why*, not just *what*
+- Reference the issue from commits and PRs (`Fixes #N` / `Refs #N`) so the fix links back to the analysis
+- Close it when the fix lands on `main`
+- The same rule applies to the console repo (creature-console)
+
 ## Tool Usage Guidelines
 
 ### When to Use the Task Tool with Explore Agent
