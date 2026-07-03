@@ -108,11 +108,15 @@ void JobManager::completeJob(const std::string &jobId, const std::string &result
         it->second.result = result;
         it->second.completedAt = std::chrono::system_clock::now();
 
-        // Mark the parent span as successful
+        // Mark the parent span as successful and END it now. The JobState lingers in
+        // jobs_ for the process lifetime (cleanup is best-effort), so the destructor
+        // won't run in time — without an explicit end() the whole job subtree never
+        // exports to Honeycomb.
         if (it->second.span) {
             it->second.span->setAttribute("job.status", toString(JobStatus::Completed));
             it->second.span->setAttribute("job.result_size", static_cast<int64_t>(result.size()));
             it->second.span->setSuccess();
+            it->second.span->end();
         }
 
         info("Job {} completed successfully", jobId);
@@ -130,10 +134,11 @@ void JobManager::failJob(const std::string &jobId, const std::string &errorMessa
         it->second.result = errorMessage;
         it->second.completedAt = std::chrono::system_clock::now();
 
-        // Mark the parent span as failed
+        // Mark the parent span as failed and END it now (see completeJob).
         if (it->second.span) {
             it->second.span->setAttribute("job.status", toString(JobStatus::Failed));
             it->second.span->setError(errorMessage);
+            it->second.span->end();
         }
 
         error("Job {} failed: {}", jobId, errorMessage);

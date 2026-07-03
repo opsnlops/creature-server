@@ -28,4 +28,9 @@ namespace creatures::voice {
 Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmData, const std::filesystem::path &wavPath,
                                               uint16_t audioChannel, uint32_t sampleRate);
 
+/// Wrap raw mono S16 LE PCM in a canonical 44-byte mono WAV header, in memory.
+/// The one shared implementation of the helper previously duplicated in
+/// DialogPreviewController and JobWorker (issue #11).
+std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate);
+
 } // namespace creatures::voice

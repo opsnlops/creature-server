@@ -1,6 +1,8 @@
 
 #pragma once
 
+#include <fmt/format.h>
+
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
@@ -11,9 +13,13 @@
 #include <model/Voice.h>
 
 #include "server/database.h"
+#include "server/jobs/JobManager.h"
+#include "server/jobs/JobWorker.h"
 #include "server/storage/Storage.h"
 
 #include "server/ws/controller/ControllerUtils.h"
+#include "server/ws/controller/HttpResponseHelpers.h"
+#include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/MakeSoundFileRequestDto.h"
 #include "server/ws/dto/StatusDto.h"
@@ -23,9 +29,14 @@
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
 
+namespace creatures {
+extern std::shared_ptr<jobs::JobManager> jobManager;
+extern std::shared_ptr<jobs::JobWorker> jobWorker;
+} // namespace creatures
+
 namespace creatures ::ws {
 
-class VoiceController : public oatpp::web::server::api::ApiController {
+class VoiceController : public oatpp::web::server::api::ApiController, public HttpResponseHelpers<VoiceController> {
   public:
     VoiceController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper))
         : oatpp::web::server::api::ApiController(objectMapper) {}
@@ -76,42 +87,61 @@ class VoiceController : public oatpp::web::server::api::ApiController {
     }
 
     ENDPOINT_INFO(makeSoundFile) {
-        info->summary = "Create a sound file for a creature based on the text given";
+        info->summary = "Create a sound file for a creature based on the text given (async job)";
+        info->description = "Single-voice TTS of the given text. Long text can outlive a 60s HTTP timeout, so this "
+                            "returns 202 with a job_id; the worker generates the sound file asynchronously and "
+                            "publishes progress + completion over the WebSocket job-progress stream. The completion "
+                            "result is the CreatureSpeechResponseDto JSON the sync path used to return.";
         info->addTag("Voice");
 
-        info->addResponse<Object<creatures::voice::CreatureSpeechResponseDto>>(Status::CODE_200,
-                                                                               "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/voice", makeSoundFile,
              BODY_DTO(Object<creatures::ws::MakeSoundFileRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("POST /api/v1/voice", "POST", "api/v1/voice", "makeSoundFile", "VoiceController", request,
-                           [&](const auto &span) {
-                               if (span && requestBody) {
-                                   if (requestBody->creature_id) {
-                                       span->setAttribute("creature.id", std::string(requestBody->creature_id));
-                                   }
-                                   if (requestBody->text) {
-                                       const auto text = std::string(requestBody->text);
-                                       span->setAttribute("speech.text_length", static_cast<int64_t>(text.size()));
-                                       span->setAttribute("speech.text_preview", text.substr(0, 60));
-                                   }
+                           [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                               if (!requestBody || !requestBody->creature_id || requestBody->creature_id->empty() ||
+                                   !requestBody->text || requestBody->text->empty()) {
+                                   return bailHttp(span, Status::CODE_400, "creature_id and text are required");
+                               }
+                               if (span) {
+                                   span->setAttribute("creature.id", std::string(requestBody->creature_id));
+                                   const auto text = std::string(requestBody->text);
+                                   span->setAttribute("speech.text_length", static_cast<int64_t>(text.size()));
+                                   span->setAttribute("speech.text_preview", text.substr(0, 60));
                                }
 
-                               auto response = m_voiceService.generateCreatureSpeech(requestBody);
+                               // Serialize the request DTO into the job framework's string-typed
+                               // `details` field; the worker round-trips it through the same
+                               // ObjectMapper.
+                               std::string detailsStr;
+                               try {
+                                   auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+                                   detailsStr = jsonMapper->writeToString(requestBody)->c_str();
+                               } catch (const std::exception &e) {
+                                   if (span)
+                                       span->setError(e.what());
+                                   return bailHttp(span, Status::CODE_500,
+                                                   fmt::format("failed to serialize request body: {}", e.what()));
+                               }
 
-                               // VoiceService.generateCreatureSpeech writes a sound file via the
-                               // CreatureVoicesLib HTTP plumbing — that path doesn't go through
-                               // the storage facade's writeSoundFile (yet), so we fire the
-                               // invalidation explicitly here as a "manual" case. Migrating the
-                               // underlying write to writeSoundFile would absorb this.
-                               creatures::storage::broadcastCacheInvalidation(CacheType::SoundList);
-
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, response);
+                               const std::string jobId = creatures::jobManager->createJob(
+                                   creatures::jobs::JobType::VoiceFile, detailsStr, span);
+                               creatures::jobWorker->queueJob(jobId);
+                               if (span) {
+                                   span->setAttribute("job.id", jobId);
+                                   span->setHttpStatus(202);
+                               }
+                               auto response = JobCreatedDto::createShared();
+                               response->job_id = jobId.c_str();
+                               response->job_type = "voice-file";
+                               response->message =
+                                   "Voice file job created. Listen for job-progress and job-complete WebSocket "
+                                   "messages on this job_id, or poll GET /api/v1/job/{job_id}.";
+                               return createDtoResponse(Status::CODE_202, response);
                            });
     }
 };

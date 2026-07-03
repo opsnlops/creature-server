@@ -541,6 +541,8 @@ add_executable(creature-server
         src/server/ws/service/AnimationService.cpp
         src/server/ws/service/CreatureService.h
         src/server/ws/service/CreatureService.cpp
+        src/server/ws/service/DialogPreviewService.h
+        src/server/ws/service/DialogPreviewService.cpp
         src/server/ws/service/DmxFixtureService.h
         src/server/ws/service/DmxFixtureService.cpp
         src/server/ws/service/MetricsService.h
@@ -677,8 +679,11 @@ add_executable(creature-server-test
         tests/server/voice/DialogCache_test.cpp
         tests/server/audio/MonoWavDownmixer_test.cpp
         tests/server/audio/OggOpusWriter_test.cpp
+        tests/server/voice/DialogPreviewAssembly_test.cpp
         src/server/audio/MonoWavDownmixer.cpp
         src/server/audio/OggOpusWriter.cpp
+        src/server/voice/DialogPreviewAssembly.cpp
+        src/server/voice/PcmWavWriter.cpp
         src/server/voice/DialogAnimation.cpp
         src/server/voice/DialogCache.cpp
         src/server/voice/DialogClient.cpp

@@ -20,6 +20,7 @@
 #include "controller/DialogPreviewController.h"
 #include "controller/DialogScriptController.h"
 #include "controller/DmxFixtureController.h"
+#include "controller/JobController.h"
 #include "controller/MetricsController.h"
 #include "controller/PlaylistController.h"
 #include "controller/SoundController.h"
@@ -68,6 +69,7 @@ void App::run() {
     docEndpoints.append(router->addController(CreatureController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DebugController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DmxFixtureController::createShared())->getEndpoints());
+    docEndpoints.append(router->addController(JobController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(MetricsController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(PlaylistController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(SoundController::createShared())->getEndpoints());
