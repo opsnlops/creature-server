@@ -14,6 +14,7 @@
 #include "server/ws/service/CreatureService.h"
 #include "spdlog/spdlog.h"
 #include "util/ObservabilityManager.h"
+#include "util/helpers.h"
 #include <algorithm>
 #include <unordered_set>
 
@@ -99,8 +100,8 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
         return;
     }
 
-    auto span = observability ? observability->createOperationSpan("SessionManager.registerSession", parentSpan)
-                              : nullptr;
+    auto span =
+        observability ? observability->createOperationSpan("SessionManager.registerSession", parentSpan) : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
         span->setAttribute("is_playlist", isPlaylist);
@@ -160,9 +161,10 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
     }
 }
 
-Result<std::shared_ptr<PlaybackSession>>
-SessionManager::interrupt(universe_t universe, const Animation &interruptAnimation, bool shouldResumePlaylist,
-                         std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::shared_ptr<PlaybackSession>> SessionManager::interrupt(universe_t universe,
+                                                                   const Animation &interruptAnimation,
+                                                                   bool shouldResumePlaylist,
+                                                                   std::shared_ptr<RequestSpan> parentSpan) {
     auto span = observability ? observability->createOperationSpan("SessionManager.interrupt", parentSpan) : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
@@ -265,16 +267,24 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
 
 Result<std::shared_ptr<PlaybackSession>> SessionManager::interruptIdleOnly(universe_t universe,
                                                                            const Animation &interruptAnimation,
-                                                                           const creatureId_t &creatureId,
+                                                                           const std::vector<creatureId_t> &creatureIds,
                                                                            std::shared_ptr<RequestSpan> parentSpan) {
-    auto span = observability
-                    ? observability->createOperationSpan("SessionManager.interruptIdleOnly", parentSpan)
-                    : nullptr;
+    auto span =
+        observability ? observability->createOperationSpan("SessionManager.interruptIdleOnly", parentSpan) : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
         span->setAttribute("interrupt.animation_id", interruptAnimation.id);
         span->setAttribute("interrupt.animation_title", interruptAnimation.metadata.title);
-        span->setAttribute("creature.id", creatureId);
+        span->setAttribute("creature.ids", joinStrings(creatureIds, ","));
+    }
+
+    if (creatureIds.empty()) {
+        std::string errorMessage = "SessionManager: interruptIdleOnly called with no creatures";
+        error(errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
     if (!eventLoop) {
@@ -286,7 +296,28 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interruptIdleOnly(unive
         return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
+    const std::unordered_set<creatureId_t> targets(creatureIds.begin(), creatureIds.end());
+
+    // First creature in a session that this interrupt also targets, if any.
+    auto overlappingCreature =
+        [&targets](const std::shared_ptr<PlaybackSession> &session) -> std::optional<creatureId_t> {
+        if (!session) {
+            return std::nullopt;
+        }
+        for (const auto &trackState : session->getTrackStates()) {
+            if (targets.count(trackState.creatureId) > 0) {
+                return trackState.creatureId;
+            }
+        }
+        return std::nullopt;
+    };
+
     std::vector<std::shared_ptr<PlaybackSession>> cancelledSessions;
+
+    // Every target creature that's mid-performance, deduped. Collected in full (not
+    // first-hit) so the error can name all of the busy performers, and reported outside
+    // the lock because name resolution can hit the database.
+    std::vector<creatureId_t> busyCreatures;
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -299,31 +330,56 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interruptIdleOnly(unive
                 if (existing->getActivityReason() == creatures::runtime::ActivityReason::Idle) {
                     continue;
                 }
-                if (sessionHasCreature(existing, creatureId)) {
-                    std::string errorMessage = "Creature " + creatureId + " already has an active non-idle session";
-                    if (span) {
-                        span->setError(errorMessage);
+                for (const auto &trackState : existing->getTrackStates()) {
+                    if (targets.count(trackState.creatureId) > 0 &&
+                        std::find(busyCreatures.begin(), busyCreatures.end(), trackState.creatureId) ==
+                            busyCreatures.end()) {
+                        busyCreatures.push_back(trackState.creatureId);
                     }
-                    return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::Conflict, errorMessage)};
                 }
             }
 
-            std::vector<std::shared_ptr<PlaybackSession>> survivors;
-            survivors.reserve(it->second.activeSessions.size());
-            for (const auto &existing : it->second.activeSessions) {
-                if (existing && !existing->isCancelled() &&
-                    existing->getActivityReason() == creatures::runtime::ActivityReason::Idle &&
-                    sessionHasCreature(existing, creatureId)) {
-                    debug("SessionManager: cancelling idle session on universe {} for creature {} (ad-hoc)", universe,
-                          creatureId);
-                    cancelSessionAndMarkActivity(existing);
-                    cancelledSessions.push_back(existing);
-                } else {
-                    survivors.push_back(existing);
+            if (busyCreatures.empty()) {
+                std::vector<std::shared_ptr<PlaybackSession>> survivors;
+                survivors.reserve(it->second.activeSessions.size());
+                for (const auto &existing : it->second.activeSessions) {
+                    const auto idleCreature =
+                        (existing && !existing->isCancelled() &&
+                         existing->getActivityReason() == creatures::runtime::ActivityReason::Idle)
+                            ? overlappingCreature(existing)
+                            : std::nullopt;
+                    if (idleCreature) {
+                        debug("SessionManager: cancelling idle session on universe {} for creature {} (ad-hoc)",
+                              universe, *idleCreature);
+                        cancelSessionAndMarkActivity(existing);
+                        cancelledSessions.push_back(existing);
+                    } else {
+                        survivors.push_back(existing);
+                    }
                 }
+                it->second.activeSessions.swap(survivors);
             }
-            it->second.activeSessions.swap(survivors);
         }
+    }
+
+    if (!busyCreatures.empty()) {
+        std::vector<std::string> busyNames;
+        busyNames.reserve(busyCreatures.size());
+        for (const auto &busyId : busyCreatures) {
+            busyNames.push_back(creatures::ws::CreatureService::resolveCreatureName(busyId));
+        }
+        std::string who = busyNames.back();
+        if (busyNames.size() > 1) {
+            const std::vector<std::string> allButLast(busyNames.begin(), busyNames.end() - 1);
+            who = joinStrings(allButLast, ", ") + " and " + busyNames.back();
+        }
+        const std::string errorMessage = who + (busyNames.size() == 1 ? " already has an active non-idle session"
+                                                                      : " already have active non-idle sessions");
+        if (span) {
+            span->setAttribute("conflict.creature_ids", joinStrings(busyCreatures, ","));
+            span->setError(errorMessage);
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::Conflict, errorMessage)};
     }
 
     auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(

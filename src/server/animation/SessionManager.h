@@ -79,17 +79,19 @@ class SessionManager {
                                                        std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
-     * Interrupt only idle playback for a specific creature.
+     * Interrupt only idle playback for a specific set of creatures.
      *
      * This is used for ad-hoc animations to avoid preempting active non-idle sessions.
+     * Pass every creature the animation targets — a multi-creature dialog interrupts the
+     * idle sessions of all of its performers, and conflicts if any of them is busy.
      *
      * @param universe The universe to target
      * @param interruptAnimation The animation to play
-     * @param creatureId The creature to interrupt idle on
+     * @param creatureIds The creatures to interrupt idle on
      * @return The session for the ad-hoc animation, or error
      */
     Result<std::shared_ptr<PlaybackSession>> interruptIdleOnly(universe_t universe, const Animation &interruptAnimation,
-                                                               const creatureId_t &creatureId,
+                                                               const std::vector<creatureId_t> &creatureIds,
                                                                std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**

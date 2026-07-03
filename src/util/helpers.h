@@ -110,6 +110,23 @@ bsoncxx::oid generateNewOid();
 void displayFrames(const creatures::Animation &animation);
 
 /**
+ * Join a vector of strings with a separator (e.g. creature ids for a span attribute)
+ *
+ * @param strings the strings to join
+ * @param separator placed between each pair of strings
+ * @return the joined string
+ */
+inline std::string joinStrings(const std::vector<std::string> &strings, std::string_view separator) {
+    std::string joined;
+    for (const auto &s : strings) {
+        if (!joined.empty())
+            joined += separator;
+        joined += s;
+    }
+    return joined;
+}
+
+/**
  * Get the current time in ISO8601 format (JavaScript format)
  *
  * @return the current time in ISO8601 format

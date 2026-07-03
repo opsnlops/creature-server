@@ -125,36 +125,6 @@ void setLastIdleAnimationId(const std::string &creatureId, const std::string &an
     lastIdleAnimationByCreature[creatureId] = animationId;
 }
 
-oatpp::String resolveCreatureName(const std::string &creatureId) {
-    {
-        std::lock_guard<std::mutex> lock(runtimeMutex);
-        auto it = creatureNameCache.find(creatureId);
-        if (it != creatureNameCache.end()) {
-            return it->second.c_str();
-        }
-    }
-
-    if (!creatures::db) {
-        warn("CreatureService: database unavailable while resolving creature name for {}, using ID fallback",
-             creatureId);
-        return creatureId.c_str();
-    }
-
-    auto creatureResult = creatures::db->getCreature(creatureId, nullptr);
-    if (!creatureResult.isSuccess()) {
-        warn("CreatureService: failed to resolve creature name for {}: {}", creatureId,
-             creatureResult.getError()->getMessage());
-        return creatureId.c_str();
-    }
-
-    auto creature = creatureResult.getValue().value();
-    {
-        std::lock_guard<std::mutex> lock(runtimeMutex);
-        creatureNameCache.emplace(creatureId, creature.name);
-    }
-    return creature.name.c_str();
-}
-
 void broadcastIdleStateChanged(const std::string &creatureId, bool enabled) {
     if (!creatures::websocketOutgoingMessages) {
         warn("CreatureService: websocket queue unavailable, skipping idle state broadcast for {}", creatureId);
@@ -188,7 +158,7 @@ void broadcastCreatureActivity(const std::string &creatureId, const oatpp::Objec
 
     auto payload = creatures::ws::CreatureActivityDto::createShared();
     payload->creature_id = creatureId.c_str();
-    payload->creature_name = resolveCreatureName(creatureId);
+    payload->creature_name = CreatureService::resolveCreatureName(creatureId).c_str();
     payload->state = rt->activity->state;
     payload->animation_id = rt->activity->animation_id;
     payload->session_id = rt->activity->session_id;
@@ -223,6 +193,36 @@ std::vector<std::string> shuffledIds(const std::vector<std::string> &ids) {
 }
 
 } // namespace
+
+std::string CreatureService::resolveCreatureName(const creatureId_t &creatureId) {
+    {
+        std::lock_guard<std::mutex> lock(runtimeMutex);
+        auto it = creatureNameCache.find(creatureId);
+        if (it != creatureNameCache.end()) {
+            return it->second;
+        }
+    }
+
+    if (!creatures::db) {
+        warn("CreatureService: database unavailable while resolving creature name for {}, using ID fallback",
+             creatureId);
+        return creatureId;
+    }
+
+    auto creatureResult = creatures::db->getCreature(creatureId, nullptr);
+    if (!creatureResult.isSuccess()) {
+        warn("CreatureService: failed to resolve creature name for {}: {}", creatureId,
+             creatureResult.getError()->getMessage());
+        return creatureId;
+    }
+
+    auto creature = creatureResult.getValue().value();
+    {
+        std::lock_guard<std::mutex> lock(runtimeMutex);
+        creatureNameCache.emplace(creatureId, creature.name);
+    }
+    return creature.name;
+}
 
 bool CreatureService::isCreatureStreaming(const creatureId_t &creatureId) {
     auto runtime = getOrCreateRuntime(creatureId);
