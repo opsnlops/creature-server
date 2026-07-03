@@ -25,6 +25,8 @@
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/SoundService.h"
 
+#include "server/audio/MonoWavDownmixer.h"
+#include "server/audio/OggOpusWriter.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
 #include "server/metrics/counters.h"
@@ -415,6 +417,94 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                                    span->setHttpStatus(200);
                                return response;
                            });
+    }
+
+    ENDPOINT_INFO(getShareableSound) {
+        info->summary = "Encode a sound file to Ogg/Opus for sharing (downmixed to mono)";
+        info->description = "Looks for the file in the permanent sound store first, then the ad-hoc store. "
+                            "Multi-channel WAVs are downmixed to mono before encoding.";
+        info->addTag("Sounds");
+        info->addResponse<String>(Status::CODE_200, "audio/ogg");
+        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/sound/shareable/{filename}", getShareableSound, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/v1/sound/shareable/{filename}", "GET", "api/v1/sound/shareable/" + std::string(filename),
+            "getShareableSound", "SoundController", request, [&](const auto &span) {
+                std::string safeFilename;
+                try {
+                    safeFilename = sanitizeFilename(filename);
+                } catch (const std::invalid_argument &e) {
+                    warn("Attempt to share {} failed: {}", std::string(filename), e.what());
+                    return bailHttp(span, Status::CODE_403, e.what());
+                }
+
+                // Permanent store first, then the ad-hoc bucket — same resolution rules
+                // as getSound / getAdHocSound.
+                std::string sourcePath;
+                try {
+                    auto canonicalPath =
+                        std::filesystem::canonical(config->getSoundFileLocation() + "/" + safeFilename);
+                    auto baseDir = std::filesystem::canonical(config->getSoundFileLocation());
+                    if (canonicalPath.string().find(baseDir.string()) != 0) {
+                        return bailHttp(span, Status::CODE_403, "Forbidden: Path traversal attempt.");
+                    }
+                    sourcePath = canonicalPath.string();
+                } catch (const std::filesystem::filesystem_error &) {
+                    // Not in the permanent store; fall through to ad-hoc.
+                }
+                if (sourcePath.empty()) {
+                    try {
+                        sourcePath = m_soundService.resolveAdHocSoundPath(safeFilename);
+                    } catch (oatpp::web::protocol::http::HttpError &) {
+                        return bailHttp(span, Status::CODE_404,
+                                        fmt::format("Sound '{}' was not found in the sound store or the ad-hoc store",
+                                                    safeFilename));
+                    }
+                }
+                if (span) {
+                    span->setAttribute("sound.source_path", sourcePath);
+                }
+
+                auto monoResult = creatures::audio::loadWavAsMono(sourcePath);
+                if (!monoResult.isSuccess()) {
+                    const auto error = monoResult.getError().value();
+                    const auto status = error.getCode() == ServerError::NotFound ? Status::CODE_404 : Status::CODE_422;
+                    return bailHttp(span, status, error.getMessage());
+                }
+                const auto mono = monoResult.getValue().value();
+
+                auto oggResult = creatures::audio::encodeMonoToOggOpus(mono.samples, mono.sampleRate);
+                if (!oggResult.isSuccess()) {
+                    const auto error = oggResult.getError().value();
+                    const auto status =
+                        error.getCode() == ServerError::InvalidData ? Status::CODE_422 : Status::CODE_500;
+                    return bailHttp(span, status, error.getMessage());
+                }
+                const auto oggBytes = oggResult.getValue().value();
+
+                // foo.wav → foo.ogg
+                const auto dot = safeFilename.rfind('.');
+                const auto shareName = (dot == std::string::npos ? safeFilename : safeFilename.substr(0, dot)) + ".ogg";
+
+                metrics->incrementSoundFilesServed();
+                info("Sharing sound file: {} → {} ({} bytes of Ogg/Opus)", safeFilename, shareName, oggBytes.size());
+
+                auto response = ResponseFactory::createResponse(
+                    Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(oggBytes.data()),
+                                                    static_cast<v_buff_size>(oggBytes.size())));
+                response->putHeader("Content-Type", "audio/ogg");
+                response->putHeader("Content-Disposition", "attachment; filename=\"" + shareName + "\"");
+                if (span) {
+                    span->setAttribute("share.bytes", static_cast<int64_t>(oggBytes.size()));
+                    span->setHttpStatus(200);
+                }
+                return response;
+            });
     }
 
     ENDPOINT_INFO(generateLipSync) {

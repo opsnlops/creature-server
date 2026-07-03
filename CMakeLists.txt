@@ -165,6 +165,19 @@ target_compile_options(opus PRIVATE
         $<$<CONFIG:Debug>:-O3>
 )
 
+# Ogg — container for the shareable Opus downloads (docs/shareable-sounds-plan.md).
+# Only the container; the encoder is core libopus above. (libopusenc was ruled out:
+# upstream is autotools-only, so it can't ride FetchContent like everything else.)
+set(INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+set(INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+        ogg
+        GIT_REPOSITORY  https://github.com/xiph/ogg.git
+        GIT_TAG         v1.3.6
+        EXCLUDE_FROM_ALL   # keep Ogg's install() rules out of our .deb, same as Opus
+)
+FetchContent_MakeAvailable(ogg)
+
 #Google Test
 FetchContent_Declare(
         googletest
@@ -606,6 +619,7 @@ target_link_libraries(creature-server
         Threads::Threads
         uvgrtp
         opus
+        ogg
         whisper
         OpenSSL::SSL
         OpenSSL::Crypto
@@ -662,7 +676,9 @@ add_executable(creature-server-test
         tests/server/voice/DialogWav_test.cpp
         tests/server/voice/DialogCache_test.cpp
         tests/server/audio/MonoWavDownmixer_test.cpp
+        tests/server/audio/OggOpusWriter_test.cpp
         src/server/audio/MonoWavDownmixer.cpp
+        src/server/audio/OggOpusWriter.cpp
         src/server/voice/DialogAnimation.cpp
         src/server/voice/DialogCache.cpp
         src/server/voice/DialogClient.cpp
@@ -720,6 +736,8 @@ target_link_libraries(creature-server-test
         argparse
         e131_service
         CreatureVoicesLib
+        opus
+        ogg
         gtest_main
         gmock_main
         Threads::Threads
