@@ -52,6 +52,30 @@ TEST(IxmlWriter, DocumentContainsAllFields) {
     EXPECT_NE(xml.find("Pip: Hi!"), std::string::npos);
 }
 
+TEST(IxmlWriter, TotalChannelsEmitsCompleteContiguousTrackList) {
+    // The used lanes are sparse (1, 2, 17), but a poly WAV needs a TRACK per
+    // channel with TRACK_COUNT == channel count for Wave Agent / DAWs to show
+    // the names.
+    DialogWavProvenance p;
+    p.tracks = {{1, "Beaky"}, {2, "Mango"}, {17, "BGM"}};
+    const auto xml = buildDialogIxml(p, 17);
+
+    EXPECT_NE(xml.find("<TRACK_COUNT>17</TRACK_COUNT>"), std::string::npos);
+    // Named lanes present.
+    EXPECT_NE(xml.find("<CHANNEL_INDEX>1</CHANNEL_INDEX><NAME>Beaky</NAME>"), std::string::npos);
+    EXPECT_NE(xml.find("<CHANNEL_INDEX>2</CHANNEL_INDEX><NAME>Mango</NAME>"), std::string::npos);
+    EXPECT_NE(xml.find("<CHANNEL_INDEX>17</CHANNEL_INDEX><NAME>BGM</NAME>"), std::string::npos);
+    // A silent lane is still present, with an empty name.
+    EXPECT_NE(xml.find("<CHANNEL_INDEX>5</CHANNEL_INDEX><NAME></NAME>"), std::string::npos);
+    // Exactly 17 TRACK entries.
+    std::size_t count = 0, pos = 0;
+    while ((pos = xml.find("<TRACK>", pos)) != std::string::npos) {
+        ++count;
+        pos += 7;
+    }
+    EXPECT_EQ(count, 17u);
+}
+
 TEST(IxmlWriter, OmitsTrackListWhenNoTracks) {
     // A mono export carries provenance without a track list (a 17-track list
     // would misdescribe a 1-channel file).

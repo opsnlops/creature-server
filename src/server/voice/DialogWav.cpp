@@ -157,7 +157,9 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     // the audio is what matters — and log it.
     std::vector<uint8_t> ixmlChunk;
     if (provenance && !provenance->empty()) {
-        ixmlChunk = makeIxmlChunk(buildDialogIxml(*provenance));
+        // Emit a complete 17-track TRACK_LIST (one per interleaved channel) so
+        // Wave Agent / DAWs show the per-lane names (#51 follow-up).
+        ixmlChunk = makeIxmlChunk(buildDialogIxml(*provenance, RTP_STREAMING_CHANNELS));
         const std::uint64_t withIxml = 36ull + dataBytes64 + ixmlChunk.size();
         if (withIxml > std::numeric_limits<std::uint32_t>::max()) {
             warn("writeDialogWav: scene too large to also carry a {}-byte iXML chunk; writing without provenance",

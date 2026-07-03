@@ -12,12 +12,16 @@ namespace creatures::voice {
 struct DialogTrackInfo {
     uint16_t channel;
     std::string name; // creature name, or "BGM" for the music lane
+
+    bool operator==(const DialogTrackInfo &) const = default;
 };
 
 /// One turn of the rendered script, for the iXML `<USER><DIALOG_SCRIPT>` block.
 struct DialogScriptLine {
     std::string speaker; // resolved creature name (falls back to creature_id)
     std::string text;
+
+    bool operator==(const DialogScriptLine &) const = default;
 };
 
 /// Everything we want to stamp into a permanent dialog WAV so an otherwise
@@ -35,12 +39,21 @@ struct DialogWavProvenance {
     [[nodiscard]] bool empty() const {
         return sourceScriptId.empty() && title.empty() && generationIds.empty() && tracks.empty() && script.empty();
     }
+
+    bool operator==(const DialogWavProvenance &) const = default;
 };
 
 /// Build the iXML document (a BWFXML string) describing a dialog WAV's
 /// provenance. All values are XML-escaped. This is the payload that goes inside
 /// the RIFF `iXML` chunk.
-[[nodiscard]] std::string buildDialogIxml(const DialogWavProvenance &provenance);
+///
+/// `totalChannels`, when > 0, forces a **complete** TRACK_LIST: one TRACK per
+/// interleaved channel 1..totalChannels, `TRACK_COUNT == totalChannels`, names
+/// filled from `provenance.tracks` by channel and left empty on silent lanes.
+/// Field recorders / Wave Agent / DAWs expect this (a sparse list with a
+/// mismatched count is ignored). When 0 (the default, e.g. a mono export), the
+/// TRACK_LIST is emitted only if `provenance.tracks` is non-empty, verbatim.
+[[nodiscard]] std::string buildDialogIxml(const DialogWavProvenance &provenance, int totalChannels = 0);
 
 /// Wrap an iXML document string as a complete RIFF `iXML` chunk: the 4-byte id,
 /// a little-endian 4-byte size, the payload, and a pad byte if the payload
