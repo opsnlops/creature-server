@@ -541,6 +541,8 @@ add_executable(creature-server
         src/server/ws/service/AnimationService.cpp
         src/server/ws/service/CreatureService.h
         src/server/ws/service/CreatureService.cpp
+        src/server/ws/service/DialogPreviewService.h
+        src/server/ws/service/DialogPreviewService.cpp
         src/server/ws/service/DmxFixtureService.h
         src/server/ws/service/DmxFixtureService.cpp
         src/server/ws/service/MetricsService.h

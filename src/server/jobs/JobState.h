@@ -23,11 +23,14 @@ enum class JobStatus {
  * Type of background job
  */
 enum class JobType {
-    LipSync,            // Generate lip sync data using Rhubarb
-    AdHocSpeech,        // Generate and immediately play ad-hoc speech
-    AdHocSpeechPrepare, // Generate ad-hoc speech but wait for manual trigger
-    AnimationLipSync,   // Regenerate lip sync data for an existing animation
-    Dialog,             // Generate a multi-character dialog scene (ElevenLabs Text-to-Dialogue + slice + assemble)
+    LipSync,             // Generate lip sync data using Rhubarb
+    AdHocSpeech,         // Generate and immediately play ad-hoc speech
+    AdHocSpeechPrepare,  // Generate ad-hoc speech but wait for manual trigger
+    AnimationLipSync,    // Regenerate lip sync data for an existing animation
+    Dialog,              // Generate a multi-character dialog scene (ElevenLabs Text-to-Dialogue + slice + assemble)
+    DialogPreview,       // Generate (or load) a dialog preview take + return its metadata
+    DialogPreviewExport, // Assemble a dialog preview's 17-channel WAV into the ad-hoc bucket
+    VoiceFile,           // Single-voice TTS of text into a permanent sound file
 };
 
 /**
@@ -95,6 +98,12 @@ inline std::string toString(JobType type) {
         return "animation-lip-sync";
     case JobType::Dialog:
         return "dialog";
+    case JobType::DialogPreview:
+        return "dialog-preview";
+    case JobType::DialogPreviewExport:
+        return "dialog-preview-export";
+    case JobType::VoiceFile:
+        return "voice-file";
     default:
         return "unknown";
     }

@@ -282,6 +282,16 @@ class OperationSpan {
     void setSuccess();
 
     /**
+     * End (export) the span now, rather than waiting for the destructor.
+     *
+     * Idempotent — safe to call more than once; the destructor's End() becomes a
+     * no-op afterward. Needed for spans whose owning object outlives the operation
+     * (e.g. a job span held in JobManager's map for the process lifetime): without
+     * an explicit end() at the terminal state, the span would never export.
+     */
+    void end();
+
+    /**
      * Mark the operation as failed with an error message
      */
     void setError(const std::string &errorMessage);
@@ -335,6 +345,7 @@ class OperationSpan {
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span_;
     opentelemetry::context::Context context_;
     bool statusSet_;
+    bool ended_ = false;
 };
 
 /**

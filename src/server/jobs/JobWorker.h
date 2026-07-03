@@ -90,6 +90,34 @@ class JobWorker : public creatures::StoppableThread {
      * "adhoc"|"permanent", autoplay: bool, title: string }.
      */
     void handleDialogJob(JobState &jobState);
+
+    /**
+     * Generate (or load) a dialog preview take and return its metadata.
+     *
+     * Details JSON is a serialized DialogPreviewRequestDto. Runs the shared
+     * DialogPreviewService::loadOrGenerate with per-chunk progress broadcasts;
+     * completion result is the DialogPreviewMetaResponseDto JSON the sync path
+     * used to return.
+     */
+    void handleDialogPreviewJob(JobState &jobState);
+
+    /**
+     * Assemble a dialog preview's 17-channel WAV into the ad-hoc sound bucket.
+     *
+     * Details JSON is a serialized DialogPreviewRequestDto. Generates/loads the
+     * take, then writes the WAV to preview-exports/. Completion result carries
+     * the downloadable file_name (+ generation_id, cache_key).
+     */
+    void handleDialogPreviewExportJob(JobState &jobState);
+
+    /**
+     * Single-voice TTS of text into a permanent sound file.
+     *
+     * Details JSON is a serialized MakeSoundFileRequestDto. Completion result
+     * is the CreatureSpeechResponseDto JSON; fires a SoundList cache
+     * invalidation on success.
+     */
+    void handleVoiceFileJob(JobState &jobState);
 };
 
 } // namespace creatures::jobs

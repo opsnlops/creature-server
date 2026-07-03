@@ -39,6 +39,12 @@
 #include "server/voice/TextToViseme.h"
 #include "server/voice/WavFileReader.h"
 #include "server/ws/dto/DialogDto.h"
+#include "server/ws/dto/DialogPreviewExportResultDto.h"
+#include "server/ws/dto/MakeSoundFileRequestDto.h"
+#include "server/ws/service/DialogPreviewService.h"
+#include "server/ws/service/VoiceService.h"
+
+#include <model/CreatureSpeechResponse.h>
 
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
@@ -216,6 +222,18 @@ void JobWorker::processJob(const std::string &jobId) {
         case JobType::Dialog:
             info("Handling job {} as Dialog type", jobId);
             handleDialogJob(jobState);
+            break;
+        case JobType::DialogPreview:
+            info("Handling job {} as DialogPreview type", jobId);
+            handleDialogPreviewJob(jobState);
+            break;
+        case JobType::DialogPreviewExport:
+            info("Handling job {} as DialogPreviewExport type", jobId);
+            handleDialogPreviewExportJob(jobState);
+            break;
+        case JobType::VoiceFile:
+            info("Handling job {} as VoiceFile type", jobId);
+            handleVoiceFileJob(jobState);
             break;
         default:
             error("Unknown job type for job {}: {}", jobId, toString(jobState.jobType));
@@ -1517,6 +1535,240 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         jobState.span->setSuccess();
     }
     info("Dialog job {} succeeded: animation_id={}", jobState.jobId, animation.id);
+    broadcastCompletion(jobState.jobId);
+}
+
+// ===========================================================================
+// Dialog preview handlers — async wrappers around DialogPreviewService.
+// ===========================================================================
+
+void JobWorker::handleDialogPreviewJob(JobState &jobState) {
+    auto broadcastProgress = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobProgressToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast dialog preview job progress: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto broadcastCompletion = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobCompleteToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast dialog preview job completion: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto updateProgress = [&](float v) {
+        jobManager_->updateJobProgress(jobState.jobId, v);
+        broadcastProgress(jobState.jobId);
+    };
+    auto failJob = [&](const std::string &msg) {
+        error("Dialog preview job {} failed: {}", jobState.jobId, msg);
+        if (jobState.span) {
+            jobState.span->setError(msg);
+        }
+        jobManager_->failJob(jobState.jobId, msg);
+        broadcastCompletion(jobState.jobId);
+    };
+
+    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+    oatpp::Object<ws::DialogPreviewRequestDto> reqDto;
+    try {
+        reqDto = jsonMapper->readFromString<oatpp::Object<ws::DialogPreviewRequestDto>>(jobState.details.c_str());
+    } catch (const std::exception &e) {
+        return failJob(fmt::format("invalid dialog preview job details: {}", e.what()));
+    }
+    if (!reqDto) {
+        return failJob("dialog preview job details deserialized to null");
+    }
+
+    updateProgress(0.05f);
+
+    ws::DialogPreviewService service;
+    auto progress = [&](float f) { updateProgress(0.05f + 0.90f * std::clamp(f, 0.0f, 1.0f)); };
+    auto outcomeResult = service.loadOrGenerate(reqDto, jobState.span, "meta-job", progress, jobState.jobId);
+    if (!outcomeResult.isSuccess()) {
+        return failJob(outcomeResult.getError().value().getMessage());
+    }
+    const auto outcome = outcomeResult.getValue().value();
+
+    auto dto = ws::DialogPreviewMetaResponseDto::createShared();
+    ws::DialogPreviewService::populateMetaResponse(dto, outcome.generation, outcome.cacheKey, outcome.cached);
+
+    updateProgress(1.0f);
+    jobManager_->completeJob(jobState.jobId, jsonMapper->writeToString(dto)->c_str());
+    if (jobState.span) {
+        jobState.span->setAttribute("dialog.generation_id", outcome.generation.generationId);
+        jobState.span->setSuccess();
+    }
+    info("Dialog preview job {} succeeded: generation_id={}", jobState.jobId, outcome.generation.generationId);
+    broadcastCompletion(jobState.jobId);
+}
+
+void JobWorker::handleDialogPreviewExportJob(JobState &jobState) {
+    auto broadcastProgress = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobProgressToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast dialog preview export job progress: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto broadcastCompletion = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobCompleteToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast dialog preview export job completion: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto updateProgress = [&](float v) {
+        jobManager_->updateJobProgress(jobState.jobId, v);
+        broadcastProgress(jobState.jobId);
+    };
+    auto failJob = [&](const std::string &msg) {
+        error("Dialog preview export job {} failed: {}", jobState.jobId, msg);
+        if (jobState.span) {
+            jobState.span->setError(msg);
+        }
+        jobManager_->failJob(jobState.jobId, msg);
+        broadcastCompletion(jobState.jobId);
+    };
+
+    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+    oatpp::Object<ws::DialogPreviewRequestDto> reqDto;
+    try {
+        reqDto = jsonMapper->readFromString<oatpp::Object<ws::DialogPreviewRequestDto>>(jobState.details.c_str());
+    } catch (const std::exception &e) {
+        return failJob(fmt::format("invalid dialog preview export job details: {}", e.what()));
+    }
+    if (!reqDto) {
+        return failJob("dialog preview export job details deserialized to null");
+    }
+
+    updateProgress(0.05f);
+
+    ws::DialogPreviewService service;
+    // loadOrGenerate owns 0.05..0.70; the WAV assembly owns the rest.
+    auto progress = [&](float f) { updateProgress(0.05f + 0.65f * std::clamp(f, 0.0f, 1.0f)); };
+    auto outcomeResult = service.loadOrGenerate(reqDto, jobState.span, "multichannel-job", progress, jobState.jobId);
+    if (!outcomeResult.isSuccess()) {
+        return failJob(outcomeResult.getError().value().getMessage());
+    }
+    const auto outcome = outcomeResult.getValue().value();
+    updateProgress(0.70f);
+
+    // Write the 17-channel WAV into the ad-hoc sound bucket so it's downloadable
+    // through GET /api/v1/sound/ad-hoc/{filename} and shareable for free.
+    auto adHocRootResult = creatures::storage::root(creatures::storage::Persistence::AdHoc);
+    if (!adHocRootResult.isSuccess()) {
+        return failJob(fmt::format("Unable to access ad-hoc root: {}", adHocRootResult.getError()->getMessage()));
+    }
+    const auto exportDir = adHocRootResult.getValue().value() / "preview-exports";
+    const auto fileName = fmt::format("dialog-17ch-{}.wav", outcome.generation.generationId);
+    const auto wavPath = exportDir / fileName;
+
+    auto exportResult = service.exportMultichannel(outcome, wavPath, jobState.span);
+    if (!exportResult.isSuccess()) {
+        return failJob(exportResult.getError().value().getMessage());
+    }
+    updateProgress(0.95f);
+
+    auto resultDto = ws::DialogPreviewExportResultDto::createShared();
+    resultDto->file_name = fileName.c_str();
+    resultDto->generation_id = outcome.generation.generationId.c_str();
+    resultDto->cache_key = outcome.cacheKey.c_str();
+
+    updateProgress(1.0f);
+    jobManager_->completeJob(jobState.jobId, jsonMapper->writeToString(resultDto)->c_str());
+    if (jobState.span) {
+        jobState.span->setAttribute("dialog.generation_id", outcome.generation.generationId);
+        jobState.span->setAttribute("export.file_name", fileName);
+        jobState.span->setSuccess();
+    }
+    info("Dialog preview export job {} succeeded: file_name={}", jobState.jobId, fileName);
+    broadcastCompletion(jobState.jobId);
+}
+
+void JobWorker::handleVoiceFileJob(JobState &jobState) {
+    auto broadcastCompletion = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobCompleteToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast voice file job completion: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto broadcastProgress = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobProgressToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast voice file job progress: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto updateProgress = [&](float v) {
+        jobManager_->updateJobProgress(jobState.jobId, v);
+        broadcastProgress(jobState.jobId);
+    };
+    auto failJob = [&](const std::string &msg) {
+        error("Voice file job {} failed: {}", jobState.jobId, msg);
+        if (jobState.span) {
+            jobState.span->setError(msg);
+        }
+        jobManager_->failJob(jobState.jobId, msg);
+        broadcastCompletion(jobState.jobId);
+    };
+
+    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+    oatpp::Object<ws::MakeSoundFileRequestDto> reqDto;
+    try {
+        reqDto = jsonMapper->readFromString<oatpp::Object<ws::MakeSoundFileRequestDto>>(jobState.details.c_str());
+    } catch (const std::exception &e) {
+        return failJob(fmt::format("invalid voice file job details: {}", e.what()));
+    }
+    if (!reqDto || !reqDto->creature_id || reqDto->creature_id->empty() || !reqDto->text || reqDto->text->empty()) {
+        return failJob("voice file jobs require both creature_id and text");
+    }
+
+    if (jobState.span) {
+        jobState.span->setAttribute("creature.id", std::string(*reqDto->creature_id));
+        const auto text = std::string(*reqDto->text);
+        jobState.span->setAttribute("speech.text_length", static_cast<int64_t>(text.size()));
+        jobState.span->setAttribute("speech.text_preview", text.substr(0, 60));
+    }
+
+    updateProgress(0.05f);
+
+    ws::VoiceService voiceService;
+    oatpp::Object<creatures::voice::CreatureSpeechResponseDto> response;
+    try {
+        response = voiceService.generateCreatureSpeech(reqDto);
+    } catch (const std::exception &e) {
+        return failJob(fmt::format("speech generation failed: {}", e.what()));
+    }
+    if (!response) {
+        return failJob("speech generation returned no response");
+    }
+
+    // The underlying CreatureVoicesLib write doesn't go through the storage
+    // facade's writeSoundFile yet, so fire the SoundList invalidation manually
+    // (mirrors what the old synchronous controller did).
+    creatures::storage::broadcastCacheInvalidation(CacheType::SoundList);
+
+    updateProgress(1.0f);
+    jobManager_->completeJob(jobState.jobId, jsonMapper->writeToString(response)->c_str());
+    if (jobState.span) {
+        jobState.span->setSuccess();
+    }
+    info("Voice file job {} succeeded", jobState.jobId);
     broadcastCompletion(jobState.jobId);
 }
 

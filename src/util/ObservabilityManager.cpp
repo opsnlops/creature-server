@@ -868,13 +868,19 @@ OperationSpan::OperationSpan(opentelemetry::nostd::shared_ptr<opentelemetry::tra
     context_ = opentelemetry::context::RuntimeContext::GetCurrent();
 }
 
-OperationSpan::~OperationSpan() {
+OperationSpan::~OperationSpan() { end(); }
+
+void OperationSpan::end() {
+    if (ended_) {
+        return;
+    }
     if (span_ && !statusSet_) {
         setSuccess();
     }
     if (span_) {
         span_->End();
     }
+    ended_ = true;
 }
 
 void OperationSpan::setSuccess() {
