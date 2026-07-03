@@ -15,9 +15,10 @@ namespace creatures::audio {
 /// provenance (TITLE, DESCRIPTION, SOURCE_SCRIPT_ID) into a shared .ogg (#47).
 using OggComments = std::vector<std::pair<std::string, std::string>>;
 
-/// Bitrate for shareable sound exports. 96 kbps mono Opus is transparent for our
-/// content while turning a multi-megabyte WAV into something chat-app sized.
-inline constexpr int kShareableOpusBitrate = 96000;
+/// Bitrate for shareable sound exports. 128 kbps mono Opus stays transparent even on
+/// music beds (96 kbps had audible artifacting) while turning a multi-megabyte WAV into
+/// something chat-app sized.
+inline constexpr int kShareableOpusBitrate = 128000;
 
 /// The whole audio pipeline runs at 48 kHz by design (Opus's native rate), and the
 /// muxer's pre-skip/granule bookkeeping relies on it: Ogg Opus granule positions are
