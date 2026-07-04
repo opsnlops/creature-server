@@ -164,6 +164,13 @@ class DialogPreviewRequestDto : public oatpp::DTO {
         info->required = false;
     }
     DTO_FIELD(Boolean, regenerate);
+
+    DTO_FIELD_INFO(title) {
+        info->description = "Optional scene title, embedded in the provenance of editor exports (#51). Not part of "
+                            "the cache key.";
+        info->required = false;
+    }
+    DTO_FIELD(String, title);
 };
 
 /// One voice_segments entry on the wire (mirrors creatures::voice::DialogVoiceSegment).

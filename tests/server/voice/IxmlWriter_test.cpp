@@ -7,6 +7,7 @@
 #include "server/voice/IxmlWriter.h"
 
 using creatures::voice::buildDialogIxml;
+using creatures::voice::DialogLipsyncTrack;
 using creatures::voice::DialogWavProvenance;
 using creatures::voice::makeIxmlChunk;
 
@@ -52,6 +53,30 @@ TEST(IxmlWriter, DocumentContainsAllFields) {
     EXPECT_NE(xml.find("Pip: Hi!"), std::string::npos);
 }
 
+TEST(IxmlWriter, TotalChannelsEmitsCompleteContiguousTrackList) {
+    // The used lanes are sparse (1, 2, 17), but a poly WAV needs a TRACK per
+    // channel with TRACK_COUNT == channel count for Wave Agent / DAWs to show
+    // the names.
+    DialogWavProvenance p;
+    p.tracks = {{1, "Beaky"}, {2, "Mango"}, {17, "BGM"}};
+    const auto xml = buildDialogIxml(p, 17);
+
+    EXPECT_NE(xml.find("<TRACK_COUNT>17</TRACK_COUNT>"), std::string::npos);
+    // Named lanes present.
+    EXPECT_NE(xml.find("<CHANNEL_INDEX>1</CHANNEL_INDEX><NAME>Beaky</NAME>"), std::string::npos);
+    EXPECT_NE(xml.find("<CHANNEL_INDEX>2</CHANNEL_INDEX><NAME>Mango</NAME>"), std::string::npos);
+    EXPECT_NE(xml.find("<CHANNEL_INDEX>17</CHANNEL_INDEX><NAME>BGM</NAME>"), std::string::npos);
+    // A silent lane is still present, with an empty name.
+    EXPECT_NE(xml.find("<CHANNEL_INDEX>5</CHANNEL_INDEX><NAME></NAME>"), std::string::npos);
+    // Exactly 17 TRACK entries.
+    std::size_t count = 0, pos = 0;
+    while ((pos = xml.find("<TRACK>", pos)) != std::string::npos) {
+        ++count;
+        pos += 7;
+    }
+    EXPECT_EQ(count, 17u);
+}
+
 TEST(IxmlWriter, OmitsTrackListWhenNoTracks) {
     // A mono export carries provenance without a track list (a 17-track list
     // would misdescribe a 1-channel file).
@@ -64,6 +89,27 @@ TEST(IxmlWriter, OmitsTrackListWhenNoTracks) {
     // The rest of the document is still there.
     EXPECT_NE(xml.find("Beaky: hi"), std::string::npos);
     EXPECT_NE(xml.find("Mono Take"), std::string::npos);
+}
+
+TEST(IxmlWriter, EmitsLipsyncBlockWithPackedCues) {
+    DialogWavProvenance p;
+    DialogLipsyncTrack track;
+    track.channel = 1;
+    track.name = "Beaky";
+    track.cues = {{0.0, 0.12, "B"}, {0.12, 0.25, "A"}, {0.25, 0.4, "X"}};
+    p.lipsync = {track};
+
+    const auto xml = buildDialogIxml(p);
+    EXPECT_NE(xml.find("<LIPSYNC>"), std::string::npos);
+    EXPECT_NE(xml.find("<CHANNEL_INDEX>1</CHANNEL_INDEX><NAME>Beaky</NAME>"), std::string::npos);
+    // Cues packed as "start end shape;..." with 3-decimal seconds.
+    EXPECT_NE(xml.find("<CUES>0.000 0.120 B;0.120 0.250 A;0.250 0.400 X</CUES>"), std::string::npos);
+}
+
+TEST(IxmlWriter, OmitsLipsyncBlockWhenAbsent) {
+    DialogWavProvenance p;
+    p.script = {{"Beaky", "hi"}};
+    EXPECT_EQ(buildDialogIxml(p).find("<LIPSYNC>"), std::string::npos);
 }
 
 TEST(IxmlWriter, EscapesXmlMetacharacters) {

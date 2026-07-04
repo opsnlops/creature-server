@@ -1,6 +1,7 @@
 #include "server/voice/IxmlWriter.h"
 
 #include <cstddef>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -51,7 +52,7 @@ std::string joinGenerationIds(const std::vector<std::string> &ids) {
 
 } // namespace
 
-std::string buildDialogIxml(const DialogWavProvenance &provenance) {
+std::string buildDialogIxml(const DialogWavProvenance &provenance, int totalChannels) {
     std::string xml;
     xml.reserve(512 + provenance.script.size() * 64);
 
@@ -66,19 +67,39 @@ std::string buildDialogIxml(const DialogWavProvenance &provenance) {
     }
     xml += "  <NOTE>" + xmlEscape(note) + "</NOTE>\n";
 
-    // TRACK_LIST: which creature (or BGM) is on which interleaved channel. Only
-    // emitted when there are tracks — a mono export carries provenance without a
-    // multi-track list that would misdescribe a single-channel file.
-    if (!provenance.tracks.empty()) {
+    // TRACK_LIST: which creature (or BGM) is on which interleaved channel.
+    auto emitTrack = [&](int channel, const std::string &name) {
+        const auto ch = std::to_string(channel);
+        xml += "    <TRACK>";
+        xml += "<CHANNEL_INDEX>" + ch + "</CHANNEL_INDEX>";
+        xml += "<NAME>" + xmlEscape(name) + "</NAME>";
+        xml += "<INTERLEAVE_INDEX>" + ch + "</INTERLEAVE_INDEX>";
+        xml += "</TRACK>\n";
+    };
+
+    if (totalChannels > 0) {
+        // Complete, contiguous list for a poly WAV: one TRACK per interleaved
+        // channel with TRACK_COUNT == channel count. A sparse list (only the used
+        // lanes) with a mismatched count is ignored by Wave Agent / DAWs.
+        std::vector<std::string> nameByChannel(static_cast<std::size_t>(totalChannels));
+        for (const auto &t : provenance.tracks) {
+            if (t.channel >= 1 && t.channel <= totalChannels) {
+                nameByChannel[static_cast<std::size_t>(t.channel - 1)] = t.name;
+            }
+        }
+        xml += "  <TRACK_LIST>\n";
+        xml += "    <TRACK_COUNT>" + std::to_string(totalChannels) + "</TRACK_COUNT>\n";
+        for (int c = 1; c <= totalChannels; ++c) {
+            emitTrack(c, nameByChannel[static_cast<std::size_t>(c - 1)]);
+        }
+        xml += "  </TRACK_LIST>\n";
+    } else if (!provenance.tracks.empty()) {
+        // Verbatim sparse list (used when the caller doesn't specify a channel
+        // count). A mono export clears tracks, so it lands here with none.
         xml += "  <TRACK_LIST>\n";
         xml += "    <TRACK_COUNT>" + std::to_string(provenance.tracks.size()) + "</TRACK_COUNT>\n";
         for (const auto &t : provenance.tracks) {
-            const auto ch = std::to_string(t.channel);
-            xml += "    <TRACK>";
-            xml += "<CHANNEL_INDEX>" + ch + "</CHANNEL_INDEX>";
-            xml += "<NAME>" + xmlEscape(t.name) + "</NAME>";
-            xml += "<INTERLEAVE_INDEX>" + ch + "</INTERLEAVE_INDEX>";
-            xml += "</TRACK>\n";
+            emitTrack(t.channel, t.name);
         }
         xml += "  </TRACK_LIST>\n";
     }
@@ -97,6 +118,31 @@ std::string buildDialogIxml(const DialogWavProvenance &provenance) {
         script += provenance.script[i].speaker + ": " + provenance.script[i].text;
     }
     xml += "    <DIALOG_SCRIPT>" + xmlEscape(script) + "</DIALOG_SCRIPT>\n";
+
+    // LIPSYNC: per-creature mouth cues (derived from ElevenLabs alignment, #53).
+    // A private block only creature-console reads. Cues are packed compactly as
+    // "start end shape;start end shape;..." (seconds to 3 decimals).
+    if (!provenance.lipsync.empty()) {
+        xml += "    <LIPSYNC>\n";
+        for (const auto &lt : provenance.lipsync) {
+            std::string cues;
+            cues.reserve(lt.cues.size() * 16);
+            for (std::size_t i = 0; i < lt.cues.size(); ++i) {
+                if (i > 0) {
+                    cues += ';';
+                }
+                char buf[48];
+                std::snprintf(buf, sizeof(buf), "%.3f %.3f ", lt.cues[i].start, lt.cues[i].end);
+                cues += buf;
+                cues += lt.cues[i].shape;
+            }
+            xml += "      <TRACK><CHANNEL_INDEX>" + std::to_string(lt.channel) + "</CHANNEL_INDEX>";
+            xml += "<NAME>" + xmlEscape(lt.name) + "</NAME>";
+            xml += "<CUES>" + xmlEscape(cues) + "</CUES></TRACK>\n";
+        }
+        xml += "    </LIPSYNC>\n";
+    }
+
     xml += "  </USER>\n";
 
     xml += "</BWFXML>\n";

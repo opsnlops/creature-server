@@ -407,18 +407,23 @@ DialogPreviewService::loadOrGenerate(const oatpp::Object<DialogPreviewRequestDto
     // can read it back. Skip the (json-only) persist if the generation already
     // carried provenance from a prior run.
     {
-        // The preview request carries only turns — no saved script id/title (those
-        // arrive at render time). So provenance here is the track layout + script
-        // text + generation id.
-        const bool alreadyPersisted = !out.generation.provenance.empty();
-        out.generation.provenance = buildPreviewProvenance(out.inputs, out.resolved, out.generation.generationId,
-                                                           /*scriptId=*/"", /*title=*/"");
-        if (!alreadyPersisted && !out.generation.provenance.empty()) {
-            auto r = creatures::voice::updateGenerationProvenance(out.cacheKey, out.generation.generationId,
-                                                                  out.generation.provenance);
-            if (!r.isSuccess()) {
-                warn("Dialog preview: persisting provenance for {}/{} failed: {}", out.cacheKey,
-                     out.generation.generationId, r.getError().value().getMessage());
+        // Provenance = track layout + script text + generation id, plus the scene
+        // title if the request carried one (#51; the preview has no saved script id).
+        // Re-persist whenever it differs from what's on disk — the title can change
+        // between previews of the same turns (the cache key is turns-only), and the
+        // mono/Ogg export endpoints read provenance straight from the cache.
+        const std::string title = body->title ? std::string(*body->title) : std::string();
+        auto built = buildPreviewProvenance(out.inputs, out.resolved, out.generation.generationId,
+                                            /*scriptId=*/"", title);
+        if (built != out.generation.provenance) {
+            out.generation.provenance = std::move(built);
+            if (!out.generation.provenance.empty()) {
+                auto r = creatures::voice::updateGenerationProvenance(out.cacheKey, out.generation.generationId,
+                                                                      out.generation.provenance);
+                if (!r.isSuccess()) {
+                    warn("Dialog preview: persisting provenance for {}/{} failed: {}", out.cacheKey,
+                         out.generation.generationId, r.getError().value().getMessage());
+                }
             }
         }
     }

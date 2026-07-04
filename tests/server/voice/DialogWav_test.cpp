@@ -258,10 +258,11 @@ TEST_F(DialogWavTest, ReadsBackEmbeddedIxml) {
     auto r = writeDialogWav(assembled, m, tmpPath_, nullptr, &prov);
     ASSERT_TRUE(r.isSuccess());
 
-    // The reader returns exactly the document the writer embedded.
+    // The reader returns exactly the document the writer embedded — writeDialogWav
+    // emits the complete 17-channel TRACK_LIST.
     auto readBack = creatures::voice::readIxmlChunk(tmpPath_);
     ASSERT_TRUE(readBack.has_value());
-    EXPECT_EQ(*readBack, creatures::voice::buildDialogIxml(prov));
+    EXPECT_EQ(*readBack, creatures::voice::buildDialogIxml(prov, 17));
 }
 
 TEST_F(DialogWavTest, ReadIxmlReturnsNulloptWhenAbsent) {

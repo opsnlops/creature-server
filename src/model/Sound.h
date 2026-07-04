@@ -14,6 +14,13 @@ struct Sound {
     uint32_t size = 0;
     std::string transcript;
     std::string lipsync;
+    // Embedded iXML provenance (dialog renders). Empty / false for plain sounds.
+    std::string title;               // human scene title, for display instead of a UUID
+    std::string sourceScriptId;      // links back to the dialog script, if any
+    std::string script;              // the full readable dialog text, if embedded
+    std::string generationIds;       // comma-separated ElevenLabs generation ids, if embedded
+    bool hasEmbeddedScript = false;  // true when the file carries iXML script text
+    bool hasEmbeddedLipsync = false; // true when the file carries iXML lip-sync (mouth cues)
 };
 
 #include OATPP_CODEGEN_BEGIN(DTO)
@@ -45,6 +52,47 @@ class SoundDto : public oatpp::DTO {
         info->required = false;
     }
     DTO_FIELD(String, lipsync);
+
+    DTO_FIELD_INFO(title) {
+        info->description = "Human scene title embedded in the file's provenance (dialog renders), for display "
+                            "instead of a UUID filename. Empty if the file has none.";
+        info->required = false;
+    }
+    DTO_FIELD(String, title);
+
+    DTO_FIELD_INFO(source_script_id) {
+        info->description = "The dialog script this render came from, embedded in the file's provenance. Empty if "
+                            "the file has none.";
+        info->required = false;
+    }
+    DTO_FIELD(String, source_script_id);
+
+    DTO_FIELD_INFO(has_embedded_script) {
+        info->description = "True when the file carries embedded (iXML) script text — the readable dialog it was "
+                            "rendered from.";
+        info->required = false;
+    }
+    DTO_FIELD(Boolean, has_embedded_script);
+
+    DTO_FIELD_INFO(script) {
+        info->description = "The full readable dialog text embedded in the file's provenance ('Speaker: line' per "
+                            "turn), if any.";
+        info->required = false;
+    }
+    DTO_FIELD(String, script);
+
+    DTO_FIELD_INFO(generation_ids) {
+        info->description = "Comma-separated ElevenLabs generation ids embedded in the file's provenance, if any.";
+        info->required = false;
+    }
+    DTO_FIELD(String, generation_ids);
+
+    DTO_FIELD_INFO(has_embedded_lipsync) {
+        info->description = "True when the file carries embedded (iXML) lip-sync — per-creature mouth cues derived "
+                            "from the ElevenLabs alignment.";
+        info->required = false;
+    }
+    DTO_FIELD(Boolean, has_embedded_lipsync);
 };
 
 #include OATPP_CODEGEN_END(DTO)

@@ -1388,6 +1388,30 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             const auto it = nameById.find(cid);
             provenance.script.push_back({it != nameById.end() ? it->second : cid, text});
         }
+
+        // Lip sync: per-creature mouth cues derived from the ElevenLabs forced
+        // alignment — the same visemes that drive the mouth servos — embedded so
+        // the file carries its own lip sync (#53). Only creature-console reads it.
+        auto viseme = getDialogTextToViseme();
+        std::unordered_map<std::string, std::pair<uint16_t, std::string>> laneByVoice;
+        for (const auto &c : creaturesCache) {
+            laneByVoice.emplace(c.voiceId, std::make_pair(c.audioChannel, nameById.at(c.creatureId)));
+        }
+        for (const auto &pc : assembled.perCreature) {
+            const auto it = laneByVoice.find(pc.voiceId);
+            if (it == laneByVoice.end()) {
+                continue;
+            }
+            voice::DialogLipsyncTrack lt;
+            lt.channel = it->second.first;
+            lt.name = it->second.second;
+            for (const auto &cue : viseme->charTimingsToMouthCues(pc.mouth)) {
+                lt.cues.push_back({cue.start, cue.end, cue.value});
+            }
+            if (!lt.cues.empty()) {
+                provenance.lipsync.push_back(std::move(lt));
+            }
+        }
     }
 
     const bool embedProvenance = persistence == DialogPersistence::Permanent && !provenance.empty();
