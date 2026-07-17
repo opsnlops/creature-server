@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "DialogClient.h"
+#include "IxmlWriter.h" // DialogWordTiming — per-word timing carried through the pipeline (#56 Part 2)
 #include "TextToViseme.h"
 #include "util/Result.h"
 
@@ -69,6 +70,13 @@ struct DialogPerCreature {
     /// of the assembled audio, not from the start of any individual turn).
     /// Feeds straight into TextToViseme::charTimingsToMouthCues().
     std::vector<TextToViseme::CharTiming> mouth;
+
+    /// Per-word timing (start/end in seconds) on that SAME tightened timeline,
+    /// from the ElevenLabs forced-alignment words — shifted by the identical
+    /// amount as `mouth` so words line up with the audio and the mouth cues.
+    /// Feeds the iXML <WORD_ALIGNMENT> block for word-at-timestamp lookups in the
+    /// editor (issue #56, Part 2).
+    std::vector<DialogWordTiming> words;
 };
 
 /// Result of assembling one or more chunks: per-creature mono PCM + mouth

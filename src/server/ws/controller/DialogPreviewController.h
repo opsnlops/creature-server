@@ -23,6 +23,7 @@
 
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
+#include "server/audio/Mp3Writer.h"
 #include "server/audio/OggOpusWriter.h"
 #include "server/database.h"
 #include "server/jobs/JobManager.h"
@@ -237,13 +238,16 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
     }
 
     ENDPOINT_INFO(getPreviewShareable) {
-        info->summary = "Download a shareable Ogg/Opus version of a cached dialog generation";
-        info->description = "Encodes the cached mono PCM for {cache_key}/{generation_id} to Ogg/Opus (96 kbps, "
-                            "mono) for sharing. URL is built from the cache_key/generation_id of a /preview/meta "
+        info->summary = "Download a shareable MP3 or Ogg/Opus version of a cached dialog generation";
+        info->description = "Encodes the cached mono PCM for {cache_key}/{generation_id} to a shareable rendition "
+                            "(mono, 128 kbps) for sharing. The trailing extension of the last path segment picks the "
+                            "format: '.mp3' → audio/mpeg (plays in Slack + AVFoundation; issue #58), '.ogg' (or no "
+                            "extension) → audio/ogg. URL is built from the cache_key/generation_id of a /preview/meta "
                             "response. 404 if the generation isn't cached (never existed or has been cron-swept).";
         info->addTag("Multi-character Dialog");
         info->pathParams["cache_key"].description = "Hex sha256 of the turns; from /preview/meta or /preview/lookup.";
         info->pathParams["generation_id"].description = "UUID of the specific take; from /preview/meta or /lookup.";
+        info->addResponse<oatpp::String>(Status::CODE_200, "audio/mpeg");
         info->addResponse<oatpp::String>(Status::CODE_200, "audio/ogg");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -258,7 +262,15 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
             "DialogPreviewController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
                 const std::string ck = cache_key ? std::string(*cache_key) : std::string();
                 std::string gid = filename ? std::string(*filename) : std::string();
-                if (gid.size() > 4 && gid.compare(gid.size() - 4, 4, ".ogg") == 0) {
+
+                // The trailing extension of the last segment picks the rendition format:
+                // '.mp3' → MP3 (issue #58), '.ogg' or no extension → Ogg/Opus. Strip it
+                // to recover the bare generation_id.
+                bool wantMp3 = false;
+                if (gid.size() > 4 && gid.compare(gid.size() - 4, 4, ".mp3") == 0) {
+                    wantMp3 = true;
+                    gid.resize(gid.size() - 4);
+                } else if (gid.size() > 4 && gid.compare(gid.size() - 4, 4, ".ogg") == 0) {
                     gid.resize(gid.size() - 4);
                 }
                 if (ck.empty() || gid.empty()) {
@@ -274,7 +286,8 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 std::vector<int16_t> samples(gen.audioPcm.size() / sizeof(int16_t));
                 std::memcpy(samples.data(), gen.audioPcm.data(), samples.size() * sizeof(int16_t));
 
-                // Mirror provenance (#50) into OpusTags: title, script id, and the
+                // Mirror provenance (#50) into the container's tags (OpusTags / ID3v2
+                // TXXX — both take the same (key,value) list): title, script id, and the
                 // full script text as DESCRIPTION.
                 creatures::audio::OggComments comments;
                 const auto &prov = gen.provenance;
@@ -295,25 +308,41 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                     comments.emplace_back("DESCRIPTION", scriptText);
                 }
 
-                auto oggResult = creatures::audio::encodeMonoToOggOpus(
-                    samples, creatures::audio::kShareableSampleRate, creatures::audio::kShareableOpusBitrate, comments);
-                if (!oggResult.isSuccess()) {
-                    return bailHttp(span, Status::CODE_500, oggResult.getError().value().getMessage());
+                std::vector<uint8_t> bytes;
+                std::string mimeType;
+                std::string shareName;
+                if (wantMp3) {
+                    auto r = creatures::audio::encodeMonoToMp3(samples, creatures::audio::kShareableSampleRate,
+                                                               creatures::audio::kShareableMp3Bitrate, comments);
+                    if (!r.isSuccess()) {
+                        return bailHttp(span, Status::CODE_500, r.getError().value().getMessage());
+                    }
+                    bytes = r.getValue().value();
+                    mimeType = "audio/mpeg";
+                    shareName = fmt::format("dialog-preview-{}.mp3", gid.substr(0, 8));
+                } else {
+                    auto r = creatures::audio::encodeMonoToOggOpus(samples, creatures::audio::kShareableSampleRate,
+                                                                   creatures::audio::kShareableOpusBitrate, comments);
+                    if (!r.isSuccess()) {
+                        return bailHttp(span, Status::CODE_500, r.getError().value().getMessage());
+                    }
+                    bytes = r.getValue().value();
+                    mimeType = "audio/ogg";
+                    shareName = fmt::format("dialog-preview-{}.ogg", gid.substr(0, 8));
                 }
-                const auto oggBytes = oggResult.getValue().value();
-                const auto shareName = fmt::format("dialog-preview-{}.ogg", gid.substr(0, 8));
 
                 auto response = oatpp::web::protocol::http::outgoing::ResponseFactory::createResponse(
-                    Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(oggBytes.data()),
-                                                    static_cast<v_int32>(oggBytes.size())));
-                response->putHeader("Content-Type", "audio/ogg");
+                    Status::CODE_200,
+                    oatpp::String(reinterpret_cast<const char *>(bytes.data()), static_cast<v_int32>(bytes.size())));
+                response->putHeader("Content-Type", mimeType.c_str());
                 response->putHeader("Content-Disposition", "attachment; filename=\"" + shareName + "\"");
                 response->putHeader("X-Dialog-Cache-Key", ck.c_str());
                 response->putHeader("X-Dialog-Generation-Id", gid.c_str());
                 if (span) {
                     span->setAttribute("dialog.cache_key", ck);
                     span->setAttribute("dialog.generation_id", gid);
-                    span->setAttribute("share.bytes", static_cast<int64_t>(oggBytes.size()));
+                    span->setAttribute("rendition.format", wantMp3 ? "mp3" : "ogg");
+                    span->setAttribute("share.bytes", static_cast<int64_t>(bytes.size()));
                     span->setHttpStatus(200);
                 }
                 return response;

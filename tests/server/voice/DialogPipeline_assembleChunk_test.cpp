@@ -269,6 +269,75 @@ TEST(AssembleChunk, HandlesElevenLabsInterleavedWhitespaceWordTokens) {
     ASSERT_EQ(out.perCreature[1].mouth.size(), 9u); // "Hi Mango."
 }
 
+TEST(AssembleChunk, WordTimingsAreCapturedAndShiftedLikeTheMouthTimings) {
+    // #56 Part 2: per-creature word timings must be captured from the FA words
+    // and shifted onto the tightened timeline by the SAME amount as the chars,
+    // so a word start lines up with its first char.
+    std::vector<int16_t> pcm(static_cast<std::size_t>(5.0 * kSR), 0);
+    fillRange(pcm, 0.0, 1.0, 1000);
+    fillRange(pcm, 1.5, 2.5, 2000);
+    DialogResult dr;
+    dr.audioData = packPcm(pcm);
+    ForcedAlignmentResult fa;
+    fa.words = {word("X", 0.0, 1.0), word("Y", 1.5, 2.5)};
+    fa.characters = {charT("X", 0.0, 1.0), charT(" ", 1.0, 1.5), charT("Y", 1.5, 2.5)};
+    std::vector<DialogInput> turns{{"voice-A", "X"}, {"voice-B", "Y"}};
+
+    auto r = assembleChunk(turns, dr, fa, kSR);
+    ASSERT_TRUE(r.isSuccess());
+    const auto out = r.getValue().value();
+    ASSERT_EQ(out.perCreature.size(), 2u);
+
+    ASSERT_EQ(out.perCreature[0].words.size(), 1u);
+    EXPECT_EQ(out.perCreature[0].words[0].word, "X");
+    ASSERT_EQ(out.perCreature[1].words.size(), 1u);
+    EXPECT_EQ(out.perCreature[1].words[0].word, "Y");
+
+    // Voice-B's word Y was at 1.5s originally; on the tightened timeline the gap
+    // shrinks so it lands earlier — same as the char shift.
+    EXPECT_LT(out.perCreature[1].words[0].start, 1.5);
+    EXPECT_GE(out.perCreature[1].words[0].start, 0.0);
+    EXPECT_LT(out.perCreature[1].words[0].start, out.perCreature[1].words[0].end);
+
+    // The word's start (seconds → ms) must match its first char's shifted start,
+    // proving both got the identical tightened-timeline shift.
+    EXPECT_NEAR(out.perCreature[1].words[0].start * 1000.0, out.perCreature[1].mouth.front().startTimeMs, 1.0);
+}
+
+TEST(AssembleChunk, WordCaptureFiltersInterleavedWhitespaceTokens) {
+    // Same interleaved-whitespace fixture as the char test: word capture must
+    // land only the real words, not the " " separator tokens.
+    std::vector<int16_t> pcm(static_cast<std::size_t>(5.0 * kSR), 0);
+    fillRange(pcm, 0.0, 1.0, 1000);
+    fillRange(pcm, 1.5, 2.5, 2000);
+    DialogResult dr;
+    dr.audioData = packPcm(pcm);
+    ForcedAlignmentResult fa;
+    fa.words = {
+        word("Beaky,", 0.0, 0.5), word(" ", 0.5, 0.55), word("hello", 0.55, 1.0),  word(" ", 1.0, 1.5),
+        word("Hi", 1.5, 2.0),     word(" ", 2.0, 2.05), word("Mango.", 2.05, 2.5),
+    };
+    fa.characters = {charT("B", 0.0, 0.1),  charT("e", 0.1, 0.2),  charT("a", 0.2, 0.3),  charT("k", 0.3, 0.4),
+                     charT("y", 0.4, 0.45), charT(",", 0.45, 0.5), charT(" ", 0.5, 0.55), charT("h", 0.55, 0.6),
+                     charT("e", 0.6, 0.65), charT("l", 0.65, 0.7), charT("l", 0.7, 0.75), charT("o", 0.75, 1.0),
+                     charT(" ", 1.0, 1.5),  charT("H", 1.5, 1.7),  charT("i", 1.7, 2.0),  charT(" ", 2.0, 2.05),
+                     charT("M", 2.05, 2.1), charT("a", 2.1, 2.15), charT("n", 2.15, 2.2), charT("g", 2.2, 2.4),
+                     charT("o", 2.4, 2.45), charT(".", 2.45, 2.5)};
+    std::vector<DialogInput> turns{{"voice-A", "Beaky, hello"}, {"voice-B", "Hi Mango."}};
+
+    auto r = assembleChunk(turns, dr, fa, kSR);
+    ASSERT_TRUE(r.isSuccess());
+    const auto out = r.getValue().value();
+    ASSERT_EQ(out.perCreature.size(), 2u);
+
+    ASSERT_EQ(out.perCreature[0].words.size(), 2u);
+    EXPECT_EQ(out.perCreature[0].words[0].word, "Beaky,");
+    EXPECT_EQ(out.perCreature[0].words[1].word, "hello");
+    ASSERT_EQ(out.perCreature[1].words.size(), 2u);
+    EXPECT_EQ(out.perCreature[1].words[0].word, "Hi");
+    EXPECT_EQ(out.perCreature[1].words[1].word, "Mango.");
+}
+
 TEST(AssembleChunk, FailsCleanlyWhenForcedAlignmentRunsOutOfWords) {
     std::vector<int16_t> pcm(static_cast<std::size_t>(2.0 * kSR), 0);
     fillRange(pcm, 0.0, 1.0, 1000);

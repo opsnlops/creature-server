@@ -10,8 +10,10 @@ namespace creatures::ws {
 
 /// Completion `result` payload for a DialogPreviewExport job. The 17-channel
 /// WAV is written into the ad-hoc sound bucket, so `file_name` is downloadable
-/// through GET /api/v1/sound/ad-hoc/{filename} (and shareable through
-/// /sound/shareable/{filename}).
+/// through GET /api/v1/sound/ad-hoc/{filename}. Shareable/playable renditions are
+/// addressed by the source *stem* plus a rendition extension, not the raw `.wav`
+/// basename: GET /api/v1/sound/mp3/{stem}.mp3 and /api/v1/sound/shareable/{stem}.ogg
+/// (issue #57).
 class DialogPreviewExportResultDto : public oatpp::DTO {
 
     DTO_INIT(DialogPreviewExportResultDto, DTO)

@@ -1412,6 +1412,23 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                 provenance.lipsync.push_back(std::move(lt));
             }
         }
+
+        // Word alignment: per-creature word timings on the same tightened timeline
+        // as the mouth cues (issue #56, Part 2). The ElevenLabs forced-alignment
+        // words survived the assembly shift in DialogPerCreature::words; embed them
+        // so the console can look up the word under the mouth-axis cursor. Same lane
+        // mapping as the lip sync above.
+        for (const auto &pc : assembled.perCreature) {
+            const auto it = laneByVoice.find(pc.voiceId);
+            if (it == laneByVoice.end() || pc.words.empty()) {
+                continue;
+            }
+            voice::DialogWordTrack wt;
+            wt.channel = it->second.first;
+            wt.name = it->second.second;
+            wt.words = pc.words;
+            provenance.wordAlignment.push_back(std::move(wt));
+        }
     }
 
     const bool embedProvenance = persistence == DialogPersistence::Permanent && !provenance.empty();
