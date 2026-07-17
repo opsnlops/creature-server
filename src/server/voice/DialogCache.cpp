@@ -214,6 +214,37 @@ nlohmann::json provenanceToJson(const DialogWavProvenance &p) {
         script.push_back(std::move(lj));
     }
     j["script"] = std::move(script);
+
+    // Per-creature mouth cues (#53) and word alignment (#56 Part 2). Kept in the
+    // round-trip so cache-loaded provenance embeds the same iXML a fresh render
+    // would — buildDialogIxml reads both fields.
+    auto lipsync = nlohmann::json::array();
+    for (const auto &track : p.lipsync) {
+        nlohmann::json tj;
+        tj["channel"] = static_cast<int>(track.channel);
+        tj["name"] = track.name;
+        auto cues = nlohmann::json::array();
+        for (const auto &cue : track.cues) {
+            cues.push_back({{"start", cue.start}, {"end", cue.end}, {"shape", cue.shape}});
+        }
+        tj["cues"] = std::move(cues);
+        lipsync.push_back(std::move(tj));
+    }
+    j["lipsync"] = std::move(lipsync);
+
+    auto wordAlignment = nlohmann::json::array();
+    for (const auto &track : p.wordAlignment) {
+        nlohmann::json tj;
+        tj["channel"] = static_cast<int>(track.channel);
+        tj["name"] = track.name;
+        auto words = nlohmann::json::array();
+        for (const auto &word : track.words) {
+            words.push_back({{"word", word.word}, {"start", word.start}, {"end", word.end}});
+        }
+        tj["words"] = std::move(words);
+        wordAlignment.push_back(std::move(tj));
+    }
+    j["word_alignment"] = std::move(wordAlignment);
     return j;
 }
 
@@ -235,6 +266,34 @@ DialogWavProvenance provenanceFromJson(const nlohmann::json &j) {
     if (j.contains("script") && j["script"].is_array()) {
         for (const auto &line : j["script"]) {
             p.script.push_back({line.value("speaker", std::string{}), line.value("text", std::string{})});
+        }
+    }
+    if (j.contains("lipsync") && j["lipsync"].is_array()) {
+        for (const auto &track : j["lipsync"]) {
+            DialogLipsyncTrack lt;
+            lt.channel = track.value("channel", uint16_t{0});
+            lt.name = track.value("name", std::string{});
+            if (track.contains("cues") && track["cues"].is_array()) {
+                for (const auto &cue : track["cues"]) {
+                    lt.cues.push_back(
+                        {cue.value("start", 0.0), cue.value("end", 0.0), cue.value("shape", std::string{})});
+                }
+            }
+            p.lipsync.push_back(std::move(lt));
+        }
+    }
+    if (j.contains("word_alignment") && j["word_alignment"].is_array()) {
+        for (const auto &track : j["word_alignment"]) {
+            DialogWordTrack wt;
+            wt.channel = track.value("channel", uint16_t{0});
+            wt.name = track.value("name", std::string{});
+            if (track.contains("words") && track["words"].is_array()) {
+                for (const auto &word : track["words"]) {
+                    wt.words.push_back(
+                        {word.value("word", std::string{}), word.value("start", 0.0), word.value("end", 0.0)});
+                }
+            }
+            p.wordAlignment.push_back(std::move(wt));
         }
     }
     return p;

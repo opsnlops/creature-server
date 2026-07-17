@@ -3,7 +3,11 @@ FROM debian:trixie AS build
 
 RUN apt update && apt upgrade -y
 
-RUN apt install -y \
+# apt update again in the same layer as install so the package index is always
+# fresh right before the install resolves versions. Without this, a cached update
+# layer can pin a point-release version that Debian has since removed from the pool
+# (e.g. an openssl security bump), making apt install 404 with exit 100.
+RUN apt update && apt install -y \
         cmake \
         dpkg-dev \
         file \
@@ -11,6 +15,7 @@ RUN apt install -y \
         git \
         libbson-dev \
         libcurl4-openssl-dev \
+        libmp3lame-dev \
         libpipewire-0.3-dev \
         libprotobuf-dev \
         libpthreadpool-dev \
@@ -103,6 +108,7 @@ FROM debian:trixie-slim AS runtime
 RUN apt update && apt upgrade -y && \
     apt install -y \
         libcurl4 \
+        libmp3lame0 \
         libprotobuf32 \
         libsasl2-2 \
         libsdl2-mixer-2.0-0 \

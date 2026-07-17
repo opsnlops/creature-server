@@ -1,9 +1,10 @@
 #include "server/voice/IxmlWriter.h"
 
 #include <cstddef>
-#include <cstdio>
 #include <string>
 #include <vector>
+
+#include "server/voice/IxmlTimedTokens.h"
 
 namespace creatures::voice {
 
@@ -119,28 +120,47 @@ std::string buildDialogIxml(const DialogWavProvenance &provenance, int totalChan
     }
     xml += "    <DIALOG_SCRIPT>" + xmlEscape(script) + "</DIALOG_SCRIPT>\n";
 
+    // One <TRACK> row for a timed-token section (LIPSYNC / WORD_ALIGNMENT): the
+    // channel + name plus a compact packed payload built by the shared codec, so
+    // both sections use one packer and one row shape and can't drift.
+    const auto emitTrackRow = [&](const char *payloadTag, uint16_t channel, const std::string &name,
+                                  const std::vector<TimedToken> &tokens) {
+        xml += "      <TRACK><CHANNEL_INDEX>" + std::to_string(channel) + "</CHANNEL_INDEX>";
+        xml += "<NAME>" + xmlEscape(name) + "</NAME>";
+        xml += "<" + std::string(payloadTag) + ">" + xmlEscape(packTimedTokens(tokens)) + "</" +
+               std::string(payloadTag) + ">";
+        xml += "</TRACK>\n";
+    };
+
     // LIPSYNC: per-creature mouth cues (derived from ElevenLabs alignment, #53).
-    // A private block only creature-console reads. Cues are packed compactly as
-    // "start end shape;start end shape;..." (seconds to 3 decimals).
+    // A private block only creature-console reads.
     if (!provenance.lipsync.empty()) {
         xml += "    <LIPSYNC>\n";
         for (const auto &lt : provenance.lipsync) {
-            std::string cues;
-            cues.reserve(lt.cues.size() * 16);
-            for (std::size_t i = 0; i < lt.cues.size(); ++i) {
-                if (i > 0) {
-                    cues += ';';
-                }
-                char buf[48];
-                std::snprintf(buf, sizeof(buf), "%.3f %.3f ", lt.cues[i].start, lt.cues[i].end);
-                cues += buf;
-                cues += lt.cues[i].shape;
+            std::vector<TimedToken> tokens;
+            tokens.reserve(lt.cues.size());
+            for (const auto &c : lt.cues) {
+                tokens.push_back({c.start, c.end, c.shape});
             }
-            xml += "      <TRACK><CHANNEL_INDEX>" + std::to_string(lt.channel) + "</CHANNEL_INDEX>";
-            xml += "<NAME>" + xmlEscape(lt.name) + "</NAME>";
-            xml += "<CUES>" + xmlEscape(cues) + "</CUES></TRACK>\n";
+            emitTrackRow("CUES", lt.channel, lt.name, tokens);
         }
         xml += "    </LIPSYNC>\n";
+    }
+
+    // WORD_ALIGNMENT: per-creature word timings (issue #56, Part 2), on the same
+    // tightened timeline as the mouth cues — the console reads it for
+    // word-at-timestamp lookups on the mouth-axis waveform hover.
+    if (!provenance.wordAlignment.empty()) {
+        xml += "    <WORD_ALIGNMENT>\n";
+        for (const auto &wt : provenance.wordAlignment) {
+            std::vector<TimedToken> tokens;
+            tokens.reserve(wt.words.size());
+            for (const auto &w : wt.words) {
+                tokens.push_back({w.start, w.end, w.word});
+            }
+            emitTrackRow("WORDS", wt.channel, wt.name, tokens);
+        }
+        xml += "    </WORD_ALIGNMENT>\n";
     }
 
     xml += "  </USER>\n";

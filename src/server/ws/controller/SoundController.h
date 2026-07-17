@@ -3,8 +3,11 @@
 
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <regex>
+#include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 
@@ -26,6 +29,7 @@
 #include "server/ws/service/SoundService.h"
 
 #include "server/audio/MonoWavDownmixer.h"
+#include "server/audio/Mp3Writer.h"
 #include "server/audio/OggOpusWriter.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
@@ -58,6 +62,107 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
 
   private:
     SoundService m_soundService; // Create the sound service
+
+    using RenditionComments = std::vector<std::pair<std::string, std::string>>;
+    using RenditionEncoder = std::function<creatures::Result<std::vector<uint8_t>>(const std::vector<int16_t> &, int,
+                                                                                   const RenditionComments &)>;
+
+    // Mirror embedded dialog provenance (TITLE / SOURCE_SCRIPT_ID / DIALOG_SCRIPT)
+    // into the (key,value) comment list the shareable encoders embed as OpusTags /
+    // ID3v2 TXXX (#47). Non-dialog WAVs and files without iXML contribute nothing.
+    static RenditionComments readProvenanceTags(const std::string &sourcePath) {
+        RenditionComments comments;
+        if (auto ixml = creatures::voice::readIxmlChunk(sourcePath)) {
+            const auto addTag = [&](const char *key, const char *tag) {
+                if (auto v = creatures::voice::extractIxmlField(*ixml, tag); v && !v->empty()) {
+                    comments.emplace_back(key, *v);
+                }
+            };
+            addTag("TITLE", "TITLE");
+            addTag("SOURCE_SCRIPT_ID", "SOURCE_SCRIPT_ID");
+            addTag("DESCRIPTION", "DIALOG_SCRIPT");
+        }
+        return comments;
+    }
+
+    // Shared body for the MP3 + Ogg rendition endpoints (issue #57): sanitize the
+    // requested '{stem}<ext>', resolve the source '{stem}.wav' (permanent then
+    // ad-hoc), downmix to mono, mirror provenance tags, encode, and return the bytes
+    // with an honest Content-Type + attachment name. The rendition is deterministic
+    // and permanent-store sounds are immutable, so those get a long immutable
+    // Cache-Control; ad-hoc sources (reusable basenames) must revalidate (no-store).
+    std::shared_ptr<OutgoingResponse> renderRendition(const std::shared_ptr<IncomingRequest> &request,
+                                                      const oatpp::String &filename, const std::string &spanName,
+                                                      const std::string &pathBase, const std::string &endpointName,
+                                                      const std::string &format, const std::string &extension,
+                                                      const std::string &mimeType, const RenditionEncoder &encode) {
+        return runEndpoint(
+            spanName, "GET", pathBase + std::string(filename), endpointName, "SoundController", request,
+            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                std::string safeFilename;
+                try {
+                    safeFilename = sanitizeFilename(filename);
+                } catch (const std::invalid_argument &e) {
+                    warn("Attempt to render {} for {} failed: {}", format, std::string(filename), e.what());
+                    return bailHttp(span, Status::CODE_403, e.what());
+                }
+
+                if (!safeFilename.ends_with(extension)) {
+                    return bailHttp(span, Status::CODE_422,
+                                    fmt::format("{} renditions are addressed as '{{name}}{}', not '{}'. Request the "
+                                                "source's basename with a {} extension.",
+                                                format, extension, safeFilename, extension));
+                }
+                const std::string stem = safeFilename.substr(0, safeFilename.size() - extension.size());
+
+                // The source can only be a WAV (loadWavAsMono), so it's exactly '{stem}.wav'.
+                const std::string sourceWav = stem + ".wav";
+                const auto resolved = m_soundService.resolveSoundPath(sourceWav);
+                if (!resolved) {
+                    return bailHttp(
+                        span, Status::CODE_404,
+                        fmt::format("Sound '{}' was not found in the sound store or the ad-hoc store", sourceWav));
+                }
+                if (span) {
+                    span->setAttribute("sound.source_path", resolved->path);
+                }
+
+                auto monoResult = creatures::audio::loadWavAsMono(resolved->path);
+                if (!monoResult.isSuccess()) {
+                    const auto error = monoResult.getError().value();
+                    const auto status = error.getCode() == ServerError::NotFound ? Status::CODE_404 : Status::CODE_422;
+                    return bailHttp(span, status, error.getMessage());
+                }
+                const auto mono = monoResult.getValue().value();
+
+                auto encoded = encode(mono.samples, mono.sampleRate, readProvenanceTags(resolved->path));
+                if (!encoded.isSuccess()) {
+                    const auto error = encoded.getError().value();
+                    const auto status =
+                        error.getCode() == ServerError::InvalidData ? Status::CODE_422 : Status::CODE_500;
+                    return bailHttp(span, status, error.getMessage());
+                }
+                const auto bytes = encoded.getValue().value();
+
+                metrics->incrementSoundFilesServed();
+                info("Rendering sound to {}: {} → {} ({} bytes)", format, sourceWav, safeFilename, bytes.size());
+
+                auto response = ResponseFactory::createResponse(
+                    Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(bytes.data()),
+                                                    static_cast<v_buff_size>(bytes.size())));
+                response->putHeader("Content-Type", mimeType.c_str());
+                response->putHeader("Content-Disposition", "attachment; filename=\"" + safeFilename + "\"");
+                response->putHeader("Cache-Control",
+                                    resolved->fromPermanentStore ? "public, max-age=31536000, immutable" : "no-store");
+                if (span) {
+                    span->setAttribute("rendition.format", format);
+                    span->setAttribute("rendition.bytes", static_cast<int64_t>(bytes.size()));
+                    span->setHttpStatus(200);
+                }
+                return response;
+            });
+    }
+
   public:
     static std::shared_ptr<SoundController>
     createShared(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>,
@@ -405,9 +510,13 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
     }
 
     ENDPOINT_INFO(getShareableSound) {
-        info->summary = "Encode a sound file to Ogg/Opus for sharing (downmixed to mono)";
-        info->description = "Looks for the file in the permanent sound store first, then the ad-hoc store. "
-                            "Multi-channel WAVs are downmixed to mono before encoding.";
+        info->summary = "Encode a stored sound to Ogg/Opus for sharing (downmixed to mono)";
+        info->description =
+            "Addressed as '{stem}.ogg' so the URL's trailing extension matches the audio/ogg body (mirrors the "
+            "MP3 endpoint). The server strips the '.ogg' and resolves the source WAV '{stem}.wav' (permanent "
+            "store first, with a recursive basename search so dialog/ renders resolve — #46, then the ad-hoc "
+            "store). Multi-channel WAVs are downmixed to mono before encoding. The response is cacheable "
+            "(immutable), same as the MP3 rendition.";
         info->addTag("Sounds");
         info->addResponse<String>(Status::CODE_200, "audio/ogg");
         info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
@@ -417,89 +526,38 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
     }
     ENDPOINT("GET", "api/v1/sound/shareable/{filename}", getShareableSound, PATH(String, filename),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint(
-            "GET /api/v1/sound/shareable/{filename}", "GET", "api/v1/sound/shareable/" + std::string(filename),
-            "getShareableSound", "SoundController", request, [&](const auto &span) {
-                std::string safeFilename;
-                try {
-                    safeFilename = sanitizeFilename(filename);
-                } catch (const std::invalid_argument &e) {
-                    warn("Attempt to share {} failed: {}", std::string(filename), e.what());
-                    return bailHttp(span, Status::CODE_403, e.what());
-                }
+        return renderRendition(
+            request, filename, "GET /api/v1/sound/shareable/{filename}", "api/v1/sound/shareable/", "getShareableSound",
+            "ogg", ".ogg", "audio/ogg",
+            [](const std::vector<int16_t> &samples, int sampleRate, const RenditionComments &comments) {
+                return creatures::audio::encodeMonoToOggOpus(samples, sampleRate,
+                                                             creatures::audio::kShareableOpusBitrate, comments);
+            });
+    }
 
-                // Permanent store first (top-level, then a recursive basename search
-                // so dialog/ renders resolve — #46), then the ad-hoc bucket. Same
-                // resolution rules as getSound / getAdHocSound.
-                std::string sourcePath;
-                try {
-                    sourcePath = m_soundService.resolvePermanentSoundPath(safeFilename);
-                } catch (oatpp::web::protocol::http::HttpError &) {
-                    // Not in the permanent store; fall through to ad-hoc.
-                }
-                if (sourcePath.empty()) {
-                    try {
-                        sourcePath = m_soundService.resolveAdHocSoundPath(safeFilename);
-                    } catch (oatpp::web::protocol::http::HttpError &) {
-                        return bailHttp(span, Status::CODE_404,
-                                        fmt::format("Sound '{}' was not found in the sound store or the ad-hoc store",
-                                                    safeFilename));
-                    }
-                }
-                if (span) {
-                    span->setAttribute("sound.source_path", sourcePath);
-                }
-
-                auto monoResult = creatures::audio::loadWavAsMono(sourcePath);
-                if (!monoResult.isSuccess()) {
-                    const auto error = monoResult.getError().value();
-                    const auto status = error.getCode() == ServerError::NotFound ? Status::CODE_404 : Status::CODE_422;
-                    return bailHttp(span, status, error.getMessage());
-                }
-                const auto mono = monoResult.getValue().value();
-
-                // Mirror any embedded dialog provenance into the Ogg's OpusTags so a
-                // shared .ogg also carries where it came from (#47). Non-WAV sources
-                // and WAVs without an iXML chunk simply contribute no comments.
-                creatures::audio::OggComments comments;
-                if (auto ixml = creatures::voice::readIxmlChunk(sourcePath)) {
-                    const auto addTag = [&](const char *key, const char *tag) {
-                        if (auto v = creatures::voice::extractIxmlField(*ixml, tag); v && !v->empty()) {
-                            comments.emplace_back(key, *v);
-                        }
-                    };
-                    addTag("TITLE", "TITLE");
-                    addTag("SOURCE_SCRIPT_ID", "SOURCE_SCRIPT_ID");
-                    addTag("DESCRIPTION", "DIALOG_SCRIPT");
-                }
-
-                auto oggResult = creatures::audio::encodeMonoToOggOpus(
-                    mono.samples, mono.sampleRate, creatures::audio::kShareableOpusBitrate, comments);
-                if (!oggResult.isSuccess()) {
-                    const auto error = oggResult.getError().value();
-                    const auto status =
-                        error.getCode() == ServerError::InvalidData ? Status::CODE_422 : Status::CODE_500;
-                    return bailHttp(span, status, error.getMessage());
-                }
-                const auto oggBytes = oggResult.getValue().value();
-
-                // foo.wav → foo.ogg
-                const auto dot = safeFilename.rfind('.');
-                const auto shareName = (dot == std::string::npos ? safeFilename : safeFilename.substr(0, dot)) + ".ogg";
-
-                metrics->incrementSoundFilesServed();
-                info("Sharing sound file: {} → {} ({} bytes of Ogg/Opus)", safeFilename, shareName, oggBytes.size());
-
-                auto response = ResponseFactory::createResponse(
-                    Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(oggBytes.data()),
-                                                    static_cast<v_buff_size>(oggBytes.size())));
-                response->putHeader("Content-Type", "audio/ogg");
-                response->putHeader("Content-Disposition", "attachment; filename=\"" + shareName + "\"");
-                if (span) {
-                    span->setAttribute("share.bytes", static_cast<int64_t>(oggBytes.size()));
-                    span->setHttpStatus(200);
-                }
-                return response;
+    ENDPOINT_INFO(getSoundMp3) {
+        info->summary = "Encode a stored sound to MP3 for playback and sharing (downmixed to mono)";
+        info->description =
+            "Addressed as '{stem}.mp3' so the URL's trailing extension honestly matches the audio/mpeg body — "
+            "URL-extension-sensitive players (AVFoundation) can stream it directly. The server strips the "
+            "'.mp3' and resolves the source WAV '{stem}.wav' (permanent store first, with a recursive basename "
+            "search so dialog/ renders resolve — #46, then the ad-hoc store). Multi-channel WAVs are downmixed "
+            "to mono before encoding. MP3 plays natively in AVFoundation (in-app + progressive streaming), "
+            "Slack, and every browser (issue #57).";
+        info->addTag("Sounds");
+        info->addResponse<String>(Status::CODE_200, "audio/mpeg");
+        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/sound/mp3/{filename}", getSoundMp3, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return renderRendition(
+            request, filename, "GET /api/v1/sound/mp3/{filename}", "api/v1/sound/mp3/", "getSoundMp3", "mp3", ".mp3",
+            "audio/mpeg", [](const std::vector<int16_t> &samples, int sampleRate, const RenditionComments &comments) {
+                return creatures::audio::encodeMonoToMp3(samples, sampleRate, creatures::audio::kShareableMp3Bitrate,
+                                                         comments);
             });
     }
 
@@ -526,37 +584,66 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                 }
 
                 // Permanent store first (dialog/ renders are where provenance lives),
-                // then ad-hoc — same resolution rules as getShareableSound.
-                std::string sourcePath;
-                try {
-                    sourcePath = m_soundService.resolvePermanentSoundPath(safeFilename);
-                } catch (oatpp::web::protocol::http::HttpError &) {
-                    // fall through to ad-hoc
-                }
-                if (sourcePath.empty()) {
-                    try {
-                        sourcePath = m_soundService.resolveAdHocSoundPath(safeFilename);
-                    } catch (oatpp::web::protocol::http::HttpError &) {
-                        return bailHttp(span, Status::CODE_404,
-                                        fmt::format("Sound '{}' was not found in the sound store or the ad-hoc store",
-                                                    safeFilename));
-                    }
+                // then ad-hoc — the shared store-precedence policy.
+                const auto resolved = m_soundService.resolveSoundPath(safeFilename);
+                if (!resolved) {
+                    return bailHttp(
+                        span, Status::CODE_404,
+                        fmt::format("Sound '{}' was not found in the sound store or the ad-hoc store", safeFilename));
                 }
 
-                auto ixml = creatures::voice::readIxmlChunk(sourcePath);
+                auto ixml = creatures::voice::readIxmlChunk(resolved->path);
                 if (!ixml) {
                     return bailHttp(span, Status::CODE_404,
                                     fmt::format("Sound '{}' has no embedded provenance", safeFilename));
                 }
 
                 if (span) {
-                    span->setAttribute("sound.source_path", sourcePath);
+                    span->setAttribute("sound.source_path", resolved->path);
                     span->setAttribute("provenance.bytes", static_cast<int64_t>(ixml->size()));
                     span->setHttpStatus(200);
                 }
                 auto response = ResponseFactory::createResponse(Status::CODE_200, oatpp::String(ixml->c_str()));
                 response->putHeader("Content-Type", "application/xml; charset=utf-8");
                 return response;
+            });
+    }
+
+    ENDPOINT_INFO(getSoundMetadata) {
+        info->summary = "Structured dialog metadata for one stored sound (issue #56)";
+        info->description = "Returns the full SoundDto for a single sound, including the heavy per-track mouth cues "
+                            "and word timings parsed from the embedded iXML. The sound LIST (GET /api/v1/sound) omits "
+                            "those arrays to stay light; the console fetches this per-sound for the animation it's "
+                            "editing. Empty structured fields for plain sounds and pre-dialog-pipeline renders.";
+        info->addTag("Sounds");
+        info->addResponse<Object<SoundDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/sound/{filename}/metadata", getSoundMetadata, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/v1/sound/{filename}/metadata", "GET", "api/v1/sound/" + std::string(filename) + "/metadata",
+            "getSoundMetadata", "SoundController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                std::string safeFilename;
+                try {
+                    safeFilename = sanitizeFilename(filename);
+                } catch (const std::invalid_argument &e) {
+                    return bailHttp(span, Status::CODE_403, e.what());
+                }
+
+                const auto resolved = m_soundService.resolveSoundPath(safeFilename);
+                if (!resolved) {
+                    return bailHttp(
+                        span, Status::CODE_404,
+                        fmt::format("Sound '{}' was not found in the sound store or the ad-hoc store", safeFilename));
+                }
+                if (span) {
+                    span->setAttribute("sound.source_path", resolved->path);
+                    span->setHttpStatus(200);
+                }
+                return createDtoResponse(Status::CODE_200,
+                                         m_soundService.buildSoundMetadata(resolved->path, safeFilename));
             });
     }
 

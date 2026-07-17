@@ -38,7 +38,11 @@ set(CPACK_DEBIAN_PACKAGE_CONFLICTS "libmongoclient0, libmongoc-dev, libmongoc-1.
 # - pipewire: Audio server (runtime, not a library dependency)
 # - locales-all: For proper locale support
 # - ffmpeg: For converting MP3 to WAV and audio channel extraction
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "pipewire, locales-all, ffmpeg")
+# - libmp3lame0: MP3 encoder for the /sound/mp3 rendition endpoint (issue #57). SHLIBDEPS
+#   would auto-detect it from the direct link, but we declare it explicitly so the runtime
+#   dependency is guaranteed regardless of shlibdeps resolution — the server links libmp3lame
+#   directly, it is NOT pulled in transitively via SDL.
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "pipewire, locales-all, ffmpeg, libmp3lame0")
 
 # rhubarb-lip-sync is optional: only needed when --lip-sync-engine=rhubarb (legacy fallback)
 # The default engine is now whisper.cpp (bundled in the package)

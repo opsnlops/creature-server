@@ -373,6 +373,23 @@ find_package(OpenSSL REQUIRED)
 #libcurl for HTTP client(ElevenLabs REST API)
 find_package(CURL REQUIRED)
 
+#libmp3lame for the shareable-MP3 rendition endpoint (issue #57). LAME has no
+#first-class CMake build, so — unlike libopus/libogg which ride FetchContent —
+#it's linked as a system library the same way SDL2_mixer is (apt in the Docker
+#images; see Dockerfile). CPACK_DEBIAN_PACKAGE_SHLIBDEPS then auto-adds the
+#libmp3lame0 runtime Depends to the .deb.
+pkg_check_modules(MP3LAME lame)                 # gives MP3LAME_LIBRARIES if lame.pc exists
+if(NOT MP3LAME_LIBRARIES)
+    find_library(MP3LAME_LIBRARIES NAMES mp3lame)
+endif()
+if(NOT MP3LAME_LIBRARIES)
+    message(FATAL_ERROR "libmp3lame not found — install libmp3lame-dev (Debian) or lame (Homebrew)")
+endif()
+# Resolve the parent include dir ourselves so <lame/lame.h> works regardless of
+# whether lame.pc points -I at include/ (Debian) or include/lame/ (Homebrew).
+find_path(MP3LAME_INCLUDE_DIRS lame/lame.h)
+message(STATUS "Using libmp3lame: ${MP3LAME_LIBRARIES}")
+
 #Leave a message
 message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
 
@@ -423,6 +440,7 @@ include_directories(
         ${argparse_SOURCE_DIR}/include
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_MIXER_INCLUDE_DIRS}
+        ${MP3LAME_INCLUDE_DIRS}
         ${MOODYCAMEL_DIR}
         ${LIBBASE64_DIR}/include
         ${oatpp_INCLUDE_DIRS}
@@ -622,6 +640,7 @@ target_link_libraries(creature-server
         uvgrtp
         opus
         ogg
+        ${MP3LAME_LIBRARIES}
         whisper
         OpenSSL::SSL
         OpenSSL::Crypto
@@ -679,15 +698,19 @@ add_executable(creature-server-test
         tests/server/voice/PcmWavWriter_test.cpp
         tests/server/voice/IxmlWriter_test.cpp
         tests/server/voice/IxmlReader_test.cpp
+        tests/server/voice/IxmlTimedTokens_test.cpp
         src/server/voice/IxmlWriter.cpp
         src/server/voice/IxmlReader.cpp
+        src/server/voice/IxmlTimedTokens.cpp
         tests/server/voice/DialogCache_test.cpp
         tests/server/audio/MonoWavDownmixer_test.cpp
         tests/server/audio/OggOpusWriter_test.cpp
+        tests/server/audio/Mp3Writer_test.cpp
         tests/server/audio/SoundPathResolver_test.cpp
         tests/server/voice/DialogPreviewAssembly_test.cpp
         src/server/audio/MonoWavDownmixer.cpp
         src/server/audio/OggOpusWriter.cpp
+        src/server/audio/Mp3Writer.cpp
         src/server/audio/SoundPathResolver.cpp
         src/server/voice/DialogPreviewAssembly.cpp
         src/server/voice/PcmWavWriter.cpp
@@ -750,6 +773,7 @@ target_link_libraries(creature-server-test
         CreatureVoicesLib
         opus
         ogg
+        ${MP3LAME_LIBRARIES}
         gtest_main
         gmock_main
         Threads::Threads

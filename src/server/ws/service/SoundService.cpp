@@ -68,6 +68,56 @@ bool isSafeFilename(const std::string &filename) {
 
     return true;
 }
+
+// Populate a Sound's embedded-metadata fields from a WAV's iXML document. Always
+// fills the lightweight fields (title/ids/flags/script + structured turns + track
+// list); `heavy` additionally parses the large per-track mouth-cue and word-timing
+// arrays. The sound LIST calls this with heavy=false to stay light; the per-sound
+// metadata endpoint uses heavy=true (issue #56).
+void populateEmbeddedMetadata(creatures::Sound &sound, const std::string &ixml, bool heavy) {
+    sound.title = creatures::voice::extractIxmlField(ixml, "TITLE").value_or("");
+    sound.sourceScriptId = creatures::voice::extractIxmlField(ixml, "SOURCE_SCRIPT_ID").value_or("");
+    sound.script = creatures::voice::extractIxmlField(ixml, "DIALOG_SCRIPT").value_or("");
+    sound.generationIds = creatures::voice::extractIxmlField(ixml, "GENERATION_IDS").value_or("");
+    sound.hasEmbeddedScript = !sound.script.empty();
+    sound.hasEmbeddedLipsync = ixml.find("<LIPSYNC>") != std::string::npos;
+    sound.scriptTurns = creatures::voice::parseDialogScriptTurns(sound.script);
+    sound.tracks = creatures::voice::parseIxmlTrackList(ixml);
+    if (heavy) {
+        sound.lipsyncTracks = creatures::voice::parseIxmlLipsync(ixml);
+        sound.wordTracks = creatures::voice::parseIxmlWordAlignment(ixml);
+    }
+}
+
+// Build a Sound from a file on disk: size, transcript/lipsync sidecars, and (for
+// .wav) the embedded iXML metadata. Single builder shared by the list (heavy=false)
+// and the per-sound metadata endpoint (heavy=true).
+creatures::Sound buildSound(const fs::path &filepath, const std::string &filename, uint32_t size, bool heavy) {
+    std::string transcript;
+    auto transcriptPath = filepath;
+    transcriptPath.replace_extension(".txt");
+    if (fs::exists(transcriptPath)) {
+        transcript = transcriptPath.filename().string();
+    }
+
+    std::string lipsync;
+    auto lipsyncPath = filepath;
+    lipsyncPath.replace_extension(".json");
+    if (fs::exists(lipsyncPath)) {
+        lipsync = lipsyncPath.filename().string();
+    }
+
+    creatures::Sound sound{filename, size, transcript, lipsync};
+
+    // Reading the iXML chunk seeks past the (large) audio data, so this stays cheap
+    // even for big files; heavy=false additionally skips the cue/word array parsing.
+    if (filepath.extension() == ".wav") {
+        if (auto ixml = creatures::voice::readIxmlChunk(filepath)) {
+            populateEmbeddedMetadata(sound, *ixml, heavy);
+        }
+    }
+    return sound;
+}
 } // namespace
 
 oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllSounds() {
@@ -126,42 +176,13 @@ oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> SoundService::getAllS
                             continue;
                         }
 
-                        std::string transcript;
-
-                        // Create a non-const copy of filepath to modify the extension
-                        auto transcriptPath = filepath;
-                        transcriptPath.replace_extension(".txt");
-                        if (fs::exists(transcriptPath)) {
-                            transcript = transcriptPath.filename().string();
-                        }
-
-                        std::string lipsync;
-
-                        // Check for lipsync JSON file
-                        auto lipsyncPath = filepath;
-                        lipsyncPath.replace_extension(".json");
-                        if (fs::exists(lipsyncPath)) {
-                            lipsync = lipsyncPath.filename().string();
-                        }
-
-                        Sound sound{filename, (uint32_t)size, transcript, lipsync};
-
-                        // Surface embedded iXML provenance (dialog renders) so the list can
-                        // show a real title and flag readable script text instead of a bare
-                        // UUID. Reading the chunk skips the (large) audio data — it seeks
-                        // past it — so this stays cheap even for big files.
-                        if (extension == ".wav") {
-                            if (auto ixml = creatures::voice::readIxmlChunk(filepath)) {
-                                sound.title = creatures::voice::extractIxmlField(*ixml, "TITLE").value_or("");
-                                sound.sourceScriptId =
-                                    creatures::voice::extractIxmlField(*ixml, "SOURCE_SCRIPT_ID").value_or("");
-                                sound.script = creatures::voice::extractIxmlField(*ixml, "DIALOG_SCRIPT").value_or("");
-                                sound.generationIds =
-                                    creatures::voice::extractIxmlField(*ixml, "GENERATION_IDS").value_or("");
-                                sound.hasEmbeddedScript = !sound.script.empty();
-                                sound.hasEmbeddedLipsync = ixml->find("<LIPSYNC>") != std::string::npos;
-                            }
-                        }
+                        // Light list: title/flags + structured script turns + track list
+                        // (comparable in size to the script blob already returned here). The
+                        // heavy per-track mouth-cue and word-timing arrays are deliberately
+                        // omitted (heavy=false) so the list stays small even for a store full
+                        // of multi-track dialog renders — the console fetches those per-sound
+                        // via GET /api/v1/sound/{filename}/metadata (issue #56).
+                        Sound sound = buildSound(filepath, filename, static_cast<uint32_t>(size), /*heavy=*/false);
 
                         logger->debug("Adding sound file: {} ({})", sound.fileName, sound.size);
                         soundList->emplace_back(creatures::convertSoundToDto(sound));
@@ -314,6 +335,35 @@ std::string SoundService::resolvePermanentSoundPath(const std::string &filename,
 
     OATPP_ASSERT_HTTP(false, Status::CODE_404,
                       fmt::format("Sound '{}' not found in {}", filename, root.string()).c_str());
+}
+
+std::optional<SoundService::ResolvedSound> SoundService::resolveSoundPath(const std::string &filename,
+                                                                          std::shared_ptr<RequestSpan> parentSpan) {
+    // Permanent store first (content-addressed, immutable), then the ad-hoc bucket.
+    // The single-store resolvers throw HttpError when they miss; catch that here so
+    // callers get a plain optional and the store-precedence policy lives in one place.
+    try {
+        return ResolvedSound{resolvePermanentSoundPath(filename, parentSpan), true};
+    } catch (oatpp::web::protocol::http::HttpError &) {
+        // fall through to ad-hoc
+    }
+    try {
+        return ResolvedSound{resolveAdHocSoundPath(filename, parentSpan), false};
+    } catch (oatpp::web::protocol::http::HttpError &) {
+        return std::nullopt;
+    }
+}
+
+oatpp::Object<creatures::SoundDto> SoundService::buildSoundMetadata(const std::string &absolutePath,
+                                                                    const std::string &filename) {
+    uint32_t size = 0;
+    std::error_code ec;
+    const auto bytes = fs::file_size(absolutePath, ec);
+    if (!ec) {
+        size = static_cast<uint32_t>(bytes);
+    }
+    const Sound sound = buildSound(absolutePath, filename, size, /*heavy=*/true);
+    return creatures::convertSoundToDto(sound);
 }
 
 /**

@@ -1,6 +1,10 @@
 
 #pragma once
 
+#include <memory>
+#include <optional>
+#include <string>
+
 #include "spdlog/spdlog.h"
 
 #include <oatpp/core/macro/component.hpp>
@@ -26,6 +30,27 @@ class SoundService {
   public:
     SoundService() = default;
     virtual ~SoundService() = default;
+
+    /// A resolved sound plus which store it came from. The permanent store is
+    /// content-addressed and immutable; the ad-hoc store reuses basenames, so
+    /// callers use `fromPermanentStore` to decide cacheability (#57 review).
+    struct ResolvedSound {
+        std::string path;
+        bool fromPermanentStore;
+    };
+
+    /// Resolve a sound by basename: permanent store first (recursive basename
+    /// search so dialog/ renders resolve — #46), then the ad-hoc store. Returns
+    /// std::nullopt if neither has it. The single owner of the store-precedence
+    /// policy the rendition/provenance/metadata endpoints all share.
+    std::optional<ResolvedSound> resolveSoundPath(const std::string &filename,
+                                                  std::shared_ptr<RequestSpan> parentSpan = nullptr);
+
+    /// Build the full (heavy) structured-metadata DTO for one already-resolved
+    /// sound file: size, sidecars, and all embedded iXML metadata including the
+    /// per-track mouth cues and word timings. Backs GET /sound/{filename}/metadata
+    /// (issue #56) — the sound LIST stays light and omits the heavy arrays.
+    oatpp::Object<creatures::SoundDto> buildSoundMetadata(const std::string &absolutePath, const std::string &filename);
 
     /**
      * Play a sound file for testing

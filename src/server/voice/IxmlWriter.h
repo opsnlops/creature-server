@@ -44,22 +44,45 @@ struct DialogLipsyncTrack {
     bool operator==(const DialogLipsyncTrack &) const = default;
 };
 
+/// One word with its start/end timing (seconds), from the ElevenLabs
+/// forced-alignment response. Enables word-at-timestamp lookups in the editor.
+struct DialogWordTiming {
+    std::string word;
+    double start; // seconds
+    double end;   // seconds
+
+    bool operator==(const DialogWordTiming &) const = default;
+};
+
+/// Per-creature word-level alignment for the iXML `<USER><WORD_ALIGNMENT>` block
+/// (issue #56, Part 2). Populated at render time from the forced-alignment words,
+/// shifted onto the same tightened timeline as the mouth cues. Old renders carry
+/// none; a re-render upgrades them.
+struct DialogWordTrack {
+    uint16_t channel; // 1-based audio channel this creature is on
+    std::string name; // creature name
+    std::vector<DialogWordTiming> words;
+
+    bool operator==(const DialogWordTrack &) const = default;
+};
+
 /// Everything we want to stamp into a permanent dialog WAV so an otherwise
 /// anonymous UUID-named file can be traced back to the script that made it
 /// (issue #47). A point-in-time snapshot, mirroring the semantics of
 /// `Animation.metadata.source_script_turns` — a copy, not a live pointer.
 struct DialogWavProvenance {
-    std::string sourceScriptId;              // may be empty (ad-hoc renders have none)
-    std::string title;                       // scene title; may be empty
-    std::vector<std::string> generationIds;  // per-chunk ElevenLabs generations, in order
-    std::vector<DialogTrackInfo> tracks;     // channel → name (creature lanes + BGM)
-    std::vector<DialogScriptLine> script;    // ordered turns, speaker + text
-    std::vector<DialogLipsyncTrack> lipsync; // per-creature mouth cues (from ElevenLabs alignment)
+    std::string sourceScriptId;                 // may be empty (ad-hoc renders have none)
+    std::string title;                          // scene title; may be empty
+    std::vector<std::string> generationIds;     // per-chunk ElevenLabs generations, in order
+    std::vector<DialogTrackInfo> tracks;        // channel → name (creature lanes + BGM)
+    std::vector<DialogScriptLine> script;       // ordered turns, speaker + text
+    std::vector<DialogLipsyncTrack> lipsync;    // per-creature mouth cues (from ElevenLabs alignment)
+    std::vector<DialogWordTrack> wordAlignment; // per-creature word timings (issue #56, Part 2)
 
     /// True when there's nothing worth embedding — writers can skip the chunk.
     [[nodiscard]] bool empty() const {
         return sourceScriptId.empty() && title.empty() && generationIds.empty() && tracks.empty() && script.empty() &&
-               lipsync.empty();
+               lipsync.empty() && wordAlignment.empty();
     }
 
     bool operator==(const DialogWavProvenance &) const = default;

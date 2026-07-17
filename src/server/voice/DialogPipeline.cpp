@@ -117,6 +117,7 @@ Result<DialogAssembled> assembleChunk(const std::vector<DialogInput> &turns, con
         double startSecs;
         double endSecs;
         std::vector<TextToViseme::CharTiming> chars; // pre-shift (still on the ORIGINAL timeline)
+        std::vector<DialogWordTiming> words;         // pre-shift words (ORIGINAL timeline, seconds)
     };
     std::vector<TurnInfo> turnInfos;
     turnInfos.reserve(turns.size());
@@ -165,6 +166,7 @@ Result<DialogAssembled> assembleChunk(const std::vector<DialogInput> &turns, con
                 fmt::format("assembleChunk: forced alignment ran out of words at turn {} (need {} more, have {})", i, k,
                             spokenWords.size() - wordCursor))};
         }
+        const std::size_t wordBase = wordCursor;
         const auto &wFirst = *spokenWords[wordCursor];
         const auto &wLast = *spokenWords[wordCursor + k - 1];
         wordCursor += k;
@@ -173,6 +175,14 @@ Result<DialogAssembled> assembleChunk(const std::vector<DialogInput> &turns, con
         ti.voiceIndex = indexFor(turn.voiceId);
         ti.startSecs = wFirst.startSeconds;
         ti.endSecs = wLast.endSeconds;
+
+        // Keep this turn's words (ORIGINAL-timeline seconds) for the word-alignment
+        // block; they get the same tightened-timeline shift as the chars in step 3.
+        ti.words.reserve(k);
+        for (std::size_t j = 0; j < k; ++j) {
+            const auto &w = *spokenWords[wordBase + j];
+            ti.words.push_back(DialogWordTiming{w.text, w.startSeconds, w.endSeconds});
+        }
 
         const std::size_t cn = stripped.size();
         if (charCursor + cn > alignment.characters.size()) {
@@ -228,12 +238,16 @@ Result<DialogAssembled> assembleChunk(const std::vector<DialogInput> &turns, con
         std::vector<int16_t> seg;
         std::ptrdiff_t origStart; // 'a' — needed to shift mouth timing later
         std::vector<TextToViseme::CharTiming> chars;
+        std::vector<DialogWordTiming> words;
     };
     std::vector<Slice> slices;
     slices.reserve(turnInfos.size());
 
     for (std::size_t i = 0; i < turnInfos.size(); ++i) {
-        const auto &ti = turnInfos[i];
+        // Non-const so the per-turn char/word vectors can be moved into the slice
+        // below — neighbor lookups only read scalar start/end secs, so moving the
+        // current turn's vectors is safe, and turnInfos is unused after this loop.
+        auto &ti = turnInfos[i];
         const std::ptrdiff_t sSample = secsToSamples(ti.startSecs);
         const std::ptrdiff_t eSample = secsToSamples(ti.endSecs);
 
@@ -253,7 +267,8 @@ Result<DialogAssembled> assembleChunk(const std::vector<DialogInput> &turns, con
         Slice sl;
         sl.voiceIndex = ti.voiceIndex;
         sl.origStart = a;
-        sl.chars = ti.chars;
+        sl.chars = std::move(ti.chars);
+        sl.words = std::move(ti.words);
         sl.seg.assign(src.begin() + a, src.begin() + b);
 
         // Linear fade in + fade out across `fade` samples (clamped to seg length).
@@ -302,13 +317,19 @@ Result<DialogAssembled> assembleChunk(const std::vector<DialogInput> &turns, con
 
         std::copy(sl.seg.begin(), sl.seg.end(), dst.pcm.begin() + static_cast<std::ptrdiff_t>(pos));
 
-        // ms shift = (pos - a) / SR seconds * 1000
-        const double shiftMs = (static_cast<double>(pos) - static_cast<double>(sl.origStart)) / srD * 1000.0;
+        // shift = (pos - a) / SR. Same amount for chars (ms) and words (seconds),
+        // since both live on the ORIGINAL forced-alignment timeline.
+        const double shiftSec = (static_cast<double>(pos) - static_cast<double>(sl.origStart)) / srD;
+        const double shiftMs = shiftSec * 1000.0;
         dst.mouth.reserve(dst.mouth.size() + sl.chars.size());
         for (const auto &c : sl.chars) {
             TextToViseme::CharTiming shifted = c;
             shifted.startTimeMs = c.startTimeMs + shiftMs;
             dst.mouth.push_back(shifted);
+        }
+        dst.words.reserve(dst.words.size() + sl.words.size());
+        for (const auto &w : sl.words) {
+            dst.words.push_back(DialogWordTiming{w.word, w.start + shiftSec, w.end + shiftSec});
         }
 
         pos += sl.seg.size();
@@ -398,6 +419,11 @@ Result<DialogAssembled> concatChunks(const std::vector<DialogAssembled> &chunks)
                 TextToViseme::CharTiming shifted = c;
                 shifted.startTimeMs = c.startTimeMs + offsetMs;
                 dst.mouth.push_back(shifted);
+            }
+            const double offsetSec = static_cast<double>(offset) / static_cast<double>(sr);
+            dst.words.reserve(dst.words.size() + pc.words.size());
+            for (const auto &w : pc.words) {
+                dst.words.push_back(DialogWordTiming{w.word, w.start + offsetSec, w.end + offsetSec});
             }
         }
         offset += chunk.totalSamples;
