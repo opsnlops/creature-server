@@ -1064,11 +1064,16 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         sourceScriptTurns = script.turns;
     } else {
         rawTurns.reserve(reqDto->turns->size());
+        sourceScriptTurns.reserve(reqDto->turns->size());
         for (const auto &t : *reqDto->turns) {
             if (!t || !t->creature_id || !t->text) {
                 return failJob("each turn must have a non-null creature_id and text");
             }
             rawTurns.emplace_back(*t->creature_id, *t->text);
+            // Snapshot the inline turns for provenance too (#60). There's no saved
+            // script to point at (sourceScriptId stays empty), but the CoW snapshot
+            // still records exactly what was rendered so the document keeps its history.
+            sourceScriptTurns.push_back(creatures::DialogScriptTurn{*t->creature_id, *t->text});
         }
     }
 
@@ -1559,13 +1564,17 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     }
     auto animation = animResult.getValue().value();
 
-    // Stamp the script provenance onto the Animation metadata. Soft pointer
-    // (source_script_id) lets the UI offer "edit this script"; the CoW
-    // snapshot (source_script_turns) preserves what the script said at render
-    // time so an edit-then-delete doesn't orphan the animation's history.
+    // Stamp the script provenance onto the Animation metadata. These are two
+    // independent things (#60): the CoW snapshot (source_script_turns) preserves
+    // what was rendered — it's stamped for every dialog render, inline or saved,
+    // so an edit-then-delete doesn't orphan the animation's history. The soft
+    // pointer (source_script_id) only exists for saved-script renders and lets the
+    // UI offer "edit this script" + drives re-render dedupe.
+    if (!sourceScriptTurns.empty()) {
+        animation.metadata.source_script_turns = sourceScriptTurns;
+    }
     if (!sourceScriptId.empty()) {
         animation.metadata.source_script_id = sourceScriptId;
-        animation.metadata.source_script_turns = sourceScriptTurns;
         if (jobState.span) {
             jobState.span->setAttribute("animation.source_script_id", sourceScriptId);
         }
