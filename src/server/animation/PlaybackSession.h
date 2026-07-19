@@ -132,8 +132,8 @@ class PlaybackSession {
     /**
      * Track whether cancellation was already broadcast to avoid duplicate activity events.
      */
-    void markCancellationNotified() { cancellationNotified_ = true; }
-    [[nodiscard]] bool isCancellationNotified() const { return cancellationNotified_; }
+    void markCancellationNotified() { cancellationNotified_.store(true); }
+    [[nodiscard]] bool isCancellationNotified() const { return cancellationNotified_.load(); }
 
     /**
      * Get the observability span for this session
@@ -180,10 +180,9 @@ class PlaybackSession {
      * Returns true if the callback was invoked, false if it was already called
      */
     bool invokeOnStart() {
-        if (hasStarted_) {
+        if (hasStarted_.exchange(true)) {
             return false;
         }
-        hasStarted_ = true;
         if (onStart_) {
             onStart_();
         }
@@ -233,8 +232,9 @@ class PlaybackSession {
     // Cancellation flag (atomic for thread-safety)
     std::atomic<bool> cancelled_{false};
 
-    // Lifecycle state
-    bool hasStarted_{false};
+    // Lifecycle state. Atomic: written by the event loop's first runner execution while
+    // SessionManager threads may be inspecting the session (issue #65).
+    std::atomic<bool> hasStarted_{false};
 
     // Lifecycle callbacks
     std::function<void()> onStart_;
@@ -246,8 +246,9 @@ class PlaybackSession {
     // Activity reason for runtime reporting
     creatures::runtime::ActivityReason activityReason_{creatures::runtime::ActivityReason::Play};
 
-    // Cancellation activity already broadcast
-    bool cancellationNotified_{false};
+    // Cancellation activity already broadcast. Atomic: set from REST/worker threads under
+    // the SessionManager lock, read on the event loop thread (issue #65).
+    std::atomic<bool> cancellationNotified_{false};
 };
 
 } // namespace creatures

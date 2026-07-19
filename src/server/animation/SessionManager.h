@@ -50,16 +50,30 @@ class SessionManager {
     SessionManager &operator=(SessionManager &&) = delete;
 
     /**
-     * Register a new playback session
+     * Adopt a new playback session: cancel conflicting sessions and register the new one
+     * in a single critical section (issues #62/#63).
      *
-     * Cancels only overlapping creature sessions on the same universe (last request wins per creature).
+     * With the default scope, only sessions overlapping the new session's creatures are
+     * cancelled (last request wins per creature). With cancelEntireUniverse=true, every
+     * active session on the universe is cancelled first (interrupt semantics).
+     *
+     * Cancelled sessions get their (cancelled, stopped) activity broadcast inside the
+     * critical section — before the caller broadcasts the new session's running state —
+     * plus an immediate teardown event. Because cancellation and registration are atomic,
+     * the idle-restart check in the playback runner can never observe the gap between
+     * "old session cancelled" and "new session registered".
+     *
+     * Called by CooperativeAnimationScheduler::scheduleAnimation before the new session's
+     * activity broadcast and before any audio load; other callers should not need it.
      *
      * @param universe The universe this session is playing on
      * @param session The playback session
      * @param isPlaylist True if this session is part of a playlist
+     * @param parentSpan Optional parent for the adoption span
+     * @param cancelEntireUniverse Cancel all sessions on the universe, not just overlapping ones
      */
     void registerSession(universe_t universe, std::shared_ptr<PlaybackSession> session, bool isPlaylist = false,
-                         std::shared_ptr<RequestSpan> parentSpan = nullptr);
+                         std::shared_ptr<OperationSpan> parentSpan = nullptr, bool cancelEntireUniverse = false);
 
     /**
      * Interrupt current playback on a universe with a new animation

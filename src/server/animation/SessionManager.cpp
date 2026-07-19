@@ -94,23 +94,30 @@ void scheduleImmediateTeardown(const std::shared_ptr<PlaybackSession> &session) 
 } // namespace
 
 void SessionManager::registerSession(universe_t universe, std::shared_ptr<PlaybackSession> session, bool isPlaylist,
-                                     std::shared_ptr<RequestSpan> parentSpan) {
+                                     std::shared_ptr<OperationSpan> parentSpan, bool cancelEntireUniverse) {
     if (!session) {
         warn("SessionManager: attempted to register null session on universe {}", universe);
         return;
     }
 
     auto span =
-        observability ? observability->createOperationSpan("SessionManager.registerSession", parentSpan) : nullptr;
+        observability ? observability->createChildOperationSpan("SessionManager.registerSession", parentSpan) : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
         span->setAttribute("is_playlist", isPlaylist);
+        span->setAttribute("adopt.cancel_entire_universe", cancelEntireUniverse);
+        span->setAttribute("session.id", session->getSessionId());
+        span->setAttribute("session.animation_id", session->getAnimation().id);
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
     auto newCreatures = collectCreatureIds(session);
 
-    // Cancel overlapping sessions on this universe (last request wins per creature)
+    // Cancel conflicting sessions and register the new one under the same lock — this
+    // atomicity is what keeps the idle-restart check from ever seeing the universe as
+    // free between the cancel and the registration (issue #62). The (cancelled, stopped)
+    // broadcasts fired here land before the caller's (reason, running) broadcast, which
+    // is the ordering the fixture binding dispatcher depends on.
     auto it = universeStates_.find(universe);
     if (it != universeStates_.end()) {
         std::vector<std::shared_ptr<PlaybackSession>> survivors;
@@ -120,9 +127,11 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
             if (!existing) {
                 continue;
             }
-            if (overlaps(newCreatures, existing) && !existing->isCancelled()) {
-                debug("SessionManager: cancelling overlapping session on universe {} for new session", universe);
+            if (!existing->isCancelled() && (cancelEntireUniverse || overlaps(newCreatures, existing))) {
+                debug("SessionManager: cancelling {} session on universe {} for new session",
+                      cancelEntireUniverse ? "active" : "overlapping", universe);
                 cancelSessionAndMarkActivity(existing);
+                scheduleImmediateTeardown(existing);
                 cancelled++;
             } else {
                 survivors.push_back(existing);
@@ -130,7 +139,7 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
         }
         it->second.activeSessions.swap(survivors);
         if (span && cancelled > 0) {
-            span->setAttribute("cancelled_existing_sessions", static_cast<int64_t>(cancelled));
+            span->setAttribute("adopt.cancelled_sessions", static_cast<int64_t>(cancelled));
         }
     }
 
@@ -184,34 +193,28 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interrupt(universe_t un
 
     bool interruptedPlaylist = false;
 
-    // IMPORTANT: Hold the mutex across the entire cancel → schedule → register
-    // sequence. There was a race condition where the event loop thread could see
-    // activeSessions as empty (after clear but before push_back) and start idle
-    // loops that would cancel the interrupt animation we're about to schedule.
-    std::unique_lock<std::mutex> lock(mutex_);
-
-    // Check if there's something playing
-    auto it = universeStates_.find(universe);
-    if (it != universeStates_.end()) {
-        if (!it->second.activeSessions.empty()) {
-            info("SessionManager: interrupting playback on universe {} with animation '{}'", universe,
-                 interruptAnimation.metadata.title);
-        }
-
-        for (auto &existing : it->second.activeSessions) {
-            if (existing && !existing->isCancelled()) {
-                cancelSessionAndMarkActivity(existing);
+    // Mark the playlist interrupted *before* scheduling so PlaylistEvents pause and the
+    // onFinish resume logic knows to restart it. The sessions themselves are NOT cancelled
+    // here: that happens inside registerSession's adoption (cancelEntireUniverse=true),
+    // atomically with the new session's registration, from within scheduleAnimation.
+    // This closes the idle-restart race the old code prevented by holding mutex_ across
+    // the whole schedule — which stalled the event loop for the duration of the audio
+    // load whenever a cancelled session's teardown touched the mutex (issues #62/#63).
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = universeStates_.find(universe);
+        if (it != universeStates_.end()) {
+            if (!it->second.activeSessions.empty()) {
+                info("SessionManager: interrupting playback on universe {} with animation '{}'", universe,
+                     interruptAnimation.metadata.title);
             }
-        }
-        it->second.activeSessions.clear();
-
-        // Mark as interrupted if it was a playlist
-        if (it->second.isPlaylist) {
-            it->second.isInterrupted = true;
-            it->second.shouldResumePlaylist = shouldResumePlaylist;
-            interruptedPlaylist = true;
-            info("SessionManager: marked playlist on universe {} as interrupted (resume: {})", universe,
-                 shouldResumePlaylist);
+            if (it->second.isPlaylist) {
+                it->second.isInterrupted = true;
+                it->second.shouldResumePlaylist = shouldResumePlaylist;
+                interruptedPlaylist = true;
+                info("SessionManager: marked playlist on universe {} as interrupted (resume: {})", universe,
+                     shouldResumePlaylist);
+            }
         }
     }
 
@@ -219,15 +222,22 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interrupt(universe_t un
         span->setAttribute("interrupted_playlist", interruptedPlaylist);
     }
 
-    // Schedule the interrupt animation using cooperative scheduler.
-    // We hold the mutex during this to prevent the event loop from seeing
-    // an empty activeSessions and starting idle loops that would cancel
-    // the interrupt animation.
+    // Schedule the interrupt animation. Adoption inside scheduleAnimation cancels every
+    // active session on the universe and registers the new one in one critical section.
     auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(
-        eventLoop->getNextFrameNumber(), interruptAnimation, universe, creatures::runtime::ActivityReason::AdHoc);
+        eventLoop->getNextFrameNumber(), interruptAnimation, universe, creatures::runtime::ActivityReason::AdHoc,
+        /*cancelEntireUniverse=*/true);
 
     if (!sessionResult.isSuccess()) {
-        lock.unlock();
+        // Nothing was cancelled — undo the playlist-interrupted mark so it keeps playing.
+        if (interruptedPlaylist) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = universeStates_.find(universe);
+            if (it != universeStates_.end()) {
+                it->second.isInterrupted = false;
+                it->second.shouldResumePlaylist = false;
+            }
+        }
         error("SessionManager: failed to schedule interrupt animation: {}", sessionResult.getError()->getMessage());
         if (span) {
             span->setError(sessionResult.getError()->getMessage());
@@ -236,23 +246,6 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interrupt(universe_t un
     }
 
     auto session = sessionResult.getValue().value();
-
-    // Register the interrupt session (still under the same lock)
-    it = universeStates_.find(universe);
-    if (it != universeStates_.end()) {
-        // Keep the playlist state but update current sessions
-        it->second.activeSessions.push_back(session);
-        // isInterrupted remains true if it was set
-    } else {
-        // No previous state, create new
-        UniverseState state;
-        state.activeSessions.push_back(session);
-        state.isPlaylist = false;
-        state.isInterrupted = false;
-        universeStates_[universe] = state;
-    }
-
-    lock.unlock();
 
     info("SessionManager: interrupt animation '{}' scheduled on universe {}", interruptAnimation.metadata.title,
          universe);
@@ -298,25 +291,14 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interruptIdleOnly(unive
 
     const std::unordered_set<creatureId_t> targets(creatureIds.begin(), creatureIds.end());
 
-    // First creature in a session that this interrupt also targets, if any.
-    auto overlappingCreature =
-        [&targets](const std::shared_ptr<PlaybackSession> &session) -> std::optional<creatureId_t> {
-        if (!session) {
-            return std::nullopt;
-        }
-        for (const auto &trackState : session->getTrackStates()) {
-            if (targets.count(trackState.creatureId) > 0) {
-                return trackState.creatureId;
-            }
-        }
-        return std::nullopt;
-    };
-
-    std::vector<std::shared_ptr<PlaybackSession>> cancelledSessions;
-
     // Every target creature that's mid-performance, deduped. Collected in full (not
     // first-hit) so the error can name all of the busy performers, and reported outside
     // the lock because name resolution can hit the database.
+    //
+    // Only the busy *check* happens here. Cancelling the targets' idle sessions is left
+    // to registerSession's adoption inside scheduleAnimation, where it happens atomically
+    // with the new session's registration (issue #62). The old code cancelled here and
+    // registered later, reopening the idle-restart race that interrupt() documents.
     std::vector<creatureId_t> busyCreatures;
 
     {
@@ -337,27 +319,6 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interruptIdleOnly(unive
                         busyCreatures.push_back(trackState.creatureId);
                     }
                 }
-            }
-
-            if (busyCreatures.empty()) {
-                std::vector<std::shared_ptr<PlaybackSession>> survivors;
-                survivors.reserve(it->second.activeSessions.size());
-                for (const auto &existing : it->second.activeSessions) {
-                    const auto idleCreature =
-                        (existing && !existing->isCancelled() &&
-                         existing->getActivityReason() == creatures::runtime::ActivityReason::Idle)
-                            ? overlappingCreature(existing)
-                            : std::nullopt;
-                    if (idleCreature) {
-                        debug("SessionManager: cancelling idle session on universe {} for creature {} (ad-hoc)",
-                              universe, *idleCreature);
-                        cancelSessionAndMarkActivity(existing);
-                        cancelledSessions.push_back(existing);
-                    } else {
-                        survivors.push_back(existing);
-                    }
-                }
-                it->second.activeSessions.swap(survivors);
             }
         }
     }
@@ -382,13 +343,14 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interruptIdleOnly(unive
         return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::Conflict, errorMessage)};
     }
 
+    // Adoption inside scheduleAnimation cancels the targets' idle sessions (any session
+    // overlapping the animation's creatures) and registers the new one atomically. A
+    // non-idle session that slipped in since the busy check above gets cancelled too —
+    // same last-request-wins semantics as every other registration path.
     auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(
         eventLoop->getNextFrameNumber(), interruptAnimation, universe, creatures::runtime::ActivityReason::AdHoc);
 
     if (!sessionResult.isSuccess()) {
-        for (const auto &cancelledSession : cancelledSessions) {
-            scheduleImmediateTeardown(cancelledSession);
-        }
         if (span) {
             span->setError(sessionResult.getError()->getMessage());
         }
@@ -396,11 +358,6 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interruptIdleOnly(unive
     }
 
     auto session = sessionResult.getValue().value();
-    registerSession(universe, session, false);
-
-    for (const auto &cancelledSession : cancelledSessions) {
-        scheduleImmediateTeardown(cancelledSession);
-    }
 
     if (span) {
         span->setAttribute("session.id", session->getSessionId());

@@ -680,6 +680,7 @@ add_executable(creature-server-test
         tests/util/SetAttributeOverload_test.cpp
         tests/server/ws/CreatureActivityMessage_test.cpp
         tests/server/ws/CreatureService_streaming_test.cpp
+        tests/server/ws/CreatureService_activityOwnership_test.cpp
         tests/server/ws/CreatureService_validate_test.cpp
         tests/server/ws/HttpResponseHelpers_test.cpp
         tests/server/storyboard/StoryboardParse_test.cpp

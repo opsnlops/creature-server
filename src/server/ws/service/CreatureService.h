@@ -3,6 +3,7 @@
 
 #include "spdlog/spdlog.h"
 
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -81,6 +82,21 @@ class CreatureService {
     static std::string setActivityRunning(const std::vector<creatureId_t> &creatureIds, const std::string &animationId,
                                           runtime::ActivityReason reason, const std::string &sessionId = "",
                                           std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * Should a non-running activity write from `incomingSessionId` be dropped because a
+     * different session now owns the creature's activity?
+     *
+     * A session reporting its own end (stopped/cancelled/idle) must still own the creature —
+     * if a newer session has already broadcast running, the stale write would stomp its
+     * state, which is exactly the edge the fixture binding dispatcher reacts to (issue #62).
+     * Running writes are takeovers and always apply; writes with no session context
+     * (empty `incomingSessionId`) always apply.
+     *
+     * Pure function so tests can exercise the ownership rules without the full service.
+     */
+    static bool isStaleActivityWrite(runtime::ActivityState requestedState, const std::string &incomingSessionId,
+                                     const std::optional<std::string> &currentSessionId);
 
     /**
      * Increment idle stopped counters for creatures (runtime only).

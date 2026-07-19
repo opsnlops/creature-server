@@ -739,14 +739,40 @@ static creatures::runtime::ActivityState resolveIdleState(const oatpp::Object<cr
     return requested;
 }
 
+bool CreatureService::isStaleActivityWrite(creatures::runtime::ActivityState requestedState,
+                                           const std::string &incomingSessionId,
+                                           const std::optional<std::string> &currentSessionId) {
+    if (requestedState == creatures::runtime::ActivityState::Running) {
+        return false;
+    }
+    if (incomingSessionId.empty() || !currentSessionId.has_value()) {
+        return false;
+    }
+    return *currentSessionId != incomingSessionId;
+}
+
 std::string CreatureService::setActivityState(const std::vector<creatureId_t> &creatureIds,
                                               const std::string &animationId, runtime::ActivityReason reason,
                                               runtime::ActivityState state, const std::string &sessionId,
-                                              std::shared_ptr<OperationSpan> /*parentSpan*/) {
+                                              std::shared_ptr<OperationSpan> parentSpan) {
 
     // Generate or reuse session ID
     std::string sid = sessionId.empty() ? creatures::util::generateUUID() : sessionId;
     auto now = getCurrentTimeISO8601();
+
+    auto span = creatures::observability
+                    ? creatures::observability->createChildOperationSpan("CreatureService.setActivityState", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("activity.reason", creatures::runtime::toString(reason));
+        span->setAttribute("activity.state", creatures::runtime::toString(state));
+        span->setAttribute("session.id", sid);
+        span->setAttribute("animation.id", animationId);
+        span->setAttribute("creatures.count", static_cast<int64_t>(creatureIds.size()));
+    }
+
+    int64_t writesApplied = 0;
+    int64_t staleWritesIgnored = 0;
 
     for (const auto &creatureId : creatureIds) {
         if (creatureId.empty()) {
@@ -756,6 +782,26 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
         if (!runtime->activity) {
             runtime->activity = makeDefaultActivity();
         }
+
+        // Ownership guard: a dying session's stop/cancel must not clobber the state of a
+        // newer session that already took this creature over (issue #62).
+        std::optional<std::string> currentSession;
+        if (runtime->activity->session_id) {
+            currentSession = std::string(runtime->activity->session_id);
+        }
+        if (isStaleActivityWrite(state, sessionId, currentSession)) {
+            debug("Ignoring stale activity write for creature {} from session {} (now owned by session {})", creatureId,
+                  sessionId, *currentSession);
+            ++staleWritesIgnored;
+            if (span) {
+                // Record the loser and the owner so Honeycomb can show exactly which
+                // session's stop got dropped and who held the creature at the time.
+                span->setAttribute("activity.stale_write.creature_id", creatureId);
+                span->setAttribute("activity.stale_write.owner_session_id", *currentSession);
+            }
+            continue;
+        }
+        ++writesApplied;
 
         auto resolvedState = resolveIdleState(runtime, state);
         auto resolvedReason = reason;
@@ -794,8 +840,14 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
         // Notify fixture bindings of the (possibly new) activity state. The hook is installed
         // by main.cpp at startup; in tests it stays empty so no fixture work runs.
         if (creatures::fixtureActivityHook) {
-            creatures::fixtureActivityHook(creatureId, resolvedReason, resolvedState);
+            creatures::fixtureActivityHook(creatureId, resolvedReason, resolvedState, span);
         }
+    }
+
+    if (span) {
+        span->setAttribute("activity.writes_applied", writesApplied);
+        span->setAttribute("activity.stale_writes_ignored", staleWritesIgnored);
+        span->setSuccess();
     }
 
     return sid;

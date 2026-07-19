@@ -48,7 +48,8 @@ extern std::shared_ptr<SessionManager> sessionManager;
 
 Result<std::shared_ptr<PlaybackSession>>
 CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const Animation &animation,
-                                                 universe_t universe, creatures::runtime::ActivityReason reason) {
+                                                 universe_t universe, creatures::runtime::ActivityReason reason,
+                                                 bool cancelEntireUniverse) {
     // Create observability span
     auto scheduleSpan =
         observability ? observability->createOperationSpan("CooperativeAnimationScheduler.scheduleAnimation") : nullptr;
@@ -58,6 +59,7 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
         scheduleSpan->setAttribute("animation.universe", static_cast<int64_t>(universe));
         scheduleSpan->setAttribute("animation.starting_frame", static_cast<int64_t>(startingFrame));
         scheduleSpan->setAttribute("scheduler.type", "cooperative");
+        scheduleSpan->setAttribute("adopt.cancel_entire_universe", cancelEntireUniverse);
     }
 
     if (!eventLoop) {
@@ -105,8 +107,29 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
         scheduleSpan->setAttribute("session.id", session->getSessionId());
     }
 
+    // A frame decode failure in the constructor leaves the session born-cancelled. Bail
+    // before adopting or broadcasting — the old code scheduled a runner for the corpse,
+    // which then broadcast (cancelled, stopped) over whatever was actually running (#65).
+    if (session->isCancelled()) {
+        std::string errorMsg =
+            fmt::format("Failed to decode frames for animation '{}'; not scheduling", animation.metadata.title);
+        error(errorMsg);
+        if (scheduleSpan) {
+            scheduleSpan->setError(errorMsg);
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
+
     debug("CooperativeAnimationScheduler: scheduling animation '{}' on universe {} at frame {} (session {})",
           animation.metadata.title, universe, startingFrame, session->getSessionId());
+
+    // Adopt the session BEFORE the running broadcast and before the audio load: adoption
+    // cancels conflicting sessions and registers this one in a single critical section, so
+    // (a) the cancelled sessions' (cancelled, stopped) broadcasts land before our
+    // (reason, running) — the ordering the fixture binding dispatcher needs — and (b) the
+    // idle-restart check in the playback runner can never observe the universe as free
+    // while we're still loading audio (issues #62/#63).
+    sessionManager->registerSession(universe, session, false, scheduleSpan, cancelEntireUniverse);
 
     // Broadcast initial activity state for involved creatures using the session UUID
     std::unordered_set<creatureId_t> creatureSet;
@@ -128,6 +151,19 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
                 error("Failed to load audio buffer: {}", loadResult.getError()->getMessage());
                 if (scheduleSpan) {
                     scheduleSpan->setError(loadResult.getError()->getMessage());
+                    scheduleSpan->setAttribute("session.aborted_after_adopt", true);
+                }
+                // The session was already adopted and broadcast as running; unwind both so
+                // the universe isn't left claimed by a session that will never run. No
+                // runner was scheduled, so nothing else will clean this up.
+                session->cancel();
+                session->markCancellationNotified();
+                creatures::ws::CreatureService::setActivityState(
+                    creatureIds, animation.id, creatures::runtime::ActivityReason::Cancelled,
+                    creatures::runtime::ActivityState::Stopped, session->getSessionId(), scheduleSpan);
+                sessionManager->clearSession(universe, session->getSessionId());
+                for (const auto &creatureId : creatureIds) {
+                    creatures::ws::CreatureService::startIdleIfNeeded(creatureId, scheduleSpan);
                 }
                 return Result<std::shared_ptr<PlaybackSession>>{loadResult.getError().value()};
             }
@@ -342,12 +378,11 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
             info("Animation queue: scheduling next animation '{}' on universe {}", nextQueued->metadata.title,
                  universe);
 
+            // scheduleAnimation adopts (registers) the session itself — see issue #62.
             auto nextResult = CooperativeAnimationScheduler::scheduleAnimation(
                 eventLoop->getNextFrameNumber(), *nextQueued, universe, creatures::runtime::ActivityReason::AdHoc);
 
-            if (nextResult.isSuccess()) {
-                sessionManager->registerSession(universe, nextResult.getValue().value(), false);
-            } else {
+            if (!nextResult.isSuccess()) {
                 warn("Animation queue: failed to schedule next: {}", nextResult.getError()->getMessage());
             }
 

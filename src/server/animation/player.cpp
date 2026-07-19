@@ -83,9 +83,9 @@ Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::
             return Result<framenum_t>{sessionResult.getError().value()};
         }
 
-        // Get the session and register it with SessionManager so it can be cancelled later
+        // The session was already adopted (registered) inside scheduleAnimation, atomically
+        // with cancelling any conflicting sessions — see issue #62.
         auto session = sessionResult.getValue().value();
-        sessionManager->registerSession(universe, session, false); // false = not a playlist
 
         // Calculate the last frame of the animation
         // Each animation frame takes (milliseconds_per_frame / EVENT_LOOP_PERIOD_MS) event loop frames
