@@ -249,7 +249,11 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::upsertFixture(const s
 
     auto fixture = result.getValue().value();
 
-    // Mirror the persisted universe assignment (if any) into the runtime map.
+    // Mirror the persisted universe assignment (if any) into the runtime map. The DB
+    // layer backfills assigned_universe from the existing document when the upsert JSON
+    // omits it (preserve semantics, issue #68), so `remove` here only fires when the DB
+    // genuinely has no assignment — an upsert can no longer silently strand a fixture
+    // with a DB universe but no runtime mapping.
     if (fixture.assigned_universe.has_value()) {
         creatures::fixtureUniverseMap->put(fixture.id, *fixture.assigned_universe);
     } else {
