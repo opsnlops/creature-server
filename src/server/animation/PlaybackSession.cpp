@@ -5,6 +5,8 @@
 
 #include "PlaybackSession.h"
 
+#include <algorithm>
+
 #include <fmt/format.h>
 
 #include "spdlog/spdlog.h"
@@ -37,6 +39,19 @@ PlaybackSession::PlaybackSession(const Animation &animation, universe_t universe
             sessionSpan_->setAttribute("session.ms_per_frame",
                                        static_cast<int64_t>(animation_.metadata.milliseconds_per_frame));
             sessionSpan_->setAttribute("session.scheduler_type", "cooperative");
+        }
+    }
+
+    // Snapshot the ids this session drives (deduped, empties removed) so other threads
+    // never need to walk the mutable track states — see getCreatureIds()/getFixtureIds().
+    for (const auto &track : animation_.tracks) {
+        if (!track.creature_id.empty() &&
+            std::find(creatureIds_.begin(), creatureIds_.end(), track.creature_id) == creatureIds_.end()) {
+            creatureIds_.push_back(track.creature_id);
+        }
+        if (!track.fixture_id.empty() &&
+            std::find(fixtureIds_.begin(), fixtureIds_.end(), track.fixture_id) == fixtureIds_.end()) {
+            fixtureIds_.push_back(track.fixture_id);
         }
     }
 
