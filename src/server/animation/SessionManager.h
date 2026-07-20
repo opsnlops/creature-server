@@ -119,13 +119,6 @@ class SessionManager {
     bool resumePlaylist(universe_t universe);
 
     /**
-     * Cancel all playback on a universe
-     *
-     * @param universe The universe to cancel
-     */
-    void cancelUniverse(universe_t universe);
-
-    /**
      * Get the current session on a universe (if any)
      *
      * @param universe The universe to check
@@ -256,19 +249,22 @@ class SessionManager {
     std::optional<PlaylistStatus> getPlaylistStatus(universe_t universe) const;
     std::vector<PlaylistStatus> getAllPlaylistStatuses() const;
     void clearPlaylist(universe_t universe);
-    bool updatePlaylistCurrentAnimation(universe_t universe, const std::string &animationId);
 
   private:
     struct UniverseState {
         std::vector<std::shared_ptr<PlaybackSession>> activeSessions;
-        bool isPlaylist{false};
-        bool isInterrupted{false};
-        bool isStopped{false}; // Explicitly stopped, will not resume
-        bool shouldResumePlaylist{false};
 
-        // Playlist state for resumption
+        // Playlist state machine. One enum instead of the old isPlaylist/isStopped/
+        // isInterrupted boolean pile, which could contradict itself — e.g. a playlist
+        // stopped via stopPlaylist() (without clearPlaylist()) still had isPlaylist=true,
+        // so a later interrupt() marked it interrupted and the onFinish resume logic
+        // could revive it (issue #64). All transitions go through the public methods;
+        // getPlaylistState() just reads this field.
+        PlaylistState playlistState{PlaylistState::None};
+        bool shouldResumePlaylist{false}; // Meaningful only while Interrupted
+
+        // Playlist identity + status snapshot for resumption and broadcasts
         std::string playlistId;
-        size_t currentPlaylistIndex{0};
         std::optional<PlaylistStatus> playlistStatus;
 
         // Animation queue for chained playback (streaming ad-hoc speech)

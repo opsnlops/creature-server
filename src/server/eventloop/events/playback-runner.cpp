@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <unordered_set>
 
 #include "spdlog/spdlog.h"
 #include <fmt/format.h>
@@ -82,12 +81,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
 
     // Defensive guard: idle sessions should target a single creature.
     if (!session_->isCancelled() && session_->getActivityReason() == creatures::runtime::ActivityReason::Idle) {
-        std::unordered_set<creatureId_t> creatureIds;
-        for (const auto &trackState : session_->getTrackStates()) {
-            if (!trackState.creatureId.empty()) {
-                creatureIds.insert(trackState.creatureId);
-            }
-        }
+        const auto &creatureIds = session_->getCreatureIds();
         if (creatureIds.size() != 1) {
             warn("PlaybackRunnerEvent: idle session {} targets {} creatures; cancelling", session_->getSessionId(),
                  creatureIds.size());
@@ -106,10 +100,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
         session_->invokeOnFinish();
 
         // Mark runtime activity as idle for involved creatures
-        std::vector<creatureId_t> creatureIds;
-        for (const auto &trackState : session_->getTrackStates()) {
-            creatureIds.push_back(trackState.creatureId);
-        }
+        const auto &creatureIds = session_->getCreatureIds();
         if (!session_->isCancellationNotified()) {
             auto reason = creatures::runtime::ActivityReason::Cancelled;
             creatures::ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
@@ -173,10 +164,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
         // Mark runtime activity as idle for involved creatures —
         // but only if the onFinish callback didn't start a new session
         // (e.g., from the animation queue for chained ad-hoc speech)
-        std::vector<creatureId_t> creatureIds;
-        for (const auto &trackState : session_->getTrackStates()) {
-            creatureIds.push_back(trackState.creatureId);
-        }
+        const auto &creatureIds = session_->getCreatureIds();
 
         // Check if a new active non-idle session was started by the callback
         bool newSessionStarted = false;

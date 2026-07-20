@@ -205,6 +205,10 @@ class PlaybackSession {
 
     /**
      * Get track states (for DMX emission)
+     *
+     * Only the playback runner (event loop thread) may use this — it mutates playback
+     * position in place. Other threads wanting to know *what* this session drives must
+     * use getCreatureIds()/getFixtureIds() instead (issue #65).
      */
     [[nodiscard]] std::vector<TrackState> &getTrackStates() { return trackStates_; }
 
@@ -212,6 +216,14 @@ class PlaybackSession {
      * Get track states (const version)
      */
     [[nodiscard]] const std::vector<TrackState> &getTrackStates() const { return trackStates_; }
+
+    /**
+     * Creature / fixture ids this session drives — deduped, empty ids removed, computed
+     * once at construction and immutable afterwards. Safe to read from any thread while
+     * the runner mutates the track states (issue #65).
+     */
+    [[nodiscard]] const std::vector<creatureId_t> &getCreatureIds() const { return creatureIds_; }
+    [[nodiscard]] const std::vector<fixtureId_t> &getFixtureIds() const { return fixtureIds_; }
 
   private:
     // Animation and playback metadata
@@ -222,6 +234,10 @@ class PlaybackSession {
 
     // Per-track decoded frames and playback state
     std::vector<TrackState> trackStates_;
+
+    // Immutable id snapshots — see getCreatureIds()/getFixtureIds()
+    std::vector<creatureId_t> creatureIds_;
+    std::vector<fixtureId_t> fixtureIds_;
 
     // Audio buffer (if animation has sound)
     std::shared_ptr<rtp::AudioStreamBuffer> audioBuffer_;

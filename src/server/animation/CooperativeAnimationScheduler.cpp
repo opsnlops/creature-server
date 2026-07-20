@@ -7,7 +7,6 @@
 
 #include <filesystem>
 #include <memory>
-#include <unordered_set>
 
 #include "spdlog/spdlog.h"
 
@@ -132,12 +131,7 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
     sessionManager->registerSession(universe, session, false, scheduleSpan, cancelEntireUniverse);
 
     // Broadcast initial activity state for involved creatures using the session UUID
-    std::unordered_set<creatureId_t> creatureSet;
-    creatureSet.reserve(animation.tracks.size());
-    for (const auto &track : animation.tracks) {
-        creatureSet.insert(track.creature_id);
-    }
-    std::vector<creatureId_t> creatureIds(creatureSet.begin(), creatureSet.end());
+    const auto &creatureIds = session->getCreatureIds();
     creatures::ws::CreatureService::setActivityRunning(creatureIds, animation.id, reason, session->getSessionId(),
                                                        scheduleSpan);
 
