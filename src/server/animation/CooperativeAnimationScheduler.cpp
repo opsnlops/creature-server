@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <thread>
 
 #include "spdlog/spdlog.h"
 
@@ -29,6 +30,7 @@
 #include "server/storage/Storage.h"
 #include "server/ws/service/CreatureService.h"
 #include "util/ObservabilityManager.h"
+#include "util/websocketUtils.h"
 
 namespace creatures {
 
@@ -135,66 +137,48 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
     creatures::ws::CreatureService::setActivityRunning(creatureIds, animation.id, reason, session->getSessionId(),
                                                        scheduleSpan);
 
-    // Load audio buffer if animation has sound
-    if (!animation.metadata.sound_file.empty()) {
-        // Only the RTP transport reads the pre-encoded buffer; the local transports
-        // load the WAV themselves, so skip the 17-channel Opus encode otherwise.
-        if (config && config->getAudioMode() == Configuration::AudioMode::RTP) {
-            auto loadResult = loadAudioBuffer(animation, session, scheduleSpan);
-            if (!loadResult.isSuccess()) {
-                error("Failed to load audio buffer: {}", loadResult.getError()->getMessage());
-                if (scheduleSpan) {
-                    scheduleSpan->setError(loadResult.getError()->getMessage());
-                    scheduleSpan->setAttribute("session.aborted_after_adopt", true);
-                }
-                // The session was already adopted and broadcast as running; unwind both so
-                // the universe isn't left claimed by a session that will never run. No
-                // runner was scheduled, so nothing else will clean this up.
-                session->cancel();
-                session->markCancellationNotified();
-                creatures::ws::CreatureService::setActivityState(
-                    creatureIds, animation.id, creatures::runtime::ActivityReason::Cancelled,
-                    creatures::runtime::ActivityState::Stopped, session->getSessionId(), scheduleSpan);
-                sessionManager->clearSession(universe, session->getSessionId());
-                for (const auto &creatureId : creatureIds) {
-                    creatures::ws::CreatureService::startIdleIfNeeded(creatureId, scheduleSpan);
-                }
-                return Result<std::shared_ptr<PlaybackSession>>{loadResult.getError().value()};
-            }
-        }
+    // Set up lifecycle callbacks before any runner (sync or async) can fire.
+    setupLifecycleCallbacks(session, universe);
 
-        // Create audio transport
+    if (!animation.metadata.sound_file.empty()) {
+        // Create the audio transport up front (cheap); onStart uses it.
         auto audioTransport = createAudioTransport(session);
         session->setAudioTransport(audioTransport);
 
-        // Audio loading is synchronous and heavy I/O - recalculate starting frame
-        // This matches the pattern in MusicEvent::scheduleRtpAudio()
-        startingFrame = eventLoop->getNextFrameNumber() + 2; // +2 to allow for reset event
+        // Only the RTP transport reads the pre-encoded buffer; the local transports
+        // load the WAV themselves in onStart.
+        if (config && config->getAudioMode() == Configuration::AudioMode::RTP) {
+            // The WAV read + 17-channel Opus encode is far too heavy for the event loop
+            // thread — which is exactly where playlist events, idle restarts, and queued
+            // ad-hoc animations call us from (issue #70). Hand off to a worker; the
+            // PlaybackRunnerEvent is only scheduled once the buffer is ready. Safe
+            // because adoption already registered the session: every "is anything
+            // active?" check sees it for the whole load window.
+            scheduleWithAsyncAudioLoad(session, universe, scheduleSpan);
 
-        // Apply animation delay for audio sync compensation if configured
+            if (metrics) {
+                metrics->incrementAnimationsPlayed();
+            }
+            if (scheduleSpan) {
+                scheduleSpan->setAttribute("audio.load_async", true);
+                scheduleSpan->setSuccess();
+            }
+            info("✅ Scheduled cooperative animation '{}' for universe {} (session {}, audio loading async)",
+                 animation.metadata.title, universe, session->getSessionId());
+            return Result<std::shared_ptr<PlaybackSession>>{session};
+        }
+
+        // Non-RTP transports: nudge the start out the same way the old synchronous path
+        // did (+2 frames, plus the configured audio-sync delay).
+        startingFrame = eventLoop->getNextFrameNumber() + 2;
         uint32_t delayMs = config->getAnimationDelayMs();
         if (delayMs > 0) {
             framenum_t delayFrames = delayMs / EVENT_LOOP_PERIOD_MS;
             startingFrame += delayFrames;
             debug("Applying animation delay of {}ms ({} frames)", delayMs, delayFrames);
         }
-
         session->setStartingFrame(startingFrame);
-
-        debug("Audio loaded, adjusted starting frame to {}", startingFrame);
-
-        // If using RTP audio, schedule encoder reset event before playback starts
-        // This rotates SSRC values so controllers can detect the new audio stream
-        if (config->getAudioMode() == Configuration::AudioMode::RTP) {
-            framenum_t resetFrame = startingFrame - 1;
-            auto resetEvent = std::make_shared<RtpEncoderResetEvent>(resetFrame, 4); // 4 silent frames
-            eventLoop->scheduleEvent(resetEvent);
-            debug("Scheduled RtpEncoderResetEvent for frame {} (one frame before animation starts)", resetFrame);
-        }
     }
-
-    // Set up lifecycle callbacks
-    setupLifecycleCallbacks(session, universe);
 
     // Schedule the initial PlaybackRunnerEvent
     auto initialRunner = std::make_shared<PlaybackRunnerEvent>(startingFrame, session);
@@ -215,6 +199,119 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
          animation.metadata.title, universe, startingFrame, session->getSessionId());
 
     return Result<std::shared_ptr<PlaybackSession>>{session};
+}
+
+void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<PlaybackSession> session,
+                                                               universe_t universe,
+                                                               std::shared_ptr<OperationSpan> scheduleSpan) {
+    // Capture shared_ptr copies of the globals so a shutdown mid-load can't yank them
+    // out from under the detached worker.
+    auto capturedEventLoop = eventLoop;
+    auto capturedSessionManager = sessionManager;
+    auto capturedConfig = config;
+    auto capturedObservability = observability;
+
+    // The schedule span ends when scheduleAnimation returns, so the worker gets its own
+    // root span carrying trigger.trace_id/span_id attributes for Honeycomb linkage —
+    // same pattern as the fixture AutoStopEvent.
+    const std::string triggerTraceId = scheduleSpan ? scheduleSpan->getTraceIdHex() : std::string{};
+    const std::string triggerSpanId = scheduleSpan ? scheduleSpan->getSpanIdHex() : std::string{};
+
+    std::thread([session, universe, capturedEventLoop, capturedSessionManager, capturedConfig, capturedObservability,
+                 triggerTraceId, triggerSpanId]() {
+        auto loadSpan = capturedObservability
+                            ? capturedObservability->createOperationSpan("CooperativeAnimationScheduler.asyncAudioLoad")
+                            : nullptr;
+        if (loadSpan) {
+            loadSpan->setAttribute("session.id", session->getSessionId());
+            loadSpan->setAttribute("animation.id", session->getAnimation().id);
+            loadSpan->setAttribute("session.universe", static_cast<int64_t>(universe));
+            if (!triggerTraceId.empty()) {
+                loadSpan->setAttribute("trigger.trace_id", triggerTraceId);
+                loadSpan->setAttribute("trigger.span_id", triggerSpanId);
+            }
+        }
+
+        auto loadResult = loadAudioBuffer(session->getAnimation(), session, loadSpan);
+
+        if (!loadResult.isSuccess()) {
+            error("Async audio load failed for session {}: {}", session->getSessionId(),
+                  loadResult.getError()->getMessage());
+            if (loadSpan) {
+                loadSpan->setError(loadResult.getError()->getMessage());
+                loadSpan->setAttribute("session.aborted_after_adopt", true);
+            }
+
+            // Same unwind as any post-adoption failure: the session was adopted and
+            // broadcast as running, but no runner will ever fire, so nothing else
+            // cleans it up.
+            session->cancel();
+            session->markCancellationNotified();
+            creatures::ws::CreatureService::setActivityState(
+                session->getCreatureIds(), session->getAnimation().id, creatures::runtime::ActivityReason::Cancelled,
+                creatures::runtime::ActivityState::Stopped, session->getSessionId(), loadSpan);
+            if (capturedSessionManager) {
+                capturedSessionManager->clearSession(universe, session->getSessionId());
+            }
+            for (const auto &creatureId : session->getCreatureIds()) {
+                creatures::ws::CreatureService::startIdleIfNeeded(creatureId, loadSpan);
+            }
+
+            // A playlist can't continue past a broken animation — halt it, matching the
+            // old synchronous-failure semantics (and avoiding a retry spin if the
+            // weighted pick keeps choosing the same broken file).
+            if (session->getActivityReason() == creatures::runtime::ActivityReason::Playlist &&
+                capturedSessionManager) {
+                warn("Halting playlist on universe {} after audio load failure", universe);
+                capturedSessionManager->clearPlaylist(universe);
+                PlaylistStatus emptyStatus{};
+                emptyStatus.universe = universe;
+                emptyStatus.playing = false;
+                broadcastPlaylistStatusToAllClients(emptyStatus);
+            }
+            return;
+        }
+
+        if (session->isCancelled()) {
+            // Someone adopted over us while we were encoding. The canceller already
+            // broadcast our (cancelled, stopped) and scheduled an immediate teardown;
+            // just don't start anything.
+            debug("Async audio load finished for cancelled session {}; skipping start", session->getSessionId());
+            if (loadSpan) {
+                loadSpan->setAttribute("session.cancelled_during_load", true);
+                loadSpan->setSuccess();
+            }
+            return;
+        }
+
+        if (!capturedEventLoop) {
+            warn("Async audio load finished but event loop is gone; dropping session {}", session->getSessionId());
+            return;
+        }
+
+        framenum_t startFrame = capturedEventLoop->getNextFrameNumber() + 2; // +2 to allow for reset event
+        const uint32_t delayMs = capturedConfig ? capturedConfig->getAnimationDelayMs() : 0;
+        if (delayMs > 0) {
+            startFrame += static_cast<framenum_t>(delayMs / EVENT_LOOP_PERIOD_MS);
+            debug("Applying animation delay of {}ms to async start", delayMs);
+        }
+        session->setStartingFrame(startFrame);
+
+        // Rotate SSRC values one frame before playback so controllers detect the new
+        // audio stream.
+        auto resetEvent = std::make_shared<RtpEncoderResetEvent>(startFrame - 1, 4); // 4 silent frames
+        capturedEventLoop->scheduleEvent(resetEvent);
+
+        auto initialRunner = std::make_shared<PlaybackRunnerEvent>(startFrame, session);
+        capturedEventLoop->scheduleEvent(initialRunner);
+
+        info("✅ Async audio ready; animation '{}' starts at frame {} (session {})",
+             session->getAnimation().metadata.title, startFrame, session->getSessionId());
+        if (loadSpan) {
+            loadSpan->setAttribute("session.starting_frame", static_cast<int64_t>(startFrame));
+            loadSpan->setSuccess();
+        }
+    }).detach();
 }
 
 Result<void> CooperativeAnimationScheduler::loadAudioBuffer(const Animation &animation,
@@ -404,6 +501,23 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
                 }
             } else {
                 warn("Interrupted playlist state inconsistent - playlist snapshot missing for universe {}", universe);
+            }
+            return;
+        }
+
+        // Event-driven playlist chaining (issue #70): the PlaylistEvent pre-scheduled at
+        // the *estimated* end frame dies silently if it fires while a session is still
+        // active — and with async audio loads the real start (and therefore end) slips
+        // past the estimate routinely. Schedule the next link from the actual finish;
+        // the estimate-based event remains a harmless backstop, since whichever fires
+        // second sees the newly adopted session and skips.
+        if (auto finishedSession = weakSession.lock()) {
+            if (finishedSession->getActivityReason() == creatures::runtime::ActivityReason::Playlist &&
+                sessionManager->getPlaylistState(universe) == PlaylistState::Active && eventLoop) {
+                auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
+                eventLoop->scheduleEvent(nextPlaylistEvent);
+                debug("Playlist chain: scheduled next PlaylistEvent on universe {} after session {} finished", universe,
+                      finishedSession->getSessionId());
             }
         }
     });
