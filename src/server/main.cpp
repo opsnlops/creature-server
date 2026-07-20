@@ -325,9 +325,10 @@ int main(const int argc, char **argv) {
     creatures::fixturePatternRunner = std::make_shared<creatures::FixturePatternRunner>();
     creatures::fixtureBindingDispatcher = std::make_shared<creatures::FixtureBindingDispatcher>();
     creatures::fixtureActivityHook = [](const creatureId_t &id, creatures::runtime::ActivityReason reason,
-                                        creatures::runtime::ActivityState state) {
+                                        creatures::runtime::ActivityState state,
+                                        std::shared_ptr<creatures::OperationSpan> parentSpan) {
         if (creatures::fixtureBindingDispatcher) {
-            creatures::fixtureBindingDispatcher->onCreatureActivity(id, reason, state);
+            creatures::fixtureBindingDispatcher->onCreatureActivity(id, reason, state, std::move(parentSpan));
         }
     };
     debug("Created the DmxFixture cache, universe map, pattern runner, and binding dispatcher");

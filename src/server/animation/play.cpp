@@ -82,20 +82,10 @@ Result<std::string> Database::playStoredAnimation(const animationId_t &animation
         }
     }
 
-    if (config->getAnimationSchedulerType() == Configuration::AnimationSchedulerType::Cooperative) {
-        // Cancel overlapping sessions first so cancel events precede new activity notifications
-        std::unordered_set<creatureId_t> creatureIds;
-        for (const auto &track : animation.tracks) {
-            creatureIds.insert(track.creature_id);
-        }
-        if (!creatureIds.empty()) {
-            std::vector<creatureId_t> toCancel(creatureIds.begin(), creatureIds.end());
-            sessionManager->cancelSessionsForCreatures(universe, toCancel);
-            if (playSpan) {
-                playSpan->setAttribute("pre_cancelled_sessions", static_cast<int64_t>(toCancel.size()));
-            }
-        }
-    }
+    // No pre-cancel needed: scheduleAnimation adopts the new session atomically with
+    // cancelling overlapping ones, so cancel events precede the running broadcast and
+    // the idle-restart race can't reopen in between (issue #62). The old pre-cancel here
+    // left a gap during the audio load in which cancelled idle sessions restarted.
 
     auto playResult = scheduleAnimation(startingFrame, animation, universe);
     if (!playResult.isSuccess()) {

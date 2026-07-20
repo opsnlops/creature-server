@@ -31,19 +31,29 @@ class CooperativeAnimationScheduler {
      *
      * This method:
      * 1. Creates a PlaybackSession with the animation data
-     * 2. Loads and decodes audio buffer if present
-     * 3. Creates appropriate AudioTransport (RTP or SDL)
-     * 4. Sets up lifecycle callbacks (status lights, metrics)
-     * 5. Schedules initial PlaybackRunnerEvent
+     * 2. Adopts the session via SessionManager::registerSession — cancels conflicting
+     *    sessions and registers the new one atomically, BEFORE the running broadcast
+     *    and audio load (issues #62/#63)
+     * 3. Broadcasts the (reason, running) activity state
+     * 4. Loads and decodes audio buffer if present
+     * 5. Creates appropriate AudioTransport (RTP or SDL)
+     * 6. Sets up lifecycle callbacks (status lights, metrics)
+     * 7. Schedules initial PlaybackRunnerEvent
+     *
+     * Callers must NOT register the returned session themselves — adoption already did.
      *
      * @param startingFrame Frame number to start the animation
      * @param animation Animation to schedule
      * @param universe DMX universe to play on
+     * @param reason Activity reason broadcast for the involved creatures
+     * @param cancelEntireUniverse Adopt with interrupt semantics: cancel every active
+     *                             session on the universe, not just overlapping ones
      * @return Playback session handle for external control, or error
      */
     static Result<std::shared_ptr<PlaybackSession>>
     scheduleAnimation(framenum_t startingFrame, const Animation &animation, universe_t universe,
-                      creatures::runtime::ActivityReason reason = creatures::runtime::ActivityReason::Play);
+                      creatures::runtime::ActivityReason reason = creatures::runtime::ActivityReason::Play,
+                      bool cancelEntireUniverse = false);
 
   private:
     // No instances needed - all static methods
