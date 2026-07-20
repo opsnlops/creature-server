@@ -108,6 +108,32 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
         bsoncxx::builder::stream::document filter_builder;
         filter_builder << "id" << id;
 
+        // Preserve semantics (issue #68): universe assignment is runtime/deployment state
+        // with its own endpoint (PUT /universe), so a config upsert that omits
+        // assigned_universe must not clobber it. The $set below already leaves the DB
+        // field alone — backfill the parsed fixture from the existing document so the
+        // cache, the runtime universe map, and the response DTO agree with what the DB
+        // actually holds. Consequence: an upsert can assign a universe but never unassign
+        // one; unassignment goes through the universe endpoint.
+        if (!fixture.assigned_universe.has_value()) {
+            auto existingDoc = collection.find_one(filter_builder.view());
+            if (existingDoc) {
+                auto element = existingDoc->view()["assigned_universe"];
+                if (element && element.type() == bsoncxx::type::k_int64) {
+                    fixture.assigned_universe = static_cast<universe_t>(element.get_int64().value);
+                } else if (element && element.type() == bsoncxx::type::k_int32) {
+                    fixture.assigned_universe = static_cast<universe_t>(element.get_int32().value);
+                }
+                if (fixture.assigned_universe.has_value()) {
+                    debug("upsertFixture: preserving existing assigned_universe {} for fixture {}",
+                          *fixture.assigned_universe, fixture.id);
+                    if (upsertSpan) {
+                        upsertSpan->setAttribute("fixture.universe.preserved", true);
+                    }
+                }
+            }
+        }
+
         mongocxx::options::update update_options;
         update_options.upsert(true);
 
