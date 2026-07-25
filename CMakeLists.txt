@@ -379,6 +379,12 @@ find_package(CURL REQUIRED)
 #images; see Dockerfile). CPACK_DEBIAN_PACKAGE_SHLIBDEPS then auto-adds the
 #libmp3lame0 runtime Depends to the .deb.
 pkg_check_modules(MP3LAME lame)                 # gives MP3LAME_LIBRARIES if lame.pc exists
+# pkg-config returns a *bare* library name in MP3LAME_LIBRARIES plus a separate -L dir we
+# never apply to the targets, so the link line ends up with an unfindable "-lmp3lame".
+# MP3LAME_LINK_LIBRARIES is the absolute-path variant — always prefer it.
+if(MP3LAME_LINK_LIBRARIES)
+    set(MP3LAME_LIBRARIES ${MP3LAME_LINK_LIBRARIES})
+endif()
 if(NOT MP3LAME_LIBRARIES)
     find_library(MP3LAME_LIBRARIES NAMES mp3lame)
 endif()

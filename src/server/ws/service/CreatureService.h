@@ -124,7 +124,26 @@ class CreatureService {
     validateCreatureConfig(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
+     * Register a creature as under live streaming control (runtime-only).
+     *
+     * The registry is the authoritative ownership signal for live streaming — it is set on
+     * the first stream frame and cleared only by the streaming timeout, so it stays correct
+     * even if an activity write briefly says otherwise (issue #74).
+     *
+     * @return true the first time (caller should broadcast the activity change)
+     */
+    static bool markStreamingIfNew(const creatureId_t &creatureId);
+
+    /**
+     * Remove a creature from the live-streaming registry (streaming timed out or ended).
+     */
+    static void clearStreaming(const creatureId_t &creatureId);
+
+    /**
      * Check if a creature is currently in streaming mode (runtime-only).
+     *
+     * True if the creature is in the streaming registry OR its runtime activity says
+     * streaming/running — either signal means live control owns the creature.
      */
     static bool isCreatureStreaming(const creatureId_t &creatureId);
 

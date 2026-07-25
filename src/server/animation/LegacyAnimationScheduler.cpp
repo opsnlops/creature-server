@@ -22,6 +22,7 @@
 #include "server/eventloop/events/types.h"
 #include "server/metrics/counters.h"
 #include "server/storage/Storage.h"
+#include "server/ws/service/CreatureService.h"
 
 #include "server/namespace-stuffs.h"
 #include "util/ObservabilityManager.h"
@@ -83,6 +84,25 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
             scheduleSpan->setError(errorMessage);
         }
         return Result<framenum_t>{ServerError(ServerError::InvalidData, errorMessage)};
+    }
+
+    // Live streaming owns its creatures absolutely — same guard as the cooperative
+    // scheduler, so the legacy path can't schedule over an active stream either (issue #74).
+    for (const auto &track : animation.tracks) {
+        if (creatures::ws::CreatureService::isCreatureStreaming(track.creature_id)) {
+            std::string errorMessage =
+                fmt::format("Creature {} is being live-streamed; refusing to schedule animation '{}'",
+                            track.creature_id, animation.metadata.title);
+            info("{}", errorMessage);
+            if (scheduleSpan) {
+                scheduleSpan->setError(errorMessage);
+                scheduleSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::Conflict));
+                scheduleSpan->setAttribute("streaming.blocked.creature_id", track.creature_id);
+                scheduleSpan->setAttribute("streaming.blocked.creature_name",
+                                           creatures::ws::CreatureService::resolveCreatureName(track.creature_id));
+            }
+            return Result<framenum_t>{ServerError(ServerError::Conflict, errorMessage)};
+        }
     }
 
     /*

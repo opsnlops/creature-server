@@ -95,7 +95,15 @@
 #define SOUND_BUFFER_SIZE 2048 // Higher = less CPU, lower = less latency
 
 #define STREAMING_TIMEOUT_FRAMES_ENV "STREAMING_TIMEOUT_FRAMES"
-#define DEFAULT_STREAMING_TIMEOUT_FRAMES 60 // ~60ms at 1ms frame rate
+// How long after the last stream frame before we declare streaming over. Frames are 1ms,
+// so this is real time: 1000 = one second. The console sends a frame every 20ms, but
+// Wi-Fi jitter and client-side hiccups make gaps well past 60ms routine — the old value
+// of 60 declared "streaming stopped" mid-stream on any hiccup, minting a fresh session
+// UUID and restarting idle every second or two for an entire live session (issue #73).
+// Streaming take-over is instant regardless; the only cost of a longer timeout is the
+// creature holding its last streamed pose slightly longer before idle resumes once the
+// operator actually lets go.
+#define DEFAULT_STREAMING_TIMEOUT_FRAMES 1000 // 1s at 1ms frame rate
 
 // Should we use the GPIO devices for LEDs? This only works on the Raspberry Pi,
 // since Macs don't have these 😅

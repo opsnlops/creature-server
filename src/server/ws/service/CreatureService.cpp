@@ -7,6 +7,7 @@
 #include <optional>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <fmt/format.h>
@@ -224,7 +225,38 @@ std::string CreatureService::resolveCreatureName(const creatureId_t &creatureId)
     return creature.name;
 }
 
+// The live-streaming registry: which creatures are owned by a live console stream right
+// now. This is deliberately separate from the runtime activity state — activity writes are
+// broadcast state and can transiently disagree (a timeout writing "stopped" a beat before
+// the next frame lands), while the registry is set on the first frame and cleared only
+// when streaming genuinely ends, so schedulers can trust it (issue #74).
+namespace {
+std::mutex streamingRegistryMutex;
+std::unordered_set<creatureId_t> streamingRegistry;
+} // namespace
+
+bool CreatureService::markStreamingIfNew(const creatureId_t &creatureId) {
+    std::lock_guard<std::mutex> lock(streamingRegistryMutex);
+    auto [it, inserted] = streamingRegistry.insert(creatureId);
+    return inserted;
+}
+
+void CreatureService::clearStreaming(const creatureId_t &creatureId) {
+    std::lock_guard<std::mutex> lock(streamingRegistryMutex);
+    streamingRegistry.erase(creatureId);
+}
+
 bool CreatureService::isCreatureStreaming(const creatureId_t &creatureId) {
+    {
+        std::lock_guard<std::mutex> lock(streamingRegistryMutex);
+        if (streamingRegistry.contains(creatureId)) {
+            return true;
+        }
+    }
+
+    // Second signal: the runtime activity state. Kept so anything that marks a creature
+    // streaming via setActivityState alone still counts — the registry above protects
+    // the windows where the two disagree.
     auto runtime = getOrCreateRuntime(creatureId);
     if (!runtime || !runtime->activity) {
         return false;
