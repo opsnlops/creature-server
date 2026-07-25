@@ -97,7 +97,9 @@ Result<framenum_t> LegacyAnimationScheduler::scheduleAnimation(framenum_t starti
             if (scheduleSpan) {
                 scheduleSpan->setError(errorMessage);
                 scheduleSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::Conflict));
-                scheduleSpan->setAttribute("streaming.blocked_creature_id", track.creature_id);
+                scheduleSpan->setAttribute("streaming.blocked.creature_id", track.creature_id);
+                scheduleSpan->setAttribute("streaming.blocked.creature_name",
+                                           creatures::ws::CreatureService::resolveCreatureName(track.creature_id));
             }
             return Result<framenum_t>{ServerError(ServerError::Conflict, errorMessage)};
         }

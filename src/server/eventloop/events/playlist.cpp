@@ -11,6 +11,8 @@
 #include "model/PlaylistStatus.h"
 #include "server/animation/SessionManager.h"
 #include "server/animation/player.h"
+#include "server/config.h"
+#include "server/config/Configuration.h"
 #include "server/database.h"
 #include "server/eventloop/event.h"
 #include "server/eventloop/eventloop.h"
@@ -26,6 +28,7 @@
 
 namespace creatures {
 
+extern std::shared_ptr<Configuration> config;
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
@@ -317,8 +320,24 @@ Result<framenum_t> PlaylistEvent::scheduleChosenAnimation(const Animation &anima
     auto scheduleResult = scheduleAnimation(eventLoop->getNextFrameNumber(), animation, activeUniverse,
                                             creatures::runtime::ActivityReason::Playlist);
     if (!scheduleResult.isSuccess()) {
-        std::string errorMessage = fmt::format("Unable to schedule animation: {}. Halting playlist playback.",
-                                               scheduleResult.getError().value().getMessage());
+        auto schedulingError = scheduleResult.getError().value();
+
+        // A streaming Conflict is transient — the operator grabbed a joystick, and the
+        // stream will end. Don't tear the whole playlist down over it (security review,
+        // PR #75): leave playlist state intact and retry after the streaming timeout
+        // window has had a chance to expire.
+        if (schedulingError.getCode() == ServerError::Conflict) {
+            framenum_t retryDelay = config ? config->getStreamingTimeoutFrames() : DEFAULT_STREAMING_TIMEOUT_FRAMES;
+            framenum_t retryFrame = eventLoop->getNextFrameNumber() + retryDelay;
+            info("Playlist on universe {} deferring: {} — retrying at frame {}", activeUniverse,
+                 schedulingError.getMessage(), retryFrame);
+            auto retryEvent = std::make_shared<PlaylistEvent>(retryFrame, activeUniverse);
+            eventLoop->scheduleEvent(retryEvent);
+            return Result<framenum_t>{ServerError(ServerError::Conflict, schedulingError.getMessage())};
+        }
+
+        std::string errorMessage =
+            fmt::format("Unable to schedule animation: {}. Halting playlist playback.", schedulingError.getMessage());
         warn(errorMessage);
         sessionManager->clearPlaylist(activeUniverse);
         sendEmptyPlaylistUpdate(activeUniverse);

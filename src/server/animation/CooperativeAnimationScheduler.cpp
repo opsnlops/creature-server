@@ -60,6 +60,9 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
         scheduleSpan->setAttribute("animation.universe", static_cast<int64_t>(universe));
         scheduleSpan->setAttribute("animation.starting_frame", static_cast<int64_t>(startingFrame));
         scheduleSpan->setAttribute("scheduler.type", "cooperative");
+        // Who asked for this schedule (play / playlist / ad_hoc / idle) — the first
+        // GROUP BY when a streaming-conflict refusal or a stall needs explaining.
+        scheduleSpan->setAttribute("activity.reason", creatures::runtime::toString(reason));
         scheduleSpan->setAttribute("adopt.cancel_entire_universe", cancelEntireUniverse);
     }
 
@@ -114,7 +117,9 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
             if (scheduleSpan) {
                 scheduleSpan->setError(errorMsg);
                 scheduleSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::Conflict));
-                scheduleSpan->setAttribute("streaming.blocked_creature_id", track.creature_id);
+                scheduleSpan->setAttribute("streaming.blocked.creature_id", track.creature_id);
+                scheduleSpan->setAttribute("streaming.blocked.creature_name",
+                                           creatures::ws::CreatureService::resolveCreatureName(track.creature_id));
             }
             return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::Conflict, errorMsg)};
         }
