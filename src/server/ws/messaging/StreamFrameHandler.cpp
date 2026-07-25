@@ -49,6 +49,10 @@ namespace {
 std::mutex streamingMutex;
 std::unordered_set<creatureId_t> streamingCreatures;
 std::unordered_map<creatureId_t, framenum_t> streamingDeadlines;
+// Creatures with a StreamingTimeoutEvent already in flight. Frames arrive at 50Hz, so
+// scheduling an event per frame would leave dozens queued per creature — instead exactly
+// one event chases the (constantly extended) deadline per creature (issue #73).
+std::unordered_set<creatureId_t> timeoutEventPending;
 
 bool markStreamingIfNew(const creatureId_t &creatureId) {
     std::lock_guard<std::mutex> lock(streamingMutex);
@@ -70,10 +74,23 @@ std::optional<framenum_t> getStreamingDeadline(const creatureId_t &creatureId) {
     return it->second;
 }
 
+/// Returns true if the caller should schedule a new timeout event (none is in flight).
+bool markTimeoutEventPending(const creatureId_t &creatureId) {
+    std::lock_guard<std::mutex> lock(streamingMutex);
+    auto [it, inserted] = timeoutEventPending.insert(creatureId);
+    return inserted;
+}
+
+void clearTimeoutEventPending(const creatureId_t &creatureId) {
+    std::lock_guard<std::mutex> lock(streamingMutex);
+    timeoutEventPending.erase(creatureId);
+}
+
 void clearStreamingState(const creatureId_t &creatureId) {
     std::lock_guard<std::mutex> lock(streamingMutex);
     streamingCreatures.erase(creatureId);
     streamingDeadlines.erase(creatureId);
+    timeoutEventPending.erase(creatureId);
 }
 
 class StreamingTimeoutEvent : public EventBase<StreamingTimeoutEvent> {
@@ -84,14 +101,22 @@ class StreamingTimeoutEvent : public EventBase<StreamingTimeoutEvent> {
     Result<framenum_t> executeImpl() {
         auto deadline = getStreamingDeadline(creatureId_);
         if (!deadline.has_value()) {
-            return Result<framenum_t>{this->frameNumber};
-        }
-        // If another frame extended the deadline, skip
-        if (deadline.value() != this->frameNumber) {
+            // Streaming state was already torn down; nothing to chase.
+            clearTimeoutEventPending(creatureId_);
             return Result<framenum_t>{this->frameNumber};
         }
 
-        // Mark streaming stopped
+        // Frames kept arriving and pushed the deadline out — this event is the single
+        // in-flight timeout for the creature, so chase the new deadline instead of dying.
+        if (deadline.value() > this->frameNumber) {
+            if (eventLoop) {
+                auto chase = std::make_shared<StreamingTimeoutEvent>(deadline.value(), creatureId_);
+                eventLoop->scheduleEvent(chase);
+            }
+            return Result<framenum_t>{this->frameNumber};
+        }
+
+        // Deadline genuinely expired: mark streaming stopped and let idle resume
         creatures::ws::CreatureService::setActivityState(
             {creatureId_}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
             creatures::runtime::ActivityState::Stopped, "" /*sessionId*/, nullptr);
@@ -270,8 +295,12 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
 
     auto deadline = eventLoop->getNextFrameNumber() + streamingTimeoutFrames;
     updateStreamingDeadline(frame.creature_id, deadline);
-    auto timeoutEvent = std::make_shared<StreamingTimeoutEvent>(deadline, frame.creature_id);
-    eventLoop->scheduleEvent(timeoutEvent);
+    // One timeout event per creature: if one is already in flight it will chase the
+    // extended deadline itself when it fires (issue #73).
+    if (markTimeoutEventPending(frame.creature_id)) {
+        auto timeoutEvent = std::make_shared<StreamingTimeoutEvent>(deadline, frame.creature_id);
+        eventLoop->scheduleEvent(timeoutEvent);
+    }
 
     // appLogger->debug("Creature: {}, Offset: {}", creature->name, creature->channel_offset);
 
