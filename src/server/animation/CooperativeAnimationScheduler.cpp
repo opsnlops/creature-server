@@ -101,6 +101,25 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
         return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
+    // Live streaming owns its creatures absolutely — the operator is standing at the
+    // creature with a joystick. Every cooperative scheduling path (play, playlist,
+    // interrupt, ad-hoc speech, idle) flows through here, so refuse loudly instead of
+    // scheduling work the next stream frame would kill with a visible glitch (issue #74).
+    for (const auto &track : animation.tracks) {
+        if (creatures::ws::CreatureService::isCreatureStreaming(track.creature_id)) {
+            std::string errorMsg =
+                fmt::format("Creature {} is being live-streamed; refusing to schedule animation '{}'",
+                            track.creature_id, animation.metadata.title);
+            info("{}", errorMsg);
+            if (scheduleSpan) {
+                scheduleSpan->setError(errorMsg);
+                scheduleSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::Conflict));
+                scheduleSpan->setAttribute("streaming.blocked_creature_id", track.creature_id);
+            }
+            return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::Conflict, errorMsg)};
+        }
+    }
+
     // Create playback session
     auto session = std::make_shared<PlaybackSession>(animation, universe, startingFrame, scheduleSpan);
     session->setActivityReason(reason);

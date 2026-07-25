@@ -47,18 +47,13 @@ namespace creatures ::ws {
 
 namespace {
 std::mutex streamingMutex;
-std::unordered_set<creatureId_t> streamingCreatures;
 std::unordered_map<creatureId_t, framenum_t> streamingDeadlines;
 // Creatures with a StreamingTimeoutEvent already in flight. Frames arrive at 50Hz, so
 // scheduling an event per frame would leave dozens queued per creature — instead exactly
 // one event chases the (constantly extended) deadline per creature (issue #73).
+// (Which creatures are *streaming* lives in CreatureService's registry, where the
+// schedulers can see it — issue #74. Only the timeout bookkeeping lives here.)
 std::unordered_set<creatureId_t> timeoutEventPending;
-
-bool markStreamingIfNew(const creatureId_t &creatureId) {
-    std::lock_guard<std::mutex> lock(streamingMutex);
-    auto [it, inserted] = streamingCreatures.insert(creatureId);
-    return inserted;
-}
 
 void updateStreamingDeadline(const creatureId_t &creatureId, framenum_t deadline) {
     std::lock_guard<std::mutex> lock(streamingMutex);
@@ -87,10 +82,12 @@ void clearTimeoutEventPending(const creatureId_t &creatureId) {
 }
 
 void clearStreamingState(const creatureId_t &creatureId) {
-    std::lock_guard<std::mutex> lock(streamingMutex);
-    streamingCreatures.erase(creatureId);
-    streamingDeadlines.erase(creatureId);
-    timeoutEventPending.erase(creatureId);
+    {
+        std::lock_guard<std::mutex> lock(streamingMutex);
+        streamingDeadlines.erase(creatureId);
+        timeoutEventPending.erase(creatureId);
+    }
+    creatures::ws::CreatureService::clearStreaming(creatureId);
 }
 
 class StreamingTimeoutEvent : public EventBase<StreamingTimeoutEvent> {
@@ -281,7 +278,7 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     }
 
     // Mark runtime activity as streaming (only once per creature)
-    if (markStreamingIfNew(frame.creature_id)) {
+    if (creatures::ws::CreatureService::markStreamingIfNew(frame.creature_id)) {
         creatures::ws::CreatureService::setActivityState(
             {frame.creature_id}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
             creatures::runtime::ActivityState::Running, "" /*sessionId*/, nullptr);
