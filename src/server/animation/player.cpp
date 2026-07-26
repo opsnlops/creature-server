@@ -7,7 +7,6 @@
 #include "spdlog/spdlog.h"
 
 #include "CooperativeAnimationScheduler.h"
-#include "LegacyAnimationScheduler.h"
 #include "SessionManager.h"
 #include "exception/exception.h"
 #include "model/Animation.h"
@@ -36,16 +35,14 @@ extern std::shared_ptr<ObservabilityManager> observability;
 /**
  * Schedules an animation on a given creature
  *
- * This function routes to either the legacy bulk scheduler or the modern cooperative
- * scheduler based on the configuration setting. The cooperative scheduler supports
- * instant cancellation and interactive overrides, while the legacy scheduler is
- * preserved for backwards compatibility and testing.
+ * Uses the cooperative scheduler, which supports instant cancellation and
+ * interactive overrides.
  *
  * @param startingFrame the frame number to start the animation on
  * @param animation the animation to play
  * @param universe the universe to play the animation on
  *
- * @return the frame number of last frame of the animation (legacy), or session handle (cooperative)
+ * @return the frame number of last frame of the animation
  */
 Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::Animation &animation,
                                      universe_t universe, creatures::runtime::ActivityReason reason) {
@@ -64,46 +61,32 @@ Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
-    // Check which scheduler to use
-    auto schedulerType = config->getAnimationSchedulerType();
-
-    if (schedulerType == Configuration::AnimationSchedulerType::Cooperative) {
-        // Use the modern cooperative scheduler
-        debug("Using cooperative animation scheduler for animation '{}'", animation.metadata.title);
-
-        if (!sessionManager) {
-            std::string errorMessage = "Animation scheduler unavailable: session manager missing";
-            warn(errorMessage);
-            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
-        }
-
-        auto sessionResult =
-            CooperativeAnimationScheduler::scheduleAnimation(startingFrame, animation, universe, reason);
-        if (!sessionResult.isSuccess()) {
-            return Result<framenum_t>{sessionResult.getError().value()};
-        }
-
-        // The session was already adopted (registered) inside scheduleAnimation, atomically
-        // with cancelling any conflicting sessions — see issue #62.
-        auto session = sessionResult.getValue().value();
-
-        // Calculate the last frame of the animation
-        // Each animation frame takes (milliseconds_per_frame / EVENT_LOOP_PERIOD_MS) event loop frames
-        framenum_t framesPerAnimFrame = std::max<framenum_t>(
-            1, static_cast<framenum_t>(animation.metadata.milliseconds_per_frame / EVENT_LOOP_PERIOD_MS));
-        framenum_t lastFrame = startingFrame + framesPerAnimFrame * (animation.metadata.number_of_frames - 1);
-
-        debug("Cooperative scheduler: animation '{}' will run from frame {} to {} ({} animation frames at {}ms each)",
-              animation.metadata.title, startingFrame, lastFrame, animation.metadata.number_of_frames,
-              animation.metadata.milliseconds_per_frame);
-
-        return Result<framenum_t>{lastFrame};
-
-    } else {
-        // Use the legacy bulk scheduler
-        debug("Using legacy animation scheduler for animation '{}'", animation.metadata.title);
-        return LegacyAnimationScheduler::scheduleAnimation(startingFrame, animation, universe);
+    if (!sessionManager) {
+        std::string errorMessage = "Animation scheduler unavailable: session manager missing";
+        warn(errorMessage);
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
+
+    auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(startingFrame, animation, universe, reason);
+    if (!sessionResult.isSuccess()) {
+        return Result<framenum_t>{sessionResult.getError().value()};
+    }
+
+    // The session was already adopted (registered) inside scheduleAnimation, atomically
+    // with cancelling any conflicting sessions — see issue #62.
+    auto session = sessionResult.getValue().value();
+
+    // Calculate the last frame of the animation
+    // Each animation frame takes (milliseconds_per_frame / EVENT_LOOP_PERIOD_MS) event loop frames
+    framenum_t framesPerAnimFrame = std::max<framenum_t>(
+        1, static_cast<framenum_t>(animation.metadata.milliseconds_per_frame / EVENT_LOOP_PERIOD_MS));
+    framenum_t lastFrame = startingFrame + framesPerAnimFrame * (animation.metadata.number_of_frames - 1);
+
+    debug("Cooperative scheduler: animation '{}' will run from frame {} to {} ({} animation frames at {}ms each)",
+          animation.metadata.title, startingFrame, lastFrame, animation.metadata.number_of_frames,
+          animation.metadata.milliseconds_per_frame);
+
+    return Result<framenum_t>{lastFrame};
 }
 
 } // namespace creatures

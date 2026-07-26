@@ -334,8 +334,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
 
     ENDPOINT_INFO(interruptAnimation) {
         info->summary = "Interrupt current playback with a new animation (for interactive Zoom meetings!)";
-        info->description =
-            "Requires cooperative scheduler (--scheduler cooperative). Returns 400 if legacy scheduler is active.";
+        info->description = "Cancels the current session on the universe and plays the given animation instead.";
         info->addTag("Animations");
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
@@ -354,20 +353,6 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                     }
                     return bailHttp(span, Status::CODE_500,
                                     "Animation interrupt unavailable: server dependencies missing");
-                }
-
-                // Check if cooperative scheduler is enabled
-                if (creatures::config->getAnimationSchedulerType() !=
-                    creatures::Configuration::AnimationSchedulerType::Cooperative) {
-                    const char *msg = "Animation interrupts require the cooperative scheduler. Start server with "
-                                      "--scheduler cooperative";
-                    if (span) {
-                        span->setAttribute("error.type", "scheduler_not_supported");
-                        span->setAttribute("error.message", std::string(msg));
-                        span->setAttribute("scheduler_type", "legacy");
-                    }
-                    error("Interrupt API called with legacy scheduler enabled");
-                    return bailHttp(span, Status::CODE_400, msg);
                 }
 
                 {
@@ -480,15 +465,6 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                         span->setAttribute("error.type", "missing_dependencies");
                     }
                     return bailHttp(span, Status::CODE_500, "Ad-hoc play unavailable: server dependencies missing");
-                }
-
-                if (creatures::config->getAnimationSchedulerType() !=
-                    creatures::Configuration::AnimationSchedulerType::Cooperative) {
-                    if (span) {
-                        span->setAttribute("error.type", "scheduler_not_supported");
-                    }
-                    return bailHttp(span, Status::CODE_400,
-                                    "Ad-hoc speech requires the cooperative scheduler (--scheduler cooperative)");
                 }
 
                 auto animationId = requestBody->animation_id ? std::string(requestBody->animation_id) : "";
@@ -625,15 +601,6 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                         span->setAttribute("error.type", "missing_dependencies");
                     }
                     return bailHttp(span, Status::CODE_500, "Ad-hoc request unavailable: server dependencies missing");
-                }
-
-                if (creatures::config->getAnimationSchedulerType() !=
-                    creatures::Configuration::AnimationSchedulerType::Cooperative) {
-                    if (span) {
-                        span->setAttribute("error.type", "scheduler_not_supported");
-                    }
-                    return bailHttp(span, Status::CODE_400,
-                                    "Ad-hoc speech requires the cooperative scheduler (--scheduler cooperative)");
                 }
 
                 auto creatureId = requestBody->creature_id ? std::string(requestBody->creature_id) : "";

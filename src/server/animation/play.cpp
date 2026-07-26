@@ -103,8 +103,8 @@ Result<std::string> Database::playStoredAnimation(const animationId_t &animation
     auto okayMessage = fmt::format("✅ Animation scheduled from frame {} to {}", startingFrame, lastFrame);
     info(okayMessage);
 
-    // Attach session id to span for cooperative scheduler
-    if (config->getAnimationSchedulerType() == Configuration::AnimationSchedulerType::Cooperative && playSpan) {
+    // Attach session id to span
+    if (playSpan) {
         auto currentSession = sessionManager->getCurrentSession(universe);
         if (currentSession) {
             playSpan->setAttribute("session.id", currentSession->getSessionId());

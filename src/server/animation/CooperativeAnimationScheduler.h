@@ -8,21 +8,18 @@
 namespace creatures {
 
 /**
- * CooperativeAnimationScheduler - Modern cooperative playback scheduler
+ * CooperativeAnimationScheduler - Cooperative playback scheduler
  *
  * This scheduler creates PlaybackSession objects and uses PlaybackRunnerEvent
  * for frame-by-frame cooperative playback instead of bulk-scheduling thousands
  * of events upfront.
  *
- * Key advantages over LegacyAnimationScheduler:
+ * Key properties:
  * - Instant cancellation via session->cancel()
  * - Shallow event queue (only runner + current frame)
  * - Interactive overrides possible during playback
  * - Clean separation of DMX and audio transport
  * - Full observability maintained
- *
- * This is the future-proof implementation that will eventually replace the legacy
- * bulk scheduler once validated.
  */
 class CooperativeAnimationScheduler {
   public:

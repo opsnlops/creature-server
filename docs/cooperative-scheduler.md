@@ -1,6 +1,6 @@
 # Cooperative Animation Scheduler
 
-The Cooperative Animation Scheduler is an experimental frame-by-frame animation playback system that enables advanced features like real-time interrupts and interactive animation control.
+The Cooperative Animation Scheduler is the frame-by-frame animation playback system that enables advanced features like real-time interrupts and interactive animation control.
 
 ## Table of Contents
 
@@ -14,23 +14,12 @@ The Cooperative Animation Scheduler is an experimental frame-by-frame animation 
 
 ## Overview
 
-The cooperative scheduler provides an alternative to the legacy bulk event scheduling system. Instead of scheduling all animation frames at once, it plays animations frame-by-frame, checking for cancellation signals between each frame. This enables:
+Instead of scheduling all animation frames at once (the approach of the old bulk scheduler, removed in issue #76), the cooperative scheduler plays animations frame-by-frame, checking for cancellation signals between each frame. This enables:
 
 - **Real-time Interrupts**: Immediately cancel current playback to play a different animation
 - **Playlist Management**: Track and resume interrupted playlists
 - **Interactive Control**: Respond to user input during playback (e.g., button presses during Zoom meetings)
 - **Fine-grained Telemetry**: Per-frame observability and tracing
-
-### Legacy vs. Cooperative Scheduler
-
-| Feature | Legacy Scheduler | Cooperative Scheduler |
-|---------|-----------------|----------------------|
-| **Scheduling** | Bulk event scheduling upfront | Frame-by-frame with event loop |
-| **Cancellation** | Difficult - events already queued | Instant - checked every frame |
-| **Interrupts** | Not supported | Full support |
-| **Playlist Resume** | Not supported | Supported |
-| **Memory Usage** | Higher (all events in queue) | Lower (one frame at a time) |
-| **Stability** | Production-tested | Experimental |
 
 ## Architecture
 
@@ -113,12 +102,7 @@ sequenceDiagram
     Note over SessionMgr: Playlist playing on Universe 1
 
     Client->>REST API: POST /api/v1/animation/interrupt<br/>{universe: 1, animation_id: "...", resumePlaylist: true}
-    REST API->>REST API: Check scheduler type == Cooperative
-
-    alt Legacy Scheduler
-        REST API-->>Client: 400 Bad Request<br/>"Requires cooperative scheduler"
-    else Cooperative Scheduler
-        REST API->>SessionMgr: interrupt(universe, animation, shouldResume=true)
+    REST API->>SessionMgr: interrupt(universe, animation, shouldResume=true)
 
         SessionMgr->>SessionMgr: Lock mutex
         SessionMgr->>SessionMgr: Get current session for universe
@@ -151,7 +135,6 @@ sequenceDiagram
         opt If shouldResumePlaylist was true
             Note over SessionMgr: TODO: Implement automatic<br/>playlist resumption
         end
-    end
 ```
 
 ## Interrupt System
@@ -177,20 +160,6 @@ All operations on `SessionManager` are protected by a `std::mutex`, ensuring thr
 The `PlaybackSession.cancelled_` flag uses `std::atomic<bool>` for lock-free cancellation checks in the hot path (every frame).
 
 ## Usage
-
-### Enabling the Cooperative Scheduler
-
-Start the server with the cooperative scheduler:
-
-```bash
-./creature-server --scheduler cooperative
-```
-
-Or use the legacy scheduler (default):
-
-```bash
-./creature-server --scheduler legacy
-```
 
 ### Quick Testing
 
@@ -230,7 +199,7 @@ The script will:
 ```
 
 **Parameters**:
-- `animation_id` (required): MongoDB ObjectID of the animation to play
+- `animation_id` (required): UUID of the animation to play
 - `universe` (required): Universe number to interrupt (1-63999)
 - `resumePlaylist` (optional, default: false): Whether to automatically resume playlist after interrupt
 
@@ -240,15 +209,6 @@ The script will:
   "status": "success",
   "code": 200,
   "message": "Animation interrupt scheduled successfully"
-}
-```
-
-**Error Response** (400 - Wrong Scheduler):
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Animation interrupts require the cooperative scheduler. Start server with --scheduler cooperative"
 }
 ```
 
@@ -358,7 +318,6 @@ All operations are fully instrumented with OpenTelemetry.
 - `animation.id`: Animation ID from request
 - `universe`: Universe number from request
 - `resume_playlist`: Resume preference from request
-- `error.type`: "scheduler_not_supported" (if wrong scheduler)
 - `error.message`: Error description (on failure)
 - `http.status_code`: HTTP response code
 
