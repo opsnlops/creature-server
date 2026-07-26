@@ -169,10 +169,12 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
     // while we're still loading audio (issues #62/#63).
     sessionManager->registerSession(universe, session, false, scheduleSpan, cancelEntireUniverse);
 
-    // Broadcast initial activity state for involved creatures using the session UUID
+    // Broadcast initial activity state for involved creatures using the session UUID.
+    // The generation was minted by adoption just above, so a delayed run of this
+    // broadcast can't clobber a newer adoption's state (issue #87).
     const auto &creatureIds = session->getCreatureIds();
     creatures::ws::CreatureService::setActivityRunning(creatureIds, animation.id, reason, session->getSessionId(),
-                                                       scheduleSpan);
+                                                       scheduleSpan, session->getActivityGeneration());
 
     if (hasSound) {
         // Only the RTP transport reads the pre-encoded buffer; the local transports
@@ -279,7 +281,8 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
             session->markCancellationNotified();
             creatures::ws::CreatureService::setActivityState(
                 session->getCreatureIds(), session->getAnimation().id, creatures::runtime::ActivityReason::Cancelled,
-                creatures::runtime::ActivityState::Stopped, session->getSessionId(), loadSpan);
+                creatures::runtime::ActivityState::Stopped, session->getSessionId(), loadSpan,
+                session->getActivityGeneration());
             if (capturedSessionManager) {
                 capturedSessionManager->clearSession(universe, session->getSessionId());
                 // onFinish never runs for this session (no runner was ever scheduled),

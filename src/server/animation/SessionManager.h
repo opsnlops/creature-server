@@ -298,6 +298,12 @@ class SessionManager {
 
     mutable std::mutex mutex_;
     std::map<universe_t, UniverseState> universeStates_;
+
+    // Monotonic activity-write generation, minted per adoption under mutex_. Because
+    // adoptions are serialized here, a later adoption of any creature always carries a
+    // higher generation, giving CreatureService a total order for dropping late
+    // activity writes (issue #87).
+    uint64_t nextActivityGeneration_{1};
 };
 
 } // namespace creatures

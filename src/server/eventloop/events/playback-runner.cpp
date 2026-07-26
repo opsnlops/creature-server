@@ -167,7 +167,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
             auto reason = session_->getActivityReason();
             ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
                                                   creatures::runtime::ActivityState::Idle, session_->getSessionId(),
-                                                  session_->getSpan());
+                                                  session_->getSpan(), session_->getActivityGeneration());
 
             if (reason != runtime::ActivityReason::Playlist) {
                 for (const auto &creatureId : creatureIds) {
@@ -218,9 +218,9 @@ void PlaybackRunnerEvent::completeCancelledSession() {
     const auto &creatureIds = session_->getCreatureIds();
     if (!session_->isCancellationNotified()) {
         auto reason = creatures::runtime::ActivityReason::Cancelled;
-        creatures::ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
-                                                         creatures::runtime::ActivityState::Stopped,
-                                                         session_->getSessionId(), session_->getSpan());
+        creatures::ws::CreatureService::setActivityState(
+            creatureIds, session_->getAnimation().id, reason, creatures::runtime::ActivityState::Stopped,
+            session_->getSessionId(), session_->getSpan(), session_->getActivityGeneration());
     }
 
     // Only restart idle loops for creatures that don't already have an

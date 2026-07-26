@@ -59,6 +59,10 @@ namespace {
 std::mutex runtimeMutex;
 std::unordered_map<std::string, oatpp::Object<creatures::CreatureRuntimeDto>> runtimeState;
 std::unordered_map<std::string, std::string> creatureNameCache;
+// Highest adoption generation whose activity write was applied, per creature. Guarded by
+// runtimeMutex. Versioned writes older than this are dropped — the total-order guard
+// that catches late Running writes the session-id heuristic can't (issue #87).
+std::unordered_map<std::string, uint64_t> lastActivityGenerationByCreature;
 // Track last idle animation per creature to avoid immediate repeats.
 std::unordered_map<std::string, std::string> lastIdleAnimationByCreature;
 
@@ -803,7 +807,7 @@ bool CreatureService::isStaleActivityWrite(creatures::runtime::ActivityState req
 std::string CreatureService::setActivityState(const std::vector<creatureId_t> &creatureIds,
                                               const std::string &animationId, runtime::ActivityReason reason,
                                               runtime::ActivityState state, const std::string &sessionId,
-                                              std::shared_ptr<OperationSpan> parentSpan) {
+                                              std::shared_ptr<OperationSpan> parentSpan, uint64_t activityGeneration) {
 
     // Generate or reuse session ID
     std::string sid = sessionId.empty() ? creatures::util::generateUUID() : sessionId;
@@ -818,6 +822,7 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
         span->setAttribute("session.id", sid);
         span->setAttribute("animation.id", animationId);
         span->setAttribute("creatures.count", static_cast<int64_t>(creatureIds.size()));
+        span->setAttribute("activity.generation", static_cast<int64_t>(activityGeneration));
     }
 
     int64_t writesApplied = 0;
@@ -830,6 +835,7 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
         auto runtime = getOrCreateRuntime(creatureId);
 
         bool stale = false;
+        std::string staleReason;
         std::string ownerSession;
         auto resolvedState = state;
         auto resolvedReason = reason;
@@ -852,8 +858,16 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
             if (runtime->activity->session_id) {
                 currentSession = std::string(runtime->activity->session_id);
             }
-            if (isStaleActivityWrite(state, sessionId, currentSession)) {
+            uint64_t &lastGeneration = lastActivityGenerationByCreature[creatureId];
+            if (activityGeneration != 0 && activityGeneration < lastGeneration) {
+                // Generation guard: a versioned write from an older adoption — even a
+                // Running write, which the session-id heuristic always lets through —
+                // must not clobber the state of a newer adoption (issue #87).
                 stale = true;
+                staleReason = "older_generation";
+            } else if (isStaleActivityWrite(state, sessionId, currentSession)) {
+                stale = true;
+                staleReason = "session_ownership";
                 ownerSession = *currentSession;
             } else {
                 resolvedState = resolveIdleState(runtime, state);
@@ -888,20 +902,27 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
                     }
                 }
 
+                if (activityGeneration > lastGeneration) {
+                    lastGeneration = activityGeneration;
+                }
+
                 snapshot = ActivitySnapshot{runtime->activity->state, runtime->activity->animation_id,
                                             runtime->activity->session_id, runtime->activity->reason};
             }
         }
 
         if (stale) {
-            debug("Ignoring stale activity write for creature {} from session {} (now owned by session {})", creatureId,
-                  sessionId, ownerSession);
+            debug("Ignoring stale activity write for creature {} from session {} ({})", creatureId, sessionId,
+                  staleReason);
             ++staleWritesIgnored;
             if (span) {
-                // Record the loser and the owner so Honeycomb can show exactly which
-                // session's stop got dropped and who held the creature at the time.
+                // Record the loser, the reason, and (for ownership drops) the owner so
+                // Honeycomb can show exactly which session's write got dropped and why.
                 span->setAttribute("activity.stale_write.creature_id", creatureId);
-                span->setAttribute("activity.stale_write.owner_session_id", ownerSession);
+                span->setAttribute("activity.stale_write.reason", staleReason);
+                if (!ownerSession.empty()) {
+                    span->setAttribute("activity.stale_write.owner_session_id", ownerSession);
+                }
             }
             continue;
         }
@@ -927,10 +948,10 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
 
 std::string CreatureService::setActivityRunning(const std::vector<creatureId_t> &creatureIds,
                                                 const std::string &animationId, runtime::ActivityReason reason,
-                                                const std::string &sessionId,
-                                                std::shared_ptr<OperationSpan> parentSpan) {
+                                                const std::string &sessionId, std::shared_ptr<OperationSpan> parentSpan,
+                                                uint64_t activityGeneration) {
     return setActivityState(creatureIds, animationId, reason, creatures::runtime::ActivityState::Running, sessionId,
-                            parentSpan);
+                            parentSpan, activityGeneration);
 }
 
 void CreatureService::incrementIdleStopped(const std::vector<creatureId_t> &creatureIds) {

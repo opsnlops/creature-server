@@ -110,7 +110,7 @@ void notifyCancelledSession(const std::shared_ptr<PlaybackSession> &session) {
     }
     creatures::ws::CreatureService::setActivityState(
         session->getCreatureIds(), session->getAnimation().id, creatures::runtime::ActivityReason::Cancelled,
-        creatures::runtime::ActivityState::Stopped, session->getSessionId());
+        creatures::runtime::ActivityState::Stopped, session->getSessionId(), nullptr, session->getActivityGeneration());
     scheduleImmediateTeardown(session);
 }
 
@@ -137,6 +137,12 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
+
+        // Mint the activity-write generation before the session is published. Adoptions
+        // are serialized by mutex_, so a later adoption always carries a higher
+        // generation — the total order CreatureService uses to drop late activity
+        // writes, including late Running writes (issue #87).
+        session->setActivityGeneration(nextActivityGeneration_++);
 
         // Cancel conflicting sessions and register the new one under the same lock — this
         // atomicity is what keeps the idle-restart check from ever seeing the universe as

@@ -216,6 +216,15 @@ class PlaybackSession {
     [[nodiscard]] const std::string &getSessionId() const { return sessionId_; }
 
     /**
+     * Activity write generation — minted by SessionManager::registerSession under its
+     * mutex at adoption, before the session is published, and immutable afterwards.
+     * Carried on every activity write so CreatureService can drop out-of-date writes,
+     * including the late Running writes the session-id heuristic can't catch (issue #87).
+     */
+    [[nodiscard]] uint64_t getActivityGeneration() const { return activityGeneration_; }
+    void setActivityGeneration(uint64_t generation) { activityGeneration_ = generation; }
+
+    /**
      * Get track states (for DMX emission)
      *
      * Only the playback runner (event loop thread) may use this — it mutates playback
@@ -243,6 +252,10 @@ class PlaybackSession {
     universe_t universe_;
     framenum_t startingFrame_;
     std::string sessionId_{creatures::util::generateUUID()};
+
+    // Activity write generation — written once in registerSession (under the
+    // SessionManager mutex, before the session is published), read-only after (issue #87).
+    uint64_t activityGeneration_{0};
 
     // Per-track decoded frames and playback state
     std::vector<TrackState> trackStates_;

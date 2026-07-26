@@ -70,18 +70,25 @@ class CreatureService {
      * @param reason descriptive reason (play|ad_hoc|playlist|idle|disabled|cancelled)
      * @param state activity state (running|idle|disabled|stopped)
      * @param sessionId optional session UUID (if empty, a new UUIDv4 is generated)
+     * @param activityGeneration adoption generation of the writing session (from
+     *        PlaybackSession::getActivityGeneration). Versioned writes older than the
+     *        creature's last applied generation are dropped — including Running writes,
+     *        which the session-id heuristic alone can't catch (issue #87). 0 = unversioned
+     *        (e.g. streaming), which bypasses the generation check.
      */
     static std::string setActivityState(const std::vector<creatureId_t> &creatureIds, const std::string &animationId,
                                         runtime::ActivityReason reason, runtime::ActivityState state,
                                         const std::string &sessionId = "",
-                                        std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                        std::shared_ptr<OperationSpan> parentSpan = nullptr,
+                                        uint64_t activityGeneration = 0);
 
     /**
      * Convenience wrapper for marking creatures as running a specific animation
      */
     static std::string setActivityRunning(const std::vector<creatureId_t> &creatureIds, const std::string &animationId,
                                           runtime::ActivityReason reason, const std::string &sessionId = "",
-                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);
+                                          std::shared_ptr<OperationSpan> parentSpan = nullptr,
+                                          uint64_t activityGeneration = 0);
 
     /**
      * Should a non-running activity write from `incomingSessionId` be dropped because a
