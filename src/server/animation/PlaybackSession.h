@@ -199,6 +199,18 @@ class PlaybackSession {
     }
 
     /**
+     * Claim the one-time right to run session completion (teardown, onFinish,
+     * activity broadcast, idle restarts).
+     *
+     * A cancelled session is observed by at least two runners — the canceller's
+     * immediate teardown runner plus the session's already-scheduled next runner —
+     * and completion must run exactly once (issue #85).
+     *
+     * @return true for exactly one caller; false if completion was already claimed
+     */
+    bool markFinished() { return !hasFinished_.exchange(true); }
+
+    /**
      * Get the session UUID for activity correlation
      */
     [[nodiscard]] const std::string &getSessionId() const { return sessionId_; }
@@ -251,6 +263,10 @@ class PlaybackSession {
     // Lifecycle state. Atomic: written by the event loop's first runner execution while
     // SessionManager threads may be inspecting the session (issue #65).
     std::atomic<bool> hasStarted_{false};
+
+    // Completion already claimed via markFinished(). Atomic: multiple runners can race
+    // to complete a cancelled session (issue #85).
+    std::atomic<bool> hasFinished_{false};
 
     // Lifecycle callbacks
     std::function<void()> onStart_;

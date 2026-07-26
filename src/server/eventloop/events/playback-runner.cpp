@@ -91,36 +91,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
 
     // Check if session has been cancelled
     if (session_->isCancelled()) {
-        debug("PlaybackRunnerEvent detected cancellation, performing teardown");
-
-        // Perform teardown
-        performTeardown();
-
-        // Invoke finish callback
-        session_->invokeOnFinish();
-
-        // Mark runtime activity as idle for involved creatures
-        const auto &creatureIds = session_->getCreatureIds();
-        if (!session_->isCancellationNotified()) {
-            auto reason = creatures::runtime::ActivityReason::Cancelled;
-            creatures::ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
-                                                             creatures::runtime::ActivityState::Stopped,
-                                                             session_->getSessionId(), session_->getSpan());
-        }
-
-        // Only restart idle loops for creatures that don't already have an
-        // active session. This is critical: when interrupt() cancels multiple
-        // sessions (e.g. Beaky idle + Mango idle) and schedules a Beaky-only
-        // interrupt animation, Mango's idle should restart (she has no active
-        // session), but Beaky's idle must NOT restart (it would cancel the
-        // interrupt animation that just replaced it).
-        if (creatures::sessionManager) {
-            for (const auto &creatureId : creatureIds) {
-                if (!creatures::sessionManager->hasActiveSessionForCreature(session_->getUniverse(), creatureId)) {
-                    ws::CreatureService::startIdleIfNeeded(creatureId, session_->getSpan());
-                }
-            }
-        }
+        completeCancelledSession();
 
         if (runnerSpan) {
             runnerSpan->setAttribute("runner.cancelled", true);
@@ -139,6 +110,12 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
         if (runnerSpan) {
             runnerSpan->setError(dmxResult.getError()->getMessage());
         }
+
+        // Returning without unwinding used to leave the session registered and
+        // non-cancelled forever: idle never restarted, playlists stalled, and the
+        // audio transport kept playing (issue #79). Fail exactly like a cancellation.
+        session_->cancel();
+        completeCancelledSession();
         return dmxResult;
     }
 
@@ -153,6 +130,15 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
 
     // Check if all tracks are finished
     if (areAllTracksFinished()) {
+        if (!session_->markFinished()) {
+            // Another runner already completed this session (issue #85).
+            if (runnerSpan) {
+                runnerSpan->setAttribute("runner.completion_already_claimed", true);
+                runnerSpan->setSuccess();
+            }
+            return Result{this->frameNumber};
+        }
+
         debug("PlaybackRunnerEvent: all tracks finished, completing playback");
 
         // Perform teardown
@@ -213,6 +199,43 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
     }
 
     return Result<framenum_t>{this->frameNumber};
+}
+
+void PlaybackRunnerEvent::completeCancelledSession() {
+    // A cancelled session is observed by at least two runners — the canceller's
+    // immediate teardown runner and the already-scheduled next runner — so claim
+    // completion exactly once (issue #85).
+    if (!session_->markFinished()) {
+        debug("PlaybackRunnerEvent: completion already ran for session {}", session_->getSessionId());
+        return;
+    }
+
+    debug("PlaybackRunnerEvent detected cancellation, performing teardown");
+
+    performTeardown();
+    session_->invokeOnFinish();
+
+    const auto &creatureIds = session_->getCreatureIds();
+    if (!session_->isCancellationNotified()) {
+        auto reason = creatures::runtime::ActivityReason::Cancelled;
+        creatures::ws::CreatureService::setActivityState(creatureIds, session_->getAnimation().id, reason,
+                                                         creatures::runtime::ActivityState::Stopped,
+                                                         session_->getSessionId(), session_->getSpan());
+    }
+
+    // Only restart idle loops for creatures that don't already have an
+    // active session. This is critical: when interrupt() cancels multiple
+    // sessions (e.g. Beaky idle + Mango idle) and schedules a Beaky-only
+    // interrupt animation, Mango's idle should restart (she has no active
+    // session), but Beaky's idle must NOT restart (it would cancel the
+    // interrupt animation that just replaced it).
+    if (creatures::sessionManager) {
+        for (const auto &creatureId : creatureIds) {
+            if (!creatures::sessionManager->hasActiveSessionForCreature(session_->getUniverse(), creatureId)) {
+                ws::CreatureService::startIdleIfNeeded(creatureId, session_->getSpan());
+            }
+        }
+    }
 }
 
 void PlaybackRunnerEvent::performTeardown() {

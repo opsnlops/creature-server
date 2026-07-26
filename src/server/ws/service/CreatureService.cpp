@@ -145,10 +145,19 @@ void broadcastIdleStateChanged(const std::string &creatureId, bool enabled) {
     creatures::websocketOutgoingMessages->enqueue(jsonMapper->writeToString(msg));
 }
 
-void broadcastCreatureActivity(const std::string &creatureId, const oatpp::Object<creatures::CreatureRuntimeDto> &rt) {
-    if (!rt || !rt->activity) {
-        return;
-    }
+/**
+ * Immutable copy of the activity fields a broadcast needs. Taken while runtimeMutex is
+ * held so the broadcast itself can run outside the lock (resolveCreatureName takes
+ * runtimeMutex, so broadcasting under it would self-deadlock) — issue #81.
+ */
+struct ActivitySnapshot {
+    oatpp::String state;
+    oatpp::String animation_id;
+    oatpp::String session_id;
+    oatpp::String reason;
+};
+
+void broadcastCreatureActivitySnapshot(const std::string &creatureId, const ActivitySnapshot &snapshot) {
     if (!creatures::websocketOutgoingMessages) {
         warn("CreatureService: websocket queue unavailable, skipping activity broadcast for {}", creatureId);
         return;
@@ -160,14 +169,22 @@ void broadcastCreatureActivity(const std::string &creatureId, const oatpp::Objec
     auto payload = creatures::ws::CreatureActivityDto::createShared();
     payload->creature_id = creatureId.c_str();
     payload->creature_name = CreatureService::resolveCreatureName(creatureId).c_str();
-    payload->state = rt->activity->state;
-    payload->animation_id = rt->activity->animation_id;
-    payload->session_id = rt->activity->session_id;
-    payload->reason = rt->activity->reason;
+    payload->state = snapshot.state;
+    payload->animation_id = snapshot.animation_id;
+    payload->session_id = snapshot.session_id;
+    payload->reason = snapshot.reason;
     payload->timestamp = getCurrentTimeISO8601();
 
     msg->payload = payload;
     creatures::websocketOutgoingMessages->enqueue(jsonMapper->writeToString(msg));
+}
+
+void broadcastCreatureActivity(const std::string &creatureId, const oatpp::Object<creatures::CreatureRuntimeDto> &rt) {
+    if (!rt || !rt->activity) {
+        return;
+    }
+    broadcastCreatureActivitySnapshot(creatureId, ActivitySnapshot{rt->activity->state, rt->activity->animation_id,
+                                                                   rt->activity->session_id, rt->activity->reason});
 }
 
 bool animationTargetsSingleCreature(const Animation &animation, const creatureId_t &creatureId) {
@@ -811,63 +828,86 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
             continue;
         }
         auto runtime = getOrCreateRuntime(creatureId);
-        if (!runtime->activity) {
-            runtime->activity = makeDefaultActivity();
+
+        bool stale = false;
+        std::string ownerSession;
+        auto resolvedState = state;
+        auto resolvedReason = reason;
+        ActivitySnapshot snapshot;
+
+        {
+            // Hold runtimeMutex across the read-check-mutate: the event-loop runner,
+            // REST adoption threads, and the async audio-load worker can all write the
+            // same creature's activity concurrently (issue #81). The broadcast runs
+            // from the snapshot after the lock is released — resolveCreatureName takes
+            // runtimeMutex itself, so it can't be called from in here.
+            std::lock_guard<std::mutex> lock(runtimeMutex);
+            if (!runtime->activity) {
+                runtime->activity = makeDefaultActivity();
+            }
+
+            // Ownership guard: a dying session's stop/cancel must not clobber the state
+            // of a newer session that already took this creature over (issue #62).
+            std::optional<std::string> currentSession;
+            if (runtime->activity->session_id) {
+                currentSession = std::string(runtime->activity->session_id);
+            }
+            if (isStaleActivityWrite(state, sessionId, currentSession)) {
+                stale = true;
+                ownerSession = *currentSession;
+            } else {
+                resolvedState = resolveIdleState(runtime, state);
+                if (resolvedState == creatures::runtime::ActivityState::Disabled &&
+                    state == creatures::runtime::ActivityState::Idle) {
+                    resolvedReason = creatures::runtime::ActivityReason::Disabled;
+                }
+
+                runtime->activity->state = creatures::runtime::toString(resolvedState);
+                if (resolvedState == creatures::runtime::ActivityState::Running) {
+                    runtime->activity->animation_id = animationId.c_str();
+                    runtime->activity->session_id = sid.c_str();
+                } else {
+                    runtime->activity->animation_id = nullptr;
+                    runtime->activity->session_id = nullptr;
+                }
+                runtime->activity->reason = creatures::runtime::toString(resolvedReason);
+                runtime->activity->started_at = now;
+                runtime->activity->updated_at = now;
+
+                if (runtime->counters) {
+                    if (resolvedState == creatures::runtime::ActivityState::Running) {
+                        v_uint64 current =
+                            runtime->counters->sessions_started_total ? *runtime->counters->sessions_started_total : 0;
+                        runtime->counters->sessions_started_total = static_cast<v_uint64>(current + 1);
+                    }
+                    if (resolvedReason == creatures::runtime::ActivityReason::Cancelled) {
+                        v_uint64 cancelled = runtime->counters->sessions_cancelled_total
+                                                 ? *runtime->counters->sessions_cancelled_total
+                                                 : 0;
+                        runtime->counters->sessions_cancelled_total = static_cast<v_uint64>(cancelled + 1);
+                    }
+                }
+
+                snapshot = ActivitySnapshot{runtime->activity->state, runtime->activity->animation_id,
+                                            runtime->activity->session_id, runtime->activity->reason};
+            }
         }
 
-        // Ownership guard: a dying session's stop/cancel must not clobber the state of a
-        // newer session that already took this creature over (issue #62).
-        std::optional<std::string> currentSession;
-        if (runtime->activity->session_id) {
-            currentSession = std::string(runtime->activity->session_id);
-        }
-        if (isStaleActivityWrite(state, sessionId, currentSession)) {
+        if (stale) {
             debug("Ignoring stale activity write for creature {} from session {} (now owned by session {})", creatureId,
-                  sessionId, *currentSession);
+                  sessionId, ownerSession);
             ++staleWritesIgnored;
             if (span) {
                 // Record the loser and the owner so Honeycomb can show exactly which
                 // session's stop got dropped and who held the creature at the time.
                 span->setAttribute("activity.stale_write.creature_id", creatureId);
-                span->setAttribute("activity.stale_write.owner_session_id", *currentSession);
+                span->setAttribute("activity.stale_write.owner_session_id", ownerSession);
             }
             continue;
         }
         ++writesApplied;
 
-        auto resolvedState = resolveIdleState(runtime, state);
-        auto resolvedReason = reason;
-        if (resolvedState == creatures::runtime::ActivityState::Disabled &&
-            state == creatures::runtime::ActivityState::Idle) {
-            resolvedReason = creatures::runtime::ActivityReason::Disabled;
-        }
-
-        runtime->activity->state = creatures::runtime::toString(resolvedState);
-        if (resolvedState == creatures::runtime::ActivityState::Running) {
-            runtime->activity->animation_id = animationId.c_str();
-            runtime->activity->session_id = sid.c_str();
-        } else {
-            runtime->activity->animation_id = nullptr;
-            runtime->activity->session_id = nullptr;
-        }
-        runtime->activity->reason = creatures::runtime::toString(resolvedReason);
-        runtime->activity->started_at = now;
-        runtime->activity->updated_at = now;
-
-        if (runtime->counters) {
-            if (resolvedState == creatures::runtime::ActivityState::Running) {
-                v_uint64 current =
-                    runtime->counters->sessions_started_total ? *runtime->counters->sessions_started_total : 0;
-                runtime->counters->sessions_started_total = static_cast<v_uint64>(current + 1);
-            }
-            if (resolvedReason == creatures::runtime::ActivityReason::Cancelled) {
-                v_uint64 cancelled =
-                    runtime->counters->sessions_cancelled_total ? *runtime->counters->sessions_cancelled_total : 0;
-                runtime->counters->sessions_cancelled_total = static_cast<v_uint64>(cancelled + 1);
-            }
-        }
-
-        broadcastCreatureActivity(creatureId, runtime);
+        broadcastCreatureActivitySnapshot(creatureId, snapshot);
 
         // Notify fixture bindings of the (possibly new) activity state. The hook is installed
         // by main.cpp at startup; in tests it stays empty so no fixture work runs.

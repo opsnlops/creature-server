@@ -119,6 +119,21 @@ class SessionManager {
     bool resumePlaylist(universe_t universe);
 
     /**
+     * Consume the resume decision for an interrupted playlist.
+     *
+     * Called by the finishing interrupt session's onFinish. If the interrupt asked
+     * for resume, the playlist returns to Active (and its status snapshot is marked
+     * playing). If it declined, the playlist transitions to Stopped — the same
+     * semantics as stopPlaylist — so onFinish doesn't revive a playlist the client
+     * wanted halted. The stored flag used to be write-only and every interrupt
+     * auto-resumed (issue #78).
+     *
+     * @param universe The universe whose interrupted playlist should be decided
+     * @return True if the playlist returned to Active and should be rescheduled
+     */
+    bool consumeInterruptResumeDecision(universe_t universe);
+
+    /**
      * Get the current session on a universe (if any)
      *
      * @param universe The universe to check
@@ -244,6 +259,16 @@ class SessionManager {
      * Check if a universe has queued animations waiting.
      */
     bool hasQueuedAnimation(universe_t universe) const;
+
+    /**
+     * Drop any queued animations for a universe.
+     *
+     * The queue is only drained by a finishing session's onFinish, so when a chained
+     * playback dies without ever running (e.g. an async audio load fails), the rest
+     * of the chain would sit here and fire whenever the *next* session on the
+     * universe finishes (issue #83).
+     */
+    void clearAnimationQueue(universe_t universe);
 
     void setPlaylistStatus(universe_t universe, const PlaylistStatus &status);
     std::optional<PlaylistStatus> getPlaylistStatus(universe_t universe) const;

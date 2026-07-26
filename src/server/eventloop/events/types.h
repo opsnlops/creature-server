@@ -227,6 +227,14 @@ class PlaybackRunnerEvent : public EventBase<PlaybackRunnerEvent> {
     void performTeardown();
 
     /**
+     * Run the one-time completion for a cancelled (or failed) session: teardown,
+     * onFinish, cancellation activity broadcast, and idle restarts for creatures
+     * left without an active session. No-op if another runner already completed
+     * the session (issue #85).
+     */
+    void completeCancelledSession();
+
+    /**
      * Emit DMX frames for all tracks at the current frame
      *
      * @param runnerSpan optional sampling span for recording per-track attributes
