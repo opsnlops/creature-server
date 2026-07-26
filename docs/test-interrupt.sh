@@ -103,8 +103,7 @@ case $HTTP_CODE in
     print_success "Interrupt scheduled successfully!"
     ;;
   400)
-    print_error "Bad request - Check if cooperative scheduler is enabled"
-    echo "Start server with: ./creature-server --scheduler cooperative"
+    print_error "Bad request - Check the request payload"
     ;;
   500)
     print_error "Server error - Check server logs"

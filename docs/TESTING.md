@@ -4,10 +4,10 @@ Quick reference guide for testing animation interrupts.
 
 ## Prerequisites
 
-1. **Start server with cooperative scheduler:**
+1. **Start the server:**
    ```bash
    cd build/
-   ./creature-server --scheduler cooperative
+   ./creature-server
    ```
 
 2. **Get an animation ID** (from another terminal):
@@ -59,9 +59,10 @@ curl -X POST http://localhost:8080/api/v1/animation/interrupt \
 ### ✅ Success (HTTP 200)
 ```json
 {
-  "status": "success",
+  "status": "ok",
   "code": 200,
-  "message": "Animation interrupt scheduled successfully"
+  "message": "Animation interrupt scheduled successfully",
+  "session_id": "1b9a3c1e-9c1c-4c8e-b6a2-3f6d1c2e4a5b"
 }
 ```
 
@@ -71,17 +72,6 @@ curl -X POST http://localhost:8080/api/v1/animation/interrupt \
 [info] SessionManager: interrupting playback on universe 1 with animation 'My Animation'
 [info] SessionManager: interrupt animation 'My Animation' scheduled on universe 1
 ```
-
-### ❌ Wrong Scheduler (HTTP 400)
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Animation interrupts require the cooperative scheduler. Start server with --scheduler cooperative"
-}
-```
-
-**Fix:** Restart server with `--scheduler cooperative`
 
 ### ❌ Animation Not Found (HTTP 404)
 The animation service will return 404 if the animation doesn't exist in the database.
@@ -149,11 +139,6 @@ Key log lines to watch for:
 **Action:** Send interrupt with `resumePlaylist: true`
 **Expected:** Playlist pauses, interrupt plays, playlist state saved for future resume
 
-### Scenario 5: Wrong Scheduler
-**Setup:** Server running with `--scheduler legacy` (default)
-**Action:** Send interrupt request
-**Expected:** HTTP 400 with clear error message
-
 ## Troubleshooting
 
 ### "Connection refused"
@@ -165,7 +150,6 @@ Key log lines to watch for:
 - Verify database connection in server logs
 
 ### Interrupt doesn't seem to work
-- Check scheduler type: Server should log "using cooperative animation scheduler"
 - Check logs for cancellation messages
 - Verify universe has active playback before interrupt
 

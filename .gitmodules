@@ -4,7 +4,7 @@
 
 [submodule "lib/libe131"]
 	path = lib/libe131
-	url = https://github.com/hhromic/libe131.git
+	url = https://github.com/opsnlops/libe131.git
 [submodule "lib/base64"]
 	path = lib/base64
 	url = https://github.com/tobiaslocker/base64.git

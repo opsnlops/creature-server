@@ -61,7 +61,6 @@ to `true` if omitted.
 | --- | --- | --- |
 | `speech_loop_animation_ids` (creature JSON) | Animation IDs that can serve as the base motion loop. At least one is required for ad-hoc jobs. | `["speech-loop-beaky-soft", "speech-loop-beaky-big"]` |
 | `--adhoc-animation-ttl-hours` or `ADHOC_ANIMATION_TTL_HOURS` | Lifetime for both Mongo `adhoc_animations` documents and temp directories. | `12` |
-| Cooperative scheduler | Required. The API rejects requests if the server runs with the legacy scheduler. | `--scheduler cooperative` (default) |
 
 ## Monitoring Jobs
 

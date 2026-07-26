@@ -153,11 +153,6 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .default_value(environmentToInt(TRAVEL_MODE_ENV, DEFAULT_TRAVEL_MODE) == 1)
         .implicit_value(true);
 
-    program.add_argument("--scheduler")
-        .help("animation scheduler to use: 'cooperative' (default, recommended) or 'legacy' (fallback)")
-        .default_value(std::string("cooperative"))
-        .nargs(1);
-
     program.add_argument("--animation-delay-ms")
         .help("delay in milliseconds before starting animation playback (for audio sync compensation)")
         .default_value(0)
@@ -212,10 +207,6 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
                       << std::endl;
             std::exit(1);
         }
-        if (program.get<std::string>("--scheduler") == "legacy") {
-            std::cerr << "Error: --travel-mode requires the cooperative scheduler (the default)" << std::endl;
-            std::exit(1);
-        }
         config->setTravelMode(true);
         info("travel mode enabled: host-local sACN, mono downmixed local audio");
     }
@@ -233,20 +224,6 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     auto rtpFragment = program.get<bool>("--rtp-fragment");
     config->setRtpFragmentPackets(rtpFragment);
     debug("RTP packet fragmentation: {}", rtpFragment ? "enabled" : "disabled");
-
-    // What scheduler are we using?
-    auto schedulerStr = program.get<std::string>("--scheduler");
-    if (schedulerStr == "cooperative") {
-        config->setAnimationSchedulerType(Configuration::AnimationSchedulerType::Cooperative);
-        debug("using cooperative animation scheduler (default, recommended)");
-    } else if (schedulerStr == "legacy") {
-        config->setAnimationSchedulerType(Configuration::AnimationSchedulerType::Legacy);
-        debug("using legacy animation scheduler (fallback mode)");
-    } else {
-        std::cerr << "Error: Invalid scheduler type '" << schedulerStr << "'. Must be 'legacy' or 'cooperative'."
-                  << std::endl;
-        std::exit(1);
-    }
 
     // Animation delay for audio sync compensation
     auto animationDelayMs = program.get<int>("--animation-delay-ms");

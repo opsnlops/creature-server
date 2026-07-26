@@ -515,12 +515,10 @@ oatpp::Object<creatures::ws::StatusDto> AnimationService::playStoredAnimation(co
     playResult->status = "OK";
     playResult->message = playMessage.c_str();
     playResult->code = 200;
-    if (config->getAnimationSchedulerType() == Configuration::AnimationSchedulerType::Cooperative) {
-        if (auto session = sessionManager->getCurrentSession(universe)) {
-            playResult->session_id = session->getSessionId().c_str();
-            if (parentSpan) {
-                parentSpan->setAttribute("session.id", session->getSessionId());
-            }
+    if (auto session = sessionManager->getCurrentSession(universe)) {
+        playResult->session_id = session->getSessionId().c_str();
+        if (parentSpan) {
+            parentSpan->setAttribute("session.id", session->getSessionId());
         }
     }
 

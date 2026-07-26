@@ -820,11 +820,6 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
             return;
         }
 
-        if (config->getAnimationSchedulerType() != Configuration::AnimationSchedulerType::Cooperative) {
-            failJob("Ad-hoc speech requires the cooperative scheduler");
-            return;
-        }
-
         // Shared speech-loop resolution via the helper (issue #15). Picks a
         // random speech_loop_animation_ids entry, loads the animation, finds
         // the per-creature track, decodes + validates frame widths.

@@ -29,15 +29,6 @@ class Configuration {
         RTP    ///< Stream audio via RTP multicast
     };
 
-    /**
-     * @enum AnimationSchedulerType
-     * @brief Denotes which animation scheduler implementation to use
-     */
-    enum class AnimationSchedulerType {
-        Legacy,     ///< Bulk event scheduling (original implementation)
-        Cooperative ///< Cooperative frame-by-frame scheduling (new implementation)
-    };
-
     /** CommandLine class is allowed to modify configuration settings */
     friend class CommandLine;
 
@@ -84,9 +75,6 @@ class Configuration {
 
     /** @return Sampling rate for event loop tracing (0.0 to 1.0) */
     double getEventLoopTraceSampling() const;
-
-    /** @return Animation scheduler type to use */
-    AnimationSchedulerType getAnimationSchedulerType() const;
 
     /** @return Animation delay in milliseconds for audio sync compensation */
     uint32_t getAnimationDelayMs() const;
@@ -150,9 +138,6 @@ class Configuration {
 
     /** @param _fragmentPackets Whether to enable RTP packet fragmentation */
     void setRtpFragmentPackets(bool _fragmentPackets);
-
-    /** @param _schedulerType Animation scheduler type to use */
-    void setAnimationSchedulerType(AnimationSchedulerType _schedulerType);
 
     /** @param _delayMs Animation delay in milliseconds for audio sync compensation */
     void setAnimationDelayMs(uint32_t _delayMs);
@@ -230,10 +215,6 @@ class Configuration {
     double eventLoopTraceSampling = DEFAULT_EVENT_LOOP_TRACE_SAMPLING;
 
     // Animation scheduler configuration
-
-    /** Animation scheduler type */
-    AnimationSchedulerType animationSchedulerType =
-        AnimationSchedulerType::Cooperative; ///< Default to cooperative (tested and stable)
 
     /** Animation delay in milliseconds for audio sync compensation */
     uint32_t animationDelayMs = 0; ///< Default to no delay

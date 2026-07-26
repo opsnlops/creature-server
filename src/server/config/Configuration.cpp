@@ -90,14 +90,6 @@ void Configuration::setEventLoopTraceSampling(const double _eventLoopTraceSampli
 
 // Animation Scheduler Configuration
 
-Configuration::AnimationSchedulerType Configuration::getAnimationSchedulerType() const {
-    return this->animationSchedulerType;
-}
-
-void Configuration::setAnimationSchedulerType(const Configuration::AnimationSchedulerType _schedulerType) {
-    this->animationSchedulerType = _schedulerType;
-}
-
 uint32_t Configuration::getAnimationDelayMs() const { return this->animationDelayMs; }
 
 void Configuration::setAnimationDelayMs(const uint32_t _delayMs) { this->animationDelayMs = _delayMs; }
