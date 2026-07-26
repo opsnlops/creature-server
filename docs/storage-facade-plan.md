@@ -31,7 +31,7 @@ This refactor is internal — no wire-format changes, no API changes — so it s
 | `StreamingAdHocSession::finish` | (caller's) | `AdHocAnimationList + AdHocSoundList` |
 | `VoiceController` POST | (service's) | `SoundList` |
 
-**Read side (sound path resolution):** `config->getSoundFileLocation() + "/" + path` joined manually in `CooperativeAnimationScheduler:52`, `LegacyAnimationScheduler:53`, `LocalSdlAudioTransport:55`, `SoundService.cpp:84/309/399`, `SoundController.h:322-329`.
+**Read side (sound path resolution):** `config->getSoundFileLocation() + "/" + path` joined manually in `CooperativeAnimationScheduler:52`, `LegacyAnimationScheduler:53` (scheduler since removed in #76), `LocalSdlAudioTransport:55`, `SoundService.cpp:84/309/399`, `SoundController.h:322-329`.
 
 ## Approach
 
@@ -126,7 +126,7 @@ The issue calls for one cohesive change; doing it in phases sequentially in the 
 - `src/server/voice/StreamingAdHocSession.cpp` — replace `scheduleCacheInvalidationEvent` pair with `publishAdHocAnimation`
 - `src/server/ws/service/VoiceService.cpp` — fold invalidation into the write call
 - `src/server/ws/service/SoundService.cpp` — `resolveSoundPath` on the read paths
-- `src/server/animation/CooperativeAnimationScheduler.cpp` + `LegacyAnimationScheduler.cpp` — `resolveSoundPath`
+- `src/server/animation/CooperativeAnimationScheduler.cpp` + `LegacyAnimationScheduler.cpp` (since removed in #76) — `resolveSoundPath`
 - `src/server/audio/LocalSdlAudioTransport.cpp` — `resolveSoundPath`
 - `src/server/ws/controller/SoundController.h` — `resolveSoundPath` (read path); lipsync-upload temp goes through `allocateSoundPath(JobScratch, ...)`
 - `VERSION.txt` — bump to 3.17.1 (internal refactor; no wire-format change)

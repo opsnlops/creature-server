@@ -110,7 +110,7 @@ sequenceDiagram
         alt Session Exists
             SessionMgr->>SessionMgr: currentSession.cancel()
             alt Was Playlist
-                SessionMgr->>SessionMgr: Mark isInterrupted=true<br/>shouldResumePlaylist=true
+                SessionMgr->>SessionMgr: PlaylistState = Interrupted<br/>shouldResumePlaylist=true
                 Note over SessionMgr: Playlist state preserved<br/>for later resumption
             end
         end
@@ -133,7 +133,7 @@ sequenceDiagram
         Note over Scheduler,EventLoop: Interrupt animation completes
 
         opt If shouldResumePlaylist was true
-            Note over SessionMgr: TODO: Implement automatic<br/>playlist resumption
+            Note over SessionMgr: Playlist resumes automatically<br/>when the interrupt session finishes
         end
 ```
 
@@ -206,9 +206,10 @@ The script will:
 **Success Response** (200):
 ```json
 {
-  "status": "success",
+  "status": "ok",
   "code": 200,
-  "message": "Animation interrupt scheduled successfully"
+  "message": "Animation interrupt scheduled successfully",
+  "session_id": "1b9a3c1e-9c1c-4c8e-b6a2-3f6d1c2e4a5b"
 }
 ```
 
@@ -230,42 +231,54 @@ April's creature sits behind her during work Zoom calls, playing an ambient play
 3. iPhone app calls: `POST /api/v1/animation/interrupt` with `resumePlaylist: true`
 4. Creature immediately stops ambient animation and plays the interactive animation
 5. Interactive animation completes
-6. (Future) Creature automatically resumes the ambient playlist
+6. Creature automatically resumes the ambient playlist
 
 ## API Reference
 
 ### SessionManager Methods
 
-#### `registerSession(universe, session, isPlaylist)`
-Registers a new playback session on a universe. Automatically cancels any existing session.
+#### `registerSession(universe, session, isPlaylist, parentSpan, cancelEntireUniverse)`
+Adopts a new playback session on a universe: cancels conflicting sessions and registers the new one atomically, before the running broadcast and audio load. Called by `CooperativeAnimationScheduler::scheduleAnimation`; other callers should not need it.
 
 **Parameters**:
 - `universe` (universe_t): Universe number
 - `session` (shared_ptr<PlaybackSession>): The playback session to register
 - `isPlaylist` (bool, default: false): Whether this is a playlist session
+- `parentSpan` (shared_ptr<OperationSpan>, default: nullptr): Optional parent for the adoption span
+- `cancelEntireUniverse` (bool, default: false): Cancel all sessions on the universe, not just overlapping ones
 
-#### `interrupt(universe, interruptAnimation, shouldResumePlaylist)`
+#### `interrupt(universe, interruptAnimation, shouldResumePlaylist, parentSpan)`
 Interrupts current playback with a new animation.
 
 **Parameters**:
 - `universe` (universe_t): Universe to interrupt
 - `interruptAnimation` (const Animation&): Animation to play as interrupt
 - `shouldResumePlaylist` (bool, default: false): Whether to auto-resume playlist
+- `parentSpan` (shared_ptr<RequestSpan>, default: nullptr): Optional parent span
+
+**Returns**: `Result<shared_ptr<PlaybackSession>>` - New session or error
+
+#### `interruptIdleOnly(universe, interruptAnimation, creatureIds, parentSpan)`
+Interrupts only idle playback for a specific set of creatures. Used by ad-hoc animations so they never preempt an active non-idle session; conflicts if any target creature is busy.
+
+**Parameters**:
+- `universe` (universe_t): Universe to target
+- `interruptAnimation` (const Animation&): Animation to play
+- `creatureIds` (vector<creatureId_t>): Every creature the animation targets
+- `parentSpan` (shared_ptr<RequestSpan>, default: nullptr): Optional parent span
 
 **Returns**: `Result<shared_ptr<PlaybackSession>>` - New session or error
 
 #### `resumePlaylist(universe)`
-Resume a previously interrupted playlist (if any).
+Resume a previously interrupted playlist (if any). Also invoked automatically when an interrupt session finishes with `shouldResumePlaylist` set.
 
 **Parameters**:
 - `universe` (universe_t): Universe to resume
 
 **Returns**: `bool` - True if resumed, false if no interrupted playlist
 
-**Status**: TODO - Full implementation pending
-
-#### `cancelUniverse(universe)`
-Cancel all playback on a universe and remove the session.
+#### `cancelSessionsForCreatures(universe, creatureIds)`
+Cancel active sessions on a universe that involve the provided creatures.
 
 #### `getCurrentSession(universe)`
 Get the current active session on a universe (if any).
@@ -281,6 +294,10 @@ Check if a universe is currently playing.
 Check if a universe has a paused playlist that can be resumed.
 
 **Returns**: `bool`
+
+#### Other methods
+
+Session queries (`getActiveSessions`, `hasActiveSessionForCreature`, `hasActiveNonIdleSession`, `hasActiveNonIdleSessionForCreature`, `cancelIdleSessionForCreature`, `clearSession`), the playlist state machine (`getPlaylistState`, `startPlaylist`, `stopPlaylist`, `clearPlaylist`, plus the `PlaylistStatus` accessors), and the animation queue used by streaming ad-hoc speech (`queueAnimation`, `popQueuedAnimation`, `hasQueuedAnimation`). See [SessionManager.h](../src/server/animation/SessionManager.h) for details.
 
 ## Observability
 
@@ -341,7 +358,6 @@ service.name = "creature-server"
 
 ## Future Enhancements
 
-- [ ] Automatic playlist resumption after interrupt completion
 - [ ] Queue multiple interrupts (interrupt stack)
 - [ ] Fade transitions between interrupted and resume animations
 - [ ] Priority levels for interrupts (allow/deny based on current animation)

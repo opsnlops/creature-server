@@ -59,9 +59,10 @@ curl -X POST http://localhost:8080/api/v1/animation/interrupt \
 ### ✅ Success (HTTP 200)
 ```json
 {
-  "status": "success",
+  "status": "ok",
   "code": 200,
-  "message": "Animation interrupt scheduled successfully"
+  "message": "Animation interrupt scheduled successfully",
+  "session_id": "1b9a3c1e-9c1c-4c8e-b6a2-3f6d1c2e4a5b"
 }
 ```
 
