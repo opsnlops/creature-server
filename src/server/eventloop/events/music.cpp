@@ -379,18 +379,18 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
             encodingSpan->setSuccess();
 
         // Get current frame for scheduling (encoding took time!)
-        framenum_t streamingStartFrame = eventLoop->getNextFrameNumber() + 2; // +2 to allow for reset event
+        framenum_t streamingStartFrame = eventLoop->getNextFrameNumber() + 2 + RTP_PRIMING_DURATION_FRAMES;
         if (span)
             span->setAttribute("streaming_start_frame", streamingStartFrame);
         debug("Original frame: {}, streaming start frame: {}", startingFrame, streamingStartFrame);
 
-        // *** NEW: Schedule encoder reset event one frame before streaming starts ***
-        framenum_t resetFrame = streamingStartFrame - 1;
-        auto resetEvent = std::make_shared<RtpEncoderResetEvent>(resetFrame, 4); // 4 silent frames
+        // Rotate SSRC and send one silent frame per 10ms interval before audio.
+        framenum_t resetFrame = streamingStartFrame - RTP_PRIMING_DURATION_FRAMES;
+        auto resetEvent = std::make_shared<RtpEncoderResetEvent>(resetFrame, RTP_PRIMING_FRAMES);
         eventLoop->scheduleEvent(resetEvent);
-        debug("Scheduled RtpEncoderResetEvent for frame {} (one frame before streaming)", resetFrame);
+        debug("Scheduled RtpEncoderResetEvent for frame {} ({}ms before streaming)", resetFrame,
+              RTP_PRIMING_FRAMES * RTP_FRAME_MS);
 
-        constexpr std::size_t kPrefill = 3; // 30ms priming
         const std::size_t frames = buffer->getFrameCount();
         framenum_t cursor = streamingStartFrame;
 
@@ -410,8 +410,21 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
             using Tag = struct RtpSendTag {};
             auto ev = std::make_shared<SimpleLambdaEvent<Tag>>(cursor, [buffer, f] {
                 // Send to all 17 RTP channels (16 creatures + 1 BGM)
+                const uint32_t timestamp = rtpServer->getNextFrameTimestamp();
+                rtp_error_t frameResult = RTP_OK;
                 for (int ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
-                    rtpServer->send(static_cast<uint8_t>(ch), buffer->getEncodedFrame(static_cast<uint8_t>(ch), f));
+                    const auto sendResult = rtpServer->send(
+                        static_cast<uint8_t>(ch), buffer->getEncodedFrame(static_cast<uint8_t>(ch), f), timestamp);
+                    if (sendResult != RTP_OK && frameResult == RTP_OK) {
+                        frameResult = sendResult;
+                    }
+                }
+                rtpServer->advanceFrameTimestamp();
+                if (metrics) {
+                    metrics->incrementRtpEventsProcessed();
+                }
+                if (frameResult != RTP_OK) {
+                    warn("Standalone RTP frame {} failed with error {}", f, static_cast<int>(frameResult));
                 }
                 // Note: SimpleLambdaEvent will automatically wrap this in a successful Result
             });
@@ -419,7 +432,7 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
             eventLoop->scheduleEvent(std::move(ev));
 
             // Calculate next frame timing
-            cursor += (f + 1 < kPrefill) ? 1 : RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
+            cursor += RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
         }
 
         debug("Finished scheduling {} RTP audio frames", frames);

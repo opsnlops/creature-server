@@ -10,7 +10,9 @@
 
 #include <filesystem>
 #include <future>
+#include <mutex>
 #include <thread>
+#include <unordered_map>
 
 #include <SDL2/SDL.h>
 #include <spdlog/spdlog.h>
@@ -26,11 +28,47 @@ extern std::shared_ptr<ObservabilityManager> observability;
 using namespace creatures;
 using namespace creatures::rtp;
 
+namespace {
+
+std::shared_ptr<std::mutex> getFileLoadMutex(const std::string &audioFilePath) {
+    static std::mutex mutexMapMutex;
+    static std::unordered_map<std::string, std::weak_ptr<std::mutex>> mutexes;
+
+    std::error_code error;
+    const auto canonicalPath = std::filesystem::weakly_canonical(audioFilePath, error);
+    const std::string key = error ? audioFilePath : canonicalPath.string();
+
+    std::lock_guard lock(mutexMapMutex);
+    if (const auto existing = mutexes.find(key); existing != mutexes.end()) {
+        if (auto mutex = existing->second.lock()) {
+            return mutex;
+        }
+        mutexes.erase(existing);
+    }
+
+    auto mutex = std::make_shared<std::mutex>();
+    mutexes.emplace(key, mutex);
+    return mutex;
+}
+
+std::mutex &encodingJobMutex() {
+    // One 17-channel job already launches 17 Opus workers and saturates the
+    // production encoder host. Serializing cache misses prevents request bursts
+    // from multiplying that CPU load while cache hits remain concurrent.
+    static std::mutex mutex;
+    return mutex;
+}
+
+} // namespace
+
 // Static cache instance shared across all AudioStreamBuffer instances
 std::shared_ptr<util::AudioCache> AudioStreamBuffer::sharedAudioCacheInstance_ = nullptr;
 
 std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWavFile(const std::string &audioFilePath,
                                                                       std::shared_ptr<OperationSpan> parentSpan) {
+    const auto fileLoadMutex = getFileLoadMutex(audioFilePath);
+    std::lock_guard fileLoadLock(*fileLoadMutex);
+
     auto buf = std::shared_ptr<AudioStreamBuffer>(new AudioStreamBuffer());
 
     // Try cache-enabled loading first if cache is available
@@ -208,46 +246,43 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         std::array<std::future<Result<size_t>>, RTP_STREAMING_CHANNELS> futures;
 
         for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
-            futures[channelIndex] = std::async(
-                std::launch::async,
-                [this, pcm, channelIndex, span]() -> Result<size_t> {
-                    auto channelSpan = observability
-                                           ? observability->createChildOperationSpan(
-                                                 fmt::format("AudioStreamBuffer.encodeChannel.{}", channelIndex), span)
-                                           : nullptr;
-                    if (channelSpan) {
-                        channelSpan->setAttribute("channel", static_cast<int64_t>(channelIndex));
-                        channelSpan->setAttribute("frames", static_cast<int64_t>(numberOfFramesPerChannel_));
+            futures[channelIndex] = std::async(std::launch::async, [this, pcm, channelIndex, span]() -> Result<size_t> {
+                auto channelSpan = observability
+                                       ? observability->createChildOperationSpan(
+                                             fmt::format("AudioStreamBuffer.encodeChannel.{}", channelIndex), span)
+                                       : nullptr;
+                if (channelSpan) {
+                    channelSpan->setAttribute("channel", static_cast<int64_t>(channelIndex));
+                    channelSpan->setAttribute("frames", static_cast<int64_t>(numberOfFramesPerChannel_));
+                }
+
+                opus::Encoder encoder;
+
+                for (std::size_t frameIndex = 0; frameIndex < numberOfFramesPerChannel_; ++frameIndex) {
+                    const int16_t *frameBase = pcm + frameIndex * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
+
+                    // De-interleave this channel's samples from the interleaved PCM
+                    std::array<int16_t, RTP_SAMPLES> mono{};
+                    for (std::size_t s = 0; s < RTP_SAMPLES; ++s) {
+                        mono[s] = frameBase[s * RTP_STREAMING_CHANNELS + channelIndex];
                     }
 
-                    opus::Encoder encoder;
+                    encodedOpusFrames_[channelIndex][frameIndex] = encoder.encode(mono.data());
+                }
 
-                    for (std::size_t frameIndex = 0; frameIndex < numberOfFramesPerChannel_; ++frameIndex) {
-                        const int16_t *frameBase = pcm + frameIndex * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
-
-                        // De-interleave this channel's samples from the interleaved PCM
-                        std::array<int16_t, RTP_SAMPLES> mono{};
-                        for (std::size_t s = 0; s < RTP_SAMPLES; ++s) {
-                            mono[s] = frameBase[s * RTP_STREAMING_CHANNELS + channelIndex];
-                        }
-
-                        encodedOpusFrames_[channelIndex][frameIndex] = encoder.encode(mono.data());
-                    }
-
-                    if (channelSpan) {
-                        channelSpan->setSuccess();
-                    }
-                    return Result<size_t>{numberOfFramesPerChannel_};
-                });
+                if (channelSpan) {
+                    channelSpan->setSuccess();
+                }
+                return Result<size_t>{numberOfFramesPerChannel_};
+            });
         }
 
         // Wait for all channels to complete
         for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
             auto channelResult = futures[channelIndex].get();
             if (!channelResult.isSuccess()) {
-                auto errorMsg =
-                    fmt::format("Opus encoding failed for channel {}: {}", channelIndex,
-                                channelResult.getError()->getMessage());
+                auto errorMsg = fmt::format("Opus encoding failed for channel {}: {}", channelIndex,
+                                            channelResult.getError()->getMessage());
                 error(errorMsg);
                 if (span) {
                     span->setError(errorMsg);
@@ -256,8 +291,8 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
             }
         }
 
-        debug("Parallel encoding completed - {} frames × {} channels encoded to Opus",
-              numberOfFramesPerChannel_, RTP_STREAMING_CHANNELS);
+        debug("Parallel encoding completed - {} frames × {} channels encoded to Opus", numberOfFramesPerChannel_,
+              RTP_STREAMING_CHANNELS);
 
     } catch (const std::exception &e) {
         const auto errorMsg = fmt::format("Error while encoding WAV to Opus: {}", e.what());
@@ -329,6 +364,8 @@ Result<size_t> AudioStreamBuffer::loadWithCaching(const std::string &audioFilePa
     if (span) {
         span->setAttribute("cache_result", "miss");
     }
+
+    std::lock_guard encodingJobLock(encodingJobMutex());
 
     auto loadResult = loadWaveFile(audioFilePath, span);
     if (!loadResult.isSuccess()) {

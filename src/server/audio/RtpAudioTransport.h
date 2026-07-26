@@ -34,6 +34,8 @@ class RtpAudioTransport : public AudioTransport {
 
     Result<framenum_t> dispatchNextChunk(framenum_t currentFrame) override;
 
+    [[nodiscard]] std::optional<framenum_t> getNextDispatchFrame() const override;
+
     [[nodiscard]] bool isFinished() const override;
 
   private:
@@ -46,9 +48,6 @@ class RtpAudioTransport : public AudioTransport {
     framenum_t nextDispatchFrame_{0};
     bool started_{false};
     bool stopped_{false};
-
-    // Prefill configuration (30ms priming, same as legacy)
-    static constexpr size_t kPrefillFrames = 3;
 };
 
 } // namespace creatures

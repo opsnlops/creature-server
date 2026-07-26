@@ -8,7 +8,9 @@
 #include <SDL.h>
 #include <chrono>
 #include <filesystem>
+#include <span>
 #include <thread>
+#include <vector>
 
 #include "MonoWavDownmixer.h"
 #include "server/animation/PlaybackSession.h"
@@ -103,18 +105,18 @@ void TravelMonoAudioTransport::playFileBlocking(const std::string &filePath, con
     try {
         setPlayingSound(true);
 
-        auto monoResult = audio::loadWavAsMono(filePath);
-        if (!monoResult.isSuccess()) {
-            error("Travel audio: {}", monoResult.getError()->getMessage());
+        auto streamResult = audio::MonoWavStream::open(filePath);
+        if (!streamResult.isSuccess()) {
+            error("Travel audio: {}", streamResult.getError()->getMessage());
             setPlayingSound(false);
             return;
         }
-        const auto mono = monoResult.getValue().value();
+        const auto stream = streamResult.getValue().value();
 
         // Open the device at the file's own rate as mono; SDL converts to whatever
         // the hardware actually wants (e.g. a stereo-only USB dongle).
         SDL_AudioSpec want{};
-        want.freq = mono.sampleRate;
+        want.freq = stream->sampleRate();
         want.format = AUDIO_S16SYS;
         want.channels = 1;
         want.samples = SOUND_BUFFER_SIZE;
@@ -127,42 +129,79 @@ void TravelMonoAudioTransport::playFileBlocking(const std::string &filePath, con
             return;
         }
 
-        const auto byteCount = static_cast<Uint32>(mono.samples.size() * sizeof(int16_t));
-        if (SDL_QueueAudio(guard.device, mono.samples.data(), byteCount) < 0) {
-            error("Travel audio: failed to queue audio: {}", SDL_GetError());
-            setPlayingSound(false);
-            return;
-        }
+        constexpr size_t READ_CHUNK_FRAMES = 4096;
+        constexpr uint32_t QUEUE_TARGET_MS = 500;
+        const uint64_t targetQueueBytes =
+            static_cast<uint64_t>(stream->sampleRate()) * sizeof(int16_t) * QUEUE_TARGET_MS / 1000;
+        std::vector<int16_t> monoChunk(READ_CHUNK_FRAMES);
 
-        SDL_PauseAudioDevice(guard.device, 0);
+        const double durationSeconds =
+            static_cast<double>(stream->totalFrames()) / static_cast<double>(stream->sampleRate());
+        const auto playbackDeadline = std::chrono::steady_clock::now() +
+                                      std::chrono::milliseconds(static_cast<int64_t>(durationSeconds * 1000.0) + 10000);
+        bool reachedEndOfFile = false;
+        bool playbackStarted = false;
+        bool playbackTimedOut = false;
 
-        const double durationSeconds = static_cast<double>(mono.samples.size()) / mono.sampleRate;
-        debug("Travel audio playing: {} ({:.2f} seconds of mono at {} Hz)", filePath, durationSeconds, mono.sampleRate);
+        debug("Travel audio streaming: {} ({:.2f} seconds at {} Hz, queue target {}ms)", filePath, durationSeconds,
+              stream->sampleRate(), QUEUE_TARGET_MS);
 
-        // Wait for the queue to drain, with timeout protection like the other transports
-        const int timeoutMs = static_cast<int>(durationSeconds * 1000.0) + 10000;
-        int elapsed = 0;
+        while (!(shouldStop && shouldStop->load())) {
+            uint64_t queuedBytes = SDL_GetQueuedAudioSize(guard.device);
+            while (!reachedEndOfFile && queuedBytes < targetQueueBytes) {
+                auto readResult = stream->readMonoFrames(std::span<int16_t>{monoChunk});
+                if (!readResult.isSuccess()) {
+                    error("Travel audio: {}", readResult.getError()->getMessage());
+                    setPlayingSound(false);
+                    return;
+                }
 
-        while (SDL_GetQueuedAudioSize(guard.device) > 0 && elapsed < timeoutMs && !(shouldStop && shouldStop->load())) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            elapsed += 100;
+                const size_t framesRead = readResult.getValue().value();
+                if (framesRead == 0) {
+                    reachedEndOfFile = true;
+                    break;
+                }
+
+                const auto byteCount = static_cast<Uint32>(framesRead * sizeof(int16_t));
+                if (SDL_QueueAudio(guard.device, monoChunk.data(), byteCount) < 0) {
+                    error("Travel audio: failed to queue audio: {}", SDL_GetError());
+                    setPlayingSound(false);
+                    return;
+                }
+                queuedBytes += byteCount;
+            }
+
+            if (!playbackStarted && queuedBytes > 0) {
+                SDL_PauseAudioDevice(guard.device, 0);
+                playbackStarted = true;
+            }
+            if (reachedEndOfFile && SDL_GetQueuedAudioSize(guard.device) == 0) {
+                break;
+            }
+            if (std::chrono::steady_clock::now() >= playbackDeadline) {
+                warn("Travel audio playback timed out after {:.2f} seconds, stopping", durationSeconds + 10.0);
+                SDL_ClearQueuedAudio(guard.device);
+                playbackTimedOut = true;
+                break;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
 
         if (shouldStop && shouldStop->load()) {
             debug("Travel audio playback stopped by request");
             SDL_ClearQueuedAudio(guard.device);
-        } else if (elapsed >= timeoutMs) {
-            warn("Travel audio playback timed out after {} seconds, stopping", timeoutMs / 1000);
-            SDL_ClearQueuedAudio(guard.device);
+        } else if (playbackTimedOut) {
+            debug("Travel audio playback ended after timeout");
         } else {
             // The queue is empty but the last hardware buffer may still be playing;
             // give it a moment so the tail doesn't get clipped when the device closes
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
             debug("Travel audio playback completed successfully");
-        }
 
-        if (metrics) {
-            metrics->incrementSoundsPlayed();
+            if (metrics) {
+                metrics->incrementSoundsPlayed();
+            }
         }
 
     } catch (const std::exception &e) {

@@ -81,5 +81,11 @@ TEST_F(SoundPathResolverTest, DoesNotMatchDirectories) {
     EXPECT_FALSE(r.has_value());
 }
 
+TEST_F(SoundPathResolverTest, RejectsAbsoluteAndTraversalPaths) {
+    EXPECT_FALSE(resolveSoundInRoot(root_, (root_ / "hello.wav").string()).has_value());
+    EXPECT_FALSE(resolveSoundInRoot(root_, "../hello.wav").has_value());
+    EXPECT_FALSE(resolveSoundInRoot(root_, "dialog/hello.wav").has_value());
+}
+
 } // namespace
 } // namespace creatures::audio

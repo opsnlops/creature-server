@@ -33,6 +33,24 @@ extern std::shared_ptr<ObservabilityManager> observability;
 using namespace creatures;
 using namespace creatures::util;
 
+namespace {
+
+constexpr uint32_t AUDIO_CACHE_FORMAT_VERSION = 2;
+constexpr const char *CACHE_COMPLETE_MARKER = ".complete";
+
+uint64_t stablePathHash(const std::string &value) {
+    // FNV-1a is stable across processes and standard-library versions, unlike
+    // std::hash. This hash is for collision-resistant cache names, not security.
+    uint64_t hash = 14695981039346656037ULL;
+    for (const unsigned char byte : value) {
+        hash ^= byte;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+} // namespace
+
 AudioCache::AudioCache(const std::string &soundDirectory) : soundDirectory_(soundDirectory) {
 
     // Get hostname for per-machine cache isolation
@@ -66,6 +84,9 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
     }
 
     try {
+        const auto keyMutex = getKeyMutex(sourceFilePath);
+        std::lock_guard lock(*keyMutex);
+
         // Fast check: do all cache files exist?
         if (!allCacheFilesExist(sourceFilePath)) {
             cacheMisses_++;
@@ -100,6 +121,7 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
                 span->setError(loadResult.getError()->getMessage());
             }
             debug("Cache miss: failed to load channel 0 cache file: {}", loadResult.getError()->getMessage());
+            clearCache(sourceFilePath);
             return nullptr;
         }
 
@@ -134,6 +156,7 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
                 }
                 warn("Cache miss: failed to load channel {} for {}: {}", ch, sourceFilePath,
                      channelResult.getError()->getMessage());
+                clearCache(sourceFilePath);
                 return nullptr;
             }
 
@@ -184,6 +207,25 @@ Result<void> AudioCache::saveToCache(const std::string &sourceFilePath, const Ca
     }
 
     try {
+        const auto keyMutex = getKeyMutex(sourceFilePath);
+        std::lock_guard lock(*keyMutex);
+
+        if (audioData.framesPerChannel == 0) {
+            const auto errorMsg = "Cannot cache audio with zero frames";
+            if (span)
+                span->setError(errorMsg);
+            return Result<void>{ServerError(ServerError::InvalidData, errorMsg)};
+        }
+        for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
+            if (audioData.encodedFrames[ch].size() != audioData.framesPerChannel) {
+                const auto errorMsg = fmt::format("Cannot cache channel {} with {} frames; expected {}", ch,
+                                                  audioData.encodedFrames[ch].size(), audioData.framesPerChannel);
+                if (span)
+                    span->setError(errorMsg);
+                return Result<void>{ServerError(ServerError::InvalidData, errorMsg)};
+            }
+        }
+
         // Get source file info for metadata
         auto sourceInfoResult = getSourceFileInfo(sourceFilePath);
         if (!sourceInfoResult.isSuccess()) {
@@ -197,11 +239,17 @@ Result<void> AudioCache::saveToCache(const std::string &sourceFilePath, const Ca
         // Ensure cache directory exists
         auto cacheDir = getCacheDirectoryPath(sourceFilePath);
         std::filesystem::create_directories(cacheDir);
+        const auto completeMarker = std::filesystem::path(cacheDir) / CACHE_COMPLETE_MARKER;
+        std::error_code filesystemError;
+        std::filesystem::remove(completeMarker, filesystemError);
 
-        // Save each channel as a separate OGG Opus file
+        // Save each channel through a temporary file. The completion marker is
+        // written last, so a crash or partial write is always treated as a miss.
         for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
             auto cachePath = getCacheFilePath(sourceFilePath, ch);
-            auto saveResult = saveAsOggOpusWithMetadata(cachePath, audioData.encodedFrames[ch], sourceInfo);
+            const auto temporaryPath = cachePath + ".tmp";
+            std::filesystem::remove(temporaryPath, filesystemError);
+            auto saveResult = saveAsOggOpusWithMetadata(temporaryPath, audioData.encodedFrames[ch], sourceInfo);
             if (!saveResult.isSuccess()) {
                 if (span)
                     span->setError(saveResult.getError()->getMessage());
@@ -209,6 +257,42 @@ Result<void> AudioCache::saveToCache(const std::string &sourceFilePath, const Ca
                 clearCache(sourceFilePath);
                 return saveResult;
             }
+
+            filesystemError.clear();
+            std::filesystem::rename(temporaryPath, cachePath, filesystemError);
+            if (filesystemError) {
+                // Windows does not replace an existing destination; retry after
+                // removing it. Per-key locking keeps readers out of this window.
+                std::filesystem::remove(cachePath, filesystemError);
+                filesystemError.clear();
+                std::filesystem::rename(temporaryPath, cachePath, filesystemError);
+            }
+            if (filesystemError) {
+                clearCache(sourceFilePath);
+                return Result<void>{
+                    ServerError(ServerError::InternalError,
+                                fmt::format("Failed to publish cache channel {}: {}", ch, filesystemError.message()))};
+            }
+        }
+
+        const auto temporaryMarker = completeMarker.string() + ".tmp";
+        {
+            std::ofstream marker(temporaryMarker, std::ios::trunc);
+            marker << AUDIO_CACHE_FORMAT_VERSION;
+            marker.flush();
+            if (!marker.good()) {
+                clearCache(sourceFilePath);
+                return Result<void>{
+                    ServerError(ServerError::InternalError, "Failed to write audio cache completion marker")};
+            }
+        }
+        filesystemError.clear();
+        std::filesystem::rename(temporaryMarker, completeMarker, filesystemError);
+        if (filesystemError) {
+            clearCache(sourceFilePath);
+            return Result<void>{ServerError(
+                ServerError::InternalError,
+                fmt::format("Failed to publish audio cache completion marker: {}", filesystemError.message()))};
         }
 
         if (span)
@@ -227,6 +311,9 @@ Result<void> AudioCache::saveToCache(const std::string &sourceFilePath, const Ca
 
 Result<void> AudioCache::clearCache(const std::string &sourceFilePath) {
     try {
+        const auto keyMutex = getKeyMutex(sourceFilePath);
+        std::lock_guard lock(*keyMutex);
+
         auto cacheDir = getCacheDirectoryPath(sourceFilePath);
         if (std::filesystem::exists(cacheDir)) {
             std::filesystem::remove_all(cacheDir);
@@ -242,8 +329,8 @@ Result<void> AudioCache::clearCache(const std::string &sourceFilePath) {
 
 AudioCache::CacheStats AudioCache::getStats() const {
     CacheStats stats{};
-    stats.cacheHits = cacheHits_;
-    stats.cacheMisses = cacheMisses_;
+    stats.cacheHits = cacheHits_.load();
+    stats.cacheMisses = cacheMisses_.load();
 
     try {
         if (std::filesystem::exists(cacheDirectory_)) {
@@ -294,6 +381,22 @@ std::string sanitizeComponent(const std::string &component) {
 }
 } // namespace
 
+std::shared_ptr<AudioCache::CacheKeyMutex> AudioCache::getKeyMutex(const std::string &sourceFilePath) const {
+    const auto cacheKey = getCacheDirectoryPath(sourceFilePath);
+    std::lock_guard lock(keyMutexMapMutex_);
+
+    if (const auto existing = keyMutexes_.find(cacheKey); existing != keyMutexes_.end()) {
+        if (auto mutex = existing->second.lock()) {
+            return mutex;
+        }
+        keyMutexes_.erase(existing);
+    }
+
+    auto mutex = std::make_shared<CacheKeyMutex>();
+    keyMutexes_.emplace(cacheKey, mutex);
+    return mutex;
+}
+
 std::string AudioCache::getCacheDirectoryPath(const std::string &sourceFilePath) const {
     try {
         // Canonicalize the source path to resolve any .. or . components
@@ -313,11 +416,12 @@ std::string AudioCache::getCacheDirectoryPath(const std::string &sourceFilePath)
 
         auto filename = canonicalSourcePath.stem().string();
         auto sanitized = sanitizeComponent(filename);
+        const auto pathHash = fmt::format("{:016x}", stablePathHash(canonicalSourcePath.string()));
+        sanitized = fmt::format("{}_{}", sanitized, pathHash);
 
         std::filesystem::path baseCachePath = cacheDirectory_;
         if (!insideSoundDir) {
             baseCachePath /= "_external";
-            sanitized = fmt::format("{}_{}", sanitized, std::hash<std::string>{}(canonicalSourcePath.string()));
         }
 
         return (baseCachePath / sanitized).string();
@@ -345,7 +449,7 @@ Result<AudioCache::SourceFileInfo> AudioCache::getSourceFileInfo(const std::stri
         }
 
         SourceFileInfo info;
-        info.filePath = filePath;
+        info.filePath = std::filesystem::canonical(filePath).string();
         info.modTime = std::filesystem::last_write_time(filePath);
         info.fileSize = std::filesystem::file_size(filePath);
 
@@ -504,9 +608,21 @@ AudioCache::loadOggOpusWithMetadata(const std::string &oggFilePath) const {
         }
         try {
             auto jsonData = jsonResult.getValue().value();
-            sourceInfo.filePath = jsonData["path"];
-            sourceInfo.fileSize = jsonData["size"];
-            sourceInfo.checksum = jsonData["checksum"];
+            const auto cacheVersion = jsonData.value("version", 0U);
+            const bool formatMatches = cacheVersion == AUDIO_CACHE_FORMAT_VERSION &&
+                                       jsonData.value("sample_rate", 0) == RTP_SRATE &&
+                                       jsonData.value("channels", 0) == RTP_STREAMING_CHANNELS &&
+                                       jsonData.value("frame_ms", 0) == RTP_FRAME_MS &&
+                                       jsonData.value("bitrate", 0) == RTP_BITRATE && jsonData.value("fec", false) &&
+                                       jsonData.value("opus_version", std::string{}) == opus_get_version_string();
+            if (!formatMatches) {
+                return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
+                    ServerError(ServerError::InvalidData, "Audio cache format or encoder fingerprint changed")};
+            }
+
+            sourceInfo.filePath = jsonData.at("path").get<std::string>();
+            sourceInfo.fileSize = jsonData.at("size").get<std::uintmax_t>();
+            sourceInfo.checksum = jsonData.at("checksum").get<std::string>();
 
             // Get current modification time for the cached file path
             // (we don't store modTime in JSON since it's not easily serializable)
@@ -530,7 +646,7 @@ AudioCache::loadOggOpusWithMetadata(const std::string &oggFilePath) const {
         }
 
         // Validate frame count to prevent memory exhaustion attacks
-        constexpr uint32_t MAX_FRAME_COUNT = 2000000; // ~5.5 hours at 48kHz/20ms frames
+        constexpr uint32_t MAX_FRAME_COUNT = 2000000; // ~5.5 hours at 48kHz/10ms frames
         if (frameCount == 0) {
             return Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>{
                 ServerError(ServerError::InvalidData, "Frame count is zero")};
@@ -634,12 +750,21 @@ Result<void> AudioCache::saveAsOggOpusWithMetadata(const std::string &oggFilePat
                 ServerError(ServerError::Forbidden, fmt::format("Cannot create cache file: {}", oggFilePath)));
         }
 
-        // Simple binary format for now
-        // In production, you'd create proper OGG Opus files with embedded metadata
-
-        // Write metadata (simplified JSON-like format)
-        std::string metadata = fmt::format("{{\"path\":\"{}\",\"size\":{},\"checksum\":\"{}\"}}", sourceInfo.filePath,
-                                           sourceInfo.fileSize, sourceInfo.checksum);
+        // Versioned internal packet format. This is intentionally not an Ogg
+        // container; it stores already packetized Opus frames for fast RTP use.
+        const nlohmann::json metadataJson = {
+            {"version", AUDIO_CACHE_FORMAT_VERSION},
+            {"path", sourceInfo.filePath},
+            {"size", sourceInfo.fileSize},
+            {"checksum", sourceInfo.checksum},
+            {"sample_rate", RTP_SRATE},
+            {"channels", RTP_STREAMING_CHANNELS},
+            {"frame_ms", RTP_FRAME_MS},
+            {"bitrate", RTP_BITRATE},
+            {"fec", true},
+            {"opus_version", opus_get_version_string()},
+        };
+        const std::string metadata = metadataJson.dump();
 
         uint32_t metadataSize = static_cast<uint32_t>(metadata.size());
         file.write(reinterpret_cast<const char *>(&metadataSize), sizeof(metadataSize));
@@ -701,6 +826,11 @@ Result<void> AudioCache::ensureCacheDirectoryWritable() const {
 }
 
 bool AudioCache::allCacheFilesExist(const std::string &sourceFilePath) const {
+    const auto completeMarker = std::filesystem::path(getCacheDirectoryPath(sourceFilePath)) / CACHE_COMPLETE_MARKER;
+    if (!std::filesystem::is_regular_file(completeMarker)) {
+        return false;
+    }
+
     for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
         auto cachePath = getCacheFilePath(sourceFilePath, ch);
         if (!std::filesystem::exists(cachePath)) {

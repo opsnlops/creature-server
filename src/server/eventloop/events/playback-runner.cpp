@@ -6,6 +6,7 @@
 #include "types.h"
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 
 #include "spdlog/spdlog.h"
@@ -128,7 +129,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
         }
     }
 
-    // Check if all tracks are finished
+    // Complete only after both motion and timestamped audio have finished.
     if (areAllTracksFinished()) {
         if (!session_->markFinished()) {
             // Another runner already completed this session (issue #85).
@@ -139,7 +140,7 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
             return Result{this->frameNumber};
         }
 
-        debug("PlaybackRunnerEvent: all tracks finished, completing playback");
+        debug("PlaybackRunnerEvent: motion and RTP audio finished, completing playback");
 
         // Perform teardown
         performTeardown();
@@ -429,13 +430,38 @@ bool PlaybackRunnerEvent::areAllTracksFinished() const {
         }
     }
 
+    // Fire-and-forget local transports retain their historical behavior: the
+    // animation timeline owns completion. RTP is part of the cooperative
+    // timeline, so do not truncate audio that extends beyond the last DMX frame.
+    if (const auto audioTransport = session_->getAudioTransport();
+        audioTransport && audioTransport->needsPerFrameDispatch() && !audioTransport->isFinished()) {
+        return false;
+    }
+
     return true;
 }
 
 framenum_t PlaybackRunnerEvent::calculateNextFrameNumber() const {
-    // Calculate next frame based on ms per frame
-    const uint32_t msPerFrame = session_->getMsPerFrame();
-    return this->frameNumber + frameStepForMs(msPerFrame);
+    framenum_t nextFrame = std::numeric_limits<framenum_t>::max();
+
+    for (const auto &trackState : session_->getTrackStates()) {
+        if (!trackState.isFinished()) {
+            nextFrame = std::min(nextFrame, trackState.nextDispatchFrame);
+        }
+    }
+
+    if (const auto audioTransport = session_->getAudioTransport(); audioTransport) {
+        if (const auto nextAudioFrame = audioTransport->getNextDispatchFrame()) {
+            nextFrame = std::min(nextFrame, *nextAudioFrame);
+        }
+    }
+
+    // No unfinished source should reach this path, but keep the runner moving
+    // forward defensively rather than rescheduling on the current frame.
+    if (nextFrame == std::numeric_limits<framenum_t>::max()) {
+        return this->frameNumber + 1;
+    }
+    return std::max(this->frameNumber + 1, nextFrame);
 }
 
 } // namespace creatures
