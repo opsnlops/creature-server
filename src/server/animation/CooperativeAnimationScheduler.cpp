@@ -148,6 +148,19 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
     debug("CooperativeAnimationScheduler: scheduling animation '{}' on universe {} at frame {} (session {})",
           animation.metadata.title, universe, startingFrame, session->getSessionId());
 
+    // Fully initialize the session BEFORE adoption publishes it. Once registered, a
+    // concurrent adoption can cancel this session and schedule an immediate teardown
+    // runner, which reads the callbacks and audio transport on the event-loop thread —
+    // setting them after publication was a data race (issue #80).
+    setupLifecycleCallbacks(session, universe);
+
+    const bool hasSound = !animation.metadata.sound_file.empty();
+    if (hasSound) {
+        // Create the audio transport up front (cheap); onStart uses it.
+        auto audioTransport = createAudioTransport(session);
+        session->setAudioTransport(audioTransport);
+    }
+
     // Adopt the session BEFORE the running broadcast and before the audio load: adoption
     // cancels conflicting sessions and registers this one in a single critical section, so
     // (a) the cancelled sessions' (cancelled, stopped) broadcasts land before our
@@ -156,19 +169,14 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
     // while we're still loading audio (issues #62/#63).
     sessionManager->registerSession(universe, session, false, scheduleSpan, cancelEntireUniverse);
 
-    // Broadcast initial activity state for involved creatures using the session UUID
+    // Broadcast initial activity state for involved creatures using the session UUID.
+    // The generation was minted by adoption just above, so a delayed run of this
+    // broadcast can't clobber a newer adoption's state (issue #87).
     const auto &creatureIds = session->getCreatureIds();
     creatures::ws::CreatureService::setActivityRunning(creatureIds, animation.id, reason, session->getSessionId(),
-                                                       scheduleSpan);
+                                                       scheduleSpan, session->getActivityGeneration());
 
-    // Set up lifecycle callbacks before any runner (sync or async) can fire.
-    setupLifecycleCallbacks(session, universe);
-
-    if (!animation.metadata.sound_file.empty()) {
-        // Create the audio transport up front (cheap); onStart uses it.
-        auto audioTransport = createAudioTransport(session);
-        session->setAudioTransport(audioTransport);
-
+    if (hasSound) {
         // Only the RTP transport reads the pre-encoded buffer; the local transports
         // load the WAV themselves in onStart.
         if (config && config->getAudioMode() == Configuration::AudioMode::RTP) {
@@ -273,9 +281,15 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
             session->markCancellationNotified();
             creatures::ws::CreatureService::setActivityState(
                 session->getCreatureIds(), session->getAnimation().id, creatures::runtime::ActivityReason::Cancelled,
-                creatures::runtime::ActivityState::Stopped, session->getSessionId(), loadSpan);
+                creatures::runtime::ActivityState::Stopped, session->getSessionId(), loadSpan,
+                session->getActivityGeneration());
             if (capturedSessionManager) {
                 capturedSessionManager->clearSession(universe, session->getSessionId());
+                // onFinish never runs for this session (no runner was ever scheduled),
+                // and onFinish is the only place the animation queue drains — drop the
+                // rest of the chain so stale sentences don't fire whenever the next
+                // session on this universe finishes (issue #83).
+                capturedSessionManager->clearAnimationQueue(universe);
             }
             for (const auto &creatureId : session->getCreatureIds()) {
                 creatures::ws::CreatureService::startIdleIfNeeded(creatureId, loadSpan);
@@ -506,25 +520,33 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
             return;
         }
 
-        // Check if there's an interrupted playlist that should resume
+        // Check if there's an interrupted playlist waiting on our finish. Whether it
+        // actually resumes is the interrupt's resumePlaylist choice — the flag used to
+        // be write-only and every interrupt auto-resumed (issue #78).
         if (sessionManager->hasInterruptedPlaylist(universe)) {
-            info("Animation finished on universe {} - resuming interrupted playlist", universe);
+            if (sessionManager->consumeInterruptResumeDecision(universe)) {
+                info("Animation finished on universe {} - resuming interrupted playlist", universe);
 
-            // Clear the interrupted state
-            bool resumed = sessionManager->resumePlaylist(universe);
-            auto snapshot = sessionManager->getPlaylistStatus(universe);
-
-            // Schedule a new PlaylistEvent to continue the playlist
-            if (resumed && snapshot && !snapshot->playlist.empty()) {
-                if (!eventLoop) {
-                    warn("Interrupted playlist resume skipped: event loop unavailable");
+                auto snapshot = sessionManager->getPlaylistStatus(universe);
+                if (snapshot && !snapshot->playlist.empty()) {
+                    if (!eventLoop) {
+                        warn("Interrupted playlist resume skipped: event loop unavailable");
+                    } else {
+                        auto nextPlaylistEvent =
+                            std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
+                        eventLoop->scheduleEvent(nextPlaylistEvent);
+                        info("Scheduled PlaylistEvent to resume playlist on universe {}", universe);
+                    }
                 } else {
-                    auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
-                    eventLoop->scheduleEvent(nextPlaylistEvent);
-                    info("Scheduled PlaylistEvent to resume playlist on universe {}", universe);
+                    warn("Interrupted playlist state inconsistent - playlist snapshot missing for universe {}",
+                         universe);
                 }
             } else {
-                warn("Interrupted playlist state inconsistent - playlist snapshot missing for universe {}", universe);
+                info("Animation finished on universe {} - interrupted playlist stays stopped (resume declined)",
+                     universe);
+                if (auto snapshot = sessionManager->getPlaylistStatus(universe)) {
+                    broadcastPlaylistStatusToAllClients(*snapshot);
+                }
             }
             return;
         }

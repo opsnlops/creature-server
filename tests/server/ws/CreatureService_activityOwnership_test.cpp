@@ -107,3 +107,62 @@ TEST_F(ActivityOwnershipTest, SessionlessStopAlwaysApplies) {
     CreatureService::setActivityState({creature}, "", ActivityReason::Streaming, ActivityState::Stopped, "", nullptr);
     EXPECT_FALSE(CreatureService::isCreatureStreaming(creature));
 }
+
+// Generation guard tests (issue #87): a versioned write from an older adoption — even a
+// Running write, which the session-id heuristic always lets through — must not clobber
+// the state of a newer adoption. Ownership is observed via the streaming registry: if a
+// stale Running write were applied, it would steal session ownership and the rightful
+// owner's stop would then be dropped as stale, leaving streaming stuck on.
+
+// The exact interleaving from issue #87: a delayed Running broadcast from a cancelled
+// session lands after its replacement's Running broadcast.
+TEST_F(ActivityOwnershipTest, LateRunningWriteFromOlderGenerationIsDropped) {
+    const std::string creature = "generation-creature-1";
+
+    CreatureService::setActivityState({creature}, "", ActivityReason::Streaming, ActivityState::Running, "session-s1",
+                                      nullptr, /*activityGeneration=*/4);
+    CreatureService::setActivityState({creature}, "", ActivityReason::Streaming, ActivityState::Running, "session-s2",
+                                      nullptr, /*activityGeneration=*/5);
+    ASSERT_TRUE(CreatureService::isCreatureStreaming(creature));
+
+    // S1's delayed Running broadcast arrives after S2 took over. Without the generation
+    // guard this applies (Running is never stale by session-id), stealing ownership.
+    CreatureService::setActivityState({creature}, "", ActivityReason::Streaming, ActivityState::Running, "session-s1",
+                                      nullptr, /*activityGeneration=*/4);
+
+    // S2 still owns the creature, so its stop must apply. If the stale write had been
+    // applied, this stop would be dropped and streaming would stay stuck on.
+    CreatureService::setActivityState({creature}, "", ActivityReason::Streaming, ActivityState::Stopped, "session-s2",
+                                      nullptr, /*activityGeneration=*/5);
+    EXPECT_FALSE(CreatureService::isCreatureStreaming(creature));
+}
+
+// A session writes running and later stopped with the same generation — both apply.
+TEST_F(ActivityOwnershipTest, EqualGenerationWritesApply) {
+    const std::string creature = "generation-creature-2";
+
+    CreatureService::setActivityState({creature}, "", ActivityReason::Streaming, ActivityState::Running, "session-a",
+                                      nullptr, /*activityGeneration=*/7);
+    ASSERT_TRUE(CreatureService::isCreatureStreaming(creature));
+
+    CreatureService::setActivityState({creature}, "", ActivityReason::Streaming, ActivityState::Stopped, "session-a",
+                                      nullptr, /*activityGeneration=*/7);
+    EXPECT_FALSE(CreatureService::isCreatureStreaming(creature));
+}
+
+// Unversioned writes (generation 0, e.g. streaming) bypass the generation check and
+// keep their existing semantics, even after versioned writes have raised the bar.
+TEST_F(ActivityOwnershipTest, UnversionedWritesBypassGenerationGuard) {
+    const std::string creature = "generation-creature-3";
+
+    CreatureService::setActivityState({creature}, "", ActivityReason::Streaming, ActivityState::Running, "session-a",
+                                      nullptr, /*activityGeneration=*/9);
+    ASSERT_TRUE(CreatureService::isCreatureStreaming(creature));
+
+    // Streaming takeover carries no generation; Running writes always apply.
+    CreatureService::setActivityState({creature}, "", ActivityReason::Streaming, ActivityState::Running, "session-b",
+                                      nullptr);
+    // ...and the sessionless timeout stop must still work too.
+    CreatureService::setActivityState({creature}, "", ActivityReason::Streaming, ActivityState::Stopped, "", nullptr);
+    EXPECT_FALSE(CreatureService::isCreatureStreaming(creature));
+}
