@@ -1,8 +1,10 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -36,16 +38,11 @@ class LocalAudioPlaybackCoordinator {
 
     struct PlaybackResult {
         PlaybackOutcome outcome{PlaybackOutcome::Completed};
+        std::string errorType;
         std::string errorCode;
         std::string errorMessage;
-    };
-
-    struct Completion {
-        uint64_t generation{0};
-        std::string id;
-        std::string source;
-        std::string fileName;
-        PlaybackResult result;
+        std::string stopReason;
+        std::exception_ptr exception;
     };
 
     struct Stats {
@@ -65,9 +62,14 @@ class LocalAudioPlaybackCoordinator {
     struct Job {
         std::string id;
         std::string source;
+        std::string mode;
         std::string fileName;
+        std::string sessionId;
+        std::string animationId;
+        std::optional<uint32_t> universe;
+        std::string triggerTraceId;
+        std::string triggerSpanId;
         std::function<PlaybackResult(const std::atomic<bool> &stopRequested)> play;
-        std::function<void(const Completion &)> onFinished;
     };
 
     enum class SubmitResult {
@@ -106,6 +108,8 @@ class LocalAudioPlaybackCoordinator {
         std::atomic<StopReason> stopReason{StopReason::None};
         std::atomic<bool> stopRequested{false};
         std::atomic<bool> completionNotified{false};
+        const std::chrono::steady_clock::time_point queuedAt{std::chrono::steady_clock::now()};
+        std::chrono::steady_clock::time_point startedAt{};
     };
 
   public:
@@ -159,7 +163,7 @@ class LocalAudioPlaybackCoordinator {
     };
 
     void workerLoop();
-    void finish(JobRecord &record, PlaybackResult result);
+    void finish(JobRecord &record, const PlaybackResult &result);
     void publishStats() const;
     static PlaybackOutcome outcomeForStopReason(StopReason reason);
     static Status statusForOutcome(PlaybackOutcome outcome);
@@ -171,7 +175,6 @@ class LocalAudioPlaybackCoordinator {
     std::condition_variable condition_;
     std::optional<JobRecord> pending_;
     std::shared_ptr<State> activeState_;
-    std::thread worker_;
     bool shuttingDown_{false};
     uint64_t nextGeneration_{1};
 
@@ -185,6 +188,7 @@ class LocalAudioPlaybackCoordinator {
     std::atomic<uint64_t> stopped_{0};
     std::atomic<uint64_t> failed_{0};
     std::atomic<uint64_t> timedOut_{0};
+    std::thread worker_;
 };
 
 } // namespace creatures::audio

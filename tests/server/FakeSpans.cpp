@@ -21,6 +21,8 @@ OperationSpan::OperationSpan(opentelemetry::nostd::shared_ptr<opentelemetry::tra
 
 OperationSpan::~OperationSpan() = default;
 
+void OperationSpan::end() {}
+
 void OperationSpan::setSuccess() { statusSet_ = true; }
 void OperationSpan::setError(const std::string & /*errorMessage*/) { statusSet_ = true; }
 

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <typeinfo>
 #include <unordered_set>
 
 #include <nlohmann/json.hpp>
@@ -49,7 +50,12 @@ namespace {
 std::filesystem::path adHocRoot() { return std::filesystem::temp_directory_path() / "creature-adhoc"; }
 
 bool isSafeFilename(const std::string &filename) {
-    if (filename.empty()) {
+    constexpr std::size_t MAX_FILENAME_LENGTH = 255;
+    if (filename.empty() || filename.size() > MAX_FILENAME_LENGTH) {
+        return false;
+    }
+    if (std::any_of(filename.begin(), filename.end(),
+                    [](unsigned char character) { return character < 0x20 || character == 0x7f; })) {
         return false;
     }
 
@@ -354,6 +360,85 @@ std::optional<SoundService::ResolvedSound> SoundService::resolveSoundPath(const 
     }
 }
 
+std::string SoundService::resolveAdHocSoundPath(const std::string &filename,
+                                                std::shared_ptr<OperationSpan> parentSpan) {
+    auto span =
+        creatures::observability
+            ? creatures::observability->createChildOperationSpan("SoundService.resolveAdHocSoundPath", parentSpan)
+            : nullptr;
+    try {
+        OATPP_ASSERT_HTTP(isSafeFilename(filename), Status::CODE_400, "Invalid filename");
+        const auto root = adHocRoot();
+        OATPP_ASSERT_HTTP(fs::exists(root), Status::CODE_404, "No ad-hoc sounds available");
+
+        if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
+            if (span) {
+                span->setAttribute("audio.file.name", filename);
+                span->setAttribute("audio.store", "ad_hoc");
+                span->setSuccess();
+            }
+            return *found;
+        }
+        OATPP_ASSERT_HTTP(false, Status::CODE_404, fmt::format("Ad-hoc sound '{}' not found", filename).c_str());
+    } catch (const std::exception &exception) {
+        if (span) {
+            span->setAttribute("error.type", typeid(exception).name());
+            span->setAttribute("error.code", "sound.resolve_ad_hoc_failed");
+            span->setAttribute("error.message", exception.what());
+            span->recordException(exception);
+            span->setError(exception.what());
+        }
+        throw;
+    }
+}
+
+std::string SoundService::resolvePermanentSoundPath(const std::string &filename,
+                                                    std::shared_ptr<OperationSpan> parentSpan) {
+    auto span =
+        creatures::observability
+            ? creatures::observability->createChildOperationSpan("SoundService.resolvePermanentSoundPath", parentSpan)
+            : nullptr;
+    try {
+        OATPP_ASSERT_HTTP(isSafeFilename(filename), Status::CODE_400, "Invalid filename");
+        OATPP_ASSERT_HTTP(config, Status::CODE_500, "Sound configuration unavailable");
+
+        const fs::path root = config->getSoundFileLocation();
+        if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
+            if (span) {
+                span->setAttribute("audio.file.name", filename);
+                span->setAttribute("audio.store", "permanent");
+                span->setSuccess();
+            }
+            return *found;
+        }
+        OATPP_ASSERT_HTTP(false, Status::CODE_404, fmt::format("Sound '{}' not found", filename).c_str());
+    } catch (const std::exception &exception) {
+        if (span) {
+            span->setAttribute("error.type", typeid(exception).name());
+            span->setAttribute("error.code", "sound.resolve_permanent_failed");
+            span->setAttribute("error.message", exception.what());
+            span->recordException(exception);
+            span->setError(exception.what());
+        }
+        throw;
+    }
+}
+
+std::optional<SoundService::ResolvedSound> SoundService::resolveSoundPath(const std::string &filename,
+                                                                          std::shared_ptr<OperationSpan> parentSpan) {
+    try {
+        return ResolvedSound{resolvePermanentSoundPath(filename, parentSpan), true};
+    } catch (oatpp::web::protocol::http::HttpError &) {
+        // Fall through to the ad-hoc store. Each attempted lookup retains its
+        // own child span so store precedence remains visible.
+    }
+    try {
+        return ResolvedSound{resolveAdHocSoundPath(filename, parentSpan), false};
+    } catch (oatpp::web::protocol::http::HttpError &) {
+        return std::nullopt;
+    }
+}
+
 oatpp::Object<creatures::SoundDto> SoundService::buildSoundMetadata(const std::string &absolutePath,
                                                                     const std::string &filename) {
     uint32_t size = 0;
@@ -367,88 +452,125 @@ oatpp::Object<creatures::SoundDto> SoundService::buildSoundMetadata(const std::s
 }
 
 /**
- * Schedule a sound to play on the next frame
+ * Admit an ad-hoc sound for playback.
  *
- * @param inSoundFile
- * @return a message telling which frame it will be played on
+ * RTP keeps its single reserved MusicEvent because frame dispatch belongs on
+ * the event loop. Local/travel playback goes straight to the one-slot audio
+ * coordinator so HTTP floods cannot accumulate on the sacred 1 ms queue.
  */
-oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::String &inSoundFile) {
-
+oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::String &inSoundFile,
+                                                                std::shared_ptr<RequestSpan> parentSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
     auto logger = appLogger ? appLogger : spdlog::default_logger();
-
-    if (!logger) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
-    }
-
-    OATPP_ASSERT_HTTP(inSoundFile && !inSoundFile->empty(), Status::CODE_400, "Sound filename is required");
-    std::string soundFile = std::string(inSoundFile);
-
-    logger->debug("Request to play sound file: {}", soundFile);
-
-    if (!config) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Sound configuration unavailable");
-    }
-    if (!eventLoop) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Sound event loop unavailable");
-    }
-
-    OATPP_ASSERT_HTTP(isSafeFilename(soundFile), Status::CODE_400, "Invalid filename");
-
-    // Resolve only through the configured permanent/ad-hoc sound stores. This
-    // endpoint previously passed absolute paths and parent traversal through to
-    // MusicEvent, allowing clients to probe and decode arbitrary readable files.
-    const auto resolvedSound = resolveSoundPath(soundFile, nullptr);
-    OATPP_ASSERT_HTTP(resolvedSound.has_value(), Status::CODE_404, fmt::format("Sound file not found: {}", soundFile));
-    const std::string &fullFilePath = resolvedSound->path;
-    debug("using sound file name: {}", fullFilePath);
-
-    // The resolver verifies canonical containment; retain the readability check
-    // for permissions and transient filesystem failures.
-    OATPP_ASSERT_HTTP(fileIsReadable(fullFilePath), Status::CODE_404,
-                      fmt::format("Sound file not found: {}", soundFile));
-
-    bool error = false;
-    oatpp::String message;
-    std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation;
-    if (config->getAudioMode() == Configuration::AudioMode::RTP) {
-        rtpReservation = rtp::standaloneRtpAdmission().tryAcquire();
-        OATPP_ASSERT_HTTP(rtpReservation, Status::CODE_409, "Standalone RTP audio loader is busy");
-    }
-
+    auto serviceSpan = creatures::observability
+                           ? creatures::observability->createOperationSpan("SoundService.playSound", parentSpan)
+                           : nullptr;
     try {
-        framenum_t frameNumber = eventLoop->getNextFrameNumber();
+        OATPP_ASSERT_HTTP(logger, Status::CODE_500, "Logger unavailable");
+        OATPP_ASSERT_HTTP(inSoundFile && !inSoundFile->empty(), Status::CODE_400, "Sound filename is required");
+        const std::string soundFile = std::string(inSoundFile);
+        OATPP_ASSERT_HTTP(isSafeFilename(soundFile), Status::CODE_400, "Invalid filename");
+        OATPP_ASSERT_HTTP(config, Status::CODE_500, "Sound configuration unavailable");
 
-        // Create the event and schedule it
-        auto playEvent = std::make_shared<MusicEvent>(frameNumber, fullFilePath, std::move(rtpReservation));
-        eventLoop->scheduleEvent(playEvent);
+        logger->debug("Request to play sound file: {}", soundFile);
+        if (serviceSpan) {
+            serviceSpan->setAttribute("audio.file.name", soundFile);
+        }
 
-        debug("scheduled sound to play on frame {}", frameNumber);
+        // Resolve only through the configured permanent/ad-hoc stores. The
+        // operation-span overload keeps both lookup attempts beneath this
+        // service operation.
+        const auto resolvedSound = resolveSoundPath(soundFile, serviceSpan);
+        OATPP_ASSERT_HTTP(resolvedSound.has_value(), Status::CODE_404,
+                          fmt::format("Sound file not found: {}", soundFile).c_str());
+        const std::string &fullFilePath = resolvedSound->path;
+        OATPP_ASSERT_HTTP(fileIsReadable(fullFilePath), Status::CODE_404,
+                          fmt::format("Sound file not found: {}", soundFile).c_str());
 
-        message = fmt::format("Scheduled {} for frame {}", soundFile, frameNumber);
+        constexpr uintmax_t MAX_PLAYBACK_FILE_SIZE = 1024ULL * 1024ULL * 1024ULL;
+        std::error_code fileError;
+        const auto fileSize = fs::file_size(fullFilePath, fileError);
+        OATPP_ASSERT_HTTP(!fileError && fileSize <= MAX_PLAYBACK_FILE_SIZE, Status::CODE_400,
+                          "Sound file is too large or cannot be inspected");
 
-    } catch (const creatures::InternalError &e) {
-        message = fmt::format("Internal error: {}", e.what());
-        logger->error(std::string(message));
-        error = true;
-    } catch (const creatures::DataFormatException &e) {
-        message = fmt::format("Data format error: {}", e.what());
-        logger->error(std::string(message));
-        error = true;
+        std::string extension = fs::path(soundFile).extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+        const bool supportedFormat = extension == ".wav" || extension == ".mp3" || extension == ".flac";
+        OATPP_ASSERT_HTTP(supportedFormat, Status::CODE_400, "Unsupported sound file format");
+
+        const bool rtpMode = config->getAudioMode() == Configuration::AudioMode::RTP;
+        const bool travelMode = config->getTravelMode();
+        OATPP_ASSERT_HTTP(!travelMode || extension == ".wav", Status::CODE_400,
+                          "Travel mode local playback requires a WAV file");
+        if (serviceSpan) {
+            serviceSpan->setAttribute("audio.store", resolvedSound->fromPermanentStore ? "permanent" : "ad_hoc");
+            serviceSpan->setAttribute("audio.file.size", static_cast<int64_t>(fileSize));
+            serviceSpan->setAttribute("audio.mode", rtpMode ? "rtp" : (travelMode ? "travel" : "main"));
+        }
+
+        oatpp::String message;
+        if (rtpMode) {
+            OATPP_ASSERT_HTTP(eventLoop, Status::CODE_500, "Sound event loop unavailable");
+            auto rtpReservation = rtp::standaloneRtpAdmission().tryAcquire();
+            OATPP_ASSERT_HTTP(rtpReservation, Status::CODE_409, "Standalone RTP audio loader is busy");
+
+            const framenum_t frameNumber = eventLoop->getNextFrameNumber();
+            const std::string traceId = serviceSpan ? serviceSpan->getTraceIdHex() : std::string{};
+            const std::string spanId = serviceSpan ? serviceSpan->getSpanIdHex() : std::string{};
+            auto playEvent =
+                std::make_shared<MusicEvent>(frameNumber, fullFilePath, std::move(rtpReservation), traceId, spanId);
+            eventLoop->scheduleEvent(playEvent);
+            if (serviceSpan) {
+                serviceSpan->setAttribute("audio.admission.result", "scheduled");
+                serviceSpan->setAttribute("event.frame_number", static_cast<int64_t>(frameNumber));
+            }
+            message = fmt::format("Scheduled {} for frame {}", soundFile, frameNumber);
+        } else {
+            const std::string traceId = serviceSpan ? serviceSpan->getTraceIdHex() : std::string{};
+            const std::string spanId = serviceSpan ? serviceSpan->getSpanIdHex() : std::string{};
+            const auto admission = MusicEvent::submitLocalAudio(fullFilePath, travelMode, serviceSpan, traceId, spanId);
+            if (!admission.isSuccess()) {
+                const auto error = admission.getError().value();
+                const auto status = error.getCode() == ServerError::Conflict ? Status::CODE_409 : Status::CODE_500;
+                OATPP_ASSERT_HTTP(false, status, error.getMessage().c_str());
+            }
+            const uint64_t generation = admission.getValue().value();
+            if (serviceSpan) {
+                serviceSpan->setAttribute("audio.admission.result", "accepted");
+                serviceSpan->setAttribute("audio.local.generation", static_cast<int64_t>(generation));
+            }
+            message = fmt::format("Queued {} as local audio generation {}", soundFile, generation);
+        }
+
+        auto response = StatusDto::createShared();
+        response->code = 200;
+        response->message = message;
+        response->status = "OK";
+        if (serviceSpan) {
+            serviceSpan->setSuccess();
+        }
+        return response;
+    } catch (const std::exception &exception) {
+        if (serviceSpan) {
+            serviceSpan->setAttribute("error.type", typeid(exception).name());
+            serviceSpan->setAttribute("error.code", "sound.play_failed");
+            serviceSpan->setAttribute("error.message", exception.what());
+            serviceSpan->setAttribute("audio.failure_stage", "admission");
+            serviceSpan->recordException(exception);
+            serviceSpan->setError(exception.what());
+        }
+        throw;
     } catch (...) {
-        message = fmt::format("Unknown error");
-        logger->error(std::string(message));
-        error = true;
+        if (serviceSpan) {
+            serviceSpan->setAttribute("error.type", "UnknownSoundPlaybackException");
+            serviceSpan->setAttribute("error.code", "sound.play_unknown_exception");
+            serviceSpan->setAttribute("error.message", "Unknown sound playback exception");
+            serviceSpan->setAttribute("audio.failure_stage", "admission");
+            serviceSpan->setError("Unknown sound playback exception");
+        }
+        throw;
     }
-    OATPP_ASSERT_HTTP(!error, Status::CODE_500, message)
-
-    auto response = StatusDto::createShared();
-    response->code = 200;
-    response->message = message;
-    response->status = "OK";
-
-    debug("returning a 200");
-    return response;
 }
 
 /**

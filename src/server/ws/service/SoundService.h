@@ -17,6 +17,7 @@
 #include "server/ws/dto/StatusDto.h"
 
 namespace creatures {
+class OperationSpan;
 class RequestSpan;
 } // namespace creatures
 
@@ -45,6 +46,8 @@ class SoundService {
     /// policy the rendition/provenance/metadata endpoints all share.
     std::optional<ResolvedSound> resolveSoundPath(const std::string &filename,
                                                   std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    std::optional<ResolvedSound> resolveSoundPath(const std::string &filename,
+                                                  std::shared_ptr<OperationSpan> parentSpan);
 
     /// Build the full (heavy) structured-metadata DTO for one already-resolved
     /// sound file: size, sidecars, and all embedded iXML metadata including the
@@ -58,7 +61,8 @@ class SoundService {
      * @param soundFile
      * @return
      */
-    oatpp::Object<creatures::ws::StatusDto> playSound(const oatpp::String &soundFile);
+    oatpp::Object<creatures::ws::StatusDto> playSound(const oatpp::String &soundFile,
+                                                      std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Get all of the sound files
@@ -74,6 +78,7 @@ class SoundService {
      * Resolve the absolute path for an ad-hoc sound filename.
      */
     std::string resolveAdHocSoundPath(const std::string &filename, std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    std::string resolveAdHocSoundPath(const std::string &filename, std::shared_ptr<OperationSpan> parentSpan);
 
     /**
      * Resolve the absolute path for a permanent-store sound by basename.
@@ -84,6 +89,7 @@ class SoundService {
      */
     std::string resolvePermanentSoundPath(const std::string &filename,
                                           std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    std::string resolvePermanentSoundPath(const std::string &filename, std::shared_ptr<OperationSpan> parentSpan);
 
     /**
      * Generate lip sync data for a sound file using Rhubarb Lip Sync

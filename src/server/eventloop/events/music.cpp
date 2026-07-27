@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <typeinfo>
 #include <vector>
 
 #include <SDL.h>
@@ -148,43 +149,64 @@ class StandaloneRtpFrameEvent : public EventBase<StandaloneRtpFrameEvent> {
     size_t skippedFramesTotal_;
 };
 
+void failAudioSpan(const std::shared_ptr<OperationSpan> &span, const std::string &errorType,
+                   const std::string &errorCode, const std::string &errorMessage, const std::string &failureStage,
+                   const std::exception *exception = nullptr) {
+    if (!span) {
+        return;
+    }
+    span->setAttribute("error.type", errorType);
+    span->setAttribute("error.code", errorCode);
+    span->setAttribute("error.message", errorMessage);
+    span->setAttribute("audio.local.failure_stage", failureStage);
+    if (exception) {
+        span->recordException(*exception);
+    }
+    span->setError(errorMessage);
+}
+
 } // namespace
 
 // ───── MusicEvent impl ───────────────────────────────────────────────────
 MusicEvent::MusicEvent(const framenum_t frameNumber_, std::string filePath_,
-                       std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation)
-    : EventBase(frameNumber_), filePath(std::move(filePath_)), rtpReservation_(std::move(rtpReservation)) {}
+                       std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation,
+                       std::string triggerTraceId, std::string triggerSpanId)
+    : EventBase(frameNumber_), filePath(std::move(filePath_)), rtpReservation_(std::move(rtpReservation)),
+      triggerTraceId_(std::move(triggerTraceId)), triggerSpanId_(std::move(triggerSpanId)) {}
 
 Result<framenum_t> MusicEvent::executeImpl() {
     // Create an observability span if observability is available
     std::shared_ptr<OperationSpan> span;
     if (observability) {
         span = observability->createOperationSpan("music_event.execute");
-        span->setAttribute("file_path", filePath);
+        span->setAttribute("audio.file.name", std::filesystem::path(filePath).filename().string());
+        if (!triggerTraceId_.empty()) {
+            span->setAttribute("trigger.trace_id", triggerTraceId_);
+        }
+        if (!triggerSpanId_.empty()) {
+            span->setAttribute("trigger.span_id", triggerSpanId_);
+        }
     }
 
     // Make sure the file exists and is readable
     if (filePath.empty()) {
         std::string errorMessage = "MusicEvent: empty file path provided";
         error(errorMessage);
-        if (span)
-            span->setError(errorMessage);
+        failAudioSpan(span, "InvalidAudioPath", "music_event.empty_path", errorMessage, "validation");
         return Result<framenum_t>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
     if (!std::filesystem::exists(filePath)) {
         std::string errorMessage = fmt::format("MusicEvent: file doesn't exist '{}'", filePath);
         error(errorMessage);
-        if (span)
-            span->setError(errorMessage);
+        failAudioSpan(span, "AudioFileNotFound", "music_event.file_not_found", errorMessage, "validation");
         return Result<framenum_t>{ServerError(ServerError::NotFound, errorMessage)};
     }
 
     if (!std::filesystem::is_regular_file(filePath)) {
         std::string errorMessage = fmt::format("MusicEvent: not a regular file '{}'", filePath);
         error(errorMessage);
-        if (span)
-            span->setError(errorMessage);
+        failAudioSpan(span, "InvalidAudioFile", "music_event.not_regular_file", errorMessage, "validation");
         return Result<framenum_t>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
@@ -192,17 +214,15 @@ Result<framenum_t> MusicEvent::executeImpl() {
     if (std::ifstream test(filePath); !test.good()) {
         std::string errorMessage = fmt::format("MusicEvent: unreadable file '{}'", filePath);
         error(errorMessage);
-        if (span)
-            span->setError(errorMessage);
+        failAudioSpan(span, "UnreadableAudioFile", "music_event.file_unreadable", errorMessage, "validation");
         return Result<framenum_t>{ServerError(ServerError::Forbidden, errorMessage)};
     }
 
     if (!config) {
         std::string errorMessage = "MusicEvent: configuration unavailable";
         error(errorMessage);
-        if (span) {
-            span->setError(errorMessage);
-        }
+        failAudioSpan(span, "AudioConfigurationUnavailable", "music_event.config_unavailable", errorMessage,
+                      "validation");
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
@@ -219,8 +239,8 @@ Result<framenum_t> MusicEvent::executeImpl() {
             span->setSuccess();
         debug("MusicEvent completed successfully");
     } else {
-        if (span)
-            span->setError(result.getError()->getMessage());
+        failAudioSpan(span, "MusicEventError", "music_event.dispatch_failed", result.getError()->getMessage(),
+                      "dispatch");
         warn("MusicEvent stumbled: {}", result.getError()->getMessage());
     }
 
@@ -229,89 +249,106 @@ Result<framenum_t> MusicEvent::executeImpl() {
 
 // ───── Local SDL playback ────────────────────────────────────────────────
 Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> parentSpan) {
-    std::shared_ptr<OperationSpan> span;
+    const bool travelMode = config->getTravelMode();
+    const auto result = submitLocalAudio(filePath, travelMode, parentSpan, triggerTraceId_, triggerSpanId_);
+    if (!result.isSuccess()) {
+        return Result<framenum_t>{result.getError().value()};
+    }
+    return Result{this->frameNumber};
+}
+
+Result<uint64_t> MusicEvent::submitLocalAudio(const std::string &localFilePath, bool travelMode,
+                                              std::shared_ptr<OperationSpan> parentSpan,
+                                              const std::string &triggerTraceId, const std::string &triggerSpanId) {
+    std::shared_ptr<OperationSpan> admissionSpan;
     if (observability) {
-        if (!parentSpan && observability) {
-            parentSpan = observability->createOperationSpan("music_event");
-        }
-        // Playback may outlive the MusicEvent operation. Use an independent
-        // lifecycle span and retain the trigger IDs for cross-system queries.
-        span = observability->createOperationSpan("audio.local.playback");
-        span->setAttribute("audio.local.file_name", std::filesystem::path(filePath).filename().string());
-        span->setAttribute("audio.local.source", "standalone");
-        if (parentSpan) {
-            span->setAttribute("trigger.trace_id", parentSpan->getTraceIdHex());
-            span->setAttribute("trigger.span_id", parentSpan->getSpanIdHex());
-        }
+        admissionSpan = parentSpan ? observability->createChildOperationSpan("audio.local.admission", parentSpan)
+                                   : observability->createOperationSpan("audio.local.admission");
     }
 
-    debug("Starting local audio playback for: {}", filePath);
+    const auto fileName = std::filesystem::path(localFilePath).filename().string();
+    const std::string traceId =
+        !triggerTraceId.empty() ? triggerTraceId : (parentSpan ? parentSpan->getTraceIdHex() : std::string{});
+    const std::string spanId =
+        !triggerSpanId.empty() ? triggerSpanId : (parentSpan ? parentSpan->getSpanIdHex() : std::string{});
+    if (admissionSpan) {
+        admissionSpan->setAttribute("audio.file.name", fileName);
+        admissionSpan->setAttribute("audio.local.source", "standalone");
+        admissionSpan->setAttribute("audio.local.mode", travelMode ? "travel" : "main");
+        admissionSpan->setAttribute("audio.local.queue_capacity", static_cast<int64_t>(1));
+        if (!traceId.empty()) {
+            admissionSpan->setAttribute("trigger.trace_id", traceId);
+        }
+        if (!spanId.empty()) {
+            admissionSpan->setAttribute("trigger.span_id", spanId);
+        }
+    }
 
     if (!localAudioPlaybackCoordinator) {
-        const std::string errorMessage = "MusicEvent: local audio coordinator unavailable";
-        if (span) {
-            span->setAttribute("error.code", "local_audio.coordinator_unavailable");
-            span->setAttribute("audio.local.failure_stage", "admission");
-            span->setError(errorMessage);
-            span->end();
+        const std::string errorMessage = "Local audio coordinator unavailable";
+        failAudioSpan(admissionSpan, "AudioCoordinatorUnavailable", "local_audio.coordinator_unavailable", errorMessage,
+                      "admission");
+        if (admissionSpan) {
+            admissionSpan->setAttribute("audio.local.outcome", "rejected");
+            admissionSpan->end();
         }
-        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+        return Result<uint64_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
-    const bool travelMode = config->getTravelMode();
-    const auto fileName = std::filesystem::path(filePath).filename().string();
-    auto submission = localAudioPlaybackCoordinator->submit(
-        {.id = fmt::format("standalone:{}:{}", fileName, frameNumber),
-         .source = "standalone",
-         .fileName = fileName,
-         .play =
-             [localPath = filePath, travelMode](const std::atomic<bool> &stopRequested) {
+    audio::LocalAudioPlaybackCoordinator::Submission submission;
+    try {
+        submission = localAudioPlaybackCoordinator->submit(
+            {.id = "standalone:" + fileName,
+             .source = "standalone",
+             .mode = travelMode ? "travel" : "main",
+             .fileName = fileName,
+             .triggerTraceId = traceId,
+             .triggerSpanId = spanId,
+             .play = [localPath = localFilePath, travelMode](const std::atomic<bool> &stopRequested) {
                  if (travelMode) {
                      return TravelMonoAudioTransport::playFileBlocking(localPath, stopRequested);
                  }
                  return LocalSdlAudioTransport::playFileBlocking(localPath, stopRequested);
-             },
-         .onFinished =
-             [span](const audio::LocalAudioPlaybackCoordinator::Completion &completion) {
-                 if (!span) {
-                     return;
-                 }
-                 span->setAttribute("audio.local.generation", static_cast<int64_t>(completion.generation));
-                 span->setAttribute("audio.local.source", completion.source);
-                 span->setAttribute("audio.local.file_name", completion.fileName);
-                 span->setAttribute("audio.local.outcome",
-                                    audio::LocalAudioPlaybackCoordinator::outcomeName(completion.result.outcome));
-                 if (completion.result.outcome == audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed ||
-                     completion.result.outcome == audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::TimedOut) {
-                     span->setAttribute("error.code", completion.result.errorCode);
-                     span->setAttribute("error.stage", "playback");
-                     span->setAttribute("error.message", completion.result.errorMessage);
-                     span->setAttribute("audio.local.failure_stage", "playback");
-                     span->setError(completion.result.errorMessage);
-                 } else {
-                     span->setSuccess();
-                 }
-                 span->end();
              }});
-    if (submission.result != audio::LocalAudioPlaybackCoordinator::SubmitResult::Accepted) {
-        const std::string errorMessage = "MusicEvent: local audio coordinator is shutting down";
-        if (span) {
-            span->setAttribute("error.code", "local_audio.admission_rejected");
-            span->setAttribute("audio.local.failure_stage", "admission");
-            span->setError(errorMessage);
-            span->end();
+    } catch (const std::exception &exception) {
+        const std::string errorMessage = fmt::format("Local audio admission failed: {}", exception.what());
+        failAudioSpan(admissionSpan, typeid(exception).name(), "local_audio.admission_exception", errorMessage,
+                      "admission", &exception);
+        if (admissionSpan) {
+            admissionSpan->setAttribute("audio.local.outcome", "rejected");
+            admissionSpan->end();
         }
-        return Result<framenum_t>{ServerError(ServerError::Conflict, errorMessage)};
+        return Result<uint64_t>{ServerError(ServerError::InternalError, errorMessage)};
+    } catch (...) {
+        const std::string errorMessage = "Local audio admission failed with an unknown exception";
+        failAudioSpan(admissionSpan, "UnknownAdmissionException", "local_audio.admission_exception", errorMessage,
+                      "admission");
+        if (admissionSpan) {
+            admissionSpan->setAttribute("audio.local.outcome", "rejected");
+            admissionSpan->end();
+        }
+        return Result<uint64_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
-    if (span) {
-        span->setAttribute("audio.local.generation", static_cast<int64_t>(submission.handle->generation()));
-        span->setAttribute("audio.local.mode", travelMode ? "travel" : "main");
-        span->setAttribute("audio.local.queue_capacity", static_cast<int64_t>(1));
+    if (submission.result != audio::LocalAudioPlaybackCoordinator::SubmitResult::Accepted) {
+        const std::string errorMessage = "Local audio coordinator is shutting down";
+        failAudioSpan(admissionSpan, "AudioAdmissionRejected", "local_audio.admission_rejected", errorMessage,
+                      "admission");
+        if (admissionSpan) {
+            admissionSpan->setAttribute("audio.local.outcome", "rejected");
+            admissionSpan->end();
+        }
+        return Result<uint64_t>{ServerError(ServerError::Conflict, errorMessage)};
     }
 
-    // Return immediately - the music plays in the background
-    return Result{this->frameNumber};
+    const uint64_t generation = submission.handle->generation();
+    if (admissionSpan) {
+        admissionSpan->setAttribute("audio.local.generation", static_cast<int64_t>(generation));
+        admissionSpan->setAttribute("audio.local.outcome", "accepted");
+        admissionSpan->setSuccess();
+        admissionSpan->end();
+    }
+    return Result<uint64_t>{generation};
 }
 
 // ───── RTP / Opus streaming with proper Result handling ──────────────────

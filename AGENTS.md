@@ -333,6 +333,10 @@ may open or close the configured local audio device directly.
 
 - New playback replaces the active owner cooperatively and replaces any
   pending request immediately.
+- Local/travel `/sound/play` requests submit from the service thread, before
+  the event loop. Do not route them through `MusicEvent`: that would reintroduce
+  an unbounded queue ahead of the coordinator. RTP keeps its separately bounded
+  reservation-backed `MusicEvent` path.
 - Event-loop start/stop calls only submit or update an atomic handle; they
   never join a playback thread.
 - The coordinator must be shut down and joined before `SDL_Quit()`.

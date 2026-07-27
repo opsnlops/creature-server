@@ -10,6 +10,7 @@
 #include <chrono>
 #include <filesystem>
 #include <thread>
+#include <typeinfo>
 
 #include "server/animation/PlaybackSession.h"
 #include "server/config/Configuration.h"
@@ -31,6 +32,8 @@ extern std::shared_ptr<ObservabilityManager> observability;
 
 namespace {
 
+constexpr uintmax_t MAX_LOCAL_AUDIO_FILE_SIZE = 1024ULL * 1024ULL * 1024ULL;
+
 struct PlayingSoundGuard {
     PlayingSoundGuard() {
         if (gpioPins) {
@@ -45,6 +48,39 @@ struct PlayingSoundGuard {
     }
 };
 
+std::shared_ptr<OperationSpan> createAdmissionSpan(const std::shared_ptr<PlaybackSession> &session) {
+    if (!observability) {
+        return nullptr;
+    }
+    const auto triggerSpan = session ? session->getSpan() : nullptr;
+    auto span = triggerSpan ? observability->createChildOperationSpan("audio.local.admission", triggerSpan)
+                            : observability->createOperationSpan("audio.local.admission");
+    if (span) {
+        span->setAttribute("audio.local.mode", "main");
+        span->setAttribute("audio.local.source", "animation");
+        span->setAttribute("audio.local.queue_capacity", static_cast<int64_t>(1));
+    }
+    return span;
+}
+
+void failAdmissionSpan(const std::shared_ptr<OperationSpan> &span, const std::string &errorType,
+                       const std::string &errorCode, const std::string &errorMessage,
+                       const std::exception *exception = nullptr) {
+    if (!span) {
+        return;
+    }
+    span->setAttribute("audio.local.outcome", "rejected");
+    span->setAttribute("audio.local.failure_stage", "admission");
+    span->setAttribute("error.type", errorType);
+    span->setAttribute("error.code", errorCode);
+    span->setAttribute("error.message", errorMessage);
+    if (exception) {
+        span->recordException(*exception);
+    }
+    span->setError(errorMessage);
+    span->end();
+}
+
 } // namespace
 
 LocalSdlAudioTransport::LocalSdlAudioTransport() = default;
@@ -52,75 +88,80 @@ LocalSdlAudioTransport::LocalSdlAudioTransport() = default;
 LocalSdlAudioTransport::~LocalSdlAudioTransport() { stop(); }
 
 Result<void> LocalSdlAudioTransport::start(std::shared_ptr<PlaybackSession> session) {
+    auto admissionSpan = createAdmissionSpan(session);
     if (!session) {
-        return Result<void>{ServerError(ServerError::InvalidData, "No playback session provided")};
+        const std::string message = "No playback session provided";
+        failAdmissionSpan(admissionSpan, "InvalidPlaybackSession", "local_audio.session_missing", message);
+        return Result<void>{ServerError(ServerError::InvalidData, message)};
     }
     if (!config) {
-        return Result<void>{ServerError(ServerError::InternalError, "Audio configuration unavailable")};
+        const std::string message = "Audio configuration unavailable";
+        failAdmissionSpan(admissionSpan, "AudioConfigurationUnavailable", "local_audio.config_unavailable", message);
+        return Result<void>{ServerError(ServerError::InternalError, message)};
     }
     if (!localAudioPlaybackCoordinator) {
-        return Result<void>{ServerError(ServerError::InternalError, "Local audio coordinator unavailable")};
+        const std::string message = "Local audio coordinator unavailable";
+        failAdmissionSpan(admissionSpan, "AudioCoordinatorUnavailable", "local_audio.coordinator_unavailable", message);
+        return Result<void>{ServerError(ServerError::InternalError, message)};
     }
 
     const auto &animation = session->getAnimation();
     if (animation.metadata.sound_file.empty()) {
-        return Result<void>{ServerError(ServerError::InvalidData, "No sound file in animation")};
+        const std::string message = "No sound file in animation";
+        failAdmissionSpan(admissionSpan, "MissingAudioFile", "local_audio.file_missing", message);
+        return Result<void>{ServerError(ServerError::InvalidData, message)};
     }
 
     std::filesystem::path soundFilePath = creatures::storage::resolveSoundPath(animation.metadata.sound_file);
-    std::shared_ptr<OperationSpan> playbackSpan;
-    if (observability) {
-        playbackSpan = observability->createOperationSpan("audio.local.playback");
-        playbackSpan->setAttribute("audio.local.mode", "main");
-        playbackSpan->setAttribute("audio.local.source", "animation");
-        playbackSpan->setAttribute("audio.local.file_name", soundFilePath.filename().string());
-        playbackSpan->setAttribute("session.id", session->getSessionId());
-        playbackSpan->setAttribute("animation.id", animation.id);
-        playbackSpan->setAttribute("session.universe", static_cast<int64_t>(session->getUniverse()));
-        if (const auto triggerSpan = session->getSpan()) {
-            playbackSpan->setAttribute("trigger.trace_id", triggerSpan->getTraceIdHex());
-            playbackSpan->setAttribute("trigger.span_id", triggerSpan->getSpanIdHex());
-        }
+    const auto fileName = soundFilePath.filename().string();
+    const auto triggerSpan = session->getSpan();
+    if (admissionSpan) {
+        admissionSpan->setAttribute("audio.file.name", fileName);
+        admissionSpan->setAttribute("session.id", session->getSessionId());
+        admissionSpan->setAttribute("animation.id", animation.id);
+        admissionSpan->setAttribute("session.universe", static_cast<int64_t>(session->getUniverse()));
     }
 
-    auto submission = localAudioPlaybackCoordinator->submit(
-        {.id = "animation:" + session->getSessionId(),
-         .source = "animation",
-         .fileName = soundFilePath.filename().string(),
-         .play = [filePath = soundFilePath.string()](
-                     const std::atomic<bool> &stopRequested) { return playFileBlocking(filePath, stopRequested); },
-         .onFinished =
-             [playbackSpan](const audio::LocalAudioPlaybackCoordinator::Completion &completion) {
-                 if (!playbackSpan) {
-                     return;
-                 }
-                 playbackSpan->setAttribute("audio.local.generation", static_cast<int64_t>(completion.generation));
-                 playbackSpan->setAttribute("audio.local.outcome", audio::LocalAudioPlaybackCoordinator::outcomeName(
-                                                                       completion.result.outcome));
-                 if (completion.result.outcome == audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed ||
-                     completion.result.outcome == audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::TimedOut) {
-                     playbackSpan->setAttribute("error.code", completion.result.errorCode);
-                     playbackSpan->setAttribute("error.message", completion.result.errorMessage);
-                     playbackSpan->setAttribute("audio.local.failure_stage", "playback");
-                     playbackSpan->setError(completion.result.errorMessage);
-                 } else {
-                     playbackSpan->setSuccess();
-                 }
-                 playbackSpan->end();
+    audio::LocalAudioPlaybackCoordinator::Submission submission;
+    try {
+        submission = localAudioPlaybackCoordinator->submit(
+            {.id = "animation:" + session->getSessionId(),
+             .source = "animation",
+             .mode = "main",
+             .fileName = fileName,
+             .sessionId = session->getSessionId(),
+             .animationId = animation.id,
+             .universe = session->getUniverse(),
+             .triggerTraceId = triggerSpan ? triggerSpan->getTraceIdHex() : std::string{},
+             .triggerSpanId = triggerSpan ? triggerSpan->getSpanIdHex() : std::string{},
+             .play = [filePath = soundFilePath.string()](const std::atomic<bool> &stopRequested) {
+                 return playFileBlocking(filePath, stopRequested);
              }});
+    } catch (const std::exception &exception) {
+        const std::string message = fmt::format("Failed to submit local audio playback: {}", exception.what());
+        failAdmissionSpan(admissionSpan, typeid(exception).name(), "local_audio.admission_exception", message,
+                          &exception);
+        return Result<void>{ServerError(ServerError::InternalError, message)};
+    } catch (...) {
+        const std::string message = "Failed to submit local audio playback: unknown exception";
+        failAdmissionSpan(admissionSpan, "UnknownAdmissionException", "local_audio.admission_exception", message);
+        return Result<void>{ServerError(ServerError::InternalError, message)};
+    }
     if (submission.result != audio::LocalAudioPlaybackCoordinator::SubmitResult::Accepted) {
-        if (playbackSpan) {
-            playbackSpan->setAttribute("error.code", "local_audio.admission_rejected");
-            playbackSpan->setAttribute("audio.local.failure_stage", "admission");
-            playbackSpan->setError("Local audio coordinator is shutting down");
-            playbackSpan->end();
-        }
-        return Result<void>{ServerError(ServerError::Conflict, "Local audio coordinator is shutting down")};
+        const std::string message = "Local audio coordinator is shutting down";
+        failAdmissionSpan(admissionSpan, "AudioAdmissionRejected", "local_audio.admission_rejected", message);
+        return Result<void>{ServerError(ServerError::Conflict, message)};
     }
     playbackHandle_ = std::move(submission.handle);
 
-    debug("LocalSdlAudioTransport submitted generation {} for file: {}", playbackHandle_->generation(),
-          soundFilePath.string());
+    if (admissionSpan) {
+        admissionSpan->setAttribute("audio.local.generation", static_cast<int64_t>(playbackHandle_->generation()));
+        admissionSpan->setAttribute("audio.local.outcome", "accepted");
+        admissionSpan->setSuccess();
+        admissionSpan->end();
+    }
+
+    debug("LocalSdlAudioTransport submitted generation {} for file: {}", playbackHandle_->generation(), fileName);
 
     return Result<void>{};
 }
@@ -162,11 +203,25 @@ LocalSdlAudioTransport::playFileBlocking(const std::string &filePath, const std:
             return {.outcome = audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Stopped};
         }
 
+        std::error_code fileError;
+        const auto fileSize = std::filesystem::file_size(filePath, fileError);
+        if (fileError || fileSize > MAX_LOCAL_AUDIO_FILE_SIZE) {
+            const std::string errorMsg =
+                fileError ? "Unable to inspect local audio file before playback"
+                          : fmt::format("Local audio file exceeds {} byte limit", MAX_LOCAL_AUDIO_FILE_SIZE);
+            error(errorMsg);
+            return {.outcome = audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed,
+                    .errorType = "AudioFileValidationError",
+                    .errorCode = fileError ? "local_audio.file_stat_failed" : "local_audio.file_size_exceeded",
+                    .errorMessage = errorMsg};
+        }
+
         if (Mix_OpenAudioDevice(localAudioDeviceAudioSpec.freq, localAudioDeviceAudioSpec.format,
                                 localAudioDeviceAudioSpec.channels, SOUND_BUFFER_SIZE, audioDevice, 1) < 0) {
             const std::string errorMsg = fmt::format("Failed to open audio device: {}", Mix_GetError());
             error(errorMsg);
             return {.outcome = audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed,
+                    .errorType = "AudioDeviceOpenError",
                     .errorCode = "local_audio.device_open_failed",
                     .errorMessage = errorMsg};
         }
@@ -178,9 +233,12 @@ LocalSdlAudioTransport::playFileBlocking(const std::string &filePath, const std:
 
         guard.music = Mix_LoadMUS(filePath.c_str());
         if (!guard.music) {
-            const std::string errorMsg = fmt::format("Failed to load music file '{}': {}", filePath, Mix_GetError());
+            const std::string errorMsg =
+                fmt::format("Failed to load music file '{}': {}", std::filesystem::path(filePath).filename().string(),
+                            Mix_GetError());
             error(errorMsg);
             return {.outcome = audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed,
+                    .errorType = "AudioFileLoadError",
                     .errorCode = "local_audio.file_load_failed",
                     .errorMessage = errorMsg};
         }
@@ -189,7 +247,7 @@ LocalSdlAudioTransport::playFileBlocking(const std::string &filePath, const std:
         if (duration > 0.0) {
             debug("Music duration: {:.2f} seconds", duration);
         } else {
-            warn("Could not determine music duration for: {}", filePath);
+            warn("Could not determine music duration for: {}", std::filesystem::path(filePath).filename().string());
         }
 
         constexpr double MAX_DURATION_SECONDS = 3600.0; // 1 hour max
@@ -198,6 +256,7 @@ LocalSdlAudioTransport::playFileBlocking(const std::string &filePath, const std:
                 fmt::format("Music file too long: {:.2f}s (max: {:.2f}s)", duration, MAX_DURATION_SECONDS);
             error(errorMsg);
             return {.outcome = audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed,
+                    .errorType = "AudioDurationExceeded",
                     .errorCode = "local_audio.duration_exceeded",
                     .errorMessage = errorMsg};
         }
@@ -210,6 +269,7 @@ LocalSdlAudioTransport::playFileBlocking(const std::string &filePath, const std:
             const std::string errorMsg = fmt::format("Failed to start music playback: {}", Mix_GetError());
             error(errorMsg);
             return {.outcome = audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed,
+                    .errorType = "AudioPlaybackStartError",
                     .errorCode = "local_audio.playback_start_failed",
                     .errorMessage = errorMsg};
         }
@@ -231,6 +291,7 @@ LocalSdlAudioTransport::playFileBlocking(const std::string &filePath, const std:
             warn("Audio playback timed out after {} seconds, stopping", TIMEOUT_MS / 1000);
             Mix_HaltMusic();
             return {.outcome = audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::TimedOut,
+                    .errorType = "AudioPlaybackTimeout",
                     .errorCode = "local_audio.playback_timeout",
                     .errorMessage = fmt::format("Audio playback timed out after {} seconds", TIMEOUT_MS / 1000)};
         }
@@ -244,14 +305,18 @@ LocalSdlAudioTransport::playFileBlocking(const std::string &filePath, const std:
         const std::string errorMsg = fmt::format("Exception in audio playback thread: {}", e.what());
         error(errorMsg);
         return {.outcome = audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed,
+                .errorType = typeid(e).name(),
                 .errorCode = "local_audio.playback_exception",
-                .errorMessage = errorMsg};
+                .errorMessage = errorMsg,
+                .exception = std::current_exception()};
     } catch (...) {
         const std::string errorMsg = "Unknown exception in audio playback thread";
         error(errorMsg);
         return {.outcome = audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed,
+                .errorType = "UnknownPlaybackException",
                 .errorCode = "local_audio.unknown_playback_exception",
-                .errorMessage = errorMsg};
+                .errorMessage = errorMsg,
+                .exception = std::current_exception()};
     }
 }
 

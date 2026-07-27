@@ -178,8 +178,6 @@ TEST(LocalAudioPlaybackCoordinatorTest, RecordsFailureAndTimeoutOutcomes) {
 
 TEST(LocalAudioPlaybackCoordinatorTest, ContainsThrownPlaybackFailureAndRunsTheNextJob) {
     LocalAudioPlaybackCoordinator coordinator;
-    std::promise<LocalAudioPlaybackCoordinator::Completion> failedCompletionPromise;
-    auto failedCompletion = failedCompletionPromise.get_future();
 
     auto failed =
         coordinator.submit({.id = "throws",
@@ -187,14 +185,9 @@ TEST(LocalAudioPlaybackCoordinatorTest, ContainsThrownPlaybackFailureAndRunsTheN
                             .fileName = "throws.wav",
                             .play = [](const std::atomic<bool> &) -> LocalAudioPlaybackCoordinator::PlaybackResult {
                                 throw std::runtime_error("device exploded");
-                            },
-                            .onFinished =
-                                [&](const LocalAudioPlaybackCoordinator::Completion &completion) {
-                                    failedCompletionPromise.set_value(completion);
-                                }});
+                            }});
     ASSERT_EQ(failed.result, LocalAudioPlaybackCoordinator::SubmitResult::Accepted);
-    ASSERT_EQ(failedCompletion.wait_for(2s), std::future_status::ready);
-    EXPECT_EQ(failedCompletion.get().result.outcome, LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed);
+    ASSERT_TRUE(waitUntil([&]() { return failed.handle->isFinished(); }));
 
     auto next = coordinator.submit(
         {.id = "next", .source = "test", .fileName = "next.wav", .play = [](const std::atomic<bool> &) {
@@ -211,8 +204,6 @@ TEST(LocalAudioPlaybackCoordinatorTest, ReplacedPendingJobFinishesWithoutRunning
     std::latch activeStarted(1);
     std::atomic<bool> releaseActive{false};
     std::atomic<bool> displacedRan{false};
-    std::promise<LocalAudioPlaybackCoordinator::Completion> displacedCompletionPromise;
-    auto displacedCompletion = displacedCompletionPromise.get_future();
 
     auto active = coordinator.submit(
         {.id = "active", .source = "test", .fileName = "active.wav", .play = [&](const std::atomic<bool> &) {
@@ -225,18 +216,11 @@ TEST(LocalAudioPlaybackCoordinatorTest, ReplacedPendingJobFinishesWithoutRunning
     ASSERT_EQ(active.result, LocalAudioPlaybackCoordinator::SubmitResult::Accepted);
     activeStarted.wait();
 
-    auto displaced = coordinator.submit({.id = "displaced",
-                                         .source = "test",
-                                         .fileName = "displaced.wav",
-                                         .play =
-                                             [&](const std::atomic<bool> &) {
-                                                 displacedRan.store(true);
-                                                 return LocalAudioPlaybackCoordinator::PlaybackResult{};
-                                             },
-                                         .onFinished =
-                                             [&](const LocalAudioPlaybackCoordinator::Completion &completion) {
-                                                 displacedCompletionPromise.set_value(completion);
-                                             }});
+    auto displaced = coordinator.submit(
+        {.id = "displaced", .source = "test", .fileName = "displaced.wav", .play = [&](const std::atomic<bool> &) {
+             displacedRan.store(true);
+             return LocalAudioPlaybackCoordinator::PlaybackResult{};
+         }});
     ASSERT_EQ(displaced.result, LocalAudioPlaybackCoordinator::SubmitResult::Accepted);
 
     auto latest = coordinator.submit(
@@ -244,9 +228,7 @@ TEST(LocalAudioPlaybackCoordinatorTest, ReplacedPendingJobFinishesWithoutRunning
              return LocalAudioPlaybackCoordinator::PlaybackResult{};
          }});
     ASSERT_EQ(latest.result, LocalAudioPlaybackCoordinator::SubmitResult::Accepted);
-    ASSERT_EQ(displacedCompletion.wait_for(2s), std::future_status::ready);
-    EXPECT_EQ(displacedCompletion.get().result.outcome, LocalAudioPlaybackCoordinator::PlaybackOutcome::Replaced);
-    EXPECT_TRUE(displaced.handle->isFinished());
+    ASSERT_TRUE(waitUntil([&]() { return displaced.handle->isFinished(); }));
     EXPECT_FALSE(displacedRan.load());
 
     releaseActive.store(true);
@@ -287,6 +269,47 @@ TEST(LocalAudioPlaybackCoordinatorTest, ShutdownCancelsActiveAndPendingAndReject
          }});
     EXPECT_EQ(late.result, LocalAudioPlaybackCoordinator::SubmitResult::ShuttingDown);
     EXPECT_EQ(coordinator->getStats().rejected, 1U);
+}
+
+TEST(LocalAudioPlaybackCoordinatorTest, FailureTakesPrecedenceOverConcurrentReplacement) {
+    LocalAudioPlaybackCoordinator coordinator;
+    std::latch activeStarted(1);
+
+    auto failing = coordinator.submit({.id = "failing",
+                                       .source = "test",
+                                       .fileName = "failing.wav",
+                                       .play = [&](const std::atomic<bool> &stopRequested) {
+                                           activeStarted.count_down();
+                                           while (!stopRequested.load(std::memory_order_acquire)) {
+                                               std::this_thread::sleep_for(1ms);
+                                           }
+                                           return LocalAudioPlaybackCoordinator::PlaybackResult{
+                                               .outcome = LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed,
+                                               .errorType = "AudioDeviceOpenError",
+                                               .errorCode = "local_audio.device_open_failed",
+                                               .errorMessage = "device failed while replacement arrived"};
+                                       }});
+    ASSERT_EQ(failing.result, LocalAudioPlaybackCoordinator::SubmitResult::Accepted);
+    activeStarted.wait();
+
+    auto replacement = coordinator.submit(
+        {.id = "replacement", .source = "test", .fileName = "replacement.wav", .play = [](const std::atomic<bool> &) {
+             return LocalAudioPlaybackCoordinator::PlaybackResult{};
+         }});
+    ASSERT_EQ(replacement.result, LocalAudioPlaybackCoordinator::SubmitResult::Accepted);
+
+    ASSERT_TRUE(waitUntil([&]() { return failing.handle->isFinished() && replacement.handle->isFinished(); }));
+    EXPECT_EQ(coordinator.getStats().replaced, 1U);
+    EXPECT_EQ(coordinator.getStats().failed, 1U);
+    EXPECT_EQ(coordinator.getStats().completed, 1U);
+}
+
+TEST(LocalAudioPlaybackCoordinatorTest, RepeatedConstructionAndShutdownIsStable) {
+    for (int iteration = 0; iteration < 250; ++iteration) {
+        LocalAudioPlaybackCoordinator coordinator;
+        EXPECT_EQ(coordinator.getStats().workerCount, 1U);
+        coordinator.shutdown();
+    }
 }
 
 } // namespace

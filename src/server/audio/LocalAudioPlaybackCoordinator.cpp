@@ -4,11 +4,17 @@
 #include <exception>
 #include <stdexcept>
 #include <string_view>
+#include <typeinfo>
 #include <utility>
 
 #include <spdlog/spdlog.h>
 
+#include "util/ObservabilityManager.h"
 #include "util/threadName.h"
+
+namespace creatures {
+extern std::shared_ptr<ObservabilityManager> observability;
+}
 
 namespace creatures::audio {
 
@@ -26,6 +32,94 @@ std::string sanitizeLogField(std::string_view value, std::size_t maxLength = 512
         sanitized.append("...");
     }
     return sanitized;
+}
+
+std::shared_ptr<OperationSpan> startPlaybackSpan(const LocalAudioPlaybackCoordinator::Job &job, uint64_t generation,
+                                                 double queueWaitMs) {
+    if (!observability) {
+        return nullptr;
+    }
+
+    auto span = observability->createOperationSpan("audio.local.playback");
+    if (!span) {
+        return nullptr;
+    }
+
+    span->setAttribute("audio.local.generation", static_cast<int64_t>(generation));
+    span->setAttribute("audio.local.job_id", job.id);
+    span->setAttribute("audio.local.source", job.source);
+    span->setAttribute("audio.local.mode", job.mode);
+    span->setAttribute("audio.file.name", job.fileName);
+    span->setAttribute("audio.local.queue_capacity", static_cast<int64_t>(1));
+    span->setAttribute("audio.local.queue_wait_ms", queueWaitMs);
+    if (!job.sessionId.empty()) {
+        span->setAttribute("session.id", job.sessionId);
+    }
+    if (!job.animationId.empty()) {
+        span->setAttribute("animation.id", job.animationId);
+    }
+    if (job.universe) {
+        span->setAttribute("session.universe", static_cast<int64_t>(*job.universe));
+    }
+    if (!job.triggerTraceId.empty()) {
+        span->setAttribute("trigger.trace_id", job.triggerTraceId);
+    }
+    if (!job.triggerSpanId.empty()) {
+        span->setAttribute("trigger.span_id", job.triggerSpanId);
+    }
+    return span;
+}
+
+void recordPlaybackException(const std::shared_ptr<OperationSpan> &span, const std::exception_ptr &exception) {
+    if (!span || !exception) {
+        return;
+    }
+    try {
+        std::rethrow_exception(exception);
+    } catch (const std::exception &caught) {
+        span->recordException(caught);
+    } catch (...) {
+        const std::runtime_error unknownException("Unknown local audio playback exception");
+        span->recordException(unknownException);
+    }
+}
+
+void finishPlaybackSpan(const std::shared_ptr<OperationSpan> &span,
+                        const LocalAudioPlaybackCoordinator::PlaybackResult &result, double playbackDurationMs) {
+    if (!span) {
+        return;
+    }
+
+    span->setAttribute("audio.local.outcome", LocalAudioPlaybackCoordinator::outcomeName(result.outcome));
+    span->setAttribute("audio.local.playback_duration_ms", playbackDurationMs);
+    if (!result.stopReason.empty()) {
+        span->setAttribute("audio.local.stop_reason", result.stopReason);
+    }
+
+    if (result.outcome == LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed ||
+        result.outcome == LocalAudioPlaybackCoordinator::PlaybackOutcome::TimedOut) {
+        const std::string errorType =
+            result.errorType.empty()
+                ? (result.outcome == LocalAudioPlaybackCoordinator::PlaybackOutcome::TimedOut ? "AudioPlaybackTimeout"
+                                                                                              : "AudioPlaybackError")
+                : result.errorType;
+        const std::string errorCode = result.errorCode.empty()
+                                          ? (result.outcome == LocalAudioPlaybackCoordinator::PlaybackOutcome::TimedOut
+                                                 ? "local_audio.playback_timeout"
+                                                 : "local_audio.playback_failed")
+                                          : result.errorCode;
+        const std::string errorMessage =
+            result.errorMessage.empty() ? "Local audio playback failed without an error message" : result.errorMessage;
+        span->setAttribute("error.type", errorType);
+        span->setAttribute("error.code", errorCode);
+        span->setAttribute("error.message", errorMessage);
+        span->setAttribute("audio.local.failure_stage", "playback");
+        recordPlaybackException(span, result.exception);
+        span->setError(errorMessage);
+    } else {
+        span->setSuccess();
+    }
+    span->end();
 }
 
 } // namespace
@@ -71,7 +165,11 @@ bool LocalAudioPlaybackCoordinator::Handle::isFinished() const {
 uint64_t LocalAudioPlaybackCoordinator::Handle::generation() const { return state_ ? state_->generation : 0; }
 
 LocalAudioPlaybackCoordinator::LocalAudioPlaybackCoordinator(StatsObserver statsObserver)
-    : statsObserver_(std::move(statsObserver)), worker_(&LocalAudioPlaybackCoordinator::workerLoop, this) {
+    : statsObserver_(std::move(statsObserver)) {
+    // Launch only after every field the worker reads has completed
+    // initialization. Member initialization order follows declaration order,
+    // not the constructor initializer list.
+    worker_ = std::thread(&LocalAudioPlaybackCoordinator::workerLoop, this);
     publishStats();
 }
 
@@ -121,8 +219,11 @@ LocalAudioPlaybackCoordinator::Submission LocalAudioPlaybackCoordinator::submit(
         const auto reason = displacedPending->state->getStopReason();
         finish(*displacedPending,
                PlaybackResult{.outcome = outcomeForStopReason(reason),
+                              .errorType =
+                                  reason == StopReason::Replaced ? "AudioPlaybackReplaced" : "AudioPlaybackStopped",
                               .errorCode = reason == StopReason::Replaced ? "local_audio.replaced"
-                                                                          : "local_audio.stopped_before_start"});
+                                                                          : "local_audio.stopped_before_start",
+                              .stopReason = reason == StopReason::Replaced ? "replaced" : "stopped"});
     }
     publishStats();
     condition_.notify_one();
@@ -152,8 +253,10 @@ void LocalAudioPlaybackCoordinator::shutdown() {
     }
 
     if (discardedPending) {
-        finish(*discardedPending,
-               PlaybackResult{.outcome = PlaybackOutcome::Shutdown, .errorCode = "local_audio.shutdown_before_start"});
+        finish(*discardedPending, PlaybackResult{.outcome = PlaybackOutcome::Shutdown,
+                                                 .errorType = "AudioPlaybackShutdown",
+                                                 .errorCode = "local_audio.shutdown_before_start",
+                                                 .stopReason = "shutdown"});
     }
     publishStats();
     condition_.notify_all();
@@ -210,37 +313,62 @@ void LocalAudioPlaybackCoordinator::workerLoop() {
             queued_.store(0, std::memory_order_relaxed);
             activeState_ = record.state;
             active_.store(1, std::memory_order_relaxed);
+            record.state->startedAt = std::chrono::steady_clock::now();
             record.state->status.store(Status::Playing, std::memory_order_release);
         }
         publishStats();
+
+        const auto queueWait =
+            std::chrono::duration<double, std::milli>(record.state->startedAt - record.state->queuedAt).count();
+        std::shared_ptr<OperationSpan> playbackSpan;
+        try {
+            playbackSpan = startPlaybackSpan(record.job, record.state->generation, queueWait);
+        } catch (const std::exception &exception) {
+            spdlog::error("Local audio lifecycle span creation failed: {}", sanitizeLogField(exception.what()));
+        } catch (...) {
+            spdlog::error("Local audio lifecycle span creation failed with an unknown exception");
+        }
 
         PlaybackResult result;
         const auto stopReasonBeforeStart = record.state->getStopReason();
         if (stopReasonBeforeStart != StopReason::None) {
             result.outcome = outcomeForStopReason(stopReasonBeforeStart);
+            result.errorType = "AudioPlaybackCancelled";
             result.errorCode = "local_audio.cancelled_before_start";
+            result.stopReason = stopReasonBeforeStart == StopReason::Replaced
+                                    ? "replaced"
+                                    : (stopReasonBeforeStart == StopReason::Shutdown ? "shutdown" : "stopped");
         } else {
             try {
                 result = record.job.play(record.state->stopRequested);
             } catch (const std::exception &exception) {
                 result = {.outcome = PlaybackOutcome::Failed,
+                          .errorType = typeid(exception).name(),
                           .errorCode = "local_audio.playback_exception",
-                          .errorMessage = exception.what()};
+                          .errorMessage = exception.what(),
+                          .exception = std::current_exception()};
             } catch (...) {
                 result = {.outcome = PlaybackOutcome::Failed,
+                          .errorType = "UnknownPlaybackException",
                           .errorCode = "local_audio.unknown_playback_exception",
-                          .errorMessage = "Local audio playback threw an unknown exception"};
+                          .errorMessage = "Local audio playback threw an unknown exception",
+                          .exception = std::current_exception()};
             }
         }
 
         {
             std::lock_guard lock(mutex_);
             const auto stopReason = record.state->getStopReason();
-            if (stopReason != StopReason::None) {
+            if (stopReason != StopReason::None && result.outcome != PlaybackOutcome::Failed &&
+                result.outcome != PlaybackOutcome::TimedOut) {
                 result.outcome = outcomeForStopReason(stopReason);
                 if (result.errorCode.empty()) {
                     result.errorCode = "local_audio." + std::string(outcomeName(result.outcome));
                 }
+            } else if (stopReason != StopReason::None) {
+                result.stopReason = stopReason == StopReason::Replaced
+                                        ? "replaced"
+                                        : (stopReason == StopReason::Shutdown ? "shutdown" : "stopped");
             }
             if (activeState_ == record.state) {
                 activeState_.reset();
@@ -248,12 +376,22 @@ void LocalAudioPlaybackCoordinator::workerLoop() {
             }
         }
 
-        finish(record, std::move(result));
+        finish(record, result);
+        const auto playbackDuration =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - record.state->startedAt)
+                .count();
+        try {
+            finishPlaybackSpan(playbackSpan, result, playbackDuration);
+        } catch (const std::exception &exception) {
+            spdlog::error("Local audio lifecycle span completion failed: {}", sanitizeLogField(exception.what()));
+        } catch (...) {
+            spdlog::error("Local audio lifecycle span completion failed with an unknown exception");
+        }
         publishStats();
     }
 }
 
-void LocalAudioPlaybackCoordinator::finish(JobRecord &record, PlaybackResult result) {
+void LocalAudioPlaybackCoordinator::finish(JobRecord &record, const PlaybackResult &result) {
     bool expected = false;
     if (!record.state->completionNotified.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         return;
@@ -287,26 +425,6 @@ void LocalAudioPlaybackCoordinator::finish(JobRecord &record, PlaybackResult res
             sanitizeLogField(record.job.source), sanitizeLogField(record.job.fileName), sanitizeLogField(record.job.id),
             sanitizeLogField(result.errorMessage));
     }
-
-    if (!record.job.onFinished) {
-        return;
-    }
-
-    try {
-        record.job.onFinished(Completion{
-            .generation = record.state->generation,
-            .id = record.job.id,
-            .source = record.job.source,
-            .fileName = record.job.fileName,
-            .result = std::move(result),
-        });
-    } catch (const std::exception &exception) {
-        spdlog::error("Local audio job '{}' completion handler threw: {}", sanitizeLogField(record.job.id),
-                      sanitizeLogField(exception.what()));
-    } catch (...) {
-        spdlog::error("Local audio job '{}' completion handler threw an unknown exception",
-                      sanitizeLogField(record.job.id));
-    }
 }
 
 void LocalAudioPlaybackCoordinator::publishStats() const {
@@ -317,7 +435,7 @@ void LocalAudioPlaybackCoordinator::publishStats() const {
     try {
         statsObserver_(getStats());
     } catch (const std::exception &exception) {
-        spdlog::error("Local audio stats observer failed: {}", exception.what());
+        spdlog::error("Local audio stats observer failed: {}", sanitizeLogField(exception.what()));
     } catch (...) {
         spdlog::error("Local audio stats observer failed with an unknown exception");
     }
