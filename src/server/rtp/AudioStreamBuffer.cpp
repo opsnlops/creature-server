@@ -18,6 +18,7 @@
 #include <spdlog/spdlog.h>
 
 #include "AudioStreamBuffer.h"
+#include "server/rtp/opus/OpusPriming.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
@@ -257,6 +258,9 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
                 }
 
                 opus::Encoder encoder;
+                // Match the decoder history established by
+                // MultiOpusRtpServer's startup silence sequence.
+                static_cast<void>(opus::encodePrimingSequence(encoder));
 
                 for (std::size_t frameIndex = 0; frameIndex < numberOfFramesPerChannel_; ++frameIndex) {
                     const int16_t *frameBase = pcm + frameIndex * RTP_SAMPLES * RTP_STREAMING_CHANNELS;

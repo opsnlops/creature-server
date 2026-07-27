@@ -164,6 +164,7 @@ class ObservabilityManager {
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> playlistStatusRequestsCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> restRequestsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpEventsProcessedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpSendFailuresCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> soundFilesServedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketConnectionsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketMessagesReceivedCounter_;

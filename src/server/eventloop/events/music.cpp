@@ -1,11 +1,12 @@
 //
 // music.cpp
 //
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <stop_token> // std::stop_token (libc++ 15+)
+#include <optional>
 #include <string>
-#include <thread> // std::jthread lives here
+#include <thread>
 #include <vector>
 
 #include <SDL.h>
@@ -38,35 +39,119 @@ extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 
 // Use constants from config.h - 17 channels for 16 creatures + BGM
 
-// ───── Fixed SimpleLambdaEvent (use this one!) ───────────────────────────
-template <typename Tag> class SimpleLambdaEvent : public EventBase<SimpleLambdaEvent<Tag>> {
+namespace {
+
+class StandaloneRtpFrameEvent : public EventBase<StandaloneRtpFrameEvent> {
   public:
-    using Fn = std::function<void()>; // ← Simple void function
+    StandaloneRtpFrameEvent(framenum_t frameNumber, std::shared_ptr<rtp::AudioStreamBuffer> buffer, size_t frameIndex,
+                            rtp::RtpOutputLease outputLease, std::shared_ptr<OperationSpan> span,
+                            std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> reservation,
+                            rtp::AsyncAudioTraceContext traceContext, size_t skippedFramesTotal = 0)
+        : EventBase(frameNumber), buffer_(std::move(buffer)), frameIndex_(frameIndex),
+          outputLease_(std::move(outputLease)), span_(std::move(span)), reservation_(std::move(reservation)),
+          traceContext_(std::move(traceContext)), skippedFramesTotal_(skippedFramesTotal) {}
 
-    SimpleLambdaEvent(framenum_t frameNum, Fn func)
-        : EventBase<SimpleLambdaEvent<Tag>>(frameNum), fn_(std::move(func)) {}
-
-    // Wraps void function in Result
     Result<framenum_t> executeImpl() {
-        try {
-            fn_();
-            return Result<framenum_t>{this->frameNumber}; // Success!
-        } catch (const std::exception &e) {
-            return Result<framenum_t>{
-                ServerError(ServerError::InternalError, std::string("SimpleLambdaEvent failed: ") + e.what())};
-        } catch (...) {
-            return Result<framenum_t>{
-                ServerError(ServerError::InternalError, "SimpleLambdaEvent failed with unknown error")};
+        if (!eventLoop || !rtpServer || !rtpServer->isReady() || !buffer_) {
+            return fail("Standalone RTP dispatch dependencies are unavailable");
         }
+
+        if (!rtpServer->isCurrentOutput(outputLease_)) {
+            if (span_) {
+                span_->setAttribute("rtp.work.outcome", "stale");
+                span_->setSuccess();
+            }
+            return Result<framenum_t>{this->frameNumber};
+        }
+
+        constexpr framenum_t dispatchStep = RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
+        size_t framesToSkip = 0;
+        const framenum_t currentFrame = eventLoop->getCurrentFrameNumber();
+        if (currentFrame > this->frameNumber) {
+            framesToSkip = static_cast<size_t>((currentFrame - this->frameNumber) / dispatchStep);
+            framesToSkip = std::min(framesToSkip, buffer_->getFrameCount() - frameIndex_);
+        }
+
+        const size_t dispatchIndex = frameIndex_ + framesToSkip;
+        skippedFramesTotal_ += framesToSkip;
+        if (dispatchIndex >= buffer_->getFrameCount()) {
+            rtpServer->releaseOutput(outputLease_);
+            if (metrics) {
+                metrics->incrementSoundsPlayed();
+            }
+            if (span_) {
+                span_->setAttribute("frames_skipped", static_cast<int64_t>(skippedFramesTotal_));
+                span_->setSuccess();
+            }
+            return Result<framenum_t>{this->frameNumber};
+        }
+
+        const bool isFinalFrame = dispatchIndex + 1 >= buffer_->getFrameCount();
+        traceContext_.enqueueFrame = currentFrame;
+        const auto enqueueResult =
+            rtpServer->enqueueAudioFrame(outputLease_, buffer_, dispatchIndex, framesToSkip, isFinalFrame,
+                                         isFinalFrame ? reservation_ : nullptr, traceContext_);
+        if (enqueueResult == rtp::RtpEnqueueResult::StaleLease) {
+            if (span_) {
+                span_->setAttribute("rtp.work.outcome", "stale");
+                span_->setSuccess();
+            }
+            return Result<framenum_t>{this->frameNumber};
+        }
+        if (enqueueResult != rtp::RtpEnqueueResult::Accepted) {
+            return fail(fmt::format("Standalone RTP output queue rejected frame {} with result {}", dispatchIndex,
+                                    static_cast<int>(enqueueResult)));
+        }
+
+        if (metrics) {
+            metrics->incrementRtpEventsProcessed();
+        }
+
+        if (isFinalFrame) {
+            if (metrics) {
+                metrics->incrementSoundsPlayed();
+            }
+            if (span_) {
+                span_->setAttribute("frames_skipped", static_cast<int64_t>(skippedFramesTotal_));
+                span_->setSuccess();
+            }
+            return Result<framenum_t>{this->frameNumber};
+        }
+
+        const framenum_t nextFrame = this->frameNumber + static_cast<framenum_t>(framesToSkip + 1) * dispatchStep;
+        eventLoop->scheduleEvent(std::make_shared<StandaloneRtpFrameEvent>(nextFrame, buffer_, dispatchIndex + 1,
+                                                                           outputLease_, span_, reservation_,
+                                                                           traceContext_, skippedFramesTotal_));
+        return Result<framenum_t>{this->frameNumber};
     }
 
   private:
-    Fn fn_;
+    Result<framenum_t> fail(const std::string &message) {
+        if (rtpServer) {
+            rtpServer->releaseOutput(outputLease_);
+        }
+        error("{}", message);
+        if (span_) {
+            span_->setError(message);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, message)};
+    }
+
+    std::shared_ptr<rtp::AudioStreamBuffer> buffer_;
+    size_t frameIndex_;
+    rtp::RtpOutputLease outputLease_;
+    std::shared_ptr<OperationSpan> span_;
+    std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> reservation_;
+    rtp::AsyncAudioTraceContext traceContext_;
+    size_t skippedFramesTotal_;
 };
 
+} // namespace
+
 // ───── MusicEvent impl ───────────────────────────────────────────────────
-MusicEvent::MusicEvent(const framenum_t frameNumber_, std::string filePath_)
-    : EventBase(frameNumber_), filePath(std::move(filePath_)) {}
+MusicEvent::MusicEvent(const framenum_t frameNumber_, std::string filePath_,
+                       std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation)
+    : EventBase(frameNumber_), filePath(std::move(filePath_)), rtpReservation_(std::move(rtpReservation)) {}
 
 Result<framenum_t> MusicEvent::executeImpl() {
     // Create an observability span if observability is available
@@ -330,122 +415,119 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
     // Capture the data we need by value so the MusicEvent can die
     const std::string localPath = filePath;
     const framenum_t startingFrame = eventLoop->getNextFrameNumber() + 1;
+    auto capturedEventLoop = eventLoop;
+    auto capturedRtpServer = rtpServer;
+    auto capturedObservability = observability;
+    auto reservation = std::move(rtpReservation_);
+    if (!reservation) {
+        reservation = rtp::standaloneRtpAdmission().tryAcquire();
+    }
+    if (!reservation) {
+        const std::string errorMsg = "Standalone RTP audio loader is busy";
+        if (span) {
+            span->setError(errorMsg);
+        }
+        return Result<framenum_t>{ServerError(ServerError::Conflict, errorMsg)};
+    }
     if (span)
         span->setAttribute("original_frame_number", startingFrame);
 
-#if defined(__cpp_lib_jthread)
-    std::jthread worker([span, localPath, startingFrame](std::stop_token st) {
-#else
-    std::thread worker([span, localPath, startingFrame]() {
-#endif
-        debug("RTP worker thread starting");
+    try {
+        std::thread worker([span, localPath, startingFrame, capturedEventLoop, capturedRtpServer, capturedObservability,
+                            reservation = std::move(reservation)]() mutable {
+            std::optional<rtp::RtpOutputLease> outputLease;
+            try {
+                debug("RTP worker thread starting");
 
-        if (!eventLoop) {
-            const std::string errorMsg = "MusicEvent: event loop unavailable in RTP worker";
-            error(errorMsg);
-            if (span) {
-                span->setError(errorMsg);
-            }
-            return;
-        }
+                if (!capturedEventLoop) {
+                    throw std::runtime_error("MusicEvent: event loop unavailable in RTP worker");
+                }
+                if (!capturedRtpServer || !capturedRtpServer->isReady()) {
+                    throw std::runtime_error("RTP server not ready in RTP worker");
+                }
 
-        if (!rtpServer || !rtpServer->isReady()) {
-            const std::string errorMsg = "RTP server not ready in RTP worker";
-            error(errorMsg);
-            if (span) {
-                span->setError(errorMsg);
-            }
-            return;
-        }
+                // Heavy I/O – off the event-loop thread.
+                debug("Loading audio buffer from WAV file: {}", localPath);
+                std::shared_ptr<OperationSpan> encodingSpan;
+                if (capturedObservability && span) {
+                    encodingSpan = capturedObservability->createChildOperationSpan("music_event.encode_to_opus", span);
+                }
 
-        // Heavy I/O – off the event‑loop thread!
-        debug("Loading audio buffer from WAV file: {}", localPath);
-        std::shared_ptr<OperationSpan> encodingSpan;
-        if (observability && span) {
-            encodingSpan = observability->createChildOperationSpan("music_event.encode_to_opus", span);
-        }
-
-        auto buffer = rtp::AudioStreamBuffer::loadFromWavFile(localPath, span);
-        if (!buffer) {
-            const auto msg = fmt::format("Failed to load audio buffer from '{}'", localPath);
-            error(msg);
-            if (encodingSpan)
-                encodingSpan->setError(msg);
-            if (span)
-                span->setError(msg);
-            return;
-        }
-        if (encodingSpan)
-            encodingSpan->setSuccess();
-
-        // Get current frame for scheduling (encoding took time!)
-        framenum_t streamingStartFrame = eventLoop->getNextFrameNumber() + 2 + RTP_PRIMING_DURATION_FRAMES;
-        if (span)
-            span->setAttribute("streaming_start_frame", streamingStartFrame);
-        debug("Original frame: {}, streaming start frame: {}", startingFrame, streamingStartFrame);
-
-        // Rotate SSRC and send one silent frame per 10ms interval before audio.
-        framenum_t resetFrame = streamingStartFrame - RTP_PRIMING_DURATION_FRAMES;
-        auto resetEvent = std::make_shared<RtpEncoderResetEvent>(resetFrame, RTP_PRIMING_FRAMES);
-        eventLoop->scheduleEvent(resetEvent);
-        debug("Scheduled RtpEncoderResetEvent for frame {} ({}ms before streaming)", resetFrame,
-              RTP_PRIMING_FRAMES * RTP_FRAME_MS);
-
-        const std::size_t frames = buffer->getFrameCount();
-        framenum_t cursor = streamingStartFrame;
-
-        if (span)
-            span->setAttribute("frames_total", static_cast<int64_t>(frames));
-        debug("Scheduling {} frames for RTP streaming", frames);
-
-        // Schedule all the audio frames as events
-        for (std::size_t f = 0; f < frames
-#if defined(__cpp_lib_jthread)
-                                && !st.stop_requested()
-#endif
-                 ;
-             ++f) {
-
-            // Use SimpleLambdaEvent for the RTP send operations
-            using Tag = struct RtpSendTag {};
-            auto ev = std::make_shared<SimpleLambdaEvent<Tag>>(cursor, [buffer, f] {
-                // Send to all 17 RTP channels (16 creatures + 1 BGM)
-                const uint32_t timestamp = rtpServer->getNextFrameTimestamp();
-                rtp_error_t frameResult = RTP_OK;
-                for (int ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
-                    const auto sendResult = rtpServer->send(
-                        static_cast<uint8_t>(ch), buffer->getEncodedFrame(static_cast<uint8_t>(ch), f), timestamp);
-                    if (sendResult != RTP_OK && frameResult == RTP_OK) {
-                        frameResult = sendResult;
+                auto buffer = rtp::AudioStreamBuffer::loadFromWavFile(localPath, span);
+                if (!buffer) {
+                    const auto message = fmt::format("Failed to load audio buffer from '{}'", localPath);
+                    if (encodingSpan) {
+                        encodingSpan->setError(message);
                     }
+                    throw std::runtime_error(message);
                 }
-                rtpServer->advanceFrameTimestamp();
-                if (metrics) {
-                    metrics->incrementRtpEventsProcessed();
+                if (encodingSpan) {
+                    encodingSpan->setSuccess();
                 }
-                if (frameResult != RTP_OK) {
-                    warn("Standalone RTP frame {} failed with error {}", f, static_cast<int>(frameResult));
+
+                if (buffer->getFrameCount() == 0) {
+                    throw std::runtime_error("Decoded RTP audio buffer contains no frames");
                 }
-                // Note: SimpleLambdaEvent will automatically wrap this in a successful Result
-            });
 
-            eventLoop->scheduleEvent(std::move(ev));
+                outputLease = capturedRtpServer->acquireOutput("standalone:" +
+                                                               std::filesystem::path(localPath).filename().string());
+                rtp::AsyncAudioTraceContext traceContext;
+                traceContext.soundFile = std::filesystem::path(localPath).filename().string();
+                if (span) {
+                    traceContext.triggerTraceId = span->getTraceIdHex();
+                    traceContext.triggerSpanId = span->getSpanIdHex();
+                }
+                if (span) {
+                    span->setAttribute("rtp.generation", static_cast<int64_t>(outputLease->generation));
+                    span->setAttribute("rtp.owner_id", outputLease->ownerId);
+                }
 
-            // Calculate next frame timing
-            cursor += RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
-        }
+                // Encoding may take time, so establish the playback frame only
+                // after the immutable packet buffer is ready.
+                const framenum_t streamingStartFrame =
+                    capturedEventLoop->getNextFrameNumber() + 2 + RTP_PRIMING_DURATION_FRAMES;
+                if (span) {
+                    span->setAttribute("streaming_start_frame", streamingStartFrame);
+                    span->setAttribute("frames_total", static_cast<int64_t>(buffer->getFrameCount()));
+                }
+                debug("Original frame: {}, streaming start frame: {}", startingFrame, streamingStartFrame);
 
-        debug("Finished scheduling {} RTP audio frames", frames);
-        if (metrics) {
-            metrics->incrementSoundsPlayed();
-        }
+                const framenum_t resetFrame = streamingStartFrame - RTP_PRIMING_DURATION_FRAMES;
+                capturedEventLoop->scheduleEvent(
+                    std::make_shared<RtpEncoderResetEvent>(resetFrame, *outputLease, traceContext));
+                capturedEventLoop->scheduleEvent(std::make_shared<StandaloneRtpFrameEvent>(
+                    streamingStartFrame, buffer, 0, *outputLease, span, std::move(reservation), traceContext));
+
+                debug("Scheduled the first of {} self-chaining RTP audio frames", buffer->getFrameCount());
+            } catch (const std::exception &exception) {
+                if (outputLease && capturedRtpServer) {
+                    capturedRtpServer->releaseOutput(*outputLease);
+                }
+                error("Standalone RTP loader failed: {}", exception.what());
+                if (span) {
+                    span->setError(exception.what());
+                }
+            } catch (...) {
+                if (outputLease && capturedRtpServer) {
+                    capturedRtpServer->releaseOutput(*outputLease);
+                }
+                const std::string errorMsg = "Standalone RTP loader failed with an unknown exception";
+                error(errorMsg);
+                if (span) {
+                    span->setError(errorMsg);
+                }
+            }
+        });
+
+        debug("Detaching RTP worker thread");
+        worker.detach();
+    } catch (const std::exception &exception) {
+        const auto errorMsg = fmt::format("Unable to start standalone RTP loader: {}", exception.what());
         if (span) {
-            span->setSuccess();
+            span->setError(errorMsg);
         }
-    });
-
-    debug("Detaching RTP worker thread");
-    worker.detach();
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+    }
 
     // Return success immediately - the RTP streaming happens in the background
     return Result<framenum_t>{this->frameNumber};

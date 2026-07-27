@@ -210,13 +210,18 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->addTag("Sounds");
 
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/sound/play", playSound, BODY_DTO(Object<creatures::ws::PlaySoundRequestDTO>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("POST /api/v1/sound/play", "POST", "api/v1/sound/play", "playSound", "SoundController",
                            request, [&](const auto &span) {
+                               if (!requestBody || !requestBody->file_name || requestBody->file_name->empty()) {
+                                   return bailHttp(span, Status::CODE_400, "file_name is required");
+                               }
                                if (span && requestBody && requestBody->file_name) {
                                    span->setAttribute("sound.file", std::string(requestBody->file_name));
                                }

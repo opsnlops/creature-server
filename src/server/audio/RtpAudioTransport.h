@@ -1,7 +1,10 @@
 #pragma once
 
+#include <mutex>
+
 #include "AudioTransport.h"
 #include "server/config.h"
+#include "server/rtp/AsyncAudioTraceContext.h"
 #include "server/rtp/MultiOpusRtpServer.h"
 
 namespace creatures {
@@ -26,6 +29,8 @@ class RtpAudioTransport : public AudioTransport {
 
     ~RtpAudioTransport() override = default;
 
+    void setOutputLease(rtp::RtpOutputLease outputLease, rtp::AsyncAudioTraceContext traceContext = {});
+
     Result<void> start(std::shared_ptr<PlaybackSession> session) override;
 
     void stop() override;
@@ -39,8 +44,18 @@ class RtpAudioTransport : public AudioTransport {
     [[nodiscard]] bool isFinished() const override;
 
   private:
+    struct OutputState {
+        rtp::RtpOutputLease lease;
+        rtp::AsyncAudioTraceContext traceContext;
+    };
+
+    [[nodiscard]] OutputState getOutputState() const;
+
     std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer_;
     std::shared_ptr<PlaybackSession> session_;
+    mutable std::mutex outputStateMutex_;
+    rtp::RtpOutputLease outputLease_;
+    rtp::AsyncAudioTraceContext traceContext_;
 
     // Playback state
     size_t currentFrameIndex_{0};
@@ -48,6 +63,7 @@ class RtpAudioTransport : public AudioTransport {
     framenum_t nextDispatchFrame_{0};
     bool started_{false};
     bool stopped_{false};
+    bool finalFrameQueued_{false};
 };
 
 } // namespace creatures
