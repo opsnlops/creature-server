@@ -18,6 +18,13 @@ SystemCounters::SystemCounters() {
     rtpEventsProcessed = 0;
     rtpSendFailures = 0;
     rtpEncoderResets = 0;
+    rtpAudioLoadersActive = 0;
+    rtpAudioLoadsQueued = 0;
+    rtpAudioLoadsAccepted = 0;
+    rtpAudioLoadsCompleted = 0;
+    rtpAudioLoadsRejected = 0;
+    rtpAudioLoadsCancelled = 0;
+    rtpAudioLoadsFailed = 0;
     soundFilesServed = 0;
     websocketConnectionsProcessed = 0;
     websocketMessagesReceived = 0;
@@ -66,6 +73,17 @@ void SystemCounters::incrementWebsocketPongsReceived() { websocketPongsReceived+
 
 void SystemCounters::incrementRtpEncoderResets() { rtpEncoderResets++; }
 
+void SystemCounters::setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
+                                            uint64_t rejected, uint64_t cancelled, uint64_t failed) {
+    rtpAudioLoadersActive.store(active);
+    rtpAudioLoadsQueued.store(queued);
+    rtpAudioLoadsAccepted.store(accepted);
+    rtpAudioLoadsCompleted.store(completed);
+    rtpAudioLoadsRejected.store(rejected);
+    rtpAudioLoadsCancelled.store(cancelled);
+    rtpAudioLoadsFailed.store(failed);
+}
+
 uint64_t SystemCounters::getTotalFrames() { return totalFrames.load(); }
 
 uint64_t SystemCounters::getEventsProcessed() { return eventsProcessed.load(); }
@@ -93,6 +111,20 @@ uint64_t SystemCounters::getRtpEventsProcessed() { return rtpEventsProcessed.loa
 uint64_t SystemCounters::getRtpSendFailures() { return rtpSendFailures.load(); }
 
 uint64_t SystemCounters::getRtpEncoderResets() { return rtpEncoderResets.load(); }
+
+uint64_t SystemCounters::getRtpAudioLoadersActive() { return rtpAudioLoadersActive.load(); }
+
+uint64_t SystemCounters::getRtpAudioLoadsQueued() { return rtpAudioLoadsQueued.load(); }
+
+uint64_t SystemCounters::getRtpAudioLoadsAccepted() { return rtpAudioLoadsAccepted.load(); }
+
+uint64_t SystemCounters::getRtpAudioLoadsCompleted() { return rtpAudioLoadsCompleted.load(); }
+
+uint64_t SystemCounters::getRtpAudioLoadsRejected() { return rtpAudioLoadsRejected.load(); }
+
+uint64_t SystemCounters::getRtpAudioLoadsCancelled() { return rtpAudioLoadsCancelled.load(); }
+
+uint64_t SystemCounters::getRtpAudioLoadsFailed() { return rtpAudioLoadsFailed.load(); }
 
 uint64_t SystemCounters::getSoundFilesServed() { return soundFilesServed.load(); }
 
@@ -129,6 +161,13 @@ oatpp::Object<SystemCountersDto> SystemCounters::convertToDto() {
     dto->rtpEventsProcessed = rtpEventsProcessed.load();
     dto->rtpSendFailures = rtpSendFailures.load();
     dto->rtpEncoderResets = rtpEncoderResets.load();
+    dto->rtpAudioLoadersActive = rtpAudioLoadersActive.load();
+    dto->rtpAudioLoadsQueued = rtpAudioLoadsQueued.load();
+    dto->rtpAudioLoadsAccepted = rtpAudioLoadsAccepted.load();
+    dto->rtpAudioLoadsCompleted = rtpAudioLoadsCompleted.load();
+    dto->rtpAudioLoadsRejected = rtpAudioLoadsRejected.load();
+    dto->rtpAudioLoadsCancelled = rtpAudioLoadsCancelled.load();
+    dto->rtpAudioLoadsFailed = rtpAudioLoadsFailed.load();
     dto->websocketConnectionsProcessed = websocketConnectionsProcessed.load();
     dto->websocketMessagesReceived = websocketMessagesReceived.load();
     dto->websocketMessagesSent = websocketMessagesSent.load();

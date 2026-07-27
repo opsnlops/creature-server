@@ -66,6 +66,41 @@ class SystemCountersDto : public oatpp::DTO {
     DTO_FIELD_INFO(rtpSendFailures) { info->description = "Number of RTP output sends that have failed"; }
     DTO_FIELD(UInt64, rtpSendFailures);
 
+    DTO_FIELD_INFO(rtpAudioLoadersActive) {
+        info->description = "Number of cooperative RTP audio loader jobs currently running";
+    }
+    DTO_FIELD(UInt64, rtpAudioLoadersActive);
+
+    DTO_FIELD_INFO(rtpAudioLoadsQueued) {
+        info->description = "Number of cooperative RTP audio loader jobs waiting for a worker";
+    }
+    DTO_FIELD(UInt64, rtpAudioLoadsQueued);
+
+    DTO_FIELD_INFO(rtpAudioLoadsAccepted) {
+        info->description = "Number of cooperative RTP audio loader jobs admitted";
+    }
+    DTO_FIELD(UInt64, rtpAudioLoadsAccepted);
+
+    DTO_FIELD_INFO(rtpAudioLoadsCompleted) {
+        info->description = "Number of cooperative RTP audio loader jobs completed";
+    }
+    DTO_FIELD(UInt64, rtpAudioLoadsCompleted);
+
+    DTO_FIELD_INFO(rtpAudioLoadsRejected) {
+        info->description = "Number of cooperative RTP audio loader submissions rejected at admission";
+    }
+    DTO_FIELD(UInt64, rtpAudioLoadsRejected);
+
+    DTO_FIELD_INFO(rtpAudioLoadsCancelled) {
+        info->description = "Number of queued cooperative RTP audio loader jobs abandoned before running";
+    }
+    DTO_FIELD(UInt64, rtpAudioLoadsCancelled);
+
+    DTO_FIELD_INFO(rtpAudioLoadsFailed) {
+        info->description = "Number of cooperative RTP audio loader jobs that threw an exception";
+    }
+    DTO_FIELD(UInt64, rtpAudioLoadsFailed);
+
     DTO_FIELD_INFO(soundFilesServed) { info->description = "Number of sound files that have been served"; }
     DTO_FIELD(UInt64, soundFilesServed);
 
@@ -126,6 +161,8 @@ class SystemCounters {
     void incrementWebsocketMessagesSent();
     void incrementWebsocketPingsSent();
     void incrementWebsocketPongsReceived();
+    void setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
+                                uint64_t rejected, uint64_t cancelled, uint64_t failed);
 
     uint64_t getTotalFrames();
     uint64_t getEventsProcessed();
@@ -141,6 +178,13 @@ class SystemCounters {
     uint64_t getRtpEventsProcessed();
     uint64_t getRtpSendFailures();
     uint64_t getRtpEncoderResets();
+    uint64_t getRtpAudioLoadersActive();
+    uint64_t getRtpAudioLoadsQueued();
+    uint64_t getRtpAudioLoadsAccepted();
+    uint64_t getRtpAudioLoadsCompleted();
+    uint64_t getRtpAudioLoadsRejected();
+    uint64_t getRtpAudioLoadsCancelled();
+    uint64_t getRtpAudioLoadsFailed();
     uint64_t getSoundFilesServed();
     uint64_t getWebsocketConnectionsProcessed();
     uint64_t getWebsocketMessagesReceived();
@@ -167,6 +211,13 @@ class SystemCounters {
     std::atomic<uint64_t> rtpEventsProcessed;
     std::atomic<uint64_t> rtpSendFailures;
     std::atomic<uint64_t> rtpEncoderResets;
+    std::atomic<uint64_t> rtpAudioLoadersActive;
+    std::atomic<uint64_t> rtpAudioLoadsQueued;
+    std::atomic<uint64_t> rtpAudioLoadsAccepted;
+    std::atomic<uint64_t> rtpAudioLoadsCompleted;
+    std::atomic<uint64_t> rtpAudioLoadsRejected;
+    std::atomic<uint64_t> rtpAudioLoadsCancelled;
+    std::atomic<uint64_t> rtpAudioLoadsFailed;
     std::atomic<uint64_t> websocketConnectionsProcessed;
     std::atomic<uint64_t> websocketMessagesReceived;
     std::atomic<uint64_t> websocketMessagesSent;

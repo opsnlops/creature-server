@@ -54,6 +54,16 @@ bool Configuration::getRtpFragmentPackets() const { return this->rtpFragmentPack
 
 void Configuration::setRtpFragmentPackets(const bool _fragmentPackets) { this->rtpFragmentPackets = _fragmentPackets; }
 
+uint32_t Configuration::getRtpAudioLoadWorkers() const { return this->rtpAudioLoadWorkers; }
+
+void Configuration::setRtpAudioLoadWorkers(const uint32_t _workers) { this->rtpAudioLoadWorkers = _workers; }
+
+uint32_t Configuration::getRtpAudioLoadQueueCapacity() const { return this->rtpAudioLoadQueueCapacity; }
+
+void Configuration::setRtpAudioLoadQueueCapacity(const uint32_t _capacity) {
+    this->rtpAudioLoadQueueCapacity = _capacity;
+}
+
 // Network Configuration
 
 uint16_t Configuration::getNetworkDevice() const { return this->networkDevice; }

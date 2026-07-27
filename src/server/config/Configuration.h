@@ -61,6 +61,12 @@ class Configuration {
     /** @return True if RTP packets should be fragmented for standard MTU networks */
     bool getRtpFragmentPackets() const;
 
+    /** @return Number of fixed workers used for cooperative RTP audio loads */
+    uint32_t getRtpAudioLoadWorkers() const;
+
+    /** @return Maximum number of cooperative RTP audio loads waiting for a worker */
+    uint32_t getRtpAudioLoadQueueCapacity() const;
+
     /** @return Network interface device ID for E1.31 communication */
     uint16_t getNetworkDevice() const;
 
@@ -139,6 +145,12 @@ class Configuration {
     /** @param _fragmentPackets Whether to enable RTP packet fragmentation */
     void setRtpFragmentPackets(bool _fragmentPackets);
 
+    /** @param _workers Fixed cooperative RTP audio loader worker count */
+    void setRtpAudioLoadWorkers(uint32_t _workers);
+
+    /** @param _capacity Maximum queued cooperative RTP audio loads */
+    void setRtpAudioLoadQueueCapacity(uint32_t _capacity);
+
     /** @param _delayMs Animation delay in milliseconds for audio sync compensation */
     void setAnimationDelayMs(uint32_t _delayMs);
 
@@ -190,6 +202,12 @@ class Configuration {
 
     /** Whether to fragment RTP packets for standard MTU networks (WiFi, etc.) */
     bool rtpFragmentPackets = DEFAULT_RTP_FRAGMENT_PACKETS;
+
+    /** Fixed workers for cooperative RTP WAV reads/cache loads */
+    uint32_t rtpAudioLoadWorkers = DEFAULT_RTP_AUDIO_LOAD_WORKERS;
+
+    /** Waiting cooperative RTP loads retained in memory before explicit rejection */
+    uint32_t rtpAudioLoadQueueCapacity = DEFAULT_RTP_AUDIO_LOAD_QUEUE_CAPACITY;
 
     // Network configuration
 
