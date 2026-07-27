@@ -33,6 +33,7 @@
 #include "Version.h"
 #include "model/PlaylistStatus.h"
 #include "server/animation/SessionManager.h"
+#include "server/audio/LocalAudioPlaybackCoordinator.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
@@ -136,6 +137,9 @@ std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 
 // Fixed worker pool for cooperative animation WAV/cache loads in RTP mode
 std::shared_ptr<rtp::AudioLoadExecutor> rtpAudioLoadExecutor;
+
+// Sole owner of the process-global SDL device in local/travel modes
+std::shared_ptr<audio::LocalAudioPlaybackCoordinator> localAudioPlaybackCoordinator;
 
 // Audio cache for pre-encoded Opus files
 std::shared_ptr<util::AudioCache> audioCache;
@@ -305,6 +309,16 @@ int main(const int argc, char **argv) {
             error("unable to open audio device; halting");
             std::exit(EXIT_FAILURE);
         }
+        std::weak_ptr<creatures::SystemCounters> weakMetrics = creatures::metrics;
+        creatures::localAudioPlaybackCoordinator = std::make_shared<creatures::audio::LocalAudioPlaybackCoordinator>(
+            [weakMetrics](const creatures::audio::LocalAudioPlaybackCoordinator::Stats &stats) {
+                if (auto counters = weakMetrics.lock()) {
+                    counters->setLocalAudioPlaybackMetrics(stats.active, stats.queued, stats.accepted, stats.completed,
+                                                           stats.replaced, stats.rejected, stats.stopped, stats.failed,
+                                                           stats.timedOut);
+                }
+            });
+        info("Local audio coordinator started with one device worker and one last-request-wins pending slot");
     } else {
         debug("RTP mode does not require a local SDL audio device");
     }
@@ -486,6 +500,13 @@ int main(const int argc, char **argv) {
         info("Stopping RTP animation audio loader...");
         creatures::rtpAudioLoadExecutor->shutdown();
         debug("RTP animation audio loader stopped");
+    }
+
+    // Join the sole SDL owner before the event loop and SDL begin teardown.
+    if (creatures::localAudioPlaybackCoordinator) {
+        info("Stopping local audio coordinator...");
+        creatures::localAudioPlaybackCoordinator->shutdown();
+        debug("Local audio coordinator stopped");
     }
 
     // Halt the event loop

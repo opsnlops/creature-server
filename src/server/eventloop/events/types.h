@@ -70,19 +70,25 @@ class MusicEvent : public EventBase<MusicEvent> {
     using EventBase::EventBase;
 
     MusicEvent(framenum_t frameNumber_, std::string filePath_,
-               std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation_ = nullptr);
+               std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation_ = nullptr,
+               std::string triggerTraceId_ = {}, std::string triggerSpanId_ = {});
 
     virtual ~MusicEvent() = default;
 
     Result<framenum_t> executeImpl();
+    static Result<uint64_t> submitLocalAudio(const std::string &filePath, bool travelMode,
+                                             std::shared_ptr<class OperationSpan> parentSpan = nullptr,
+                                             const std::string &triggerTraceId = {},
+                                             const std::string &triggerSpanId = {});
     static int initSDL();
     static int locateAudioDevice();
     static void listAudioDevices();
 
   private:
     std::string filePath;
-    std::mutex sdl_mutex;
     std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation_;
+    std::string triggerTraceId_;
+    std::string triggerSpanId_;
 
     /**
      * Play audio locally through SDL (traditional mode)

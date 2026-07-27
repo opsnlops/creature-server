@@ -191,6 +191,37 @@ void ObservabilityManager::initializeMetricInstruments() {
         meter_->CreateUInt64Counter("creature_server_rtp_audio_loads_failed",
                                     "Total cooperative RTP audio loader jobs that threw an exception", "jobs");
 
+    localAudioPlaybacksActiveGauge_ = meter_->CreateDoubleUpDownCounter(
+        "creature_server_local_audio_playbacks_active", "Local audio device jobs currently running", "jobs");
+
+    localAudioPlaybacksQueuedGauge_ =
+        meter_->CreateDoubleUpDownCounter("creature_server_local_audio_playbacks_queued",
+                                          "Local audio jobs waiting in the last-request-wins slot", "jobs");
+
+    localAudioPlaybacksAcceptedCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_local_audio_playbacks_accepted", "Total local audio playback jobs admitted", "jobs");
+
+    localAudioPlaybacksCompletedCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_local_audio_playbacks_completed", "Total local audio playback jobs completed", "jobs");
+
+    localAudioPlaybacksReplacedCounter_ =
+        meter_->CreateUInt64Counter("creature_server_local_audio_playbacks_replaced",
+                                    "Total local audio playback jobs replaced by newer work", "jobs");
+
+    localAudioPlaybacksRejectedCounter_ =
+        meter_->CreateUInt64Counter("creature_server_local_audio_playbacks_rejected",
+                                    "Total local audio playback jobs rejected during admission", "jobs");
+
+    localAudioPlaybacksStoppedCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_local_audio_playbacks_stopped",
+        "Total local audio playback jobs explicitly stopped or stopped at shutdown", "jobs");
+
+    localAudioPlaybacksFailedCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_local_audio_playbacks_failed", "Total local audio playback jobs that failed", "jobs");
+
+    localAudioPlaybacksTimedOutCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_local_audio_playbacks_timed_out", "Total local audio playback jobs that timed out", "jobs");
+
     soundFilesServedCounter_ = meter_->CreateUInt64Counter("creature_server_sound_files_served",
                                                            "Total number of sound files served", "files");
 
@@ -268,6 +299,15 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
     static std::atomic<uint64_t> lastRtpAudioLoadsRejected{0};
     static std::atomic<uint64_t> lastRtpAudioLoadsCancelled{0};
     static std::atomic<uint64_t> lastRtpAudioLoadsFailed{0};
+    static std::atomic<double> lastLocalAudioPlaybacksActive{0};
+    static std::atomic<double> lastLocalAudioPlaybacksQueued{0};
+    static std::atomic<uint64_t> lastLocalAudioPlaybacksAccepted{0};
+    static std::atomic<uint64_t> lastLocalAudioPlaybacksCompleted{0};
+    static std::atomic<uint64_t> lastLocalAudioPlaybacksReplaced{0};
+    static std::atomic<uint64_t> lastLocalAudioPlaybacksRejected{0};
+    static std::atomic<uint64_t> lastLocalAudioPlaybacksStopped{0};
+    static std::atomic<uint64_t> lastLocalAudioPlaybacksFailed{0};
+    static std::atomic<uint64_t> lastLocalAudioPlaybacksTimedOut{0};
     static std::atomic<uint64_t> lastSoundFilesServed{0};
     static std::atomic<uint64_t> lastWebsocketConnectionsProcessed{0};
     static std::atomic<uint64_t> lastWebsocketMessagesReceived{0};
@@ -387,6 +427,65 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
         currentRtpAudioLoadsFailed - lastRtpAudioLoadsFailed.exchange(currentRtpAudioLoadsFailed);
     if (deltaRtpAudioLoadsFailed > 0)
         rtpAudioLoadsFailedCounter_->Add(deltaRtpAudioLoadsFailed);
+
+    double currentLocalAudioPlaybacksActive = static_cast<double>(metrics->getLocalAudioPlaybacksActive());
+    double deltaLocalAudioPlaybacksActive =
+        currentLocalAudioPlaybacksActive - lastLocalAudioPlaybacksActive.exchange(currentLocalAudioPlaybacksActive);
+    if (deltaLocalAudioPlaybacksActive != 0)
+        localAudioPlaybacksActiveGauge_->Add(deltaLocalAudioPlaybacksActive);
+
+    double currentLocalAudioPlaybacksQueued = static_cast<double>(metrics->getLocalAudioPlaybacksQueued());
+    double deltaLocalAudioPlaybacksQueued =
+        currentLocalAudioPlaybacksQueued - lastLocalAudioPlaybacksQueued.exchange(currentLocalAudioPlaybacksQueued);
+    if (deltaLocalAudioPlaybacksQueued != 0)
+        localAudioPlaybacksQueuedGauge_->Add(deltaLocalAudioPlaybacksQueued);
+
+    uint64_t currentLocalAudioPlaybacksAccepted = metrics->getLocalAudioPlaybacksAccepted();
+    uint64_t deltaLocalAudioPlaybacksAccepted =
+        currentLocalAudioPlaybacksAccepted -
+        lastLocalAudioPlaybacksAccepted.exchange(currentLocalAudioPlaybacksAccepted);
+    if (deltaLocalAudioPlaybacksAccepted > 0)
+        localAudioPlaybacksAcceptedCounter_->Add(deltaLocalAudioPlaybacksAccepted);
+
+    uint64_t currentLocalAudioPlaybacksCompleted = metrics->getLocalAudioPlaybacksCompleted();
+    uint64_t deltaLocalAudioPlaybacksCompleted =
+        currentLocalAudioPlaybacksCompleted -
+        lastLocalAudioPlaybacksCompleted.exchange(currentLocalAudioPlaybacksCompleted);
+    if (deltaLocalAudioPlaybacksCompleted > 0)
+        localAudioPlaybacksCompletedCounter_->Add(deltaLocalAudioPlaybacksCompleted);
+
+    uint64_t currentLocalAudioPlaybacksReplaced = metrics->getLocalAudioPlaybacksReplaced();
+    uint64_t deltaLocalAudioPlaybacksReplaced =
+        currentLocalAudioPlaybacksReplaced -
+        lastLocalAudioPlaybacksReplaced.exchange(currentLocalAudioPlaybacksReplaced);
+    if (deltaLocalAudioPlaybacksReplaced > 0)
+        localAudioPlaybacksReplacedCounter_->Add(deltaLocalAudioPlaybacksReplaced);
+
+    uint64_t currentLocalAudioPlaybacksRejected = metrics->getLocalAudioPlaybacksRejected();
+    uint64_t deltaLocalAudioPlaybacksRejected =
+        currentLocalAudioPlaybacksRejected -
+        lastLocalAudioPlaybacksRejected.exchange(currentLocalAudioPlaybacksRejected);
+    if (deltaLocalAudioPlaybacksRejected > 0)
+        localAudioPlaybacksRejectedCounter_->Add(deltaLocalAudioPlaybacksRejected);
+
+    uint64_t currentLocalAudioPlaybacksStopped = metrics->getLocalAudioPlaybacksStopped();
+    uint64_t deltaLocalAudioPlaybacksStopped =
+        currentLocalAudioPlaybacksStopped - lastLocalAudioPlaybacksStopped.exchange(currentLocalAudioPlaybacksStopped);
+    if (deltaLocalAudioPlaybacksStopped > 0)
+        localAudioPlaybacksStoppedCounter_->Add(deltaLocalAudioPlaybacksStopped);
+
+    uint64_t currentLocalAudioPlaybacksFailed = metrics->getLocalAudioPlaybacksFailed();
+    uint64_t deltaLocalAudioPlaybacksFailed =
+        currentLocalAudioPlaybacksFailed - lastLocalAudioPlaybacksFailed.exchange(currentLocalAudioPlaybacksFailed);
+    if (deltaLocalAudioPlaybacksFailed > 0)
+        localAudioPlaybacksFailedCounter_->Add(deltaLocalAudioPlaybacksFailed);
+
+    uint64_t currentLocalAudioPlaybacksTimedOut = metrics->getLocalAudioPlaybacksTimedOut();
+    uint64_t deltaLocalAudioPlaybacksTimedOut =
+        currentLocalAudioPlaybacksTimedOut -
+        lastLocalAudioPlaybacksTimedOut.exchange(currentLocalAudioPlaybacksTimedOut);
+    if (deltaLocalAudioPlaybacksTimedOut > 0)
+        localAudioPlaybacksTimedOutCounter_->Add(deltaLocalAudioPlaybacksTimedOut);
 
     uint64_t currentSoundFilesServed = metrics->getSoundFilesServed();
     uint64_t deltaSoundFilesServed = currentSoundFilesServed - lastSoundFilesServed.exchange(currentSoundFilesServed);

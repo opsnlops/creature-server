@@ -1,23 +1,22 @@
 #pragma once
 
-#include <atomic>
 #include <memory>
-#include <thread>
+#include <string>
 
 #include "AudioTransport.h"
+#include "LocalAudioPlaybackCoordinator.h"
 
 namespace creatures {
 
 /**
  * LocalSdlAudioTransport - SDL local playback audio transport implementation
  *
- * Plays audio through SDL_mixer on the local audio device. Runs in a background
- * thread that is spawned on start() and runs independently until the audio completes
- * or stop() is called.
+ * Plays audio through SDL_mixer on the local audio device. Blocking SDL work is
+ * submitted to the process-wide LocalAudioPlaybackCoordinator.
  *
- * This is a "fire and forget" transport - once started, it doesn't need per-frame
- * dispatch from the PlaybackRunnerEvent. The runner only needs to call stop() on
- * cancellation.
+ * This is a "fire and forget" transport - once started, it doesn't need
+ * per-frame dispatch from the PlaybackRunnerEvent. The runner only needs to
+ * cancel its lightweight coordinator handle.
  */
 class LocalSdlAudioTransport : public AudioTransport {
   public:
@@ -37,19 +36,11 @@ class LocalSdlAudioTransport : public AudioTransport {
 
     [[nodiscard]] bool isFinished() const override;
 
-  private:
-    std::shared_ptr<PlaybackSession> session_;
-    std::thread audioThread_;
-    std::atomic<bool> shouldStop_{false};
-    std::atomic<bool> isPlaying_{false};
-    std::atomic<bool> hasFinished_{false};
+    static audio::LocalAudioPlaybackCoordinator::PlaybackResult
+    playFileBlocking(const std::string &filePath, const std::atomic<bool> &stopRequested);
 
-    /**
-     * Audio playback thread function
-     *
-     * Runs SDL_mixer playback in background, extracted from MusicEvent::playLocalAudio()
-     */
-    void audioThreadFunc(std::string filePath);
+  private:
+    std::shared_ptr<audio::LocalAudioPlaybackCoordinator::Handle> playbackHandle_;
 };
 
 } // namespace creatures

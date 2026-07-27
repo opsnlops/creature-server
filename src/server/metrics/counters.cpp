@@ -25,6 +25,15 @@ SystemCounters::SystemCounters() {
     rtpAudioLoadsRejected = 0;
     rtpAudioLoadsCancelled = 0;
     rtpAudioLoadsFailed = 0;
+    localAudioPlaybacksActive = 0;
+    localAudioPlaybacksQueued = 0;
+    localAudioPlaybacksAccepted = 0;
+    localAudioPlaybacksCompleted = 0;
+    localAudioPlaybacksReplaced = 0;
+    localAudioPlaybacksRejected = 0;
+    localAudioPlaybacksStopped = 0;
+    localAudioPlaybacksFailed = 0;
+    localAudioPlaybacksTimedOut = 0;
     soundFilesServed = 0;
     websocketConnectionsProcessed = 0;
     websocketMessagesReceived = 0;
@@ -84,6 +93,20 @@ void SystemCounters::setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, ui
     rtpAudioLoadsFailed.store(failed);
 }
 
+void SystemCounters::setLocalAudioPlaybackMetrics(uint64_t active, uint64_t queued, uint64_t accepted,
+                                                  uint64_t completed, uint64_t replaced, uint64_t rejected,
+                                                  uint64_t stopped, uint64_t failed, uint64_t timedOut) {
+    localAudioPlaybacksActive.store(active);
+    localAudioPlaybacksQueued.store(queued);
+    localAudioPlaybacksAccepted.store(accepted);
+    localAudioPlaybacksCompleted.store(completed);
+    localAudioPlaybacksReplaced.store(replaced);
+    localAudioPlaybacksRejected.store(rejected);
+    localAudioPlaybacksStopped.store(stopped);
+    localAudioPlaybacksFailed.store(failed);
+    localAudioPlaybacksTimedOut.store(timedOut);
+}
+
 uint64_t SystemCounters::getTotalFrames() { return totalFrames.load(); }
 
 uint64_t SystemCounters::getEventsProcessed() { return eventsProcessed.load(); }
@@ -125,6 +148,24 @@ uint64_t SystemCounters::getRtpAudioLoadsRejected() { return rtpAudioLoadsReject
 uint64_t SystemCounters::getRtpAudioLoadsCancelled() { return rtpAudioLoadsCancelled.load(); }
 
 uint64_t SystemCounters::getRtpAudioLoadsFailed() { return rtpAudioLoadsFailed.load(); }
+
+uint64_t SystemCounters::getLocalAudioPlaybacksActive() { return localAudioPlaybacksActive.load(); }
+
+uint64_t SystemCounters::getLocalAudioPlaybacksQueued() { return localAudioPlaybacksQueued.load(); }
+
+uint64_t SystemCounters::getLocalAudioPlaybacksAccepted() { return localAudioPlaybacksAccepted.load(); }
+
+uint64_t SystemCounters::getLocalAudioPlaybacksCompleted() { return localAudioPlaybacksCompleted.load(); }
+
+uint64_t SystemCounters::getLocalAudioPlaybacksReplaced() { return localAudioPlaybacksReplaced.load(); }
+
+uint64_t SystemCounters::getLocalAudioPlaybacksRejected() { return localAudioPlaybacksRejected.load(); }
+
+uint64_t SystemCounters::getLocalAudioPlaybacksStopped() { return localAudioPlaybacksStopped.load(); }
+
+uint64_t SystemCounters::getLocalAudioPlaybacksFailed() { return localAudioPlaybacksFailed.load(); }
+
+uint64_t SystemCounters::getLocalAudioPlaybacksTimedOut() { return localAudioPlaybacksTimedOut.load(); }
 
 uint64_t SystemCounters::getSoundFilesServed() { return soundFilesServed.load(); }
 
@@ -168,6 +209,15 @@ oatpp::Object<SystemCountersDto> SystemCounters::convertToDto() {
     dto->rtpAudioLoadsRejected = rtpAudioLoadsRejected.load();
     dto->rtpAudioLoadsCancelled = rtpAudioLoadsCancelled.load();
     dto->rtpAudioLoadsFailed = rtpAudioLoadsFailed.load();
+    dto->localAudioPlaybacksActive = localAudioPlaybacksActive.load();
+    dto->localAudioPlaybacksQueued = localAudioPlaybacksQueued.load();
+    dto->localAudioPlaybacksAccepted = localAudioPlaybacksAccepted.load();
+    dto->localAudioPlaybacksCompleted = localAudioPlaybacksCompleted.load();
+    dto->localAudioPlaybacksReplaced = localAudioPlaybacksReplaced.load();
+    dto->localAudioPlaybacksRejected = localAudioPlaybacksRejected.load();
+    dto->localAudioPlaybacksStopped = localAudioPlaybacksStopped.load();
+    dto->localAudioPlaybacksFailed = localAudioPlaybacksFailed.load();
+    dto->localAudioPlaybacksTimedOut = localAudioPlaybacksTimedOut.load();
     dto->websocketConnectionsProcessed = websocketConnectionsProcessed.load();
     dto->websocketMessagesReceived = websocketMessagesReceived.load();
     dto->websocketMessagesSent = websocketMessagesSent.load();

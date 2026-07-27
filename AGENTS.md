@@ -323,6 +323,27 @@ The server includes an intelligent caching mechanism for pre-encoded Opus files 
 - **Cache Hit Rate**: High for repeated audio file usage in shows/playlists
 - **Memory Usage**: Minimal - cache files stored on disk, loaded on demand
 
+### Local/Travel Audio Ownership
+
+SDL and SDL_mixer device lifecycle is serialized through
+`audio::LocalAudioPlaybackCoordinator` in local and travel modes. The
+coordinator owns exactly one worker and one last-request-wins pending slot.
+Both animation transports and `/sound/play` submit through it; no other path
+may open or close the configured local audio device directly.
+
+- New playback replaces the active owner cooperatively and replaces any
+  pending request immediately.
+- Local/travel `/sound/play` requests submit from the service thread, before
+  the event loop. Do not route them through `MusicEvent`: that would reintroduce
+  an unbounded queue ahead of the coordinator. RTP keeps its separately bounded
+  reservation-backed `MusicEvent` path.
+- Event-loop start/stop calls only submit or update an atomic handle; they
+  never join a playback thread.
+- The coordinator must be shut down and joined before `SDL_Quit()`.
+- Main and travel modes intentionally share the one-owner limit because the
+  server configures one process-global output device. Any future multi-device
+  support must make its higher owner limit explicit and configurable.
+
 ## Development Workflow
 
 ### Testing

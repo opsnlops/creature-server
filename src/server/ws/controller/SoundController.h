@@ -223,9 +223,9 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                                    return bailHttp(span, Status::CODE_400, "file_name is required");
                                }
                                if (span && requestBody && requestBody->file_name) {
-                                   span->setAttribute("sound.file", std::string(requestBody->file_name));
+                                   span->setAttribute("audio.file.name", std::string(requestBody->file_name));
                                }
-                               const auto result = m_soundService.playSound(std::string(requestBody->file_name));
+                               const auto result = m_soundService.playSound(std::string(requestBody->file_name), span);
                                if (span)
                                    span->setHttpStatus(200);
                                return createDtoResponse(Status::CODE_200, result);
