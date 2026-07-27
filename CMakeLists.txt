@@ -717,6 +717,7 @@ add_executable(creature-server-test
         tests/server/audio/OggOpusWriter_test.cpp
         tests/server/audio/Mp3Writer_test.cpp
         tests/server/audio/SoundPathResolver_test.cpp
+        tests/server/audio/LocalAudioPlaybackCoordinator_test.cpp
         tests/server/rtp/AudioLoadExecutor_test.cpp
         tests/server/rtp/BoundedCommandQueue_test.cpp
         tests/server/rtp/OpusPriming_test.cpp
@@ -728,6 +729,7 @@ add_executable(creature-server-test
         src/server/audio/OggOpusWriter.cpp
         src/server/audio/Mp3Writer.cpp
         src/server/audio/SoundPathResolver.cpp
+        src/server/audio/LocalAudioPlaybackCoordinator.cpp
         src/server/rtp/AudioLoadExecutor.cpp
         src/server/rtp/opus/OpusEncoderWrapper.cpp
         src/server/voice/DialogPreviewAssembly.cpp
@@ -763,6 +765,7 @@ add_executable(creature-server-test
         src/util/uuidUtils.cpp
         src/util/Result.cpp
         src/util/environment.cpp
+        src/util/threadName.cpp
         tests/server/FakeObservabilityManager.cpp
         tests/server/FakeDatabase.cpp
         tests/server/FakeSpans.cpp

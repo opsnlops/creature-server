@@ -172,6 +172,15 @@ class ObservabilityManager {
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpAudioLoadsRejectedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpAudioLoadsCancelledCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpAudioLoadsFailedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> localAudioPlaybacksActiveGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> localAudioPlaybacksQueuedGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> localAudioPlaybacksAcceptedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> localAudioPlaybacksCompletedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> localAudioPlaybacksReplacedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> localAudioPlaybacksRejectedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> localAudioPlaybacksStoppedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> localAudioPlaybacksFailedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> localAudioPlaybacksTimedOutCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> soundFilesServedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketConnectionsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketMessagesReceivedCounter_;

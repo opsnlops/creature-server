@@ -10,9 +10,10 @@
 #include <vector>
 
 #include <SDL.h>
-#include <SDL_mixer.h>
 #include <spdlog/spdlog.h>
 
+#include "server/audio/LocalAudioPlaybackCoordinator.h"
+#include "server/audio/LocalSdlAudioTransport.h"
 #include "server/audio/TravelMonoAudioTransport.h"
 #include "server/config.h"
 #include "server/config/Configuration.h"
@@ -36,6 +37,7 @@ extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
+extern std::shared_ptr<audio::LocalAudioPlaybackCoordinator> localAudioPlaybackCoordinator;
 
 // Use constants from config.h - 17 channels for 16 creatures + BGM
 
@@ -232,150 +234,81 @@ Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> par
         if (!parentSpan && observability) {
             parentSpan = observability->createOperationSpan("music_event");
         }
-        span = observability->createChildOperationSpan("music_event.play_local", parentSpan);
-        span->setAttribute("file_path", filePath);
+        // Playback may outlive the MusicEvent operation. Use an independent
+        // lifecycle span and retain the trigger IDs for cross-system queries.
+        span = observability->createOperationSpan("audio.local.playback");
+        span->setAttribute("audio.local.file_name", std::filesystem::path(filePath).filename().string());
+        span->setAttribute("audio.local.source", "standalone");
+        if (parentSpan) {
+            span->setAttribute("trigger.trace_id", parentSpan->getTraceIdHex());
+            span->setAttribute("trigger.span_id", parentSpan->getSpanIdHex());
+        }
     }
 
     debug("Starting local audio playback for: {}", filePath);
 
-    // Travel mode plays a mono downmix via plain SDL; SDL_mixer can't make sense
-    // of the 17-channel animation tracks.
-    if (config->getTravelMode()) {
-        std::thread([filePath = this->filePath, span] {
-            TravelMonoAudioTransport::playFileBlocking(filePath, nullptr);
-            if (span) {
-                span->setSuccess();
-            }
-        }).detach();
-
-        // Return immediately - the music plays in the background
-        return Result{this->frameNumber};
+    if (!localAudioPlaybackCoordinator) {
+        const std::string errorMessage = "MusicEvent: local audio coordinator unavailable";
+        if (span) {
+            span->setAttribute("error.code", "local_audio.coordinator_unavailable");
+            span->setAttribute("audio.local.failure_stage", "admission");
+            span->setError(errorMessage);
+            span->end();
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
-    const bool hasGpio = gpioPins != nullptr;
-    const bool hasMetrics = metrics != nullptr;
-
-    // Spawn the audio thread with proper RAII and error handling
-    std::thread([filePath = this->filePath, span, hasGpio, hasMetrics] {
-        // RAII wrapper for SDL Mixer resources
-        struct SDLMixerGuard {
-            Mix_Music *music = nullptr;
-            bool audioDeviceOpen = false;
-
-            ~SDLMixerGuard() { cleanup(); }
-
-            void cleanup() {
-                if (music) {
-                    Mix_FreeMusic(music);
-                    music = nullptr;
-                }
-                if (audioDeviceOpen) {
-                    Mix_CloseAudio();
-                    audioDeviceOpen = false;
-                }
-            }
-        };
-
-        SDLMixerGuard guard;
-
-        auto setPlayingSound = [hasGpio](bool isPlaying) {
-            if (hasGpio && gpioPins) {
-                gpioPins->playingSound(isPlaying);
-            }
-        };
-
-        try {
-            setPlayingSound(true);
-
-            // Open audio device with error checking
-            if (Mix_OpenAudioDevice(localAudioDeviceAudioSpec.freq, localAudioDeviceAudioSpec.format,
-                                    localAudioDeviceAudioSpec.channels, SOUND_BUFFER_SIZE, audioDevice, 1) < 0) {
-                const std::string errorMsg = fmt::format("Failed to open audio device: {}", Mix_GetError());
-                error(errorMsg);
-                if (span)
-                    span->setError(errorMsg);
-                return;
-            }
-            guard.audioDeviceOpen = true;
-
-            // Load music file with validation
-            guard.music = Mix_LoadMUS(filePath.c_str());
-            if (!guard.music) {
-                const std::string errorMsg =
-                    fmt::format("Failed to load music file '{}': {}", filePath, Mix_GetError());
-                error(errorMsg);
-                if (span)
-                    span->setError(errorMsg);
-                return;
-            }
-
-            // Get duration safely
-            double duration = Mix_MusicDuration(guard.music);
-            if (duration > 0.0) {
-                if (span)
-                    span->setAttribute("duration_seconds", duration);
-                debug("Music duration: {:.2f} seconds", duration);
-            } else {
-                warn("Could not determine music duration for: {}", filePath);
-            }
-
-            // Validate duration is reasonable (prevent infinite loops)
-            constexpr double MAX_DURATION_SECONDS = 3600.0; // 1 hour max
-            if (duration > MAX_DURATION_SECONDS) {
-                const std::string errorMsg =
-                    fmt::format("Music file too long: {:.2f}s (max: {:.2f}s)", duration, MAX_DURATION_SECONDS);
-                error(errorMsg);
-                if (span)
-                    span->setError(errorMsg);
-                return;
-            }
-
-            // Start playback
-            if (Mix_PlayMusic(guard.music, 1) == -1) {
-                const std::string errorMsg = fmt::format("Failed to start music playback: {}", Mix_GetError());
-                error(errorMsg);
-                if (span)
-                    span->setError(errorMsg);
-                return;
-            }
-
-            // Wait for playback to finish with timeout protection
-            constexpr int TIMEOUT_MS = static_cast<int>(MAX_DURATION_SECONDS * 1000) + 10000; // Duration + 10s buffer
-            int elapsed = 0;
-
-            while (Mix_PlayingMusic() && elapsed < TIMEOUT_MS) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                elapsed += 100;
-            }
-
-            if (elapsed >= TIMEOUT_MS) {
-                warn("Audio playback timed out after {} seconds, stopping", TIMEOUT_MS / 1000);
-                Mix_HaltMusic();
-            }
-
-            if (hasMetrics && metrics) {
-                metrics->incrementSoundsPlayed();
-            }
-            if (span) {
-                span->setSuccess();
-            }
-            debug("Local audio playback completed successfully");
-
-        } catch (const std::exception &e) {
-            const std::string errorMsg = fmt::format("Exception in audio playback thread: {}", e.what());
-            error(errorMsg);
-            if (span)
-                span->setError(errorMsg);
-        } catch (...) {
-            const std::string errorMsg = "Unknown exception in audio playback thread";
-            error(errorMsg);
-            if (span)
-                span->setError(errorMsg);
+    const bool travelMode = config->getTravelMode();
+    const auto fileName = std::filesystem::path(filePath).filename().string();
+    auto submission = localAudioPlaybackCoordinator->submit(
+        {.id = fmt::format("standalone:{}:{}", fileName, frameNumber),
+         .source = "standalone",
+         .fileName = fileName,
+         .play =
+             [localPath = filePath, travelMode](const std::atomic<bool> &stopRequested) {
+                 if (travelMode) {
+                     return TravelMonoAudioTransport::playFileBlocking(localPath, stopRequested);
+                 }
+                 return LocalSdlAudioTransport::playFileBlocking(localPath, stopRequested);
+             },
+         .onFinished =
+             [span](const audio::LocalAudioPlaybackCoordinator::Completion &completion) {
+                 if (!span) {
+                     return;
+                 }
+                 span->setAttribute("audio.local.generation", static_cast<int64_t>(completion.generation));
+                 span->setAttribute("audio.local.source", completion.source);
+                 span->setAttribute("audio.local.file_name", completion.fileName);
+                 span->setAttribute("audio.local.outcome",
+                                    audio::LocalAudioPlaybackCoordinator::outcomeName(completion.result.outcome));
+                 if (completion.result.outcome == audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::Failed ||
+                     completion.result.outcome == audio::LocalAudioPlaybackCoordinator::PlaybackOutcome::TimedOut) {
+                     span->setAttribute("error.code", completion.result.errorCode);
+                     span->setAttribute("error.stage", "playback");
+                     span->setAttribute("error.message", completion.result.errorMessage);
+                     span->setAttribute("audio.local.failure_stage", "playback");
+                     span->setError(completion.result.errorMessage);
+                 } else {
+                     span->setSuccess();
+                 }
+                 span->end();
+             }});
+    if (submission.result != audio::LocalAudioPlaybackCoordinator::SubmitResult::Accepted) {
+        const std::string errorMessage = "MusicEvent: local audio coordinator is shutting down";
+        if (span) {
+            span->setAttribute("error.code", "local_audio.admission_rejected");
+            span->setAttribute("audio.local.failure_stage", "admission");
+            span->setError(errorMessage);
+            span->end();
         }
+        return Result<framenum_t>{ServerError(ServerError::Conflict, errorMessage)};
+    }
 
-        // Cleanup happens automatically via RAII guard
-        setPlayingSound(false);
-    }).detach();
+    if (span) {
+        span->setAttribute("audio.local.generation", static_cast<int64_t>(submission.handle->generation()));
+        span->setAttribute("audio.local.mode", travelMode ? "travel" : "main");
+        span->setAttribute("audio.local.queue_capacity", static_cast<int64_t>(1));
+    }
 
     // Return immediately - the music plays in the background
     return Result{this->frameNumber};

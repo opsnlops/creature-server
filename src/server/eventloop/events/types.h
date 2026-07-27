@@ -81,7 +81,6 @@ class MusicEvent : public EventBase<MusicEvent> {
 
   private:
     std::string filePath;
-    std::mutex sdl_mutex;
     std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation_;
 
     /**

@@ -1,11 +1,10 @@
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <string>
-#include <thread>
 
 #include "AudioTransport.h"
+#include "LocalAudioPlaybackCoordinator.h"
 
 namespace creatures {
 
@@ -16,8 +15,7 @@ namespace creatures {
  * speakers plugged into the server, so the 17-channel animation tracks get
  * downmixed to mono and played on the local sound device via plain SDL
  * (SDL_QueueAudio). Like LocalSdlAudioTransport this is a fire-and-forget
- * transport: a background thread plays the audio and the runner only calls
- * stop() on cancellation.
+ * transport backed by the single process-wide local-audio worker.
  */
 class TravelMonoAudioTransport : public AudioTransport {
   public:
@@ -45,18 +43,13 @@ class TravelMonoAudioTransport : public AudioTransport {
      * gets the same downmix treatment in travel mode.
      *
      * @param filePath path to the WAV file
-     * @param shouldStop optional early-stop flag (may be nullptr)
+     * @param stopRequested cooperative early-stop flag
      */
-    static void playFileBlocking(const std::string &filePath, const std::atomic<bool> *shouldStop);
+    static audio::LocalAudioPlaybackCoordinator::PlaybackResult
+    playFileBlocking(const std::string &filePath, const std::atomic<bool> &stopRequested);
 
   private:
-    std::shared_ptr<PlaybackSession> session_;
-    std::thread audioThread_;
-    std::atomic<bool> shouldStop_{false};
-    std::atomic<bool> isPlaying_{false};
-    std::atomic<bool> hasFinished_{false};
-
-    void audioThreadFunc(std::string filePath);
+    std::shared_ptr<audio::LocalAudioPlaybackCoordinator::Handle> playbackHandle_;
 };
 
 } // namespace creatures

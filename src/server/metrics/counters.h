@@ -101,6 +101,47 @@ class SystemCountersDto : public oatpp::DTO {
     }
     DTO_FIELD(UInt64, rtpAudioLoadsFailed);
 
+    DTO_FIELD_INFO(localAudioPlaybacksActive) {
+        info->description = "Number of local audio device jobs currently running";
+    }
+    DTO_FIELD(UInt64, localAudioPlaybacksActive);
+
+    DTO_FIELD_INFO(localAudioPlaybacksQueued) {
+        info->description = "Number of local audio device jobs waiting in the last-request-wins slot";
+    }
+    DTO_FIELD(UInt64, localAudioPlaybacksQueued);
+
+    DTO_FIELD_INFO(localAudioPlaybacksAccepted) { info->description = "Number of local audio playback jobs admitted"; }
+    DTO_FIELD(UInt64, localAudioPlaybacksAccepted);
+
+    DTO_FIELD_INFO(localAudioPlaybacksCompleted) {
+        info->description = "Number of local audio playback jobs completed";
+    }
+    DTO_FIELD(UInt64, localAudioPlaybacksCompleted);
+
+    DTO_FIELD_INFO(localAudioPlaybacksReplaced) {
+        info->description = "Number of local audio playback jobs replaced by a newer request";
+    }
+    DTO_FIELD(UInt64, localAudioPlaybacksReplaced);
+
+    DTO_FIELD_INFO(localAudioPlaybacksRejected) {
+        info->description = "Number of local audio playback jobs rejected during admission";
+    }
+    DTO_FIELD(UInt64, localAudioPlaybacksRejected);
+
+    DTO_FIELD_INFO(localAudioPlaybacksStopped) {
+        info->description = "Number of local audio playback jobs explicitly stopped or stopped at shutdown";
+    }
+    DTO_FIELD(UInt64, localAudioPlaybacksStopped);
+
+    DTO_FIELD_INFO(localAudioPlaybacksFailed) { info->description = "Number of local audio playback jobs that failed"; }
+    DTO_FIELD(UInt64, localAudioPlaybacksFailed);
+
+    DTO_FIELD_INFO(localAudioPlaybacksTimedOut) {
+        info->description = "Number of local audio playback jobs that timed out";
+    }
+    DTO_FIELD(UInt64, localAudioPlaybacksTimedOut);
+
     DTO_FIELD_INFO(soundFilesServed) { info->description = "Number of sound files that have been served"; }
     DTO_FIELD(UInt64, soundFilesServed);
 
@@ -163,6 +204,9 @@ class SystemCounters {
     void incrementWebsocketPongsReceived();
     void setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
                                 uint64_t rejected, uint64_t cancelled, uint64_t failed);
+    void setLocalAudioPlaybackMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
+                                      uint64_t replaced, uint64_t rejected, uint64_t stopped, uint64_t failed,
+                                      uint64_t timedOut);
 
     uint64_t getTotalFrames();
     uint64_t getEventsProcessed();
@@ -185,6 +229,15 @@ class SystemCounters {
     uint64_t getRtpAudioLoadsRejected();
     uint64_t getRtpAudioLoadsCancelled();
     uint64_t getRtpAudioLoadsFailed();
+    uint64_t getLocalAudioPlaybacksActive();
+    uint64_t getLocalAudioPlaybacksQueued();
+    uint64_t getLocalAudioPlaybacksAccepted();
+    uint64_t getLocalAudioPlaybacksCompleted();
+    uint64_t getLocalAudioPlaybacksReplaced();
+    uint64_t getLocalAudioPlaybacksRejected();
+    uint64_t getLocalAudioPlaybacksStopped();
+    uint64_t getLocalAudioPlaybacksFailed();
+    uint64_t getLocalAudioPlaybacksTimedOut();
     uint64_t getSoundFilesServed();
     uint64_t getWebsocketConnectionsProcessed();
     uint64_t getWebsocketMessagesReceived();
@@ -218,6 +271,15 @@ class SystemCounters {
     std::atomic<uint64_t> rtpAudioLoadsRejected;
     std::atomic<uint64_t> rtpAudioLoadsCancelled;
     std::atomic<uint64_t> rtpAudioLoadsFailed;
+    std::atomic<uint64_t> localAudioPlaybacksActive;
+    std::atomic<uint64_t> localAudioPlaybacksQueued;
+    std::atomic<uint64_t> localAudioPlaybacksAccepted;
+    std::atomic<uint64_t> localAudioPlaybacksCompleted;
+    std::atomic<uint64_t> localAudioPlaybacksReplaced;
+    std::atomic<uint64_t> localAudioPlaybacksRejected;
+    std::atomic<uint64_t> localAudioPlaybacksStopped;
+    std::atomic<uint64_t> localAudioPlaybacksFailed;
+    std::atomic<uint64_t> localAudioPlaybacksTimedOut;
     std::atomic<uint64_t> websocketConnectionsProcessed;
     std::atomic<uint64_t> websocketMessagesReceived;
     std::atomic<uint64_t> websocketMessagesSent;
