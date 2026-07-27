@@ -61,13 +61,12 @@ TEST(AudioLoadExecutorTest, RejectsImmediatelyWhenBoundedQueueIsFull) {
     release.store(true);
 }
 
-TEST(AudioLoadExecutorTest, SkipsCancelledQueuedJobBeforeRunningIt) {
-    AudioLoadExecutor executor(1, 2);
+TEST(AudioLoadExecutorTest, ReservationRejectsBeforePreparationAndGuaranteesCommit) {
+    AudioLoadExecutor executor(1, 1);
     std::latch workerStarted(1);
     std::promise<void> releasePromise;
     auto release = releasePromise.get_future().share();
-    std::atomic<bool> cancelled{false};
-    std::atomic<bool> cancelledJobRan{false};
+    std::atomic<bool> reservedJobRan{false};
 
     ASSERT_EQ(executor.submit({.id = "active",
                                .run =
@@ -78,9 +77,79 @@ TEST(AudioLoadExecutorTest, SkipsCancelledQueuedJobBeforeRunningIt) {
               AudioLoadExecutor::SubmitResult::Accepted);
     workerStarted.wait();
 
-    ASSERT_EQ(executor.submit({.id = "cancel-me",
-                               .isCancelled = [&]() { return cancelled.load(); },
-                               .run = [&]() { cancelledJobRan.store(true); }}),
+    auto reservation = executor.tryReserve();
+    ASSERT_EQ(reservation.result, AudioLoadExecutor::SubmitResult::Accepted);
+    EXPECT_TRUE(reservation.reservation.valid());
+    EXPECT_EQ(executor.getStats().reserved, 1U);
+
+    auto overloaded = executor.tryReserve();
+    EXPECT_EQ(overloaded.result, AudioLoadExecutor::SubmitResult::QueueFull);
+    EXPECT_FALSE(overloaded.reservation.valid());
+
+    EXPECT_EQ(executor.submit(std::move(reservation.reservation),
+                              {.id = "reserved", .run = [&]() { reservedJobRan.store(true); }}),
+              AudioLoadExecutor::SubmitResult::Accepted);
+    EXPECT_EQ(executor.getStats().reserved, 0U);
+
+    releasePromise.set_value();
+    ASSERT_TRUE(waitUntil([&]() { return reservedJobRan.load(); }));
+}
+
+TEST(AudioLoadExecutorTest, DroppedReservationReleasesItsBoundedSlot) {
+    AudioLoadExecutor executor(1, 1);
+
+    {
+        auto reservation = executor.tryReserve();
+        ASSERT_EQ(reservation.result, AudioLoadExecutor::SubmitResult::Accepted);
+        EXPECT_EQ(executor.getStats().reserved, 1U);
+    }
+
+    EXPECT_EQ(executor.getStats().reserved, 0U);
+    auto replacement = executor.tryReserve();
+    EXPECT_EQ(replacement.result, AudioLoadExecutor::SubmitResult::Accepted);
+}
+
+TEST(AudioLoadExecutorTest, ShutdownWaitsForOutstandingReservationToCommit) {
+    AudioLoadExecutor executor(1, 1);
+    auto reservation = executor.tryReserve();
+    ASSERT_EQ(reservation.result, AudioLoadExecutor::SubmitResult::Accepted);
+
+    auto shutdown = std::async(std::launch::async, [&]() { executor.shutdown(); });
+    ASSERT_TRUE(waitUntil([&]() { return executor.isStopping(); }));
+    EXPECT_EQ(shutdown.wait_for(10ms), std::future_status::timeout);
+    EXPECT_EQ(executor.tryReserve().result, AudioLoadExecutor::SubmitResult::ShuttingDown);
+
+    EXPECT_EQ(executor.submit(std::move(reservation.reservation), {.id = "reserved-during-shutdown", .run = [] {}}),
+              AudioLoadExecutor::SubmitResult::Accepted);
+    ASSERT_EQ(shutdown.wait_for(2s), std::future_status::ready);
+    shutdown.get();
+}
+
+TEST(AudioLoadExecutorTest, SkipsCancelledQueuedJobBeforeRunningIt) {
+    AudioLoadExecutor executor(1, 2);
+    std::latch workerStarted(1);
+    std::promise<void> releasePromise;
+    auto release = releasePromise.get_future().share();
+    std::atomic<bool> cancelled{false};
+    std::atomic<bool> cancelledJobRan{false};
+    std::promise<AudioLoadExecutor::CancellationReason> cancellationPromise;
+    auto cancellationReason = cancellationPromise.get_future();
+
+    ASSERT_EQ(executor.submit({.id = "active",
+                               .run =
+                                   [&]() {
+                                       workerStarted.count_down();
+                                       release.wait();
+                                   }}),
+              AudioLoadExecutor::SubmitResult::Accepted);
+    workerStarted.wait();
+
+    ASSERT_EQ(executor.submit(
+                  {.id = "cancel-me",
+                   .isCancelled = [&]() { return cancelled.load(); },
+                   .run = [&]() { cancelledJobRan.store(true); },
+                   .onCancelled =
+                       [&](AudioLoadExecutor::CancellationReason reason) { cancellationPromise.set_value(reason); }}),
               AudioLoadExecutor::SubmitResult::Accepted);
     cancelled.store(true);
     releasePromise.set_value();
@@ -88,6 +157,8 @@ TEST(AudioLoadExecutorTest, SkipsCancelledQueuedJobBeforeRunningIt) {
     ASSERT_TRUE(waitUntil([&]() { return executor.getStats().cancelled == 1; }));
     EXPECT_FALSE(cancelledJobRan.load());
     EXPECT_EQ(executor.getStats().completed, 1U);
+    ASSERT_EQ(cancellationReason.wait_for(2s), std::future_status::ready);
+    EXPECT_EQ(cancellationReason.get(), AudioLoadExecutor::CancellationReason::SessionCancelled);
 }
 
 TEST(AudioLoadExecutorTest, NewSubmissionPrunesCancelledWorkBeforeCapacityCheck) {
@@ -153,6 +224,7 @@ TEST(AudioLoadExecutorTest, ShutdownDiscardsPendingJobsAndRejectsNewOnes) {
     std::promise<void> releasePromise;
     auto release = releasePromise.get_future().share();
     std::atomic<bool> pendingRan{false};
+    std::atomic<bool> shutdownCancellationObserved{false};
 
     ASSERT_EQ(executor->submit({.id = "active",
                                 .run =
@@ -162,7 +234,13 @@ TEST(AudioLoadExecutorTest, ShutdownDiscardsPendingJobsAndRejectsNewOnes) {
                                     }}),
               AudioLoadExecutor::SubmitResult::Accepted);
     workerStarted.wait();
-    ASSERT_EQ(executor->submit({.id = "pending", .run = [&]() { pendingRan.store(true); }}),
+    ASSERT_EQ(executor->submit({.id = "pending",
+                                .run = [&]() { pendingRan.store(true); },
+                                .onCancelled =
+                                    [&](AudioLoadExecutor::CancellationReason reason) {
+                                        shutdownCancellationObserved.store(
+                                            reason == AudioLoadExecutor::CancellationReason::Shutdown);
+                                    }}),
               AudioLoadExecutor::SubmitResult::Accepted);
 
     auto shutdown = std::async(std::launch::async, [&]() { executor->shutdown(); });
@@ -172,6 +250,7 @@ TEST(AudioLoadExecutorTest, ShutdownDiscardsPendingJobsAndRejectsNewOnes) {
     shutdown.get();
 
     EXPECT_FALSE(pendingRan.load());
+    EXPECT_TRUE(shutdownCancellationObserved.load());
     EXPECT_EQ(executor->getStats().cancelled, 1U);
     EXPECT_EQ(executor->submit({.id = "late", .run = [] {}}), AudioLoadExecutor::SubmitResult::ShuttingDown);
     EXPECT_EQ(executor->getStats().rejected, 1U);

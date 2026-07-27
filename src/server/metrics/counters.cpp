@@ -20,6 +20,8 @@ SystemCounters::SystemCounters() {
     rtpEncoderResets = 0;
     rtpAudioLoadersActive = 0;
     rtpAudioLoadsQueued = 0;
+    rtpAudioLoadsAccepted = 0;
+    rtpAudioLoadsCompleted = 0;
     rtpAudioLoadsRejected = 0;
     rtpAudioLoadsCancelled = 0;
     rtpAudioLoadsFailed = 0;
@@ -71,10 +73,12 @@ void SystemCounters::incrementWebsocketPongsReceived() { websocketPongsReceived+
 
 void SystemCounters::incrementRtpEncoderResets() { rtpEncoderResets++; }
 
-void SystemCounters::setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t rejected, uint64_t cancelled,
-                                            uint64_t failed) {
+void SystemCounters::setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
+                                            uint64_t rejected, uint64_t cancelled, uint64_t failed) {
     rtpAudioLoadersActive.store(active);
     rtpAudioLoadsQueued.store(queued);
+    rtpAudioLoadsAccepted.store(accepted);
+    rtpAudioLoadsCompleted.store(completed);
     rtpAudioLoadsRejected.store(rejected);
     rtpAudioLoadsCancelled.store(cancelled);
     rtpAudioLoadsFailed.store(failed);
@@ -111,6 +115,10 @@ uint64_t SystemCounters::getRtpEncoderResets() { return rtpEncoderResets.load();
 uint64_t SystemCounters::getRtpAudioLoadersActive() { return rtpAudioLoadersActive.load(); }
 
 uint64_t SystemCounters::getRtpAudioLoadsQueued() { return rtpAudioLoadsQueued.load(); }
+
+uint64_t SystemCounters::getRtpAudioLoadsAccepted() { return rtpAudioLoadsAccepted.load(); }
+
+uint64_t SystemCounters::getRtpAudioLoadsCompleted() { return rtpAudioLoadsCompleted.load(); }
 
 uint64_t SystemCounters::getRtpAudioLoadsRejected() { return rtpAudioLoadsRejected.load(); }
 
@@ -155,6 +163,8 @@ oatpp::Object<SystemCountersDto> SystemCounters::convertToDto() {
     dto->rtpEncoderResets = rtpEncoderResets.load();
     dto->rtpAudioLoadersActive = rtpAudioLoadersActive.load();
     dto->rtpAudioLoadsQueued = rtpAudioLoadsQueued.load();
+    dto->rtpAudioLoadsAccepted = rtpAudioLoadsAccepted.load();
+    dto->rtpAudioLoadsCompleted = rtpAudioLoadsCompleted.load();
     dto->rtpAudioLoadsRejected = rtpAudioLoadsRejected.load();
     dto->rtpAudioLoadsCancelled = rtpAudioLoadsCancelled.load();
     dto->rtpAudioLoadsFailed = rtpAudioLoadsFailed.load();

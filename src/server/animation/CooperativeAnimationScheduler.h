@@ -3,6 +3,7 @@
 #include "PlaybackSession.h"
 #include "model/Animation.h"
 #include "server/namespace-stuffs.h"
+#include "server/rtp/AudioLoadExecutor.h"
 #include "util/Result.h"
 
 namespace creatures {
@@ -103,7 +104,9 @@ class CooperativeAnimationScheduler {
      * @return Success when admitted, or an explicit overload/shutdown error
      */
     static Result<void> scheduleWithAsyncAudioLoad(std::shared_ptr<PlaybackSession> session, universe_t universe,
-                                                   std::shared_ptr<class OperationSpan> scheduleSpan);
+                                                   std::shared_ptr<class OperationSpan> scheduleSpan,
+                                                   const std::shared_ptr<rtp::AudioLoadExecutor> &executor,
+                                                   rtp::AudioLoadExecutor::Reservation reservation);
 };
 
 } // namespace creatures

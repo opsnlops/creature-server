@@ -76,6 +76,16 @@ class SystemCountersDto : public oatpp::DTO {
     }
     DTO_FIELD(UInt64, rtpAudioLoadsQueued);
 
+    DTO_FIELD_INFO(rtpAudioLoadsAccepted) {
+        info->description = "Number of cooperative RTP audio loader jobs admitted";
+    }
+    DTO_FIELD(UInt64, rtpAudioLoadsAccepted);
+
+    DTO_FIELD_INFO(rtpAudioLoadsCompleted) {
+        info->description = "Number of cooperative RTP audio loader jobs completed";
+    }
+    DTO_FIELD(UInt64, rtpAudioLoadsCompleted);
+
     DTO_FIELD_INFO(rtpAudioLoadsRejected) {
         info->description = "Number of cooperative RTP audio loader submissions rejected at admission";
     }
@@ -151,8 +161,8 @@ class SystemCounters {
     void incrementWebsocketMessagesSent();
     void incrementWebsocketPingsSent();
     void incrementWebsocketPongsReceived();
-    void setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t rejected, uint64_t cancelled,
-                                uint64_t failed);
+    void setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
+                                uint64_t rejected, uint64_t cancelled, uint64_t failed);
 
     uint64_t getTotalFrames();
     uint64_t getEventsProcessed();
@@ -170,6 +180,8 @@ class SystemCounters {
     uint64_t getRtpEncoderResets();
     uint64_t getRtpAudioLoadersActive();
     uint64_t getRtpAudioLoadsQueued();
+    uint64_t getRtpAudioLoadsAccepted();
+    uint64_t getRtpAudioLoadsCompleted();
     uint64_t getRtpAudioLoadsRejected();
     uint64_t getRtpAudioLoadsCancelled();
     uint64_t getRtpAudioLoadsFailed();
@@ -201,6 +213,8 @@ class SystemCounters {
     std::atomic<uint64_t> rtpEncoderResets;
     std::atomic<uint64_t> rtpAudioLoadersActive;
     std::atomic<uint64_t> rtpAudioLoadsQueued;
+    std::atomic<uint64_t> rtpAudioLoadsAccepted;
+    std::atomic<uint64_t> rtpAudioLoadsCompleted;
     std::atomic<uint64_t> rtpAudioLoadsRejected;
     std::atomic<uint64_t> rtpAudioLoadsCancelled;
     std::atomic<uint64_t> rtpAudioLoadsFailed;

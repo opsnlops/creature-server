@@ -25,11 +25,17 @@ namespace creatures::rtp {
  */
 class AudioLoadExecutor {
   public:
+    enum class CancellationReason {
+        SessionCancelled,
+        Shutdown,
+    };
+
     struct Stats {
         std::size_t workerCount{0};
         std::size_t queueCapacity{0};
         std::size_t active{0};
         std::size_t queued{0};
+        std::size_t reserved{0};
         uint64_t accepted{0};
         uint64_t completed{0};
         uint64_t rejected{0};
@@ -44,12 +50,45 @@ class AudioLoadExecutor {
         std::function<bool()> isCancelled;
         std::function<void()> run;
         std::function<void(std::exception_ptr)> onFailure;
+        std::function<void(CancellationReason)> onCancelled;
     };
 
     enum class SubmitResult {
         Accepted,
         QueueFull,
         ShuttingDown,
+    };
+
+    /**
+     * Move-only admission token. Reserving before expensive PlaybackSession
+     * construction guarantees that a later commit cannot fail for saturation
+     * after the caller has displaced an existing session.
+     *
+     * A reservation must not outlive its executor.
+     */
+    class Reservation {
+      public:
+        Reservation() = default;
+        ~Reservation();
+
+        Reservation(const Reservation &) = delete;
+        Reservation &operator=(const Reservation &) = delete;
+        Reservation(Reservation &&other) noexcept;
+        Reservation &operator=(Reservation &&other) noexcept;
+
+        [[nodiscard]] bool valid() const { return owner_ != nullptr; }
+
+      private:
+        friend class AudioLoadExecutor;
+        explicit Reservation(AudioLoadExecutor *owner) : owner_(owner) {}
+        void consume() { owner_ = nullptr; }
+
+        AudioLoadExecutor *owner_{nullptr};
+    };
+
+    struct ReserveResult {
+        SubmitResult result{SubmitResult::ShuttingDown};
+        Reservation reservation;
     };
 
     using StatsObserver = std::function<void(const Stats &)>;
@@ -68,15 +107,39 @@ class AudioLoadExecutor {
     [[nodiscard]] SubmitResult submit(Job job);
 
     /**
+     * Reserve one bounded in-flight slot before doing expensive preparation or
+     * mutating playback ownership. The token releases itself if not committed.
+     */
+    [[nodiscard]] ReserveResult tryReserve();
+
+    /**
+     * Commit a previously reserved job. Saturation cannot reject a valid token;
+     * shutdown waits for outstanding reservations to commit or release.
+     */
+    [[nodiscard]] SubmitResult submit(Reservation reservation, Job job);
+
+    /**
      * Stop accepting work, discard queued jobs, and join active workers.
      * Safe to call more than once.
      */
     void shutdown();
 
+    [[nodiscard]] bool isStopping() const { return stopRequested_.load(std::memory_order_acquire); }
+
     [[nodiscard]] Stats getStats() const;
 
   private:
-    std::size_t discardCancelledJobsLocked();
+    struct CancellationNotification {
+        std::string id;
+        CancellationReason reason{CancellationReason::SessionCancelled};
+        std::function<void(CancellationReason)> callback;
+    };
+
+    std::vector<Job> takeCancelledJobsLocked();
+    void enqueueCancellationNotificationsLocked(std::vector<Job> &jobs, CancellationReason reason);
+    void notifyCancelledJob(const Job &job, CancellationReason reason);
+    void processCancellationNotification(CancellationNotification notification);
+    void releaseReservation();
     void workerLoop(std::size_t workerIndex);
     void publishStats() const;
     void recordFailure(const Job &job, std::exception_ptr failure);
@@ -88,13 +151,20 @@ class AudioLoadExecutor {
 
     mutable std::mutex queueMutex_;
     std::condition_variable queueCondition_;
+    std::condition_variable reservationsCondition_;
     std::deque<Job> queue_;
+    std::deque<CancellationNotification> cancellationNotifications_;
     std::latch workersStart_{1};
     std::vector<std::thread> workers_;
+    bool accepting_{true};
     bool shuttingDown_{false};
+    std::size_t reservations_{0};
+    std::size_t inFlight_{0};
 
     std::atomic<std::size_t> active_{0};
     std::atomic<std::size_t> queued_{0};
+    std::atomic<std::size_t> reserved_{0};
+    std::atomic<bool> stopRequested_{false};
     std::atomic<uint64_t> accepted_{0};
     std::atomic<uint64_t> completed_{0};
     std::atomic<uint64_t> rejected_{0};

@@ -380,8 +380,8 @@ int main(const int argc, char **argv) {
             creatures::config->getRtpAudioLoadWorkers(), creatures::config->getRtpAudioLoadQueueCapacity(),
             [weakMetrics](const creatures::rtp::AudioLoadExecutor::Stats &stats) {
                 if (auto counters = weakMetrics.lock()) {
-                    counters->setRtpAudioLoadMetrics(stats.active, stats.queued, stats.rejected, stats.cancelled,
-                                                     stats.failed);
+                    counters->setRtpAudioLoadMetrics(stats.active, stats.queued, stats.accepted, stats.completed,
+                                                     stats.rejected, stats.cancelled, stats.failed);
                 }
             });
         info("RTP animation audio loader started with {} workers and {} queued-job capacity",
@@ -485,7 +485,6 @@ int main(const int argc, char **argv) {
     if (creatures::rtpAudioLoadExecutor) {
         info("Stopping RTP animation audio loader...");
         creatures::rtpAudioLoadExecutor->shutdown();
-        creatures::rtpAudioLoadExecutor.reset();
         debug("RTP animation audio loader stopped");
     }
 
