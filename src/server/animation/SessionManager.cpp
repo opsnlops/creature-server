@@ -696,6 +696,50 @@ void SessionManager::clearSession(universe_t universe, const std::string &sessio
     }
 }
 
+SessionManager::LoadingSessionAbortResult SessionManager::abortLoadingSession(universe_t universe,
+                                                                              const std::string &sessionId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    LoadingSessionAbortResult result;
+
+    auto stateIt = universeStates_.find(universe);
+    if (stateIt == universeStates_.end()) {
+        return result;
+    }
+
+    auto &state = stateIt->second;
+    auto sessionIt = std::find_if(state.activeSessions.begin(), state.activeSessions.end(),
+                                  [&](const std::shared_ptr<PlaybackSession> &candidate) {
+                                      return candidate && candidate->getSessionId() == sessionId;
+                                  });
+    if (sessionIt == state.activeSessions.end()) {
+        return result;
+    }
+
+    const bool wasPlaylist = (*sessionIt)->getActivityReason() == creatures::runtime::ActivityReason::Playlist;
+    state.activeSessions.erase(sessionIt);
+    result.sessionRemoved = true;
+
+    result.queuedAnimationsDropped = state.animationQueue.size();
+    if (!state.animationQueue.empty()) {
+        std::queue<Animation> empty;
+        state.animationQueue.swap(empty);
+    }
+
+    if (wasPlaylist) {
+        state.playlistState = PlaylistState::None;
+        state.shouldResumePlaylist = false;
+        state.playlistId.clear();
+        state.playlistStatus.reset();
+        result.playlistCleared = true;
+    }
+
+    if (state.activeSessions.empty() && state.playlistState == PlaylistState::None) {
+        universeStates_.erase(stateIt);
+    }
+
+    return result;
+}
+
 void SessionManager::setPlaylistStatus(universe_t universe, const PlaylistStatus &status) {
     std::lock_guard<std::mutex> lock(mutex_);
 

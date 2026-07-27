@@ -168,6 +168,23 @@ void ObservabilityManager::initializeMetricInstruments() {
     rtpSendFailuresCounter_ = meter_->CreateUInt64Counter("creature_server_rtp_send_failures",
                                                           "Total number of failed RTP output sends", "failures");
 
+    rtpAudioLoadersActiveGauge_ = meter_->CreateDoubleUpDownCounter(
+        "creature_server_rtp_audio_loaders_active", "Cooperative RTP audio loader jobs currently running", "jobs");
+
+    rtpAudioLoadsQueuedGauge_ = meter_->CreateDoubleUpDownCounter(
+        "creature_server_rtp_audio_loads_queued", "Cooperative RTP audio loader jobs waiting for a worker", "jobs");
+
+    rtpAudioLoadsRejectedCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_rtp_audio_loads_rejected", "Total cooperative RTP audio loads rejected at admission", "jobs");
+
+    rtpAudioLoadsCancelledCounter_ =
+        meter_->CreateUInt64Counter("creature_server_rtp_audio_loads_cancelled",
+                                    "Total queued cooperative RTP audio loads abandoned before running", "jobs");
+
+    rtpAudioLoadsFailedCounter_ =
+        meter_->CreateUInt64Counter("creature_server_rtp_audio_loads_failed",
+                                    "Total cooperative RTP audio loader jobs that threw an exception", "jobs");
+
     soundFilesServedCounter_ = meter_->CreateUInt64Counter("creature_server_sound_files_served",
                                                            "Total number of sound files served", "files");
 
@@ -238,6 +255,11 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
     static std::atomic<uint64_t> lastRestRequestsProcessed{0};
     static std::atomic<uint64_t> lastRtpEventsProcessed{0};
     static std::atomic<uint64_t> lastRtpSendFailures{0};
+    static std::atomic<double> lastRtpAudioLoadersActive{0};
+    static std::atomic<double> lastRtpAudioLoadsQueued{0};
+    static std::atomic<uint64_t> lastRtpAudioLoadsRejected{0};
+    static std::atomic<uint64_t> lastRtpAudioLoadsCancelled{0};
+    static std::atomic<uint64_t> lastRtpAudioLoadsFailed{0};
     static std::atomic<uint64_t> lastSoundFilesServed{0};
     static std::atomic<uint64_t> lastWebsocketConnectionsProcessed{0};
     static std::atomic<uint64_t> lastWebsocketMessagesReceived{0};
@@ -315,6 +337,36 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
     uint64_t deltaRtpSendFailures = currentRtpSendFailures - lastRtpSendFailures.exchange(currentRtpSendFailures);
     if (deltaRtpSendFailures > 0)
         rtpSendFailuresCounter_->Add(deltaRtpSendFailures);
+
+    double currentRtpAudioLoadersActive = static_cast<double>(metrics->getRtpAudioLoadersActive());
+    double deltaRtpAudioLoadersActive =
+        currentRtpAudioLoadersActive - lastRtpAudioLoadersActive.exchange(currentRtpAudioLoadersActive);
+    if (deltaRtpAudioLoadersActive != 0)
+        rtpAudioLoadersActiveGauge_->Add(deltaRtpAudioLoadersActive);
+
+    double currentRtpAudioLoadsQueued = static_cast<double>(metrics->getRtpAudioLoadsQueued());
+    double deltaRtpAudioLoadsQueued =
+        currentRtpAudioLoadsQueued - lastRtpAudioLoadsQueued.exchange(currentRtpAudioLoadsQueued);
+    if (deltaRtpAudioLoadsQueued != 0)
+        rtpAudioLoadsQueuedGauge_->Add(deltaRtpAudioLoadsQueued);
+
+    uint64_t currentRtpAudioLoadsRejected = metrics->getRtpAudioLoadsRejected();
+    uint64_t deltaRtpAudioLoadsRejected =
+        currentRtpAudioLoadsRejected - lastRtpAudioLoadsRejected.exchange(currentRtpAudioLoadsRejected);
+    if (deltaRtpAudioLoadsRejected > 0)
+        rtpAudioLoadsRejectedCounter_->Add(deltaRtpAudioLoadsRejected);
+
+    uint64_t currentRtpAudioLoadsCancelled = metrics->getRtpAudioLoadsCancelled();
+    uint64_t deltaRtpAudioLoadsCancelled =
+        currentRtpAudioLoadsCancelled - lastRtpAudioLoadsCancelled.exchange(currentRtpAudioLoadsCancelled);
+    if (deltaRtpAudioLoadsCancelled > 0)
+        rtpAudioLoadsCancelledCounter_->Add(deltaRtpAudioLoadsCancelled);
+
+    uint64_t currentRtpAudioLoadsFailed = metrics->getRtpAudioLoadsFailed();
+    uint64_t deltaRtpAudioLoadsFailed =
+        currentRtpAudioLoadsFailed - lastRtpAudioLoadsFailed.exchange(currentRtpAudioLoadsFailed);
+    if (deltaRtpAudioLoadsFailed > 0)
+        rtpAudioLoadsFailedCounter_->Add(deltaRtpAudioLoadsFailed);
 
     uint64_t currentSoundFilesServed = metrics->getSoundFilesServed();
     uint64_t deltaSoundFilesServed = currentSoundFilesServed - lastSoundFilesServed.exchange(currentSoundFilesServed);

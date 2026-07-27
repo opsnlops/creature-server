@@ -5,9 +5,10 @@
 
 #include "CooperativeAnimationScheduler.h"
 
+#include <chrono>
 #include <filesystem>
 #include <memory>
-#include <thread>
+#include <stdexcept>
 
 #include "spdlog/spdlog.h"
 
@@ -24,6 +25,7 @@
 #include "server/eventloop/events/types.h"
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
+#include "server/rtp/AudioLoadExecutor.h"
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/rtp/MultiOpusRtpServer.h"
 #include "server/runtime/Activity.h"
@@ -39,8 +41,109 @@ extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<GPIO> gpioPins;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<rtp::AudioLoadExecutor> rtpAudioLoadExecutor;
 extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 extern std::shared_ptr<SessionManager> sessionManager;
+
+namespace {
+
+void unwindAdoptedAudioSession(const std::shared_ptr<PlaybackSession> &session, universe_t universe,
+                               const std::shared_ptr<SessionManager> &capturedSessionManager,
+                               const std::shared_ptr<OperationSpan> &span, bool restartIdle) {
+    if (!session) {
+        return;
+    }
+
+    // No runner will necessarily fire for a loader failure or admission
+    // rejection, so perform the complete post-adoption teardown here.
+    const bool wasAlreadyCancelled = session->isCancelled();
+    session->cancel();
+    session->markCancellationNotified();
+    try {
+        if (auto transport = session->getAudioTransport()) {
+            // Releases an RTP output lease if failure happened after acquireOutput.
+            transport->stop();
+        }
+    } catch (const std::exception &ex) {
+        error("Audio loader teardown could not stop transport for session {}: {}", session->getSessionId(), ex.what());
+    } catch (...) {
+        error("Audio loader teardown could not stop transport for session {}", session->getSessionId());
+    }
+
+    SessionManager::LoadingSessionAbortResult abortResult;
+    try {
+        if (capturedSessionManager) {
+            abortResult = capturedSessionManager->abortLoadingSession(universe, session->getSessionId());
+        } else {
+            abortResult.sessionRemoved = !wasAlreadyCancelled;
+        }
+    } catch (const std::exception &ex) {
+        error("Audio loader teardown could not clear session {}: {}", session->getSessionId(), ex.what());
+    } catch (...) {
+        error("Audio loader teardown could not clear session {}", session->getSessionId());
+    }
+
+    // A newer adoption owns the universe and already scheduled this session's
+    // teardown. abortLoadingSession checks ownership and clears related state in
+    // one critical section, so a late failure cannot erase the replacement's
+    // animation queue or playlist.
+    if (!abortResult.sessionRemoved) {
+        debug("Audio loader failure arrived after session {} was replaced; skipping shared-universe cleanup",
+              session->getSessionId());
+        return;
+    }
+    if (abortResult.queuedAnimationsDropped > 0) {
+        warn("Audio loader teardown dropped {} queued animation(s) on universe {}", abortResult.queuedAnimationsDropped,
+             universe);
+    }
+
+    try {
+        creatures::ws::CreatureService::setActivityState(
+            session->getCreatureIds(), session->getAnimation().id, creatures::runtime::ActivityReason::Cancelled,
+            creatures::runtime::ActivityState::Stopped, session->getSessionId(), span,
+            session->getActivityGeneration());
+    } catch (const std::exception &ex) {
+        error("Audio loader teardown could not broadcast stopped state for session {}: {}", session->getSessionId(),
+              ex.what());
+    } catch (...) {
+        error("Audio loader teardown could not broadcast stopped state for session {}", session->getSessionId());
+    }
+
+    try {
+        if (abortResult.playlistCleared) {
+            warn("Halting playlist on universe {} after audio loader failure", universe);
+            PlaylistStatus emptyStatus{};
+            emptyStatus.universe = universe;
+            emptyStatus.playing = false;
+            broadcastPlaylistStatusToAllClients(emptyStatus);
+        }
+    } catch (const std::exception &ex) {
+        error("Audio loader teardown could not halt playlist on universe {}: {}", universe, ex.what());
+    } catch (...) {
+        error("Audio loader teardown could not halt playlist on universe {}", universe);
+    }
+
+    // Admission rejection happens precisely because the queue is full. Do not
+    // recursively schedule idle audio into the same full queue; the caller gets
+    // a synchronous conflict and can retry once capacity becomes available.
+    if (restartIdle) {
+        for (const auto &creatureId : session->getCreatureIds()) {
+            try {
+                creatures::ws::CreatureService::startIdleIfNeeded(creatureId, span);
+            } catch (const std::exception &ex) {
+                error("Audio loader teardown could not restart idle for creature {}: {}", creatureId, ex.what());
+            } catch (...) {
+                error("Audio loader teardown could not restart idle for creature {}", creatureId);
+            }
+        }
+    }
+}
+
+struct AsyncAudioLoadContext {
+    std::shared_ptr<OperationSpan> span;
+};
+
+} // namespace
 
 // resolveSoundFilePath was a private helper that joined relative paths under
 // the permanent sound root. Replaced by creatures::storage::resolveSoundPath
@@ -186,7 +289,36 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
             // PlaybackRunnerEvent is only scheduled once the buffer is ready. Safe
             // because adoption already registered the session: every "is anything
             // active?" check sees it for the whole load window.
-            scheduleWithAsyncAudioLoad(session, universe, scheduleSpan);
+            try {
+                auto submitResult = scheduleWithAsyncAudioLoad(session, universe, scheduleSpan);
+                if (!submitResult.isSuccess()) {
+                    auto submitError = submitResult.getError().value();
+                    if (scheduleSpan) {
+                        scheduleSpan->setError(submitError.getMessage());
+                        scheduleSpan->setAttribute("error.code", static_cast<int64_t>(submitError.getCode()));
+                    }
+                    return Result<std::shared_ptr<PlaybackSession>>{submitError};
+                }
+            } catch (const std::exception &ex) {
+                const auto errorMsg = fmt::format("RTP audio loader submission failed: {}", ex.what());
+                error("{} for session {}", errorMsg, session->getSessionId());
+                if (scheduleSpan) {
+                    scheduleSpan->recordException(ex);
+                    scheduleSpan->setError(errorMsg);
+                    scheduleSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+                }
+                unwindAdoptedAudioSession(session, universe, sessionManager, scheduleSpan, false);
+                return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InternalError, errorMsg)};
+            } catch (...) {
+                const std::string errorMsg = "RTP audio loader submission failed with an unknown exception";
+                error("{} for session {}", errorMsg, session->getSessionId());
+                if (scheduleSpan) {
+                    scheduleSpan->setError(errorMsg);
+                    scheduleSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+                }
+                unwindAdoptedAudioSession(session, universe, sessionManager, scheduleSpan, false);
+                return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::InternalError, errorMsg)};
+            }
 
             if (metrics) {
                 metrics->incrementAnimationsPlayed();
@@ -233,11 +365,22 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
     return Result<std::shared_ptr<PlaybackSession>>{session};
 }
 
-void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<PlaybackSession> session,
-                                                               universe_t universe,
-                                                               std::shared_ptr<OperationSpan> scheduleSpan) {
-    // Capture shared_ptr copies of the globals so a shutdown mid-load can't yank them
-    // out from under the detached worker.
+Result<void> CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<PlaybackSession> session,
+                                                                       universe_t universe,
+                                                                       std::shared_ptr<OperationSpan> scheduleSpan) {
+    auto executor = rtpAudioLoadExecutor;
+    if (!executor) {
+        const std::string errorMsg = "RTP audio loader executor is unavailable";
+        error("{} for session {}", errorMsg, session ? session->getSessionId() : std::string{"<missing>"});
+        if (scheduleSpan) {
+            scheduleSpan->setAttribute("audio.loader.submit_result", "unavailable");
+        }
+        unwindAdoptedAudioSession(session, universe, sessionManager, scheduleSpan, false);
+        return Result<void>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+
+    // Capture shared_ptr copies of the services so shutdown joins this job
+    // before releasing any dependency it may still use.
     auto capturedEventLoop = eventLoop;
     auto capturedSessionManager = sessionManager;
     auto capturedConfig = config;
@@ -249,16 +392,27 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
     // same pattern as the fixture AutoStopEvent.
     const std::string triggerTraceId = scheduleSpan ? scheduleSpan->getTraceIdHex() : std::string{};
     const std::string triggerSpanId = scheduleSpan ? scheduleSpan->getSpanIdHex() : std::string{};
+    const auto queuedAt = std::chrono::steady_clock::now();
+    auto loadContext = std::make_shared<AsyncAudioLoadContext>();
 
-    std::thread([session, universe, capturedEventLoop, capturedSessionManager, capturedConfig, capturedObservability,
-                 capturedRtpServer, triggerTraceId, triggerSpanId]() {
-        auto loadSpan = capturedObservability
-                            ? capturedObservability->createOperationSpan("CooperativeAnimationScheduler.asyncAudioLoad")
-                            : nullptr;
+    rtp::AudioLoadExecutor::Job job;
+    job.id = session->getSessionId();
+    job.isCancelled = [session]() { return session->isCancelled(); };
+    job.run = [session, universe, capturedEventLoop, capturedConfig, capturedObservability, capturedRtpServer,
+               triggerTraceId, triggerSpanId, queuedAt, loadContext]() {
+        loadContext->span =
+            capturedObservability
+                ? capturedObservability->createOperationSpan("CooperativeAnimationScheduler.asyncAudioLoad")
+                : nullptr;
+        auto loadSpan = loadContext->span;
         if (loadSpan) {
             loadSpan->setAttribute("session.id", session->getSessionId());
             loadSpan->setAttribute("animation.id", session->getAnimation().id);
             loadSpan->setAttribute("session.universe", static_cast<int64_t>(universe));
+            loadSpan->setAttribute("audio.loader.queue_wait_ms",
+                                   static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                            std::chrono::steady_clock::now() - queuedAt)
+                                                            .count()));
             if (!triggerTraceId.empty()) {
                 loadSpan->setAttribute("trigger.trace_id", triggerTraceId);
                 loadSpan->setAttribute("trigger.span_id", triggerSpanId);
@@ -268,47 +422,7 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
         auto loadResult = loadAudioBuffer(session->getAnimation(), session, loadSpan);
 
         if (!loadResult.isSuccess()) {
-            error("Async audio load failed for session {}: {}", session->getSessionId(),
-                  loadResult.getError()->getMessage());
-            if (loadSpan) {
-                loadSpan->setError(loadResult.getError()->getMessage());
-                loadSpan->setAttribute("session.aborted_after_adopt", true);
-            }
-
-            // Same unwind as any post-adoption failure: the session was adopted and
-            // broadcast as running, but no runner will ever fire, so nothing else
-            // cleans it up.
-            session->cancel();
-            session->markCancellationNotified();
-            creatures::ws::CreatureService::setActivityState(
-                session->getCreatureIds(), session->getAnimation().id, creatures::runtime::ActivityReason::Cancelled,
-                creatures::runtime::ActivityState::Stopped, session->getSessionId(), loadSpan,
-                session->getActivityGeneration());
-            if (capturedSessionManager) {
-                capturedSessionManager->clearSession(universe, session->getSessionId());
-                // onFinish never runs for this session (no runner was ever scheduled),
-                // and onFinish is the only place the animation queue drains — drop the
-                // rest of the chain so stale sentences don't fire whenever the next
-                // session on this universe finishes (issue #83).
-                capturedSessionManager->clearAnimationQueue(universe);
-            }
-            for (const auto &creatureId : session->getCreatureIds()) {
-                creatures::ws::CreatureService::startIdleIfNeeded(creatureId, loadSpan);
-            }
-
-            // A playlist can't continue past a broken animation — halt it, matching the
-            // old synchronous-failure semantics (and avoiding a retry spin if the
-            // weighted pick keeps choosing the same broken file).
-            if (session->getActivityReason() == creatures::runtime::ActivityReason::Playlist &&
-                capturedSessionManager) {
-                warn("Halting playlist on universe {} after audio load failure", universe);
-                capturedSessionManager->clearPlaylist(universe);
-                PlaylistStatus emptyStatus{};
-                emptyStatus.universe = universe;
-                emptyStatus.playing = false;
-                broadcastPlaylistStatusToAllClients(emptyStatus);
-            }
-            return;
+            throw std::runtime_error(loadResult.getError()->getMessage());
         }
 
         if (session->isCancelled()) {
@@ -324,21 +438,12 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
         }
 
         if (!capturedEventLoop) {
-            warn("Async audio load finished but event loop is gone; dropping session {}", session->getSessionId());
-            return;
+            throw std::runtime_error("Async audio load finished after the event loop became unavailable");
         }
 
         auto rtpTransport = std::dynamic_pointer_cast<RtpAudioTransport>(session->getAudioTransport());
         if (!capturedRtpServer || !capturedRtpServer->isReady() || !rtpTransport) {
-            const std::string errorMsg = "Async audio load finished without an available RTP server and transport";
-            error("{} for session {}", errorMsg, session->getSessionId());
-            if (loadSpan) {
-                loadSpan->setError(errorMsg);
-            }
-            session->cancel();
-            capturedEventLoop->scheduleEvent(
-                std::make_shared<PlaybackRunnerEvent>(capturedEventLoop->getNextFrameNumber() + 1, session));
-            return;
+            throw std::runtime_error("Async audio load finished without an available RTP server and transport");
         }
 
         // Ownership is claimed only after the expensive load finishes. acquireOutput
@@ -392,7 +497,93 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
             loadSpan->setAttribute("session.starting_frame", static_cast<int64_t>(startFrame));
             loadSpan->setSuccess();
         }
-    }).detach();
+    };
+    job.onFailure = [session, universe, capturedSessionManager, capturedObservability, triggerTraceId, triggerSpanId,
+                     loadContext](std::exception_ptr failure) {
+        auto failureSpan = loadContext->span;
+        try {
+            if (!failureSpan && capturedObservability) {
+                failureSpan =
+                    capturedObservability->createOperationSpan("CooperativeAnimationScheduler.asyncAudioLoad.failure");
+                if (failureSpan) {
+                    failureSpan->setAttribute("session.id", session->getSessionId());
+                    failureSpan->setAttribute("animation.id", session->getAnimation().id);
+                    failureSpan->setAttribute("session.universe", static_cast<int64_t>(universe));
+                    if (!triggerTraceId.empty()) {
+                        failureSpan->setAttribute("trigger.trace_id", triggerTraceId);
+                        failureSpan->setAttribute("trigger.span_id", triggerSpanId);
+                    }
+                }
+            }
+        } catch (const std::exception &ex) {
+            error("Could not create async audio failure span for session {}: {}", session->getSessionId(), ex.what());
+            failureSpan.reset();
+        } catch (...) {
+            error("Could not create async audio failure span for session {}", session->getSessionId());
+            failureSpan.reset();
+        }
+
+        std::string errorMsg = "Async audio load failed with an unknown exception";
+        try {
+            if (failure) {
+                std::rethrow_exception(failure);
+            }
+        } catch (const std::exception &ex) {
+            errorMsg = fmt::format("Async audio load failed: {}", ex.what());
+            if (failureSpan) {
+                try {
+                    failureSpan->recordException(ex);
+                    failureSpan->setAttribute("error.type", "std::exception");
+                } catch (...) {
+                    error("Could not record async audio exception for session {}", session->getSessionId());
+                }
+            }
+        } catch (...) {
+            if (failureSpan) {
+                try {
+                    failureSpan->setAttribute("error.type", "unknown");
+                } catch (...) {
+                    error("Could not record unknown async audio exception for session {}", session->getSessionId());
+                }
+            }
+        }
+
+        error("{} for session {}", errorMsg, session->getSessionId());
+        if (failureSpan) {
+            try {
+                failureSpan->setError(errorMsg);
+                failureSpan->setAttribute("session.aborted_after_adopt", true);
+            } catch (...) {
+                error("Could not mark async audio failure span for session {}", session->getSessionId());
+            }
+        }
+        unwindAdoptedAudioSession(session, universe, capturedSessionManager, failureSpan, true);
+    };
+
+    const auto submitResult = executor->submit(std::move(job));
+    const auto stats = executor->getStats();
+    if (scheduleSpan) {
+        scheduleSpan->setAttribute("audio.loader.workers", static_cast<int64_t>(stats.workerCount));
+        scheduleSpan->setAttribute("audio.loader.queue_capacity", static_cast<int64_t>(stats.queueCapacity));
+        scheduleSpan->setAttribute("audio.loader.active", static_cast<int64_t>(stats.active));
+        scheduleSpan->setAttribute("audio.loader.queued", static_cast<int64_t>(stats.queued));
+    }
+
+    if (submitResult == rtp::AudioLoadExecutor::SubmitResult::Accepted) {
+        if (scheduleSpan) {
+            scheduleSpan->setAttribute("audio.loader.submit_result", "accepted");
+        }
+        return Result<void>{};
+    }
+
+    const bool queueFull = submitResult == rtp::AudioLoadExecutor::SubmitResult::QueueFull;
+    const std::string errorMsg = queueFull ? "RTP audio loader queue is full" : "RTP audio loader is shutting down";
+    warn("{}; rejecting session {}", errorMsg, session->getSessionId());
+    if (scheduleSpan) {
+        scheduleSpan->setAttribute("audio.loader.submit_result", queueFull ? "queue_full" : "shutting_down");
+    }
+    unwindAdoptedAudioSession(session, universe, capturedSessionManager, scheduleSpan, false);
+    return Result<void>{ServerError(queueFull ? ServerError::Conflict : ServerError::InternalError, errorMsg)};
 }
 
 Result<void> CooperativeAnimationScheduler::loadAudioBuffer(const Animation &animation,

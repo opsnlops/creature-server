@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <cstdio>
+#include <cstdlib>
 #include <ifaddrs.h>
 #include <iostream>
 #include <net/if.h>
@@ -120,6 +121,18 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .default_value(environmentToInt(RTP_FRAGMENT_PACKETS_ENV, DEFAULT_RTP_FRAGMENT_PACKETS) == 1)
         .implicit_value(true);
 
+    program.add_argument("--rtp-audio-load-workers")
+        .help("fixed worker count for cooperative RTP WAV/cache loads")
+        .default_value(environmentToInt(RTP_AUDIO_LOAD_WORKERS_ENV, DEFAULT_RTP_AUDIO_LOAD_WORKERS))
+        .scan<'i', int>()
+        .nargs(1);
+
+    program.add_argument("--rtp-audio-load-queue-capacity")
+        .help("maximum cooperative RTP audio loads waiting for a worker")
+        .default_value(environmentToInt(RTP_AUDIO_LOAD_QUEUE_CAPACITY_ENV, DEFAULT_RTP_AUDIO_LOAD_QUEUE_CAPACITY))
+        .scan<'i', int>()
+        .nargs(1);
+
     auto &oneShots = program.add_mutually_exclusive_group();
     oneShots.add_argument("--list-sound-devices")
         .help("list available sound devices and exit")
@@ -224,6 +237,29 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     auto rtpFragment = program.get<bool>("--rtp-fragment");
     config->setRtpFragmentPackets(rtpFragment);
     debug("RTP packet fragmentation: {}", rtpFragment ? "enabled" : "disabled");
+
+    auto rtpAudioLoadWorkers = program.get<int>("--rtp-audio-load-workers");
+    const bool rtpAudioLoadWorkersOverridden =
+        program.is_used("--rtp-audio-load-workers") || std::getenv(RTP_AUDIO_LOAD_WORKERS_ENV) != nullptr;
+    if (travelMode && !rtpAudioLoadWorkersOverridden) {
+        // Travel mode currently forces local audio, but keep its effective
+        // default safe for the Pi if that restriction changes later.
+        rtpAudioLoadWorkers = 1;
+    }
+    if (rtpAudioLoadWorkers < 1 || rtpAudioLoadWorkers > 32) {
+        std::cerr << "Error: --rtp-audio-load-workers must be between 1 and 32" << std::endl;
+        std::exit(1);
+    }
+    config->setRtpAudioLoadWorkers(static_cast<uint32_t>(rtpAudioLoadWorkers));
+
+    auto rtpAudioLoadQueueCapacity = program.get<int>("--rtp-audio-load-queue-capacity");
+    if (rtpAudioLoadQueueCapacity < 1 || rtpAudioLoadQueueCapacity > 1024) {
+        std::cerr << "Error: --rtp-audio-load-queue-capacity must be between 1 and 1024" << std::endl;
+        std::exit(1);
+    }
+    config->setRtpAudioLoadQueueCapacity(static_cast<uint32_t>(rtpAudioLoadQueueCapacity));
+    debug("RTP audio loader configured with {} workers and {} queued jobs", rtpAudioLoadWorkers,
+          rtpAudioLoadQueueCapacity);
 
     // Animation delay for audio sync compensation
     auto animationDelayMs = program.get<int>("--animation-delay-ms");

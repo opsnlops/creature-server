@@ -91,18 +91,19 @@ class CooperativeAnimationScheduler {
     static void setupLifecycleCallbacks(std::shared_ptr<PlaybackSession> session, universe_t universe);
 
     /**
-     * Load the RTP audio buffer on a detached worker thread, then schedule the encoder
-     * reset and initial PlaybackRunnerEvent from there (issue #70). The session must
-     * already be adopted, broadcast as running, and have its callbacks set — the worker
-     * only loads, adjusts the start frame, and schedules (or unwinds on failure).
+     * Submit the RTP audio buffer load to the fixed, bounded executor, then schedule
+     * the encoder reset and initial PlaybackRunnerEvent from its worker (issues #70/#95).
+     * The session must already be adopted, broadcast as running, and have its callbacks
+     * set. Admission failure is synchronous and fully unwinds the adopted session.
      *
      * @param session The adopted playback session
      * @param universe DMX universe (for unwind bookkeeping)
      * @param scheduleSpan The schedule span; its trace/span ids are stamped on the
      *                     worker's root span for Honeycomb linkage
+     * @return Success when admitted, or an explicit overload/shutdown error
      */
-    static void scheduleWithAsyncAudioLoad(std::shared_ptr<PlaybackSession> session, universe_t universe,
-                                           std::shared_ptr<class OperationSpan> scheduleSpan);
+    static Result<void> scheduleWithAsyncAudioLoad(std::shared_ptr<PlaybackSession> session, universe_t universe,
+                                                   std::shared_ptr<class OperationSpan> scheduleSpan);
 };
 
 } // namespace creatures

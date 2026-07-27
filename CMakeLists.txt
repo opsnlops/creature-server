@@ -601,6 +601,8 @@ add_executable(creature-server
         src/server/rtp/AudioStreamBuffer.cpp
         src/server/rtp/AudioStreamBuffer.h
         src/server/rtp/AudioChunk.h
+        src/server/rtp/AudioLoadExecutor.cpp
+        src/server/rtp/AudioLoadExecutor.h
         src/server/rtp/opus/OpusEncoderWrapper.cpp
         src/server/rtp/opus/OpusEncoderWrapper.h
         src/server/rtp/MultiOpusRtpServer.cpp
@@ -715,6 +717,7 @@ add_executable(creature-server-test
         tests/server/audio/OggOpusWriter_test.cpp
         tests/server/audio/Mp3Writer_test.cpp
         tests/server/audio/SoundPathResolver_test.cpp
+        tests/server/rtp/AudioLoadExecutor_test.cpp
         tests/server/rtp/BoundedCommandQueue_test.cpp
         tests/server/rtp/OpusPriming_test.cpp
         tests/server/rtp/RtpFrameClock_test.cpp
@@ -725,6 +728,7 @@ add_executable(creature-server-test
         src/server/audio/OggOpusWriter.cpp
         src/server/audio/Mp3Writer.cpp
         src/server/audio/SoundPathResolver.cpp
+        src/server/rtp/AudioLoadExecutor.cpp
         src/server/rtp/opus/OpusEncoderWrapper.cpp
         src/server/voice/DialogPreviewAssembly.cpp
         src/server/voice/PcmWavWriter.cpp

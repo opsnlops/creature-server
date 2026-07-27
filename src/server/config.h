@@ -92,6 +92,14 @@
 #define RTP_FRAGMENT_PACKETS_ENV "RTP_FRAGMENT_PACKETS"
 #define DEFAULT_RTP_FRAGMENT_PACKETS 0 // Disabled by default (assume jumbo frames)
 
+// Cooperative animation RTP audio loader. Main production servers have enough
+// CPU/RAM to keep several cache-hit loads resident; cache-miss encoding still
+// has its own single-flight gate because each file fans out to 17 Opus workers.
+#define RTP_AUDIO_LOAD_WORKERS_ENV "RTP_AUDIO_LOAD_WORKERS"
+#define DEFAULT_RTP_AUDIO_LOAD_WORKERS 4
+#define RTP_AUDIO_LOAD_QUEUE_CAPACITY_ENV "RTP_AUDIO_LOAD_QUEUE_CAPACITY"
+#define DEFAULT_RTP_AUDIO_LOAD_QUEUE_CAPACITY 64
+
 #define SOUND_BUFFER_SIZE 2048 // Higher = less CPU, lower = less latency
 
 #define STREAMING_TIMEOUT_FRAMES_ENV "STREAMING_TIMEOUT_FRAMES"

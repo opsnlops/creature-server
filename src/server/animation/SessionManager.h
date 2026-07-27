@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -238,6 +239,22 @@ class SessionManager {
      * @param sessionId The session ID to clear
      */
     void clearSession(universe_t universe, const std::string &sessionId);
+
+    struct LoadingSessionAbortResult {
+        bool sessionRemoved{false};
+        bool playlistCleared{false};
+        std::size_t queuedAnimationsDropped{0};
+    };
+
+    /**
+     * Atomically remove a session whose asynchronous audio load failed and
+     * discard state that only its normal onFinish callback could have drained.
+     *
+     * If a newer adoption already removed the session, this is a no-op. That
+     * ownership check and the queue/playlist cleanup share one mutex section so
+     * a late failure cannot erase state belonging to the replacement session.
+     */
+    LoadingSessionAbortResult abortLoadingSession(universe_t universe, const std::string &sessionId);
 
     /**
      * Queue an animation to play on a universe after the current animation finishes.

@@ -46,6 +46,7 @@
 #include "server/jobs/JobWorker.h"
 #include "server/metrics/StatusLights.h"
 #include "server/metrics/counters.h"
+#include "server/rtp/AudioLoadExecutor.h"
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/rtp/MultiOpusRtpServer.h"
 #include "server/sensors/SensorDataCache.h"
@@ -132,6 +133,9 @@ std::shared_ptr<ObservabilityManager> observability;
 
 // RTP server for handling real-time protocol streaming
 std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
+
+// Fixed worker pool for cooperative animation WAV/cache loads in RTP mode
+std::shared_ptr<rtp::AudioLoadExecutor> rtpAudioLoadExecutor;
 
 // Audio cache for pre-encoded Opus files
 std::shared_ptr<util::AudioCache> audioCache;
@@ -371,6 +375,17 @@ int main(const int argc, char **argv) {
     if (creatures::config->getAudioMode() == creatures::Configuration::AudioMode::RTP) {
         info("RTP audio mode enabled, starting RTP server");
         creatures::rtpServer = std::make_shared<creatures::rtp::MultiOpusRtpServer>();
+        std::weak_ptr<creatures::SystemCounters> weakMetrics = creatures::metrics;
+        creatures::rtpAudioLoadExecutor = std::make_shared<creatures::rtp::AudioLoadExecutor>(
+            creatures::config->getRtpAudioLoadWorkers(), creatures::config->getRtpAudioLoadQueueCapacity(),
+            [weakMetrics](const creatures::rtp::AudioLoadExecutor::Stats &stats) {
+                if (auto counters = weakMetrics.lock()) {
+                    counters->setRtpAudioLoadMetrics(stats.active, stats.queued, stats.rejected, stats.cancelled,
+                                                     stats.failed);
+                }
+            });
+        info("RTP animation audio loader started with {} workers and {} queued-job capacity",
+             creatures::config->getRtpAudioLoadWorkers(), creatures::config->getRtpAudioLoadQueueCapacity());
     }
 
     // Initialize audio cache for faster Opus encoding
@@ -464,6 +479,15 @@ int main(const int argc, char **argv) {
     info("Stopping job worker...");
     creatures::jobWorker->shutdown();
     debug("JobWorker stopped");
+
+    // Loader jobs retain event-loop, session-manager, and RTP-server handles.
+    // Join them before any of those services begin teardown.
+    if (creatures::rtpAudioLoadExecutor) {
+        info("Stopping RTP animation audio loader...");
+        creatures::rtpAudioLoadExecutor->shutdown();
+        creatures::rtpAudioLoadExecutor.reset();
+        debug("RTP animation audio loader stopped");
+    }
 
     // Halt the event loop
     creatures::eventLoop->shutdown();
