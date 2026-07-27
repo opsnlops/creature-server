@@ -63,6 +63,9 @@ class SystemCountersDto : public oatpp::DTO {
     DTO_FIELD_INFO(rtpEventsProcessed) { info->description = "Number of RTP events that have been processed"; }
     DTO_FIELD(UInt64, rtpEventsProcessed);
 
+    DTO_FIELD_INFO(rtpSendFailures) { info->description = "Number of RTP output sends that have failed"; }
+    DTO_FIELD(UInt64, rtpSendFailures);
+
     DTO_FIELD_INFO(soundFilesServed) { info->description = "Number of sound files that have been served"; }
     DTO_FIELD(UInt64, soundFilesServed);
 
@@ -114,6 +117,7 @@ class SystemCounters {
     void incrementPlaylistsEventsProcessed();
     void incrementPlaylistStatusRequests();
     void incrementRtpEventsProcessed();
+    void incrementRtpSendFailures();
     void incrementRtpEncoderResets();
     void incrementRestRequestsProcessed();
     void incrementSoundFilesServed();
@@ -135,6 +139,7 @@ class SystemCounters {
     uint64_t getPlaylistStatusRequests();
     uint64_t getRestRequestsProcessed();
     uint64_t getRtpEventsProcessed();
+    uint64_t getRtpSendFailures();
     uint64_t getRtpEncoderResets();
     uint64_t getSoundFilesServed();
     uint64_t getWebsocketConnectionsProcessed();
@@ -160,6 +165,7 @@ class SystemCounters {
     std::atomic<uint64_t> restRequestsProcessed;
     std::atomic<uint64_t> soundFilesServed;
     std::atomic<uint64_t> rtpEventsProcessed;
+    std::atomic<uint64_t> rtpSendFailures;
     std::atomic<uint64_t> rtpEncoderResets;
     std::atomic<uint64_t> websocketConnectionsProcessed;
     std::atomic<uint64_t> websocketMessagesReceived;

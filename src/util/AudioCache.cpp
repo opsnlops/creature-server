@@ -35,7 +35,8 @@ using namespace creatures::util;
 
 namespace {
 
-constexpr uint32_t AUDIO_CACHE_FORMAT_VERSION = 2;
+// Version 3 adds the encoder-state silence pre-roll used by RTP startup.
+constexpr uint32_t AUDIO_CACHE_FORMAT_VERSION = 3;
 constexpr const char *CACHE_COMPLETE_MARKER = ".complete";
 
 uint64_t stablePathHash(const std::string &value) {
@@ -613,6 +614,7 @@ AudioCache::loadOggOpusWithMetadata(const std::string &oggFilePath) const {
                                        jsonData.value("sample_rate", 0) == RTP_SRATE &&
                                        jsonData.value("channels", 0) == RTP_STREAMING_CHANNELS &&
                                        jsonData.value("frame_ms", 0) == RTP_FRAME_MS &&
+                                       jsonData.value("priming_frames", 0) == RTP_PRIMING_FRAMES &&
                                        jsonData.value("bitrate", 0) == RTP_BITRATE && jsonData.value("fec", false) &&
                                        jsonData.value("opus_version", std::string{}) == opus_get_version_string();
             if (!formatMatches) {
@@ -760,6 +762,7 @@ Result<void> AudioCache::saveAsOggOpusWithMetadata(const std::string &oggFilePat
             {"sample_rate", RTP_SRATE},
             {"channels", RTP_STREAMING_CHANNELS},
             {"frame_ms", RTP_FRAME_MS},
+            {"priming_frames", RTP_PRIMING_FRAMES},
             {"bitrate", RTP_BITRATE},
             {"fec", true},
             {"opus_version", opus_get_version_string()},

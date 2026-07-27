@@ -381,6 +381,7 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
         OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
     }
 
+    OATPP_ASSERT_HTTP(inSoundFile && !inSoundFile->empty(), Status::CODE_400, "Sound filename is required");
     std::string soundFile = std::string(inSoundFile);
 
     logger->debug("Request to play sound file: {}", soundFile);
@@ -409,12 +410,17 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
 
     bool error = false;
     oatpp::String message;
+    std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation;
+    if (config->getAudioMode() == Configuration::AudioMode::RTP) {
+        rtpReservation = rtp::standaloneRtpAdmission().tryAcquire();
+        OATPP_ASSERT_HTTP(rtpReservation, Status::CODE_409, "Standalone RTP audio loader is busy");
+    }
 
     try {
         framenum_t frameNumber = eventLoop->getNextFrameNumber();
 
         // Create the event and schedule it
-        auto playEvent = std::make_shared<MusicEvent>(frameNumber, fullFilePath);
+        auto playEvent = std::make_shared<MusicEvent>(frameNumber, fullFilePath, std::move(rtpReservation));
         eventLoop->scheduleEvent(playEvent);
 
         debug("scheduled sound to play on frame {}", frameNumber);

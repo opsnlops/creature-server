@@ -165,6 +165,9 @@ void ObservabilityManager::initializeMetricInstruments() {
     rtpEventsProcessedCounter_ = meter_->CreateUInt64Counter(
         "creature_server_rtp_events_processed", "Total number of RTP audio chunk events processed", "events");
 
+    rtpSendFailuresCounter_ = meter_->CreateUInt64Counter("creature_server_rtp_send_failures",
+                                                          "Total number of failed RTP output sends", "failures");
+
     soundFilesServedCounter_ = meter_->CreateUInt64Counter("creature_server_sound_files_served",
                                                            "Total number of sound files served", "files");
 
@@ -234,6 +237,7 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
     static std::atomic<uint64_t> lastPlaylistStatusRequests{0};
     static std::atomic<uint64_t> lastRestRequestsProcessed{0};
     static std::atomic<uint64_t> lastRtpEventsProcessed{0};
+    static std::atomic<uint64_t> lastRtpSendFailures{0};
     static std::atomic<uint64_t> lastSoundFilesServed{0};
     static std::atomic<uint64_t> lastWebsocketConnectionsProcessed{0};
     static std::atomic<uint64_t> lastWebsocketMessagesReceived{0};
@@ -306,6 +310,11 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
         currentRtpEventsProcessed - lastRtpEventsProcessed.exchange(currentRtpEventsProcessed);
     if (deltaRtpEventsProcessed > 0)
         rtpEventsProcessedCounter_->Add(deltaRtpEventsProcessed);
+
+    uint64_t currentRtpSendFailures = metrics->getRtpSendFailures();
+    uint64_t deltaRtpSendFailures = currentRtpSendFailures - lastRtpSendFailures.exchange(currentRtpSendFailures);
+    if (deltaRtpSendFailures > 0)
+        rtpSendFailuresCounter_->Add(deltaRtpSendFailures);
 
     uint64_t currentSoundFilesServed = metrics->getSoundFilesServed();
     uint64_t deltaSoundFilesServed = currentSoundFilesServed - lastSoundFilesServed.exchange(currentSoundFilesServed);

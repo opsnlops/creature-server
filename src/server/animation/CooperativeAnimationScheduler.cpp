@@ -242,6 +242,7 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
     auto capturedSessionManager = sessionManager;
     auto capturedConfig = config;
     auto capturedObservability = observability;
+    auto capturedRtpServer = rtpServer;
 
     // The schedule span ends when scheduleAnimation returns, so the worker gets its own
     // root span carrying trigger.trace_id/span_id attributes for Honeycomb linkage —
@@ -250,7 +251,7 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
     const std::string triggerSpanId = scheduleSpan ? scheduleSpan->getSpanIdHex() : std::string{};
 
     std::thread([session, universe, capturedEventLoop, capturedSessionManager, capturedConfig, capturedObservability,
-                 triggerTraceId, triggerSpanId]() {
+                 capturedRtpServer, triggerTraceId, triggerSpanId]() {
         auto loadSpan = capturedObservability
                             ? capturedObservability->createOperationSpan("CooperativeAnimationScheduler.asyncAudioLoad")
                             : nullptr;
@@ -327,6 +328,44 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
             return;
         }
 
+        auto rtpTransport = std::dynamic_pointer_cast<RtpAudioTransport>(session->getAudioTransport());
+        if (!capturedRtpServer || !capturedRtpServer->isReady() || !rtpTransport) {
+            const std::string errorMsg = "Async audio load finished without an available RTP server and transport";
+            error("{} for session {}", errorMsg, session->getSessionId());
+            if (loadSpan) {
+                loadSpan->setError(errorMsg);
+            }
+            session->cancel();
+            capturedEventLoop->scheduleEvent(
+                std::make_shared<PlaybackRunnerEvent>(capturedEventLoop->getNextFrameNumber() + 1, session));
+            return;
+        }
+
+        // Ownership is claimed only after the expensive load finishes. acquireOutput
+        // runs on this loader thread, so it can wait for an in-flight 17-channel
+        // send without ever delaying the 1ms event loop.
+        auto outputLease = capturedRtpServer->acquireOutput("session:" + session->getSessionId());
+        rtp::AsyncAudioTraceContext traceContext;
+        traceContext.triggerTraceId = triggerTraceId;
+        traceContext.triggerSpanId = triggerSpanId;
+        traceContext.sessionId = session->getSessionId();
+        traceContext.animationId = session->getAnimation().id;
+        traceContext.soundFile = session->getAnimation().metadata.sound_file;
+        rtpTransport->setOutputLease(outputLease, traceContext);
+        if (loadSpan) {
+            loadSpan->setAttribute("rtp.generation", static_cast<int64_t>(outputLease.generation));
+            loadSpan->setAttribute("rtp.owner_id", outputLease.ownerId);
+        }
+        if (session->isCancelled()) {
+            capturedRtpServer->releaseOutput(outputLease);
+            debug("Session {} was cancelled while acquiring RTP output", session->getSessionId());
+            if (loadSpan) {
+                loadSpan->setAttribute("session.cancelled_during_rtp_acquire", true);
+                loadSpan->setSuccess();
+            }
+            return;
+        }
+
         // Leave a complete 40ms priming window before playback. The reset event
         // schedules one silent RTP frame every 10ms rather than blocking the
         // event loop to send them all at once.
@@ -341,7 +380,7 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
         // Rotate SSRC values and begin decoder priming immediately before the
         // playback sample timeline.
         auto resetEvent =
-            std::make_shared<RtpEncoderResetEvent>(startFrame - RTP_PRIMING_DURATION_FRAMES, RTP_PRIMING_FRAMES);
+            std::make_shared<RtpEncoderResetEvent>(startFrame - RTP_PRIMING_DURATION_FRAMES, outputLease, traceContext);
         capturedEventLoop->scheduleEvent(resetEvent);
 
         auto initialRunner = std::make_shared<PlaybackRunnerEvent>(startFrame, session);

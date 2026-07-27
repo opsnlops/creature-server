@@ -16,8 +16,9 @@ extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 
-RtpEncoderResetEvent::RtpEncoderResetEvent(framenum_t frameNumber_, uint8_t silentFrameCount_)
-    : EventBase(frameNumber_), silentFrameCount_(silentFrameCount_) {}
+RtpEncoderResetEvent::RtpEncoderResetEvent(framenum_t frameNumber_, rtp::RtpOutputLease outputLease_,
+                                           rtp::AsyncAudioTraceContext traceContext_)
+    : EventBase(frameNumber_), outputLease_(std::move(outputLease_)), traceContext_(std::move(traceContext_)) {}
 
 Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
     std::shared_ptr<OperationSpan> span;
@@ -25,6 +26,8 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
         span = observability->createOperationSpan("rtp_encoder_reset_event.execute");
         span->setAttribute("frame_number", static_cast<int64_t>(frameNumber));
         span->setAttribute("silent_frame_count", static_cast<int64_t>(silentFrameCount_));
+        span->setAttribute("rtp.generation", static_cast<int64_t>(outputLease_.generation));
+        span->setAttribute("rtp.owner_id", outputLease_.ownerId);
     }
 
     debug("RtpEncoderResetEvent executing on frame {}", frameNumber);
@@ -38,28 +41,39 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
             return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
         }
 
-        // Step 1: Rotate SSRC for all channels
-        const auto oldSSRC = rtpServer->getCurrentSynchronizationSourceIdentifier();
-        rtpServer->rotateSynchronizationSourceIdentifiers();
-        const auto newSSRC = rtpServer->getCurrentSynchronizationSourceIdentifier();
+        traceContext_.enqueueFrame = frameNumber;
+        const auto enqueueResult = rtpServer->enqueueReset(outputLease_, traceContext_);
+        if (enqueueResult == rtp::RtpEnqueueResult::StaleLease) {
+            debug("Skipping stale RTP reset for {} generation {}", outputLease_.ownerId, outputLease_.generation);
+            if (span) {
+                span->setAttribute("rtp.work.outcome", "stale");
+                span->setSuccess();
+            }
+            return Result<framenum_t>{frameNumber};
+        }
+        if (enqueueResult != rtp::RtpEnqueueResult::Accepted) {
+            const auto errorMsg =
+                fmt::format("RTP reset enqueue failed with result {}", static_cast<int>(enqueueResult));
+            rtpServer->releaseOutput(outputLease_);
+            if (span) {
+                span->setError(errorMsg);
+            }
+            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+        }
 
-        debug("SSRC rotated from {} to {} - fresh identity for all channels", oldSSRC, newSSRC);
-
-        // Step 2: Reset all Opus encoders
-        rtpServer->resetAllEncoders();
-        debug("All encoders reset - clean slate for encoding");
-
-        // Step 3: Prime decoders without blocking this 1ms event-loop tick.
+        // Prime decoders without blocking this 1ms event-loop tick.
         // Each RtpSilentFrameEvent sends one 10ms sample interval and schedules
         // the next interval independently.
         if (silentFrameCount_ > 0) {
             if (!eventLoop) {
                 const auto errorMsg = "Event loop unavailable for RTP decoder priming";
+                rtpServer->releaseOutput(outputLease_);
                 if (span)
                     span->setError(errorMsg);
                 return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
             }
-            eventLoop->scheduleEvent(std::make_shared<RtpSilentFrameEvent>(frameNumber, silentFrameCount_));
+            eventLoop->scheduleEvent(
+                std::make_shared<RtpSilentFrameEvent>(frameNumber, outputLease_, silentFrameCount_, traceContext_));
             debug("Scheduled {} silent priming frames", silentFrameCount_);
         }
 
@@ -68,13 +82,11 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
             metrics->incrementRtpEncoderResets();
         }
         if (span) {
-            span->setAttribute("old_ssrc", static_cast<int64_t>(oldSSRC));
-            span->setAttribute("new_ssrc", static_cast<int64_t>(newSSRC));
             span->setSuccess();
         }
 
-        info("RTP encoder reset complete! SSRC: {} → {}, {} silent frames scheduled", oldSSRC, newSSRC,
-             silentFrameCount_);
+        info("RTP reset queued for {} generation {}; {} silent frames scheduled", outputLease_.ownerId,
+             outputLease_.generation, silentFrameCount_);
 
         return Result<framenum_t>{frameNumber};
 
@@ -93,8 +105,12 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
     }
 }
 
-RtpSilentFrameEvent::RtpSilentFrameEvent(framenum_t frameNumber_, uint8_t framesRemaining_)
-    : EventBase(frameNumber_), framesRemaining_(framesRemaining_) {}
+RtpSilentFrameEvent::RtpSilentFrameEvent(framenum_t frameNumber_, rtp::RtpOutputLease outputLease_,
+                                         uint8_t framesRemaining_, rtp::AsyncAudioTraceContext traceContext_)
+    : EventBase(frameNumber_), framesRemaining_(framesRemaining_), outputLease_(std::move(outputLease_)),
+      traceContext_(std::move(traceContext_)) {
+    primingFrameIndex_ = RTP_PRIMING_FRAMES - framesRemaining_;
+}
 
 Result<framenum_t> RtpSilentFrameEvent::executeImpl() {
     if (framesRemaining_ == 0) {
@@ -105,12 +121,17 @@ Result<framenum_t> RtpSilentFrameEvent::executeImpl() {
             ServerError(ServerError::InternalError, "RTP server unavailable during decoder priming")};
     }
 
-    const uint32_t timestamp = rtpServer->getNextFrameTimestamp();
-    const auto sendResult = rtpServer->sendSilentFrame();
-    if (sendResult != RTP_OK) {
-        return Result<framenum_t>{ServerError(ServerError::InternalError,
-                                              fmt::format("RTP silent frame send failed at timestamp {} with error {}",
-                                                          timestamp, static_cast<int>(sendResult)))};
+    traceContext_.enqueueFrame = frameNumber;
+    const auto enqueueResult = rtpServer->enqueueSilentFrame(outputLease_, primingFrameIndex_, traceContext_);
+    if (enqueueResult == rtp::RtpEnqueueResult::StaleLease) {
+        debug("Stopping stale RTP priming for {} generation {}", outputLease_.ownerId, outputLease_.generation);
+        return Result<framenum_t>{frameNumber};
+    }
+    if (enqueueResult != rtp::RtpEnqueueResult::Accepted) {
+        rtpServer->releaseOutput(outputLease_);
+        return Result<framenum_t>{
+            ServerError(ServerError::InternalError, fmt::format("RTP silent frame enqueue failed with result {}",
+                                                                static_cast<int>(enqueueResult)))};
     }
 
     if (metrics) {
@@ -123,8 +144,8 @@ Result<framenum_t> RtpSilentFrameEvent::executeImpl() {
                 ServerError(ServerError::InternalError, "Event loop unavailable during decoder priming")};
         }
         constexpr framenum_t primingStep = RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
-        eventLoop->scheduleEvent(
-            std::make_shared<RtpSilentFrameEvent>(frameNumber + primingStep, framesRemaining_ - 1));
+        eventLoop->scheduleEvent(std::make_shared<RtpSilentFrameEvent>(frameNumber + primingStep, outputLease_,
+                                                                       framesRemaining_ - 1, traceContext_));
     }
 
     return Result<framenum_t>{frameNumber};

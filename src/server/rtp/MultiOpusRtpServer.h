@@ -9,57 +9,111 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <cstddef>
+#include <memory>
+#include <string>
+#include <thread>
 #include <uvgrtp/lib.hh>
+#include <vector>
 
 #include "server/config.h"
+#include "server/rtp/AsyncAudioTraceContext.h"
+#include "server/rtp/BoundedCommandQueue.h"
 #include "server/rtp/RtpFrameClock.h"
-#include "server/rtp/opus/OpusEncoderWrapper.h"
+#include "server/rtp/RtpOutputCoordinator.h"
 
 namespace creatures::rtp {
+
+class AudioStreamBuffer;
+
+enum class RtpEnqueueResult {
+    Accepted,
+    StaleLease,
+    QueueFull,
+    ServerNotReady,
+    InvalidData,
+};
+
 class MultiOpusRtpServer {
   public:
+    static constexpr size_t OUTPUT_QUEUE_CAPACITY = 64;
+
     MultiOpusRtpServer();
     ~MultiOpusRtpServer();
 
-    // Send one 10ms mono Opus frame for a given channel [0-16].
-    // Every channel belonging to the same sample frame must use the same timestamp.
-    rtp_error_t send(uint8_t channelIndex, const std::vector<uint8_t> &opusEncodedFrame, uint32_t timestamp);
+    /**
+     * Claim exclusive ownership of the process-wide RTP output.
+     *
+     * The returned generation invalidates every command from the prior owner.
+     */
+    [[nodiscard]] RtpOutputLease acquireOutput(std::string ownerId);
+    void releaseOutput(const RtpOutputLease &lease);
+    [[nodiscard]] bool isCurrentOutput(const RtpOutputLease &lease) const;
 
-    // Rotate SSRC for all channels and reset encoders for a fresh start
-    void rotateSynchronizationSourceIdentifiers();
+    // Non-blocking event-loop-to-output-worker commands.
+    [[nodiscard]] RtpEnqueueResult enqueueReset(const RtpOutputLease &lease, AsyncAudioTraceContext traceContext = {});
+    [[nodiscard]] RtpEnqueueResult enqueueSilentFrame(const RtpOutputLease &lease, size_t primingFrameIndex,
+                                                      AsyncAudioTraceContext traceContext = {});
+    [[nodiscard]] RtpEnqueueResult enqueueAudioFrame(const RtpOutputLease &lease,
+                                                     std::shared_ptr<AudioStreamBuffer> buffer, size_t frameIndex,
+                                                     size_t skippedFrames = 0, bool releaseAfterSend = false,
+                                                     std::shared_ptr<void> releaseAfterSendHold = nullptr,
+                                                     AsyncAudioTraceContext traceContext = {});
 
-    // Reset all Opus encoders to clean state
-    void resetAllEncoders();
-
-    // Encode and send one timestamped silent frame on every channel.
-    rtp_error_t sendSilentFrame();
-
-    // RTP sample-clock timeline shared by the 17 channels.
-    void resetFrameTimestamp();
-    void advanceFrameTimestamp(size_t frameCount = 1);
-    [[nodiscard]] uint32_t getNextFrameTimestamp() const { return frameClock_.current(); }
-
-    [[nodiscard]] bool isReady() const { return isServerReady_; }
-
-    // Get current SSRC (useful for debugging)
-    [[nodiscard]] uint32_t getCurrentSynchronizationSourceIdentifier() const {
-        return currentSynchronizationSourceIdentifier_;
-    }
+    [[nodiscard]] bool isReady() const { return isServerReady_.load(); }
+    [[nodiscard]] size_t getPendingCommandCount() const { return outputQueue_.size(); }
+    [[nodiscard]] size_t getOutputQueueCapacity() const { return outputQueue_.capacity(); }
 
   private:
-    bool isServerReady_{false};
+    enum class OutputCommandType {
+        Reset,
+        SilentFrame,
+        AudioFrame,
+    };
+
+    struct OutputCommand {
+        OutputCommandType type;
+        RtpOutputLease lease;
+        std::shared_ptr<AudioStreamBuffer> buffer;
+        size_t frameIndex{0};
+        size_t skippedFrames{0};
+        bool releaseAfterSend{false};
+        std::shared_ptr<void> releaseAfterSendHold;
+        AsyncAudioTraceContext traceContext;
+    };
+
+    struct OutputResult {
+        rtp_error_t error{RTP_OK};
+        uint8_t firstFailedChannel{0};
+        uint32_t timestamp{0};
+    };
+
+    void runOutputWorker();
+    void processOutputCommand(const OutputCommand &command);
+    void recordOutputFailure(const OutputCommand &command, const OutputResult &result) noexcept;
+    void recordOutputException(const OutputCommand &command, const std::exception &exception) noexcept;
+    [[nodiscard]] static const char *commandTypeName(OutputCommandType type);
+    void rotateSynchronizationSourceIdentifiers();
+    void resetFrameTimestamp();
+    rtp_error_t send(uint8_t channelIndex, const std::vector<uint8_t> &opusEncodedFrame, uint32_t timestamp);
+    OutputResult sendSilentFrameSet(size_t primingFrameIndex);
+    OutputResult sendAudioFrameSet(const AudioStreamBuffer &buffer, size_t frameIndex);
+
+    std::atomic<bool> isServerReady_{false};
     uint32_t nextSynchronizationSourceIdentifier_{1000}; // Start from a round number for easy debugging
     uint32_t currentSynchronizationSourceIdentifier_{0}; // Track current SSRC for logging
     RtpFrameClock frameClock_;
+    RtpOutputCoordinator outputCoordinator_;
+    BoundedCommandQueue<OutputCommand> outputQueue_{OUTPUT_QUEUE_CAPACITY};
+    std::thread outputThread_;
 
     uvgrtp::context rtpContext_;
     std::array<uvgrtp::session *, RTP_STREAMING_CHANNELS> rtpSessions_{};
     std::array<uvgrtp::media_stream *, RTP_STREAMING_CHANNELS> mediaStreams_{};
 
-    // Store encoders for reset capability
-    std::array<std::unique_ptr<opus::Encoder>, RTP_STREAMING_CHANNELS> opusEncoders_;
-
-    // Pre-allocated silent frame for priming decoders
-    std::vector<int16_t> silentFrameBuffer_;
+    // Each successive packet advances Opus encoder state. AudioStreamBuffer
+    // applies the same silence pre-roll before encoding program frame zero.
+    std::array<std::array<std::vector<uint8_t>, RTP_PRIMING_FRAMES>, RTP_STREAMING_CHANNELS> encodedSilentFrames_;
 };
 } // namespace creatures::rtp

@@ -14,8 +14,11 @@
 #include "server/config.h"
 #include "server/eventloop/event.h"
 #include "server/eventloop/eventloop.h"
+#include "server/rtp/AsyncAudioTraceContext.h"
 #include "server/rtp/AudioChunk.h"
 #include "server/rtp/AudioStreamBuffer.h"
+#include "server/rtp/RtpOutputCoordinator.h"
+#include "server/rtp/StandaloneRtpAdmission.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -66,7 +69,8 @@ class MusicEvent : public EventBase<MusicEvent> {
   public:
     using EventBase::EventBase;
 
-    MusicEvent(framenum_t frameNumber_, std::string filePath_);
+    MusicEvent(framenum_t frameNumber_, std::string filePath_,
+               std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation_ = nullptr);
 
     virtual ~MusicEvent() = default;
 
@@ -78,6 +82,7 @@ class MusicEvent : public EventBase<MusicEvent> {
   private:
     std::string filePath;
     std::mutex sdl_mutex;
+    std::shared_ptr<rtp::StandaloneRtpAdmission::Reservation> rtpReservation_;
 
     /**
      * Play audio locally through SDL (traditional mode)
@@ -167,8 +172,8 @@ class RtpEncoderResetEvent : public EventBase<RtpEncoderResetEvent> {
   public:
     using EventBase::EventBase;
 
-    // Constructor with silent frame count parameter
-    RtpEncoderResetEvent(framenum_t frameNumber_, uint8_t silentFrameCount_ = RTP_PRIMING_FRAMES);
+    RtpEncoderResetEvent(framenum_t frameNumber_, rtp::RtpOutputLease outputLease_,
+                         rtp::AsyncAudioTraceContext traceContext_ = {});
 
     virtual ~RtpEncoderResetEvent() = default;
 
@@ -176,6 +181,8 @@ class RtpEncoderResetEvent : public EventBase<RtpEncoderResetEvent> {
 
   private:
     uint8_t silentFrameCount_{RTP_PRIMING_FRAMES};
+    rtp::RtpOutputLease outputLease_;
+    rtp::AsyncAudioTraceContext traceContext_;
 };
 
 /**
@@ -185,7 +192,8 @@ class RtpEncoderResetEvent : public EventBase<RtpEncoderResetEvent> {
  */
 class RtpSilentFrameEvent : public EventBase<RtpSilentFrameEvent> {
   public:
-    RtpSilentFrameEvent(framenum_t frameNumber_, uint8_t framesRemaining_);
+    RtpSilentFrameEvent(framenum_t frameNumber_, rtp::RtpOutputLease outputLease_, uint8_t framesRemaining_,
+                        rtp::AsyncAudioTraceContext traceContext_ = {});
 
     virtual ~RtpSilentFrameEvent() = default;
 
@@ -193,6 +201,9 @@ class RtpSilentFrameEvent : public EventBase<RtpSilentFrameEvent> {
 
   private:
     uint8_t framesRemaining_{0};
+    uint8_t primingFrameIndex_{0};
+    rtp::RtpOutputLease outputLease_;
+    rtp::AsyncAudioTraceContext traceContext_;
 };
 
 /**
