@@ -392,12 +392,18 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
         OATPP_ASSERT_HTTP(false, Status::CODE_500, "Sound event loop unavailable");
     }
 
-    // Resolve via the storage facade: absolute paths pass through; relative
-    // ones join under the permanent sound root.
-    std::string fullFilePath = creatures::storage::resolveSoundPath(inSoundFile).string();
+    OATPP_ASSERT_HTTP(isSafeFilename(soundFile), Status::CODE_400, "Invalid filename");
+
+    // Resolve only through the configured permanent/ad-hoc sound stores. This
+    // endpoint previously passed absolute paths and parent traversal through to
+    // MusicEvent, allowing clients to probe and decode arbitrary readable files.
+    const auto resolvedSound = resolveSoundPath(soundFile, nullptr);
+    OATPP_ASSERT_HTTP(resolvedSound.has_value(), Status::CODE_404, fmt::format("Sound file not found: {}", soundFile));
+    const std::string &fullFilePath = resolvedSound->path;
     debug("using sound file name: {}", fullFilePath);
 
-    // Make sure the file exists and is readable
+    // The resolver verifies canonical containment; retain the readability check
+    // for permissions and transient filesystem failures.
     OATPP_ASSERT_HTTP(fileIsReadable(fullFilePath), Status::CODE_404,
                       fmt::format("Sound file not found: {}", soundFile));
 

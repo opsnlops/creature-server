@@ -288,15 +288,21 @@ int main(const int argc, char **argv) {
     }
     cleanupAdHocTempDirectory(creatures::config->getAdHocAnimationTtlHours());
 
-    // Fire up SDL
-    if (!MusicEvent::initSDL()) {
-        error("Unable to start up SDL");
-    }
-    debug("SDL started");
-    MusicEvent::listAudioDevices();
-    if (!MusicEvent::locateAudioDevice()) {
-        error("unable to open audio device; halting");
-        std::exit(EXIT_FAILURE);
+    // RTP servers only parse WAV files and do not need a local output device.
+    // Requiring one made headless production hosts fail before RTP startup.
+    if (creatures::config->getAudioMode() != creatures::Configuration::AudioMode::RTP) {
+        if (!MusicEvent::initSDL()) {
+            error("Unable to start up SDL; halting");
+            std::exit(EXIT_FAILURE);
+        }
+        debug("SDL started");
+        MusicEvent::listAudioDevices();
+        if (!MusicEvent::locateAudioDevice()) {
+            error("unable to open audio device; halting");
+            std::exit(EXIT_FAILURE);
+        }
+    } else {
+        debug("RTP mode does not require a local SDL audio device");
     }
 
     // Fire up the GPIO

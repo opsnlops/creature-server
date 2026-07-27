@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include "server/namespace-stuffs.h"
 #include "util/Result.h"
@@ -66,6 +67,15 @@ class AudioTransport {
      * @return Frame number when next dispatch is needed, or error
      */
     virtual Result<framenum_t> dispatchNextChunk(framenum_t currentFrame) = 0;
+
+    /**
+     * Next event-loop frame when this transport needs dispatch.
+     *
+     * Fire-and-forget transports return nullopt. Timestamped transports use
+     * this to let the cooperative runner wake at the audio cadence rather than
+     * waiting for the next animation frame.
+     */
+    [[nodiscard]] virtual std::optional<framenum_t> getNextDispatchFrame() const { return std::nullopt; }
 
     /**
      * Check if audio has finished playing

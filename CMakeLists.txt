@@ -684,6 +684,7 @@ add_executable(creature-server-test
         tests/fixture/FixtureBindingDispatcher_test.cpp
         src/server/fixture/FixturePatternRunner.cpp
         tests/util/SetAttributeOverload_test.cpp
+        tests/util/AudioCache_test.cpp
         tests/server/ws/CreatureActivityMessage_test.cpp
         tests/server/ws/CreatureService_streaming_test.cpp
         tests/server/ws/CreatureService_activityOwnership_test.cpp
@@ -714,6 +715,7 @@ add_executable(creature-server-test
         tests/server/audio/OggOpusWriter_test.cpp
         tests/server/audio/Mp3Writer_test.cpp
         tests/server/audio/SoundPathResolver_test.cpp
+        tests/server/rtp/RtpFrameClock_test.cpp
         tests/server/voice/DialogPreviewAssembly_test.cpp
         src/server/audio/MonoWavDownmixer.cpp
         src/server/audio/OggOpusWriter.cpp
@@ -747,6 +749,7 @@ add_executable(creature-server-test
         src/server/ws/service/CreatureService.cpp
         src/server/ws/dto/websocket/MessageTypes.cpp
         src/util/JsonParser.cpp
+        src/util/AudioCache.cpp
         src/util/helpers.cpp
         src/util/uuidUtils.cpp
         src/util/Result.cpp

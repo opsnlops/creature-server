@@ -19,8 +19,8 @@ namespace creatures::audio {
 /// by default, and every candidate is re-checked with a canonical within-root
 /// test, so a match cannot escape `root`.
 ///
-/// `filename` is expected to be a bare basename with no path separators; callers
-/// are responsible for that sanitization (see SoundService's isSafeFilename).
+/// `filename` must be a bare basename with no path separators. The resolver
+/// enforces that contract even when a caller forgets to pre-validate it.
 /// Basename matching is safe because the only subdir'd files are dialog renders
 /// named with globally-unique UUIDs — a collision with a top-level sound is not
 /// possible in practice.

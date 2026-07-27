@@ -12,6 +12,7 @@
 namespace creatures {
 
 extern std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
+extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 
@@ -48,10 +49,18 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
         rtpServer->resetAllEncoders();
         debug("All encoders reset - clean slate for encoding");
 
-        // Step 3: Send silent frames to prime decoders
+        // Step 3: Prime decoders without blocking this 1ms event-loop tick.
+        // Each RtpSilentFrameEvent sends one 10ms sample interval and schedules
+        // the next interval independently.
         if (silentFrameCount_ > 0) {
-            rtpServer->sendSilentFrames(silentFrameCount_);
-            debug("Sent {} silent frames - decoders should be primed!", silentFrameCount_);
+            if (!eventLoop) {
+                const auto errorMsg = "Event loop unavailable for RTP decoder priming";
+                if (span)
+                    span->setError(errorMsg);
+                return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+            }
+            eventLoop->scheduleEvent(std::make_shared<RtpSilentFrameEvent>(frameNumber, silentFrameCount_));
+            debug("Scheduled {} silent priming frames", silentFrameCount_);
         }
 
         // Update metrics
@@ -64,7 +73,8 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
             span->setSuccess();
         }
 
-        info("RTP encoder reset complete! SSRC: {} → {}, {} silent frames sent", oldSSRC, newSSRC, silentFrameCount_);
+        info("RTP encoder reset complete! SSRC: {} → {}, {} silent frames scheduled", oldSSRC, newSSRC,
+             silentFrameCount_);
 
         return Result<framenum_t>{frameNumber};
 
@@ -81,6 +91,43 @@ Result<framenum_t> RtpEncoderResetEvent::executeImpl() {
             span->setError(errorMsg);
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
     }
+}
+
+RtpSilentFrameEvent::RtpSilentFrameEvent(framenum_t frameNumber_, uint8_t framesRemaining_)
+    : EventBase(frameNumber_), framesRemaining_(framesRemaining_) {}
+
+Result<framenum_t> RtpSilentFrameEvent::executeImpl() {
+    if (framesRemaining_ == 0) {
+        return Result<framenum_t>{frameNumber};
+    }
+    if (!rtpServer || !rtpServer->isReady()) {
+        return Result<framenum_t>{
+            ServerError(ServerError::InternalError, "RTP server unavailable during decoder priming")};
+    }
+
+    const uint32_t timestamp = rtpServer->getNextFrameTimestamp();
+    const auto sendResult = rtpServer->sendSilentFrame();
+    if (sendResult != RTP_OK) {
+        return Result<framenum_t>{ServerError(ServerError::InternalError,
+                                              fmt::format("RTP silent frame send failed at timestamp {} with error {}",
+                                                          timestamp, static_cast<int>(sendResult)))};
+    }
+
+    if (metrics) {
+        metrics->incrementRtpEventsProcessed();
+    }
+
+    if (framesRemaining_ > 1) {
+        if (!eventLoop) {
+            return Result<framenum_t>{
+                ServerError(ServerError::InternalError, "Event loop unavailable during decoder priming")};
+        }
+        constexpr framenum_t primingStep = RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
+        eventLoop->scheduleEvent(
+            std::make_shared<RtpSilentFrameEvent>(frameNumber + primingStep, framesRemaining_ - 1));
+    }
+
+    return Result<framenum_t>{frameNumber};
 }
 
 } // namespace creatures

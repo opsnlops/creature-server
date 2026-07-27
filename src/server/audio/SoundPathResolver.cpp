@@ -48,6 +48,11 @@ std::optional<std::string> findByBasename(const fs::path &canonicalRoot, const s
 } // namespace
 
 std::optional<std::string> resolveSoundInRoot(const fs::path &root, const std::string &filename) {
+    const fs::path requested(filename);
+    if (filename.empty() || requested.is_absolute() || requested.has_root_path() || requested != requested.filename()) {
+        return std::nullopt;
+    }
+
     std::error_code ec;
     if (!fs::exists(root, ec) || ec) {
         return std::nullopt;

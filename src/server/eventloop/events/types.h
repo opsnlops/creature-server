@@ -168,14 +168,31 @@ class RtpEncoderResetEvent : public EventBase<RtpEncoderResetEvent> {
     using EventBase::EventBase;
 
     // Constructor with silent frame count parameter
-    RtpEncoderResetEvent(framenum_t frameNumber_, uint8_t silentFrameCount_ = 4);
+    RtpEncoderResetEvent(framenum_t frameNumber_, uint8_t silentFrameCount_ = RTP_PRIMING_FRAMES);
 
     virtual ~RtpEncoderResetEvent() = default;
 
     Result<framenum_t> executeImpl();
 
   private:
-    uint8_t silentFrameCount_{4}; // Default to 4 silent frames (80ms of priming)
+    uint8_t silentFrameCount_{RTP_PRIMING_FRAMES};
+};
+
+/**
+ * Sends one 10ms silent RTP frame set and reschedules itself until decoder
+ * priming is complete. Keeping each frame in its own event preserves the
+ * event-loop's 1ms timing contract.
+ */
+class RtpSilentFrameEvent : public EventBase<RtpSilentFrameEvent> {
+  public:
+    RtpSilentFrameEvent(framenum_t frameNumber_, uint8_t framesRemaining_);
+
+    virtual ~RtpSilentFrameEvent() = default;
+
+    Result<framenum_t> executeImpl();
+
+  private:
+    uint8_t framesRemaining_{0};
 };
 
 /**

@@ -327,7 +327,10 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
             return;
         }
 
-        framenum_t startFrame = capturedEventLoop->getNextFrameNumber() + 2; // +2 to allow for reset event
+        // Leave a complete 40ms priming window before playback. The reset event
+        // schedules one silent RTP frame every 10ms rather than blocking the
+        // event loop to send them all at once.
+        framenum_t startFrame = capturedEventLoop->getNextFrameNumber() + 2 + RTP_PRIMING_DURATION_FRAMES;
         const uint32_t delayMs = capturedConfig ? capturedConfig->getAnimationDelayMs() : 0;
         if (delayMs > 0) {
             startFrame += static_cast<framenum_t>(delayMs / EVENT_LOOP_PERIOD_MS);
@@ -335,9 +338,10 @@ void CooperativeAnimationScheduler::scheduleWithAsyncAudioLoad(std::shared_ptr<P
         }
         session->setStartingFrame(startFrame);
 
-        // Rotate SSRC values one frame before playback so controllers detect the new
-        // audio stream.
-        auto resetEvent = std::make_shared<RtpEncoderResetEvent>(startFrame - 1, 4); // 4 silent frames
+        // Rotate SSRC values and begin decoder priming immediately before the
+        // playback sample timeline.
+        auto resetEvent =
+            std::make_shared<RtpEncoderResetEvent>(startFrame - RTP_PRIMING_DURATION_FRAMES, RTP_PRIMING_FRAMES);
         capturedEventLoop->scheduleEvent(resetEvent);
 
         auto initialRunner = std::make_shared<PlaybackRunnerEvent>(startFrame, session);

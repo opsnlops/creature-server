@@ -1,6 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <fstream>
+#include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -14,6 +17,40 @@ namespace creatures::audio {
 struct MonoWav {
     std::vector<int16_t> samples;
     int sampleRate = 0;
+};
+
+/**
+ * Bounded-memory reader for signed 16-bit PCM WAV files.
+ *
+ * The reader keeps only the caller-requested chunk in memory and downmixes it
+ * directly to mono. Travel mode uses this instead of SDL_LoadWAV so a long
+ * 17-channel file does not need to fit in the Raspberry Pi's RAM.
+ */
+class MonoWavStream {
+  public:
+    static Result<std::shared_ptr<MonoWavStream>> open(const std::string &filePath);
+
+    /**
+     * Read and downmix up to output.size() sample frames.
+     *
+     * @return number of mono samples written; zero means end of file
+     */
+    Result<size_t> readMonoFrames(std::span<int16_t> output);
+
+    [[nodiscard]] int sampleRate() const { return sampleRate_; }
+    [[nodiscard]] uint16_t channels() const { return channels_; }
+    [[nodiscard]] uint64_t totalFrames() const { return totalFrames_; }
+
+  private:
+    MonoWavStream() = default;
+
+    std::ifstream file_;
+    uint16_t channels_{0};
+    uint16_t blockAlign_{0};
+    int sampleRate_{0};
+    uint64_t totalFrames_{0};
+    uint64_t dataBytesRemaining_{0};
+    std::vector<uint8_t> sourceBuffer_;
 };
 
 /**
