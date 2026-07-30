@@ -96,7 +96,8 @@ class MultiOpusRtpServer {
     void recordOutputFailure(const OutputCommand &command, const OutputResult &result) noexcept;
     void recordOutputException(const OutputCommand &command, const std::exception &exception) noexcept;
     [[nodiscard]] static const char *commandTypeName(OutputCommandType type);
-    void rotateSynchronizationSourceIdentifiers(uint64_t generation);
+    void rotateSynchronizationSourceIdentifiers(uint64_t generation, const std::string &ownerId,
+                                                const AsyncAudioTraceContext &traceContext);
     [[nodiscard]] RtpClockMapping resetFrameTimestamp();
     rtp_error_t send(uint8_t channelIndex, const std::vector<uint8_t> &opusEncodedFrame, uint32_t timestamp);
     OutputResult sendSilentFrameSet(size_t primingFrameIndex);
@@ -107,6 +108,7 @@ class MultiOpusRtpServer {
     uint32_t currentSynchronizationSourceIdentifier_{0}; // Track current SSRC for logging
     RtpFrameClock frameClock_;
     RtcpSender rtcpSender_;
+    std::atomic<uint64_t> readyGeneration_{0};
     RtpOutputCoordinator outputCoordinator_;
     BoundedCommandQueue<OutputCommand> outputQueue_{OUTPUT_QUEUE_CAPACITY};
     std::thread outputThread_;

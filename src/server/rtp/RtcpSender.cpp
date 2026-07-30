@@ -11,6 +11,7 @@
 #include <string>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <utility>
 
 #include <fmt/format.h>
 
@@ -33,8 +34,16 @@ RtcpSender::RtcpSender(std::chrono::milliseconds reportInterval)
         throw std::invalid_argument("RTCP report interval must be positive");
     }
     if (openSocket()) {
-        worker_ = std::thread(&RtcpSender::run, this);
-        info("RTCP sender ready on port {} with CNAME '{}'", RTCP_PORT, canonicalName_);
+        try {
+            worker_ = std::thread(&RtcpSender::run, this);
+            ready_.store(true);
+            info("RTCP sender ready on port {} with CNAME '{}'", RTCP_PORT, canonicalName_);
+        } catch (const std::exception &exception) {
+            error("Unable to start RTCP sender thread: {}; RTP audio will continue without synchronized timing",
+                  exception.what());
+            close(socket_);
+            socket_ = -1;
+        }
     } else {
         error("RTCP sender unavailable on port {}; RTP audio will continue without synchronized timing", RTCP_PORT);
     }
@@ -42,18 +51,24 @@ RtcpSender::RtcpSender(std::chrono::milliseconds reportInterval)
 
 RtcpSender::~RtcpSender() { shutdown(); }
 
-void RtcpSender::beginSession(uint64_t generation, const SynchronizationSources &synchronizationSources,
-                              const RtpClockMapping &clockMapping) {
+void RtcpSender::beginSession(uint64_t generation, std::string ownerId,
+                              const SynchronizationSources &synchronizationSources, const RtpClockMapping &clockMapping,
+                              AsyncAudioTraceContext traceContext) {
     if (!isReady()) {
         return;
     }
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (stopping_) {
+            return;
+        }
         session_.emplace(SessionState{
             .generation = generation,
+            .ownerId = std::move(ownerId),
             .synchronizationSources = synchronizationSources,
             .clockMapping = clockMapping,
+            .traceContext = std::move(traceContext),
         });
         ++stateRevision_;
         immediateReportRequested_ = false;
@@ -70,7 +85,7 @@ void RtcpSender::recordFrame(uint64_t generation, const SentOctets &sentOctets) 
     bool notify = false;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!session_.has_value() || session_->generation != generation) {
+        if (stopping_ || !session_.has_value() || session_->generation != generation) {
             return;
         }
 
@@ -102,7 +117,25 @@ void RtcpSender::endSession(uint64_t generation) {
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!session_.has_value() || session_->generation != generation) {
+        if (stopping_ || !session_.has_value() || session_->generation != generation) {
+            return;
+        }
+        session_.reset();
+        ++stateRevision_;
+        immediateReportRequested_ = false;
+        nextReportTime_ = {};
+    }
+    condition_.notify_one();
+}
+
+void RtcpSender::discardSessionUnless(uint64_t generation) {
+    if (!isReady()) {
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (stopping_ || !session_.has_value() || session_->generation == generation) {
             return;
         }
         session_.reset();
@@ -114,6 +147,7 @@ void RtcpSender::endSession(uint64_t generation) {
 }
 
 void RtcpSender::shutdown() {
+    ready_.store(false);
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (stopping_) {
@@ -199,8 +233,10 @@ void RtcpSender::run() {
         nextReportTime_ = now + reportInterval_;
         ReportSnapshot snapshot{
             .generation = session_->generation,
+            .ownerId = session_->ownerId,
             .synchronizationSources = session_->synchronizationSources,
             .clockMapping = session_->clockMapping,
+            .traceContext = session_->traceContext,
             .packetCounts = session_->packetCounts,
             .octetCounts = session_->octetCounts,
             .initialReport = initialReport,
@@ -264,6 +300,7 @@ void RtcpSender::sendReport(const ReportSnapshot &snapshot) noexcept {
                  snapshot.generation, snapshot.synchronizationSources.front(), snapshot.synchronizationSources.back(),
                  canonicalName_, static_cast<uint32_t>(timestamp.ntpTimestamp >> 32U),
                  static_cast<uint32_t>(timestamp.ntpTimestamp), timestamp.rtpTimestamp);
+            recordFirstReport(snapshot, timestamp);
         } else {
             debug("RTCP timing report sent for generation {} at RTP timestamp {}", snapshot.generation,
                   timestamp.rtpTimestamp);
@@ -273,6 +310,50 @@ void RtcpSender::sendReport(const ReportSnapshot &snapshot) noexcept {
         if (creatures::metrics) {
             creatures::metrics->incrementRtcpSendFailures();
         }
+        try {
+            auto span = creatures::observability
+                            ? creatures::observability->createOperationSpan("rtcp.sender.report.exception")
+                            : nullptr;
+            if (span) {
+                addTraceContextAttributes(span, snapshot);
+                span->setAttribute("error.type", "RtcpReportException");
+                span->setAttribute("error.message", exception.what());
+                span->recordException(exception);
+                span->setError(exception.what());
+            }
+        } catch (...) {
+            error("Failed to record RTCP report exception");
+        }
+    } catch (...) {
+        error("RTCP report generation failed for generation {} with an unknown exception", snapshot.generation);
+        if (creatures::metrics) {
+            creatures::metrics->incrementRtcpSendFailures();
+        }
+    }
+}
+
+void RtcpSender::recordFirstReport(const ReportSnapshot &snapshot, const RtpWallClockTimestamp &timestamp) noexcept {
+    try {
+        auto span = creatures::observability ? creatures::observability->createOperationSpan("rtcp.sender.report.first")
+                                             : nullptr;
+        if (!span) {
+            return;
+        }
+        addTraceContextAttributes(span, snapshot);
+        span->setAttribute("rtcp.sender.cname", canonicalName_);
+        span->setAttribute("rtcp.sender.ssrc.first", static_cast<int64_t>(snapshot.synchronizationSources.front()));
+        span->setAttribute("rtcp.sender.ssrc.last", static_cast<int64_t>(snapshot.synchronizationSources.back()));
+        span->setAttribute("rtcp.sender.ssrc.count", static_cast<int64_t>(RTP_STREAMING_CHANNELS));
+        span->setAttribute("rtcp.report.interval.ms", static_cast<int64_t>(reportInterval_.count()));
+        span->setAttribute("rtp.clock.rate", static_cast<int64_t>(RTP_SRATE));
+        span->setAttribute("rtp.timestamp", static_cast<int64_t>(timestamp.rtpTimestamp));
+        span->setAttribute("rtcp.ntp.seconds", static_cast<int64_t>(timestamp.ntpTimestamp >> 32U));
+        span->setAttribute("rtcp.ntp.fraction", static_cast<int64_t>(static_cast<uint32_t>(timestamp.ntpTimestamp)));
+        span->setSuccess();
+    } catch (const std::exception &exception) {
+        error("Failed to record initial RTCP report: {}", exception.what());
+    } catch (...) {
+        error("Failed to record initial RTCP report");
     }
 }
 
@@ -295,12 +376,13 @@ void RtcpSender::recordSendFailure(const ReportSnapshot &snapshot, const RtpWall
         if (!span) {
             return;
         }
-        span->setAttribute("rtcp.generation", static_cast<int64_t>(snapshot.generation));
-        span->setAttribute("rtcp.failed_channels", static_cast<int64_t>(failedChannels));
-        span->setAttribute("rtcp.first_failed_channel", static_cast<int64_t>(firstFailedChannel));
-        span->setAttribute("rtcp.ssrc", static_cast<int64_t>(snapshot.synchronizationSources[firstFailedChannel]));
-        span->setAttribute("rtcp.cname", canonicalName_);
-        span->setAttribute("rtcp.rtp_timestamp", static_cast<int64_t>(timestamp.rtpTimestamp));
+        addTraceContextAttributes(span, snapshot);
+        span->setAttribute("rtcp.report.failed.channels.count", static_cast<int64_t>(failedChannels));
+        span->setAttribute("rtcp.report.failed.channel.first", static_cast<int64_t>(firstFailedChannel));
+        span->setAttribute("rtcp.sender.ssrc",
+                           static_cast<int64_t>(snapshot.synchronizationSources[firstFailedChannel]));
+        span->setAttribute("rtcp.sender.cname", canonicalName_);
+        span->setAttribute("rtp.timestamp", static_cast<int64_t>(timestamp.rtpTimestamp));
         span->setAttribute("rtcp.ntp.seconds", static_cast<int64_t>(timestamp.ntpTimestamp >> 32U));
         span->setAttribute("rtcp.ntp.fraction", static_cast<int64_t>(static_cast<uint32_t>(timestamp.ntpTimestamp)));
         span->setAttribute("error.type", "RtcpSendFailure");
@@ -311,6 +393,26 @@ void RtcpSender::recordSendFailure(const ReportSnapshot &snapshot, const RtpWall
         error("Failed to record RTCP send failure: {}", exception.what());
     } catch (...) {
         error("Failed to record RTCP send failure");
+    }
+}
+
+void RtcpSender::addTraceContextAttributes(const std::shared_ptr<creatures::OperationSpan> &span,
+                                           const ReportSnapshot &snapshot) {
+    span->setAttribute("rtp.generation", static_cast<int64_t>(snapshot.generation));
+    span->setAttribute("rtp.owner.id", snapshot.ownerId);
+    span->setAttribute("rtp.enqueue.frame", snapshot.traceContext.enqueueFrame);
+    if (!snapshot.traceContext.triggerTraceId.empty()) {
+        span->setAttribute("trigger.trace_id", snapshot.traceContext.triggerTraceId);
+        span->setAttribute("trigger.span_id", snapshot.traceContext.triggerSpanId);
+    }
+    if (!snapshot.traceContext.sessionId.empty()) {
+        span->setAttribute("session.id", snapshot.traceContext.sessionId);
+    }
+    if (!snapshot.traceContext.animationId.empty()) {
+        span->setAttribute("animation.id", snapshot.traceContext.animationId);
+    }
+    if (!snapshot.traceContext.soundFile.empty()) {
+        span->setAttribute("sound.file", snapshot.traceContext.soundFile);
     }
 }
 
