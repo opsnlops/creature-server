@@ -186,6 +186,11 @@ bool RtcpSender::openSocket() {
         return false;
     }
 
+    const uint8_t multicastLoopback = 0;
+    if (setsockopt(socket_, IPPROTO_IP, IP_MULTICAST_LOOP, &multicastLoopback, sizeof(multicastLoopback)) < 0) {
+        warn("Unable to disable RTCP multicast loopback: {}; continuing with loopback enabled", std::strerror(errno));
+    }
+
     const int currentFlags = fcntl(socket_, F_GETFL, 0);
     if (currentFlags < 0 || fcntl(socket_, F_SETFL, currentFlags | O_NONBLOCK) < 0) {
         error("Unable to make RTCP socket non-blocking: {}", std::strerror(errno));
