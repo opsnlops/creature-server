@@ -117,10 +117,16 @@ MultiOpusRtpServer::~MultiOpusRtpServer() {
 
 RtpOutputLease MultiOpusRtpServer::acquireOutput(std::string ownerId) {
     auto lease = outputCoordinator_.acquire(std::move(ownerId));
-    readyGeneration_.store(0);
-    rtcpSender_.discardSessionUnless(lease.generation);
-    const size_t purged = outputQueue_.eraseIf(
-        [&lease](const OutputCommand &command) { return command.lease.generation != lease.generation; });
+    size_t purged = 0;
+    {
+        auto guard = outputCoordinator_.lockIfCurrent(lease);
+        if (guard) {
+            readyGeneration_.store(0);
+            rtcpSender_.discardSessionUnless(lease.generation);
+            purged = outputQueue_.eraseIf(
+                [&lease](const OutputCommand &command) { return command.lease.generation != lease.generation; });
+        }
+    }
     info("RTP output acquired by {} at generation {} ({} stale command(s) purged)", lease.ownerId, lease.generation,
          purged);
     return lease;

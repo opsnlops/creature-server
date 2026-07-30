@@ -5,10 +5,12 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 
 #include "server/config.h"
@@ -58,7 +60,7 @@ class RtcpSender {
         std::array<uint32_t, RTP_STREAMING_CHANNELS> packetCounts{};
         std::array<uint32_t, RTP_STREAMING_CHANNELS> octetCounts{};
         bool hasPackets{false};
-        uint64_t reportCount{0};
+        bool firstSuccessfulReportRecorded{false};
     };
 
     struct ReportSnapshot {
@@ -69,14 +71,16 @@ class RtcpSender {
         AsyncAudioTraceContext traceContext;
         std::array<uint32_t, RTP_STREAMING_CHANNELS> packetCounts;
         std::array<uint32_t, RTP_STREAMING_CHANNELS> octetCounts;
-        bool initialReport;
+        bool firstSuccessfulReport;
     };
 
     [[nodiscard]] static std::string makeCanonicalName();
     [[nodiscard]] bool openSocket();
     void run();
-    void sendReport(const ReportSnapshot &snapshot) noexcept;
+    [[nodiscard]] bool sendReport(const ReportSnapshot &snapshot) noexcept;
     void recordFirstReport(const ReportSnapshot &snapshot, const RtpWallClockTimestamp &timestamp) noexcept;
+    void recordReportException(const ReportSnapshot &snapshot, const std::exception &exception,
+                               std::string_view errorCode) noexcept;
     void recordSendFailure(const ReportSnapshot &snapshot, const RtpWallClockTimestamp &timestamp,
                            size_t failedChannels, uint8_t firstFailedChannel, int firstError) noexcept;
     static void addTraceContextAttributes(const std::shared_ptr<creatures::OperationSpan> &span,

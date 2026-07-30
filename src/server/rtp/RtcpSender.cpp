@@ -227,8 +227,6 @@ void RtcpSender::run() {
             continue;
         }
 
-        const bool initialReport = session_->reportCount == 0;
-        ++session_->reportCount;
         immediateReportRequested_ = false;
         nextReportTime_ = now + reportInterval_;
         ReportSnapshot snapshot{
@@ -239,16 +237,20 @@ void RtcpSender::run() {
             .traceContext = session_->traceContext,
             .packetCounts = session_->packetCounts,
             .octetCounts = session_->octetCounts,
-            .initialReport = initialReport,
+            .firstSuccessfulReport = !session_->firstSuccessfulReportRecorded,
         };
 
         lock.unlock();
-        sendReport(snapshot);
+        const bool reportSucceeded = sendReport(snapshot);
         lock.lock();
+        if (reportSucceeded && snapshot.firstSuccessfulReport && session_.has_value() &&
+            session_->generation == snapshot.generation) {
+            session_->firstSuccessfulReportRecorded = true;
+        }
     }
 }
 
-void RtcpSender::sendReport(const ReportSnapshot &snapshot) noexcept {
+bool RtcpSender::sendReport(const ReportSnapshot &snapshot) noexcept {
     try {
         const auto timestamp = snapshot.clockMapping.at(std::chrono::steady_clock::now());
         size_t failedChannels = 0;
@@ -292,10 +294,10 @@ void RtcpSender::sendReport(const ReportSnapshot &snapshot) noexcept {
 
         if (failedChannels > 0) {
             recordSendFailure(snapshot, timestamp, failedChannels, firstFailedChannel, firstError);
-            return;
+            return false;
         }
 
-        if (snapshot.initialReport) {
+        if (snapshot.firstSuccessfulReport) {
             info("Initial RTCP timing report sent for generation {} (SSRC {}-{}, CNAME '{}', NTP {}.{}, RTP {})",
                  snapshot.generation, snapshot.synchronizationSources.front(), snapshot.synchronizationSources.back(),
                  canonicalName_, static_cast<uint32_t>(timestamp.ntpTimestamp >> 32U),
@@ -305,31 +307,22 @@ void RtcpSender::sendReport(const ReportSnapshot &snapshot) noexcept {
             debug("RTCP timing report sent for generation {} at RTP timestamp {}", snapshot.generation,
                   timestamp.rtpTimestamp);
         }
+        return true;
     } catch (const std::exception &exception) {
         error("RTCP report generation failed for generation {}: {}", snapshot.generation, exception.what());
         if (creatures::metrics) {
             creatures::metrics->incrementRtcpSendFailures();
         }
-        try {
-            auto span = creatures::observability
-                            ? creatures::observability->createOperationSpan("rtcp.sender.report.exception")
-                            : nullptr;
-            if (span) {
-                addTraceContextAttributes(span, snapshot);
-                span->setAttribute("error.type", "RtcpReportException");
-                span->setAttribute("error.message", exception.what());
-                span->recordException(exception);
-                span->setError(exception.what());
-            }
-        } catch (...) {
-            error("Failed to record RTCP report exception");
-        }
+        recordReportException(snapshot, exception, "rtcp_report_exception");
     } catch (...) {
-        error("RTCP report generation failed for generation {} with an unknown exception", snapshot.generation);
+        const std::runtime_error exception("unknown RTCP report exception");
+        error("RTCP report generation failed for generation {}: {}", snapshot.generation, exception.what());
         if (creatures::metrics) {
             creatures::metrics->incrementRtcpSendFailures();
         }
+        recordReportException(snapshot, exception, "rtcp_report_unknown_exception");
     }
+    return false;
 }
 
 void RtcpSender::recordFirstReport(const ReportSnapshot &snapshot, const RtpWallClockTimestamp &timestamp) noexcept {
@@ -357,6 +350,26 @@ void RtcpSender::recordFirstReport(const ReportSnapshot &snapshot, const RtpWall
     }
 }
 
+void RtcpSender::recordReportException(const ReportSnapshot &snapshot, const std::exception &exception,
+                                       std::string_view errorCode) noexcept {
+    try {
+        auto span = creatures::observability
+                        ? creatures::observability->createOperationSpan("rtcp.sender.report.exception")
+                        : nullptr;
+        if (!span) {
+            return;
+        }
+        addTraceContextAttributes(span, snapshot);
+        span->setAttribute("error.type", "RtcpReportException");
+        span->setAttribute("error.code", std::string(errorCode));
+        span->setAttribute("error.message", exception.what());
+        span->recordException(exception);
+        span->setError(exception.what());
+    } catch (...) {
+        error("Failed to record RTCP report exception");
+    }
+}
+
 void RtcpSender::recordSendFailure(const ReportSnapshot &snapshot, const RtpWallClockTimestamp &timestamp,
                                    size_t failedChannels, uint8_t firstFailedChannel, int firstError) noexcept {
     try {
@@ -370,9 +383,8 @@ void RtcpSender::recordSendFailure(const ReportSnapshot &snapshot, const RtpWall
                                               failedChannels, firstFailedChannel, std::strerror(firstError));
         error("{} (generation {}, RTP timestamp {})", errorMessage, snapshot.generation, timestamp.rtpTimestamp);
 
-        auto span = creatures::observability
-                        ? creatures::observability->createOperationSpan("rtcp.sender_report.send_failure")
-                        : nullptr;
+        auto span = creatures::observability ? creatures::observability->createOperationSpan("rtcp.sender.report.send")
+                                             : nullptr;
         if (!span) {
             return;
         }
