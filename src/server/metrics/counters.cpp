@@ -17,6 +17,8 @@ SystemCounters::SystemCounters() {
     restRequestsProcessed = 0;
     rtpEventsProcessed = 0;
     rtpSendFailures = 0;
+    rtcpReportsSent = 0;
+    rtcpSendFailures = 0;
     rtpEncoderResets = 0;
     rtpAudioLoadersActive = 0;
     rtpAudioLoadsQueued = 0;
@@ -67,6 +69,10 @@ void SystemCounters::incrementRestRequestsProcessed() { restRequestsProcessed++;
 void SystemCounters::incrementRtpEventsProcessed() { rtpEventsProcessed++; }
 
 void SystemCounters::incrementRtpSendFailures() { rtpSendFailures++; }
+
+void SystemCounters::incrementRtcpReportsSent() { rtcpReportsSent++; }
+
+void SystemCounters::incrementRtcpSendFailures() { rtcpSendFailures++; }
 
 void SystemCounters::incrementSoundFilesServed() { soundFilesServed++; }
 
@@ -132,6 +138,10 @@ uint64_t SystemCounters::getRestRequestsProcessed() { return restRequestsProcess
 uint64_t SystemCounters::getRtpEventsProcessed() { return rtpEventsProcessed.load(); }
 
 uint64_t SystemCounters::getRtpSendFailures() { return rtpSendFailures.load(); }
+
+uint64_t SystemCounters::getRtcpReportsSent() { return rtcpReportsSent.load(); }
+
+uint64_t SystemCounters::getRtcpSendFailures() { return rtcpSendFailures.load(); }
 
 uint64_t SystemCounters::getRtpEncoderResets() { return rtpEncoderResets.load(); }
 
@@ -201,6 +211,8 @@ oatpp::Object<SystemCountersDto> SystemCounters::convertToDto() {
     dto->restRequestsProcessed = restRequestsProcessed.load();
     dto->rtpEventsProcessed = rtpEventsProcessed.load();
     dto->rtpSendFailures = rtpSendFailures.load();
+    dto->rtcpReportsSent = rtcpReportsSent.load();
+    dto->rtcpSendFailures = rtcpSendFailures.load();
     dto->rtpEncoderResets = rtpEncoderResets.load();
     dto->rtpAudioLoadersActive = rtpAudioLoadersActive.load();
     dto->rtpAudioLoadsQueued = rtpAudioLoadsQueued.load();

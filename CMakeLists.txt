@@ -607,6 +607,12 @@ add_executable(creature-server
         src/server/rtp/opus/OpusEncoderWrapper.h
         src/server/rtp/MultiOpusRtpServer.cpp
         src/server/rtp/MultiOpusRtpServer.h
+        src/server/rtp/RtcpPacket.cpp
+        src/server/rtp/RtcpPacket.h
+        src/server/rtp/RtcpSender.cpp
+        src/server/rtp/RtcpSender.h
+        src/server/rtp/RtpClockMapping.cpp
+        src/server/rtp/RtpClockMapping.h
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
@@ -721,6 +727,8 @@ add_executable(creature-server-test
         tests/server/rtp/AudioLoadExecutor_test.cpp
         tests/server/rtp/BoundedCommandQueue_test.cpp
         tests/server/rtp/OpusPriming_test.cpp
+        tests/server/rtp/RtcpPacket_test.cpp
+        tests/server/rtp/RtpClockMapping_test.cpp
         tests/server/rtp/RtpFrameClock_test.cpp
         tests/server/rtp/RtpOutputCoordinator_test.cpp
         tests/server/rtp/StandaloneRtpAdmission_test.cpp
@@ -731,6 +739,8 @@ add_executable(creature-server-test
         src/server/audio/SoundPathResolver.cpp
         src/server/audio/LocalAudioPlaybackCoordinator.cpp
         src/server/rtp/AudioLoadExecutor.cpp
+        src/server/rtp/RtcpPacket.cpp
+        src/server/rtp/RtpClockMapping.cpp
         src/server/rtp/opus/OpusEncoderWrapper.cpp
         src/server/voice/DialogPreviewAssembly.cpp
         src/server/voice/PcmWavWriter.cpp

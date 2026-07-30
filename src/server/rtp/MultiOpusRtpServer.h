@@ -20,6 +20,7 @@
 #include "server/config.h"
 #include "server/rtp/AsyncAudioTraceContext.h"
 #include "server/rtp/BoundedCommandQueue.h"
+#include "server/rtp/RtcpSender.h"
 #include "server/rtp/RtpFrameClock.h"
 #include "server/rtp/RtpOutputCoordinator.h"
 
@@ -87,6 +88,7 @@ class MultiOpusRtpServer {
         rtp_error_t error{RTP_OK};
         uint8_t firstFailedChannel{0};
         uint32_t timestamp{0};
+        RtcpSender::SentOctets sentOctets{};
     };
 
     void runOutputWorker();
@@ -94,8 +96,8 @@ class MultiOpusRtpServer {
     void recordOutputFailure(const OutputCommand &command, const OutputResult &result) noexcept;
     void recordOutputException(const OutputCommand &command, const std::exception &exception) noexcept;
     [[nodiscard]] static const char *commandTypeName(OutputCommandType type);
-    void rotateSynchronizationSourceIdentifiers();
-    void resetFrameTimestamp();
+    void rotateSynchronizationSourceIdentifiers(uint64_t generation);
+    [[nodiscard]] RtpClockMapping resetFrameTimestamp();
     rtp_error_t send(uint8_t channelIndex, const std::vector<uint8_t> &opusEncodedFrame, uint32_t timestamp);
     OutputResult sendSilentFrameSet(size_t primingFrameIndex);
     OutputResult sendAudioFrameSet(const AudioStreamBuffer &buffer, size_t frameIndex);
@@ -104,6 +106,7 @@ class MultiOpusRtpServer {
     uint32_t nextSynchronizationSourceIdentifier_{1000}; // Start from a round number for easy debugging
     uint32_t currentSynchronizationSourceIdentifier_{0}; // Track current SSRC for logging
     RtpFrameClock frameClock_;
+    RtcpSender rtcpSender_;
     RtpOutputCoordinator outputCoordinator_;
     BoundedCommandQueue<OutputCommand> outputQueue_{OUTPUT_QUEUE_CAPACITY};
     std::thread outputThread_;
