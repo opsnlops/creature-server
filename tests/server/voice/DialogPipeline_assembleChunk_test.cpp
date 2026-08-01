@@ -9,6 +9,7 @@
 #include "server/voice/DialogPipeline.h"
 
 using creatures::voice::assembleChunk;
+using creatures::voice::DialogClient;
 using creatures::voice::DialogInput;
 using creatures::voice::DialogResult;
 using creatures::voice::ForcedAlignmentChar;
@@ -336,6 +337,29 @@ TEST(AssembleChunk, WordCaptureFiltersInterleavedWhitespaceTokens) {
     ASSERT_EQ(out.perCreature[1].words.size(), 2u);
     EXPECT_EQ(out.perCreature[1].words[0].word, "Hi");
     EXPECT_EQ(out.perCreature[1].words[1].word, "Mango.");
+}
+
+TEST(AssembleChunk, CountsUtf8CharactersAfterStrippingStyleTags) {
+    const std::string text = "[grumble] I don’t care";
+    const std::string stripped = DialogClient::stripTags(text);
+    const auto offsets = DialogClient::utf8CodepointByteOffsets(stripped);
+
+    std::vector<int16_t> pcm(static_cast<std::size_t>(1.0 * kSR), 0);
+    DialogResult dr;
+    dr.audioData = packPcm(pcm);
+
+    ForcedAlignmentResult fa;
+    fa.words = {word("I", 0.0, 0.1), word("don’t", 0.1, 0.2), word("care", 0.2, 0.3)};
+    for (std::size_t i = 0; i + 1 < offsets.size(); ++i) {
+        fa.characters.push_back(charT(stripped.substr(offsets[i], offsets[i + 1] - offsets[i]),
+                                      static_cast<double>(i) * 0.01, static_cast<double>(i + 1) * 0.01));
+    }
+
+    const std::vector<DialogInput> turns{{"voice-A", text}};
+    const auto result = assembleChunk(turns, dr, fa, kSR);
+    ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError().value().getMessage() : "");
+    ASSERT_EQ(result.getValue()->perCreature.size(), 1u);
+    EXPECT_EQ(result.getValue()->perCreature[0].mouth.size(), DialogClient::utf8CodepointCount(stripped));
 }
 
 TEST(AssembleChunk, FailsCleanlyWhenForcedAlignmentRunsOutOfWords) {

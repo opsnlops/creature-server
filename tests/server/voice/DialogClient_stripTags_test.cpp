@@ -69,3 +69,20 @@ TEST(DialogClientStripTags, WhitespaceVariantsAllCollapse) {
     // the same way: collapse to a single ASCII space.
     EXPECT_EQ(DialogClient::stripTags("a\rb\fc\vd"), "a b c d");
 }
+
+TEST(DialogClientStripTags, UnicodeWhitespaceCollapses) {
+    EXPECT_EQ(DialogClient::stripTags("a\xC2\x85"
+                                      "b\xC2\xA0"
+                                      "c\xE2\x80\x83"
+                                      "d\xE2\x80\xA8"
+                                      "e"),
+              "a b c d e");
+}
+
+TEST(DialogClientUtf8, CountsCodePointsRatherThanEncodedBytes) {
+    const std::string text = "It’s seven 😀";
+    EXPECT_EQ(DialogClient::utf8CodepointCount(text), 12u);
+    const auto offsets = DialogClient::utf8CodepointByteOffsets(text);
+    ASSERT_EQ(offsets.size(), 13u);
+    EXPECT_EQ(offsets.back(), text.size());
+}

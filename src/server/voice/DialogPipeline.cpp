@@ -21,8 +21,10 @@ namespace {
 std::size_t countWords(const std::string &s) {
     std::size_t n = 0;
     bool inWord = false;
-    for (char c : s) {
-        const bool ws = (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v');
+    const auto offsets = DialogClient::utf8CodepointByteOffsets(s);
+    for (std::size_t i = 0; i + 1 < offsets.size(); ++i) {
+        const auto codepoint = std::string_view(s).substr(offsets[i], offsets[i + 1] - offsets[i]);
+        const bool ws = DialogClient::isUnicodeWhitespace(codepoint);
         if (!ws && !inWord) {
             ++n;
             inWord = true;
@@ -184,7 +186,10 @@ Result<DialogAssembled> assembleChunk(const std::vector<DialogInput> &turns, con
             ti.words.push_back(DialogWordTiming{w.text, w.startSeconds, w.endSeconds});
         }
 
-        const std::size_t cn = stripped.size();
+        // Forced alignment returns one entry per Unicode character. Do not use
+        // std::string::size() here: it counts UTF-8 bytes, which over-runs the
+        // alignment stream for text such as curly apostrophes or emoji.
+        const std::size_t cn = DialogClient::utf8CodepointCount(stripped);
         if (charCursor + cn > alignment.characters.size()) {
             return Result<DialogAssembled>{
                 ServerError(ServerError::InvalidData,

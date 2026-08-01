@@ -106,6 +106,7 @@ TEST(DialogCacheSaveLoad, RoundTripsAllFields) {
     EXPECT_EQ(out.generationId, "gen-rt-1");
     EXPECT_EQ(out.audioPcm, in.audioPcm);
     EXPECT_EQ(out.turnsSummary, in.turnsSummary);
+    EXPECT_EQ(out.voiceSegmentIndexSpace, creatures::voice::kVoiceSegmentIndexSpaceRaw);
     ASSERT_EQ(out.voiceSegments.size(), 1u);
     EXPECT_EQ(out.voiceSegments[0].voiceId, "voice-A");
     EXPECT_EQ(out.voiceSegments[0].characterStartIndex, 0u);

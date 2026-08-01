@@ -14,6 +14,14 @@ namespace creatures::voice {
 
 namespace {
 
+/// Map raw UTF-8 code-point boundaries in one turn to boundaries in the
+/// tag-stripped, whitespace-collapsed representation sent to forced
+/// alignment. The vector has one entry for every raw boundary, including the
+/// beginning and end of the input.
+std::vector<std::size_t> normalizedBoundaryMap(const std::string &raw) {
+    return DialogClient::tagStrippedCodepointBoundaryMap(raw);
+}
+
 /// First ~80 chars of the tag-stripped, space-joined turn text — the same
 /// human-readable cache-directory summary the preview and render always built.
 std::string makeTurnsSummary(const std::vector<DialogInput> &inputs) {
@@ -33,6 +41,58 @@ std::string makeTurnsSummary(const std::vector<DialogInput> &inputs) {
 }
 
 } // namespace
+
+void normalizeVoiceSegmentIndices(std::vector<DialogVoiceSegment> &segments, const std::vector<DialogInput> &inputs) {
+    struct TurnMap {
+        std::size_t rawStart = 0;
+        std::size_t rawLength = 0;
+        std::size_t normalizedStart = 0;
+        std::vector<std::size_t> rawToNormalized;
+    };
+
+    std::vector<TurnMap> maps;
+    maps.reserve(inputs.size());
+    std::size_t rawCursor = 0;
+    std::size_t normalizedCursor = 0;
+    for (std::size_t i = 0; i < inputs.size(); ++i) {
+        TurnMap map;
+        map.rawStart = rawCursor;
+        map.rawLength = DialogClient::utf8CodepointCount(inputs[i].text);
+        map.normalizedStart = normalizedCursor;
+        map.rawToNormalized = normalizedBoundaryMap(inputs[i].text);
+        maps.push_back(std::move(map));
+
+        rawCursor += maps.back().rawLength;
+        normalizedCursor += DialogClient::utf8CodepointCount(DialogClient::stripTags(inputs[i].text));
+        if (i + 1 < inputs.size()) {
+            ++normalizedCursor;
+        }
+    }
+
+    for (auto &segment : segments) {
+        if (segment.dialogInputIndex >= maps.size())
+            continue;
+        const auto &map = maps[segment.dialogInputIndex];
+        const auto localRawStart = segment.characterStartIndex >= map.rawStart
+                                       ? std::min(segment.characterStartIndex - map.rawStart, map.rawLength)
+                                       : 0;
+        const auto localRawEnd = segment.characterEndIndex >= map.rawStart
+                                     ? std::min(segment.characterEndIndex - map.rawStart, map.rawLength)
+                                     : 0;
+        const auto startBoundary = std::min(localRawStart, map.rawToNormalized.size() - 1);
+        const auto endBoundary = std::min(std::max(localRawEnd, localRawStart), map.rawToNormalized.size() - 1);
+        segment.characterStartIndex = map.normalizedStart + map.rawToNormalized[startBoundary];
+        segment.characterEndIndex = map.normalizedStart + map.rawToNormalized[endBoundary];
+    }
+}
+
+bool normalizeCachedGenerationVoiceSegments(CachedGeneration &generation, const std::vector<DialogInput> &inputs) {
+    if (generation.voiceSegmentIndexSpace == kVoiceSegmentIndexSpaceNormalized)
+        return false;
+    normalizeVoiceSegmentIndices(generation.voiceSegments, inputs);
+    generation.voiceSegmentIndexSpace = kVoiceSegmentIndexSpaceNormalized;
+    return true;
+}
 
 Result<CachedGeneration> generateChunkWithAlignment(DialogClient &client, const std::string &apiKey,
                                                     const std::vector<DialogInput> &chunk, const std::string &cacheKey,
@@ -73,6 +133,12 @@ Result<CachedGeneration> generateChunkWithAlignment(DialogClient &client, const 
         warn("generateChunkWithAlignment: saveGeneration failed: {}", saveResult.getError().value().getMessage());
     }
 
+    const bool normalized = normalizeCachedGenerationVoiceSegments(gen, chunk);
+    if (span) {
+        span->setAttribute("dialog.segment_index_space", gen.voiceSegmentIndexSpace);
+        span->setAttribute("dialog.segment_normalization_applied", normalized);
+    }
+
     return Result<CachedGeneration>{gen};
 }
 
@@ -81,6 +147,7 @@ CachedGeneration mergeChunkGenerations(const std::vector<CachedGeneration> &chun
                                        double interChunkGapSecs) {
 
     CachedGeneration merged;
+    merged.voiceSegmentIndexSpace = kVoiceSegmentIndexSpaceNormalized;
     merged.generationId = util::generateUUID();
     merged.createdAt = std::chrono::system_clock::now();
     merged.forcedAlignment.loss = 0.0;

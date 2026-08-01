@@ -264,6 +264,7 @@ Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::
     if (meta.contains("voice_segments")) {
         gen.voiceSegments = voiceSegmentsFromJson(meta["voice_segments"]);
     }
+    gen.voiceSegmentIndexSpace = meta.value("voice_segment_index_space", std::string{kVoiceSegmentIndexSpaceRaw});
     if (meta.contains("forced_alignment")) {
         gen.forcedAlignment = forcedAlignmentFromJson(meta["forced_alignment"]);
     }
@@ -322,6 +323,7 @@ Result<void> saveGeneration(const std::string &cacheKey, const CachedGeneration 
     meta["created_at"] = toIso8601(gen.createdAt);
     meta["turns_summary"] = gen.turnsSummary;
     meta["voice_segments"] = voiceSegmentsToJson(gen.voiceSegments);
+    meta["voice_segment_index_space"] = gen.voiceSegmentIndexSpace;
     meta["forced_alignment"] = forcedAlignmentToJson(gen.forcedAlignment);
     meta["provenance"] = provenanceToJson(gen.provenance);
 

@@ -118,8 +118,9 @@ Result<std::vector<std::vector<DialogInput>>> chunkTurns(const std::vector<Dialo
 ///
 /// Algorithm (port of show.py steps 3+4, validated by ear on the prototype):
 /// 1. Walk turns in order. For each, consume len(stripped.split()) words from
-///    `alignment.words` to bracket the turn's audio. Consume len(stripped)
-///    chars from `alignment.characters` for mouth timing. Advance the char
+///    `alignment.words` to bracket the turn's audio. Consume the UTF-8
+///    code-point count of `stripped` from `alignment.characters` for mouth
+///    timing. Advance the char
 ///    cursor by 1 to skip the inter-turn space separator.
 /// 2. Slice the mixdown per turn: clamp the cut to the midpoint of the gap
 ///    with each neighbour; keep PAD_IN onset + PAD_OUT release; apply 8ms

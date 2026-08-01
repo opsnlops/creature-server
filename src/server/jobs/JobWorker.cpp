@@ -1355,6 +1355,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         std::vector<voice::DialogVoiceSegment> chunkSegments;
         voice::ForcedAlignmentResult chunkAlignment;
         bool cacheHit = false;
+        bool segmentNormalizationApplied = false;
 
         // Only honor the explicit generation_id on a SINGLE-chunk scene —
         // for multi-chunk scenes the id would only match one chunk's cache
@@ -1365,6 +1366,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             auto loadResult = voice::loadGeneration(cacheKey, requestedGenerationId);
             if (loadResult.isSuccess()) {
                 auto gen = loadResult.getValue().value();
+                segmentNormalizationApplied = voice::normalizeCachedGenerationVoiceSegments(gen, chunk);
                 chunkGenerationId = gen.generationId;
                 chunkAudio = std::move(gen.audioPcm);
                 chunkSegments = std::move(gen.voiceSegments);
@@ -1382,6 +1384,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                 auto loadResult = voice::loadGeneration(cacheKey, *latest);
                 if (loadResult.isSuccess()) {
                     auto gen = loadResult.getValue().value();
+                    segmentNormalizationApplied = voice::normalizeCachedGenerationVoiceSegments(gen, chunk);
                     chunkGenerationId = gen.generationId;
                     chunkAudio = std::move(gen.audioPcm);
                     chunkSegments = std::move(gen.voiceSegments);
@@ -1403,9 +1406,12 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             chunkAudio = std::move(gen.audioPcm);
             chunkSegments = std::move(gen.voiceSegments);
             chunkAlignment = std::move(gen.forcedAlignment);
+            segmentNormalizationApplied = true;
         }
         if (chunkSpan) {
             chunkSpan->setAttribute("dialog.cache_hit", cacheHit);
+            chunkSpan->setAttribute("dialog.segment_index_space", voice::kVoiceSegmentIndexSpaceNormalized);
+            chunkSpan->setAttribute("dialog.segment_normalization_applied", segmentNormalizationApplied);
         }
         generationIds.push_back(chunkGenerationId);
 
@@ -1417,6 +1423,11 @@ void JobWorker::handleDialogJob(JobState &jobState) {
 
         auto assembleResult = voice::assembleChunk(chunk, dialog, chunkAlignment, kDialogSampleRate);
         if (!assembleResult.isSuccess()) {
+            if (chunkSpan) {
+                recordSpanError(chunkSpan, assembleResult.getError().value().getMessage(), "DialogAssemblyError",
+                                assembleResult.getError().value().getCode());
+                chunkSpan->setAttribute("dialog.assembly_failed", true);
+            }
             return failJob(
                 fmt::format("chunk {} assembleChunk: {}", ci, assembleResult.getError().value().getMessage()));
         }

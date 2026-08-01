@@ -12,6 +12,9 @@
 
 namespace creatures::voice {
 
+inline constexpr const char *kVoiceSegmentIndexSpaceRaw = "elevenlabs_raw_v1";
+inline constexpr const char *kVoiceSegmentIndexSpaceNormalized = "normalized_transcript_v1";
+
 /// One captured "take" of an ElevenLabs Text-to-Dialogue + Forced-Alignment
 /// call, persisted to disk so subsequent previews / full-pipeline runs can
 /// reuse it without re-paying the API cost.
@@ -35,6 +38,9 @@ struct CachedGeneration {
     /// each segment are unreliable on eleven_v3 (kept for diagnostics only);
     /// the character INDICES are reliable.
     std::vector<DialogVoiceSegment> voiceSegments;
+    /// Coordinate system used by voiceSegments in persisted metadata. Older
+    /// entries omit this field and are treated as raw ElevenLabs indices.
+    std::string voiceSegmentIndexSpace = kVoiceSegmentIndexSpaceRaw;
     /// Real per-character / per-word timing for the audio + tag-stripped
     /// transcript. The cache stores it so a re-run doesn't have to call
     /// forced-alignment either.
