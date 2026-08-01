@@ -28,7 +28,6 @@
 
 #include <array>
 #include <chrono>
-#include <mutex>
 #include <random>
 
 #include "server/metrics/counters.h"
@@ -130,142 +129,143 @@ void ObservabilityManager::initializeMetricInstruments() {
     // Create all the counter instruments
     // Using Counter since these are monotonic increasing values
     totalFramesCounter_ = meter_->CreateUInt64Counter("creature_server_total_frames",
-                                                      "Total number of frames processed by the event loop", "frames");
+                                                      "Total number of frames processed by the event loop", "{frames}");
 
     eventsProcessedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_events_processed", "Total number of events processed by the event loop", "events");
+        "creature_server_events_processed", "Total number of events processed by the event loop", "{events}");
 
     framesStreamedCounter_ = meter_->CreateUInt64Counter("creature_server_frames_streamed",
-                                                         "Total number of frames streamed from clients", "frames");
+                                                         "Total number of frames streamed from clients", "{frames}");
 
     dmxEventsProcessedCounter_ = meter_->CreateUInt64Counter("creature_server_dmx_events_processed",
-                                                             "Total number of DMX events processed", "events");
+                                                             "Total number of DMX events processed", "{events}");
 
     animationsPlayedCounter_ = meter_->CreateUInt64Counter("creature_server_animations_played",
-                                                           "Total number of animations played", "animations");
+                                                           "Total number of animations played", "{animations}");
 
     soundsPlayedCounter_ =
-        meter_->CreateUInt64Counter("creature_server_sounds_played", "Total number of sounds played", "sounds");
+        meter_->CreateUInt64Counter("creature_server_sounds_played", "Total number of sounds played", "{sounds}");
 
     playlistsStartedCounter_ = meter_->CreateUInt64Counter("creature_server_playlists_started",
-                                                           "Total number of playlists started", "playlists");
+                                                           "Total number of playlists started", "{playlists}");
 
     playlistsStoppedCounter_ = meter_->CreateUInt64Counter("creature_server_playlists_stopped",
-                                                           "Total number of playlists stopped", "playlists");
+                                                           "Total number of playlists stopped", "{playlists}");
 
     playlistsEventsProcessedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_playlist_events_processed", "Total number of playlist events processed", "events");
+        "creature_server_playlist_events_processed", "Total number of playlist events processed", "{events}");
 
     playlistStatusRequestsCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_playlist_status_requests", "Total number of playlist status requests", "requests");
+        "creature_server_playlist_status_requests", "Total number of playlist status requests", "{requests}");
 
-    restRequestsProcessedCounter_ = meter_->CreateUInt64Counter("creature_server_rest_requests_processed",
-                                                                "Total number of REST requests processed", "requests");
+    restRequestsProcessedCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_rest_requests_processed", "Total number of REST requests processed", "{requests}");
 
     rtpEventsProcessedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_rtp_events_processed", "Total number of RTP audio chunk events processed", "events");
+        "creature_server_rtp_events_processed", "Total number of RTP audio chunk events processed", "{events}");
 
     rtpSendFailuresCounter_ = meter_->CreateUInt64Counter("creature_server_rtp_send_failures",
-                                                          "Total number of failed RTP output sends", "failures");
+                                                          "Total number of failed RTP output sends", "{failures}");
 
-    rtpAudioLoadersActiveGauge_ = meter_->CreateDoubleUpDownCounter(
-        "creature_server_rtp_audio_loaders_active", "Cooperative RTP audio loader jobs currently running", "jobs");
+    rtpAudioLoadersActiveGauge_ = meter_->CreateDoubleGauge(
+        "creature_server_rtp_audio_loaders_active", "Cooperative RTP audio loader jobs currently running", "{jobs}");
 
-    rtpAudioLoadsQueuedGauge_ = meter_->CreateDoubleUpDownCounter(
-        "creature_server_rtp_audio_loads_queued", "Cooperative RTP audio loader jobs waiting for a worker", "jobs");
+    rtpAudioLoadsQueuedGauge_ = meter_->CreateDoubleGauge(
+        "creature_server_rtp_audio_loads_queued", "Cooperative RTP audio loader jobs waiting for a worker", "{jobs}");
 
     rtpAudioLoadsAcceptedCounter_ = meter_->CreateUInt64Counter("creature_server_rtp_audio_loads_accepted",
-                                                                "Total cooperative RTP audio loads admitted", "jobs");
+                                                                "Total cooperative RTP audio loads admitted", "{jobs}");
 
-    rtpAudioLoadsCompletedCounter_ = meter_->CreateUInt64Counter("creature_server_rtp_audio_loads_completed",
-                                                                 "Total cooperative RTP audio loads completed", "jobs");
+    rtpAudioLoadsCompletedCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_rtp_audio_loads_completed", "Total cooperative RTP audio loads completed", "{jobs}");
 
-    rtpAudioLoadsRejectedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_rtp_audio_loads_rejected", "Total cooperative RTP audio loads rejected at admission", "jobs");
+    rtpAudioLoadsRejectedCounter_ =
+        meter_->CreateUInt64Counter("creature_server_rtp_audio_loads_rejected",
+                                    "Total cooperative RTP audio loads rejected at admission", "{jobs}");
 
     rtpAudioLoadsCancelledCounter_ =
         meter_->CreateUInt64Counter("creature_server_rtp_audio_loads_cancelled",
-                                    "Total queued cooperative RTP audio loads abandoned before running", "jobs");
+                                    "Total queued cooperative RTP audio loads abandoned before running", "{jobs}");
 
     rtpAudioLoadsFailedCounter_ =
         meter_->CreateUInt64Counter("creature_server_rtp_audio_loads_failed",
-                                    "Total cooperative RTP audio loader jobs that threw an exception", "jobs");
+                                    "Total cooperative RTP audio loader jobs that threw an exception", "{jobs}");
 
-    localAudioPlaybacksActiveGauge_ = meter_->CreateDoubleUpDownCounter(
-        "creature_server_local_audio_playbacks_active", "Local audio device jobs currently running", "jobs");
+    localAudioPlaybacksActiveGauge_ = meter_->CreateDoubleGauge("creature_server_local_audio_playbacks_active",
+                                                                "Local audio device jobs currently running", "{jobs}");
 
     localAudioPlaybacksQueuedGauge_ =
-        meter_->CreateDoubleUpDownCounter("creature_server_local_audio_playbacks_queued",
-                                          "Local audio jobs waiting in the last-request-wins slot", "jobs");
+        meter_->CreateDoubleGauge("creature_server_local_audio_playbacks_queued",
+                                  "Local audio jobs waiting in the last-request-wins slot", "{jobs}");
 
     localAudioPlaybacksAcceptedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_local_audio_playbacks_accepted", "Total local audio playback jobs admitted", "jobs");
+        "creature_server_local_audio_playbacks_accepted", "Total local audio playback jobs admitted", "{jobs}");
 
     localAudioPlaybacksCompletedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_local_audio_playbacks_completed", "Total local audio playback jobs completed", "jobs");
+        "creature_server_local_audio_playbacks_completed", "Total local audio playback jobs completed", "{jobs}");
 
     localAudioPlaybacksReplacedCounter_ =
         meter_->CreateUInt64Counter("creature_server_local_audio_playbacks_replaced",
-                                    "Total local audio playback jobs replaced by newer work", "jobs");
+                                    "Total local audio playback jobs replaced by newer work", "{jobs}");
 
     localAudioPlaybacksRejectedCounter_ =
         meter_->CreateUInt64Counter("creature_server_local_audio_playbacks_rejected",
-                                    "Total local audio playback jobs rejected during admission", "jobs");
+                                    "Total local audio playback jobs rejected during admission", "{jobs}");
 
     localAudioPlaybacksStoppedCounter_ = meter_->CreateUInt64Counter(
         "creature_server_local_audio_playbacks_stopped",
-        "Total local audio playback jobs explicitly stopped or stopped at shutdown", "jobs");
+        "Total local audio playback jobs explicitly stopped or stopped at shutdown", "{jobs}");
 
     localAudioPlaybacksFailedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_local_audio_playbacks_failed", "Total local audio playback jobs that failed", "jobs");
+        "creature_server_local_audio_playbacks_failed", "Total local audio playback jobs that failed", "{jobs}");
 
     localAudioPlaybacksTimedOutCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_local_audio_playbacks_timed_out", "Total local audio playback jobs that timed out", "jobs");
+        "creature_server_local_audio_playbacks_timed_out", "Total local audio playback jobs that timed out", "{jobs}");
 
     soundFilesServedCounter_ = meter_->CreateUInt64Counter("creature_server_sound_files_served",
-                                                           "Total number of sound files served", "files");
+                                                           "Total number of sound files served", "{files}");
 
     websocketConnectionsProcessedCounter_ =
         meter_->CreateUInt64Counter("creature_server_websocket_connections_processed",
-                                    "Total number of WebSocket connections processed", "connections");
+                                    "Total number of WebSocket connections processed", "{connections}");
 
     websocketMessagesReceivedCounter_ = meter_->CreateUInt64Counter(
-        "creature_server_websocket_messages_received", "Total number of WebSocket messages received", "messages");
+        "creature_server_websocket_messages_received", "Total number of WebSocket messages received", "{messages}");
 
-    websocketMessagesSentCounter_ = meter_->CreateUInt64Counter("creature_server_websocket_messages_sent",
-                                                                "Total number of WebSocket messages sent", "messages");
+    websocketMessagesSentCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_websocket_messages_sent", "Total number of WebSocket messages sent", "{messages}");
 
     websocketPingsSentCounter_ = meter_->CreateUInt64Counter("creature_server_websocket_pings_sent",
-                                                             "Total number of WebSocket pings sent", "pings");
+                                                             "Total number of WebSocket pings sent", "{pings}");
 
     websocketPongsReceivedCounter_ = meter_->CreateUInt64Counter("creature_server_websocket_pongs_received",
-                                                                 "Total number of WebSocket pongs received", "pongs");
+                                                                 "Total number of WebSocket pongs received", "{pongs}");
 
     // Initialize sensor metric instruments (gauges for current readings)
-    boardTemperatureGauge_ = meter_->CreateDoubleUpDownCounter(
-        "creature_server_board_temperature", "Current board temperature for each creature", "fahrenheit");
+    boardTemperatureGauge_ = meter_->CreateDoubleGauge("creature_server_board_temperature",
+                                                       "Current board temperature for each creature", "[degF]");
 
-    sensorVoltageGauge_ = meter_->CreateDoubleUpDownCounter("creature_server_sensor_voltage",
-                                                            "Current voltage reading for each power sensor", "volts");
+    sensorVoltageGauge_ = meter_->CreateDoubleGauge("creature_server_sensor_voltage",
+                                                    "Current voltage reading for each power sensor", "V");
 
-    sensorCurrentGauge_ = meter_->CreateDoubleUpDownCounter(
-        "creature_server_sensor_current", "Current amperage reading for each power sensor", "amperes");
+    sensorCurrentGauge_ = meter_->CreateDoubleGauge("creature_server_sensor_current",
+                                                    "Current amperage reading for each power sensor", "A");
 
-    sensorPowerGauge_ = meter_->CreateDoubleUpDownCounter("creature_server_sensor_power",
-                                                          "Current power reading for each power sensor", "watts");
+    sensorPowerGauge_ =
+        meter_->CreateDoubleGauge("creature_server_sensor_power", "Current power reading for each power sensor", "W");
 
     // Dynamixel servo telemetry gauges (one series per servo, keyed by dxl.id)
-    dynamixelTemperatureGauge_ = meter_->CreateDoubleUpDownCounter(
-        "creature_server_dynamixel_temperature", "Current temperature for each Dynamixel servo", "fahrenheit");
+    dynamixelTemperatureGauge_ = meter_->CreateDoubleGauge("creature_server_dynamixel_temperature",
+                                                           "Current temperature for each Dynamixel servo", "[degF]");
 
-    dynamixelLoadGauge_ = meter_->CreateDoubleUpDownCounter(
-        "creature_server_dynamixel_load", "Current present load for each Dynamixel servo (raw, signed)", "load");
+    dynamixelLoadGauge_ = meter_->CreateDoubleGauge(
+        "creature_server_dynamixel_load", "Current present load for each Dynamixel servo (raw, signed)", "{load}");
 
-    dynamixelVoltageGauge_ = meter_->CreateDoubleUpDownCounter(
-        "creature_server_dynamixel_voltage", "Current input voltage for each Dynamixel servo", "volts");
+    dynamixelVoltageGauge_ = meter_->CreateDoubleGauge("creature_server_dynamixel_voltage",
+                                                       "Current input voltage for each Dynamixel servo", "V");
 
-    dynamixelPositionGauge_ = meter_->CreateDoubleUpDownCounter(
-        "creature_server_dynamixel_position", "Current raw encoder position for each Dynamixel servo", "ticks");
+    dynamixelPositionGauge_ = meter_->CreateDoubleGauge(
+        "creature_server_dynamixel_position", "Current raw encoder position for each Dynamixel servo", "{ticks}");
 
     debug("All metric instruments initialized successfully");
 }
@@ -278,7 +278,8 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
     trace("Exporting metrics to OTel");
 
     // Since these are cumulative counters and OTel expects delta values,
-    // we need to track the previous values and only send the difference
+    // we need to track the previous values and only send the difference.
+    // (Gauges below need none of this — they Record() the absolute value.)
     static std::atomic<uint64_t> lastTotalFrames{0};
     static std::atomic<uint64_t> lastEventsProcessed{0};
     static std::atomic<uint64_t> lastFramesStreamed{0};
@@ -292,15 +293,11 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
     static std::atomic<uint64_t> lastRestRequestsProcessed{0};
     static std::atomic<uint64_t> lastRtpEventsProcessed{0};
     static std::atomic<uint64_t> lastRtpSendFailures{0};
-    static std::atomic<double> lastRtpAudioLoadersActive{0};
-    static std::atomic<double> lastRtpAudioLoadsQueued{0};
     static std::atomic<uint64_t> lastRtpAudioLoadsAccepted{0};
     static std::atomic<uint64_t> lastRtpAudioLoadsCompleted{0};
     static std::atomic<uint64_t> lastRtpAudioLoadsRejected{0};
     static std::atomic<uint64_t> lastRtpAudioLoadsCancelled{0};
     static std::atomic<uint64_t> lastRtpAudioLoadsFailed{0};
-    static std::atomic<double> lastLocalAudioPlaybacksActive{0};
-    static std::atomic<double> lastLocalAudioPlaybacksQueued{0};
     static std::atomic<uint64_t> lastLocalAudioPlaybacksAccepted{0};
     static std::atomic<uint64_t> lastLocalAudioPlaybacksCompleted{0};
     static std::atomic<uint64_t> lastLocalAudioPlaybacksReplaced{0};
@@ -386,17 +383,10 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
     if (deltaRtpSendFailures > 0)
         rtpSendFailuresCounter_->Add(deltaRtpSendFailures);
 
-    double currentRtpAudioLoadersActive = static_cast<double>(metrics->getRtpAudioLoadersActive());
-    double deltaRtpAudioLoadersActive =
-        currentRtpAudioLoadersActive - lastRtpAudioLoadersActive.exchange(currentRtpAudioLoadersActive);
-    if (deltaRtpAudioLoadersActive != 0)
-        rtpAudioLoadersActiveGauge_->Add(deltaRtpAudioLoadersActive);
-
-    double currentRtpAudioLoadsQueued = static_cast<double>(metrics->getRtpAudioLoadsQueued());
-    double deltaRtpAudioLoadsQueued =
-        currentRtpAudioLoadsQueued - lastRtpAudioLoadsQueued.exchange(currentRtpAudioLoadsQueued);
-    if (deltaRtpAudioLoadsQueued != 0)
-        rtpAudioLoadsQueuedGauge_->Add(deltaRtpAudioLoadsQueued);
+    // Gauges record the absolute reading every cycle — no delta tracking, and no
+    // skip-if-unchanged, so a steady value keeps reporting instead of going stale.
+    rtpAudioLoadersActiveGauge_->Record(static_cast<double>(metrics->getRtpAudioLoadersActive()));
+    rtpAudioLoadsQueuedGauge_->Record(static_cast<double>(metrics->getRtpAudioLoadsQueued()));
 
     uint64_t currentRtpAudioLoadsAccepted = metrics->getRtpAudioLoadsAccepted();
     uint64_t deltaRtpAudioLoadsAccepted =
@@ -428,17 +418,8 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
     if (deltaRtpAudioLoadsFailed > 0)
         rtpAudioLoadsFailedCounter_->Add(deltaRtpAudioLoadsFailed);
 
-    double currentLocalAudioPlaybacksActive = static_cast<double>(metrics->getLocalAudioPlaybacksActive());
-    double deltaLocalAudioPlaybacksActive =
-        currentLocalAudioPlaybacksActive - lastLocalAudioPlaybacksActive.exchange(currentLocalAudioPlaybacksActive);
-    if (deltaLocalAudioPlaybacksActive != 0)
-        localAudioPlaybacksActiveGauge_->Add(deltaLocalAudioPlaybacksActive);
-
-    double currentLocalAudioPlaybacksQueued = static_cast<double>(metrics->getLocalAudioPlaybacksQueued());
-    double deltaLocalAudioPlaybacksQueued =
-        currentLocalAudioPlaybacksQueued - lastLocalAudioPlaybacksQueued.exchange(currentLocalAudioPlaybacksQueued);
-    if (deltaLocalAudioPlaybacksQueued != 0)
-        localAudioPlaybacksQueuedGauge_->Add(deltaLocalAudioPlaybacksQueued);
+    localAudioPlaybacksActiveGauge_->Record(static_cast<double>(metrics->getLocalAudioPlaybacksActive()));
+    localAudioPlaybacksQueuedGauge_->Record(static_cast<double>(metrics->getLocalAudioPlaybacksQueued()));
 
     uint64_t currentLocalAudioPlaybacksAccepted = metrics->getLocalAudioPlaybacksAccepted();
     uint64_t deltaLocalAudioPlaybacksAccepted =
@@ -534,48 +515,17 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
     // Get all current sensor data
     auto allSensorData = sensorDataCache->getAllSensorData();
 
-    // Static storage for previous values to implement true gauge behavior
-    // Thread-safe access using static mutex
-    static std::mutex sensorMetricsMutex;
-    static std::unordered_map<std::string, double> lastTemperatureValues;
-    static std::unordered_map<std::string, double> lastVoltageValues;
-    static std::unordered_map<std::string, double> lastCurrentValues;
-    static std::unordered_map<std::string, double> lastPowerValues;
-
-    std::lock_guard<std::mutex> lock(sensorMetricsMutex);
-
     for (const auto &[creatureId, sensorData] : allSensorData) {
         // Create attributes map for this creature
         std::unordered_map<std::string, std::string> attributes;
         attributes["creature.id"] = creatureId;
         attributes["creature.name"] = sensorData.creatureName;
 
-        debug("Processing sensor data: creatureId='{}' (len={}), creatureName='{}' (len={})", creatureId,
-              creatureId.length(), sensorData.creatureName, sensorData.creatureName.length());
-
         // Export board temperature with creature identification
         if (boardTemperatureGauge_) {
-            debug("Exporting temperature metric: creature.id={}, creature.name={}, temperature={:.2f}F", creatureId,
+            trace("Exporting temperature metric: creature.id={}, creature.name={}, temperature={:.2f}F", creatureId,
                   sensorData.creatureName, sensorData.boardTemperature);
-
-            // Calculate delta from previous value for true gauge behavior
-            std::string tempKey = creatureId;
-            bool isFirstReading = lastTemperatureValues.find(tempKey) == lastTemperatureValues.end();
-            double lastTemp = isFirstReading ? 0.0 : lastTemperatureValues[tempKey];
-            double tempDelta = sensorData.boardTemperature - lastTemp;
-
-            debug("Temperature delta calculation: creature={}, lastTemp={:.2f}, currentTemp={:.2f}, delta={:.2f}, "
-                  "isFirst={}",
-                  creatureId, lastTemp, sensorData.boardTemperature, tempDelta, isFirstReading);
-
-            if (tempDelta != 0.0 || isFirstReading) {
-                debug("Sending temperature metric with {} attributes", attributes.size());
-                for (const auto &[key, value] : attributes) {
-                    debug("  attribute: {}={}", key, value);
-                }
-                boardTemperatureGauge_->Add(isFirstReading ? sensorData.boardTemperature : tempDelta, attributes);
-                lastTemperatureValues[tempKey] = sensorData.boardTemperature;
-            }
+            boardTemperatureGauge_->Record(sensorData.boardTemperature, attributes);
         }
 
         // Export power sensor readings
@@ -584,34 +534,16 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
             std::unordered_map<std::string, std::string> sensorAttributes = attributes;
             sensorAttributes["sensor.name"] = powerReading.name;
 
-            // Create unique keys for tracking previous values
-            std::string sensorKey = creatureId + ":" + powerReading.name;
-
             if (sensorVoltageGauge_) {
-                double lastVoltage = lastVoltageValues[sensorKey];
-                double voltageDelta = powerReading.voltage - lastVoltage;
-                if (voltageDelta != 0.0) {
-                    sensorVoltageGauge_->Add(voltageDelta, sensorAttributes);
-                    lastVoltageValues[sensorKey] = powerReading.voltage;
-                }
+                sensorVoltageGauge_->Record(powerReading.voltage, sensorAttributes);
             }
 
             if (sensorCurrentGauge_) {
-                double lastCurrent = lastCurrentValues[sensorKey];
-                double currentDelta = powerReading.current - lastCurrent;
-                if (currentDelta != 0.0) {
-                    sensorCurrentGauge_->Add(currentDelta, sensorAttributes);
-                    lastCurrentValues[sensorKey] = powerReading.current;
-                }
+                sensorCurrentGauge_->Record(powerReading.current, sensorAttributes);
             }
 
             if (sensorPowerGauge_) {
-                double lastPower = lastPowerValues[sensorKey];
-                double powerDelta = powerReading.power - lastPower;
-                if (powerDelta != 0.0) {
-                    sensorPowerGauge_->Add(powerDelta, sensorAttributes);
-                    lastPowerValues[sensorKey] = powerReading.power;
-                }
+                sensorPowerGauge_->Record(powerReading.power, sensorAttributes);
             }
         }
     }
@@ -623,11 +555,6 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
     // Export Dynamixel servo telemetry (separate cache slot, one series per servo)
     auto allDynamixelData = sensorDataCache->getAllDynamixelData();
 
-    static std::unordered_map<std::string, double> lastDynamixelTemperatureValues;
-    static std::unordered_map<std::string, double> lastDynamixelLoadValues;
-    static std::unordered_map<std::string, double> lastDynamixelVoltageValues;
-    static std::unordered_map<std::string, double> lastDynamixelPositionValues;
-
     for (const auto &[creatureId, dynamixelData] : allDynamixelData) {
         for (const auto &reading : dynamixelData.dynamixelReadings) {
             // Attributes identify the creature and the specific servo on its bus
@@ -636,47 +563,22 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
             servoAttributes["creature.name"] = dynamixelData.creatureName;
             servoAttributes["dxl.id"] = std::to_string(reading.dxlId);
 
-            // Unique key per (creature, servo) for delta tracking
-            std::string servoKey = creatureId + ":" + std::to_string(reading.dxlId);
-
             if (dynamixelTemperatureGauge_) {
-                double lastTemp = lastDynamixelTemperatureValues[servoKey];
-                double tempDelta = reading.temperatureF - lastTemp;
-                if (tempDelta != 0.0) {
-                    dynamixelTemperatureGauge_->Add(tempDelta, servoAttributes);
-                    lastDynamixelTemperatureValues[servoKey] = reading.temperatureF;
-                }
+                dynamixelTemperatureGauge_->Record(reading.temperatureF, servoAttributes);
             }
 
             if (dynamixelLoadGauge_) {
-                double currentLoad = static_cast<double>(reading.presentLoad);
-                double lastLoad = lastDynamixelLoadValues[servoKey];
-                double loadDelta = currentLoad - lastLoad;
-                if (loadDelta != 0.0) {
-                    dynamixelLoadGauge_->Add(loadDelta, servoAttributes);
-                    lastDynamixelLoadValues[servoKey] = currentLoad;
-                }
+                dynamixelLoadGauge_->Record(static_cast<double>(reading.presentLoad), servoAttributes);
             }
 
             if (dynamixelVoltageGauge_) {
-                double lastVoltage = lastDynamixelVoltageValues[servoKey];
-                double voltageDelta = reading.voltageV - lastVoltage;
-                if (voltageDelta != 0.0) {
-                    dynamixelVoltageGauge_->Add(voltageDelta, servoAttributes);
-                    lastDynamixelVoltageValues[servoKey] = reading.voltageV;
-                }
+                dynamixelVoltageGauge_->Record(reading.voltageV, servoAttributes);
             }
 
             // Position is only reported by newer firmware; skip it entirely when absent
             // so older servos don't emit a misleading 0.
             if (dynamixelPositionGauge_ && reading.hasPosition) {
-                double currentPosition = static_cast<double>(reading.presentPosition);
-                double lastPosition = lastDynamixelPositionValues[servoKey];
-                double positionDelta = currentPosition - lastPosition;
-                if (positionDelta != 0.0) {
-                    dynamixelPositionGauge_->Add(positionDelta, servoAttributes);
-                    lastDynamixelPositionValues[servoKey] = currentPosition;
-                }
+                dynamixelPositionGauge_->Record(static_cast<double>(reading.presentPosition), servoAttributes);
             }
         }
     }

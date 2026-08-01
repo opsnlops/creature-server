@@ -165,15 +165,15 @@ class ObservabilityManager {
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> restRequestsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpEventsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpSendFailuresCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> rtpAudioLoadersActiveGauge_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> rtpAudioLoadsQueuedGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> rtpAudioLoadersActiveGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> rtpAudioLoadsQueuedGauge_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpAudioLoadsAcceptedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpAudioLoadsCompletedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpAudioLoadsRejectedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpAudioLoadsCancelledCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpAudioLoadsFailedCounter_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> localAudioPlaybacksActiveGauge_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> localAudioPlaybacksQueuedGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> localAudioPlaybacksActiveGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> localAudioPlaybacksQueuedGauge_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> localAudioPlaybacksAcceptedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> localAudioPlaybacksCompletedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> localAudioPlaybacksReplacedCounter_;
@@ -189,16 +189,16 @@ class ObservabilityManager {
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> websocketPongsReceivedCounter_;
 
     // Sensor metric instruments - gauges for current readings
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> boardTemperatureGauge_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> sensorVoltageGauge_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> sensorCurrentGauge_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> sensorPowerGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> boardTemperatureGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> sensorVoltageGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> sensorCurrentGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> sensorPowerGauge_;
 
     // Dynamixel servo telemetry gauges - keyed per servo (dxl.id)
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelTemperatureGauge_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelLoadGauge_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelVoltageGauge_;
-    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::UpDownCounter<double>> dynamixelPositionGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> dynamixelTemperatureGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> dynamixelLoadGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> dynamixelVoltageGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> dynamixelPositionGauge_;
 
     bool initialized_;
 
