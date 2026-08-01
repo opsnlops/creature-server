@@ -19,8 +19,8 @@ RTP/Opus show pipeline.
    optional client-supplied `duration_extension_ms`, and calls
    `POST /v1/music/detailed?output_format=pcm_48000` with `music_v2` and
    `force_instrumental=true`. This extra requested material compensates for
-   ElevenLabs compositions that end with a few seconds of silence; the final show
-   WAV still trims the BGM to the dialog timeline.
+   ElevenLabs compositions that end with a few seconds of silence. Final show
+   rendering continues until whichever ends last: spoken dialog or accepted music.
 5. ElevenLabs returns 48 kHz, 16-bit stereo PCM for `pcm_48000`. The server averages
    each left/right sample pair into the single BGM lane without resampling or a
    codec round trip, then stores the authoritative candidate as a temporary mono
@@ -29,8 +29,9 @@ RTP/Opus show pipeline.
 6. Promotion validates the candidate and its embedded provenance, copies it
    atomically to `sounds/dialog/music/` under a descriptive immutable filename,
    and updates the saved DialogScript's background-music reference.
-7. A later dialog render loads that permanent WAV, truncates or zero-pads it to the
-   rendered speech timeline, and writes it to channel 17 of the 17-channel show WAV.
+7. A later dialog render loads that permanent WAV and writes it to channel 17 of
+   the 17-channel show WAV. The show timeline is the longer of dialog and music;
+   creature lanes hold silent/neutral frames through any remaining music tail.
 
 MP3 is a preview/share transport only. It is never accepted as show input.
 
@@ -188,5 +189,16 @@ call span. It also confirmed that permanent-rendition path resolution remains a
 child of the HTTP request trace and exports only a file hash, extension, and store
 class—not prompt-derived filenames or filesystem paths.
 
-The debug build and all 306 automated tests passed after the final integration and
-observability changes.
+The final timeline policy was subsequently corrected after console planning caught
+that truncating an accepted music tail would make natural fades impossible. The
+renderer now uses the later of the spoken-dialog and accepted-music endpoints,
+leaves creature audio lanes silent, and emits neutral animation frames while track
+17 finishes. Unit coverage verifies both longer-music WAV interleaving and show
+timeline selection. Long show WAVs interleave in bounded blocks; accepted-WAV and
+iXML chunk extents, music duration, animation frame count, and estimated BSON size
+are preflighted before publication and before large accepted WAVs are allocated.
+Failed renders remove their partial WAV. Superseded WAVs are retained because the
+legacy animation metadata that names them is client-writable and therefore is not
+a safe deletion authority. The debug build and all 324
+automated tests passed after the final integration, observability, timeline, and
+resource-safety changes.

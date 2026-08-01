@@ -714,6 +714,8 @@ add_executable(creature-server-test
         tests/server/voice/MusicClient_test.cpp
         tests/server/voice/SpeechTrackBuilder_test.cpp
         src/server/voice/SpeechTrackBuilder.cpp
+        tests/server/voice/DialogAnimation_test.cpp
+        src/server/voice/DialogAnimation.cpp
         tests/server/voice/DialogPipeline_chunkTurns_test.cpp
         tests/server/voice/DialogPipeline_assembleChunk_test.cpp
         tests/server/voice/DialogPipeline_concatChunks_test.cpp

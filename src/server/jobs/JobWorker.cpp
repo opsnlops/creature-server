@@ -33,6 +33,7 @@
 #include "server/voice/DialogWav.h"
 #include "server/voice/IxmlReader.h"
 #include "server/voice/LipSyncProcessor.h"
+#include "server/voice/MusicClient.h"
 #include "server/voice/RhubarbData.h"
 #include "server/voice/SoundDataProcessor.h"
 #include "server/voice/SpeechGenerationManager.h"
@@ -72,6 +73,27 @@ extern std::shared_ptr<util::AudioCache> audioCache;
 namespace creatures::jobs {
 
 namespace {
+
+class RemoveFileUnlessReleased {
+  public:
+    explicit RemoveFileUnlessReleased(std::filesystem::path path) : path_(std::move(path)) {}
+    RemoveFileUnlessReleased(const RemoveFileUnlessReleased &) = delete;
+    RemoveFileUnlessReleased &operator=(const RemoveFileUnlessReleased &) = delete;
+    ~RemoveFileUnlessReleased() {
+        if (!released_) {
+            std::error_code errorCode;
+            std::filesystem::remove(path_, errorCode);
+            if (errorCode) {
+                warn("Unable to remove uncommitted dialog WAV: {}", errorCode.message());
+            }
+        }
+    }
+    void release() { released_ = true; }
+
+  private:
+    std::filesystem::path path_;
+    bool released_{false};
+};
 
 // getAdHocTempRoot + getAnimationLipSyncTempRoot used to live here as anon-
 // namespace helpers (the latter for the lipsync handler, the former for ad-hoc
@@ -1429,7 +1451,9 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             failJob(message);
         };
         const auto musicPath = storage::resolveSoundPath(backgroundMusic->sound_file);
-        auto musicResult = audio::loadWavAsMono(musicPath.string());
+        const auto maxMusicSamples =
+            static_cast<std::uint64_t>(voice::kMaxMusicLengthMs) * static_cast<std::uint64_t>(kDialogSampleRate) / 1000;
+        auto musicResult = audio::loadWavAsMono(musicPath.string(), maxMusicSamples);
         if (!musicResult.isSuccess()) {
             return failMusicLoad(fmt::format("accepted background music could not be loaded: {}",
                                              musicResult.getError().value().getMessage()),
@@ -1465,6 +1489,21 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             musicSpan->setAttribute("music.checksum_verified", true);
             musicSpan->setSuccess();
         }
+    }
+
+    const auto showTimelineSamples = voice::dialogPlaybackSampleCount(assembled, backgroundMusicSamples);
+    const auto musicTailSamples = showTimelineSamples - assembled.totalSamples;
+    if (jobState.span) {
+        const auto samplesToMs = [](std::size_t samples) {
+            return static_cast<int64_t>(samples * 1000 / kDialogSampleRate);
+        };
+        jobState.span->setAttribute("dialog.speech_samples", static_cast<int64_t>(assembled.totalSamples));
+        jobState.span->setAttribute("dialog.show_samples", static_cast<int64_t>(showTimelineSamples));
+        jobState.span->setAttribute("music.tail_samples", static_cast<int64_t>(musicTailSamples));
+        jobState.span->setAttribute("dialog.speech_duration_ms", samplesToMs(assembled.totalSamples));
+        jobState.span->setAttribute("dialog.show_duration_ms", samplesToMs(showTimelineSamples));
+        jobState.span->setAttribute("music.tail_duration_ms", samplesToMs(musicTailSamples));
+        jobState.span->setAttribute("music.extends_show", musicTailSamples > 0);
     }
 
     // ---- 17-channel WAV output. The storage facade owns the path math AND
@@ -1572,12 +1611,6 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         }
     }
 
-    const bool embedProvenance = persistence == DialogPersistence::Permanent && !provenance.empty();
-    auto wavWriteResult = voice::writeDialogWav(assembled, voiceToChannel, wavPath, jobState.span,
-                                                embedProvenance ? &provenance : nullptr, backgroundMusicSamples);
-    if (!wavWriteResult.isSuccess()) {
-        return failJob(wavWriteResult.getError().value().getMessage());
-    }
     updateProgress(0.70f);
 
     // ---- Per-creature base body motion + mouth bytes.
@@ -1626,7 +1659,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                 *msPerFrame = 1; // mirror ad-hoc fallback; avoid divide-by-zero
             }
             const double totalMs =
-                static_cast<double>(assembled.totalSamples) * 1000.0 / static_cast<double>(assembled.sampleRate);
+                static_cast<double>(showTimelineSamples) * 1000.0 / static_cast<double>(assembled.sampleRate);
             totalFrames = static_cast<std::size_t>(std::ceil(totalMs / static_cast<double>(*msPerFrame)));
         } else if (baseAnim.metadata.milliseconds_per_frame != *msPerFrame) {
             return failJob(fmt::format(
@@ -1652,7 +1685,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         }
 
         RhubarbSoundData snd;
-        snd.metadata.duration = static_cast<double>(assembled.totalSamples) / static_cast<double>(assembled.sampleRate);
+        snd.metadata.duration = static_cast<double>(showTimelineSamples) / static_cast<double>(assembled.sampleRate);
         snd.metadata.soundFile = wavPath.filename().string();
         snd.mouthCues = viseme->charTimingsToMouthCues(pc.mouth);
         auto mouthBytes = soundProc.processSoundData(snd, *msPerFrame, totalFrames);
@@ -1694,7 +1727,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
 
     // ---- Build the multi-track Animation.
     auto animResult = voice::buildDialogAnimation(assembled, creatureInputs, *msPerFrame, animationSoundFile, title,
-                                                  jobState.span, existingAnimationId);
+                                                  jobState.span, existingAnimationId, showTimelineSamples);
     if (!animResult.isSuccess()) {
         return failJob(animResult.getError().value().getMessage());
     }
@@ -1716,6 +1749,18 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         }
     }
 
+    // Validate and construct every animation frame before publishing the much
+    // larger multichannel WAV. From this point until the database publication
+    // succeeds, any return or exception removes the new/partial file.
+    const bool embedProvenance = persistence == DialogPersistence::Permanent && !provenance.empty();
+    RemoveFileUnlessReleased wavCleanup(wavPath);
+    auto wavWriteResult = voice::writeDialogWav(assembled, voiceToChannel, wavPath, jobState.span,
+                                                embedProvenance ? &provenance : nullptr, backgroundMusicSamples);
+    if (!wavWriteResult.isSuccess()) {
+        return failJob(wavWriteResult.getError().value().getMessage());
+    }
+    updateProgress(0.90f);
+
     // ---- Persist via the storage facade so the right cache invalidations
     // fire automatically per persistence (AdHoc → AdHocAnimationList+AdHocSoundList,
     // Permanent → Animation+SoundList). Per issue #11 we can't forget any of them.
@@ -1731,6 +1776,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             return failJob(fmt::format("publishAnimation: {}", upsertResult.getError().value().getMessage()));
         }
     }
+    wavCleanup.release();
     updateProgress(0.95f);
 
     // ---- Optional autoplay. Universe was validated above to be common across

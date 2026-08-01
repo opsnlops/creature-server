@@ -22,13 +22,19 @@ namespace creatures::voice {
 /// 0-based interleave lane.
 using VoiceChannelMap = std::unordered_map<std::string, uint16_t>;
 
+/// Return the show timeline length in 48 kHz samples. Dialog rendering follows
+/// whichever accepted asset ends last: spoken dialog or background music.
+std::size_t dialogPlaybackSampleCount(const DialogAssembled &assembled, std::span<const int16_t> backgroundMusic = {});
+
 /// Write an assembled dialog scene to disk as the 48 kHz / S16 / 17-channel
 /// interleaved WAV that AudioStreamBuffer::loadFromWavFile and the external
 /// creature-controller both depend on.
 ///
 /// Each creature's mono PCM is placed in its `audio_channel` lane; every
-/// other lane is zero. The output file is a standard PCM WAV — 44-byte
-/// canonical header, then the interleaved samples.
+/// other lane is zero. The output lasts until the later of the dialog or
+/// background music; creature lanes are silent during a longer music tail.
+/// The output file is a standard PCM WAV — 44-byte canonical header, then the
+/// interleaved samples.
 ///
 /// Validation (returns InvalidData on failure):
 /// - `assembled.sampleRate` must be 48000 (the only rate the streaming audio
@@ -40,13 +46,13 @@ using VoiceChannelMap = std::unordered_map<std::string, uint16_t>;
 ///   for `backgroundMusic`.
 ///   mapped channel (two creatures clobbering the same lane = silent data
 ///   loss; fail at submit time instead).
-/// - `assembled.totalSamples` * 17 * 2 bytes must fit in a uint32_t — the WAV
+/// - `max(assembled.totalSamples, backgroundMusic.size())` * 17 * 2 bytes must
+///   fit in a uint32_t — the WAV
 ///   header's size fields are 32-bit. ~4.2 GiB total, or about an hour of
 ///   17-channel audio at 48 kHz. Realistic dialog scenes are well under this.
 ///
-/// Builds the full interleaved buffer in memory before writing — the file is
-/// only loaded back via loadFromWavFile, which itself reads the whole thing
-/// into memory, so there's no streaming win from doing it incrementally.
+/// Interleaving is written in bounded blocks so long music tails do not require
+/// the full 17-channel WAV to exist in memory at once.
 ///
 /// On success, the file at `outPath` is suitable for direct hand-off to
 /// AudioStreamBuffer::loadFromWavFile.

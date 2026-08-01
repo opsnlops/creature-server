@@ -18,7 +18,7 @@ class DialogMusicRequestDto : public oatpp::DTO {
     DTO_FIELD_INFO(duration_extension_ms) {
         info->description =
             "Extra instrumental material to request beyond the exact dialog duration. Defaults to 0; range "
-            "0...60000 ms. The final show WAV still ends on the dialog timeline.";
+            "0...60000 ms. Final rendering continues until the later of the dialog or accepted music.";
         info->required = false;
     }
     DTO_FIELD(Int64, duration_extension_ms);

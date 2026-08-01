@@ -1,3 +1,8 @@
+#include <array>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <limits>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -12,6 +17,7 @@ using creatures::voice::parseIxmlLipsync;
 using creatures::voice::parseIxmlProvenance;
 using creatures::voice::parseIxmlTrackList;
 using creatures::voice::parseIxmlWordAlignment;
+using creatures::voice::readIxmlChunk;
 using creatures::voice::WavProvenance;
 
 TEST(IxmlReaderExtract, ReturnsInnerTextOfATag) {
@@ -19,6 +25,29 @@ TEST(IxmlReaderExtract, ReturnsInnerTextOfATag) {
     auto v = extractIxmlField(xml, "SOURCE_SCRIPT_ID");
     ASSERT_TRUE(v.has_value());
     EXPECT_EQ(*v, "abc-123");
+}
+
+TEST(IxmlReaderExtract, RejectsAChunkDeclaredPastEndOfFileBeforeAllocating) {
+    const auto unique = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path =
+        std::filesystem::temp_directory_path() / ("creature-server-oversized-ixml-" + std::to_string(unique) + ".wav");
+    {
+        std::ofstream out(path, std::ios::binary);
+        const auto writeU32 = [&](std::uint32_t value) {
+            const std::array<char, 4> bytes{static_cast<char>(value), static_cast<char>(value >> 8),
+                                            static_cast<char>(value >> 16), static_cast<char>(value >> 24)};
+            out.write(bytes.data(), bytes.size());
+        };
+        out.write("RIFF", 4);
+        writeU32(12);
+        out.write("WAVE", 4);
+        out.write("iXML", 4);
+        writeU32(std::numeric_limits<std::uint32_t>::max());
+    }
+
+    EXPECT_FALSE(readIxmlChunk(path).has_value());
+    std::error_code removeError;
+    std::filesystem::remove(path, removeError);
 }
 
 TEST(IxmlReaderExtract, RoundTripsMusicProvenance) {

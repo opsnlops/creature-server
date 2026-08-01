@@ -141,6 +141,51 @@ TEST_F(DialogWavTest, PlacesBackgroundMusicOnLane17AndPadsWithSilence) {
     EXPECT_EQ(readS16LE(bytes, 44 + 3 * 17 * 2 + 16 * 2), 0);
 }
 
+TEST_F(DialogWavTest, LongerBackgroundMusicExtendsTheShowAndLeavesVoiceLanesSilent) {
+    auto assembled = twoVoiceFixture(2);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+    const std::vector<int16_t> music = {3000, 4000, 5000, 6000};
+    auto r = writeDialogWav(assembled, m, tmpPath_, nullptr, nullptr, music);
+    ASSERT_TRUE(r.isSuccess());
+
+    const auto bytes = readFile(tmpPath_);
+    EXPECT_EQ(readU32LE(bytes, 40), 4u * 17 * 2);
+    EXPECT_EQ(bytes.size(), 44u + 4 * 17 * 2);
+
+    for (std::size_t sample = 0; sample < music.size(); ++sample) {
+        const auto frameOffset = 44 + sample * 17 * 2;
+        EXPECT_EQ(readS16LE(bytes, frameOffset + 16 * 2), music[sample]);
+        EXPECT_EQ(readS16LE(bytes, frameOffset), sample < 2 ? 1000 : 0);
+        EXPECT_EQ(readS16LE(bytes, frameOffset + 2), sample < 2 ? 2000 : 0);
+    }
+}
+
+TEST_F(DialogWavTest, PlaybackSampleCountUsesWhicheverAssetEndsLast) {
+    auto assembled = twoVoiceFixture(2);
+    const std::vector<int16_t> music = {3000, 4000, 5000, 6000};
+
+    EXPECT_EQ(creatures::voice::dialogPlaybackSampleCount(assembled, music), music.size());
+    EXPECT_EQ(creatures::voice::dialogPlaybackSampleCount(assembled, std::span<const int16_t>{}),
+              assembled.totalSamples);
+}
+
+TEST_F(DialogWavTest, StreamsInterleavingAcrossBoundedWriteBlocks) {
+    auto assembled = twoVoiceFixture(4097);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+    std::vector<int16_t> music(5000, 3000);
+
+    const auto result = writeDialogWav(assembled, m, tmpPath_, nullptr, nullptr, music);
+    ASSERT_TRUE(result.isSuccess());
+
+    const auto bytes = readFile(tmpPath_);
+    EXPECT_EQ(readU32LE(bytes, 40), 5000u * 17 * 2);
+    for (const std::size_t sample : {4095u, 4096u, 4097u, 4999u}) {
+        const auto frameOffset = 44 + sample * 17 * 2;
+        EXPECT_EQ(readS16LE(bytes, frameOffset + 16 * 2), 3000);
+        EXPECT_EQ(readS16LE(bytes, frameOffset), sample < assembled.totalSamples ? 1000 : 0);
+    }
+}
+
 TEST_F(DialogWavTest, RejectsCreatureOnReservedBackgroundMusicLane) {
     auto assembled = twoVoiceFixture(2);
     VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 17}};

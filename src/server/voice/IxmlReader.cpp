@@ -13,6 +13,8 @@ namespace creatures::voice {
 
 namespace {
 
+constexpr std::uint32_t kMaxIxmlPayloadBytes = 1024 * 1024;
+
 template <typename T> bool readLE(std::ifstream &in, T &out) {
     in.read(reinterpret_cast<char *>(&out), sizeof(T));
     return in.good();
@@ -23,6 +25,11 @@ template <typename T> bool readLE(std::ifstream &in, T &out) {
 std::optional<std::string> readIxmlChunk(const std::filesystem::path &path) {
     std::ifstream in(path, std::ios::binary);
     if (!in.is_open()) {
+        return std::nullopt;
+    }
+    std::error_code fileSizeError;
+    const auto fileSize = std::filesystem::file_size(path, fileSizeError);
+    if (fileSizeError) {
         return std::nullopt;
     }
 
@@ -47,8 +54,17 @@ std::optional<std::string> readIxmlChunk(const std::filesystem::path &path) {
         if (!readLE(in, chunkSize)) {
             break;
         }
+        const auto payloadPosition = in.tellg();
+        const auto paddedChunkSize = static_cast<std::uint64_t>(chunkSize) + (chunkSize % 2 == 1 ? 1ULL : 0ULL);
+        if (payloadPosition < 0 || static_cast<std::uint64_t>(payloadPosition) > fileSize ||
+            paddedChunkSize > fileSize - static_cast<std::uint64_t>(payloadPosition)) {
+            return std::nullopt;
+        }
 
         if (std::memcmp(chunkId, "iXML", 4) == 0) {
+            if (chunkSize > kMaxIxmlPayloadBytes) {
+                return std::nullopt;
+            }
             std::vector<char> payload(chunkSize);
             if (chunkSize > 0) {
                 in.read(payload.data(), static_cast<std::streamsize>(chunkSize));
