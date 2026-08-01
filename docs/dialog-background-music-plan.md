@@ -100,13 +100,23 @@ path or filename from the client. It returns:
 The promoted MP3 is served by the existing sound API and inherits its immutable
 cache policy. The permanent WAV remains the show asset.
 
+### Clear an accepted take
+
+`DELETE /api/v1/animation/dialog/script/{scriptId}/music`
+
+This detaches the accepted music reference and returns the canonical updated
+script. The operation is serialized with normal script edits and promotion,
+invalidates the dialog-script cache only when a reference was attached, and
+retains the permanent WAV/MP3 assets. Subsequent renders of the script are
+dialog-only until another take is promoted.
+
 ## Persistence
 
 DialogScript gains an optional `background_music` object containing the permanent
 relative `sound_file`, accepted generation id, prompt, and acceptance timestamp.
 Old documents parse with no background music. CRUD responses round-trip the optional
 object, but normal creates/updates treat it as read-only; only the verified promotion
-path may attach or replace it.
+path may attach or replace it, and the explicit clear endpoint may detach it.
 Promotion reloads the script before updating it, preserves all existing fields,
 and publishes through the storage facade so DialogScript and SoundList cache
 invalidations stay paired with successful writes.

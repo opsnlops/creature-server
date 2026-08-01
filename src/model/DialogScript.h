@@ -114,7 +114,8 @@ class DialogScriptDto : public oatpp::DTO {
     DTO_FIELD_INFO(background_music) {
         info->description = "Accepted instrumental background music. sound_file always names the permanent WAV used "
                             "on dialog channel 17; MP3 is only an on-demand client rendition. Read-only: ordinary "
-                            "script create/update requests cannot set or replace it; use music promotion.";
+                            "script create/update requests cannot set or replace it; use music promotion or the "
+                            "explicit clear-background-music endpoint.";
         info->required = false;
     }
     DTO_FIELD(Object<DialogBackgroundMusicDto>, background_music);
