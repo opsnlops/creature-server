@@ -66,6 +66,14 @@ class SystemCountersDto : public oatpp::DTO {
     DTO_FIELD_INFO(rtpSendFailures) { info->description = "Number of RTP output sends that have failed"; }
     DTO_FIELD(UInt64, rtpSendFailures);
 
+    DTO_FIELD_INFO(rtcpReportsSent) {
+        info->description = "Number of RTCP Sender Report compound packets successfully sent";
+    }
+    DTO_FIELD(UInt64, rtcpReportsSent);
+
+    DTO_FIELD_INFO(rtcpSendFailures) { info->description = "Number of RTCP Sender Report sends that have failed"; }
+    DTO_FIELD(UInt64, rtcpSendFailures);
+
     DTO_FIELD_INFO(rtpAudioLoadersActive) {
         info->description = "Number of cooperative RTP audio loader jobs currently running";
     }
@@ -194,6 +202,8 @@ class SystemCounters {
     void incrementPlaylistStatusRequests();
     void incrementRtpEventsProcessed();
     void incrementRtpSendFailures();
+    void incrementRtcpReportsSent();
+    void incrementRtcpSendFailures();
     void incrementRtpEncoderResets();
     void incrementRestRequestsProcessed();
     void incrementSoundFilesServed();
@@ -221,6 +231,8 @@ class SystemCounters {
     uint64_t getRestRequestsProcessed();
     uint64_t getRtpEventsProcessed();
     uint64_t getRtpSendFailures();
+    uint64_t getRtcpReportsSent();
+    uint64_t getRtcpSendFailures();
     uint64_t getRtpEncoderResets();
     uint64_t getRtpAudioLoadersActive();
     uint64_t getRtpAudioLoadsQueued();
@@ -263,6 +275,8 @@ class SystemCounters {
     std::atomic<uint64_t> soundFilesServed;
     std::atomic<uint64_t> rtpEventsProcessed;
     std::atomic<uint64_t> rtpSendFailures;
+    std::atomic<uint64_t> rtcpReportsSent;
+    std::atomic<uint64_t> rtcpSendFailures;
     std::atomic<uint64_t> rtpEncoderResets;
     std::atomic<uint64_t> rtpAudioLoadersActive;
     std::atomic<uint64_t> rtpAudioLoadsQueued;
