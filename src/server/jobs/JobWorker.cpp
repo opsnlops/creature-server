@@ -17,6 +17,7 @@
 
 #include "model/Animation.h"
 #include "server/animation/SessionManager.h"
+#include "server/audio/MonoWavDownmixer.h"
 #include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/creature/UniverseResolver.h"
@@ -30,6 +31,7 @@
 #include "server/voice/DialogPipeline.h"
 #include "server/voice/DialogPreviewAssembly.h"
 #include "server/voice/DialogWav.h"
+#include "server/voice/IxmlReader.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/RhubarbData.h"
 #include "server/voice/SoundDataProcessor.h"
@@ -39,14 +41,18 @@
 #include "server/voice/TextToViseme.h"
 #include "server/voice/WavFileReader.h"
 #include "server/ws/dto/DialogDto.h"
+#include "server/ws/dto/DialogMusicDto.h"
 #include "server/ws/dto/DialogPreviewExportResultDto.h"
 #include "server/ws/dto/MakeSoundFileRequestDto.h"
+#include "server/ws/service/DialogMusicService.h"
 #include "server/ws/service/DialogPreviewService.h"
 #include "server/ws/service/VoiceService.h"
 
 #include <model/CreatureSpeechResponse.h>
 
 #include "util/ObservabilityManager.h"
+#include "util/Sha256.h"
+#include "util/Slugify.h"
 #include "util/cache.h"
 #include "util/helpers.h"
 #include "util/threadName.h"
@@ -71,33 +77,6 @@ namespace {
 // namespace helpers (the latter for the lipsync handler, the former for ad-hoc
 // speech + the dialog handler). All callers migrated to the storage facade in
 // issue #11 — see creatures::storage::{root, allocateSoundPath}.
-
-std::string slugify(const std::string &value, std::size_t maxLength = 40) {
-    std::string slug;
-    slug.reserve(std::min<std::size_t>(value.size(), maxLength));
-    bool lastDash = false;
-    for (char c : value) {
-        if (std::isalnum(static_cast<unsigned char>(c))) {
-            slug.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-            lastDash = false;
-        } else if (std::isspace(static_cast<unsigned char>(c)) || c == '-' || c == '_') {
-            if (!lastDash && !slug.empty()) {
-                slug.push_back('-');
-                lastDash = true;
-            }
-        }
-        if (slug.size() >= maxLength) {
-            break;
-        }
-    }
-    if (slug.empty()) {
-        slug = "speech";
-    }
-    if (slug.back() == '-') {
-        slug.pop_back();
-    }
-    return slug;
-}
 
 Result<void> prewarmAudioCache(const std::filesystem::path &wavPath, std::shared_ptr<OperationSpan> parentSpan) {
     auto span = creatures::observability->createChildOperationSpan("AdHocSpeech.prewarmAudioCache", parentSpan);
@@ -153,13 +132,41 @@ Result<void> prewarmAudioCache(const std::filesystem::path &wavPath, std::shared
 } // namespace
 
 JobWorker::JobWorker(std::shared_ptr<JobManager> jobManager)
-    : jobManager_(jobManager), jobQueue_(std::make_shared<moodycamel::BlockingConcurrentQueue<std::string>>()) {
+    : jobManager_(jobManager), jobQueue_(std::make_shared<moodycamel::BlockingConcurrentQueue<std::string>>()),
+      musicJobQueue_(std::make_shared<moodycamel::BlockingConcurrentQueue<std::string>>()) {
     info("JobWorker created");
+}
+
+JobWorker::~JobWorker() { shutdown(); }
+
+void JobWorker::start() {
+    StoppableThread::start();
+    musicThread_ = std::thread(&JobWorker::runMusicJobs, this);
+}
+
+void JobWorker::shutdown() {
+    StoppableThread::shutdown();
+    if (musicThread_.joinable()) {
+        musicThread_.join();
+    }
 }
 
 void JobWorker::queueJob(const std::string &jobId) {
     jobQueue_->enqueue(jobId);
     info("Job {} queued for processing", jobId);
+}
+
+bool JobWorker::tryQueueMusicJob(const std::string &jobId) {
+    auto current = musicJobsInFlight_.load(std::memory_order_relaxed);
+    while (current < kMaxMusicJobsInFlight) {
+        if (musicJobsInFlight_.compare_exchange_weak(current, current + 1, std::memory_order_acq_rel,
+                                                     std::memory_order_relaxed)) {
+            musicJobQueue_->enqueue(jobId);
+            info("Music job {} queued for dedicated processing", jobId);
+            return true;
+        }
+    }
+    return false;
 }
 
 void JobWorker::run() {
@@ -179,6 +186,19 @@ void JobWorker::run() {
     info("JobWorker thread stopping");
 }
 
+void JobWorker::runMusicJobs() {
+    setThreadName("MusicJobWorker");
+    info("Music job worker thread started");
+    std::string jobId;
+    while (!stop_requested.load()) {
+        if (musicJobQueue_->wait_dequeue_timed(jobId, std::chrono::milliseconds(500))) {
+            processJob(jobId);
+            musicJobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
+        }
+    }
+    info("Music job worker thread stopping");
+}
+
 void JobWorker::processJob(const std::string &jobId) {
     debug("JobWorker::processJob() called for job {}", jobId);
 
@@ -191,8 +211,8 @@ void JobWorker::processJob(const std::string &jobId) {
     }
 
     JobState jobState = *jobStateOpt;
-    info("Retrieved job state for {}: type={}, status={}, details={}", jobId, toString(jobState.jobType),
-         toString(jobState.status), jobState.details);
+    info("Retrieved job state for {}: type={}, status={}, details_length={}", jobId, toString(jobState.jobType),
+         toString(jobState.status), jobState.details.size());
 
     // Mark the job as running
     debug("Marking job {} as running", jobId);
@@ -231,6 +251,10 @@ void JobWorker::processJob(const std::string &jobId) {
             info("Handling job {} as DialogPreviewExport type", jobId);
             handleDialogPreviewExportJob(jobState);
             break;
+        case JobType::DialogMusic:
+            info("Handling job {} as DialogMusic type", jobId);
+            handleDialogMusicJob(jobState);
+            break;
         case JobType::VoiceFile:
             info("Handling job {} as VoiceFile type", jobId);
             handleVoiceFileJob(jobState);
@@ -246,6 +270,61 @@ void JobWorker::processJob(const std::string &jobId) {
     }
 
     debug("JobWorker::processJob() completed for job {}", jobId);
+}
+
+void JobWorker::handleDialogMusicJob(JobState &jobState) {
+    const auto broadcastProgress = [this, &jobState] {
+        if (auto state = jobManager_->getJob(jobState.jobId)) {
+            auto result = broadcastJobProgressToAllClients(*state);
+            if (!result.isSuccess())
+                warn("Failed to broadcast dialog music job progress: {}", result.getError()->getMessage());
+        }
+    };
+    const auto broadcastCompletion = [this, &jobState] {
+        if (auto state = jobManager_->getJob(jobState.jobId)) {
+            auto result = broadcastJobCompleteToAllClients(*state);
+            if (!result.isSuccess())
+                warn("Failed to broadcast dialog music job completion: {}", result.getError()->getMessage());
+        }
+    };
+    const auto failJob = [&](const std::string &message, const std::string &type, ServerError::Code code,
+                             const std::string &stage) {
+        recordSpanError(jobState.span, message, type, code);
+        if (jobState.span)
+            jobState.span->setAttribute("job.failure_stage", stage);
+        jobManager_->failJob(jobState.jobId, message);
+        broadcastCompletion();
+    };
+
+    auto mapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+    oatpp::Object<ws::DialogMusicRequestDto> request;
+    try {
+        request = mapper->readFromString<oatpp::Object<ws::DialogMusicRequestDto>>(jobState.details.c_str());
+    } catch (const std::exception &e) {
+        if (jobState.span)
+            jobState.span->recordException(e);
+        return failJob(fmt::format("invalid dialog music job details: {}", e.what()), "JsonParsingException",
+                       ServerError::InvalidData, "deserialize");
+    }
+    if (!request) {
+        return failJob("dialog music job details deserialized to null", "InvalidData", ServerError::InvalidData,
+                       "deserialize");
+    }
+    jobManager_->updateJobProgress(jobState.jobId, 0.05f);
+    broadcastProgress();
+
+    ws::DialogMusicService service;
+    auto generated = service.generate(request, jobState.span, jobState.jobId);
+    if (!generated.isSuccess()) {
+        const auto error = generated.getError().value();
+        return failJob(error.getMessage(), "DialogMusicGenerationError", error.getCode(), "generate");
+    }
+    jobManager_->updateJobProgress(jobState.jobId, 1.0f);
+    broadcastProgress();
+    jobManager_->completeJob(jobState.jobId, mapper->writeToString(generated.getValue().value())->c_str());
+    if (jobState.span)
+        jobState.span->setSuccess();
+    broadcastCompletion();
 }
 
 void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
@@ -415,7 +494,8 @@ void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
             return;
         }
 
-        const std::string trackSlug = slugify(creatureId.empty() ? fmt::format("track{}", idx) : creatureId);
+        const std::string trackSlug =
+            util::slugify(creatureId.empty() ? fmt::format("track{}", idx) : creatureId, 40, "speech");
         const auto monoPath = tempDir / fmt::format("{}-ch{}.wav", trackSlug, creature.audio_channel);
 
         auto trackStageProgress = [&](double stage) {
@@ -681,7 +761,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         std::filesystem::path transcriptPath;
         Creature creature;
         std::string creatureName;
-        auto textSlug = slugify(text);
+        auto textSlug = util::slugify(text, 40, "speech");
         auto timestamp = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
 
         if (jobState.span) {
@@ -736,7 +816,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
             creatureName = creature.name.empty() ? creatureId : creature.name;
 
             // Rename files with descriptive names
-            auto creatureSlug = slugify(creatureName);
+            auto creatureSlug = util::slugify(creatureName, 40, "speech");
             auto baseName = fmt::format("adhoc_{}_{}_{}", creatureSlug, timestamp, textSlug);
 
             auto renameIfExists = [&](const std::filesystem::path &oldPath, const std::string &ext) {
@@ -792,7 +872,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         // Rename WAV/transcript with descriptive names if streaming path was used
         // (streaming path outputs generic names)
         if (streamingResult.isSuccess()) {
-            auto creatureSlug = slugify(creatureName);
+            auto creatureSlug = util::slugify(creatureName, 40, "speech");
             auto baseName = fmt::format("adhoc_{}_{}_{}", creatureSlug, timestamp, textSlug);
 
             auto renameFile = [&](std::filesystem::path &path, const std::string &ext) {
@@ -1034,6 +1114,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // turns (no script to point at); populated when loading from a script.
     std::string sourceScriptId;
     std::vector<creatures::DialogScriptTurn> sourceScriptTurns;
+    std::optional<creatures::DialogBackgroundMusic> backgroundMusic;
     if (hasScriptId) {
         // Re-validate at the trust boundary even though the controller already did —
         // the worker rehydrates from a serialized blob and may eventually be fed
@@ -1057,6 +1138,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         }
         sourceScriptId = script.id;
         sourceScriptTurns = script.turns;
+        backgroundMusic = script.background_music;
     } else {
         rawTurns.reserve(reqDto->turns->size());
         sourceScriptTurns.reserve(reqDto->turns->size());
@@ -1330,6 +1412,61 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     const auto assembled = concatResult.getValue().value();
     updateProgress(0.60f);
 
+    std::vector<int16_t> backgroundMusicSamples;
+    std::optional<voice::MusicWavProvenance> backgroundMusicProvenance;
+    if (backgroundMusic) {
+        auto musicSpan =
+            creatures::observability->createChildOperationSpan("DialogJob.loadBackgroundMusic", jobState.span);
+        if (musicSpan) {
+            musicSpan->setAttribute("music.generation_id", backgroundMusic->generation_id);
+            musicSpan->setAttribute("sound.file_hash", util::sha256Hex(backgroundMusic->sound_file));
+            musicSpan->setAttribute("sound.file_extension",
+                                    std::filesystem::path(backgroundMusic->sound_file).extension().string());
+        }
+        const auto failMusicLoad = [&](const std::string &message, const std::string &type,
+                                       ServerError::Code code = ServerError::InvalidData) {
+            recordSpanError(musicSpan, message, type, code);
+            failJob(message);
+        };
+        const auto musicPath = storage::resolveSoundPath(backgroundMusic->sound_file);
+        auto musicResult = audio::loadWavAsMono(musicPath.string());
+        if (!musicResult.isSuccess()) {
+            return failMusicLoad(fmt::format("accepted background music could not be loaded: {}",
+                                             musicResult.getError().value().getMessage()),
+                                 "AudioLoadError", musicResult.getError().value().getCode());
+        }
+        const auto music = musicResult.getValue().value();
+        if (music.sampleRate != kDialogSampleRate) {
+            return failMusicLoad(fmt::format("accepted background music sample rate {} is not {} Hz", music.sampleRate,
+                                             kDialogSampleRate),
+                                 "InvalidAudioFormat");
+        }
+        backgroundMusicSamples = music.samples;
+        const auto ixml = voice::readIxmlChunk(musicPath);
+        if (!ixml) {
+            return failMusicLoad("accepted background music has no embedded provenance", "MissingProvenance");
+        }
+        const auto musicProvenance = voice::parseIxmlProvenance(*ixml);
+        if (!musicProvenance.music || musicProvenance.music->musicGenerationId != backgroundMusic->generation_id) {
+            return failMusicLoad("accepted background music provenance does not match the dialog reference",
+                                 "ProvenanceVerificationError");
+        }
+        const auto musicBytes = std::span<const uint8_t>(reinterpret_cast<const uint8_t *>(music.samples.data()),
+                                                         music.samples.size() * sizeof(int16_t));
+        if (musicProvenance.music->pcmSha256.empty() ||
+            util::sha256Hex(musicBytes) != musicProvenance.music->pcmSha256) {
+            return failMusicLoad("accepted background music PCM checksum does not match its provenance",
+                                 "ChecksumMismatch");
+        }
+        backgroundMusicProvenance = *musicProvenance.music;
+        if (musicSpan) {
+            musicSpan->setAttribute("audio.sample_rate", static_cast<int64_t>(music.sampleRate));
+            musicSpan->setAttribute("audio.samples", static_cast<int64_t>(music.samples.size()));
+            musicSpan->setAttribute("music.checksum_verified", true);
+            musicSpan->setSuccess();
+        }
+    }
+
     // ---- 17-channel WAV output. The storage facade owns the path math AND
     // the absolute-vs-relative metadata convention (Permanent stores relative,
     // AdHoc stores absolute) so this handler doesn't reinvent it.
@@ -1358,11 +1495,15 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // dialog/<uuid>.wav can be traced back to its script (#47). Ad-hoc and
     // preview WAVs stay lean (nullptr below). This is a point-in-time snapshot,
     // mirroring animation.metadata.source_script_turns.
-    voice::DialogWavProvenance provenance;
+    voice::WavProvenance provenance;
     if (persistence == DialogPersistence::Permanent) {
+        provenance.fileUid = jobState.jobId;
+        provenance.take = jobState.jobId;
+        provenance.circled = true;
         provenance.sourceScriptId = sourceScriptId;
         provenance.title = title;
         provenance.generationIds = generationIds;
+        provenance.music = backgroundMusicProvenance;
 
         // creature_id → display name for the track list and speaker labels.
         std::unordered_map<std::string, std::string> nameById;
@@ -1433,7 +1574,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
 
     const bool embedProvenance = persistence == DialogPersistence::Permanent && !provenance.empty();
     auto wavWriteResult = voice::writeDialogWav(assembled, voiceToChannel, wavPath, jobState.span,
-                                                embedProvenance ? &provenance : nullptr);
+                                                embedProvenance ? &provenance : nullptr, backgroundMusicSamples);
     if (!wavWriteResult.isSuccess()) {
         return failJob(wavWriteResult.getError().value().getMessage());
     }

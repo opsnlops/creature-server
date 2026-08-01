@@ -119,6 +119,72 @@ std::optional<std::string> extractIxmlField(const std::string &ixmlDocument, con
     return extractField(ixmlDocument, tag);
 }
 
+WavProvenance parseIxmlProvenance(const std::string &document) {
+    WavProvenance provenance;
+    provenance.fileUid = extractIxmlField(document, "FILE_UID").value_or("");
+    provenance.take = extractIxmlField(document, "TAKE").value_or("");
+    if (const auto circled = extractIxmlField(document, "CIRCLED")) {
+        provenance.circled = *circled == "TRUE";
+    }
+    provenance.sourceScriptId = extractIxmlField(document, "SOURCE_SCRIPT_ID").value_or("");
+    provenance.title = extractIxmlField(document, "TITLE").value_or("");
+    if (const auto ids = extractIxmlField(document, "GENERATION_IDS"); ids && !ids->empty()) {
+        std::size_t start = 0;
+        while (start <= ids->size()) {
+            const auto comma = ids->find(',', start);
+            provenance.generationIds.push_back(ids->substr(start, comma == std::string::npos ? comma : comma - start));
+            if (comma == std::string::npos)
+                break;
+            start = comma + 1;
+        }
+    }
+    provenance.tracks = parseIxmlTrackList(document);
+    provenance.lipsync = parseIxmlLipsync(document);
+    provenance.wordAlignment = parseIxmlWordAlignment(document);
+    if (const auto script = extractIxmlField(document, "DIALOG_SCRIPT")) {
+        provenance.script = parseDialogScriptTurns(*script);
+    }
+    if (document.find("<MUSIC_PROVENANCE>") != std::string::npos) {
+        MusicWavProvenance music;
+        music.provider = extractIxmlField(document, "PROVIDER").value_or("");
+        music.endpoint = extractIxmlField(document, "ENDPOINT").value_or("");
+        music.modelId = extractIxmlField(document, "MODEL_ID").value_or("");
+        music.outputFormat = extractIxmlField(document, "OUTPUT_FORMAT").value_or("");
+        if (const auto channels = extractIxmlField(document, "SOURCE_CHANNELS")) {
+            music.sourceChannels = static_cast<int>(std::strtol(channels->c_str(), nullptr, 10));
+        }
+        music.channelTransform = extractIxmlField(document, "CHANNEL_TRANSFORM").value_or("");
+        music.generationMode = extractIxmlField(document, "GENERATION_MODE").value_or("");
+        music.prompt = extractIxmlField(document, "MUSIC_PROMPT").value_or("");
+        if (const auto duration = extractIxmlField(document, "SOURCE_DIALOG_DURATION_MS")) {
+            music.sourceDialogDurationMs = std::strtoll(duration->c_str(), nullptr, 10);
+        }
+        if (const auto extension = extractIxmlField(document, "DURATION_EXTENSION_MS")) {
+            music.durationExtensionMs = std::strtoll(extension->c_str(), nullptr, 10);
+        }
+        if (const auto duration = extractIxmlField(document, "MUSIC_LENGTH_MS")) {
+            music.musicLengthMs = std::strtoll(duration->c_str(), nullptr, 10);
+        }
+        music.forceInstrumental = extractIxmlField(document, "FORCE_INSTRUMENTAL").value_or("") == "true";
+        music.requestJson = extractIxmlField(document, "REQUEST_JSON").value_or("");
+        music.responseMetadataJson = extractIxmlField(document, "RESPONSE_METADATA_JSON").value_or("");
+        music.compositionPlanJson = extractIxmlField(document, "COMPOSITION_PLAN_JSON").value_or("");
+        music.songMetadataJson = extractIxmlField(document, "SONG_METADATA_JSON").value_or("");
+        music.songId = extractIxmlField(document, "SONG_ID").value_or("");
+        music.requestId = extractIxmlField(document, "REQUEST_ID").value_or("");
+        music.generatedAt = extractIxmlField(document, "GENERATED_AT").value_or("");
+        music.musicGenerationId = extractIxmlField(document, "MUSIC_GENERATION_ID").value_or("");
+        music.sourceDialogGenerationId = extractIxmlField(document, "SOURCE_DIALOG_GENERATION_ID").value_or("");
+        music.sourceDialogCacheKey = extractIxmlField(document, "SOURCE_DIALOG_CACHE_KEY").value_or("");
+        if (const auto updatedAt = extractIxmlField(document, "SOURCE_SCRIPT_UPDATED_AT")) {
+            music.sourceScriptUpdatedAt = std::strtoll(updatedAt->c_str(), nullptr, 10);
+        }
+        music.pcmSha256 = extractIxmlField(document, "PCM_SHA256").value_or("");
+        provenance.music = std::move(music);
+    }
+    return provenance;
+}
+
 namespace {
 
 // The inner text of the first `<tag>…</tag>` at/after `from`, as a view into `doc`

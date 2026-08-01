@@ -1,4 +1,6 @@
 
+#include <filesystem>
+#include <iterator>
 #include <set>
 #include <string>
 
@@ -116,6 +118,50 @@ Result<creatures::DialogScript> Database::dialogScriptFromJson(json scriptJson,
                     fmt::format("Turn 'text' is {} chars; max {}", turn.text.size(), MAX_DIALOG_SCRIPT_TURN_TEXT));
             }
             script.turns.push_back(std::move(turn));
+        }
+
+        if (scriptJson.contains("background_music") && !scriptJson["background_music"].is_null()) {
+            const auto &musicJson = scriptJson["background_music"];
+            if (!musicJson.is_object()) {
+                return invalidScriptData<DialogScript>(span, "Dialog script 'background_music' must be an object");
+            }
+            for (const char *field : {"sound_file", "generation_id", "prompt"}) {
+                if (!musicJson.contains(field) || !musicJson[field].is_string() ||
+                    musicJson[field].get<std::string>().empty()) {
+                    return invalidScriptData<DialogScript>(
+                        span, fmt::format("Dialog script 'background_music.{}' must be a non-empty string", field));
+                }
+            }
+            DialogBackgroundMusic music;
+            music.sound_file = musicJson["sound_file"].get<std::string>();
+            music.generation_id = musicJson["generation_id"].get<std::string>();
+            music.prompt = musicJson["prompt"].get<std::string>();
+            if (music.sound_file.size() > MAX_DIALOG_MUSIC_SOUND_FILE) {
+                return invalidScriptData<DialogScript>(span, "Dialog script background music sound_file is too long");
+            }
+            const std::filesystem::path soundPath(music.sound_file);
+            const auto normalPath = soundPath.lexically_normal();
+            if (soundPath.is_absolute() || soundPath.has_root_path() || normalPath != soundPath ||
+                soundPath.extension() != ".wav" || soundPath.begin() == soundPath.end() ||
+                *soundPath.begin() != "dialog" || std::next(soundPath.begin()) == soundPath.end() ||
+                *std::next(soundPath.begin()) != "music") {
+                return invalidScriptData<DialogScript>(
+                    span, "Dialog script background music must be a normalized WAV path under dialog/music");
+            }
+            if (!isUuidShape(music.generation_id)) {
+                return invalidScriptData<DialogScript>(span,
+                                                       "Dialog script background music generation_id must be a UUID");
+            }
+            if (music.prompt.size() > MAX_DIALOG_MUSIC_PROMPT) {
+                return invalidScriptData<DialogScript>(span, "Dialog script background music prompt is too long");
+            }
+            if (!musicJson.contains("accepted_at") || !musicJson["accepted_at"].is_number_integer() ||
+                musicJson["accepted_at"].get<int64_t>() <= 0) {
+                return invalidScriptData<DialogScript>(
+                    span, "Dialog script background music accepted_at must be a positive integer");
+            }
+            music.accepted_at = musicJson["accepted_at"].get<int64_t>();
+            script.background_music = std::move(music);
         }
 
         // created_at / updated_at — server-managed but stored in JSON so they

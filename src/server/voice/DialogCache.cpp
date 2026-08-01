@@ -1,23 +1,20 @@
 #include "DialogCache.h"
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <fstream>
-#include <memory>
 #include <string>
 #include <vector>
 
-#include <fmt/format.h>
-#include <nlohmann/json.hpp>
-#include <openssl/evp.h>
-
 #include "server/namespace-stuffs.h"
 #include "server/storage/Storage.h"
+#include "util/Sha256.h"
+#include <fmt/format.h>
+#include <nlohmann/json.hpp>
 
 namespace creatures::voice {
 
@@ -45,41 +42,6 @@ std::filesystem::path pcmPath(const std::string &cacheKey, const std::string &ge
 }
 std::filesystem::path jsonPath(const std::string &cacheKey, const std::string &generationId) {
     return cacheKeyDir(cacheKey) / (generationId + ".json");
-}
-
-/// Sha-256 over `data`, returned as 64-char lowercase hex.
-std::string sha256Hex(const std::string &data) {
-    std::array<uint8_t, EVP_MAX_MD_SIZE> hash{};
-    unsigned int hashLen = 0;
-
-    auto ctxDeleter = [](EVP_MD_CTX *c) {
-        if (c) {
-            EVP_MD_CTX_free(c);
-        }
-    };
-    std::unique_ptr<EVP_MD_CTX, decltype(ctxDeleter)> ctx(EVP_MD_CTX_new(), ctxDeleter);
-    if (!ctx) {
-        // Shouldn't fail; if it does, return a marker so callers don't
-        // silently collide on an empty string.
-        return std::string{};
-    }
-    if (EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1) {
-        return std::string{};
-    }
-    if (EVP_DigestUpdate(ctx.get(), data.data(), data.size()) != 1) {
-        return std::string{};
-    }
-    if (EVP_DigestFinal_ex(ctx.get(), hash.data(), &hashLen) != 1 || hashLen == 0) {
-        return std::string{};
-    }
-    std::string hex;
-    hex.reserve(hashLen * 2);
-    for (unsigned int i = 0; i < hashLen; ++i) {
-        constexpr const char *digits = "0123456789abcdef";
-        hex.push_back(digits[(hash[i] >> 4) & 0xF]);
-        hex.push_back(digits[hash[i] & 0xF]);
-    }
-    return hex;
 }
 
 /// Convert a system_clock::time_point to ISO-8601 string (UTC). Matches
@@ -188,116 +150,9 @@ ForcedAlignmentResult forcedAlignmentFromJson(const nlohmann::json &j) {
     return fa;
 }
 
-nlohmann::json provenanceToJson(const DialogWavProvenance &p) {
-    // Build the object with explicit assignment rather than a brace-init list:
-    // nlohmann's initializer-list constructor mis-parses array-valued entries
-    // (they came back empty on round-trip).
-    nlohmann::json j;
-    j["source_script_id"] = p.sourceScriptId;
-    j["title"] = p.title;
-    j["generation_ids"] = p.generationIds;
+nlohmann::json provenanceToJson(const WavProvenance &p) { return wavProvenanceToJson(p); }
 
-    auto tracks = nlohmann::json::array();
-    for (const auto &t : p.tracks) {
-        nlohmann::json tj;
-        tj["channel"] = static_cast<int>(t.channel);
-        tj["name"] = t.name;
-        tracks.push_back(std::move(tj));
-    }
-    j["tracks"] = std::move(tracks);
-
-    auto script = nlohmann::json::array();
-    for (const auto &line : p.script) {
-        nlohmann::json lj;
-        lj["speaker"] = line.speaker;
-        lj["text"] = line.text;
-        script.push_back(std::move(lj));
-    }
-    j["script"] = std::move(script);
-
-    // Per-creature mouth cues (#53) and word alignment (#56 Part 2). Kept in the
-    // round-trip so cache-loaded provenance embeds the same iXML a fresh render
-    // would — buildDialogIxml reads both fields.
-    auto lipsync = nlohmann::json::array();
-    for (const auto &track : p.lipsync) {
-        nlohmann::json tj;
-        tj["channel"] = static_cast<int>(track.channel);
-        tj["name"] = track.name;
-        auto cues = nlohmann::json::array();
-        for (const auto &cue : track.cues) {
-            cues.push_back({{"start", cue.start}, {"end", cue.end}, {"shape", cue.shape}});
-        }
-        tj["cues"] = std::move(cues);
-        lipsync.push_back(std::move(tj));
-    }
-    j["lipsync"] = std::move(lipsync);
-
-    auto wordAlignment = nlohmann::json::array();
-    for (const auto &track : p.wordAlignment) {
-        nlohmann::json tj;
-        tj["channel"] = static_cast<int>(track.channel);
-        tj["name"] = track.name;
-        auto words = nlohmann::json::array();
-        for (const auto &word : track.words) {
-            words.push_back({{"word", word.word}, {"start", word.start}, {"end", word.end}});
-        }
-        tj["words"] = std::move(words);
-        wordAlignment.push_back(std::move(tj));
-    }
-    j["word_alignment"] = std::move(wordAlignment);
-    return j;
-}
-
-DialogWavProvenance provenanceFromJson(const nlohmann::json &j) {
-    DialogWavProvenance p;
-    if (!j.is_object()) {
-        return p;
-    }
-    p.sourceScriptId = j.value("source_script_id", std::string{});
-    p.title = j.value("title", std::string{});
-    if (j.contains("generation_ids") && j["generation_ids"].is_array()) {
-        p.generationIds = j["generation_ids"].get<std::vector<std::string>>();
-    }
-    if (j.contains("tracks") && j["tracks"].is_array()) {
-        for (const auto &t : j["tracks"]) {
-            p.tracks.push_back({t.value("channel", uint16_t{0}), t.value("name", std::string{})});
-        }
-    }
-    if (j.contains("script") && j["script"].is_array()) {
-        for (const auto &line : j["script"]) {
-            p.script.push_back({line.value("speaker", std::string{}), line.value("text", std::string{})});
-        }
-    }
-    if (j.contains("lipsync") && j["lipsync"].is_array()) {
-        for (const auto &track : j["lipsync"]) {
-            DialogLipsyncTrack lt;
-            lt.channel = track.value("channel", uint16_t{0});
-            lt.name = track.value("name", std::string{});
-            if (track.contains("cues") && track["cues"].is_array()) {
-                for (const auto &cue : track["cues"]) {
-                    lt.cues.push_back(
-                        {cue.value("start", 0.0), cue.value("end", 0.0), cue.value("shape", std::string{})});
-                }
-            }
-            p.lipsync.push_back(std::move(lt));
-        }
-    }
-    if (j.contains("word_alignment") && j["word_alignment"].is_array()) {
-        for (const auto &track : j["word_alignment"]) {
-            DialogWordTrack wt;
-            wt.channel = track.value("channel", uint16_t{0});
-            wt.name = track.value("name", std::string{});
-            if (track.contains("words") && track["words"].is_array()) {
-                for (const auto &word : track["words"]) {
-                    wt.words.push_back(
-                        {word.value("word", std::string{}), word.value("start", 0.0), word.value("end", 0.0)});
-                }
-            }
-            p.wordAlignment.push_back(std::move(wt));
-        }
-    }
-    return p;
-}
+WavProvenance provenanceFromJson(const nlohmann::json &j) { return wavProvenanceFromJson(j); }
 
 /// Read a whole file into a byte vector. Empty vector on failure.
 std::vector<uint8_t> readBinary(const std::filesystem::path &p) {
@@ -319,7 +174,7 @@ std::string computeCacheKey(const std::vector<DialogInput> &turns) {
         arr.push_back({{"v", t.voiceId}, {"t", t.text}});
     }
     std::string serialized = "eleven_v3|" + arr.dump();
-    return sha256Hex(serialized);
+    return util::sha256Hex(serialized);
 }
 
 std::vector<GenerationListEntry> listGenerations(const std::string &cacheKey) {
@@ -510,7 +365,7 @@ Result<void> saveGeneration(const std::string &cacheKey, const CachedGeneration 
 }
 
 Result<void> updateGenerationProvenance(const std::string &cacheKey, const std::string &generationId,
-                                        const DialogWavProvenance &provenance) {
+                                        const WavProvenance &provenance) {
     const auto jsonFile = jsonPath(cacheKey, generationId);
     std::error_code ec;
     if (!std::filesystem::exists(jsonFile, ec) || ec) {

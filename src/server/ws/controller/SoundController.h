@@ -3,7 +3,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <functional>
 #include <memory>
 #include <regex>
 #include <utility>
@@ -26,11 +25,9 @@
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/PlaySoundRequestDTO.h"
 #include "server/ws/dto/StatusDto.h"
+#include "server/ws/service/SoundRenditionService.h"
 #include "server/ws/service/SoundService.h"
 
-#include "server/audio/MonoWavDownmixer.h"
-#include "server/audio/Mp3Writer.h"
-#include "server/audio/OggOpusWriter.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
 #include "server/metrics/counters.h"
@@ -40,6 +37,7 @@
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "util/Result.h"
+#include "util/Sha256.h"
 #include "util/uuidUtils.h"
 
 namespace fs = std::filesystem;
@@ -62,28 +60,7 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
 
   private:
     SoundService m_soundService; // Create the sound service
-
-    using RenditionComments = std::vector<std::pair<std::string, std::string>>;
-    using RenditionEncoder = std::function<creatures::Result<std::vector<uint8_t>>(const std::vector<int16_t> &, int,
-                                                                                   const RenditionComments &)>;
-
-    // Mirror embedded dialog provenance (TITLE / SOURCE_SCRIPT_ID / DIALOG_SCRIPT)
-    // into the (key,value) comment list the shareable encoders embed as OpusTags /
-    // ID3v2 TXXX (#47). Non-dialog WAVs and files without iXML contribute nothing.
-    static RenditionComments readProvenanceTags(const std::string &sourcePath) {
-        RenditionComments comments;
-        if (auto ixml = creatures::voice::readIxmlChunk(sourcePath)) {
-            const auto addTag = [&](const char *key, const char *tag) {
-                if (auto v = creatures::voice::extractIxmlField(*ixml, tag); v && !v->empty()) {
-                    comments.emplace_back(key, *v);
-                }
-            };
-            addTag("TITLE", "TITLE");
-            addTag("SOURCE_SCRIPT_ID", "SOURCE_SCRIPT_ID");
-            addTag("DESCRIPTION", "DIALOG_SCRIPT");
-        }
-        return comments;
-    }
+    SoundRenditionService renditionService_;
 
     // Shared body for the MP3 + Ogg rendition endpoints (issue #57): sanitize the
     // requested '{stem}<ext>', resolve the source '{stem}.wav' (permanent then
@@ -95,9 +72,9 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                                                       const oatpp::String &filename, const std::string &spanName,
                                                       const std::string &pathBase, const std::string &endpointName,
                                                       const std::string &format, const std::string &extension,
-                                                      const std::string &mimeType, const RenditionEncoder &encode) {
+                                                      SoundRenditionFormat renditionFormat) {
         return runEndpoint(
-            spanName, "GET", pathBase + std::string(filename), endpointName, "SoundController", request,
+            spanName, "GET", pathBase + "{filename}", endpointName, "SoundController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
                 std::string safeFilename;
                 try {
@@ -114,35 +91,54 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                                                 format, extension, safeFilename, extension));
                 }
                 const std::string stem = safeFilename.substr(0, safeFilename.size() - extension.size());
+                if (span) {
+                    // Dialog titles and music-prompt fragments can appear in
+                    // descriptive filenames. Retain correlation without
+                    // persisting that creative text in Honeycomb.
+                    span->setAttribute("http.target", pathBase + "{filename}");
+                    span->setAttribute("sound.filename_hash", util::sha256Hex(safeFilename));
+                }
 
                 // The source can only be a WAV (loadWavAsMono), so it's exactly '{stem}.wav'.
                 const std::string sourceWav = stem + ".wav";
-                const auto resolved = m_soundService.resolveSoundPath(sourceWav);
+                const auto resolved = m_soundService.resolveSoundPath(sourceWav, span);
                 if (!resolved) {
                     return bailHttp(
                         span, Status::CODE_404,
                         fmt::format("Sound '{}' was not found in the sound store or the ad-hoc store", sourceWav));
                 }
                 if (span) {
-                    span->setAttribute("sound.source_path", resolved->path);
+                    span->setAttribute("sound.store", resolved->fromPermanentStore ? "permanent" : "ad_hoc");
+                    span->setAttribute("sound.source_hash", util::sha256Hex(resolved->path));
                 }
 
-                auto monoResult = creatures::audio::loadWavAsMono(resolved->path);
-                if (!monoResult.isSuccess()) {
-                    const auto error = monoResult.getError().value();
-                    const auto status = error.getCode() == ServerError::NotFound ? Status::CODE_404 : Status::CODE_422;
-                    return bailHttp(span, status, error.getMessage());
+                auto renditionSpan =
+                    creatures::observability->createChildOperationSpan("SoundRenditionService.renderWav", span);
+                if (renditionSpan) {
+                    renditionSpan->setAttribute("sound.store", resolved->fromPermanentStore ? "permanent" : "ad_hoc");
+                    renditionSpan->setAttribute("sound.source_hash", util::sha256Hex(resolved->path));
+                    renditionSpan->setAttribute("rendition.format", format);
+                    renditionSpan->setAttribute("cache.outcome", "bypass");
+                    renditionSpan->setAttribute("encoding.performed", true);
+                    std::error_code fileSizeError;
+                    const auto inputBytes = std::filesystem::file_size(resolved->path, fileSizeError);
+                    if (!fileSizeError)
+                        renditionSpan->setAttribute("encoding.input_bytes", static_cast<int64_t>(inputBytes));
                 }
-                const auto mono = monoResult.getValue().value();
-
-                auto encoded = encode(mono.samples, mono.sampleRate, readProvenanceTags(resolved->path));
+                auto encoded = renditionService_.renderWav(resolved->path, renditionFormat);
                 if (!encoded.isSuccess()) {
                     const auto error = encoded.getError().value();
+                    recordSpanError(renditionSpan, error.getMessage(), "RenditionError", error.getCode());
                     const auto status =
                         error.getCode() == ServerError::InvalidData ? Status::CODE_422 : Status::CODE_500;
                     return bailHttp(span, status, error.getMessage());
                 }
-                const auto bytes = encoded.getValue().value();
+                const auto rendition = encoded.getValue().value();
+                const auto &bytes = rendition.bytes;
+                if (renditionSpan) {
+                    renditionSpan->setAttribute("rendition.output_bytes", static_cast<int64_t>(bytes.size()));
+                    renditionSpan->setSuccess();
+                }
 
                 metrics->incrementSoundFilesServed();
                 info("Rendering sound to {}: {} → {} ({} bytes)", format, sourceWav, safeFilename, bytes.size());
@@ -150,13 +146,16 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                 auto response = ResponseFactory::createResponse(
                     Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(bytes.data()),
                                                     static_cast<v_buff_size>(bytes.size())));
-                response->putHeader("Content-Type", mimeType.c_str());
+                response->putHeader("Content-Type", rendition.mimeType.c_str());
                 response->putHeader("Content-Disposition", "attachment; filename=\"" + safeFilename + "\"");
                 response->putHeader("Cache-Control",
                                     resolved->fromPermanentStore ? "public, max-age=31536000, immutable" : "no-store");
                 if (span) {
                     span->setAttribute("rendition.format", format);
                     span->setAttribute("rendition.bytes", static_cast<int64_t>(bytes.size()));
+                    span->setAttribute("http.response.cache_control", resolved->fromPermanentStore
+                                                                          ? "public, max-age=31536000, immutable"
+                                                                          : "no-store");
                     span->setHttpStatus(200);
                 }
                 return response;
@@ -531,13 +530,8 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
     }
     ENDPOINT("GET", "api/v1/sound/shareable/{filename}", getShareableSound, PATH(String, filename),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return renderRendition(
-            request, filename, "GET /api/v1/sound/shareable/{filename}", "api/v1/sound/shareable/", "getShareableSound",
-            "ogg", ".ogg", "audio/ogg",
-            [](const std::vector<int16_t> &samples, int sampleRate, const RenditionComments &comments) {
-                return creatures::audio::encodeMonoToOggOpus(samples, sampleRate,
-                                                             creatures::audio::kShareableOpusBitrate, comments);
-            });
+        return renderRendition(request, filename, "GET /api/v1/sound/shareable/{filename}", "api/v1/sound/shareable/",
+                               "getShareableSound", "ogg", ".ogg", SoundRenditionFormat::OggOpus);
     }
 
     ENDPOINT_INFO(getSoundMp3) {
@@ -558,12 +552,8 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
     }
     ENDPOINT("GET", "api/v1/sound/mp3/{filename}", getSoundMp3, PATH(String, filename),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return renderRendition(
-            request, filename, "GET /api/v1/sound/mp3/{filename}", "api/v1/sound/mp3/", "getSoundMp3", "mp3", ".mp3",
-            "audio/mpeg", [](const std::vector<int16_t> &samples, int sampleRate, const RenditionComments &comments) {
-                return creatures::audio::encodeMonoToMp3(samples, sampleRate, creatures::audio::kShareableMp3Bitrate,
-                                                         comments);
-            });
+        return renderRendition(request, filename, "GET /api/v1/sound/mp3/{filename}", "api/v1/sound/mp3/",
+                               "getSoundMp3", "mp3", ".mp3", SoundRenditionFormat::Mp3);
     }
 
     ENDPOINT_INFO(getSoundProvenance) {

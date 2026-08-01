@@ -8,7 +8,7 @@
 #include "server/voice/IxmlWriter.h"
 #include "server/voice/PcmWavWriter.h"
 
-using creatures::voice::DialogWavProvenance;
+using creatures::voice::WavProvenance;
 using creatures::voice::wrapMonoPcmAsWav;
 
 namespace {
@@ -36,7 +36,7 @@ TEST(PcmWavWriter, NoProvenanceIsACanonical44ByteWav) {
 TEST(PcmWavWriter, AppendsIxmlChunkWhenProvenancePresent) {
     const auto pcm = samplePcm();
 
-    DialogWavProvenance prov;
+    WavProvenance prov;
     prov.title = "Mono Export";
     prov.script = {{"Beaky", "hello"}, {"Pip", "world"}};
     // Mono callers clear tracks; verify no TRACK_LIST leaks into a 1-channel file.
@@ -66,7 +66,7 @@ TEST(PcmWavWriter, AppendsIxmlChunkWhenProvenancePresent) {
 
 TEST(PcmWavWriter, EmptyProvenanceAppendsNothing) {
     const auto pcm = samplePcm();
-    DialogWavProvenance empty;
+    WavProvenance empty;
     const auto wav = wrapMonoPcmAsWav(pcm, 48000, &empty);
     EXPECT_EQ(wav.size(), 44u + pcm.size()) << "empty provenance adds no chunk";
 }

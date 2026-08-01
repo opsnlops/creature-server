@@ -50,13 +50,14 @@ void writeU32LE(std::ostream &os, uint32_t v) {
 
 Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannelMap &voiceToChannel,
                             const std::filesystem::path &outPath, std::shared_ptr<OperationSpan> parentSpan,
-                            const DialogWavProvenance *provenance) {
+                            const WavProvenance *provenance, std::span<const int16_t> backgroundMusic) {
     auto span = creatures::observability->createChildOperationSpan("DialogWav.writeDialogWav", parentSpan);
     if (span) {
         span->setAttribute("wav.path", outPath.string());
         span->setAttribute("wav.voices", static_cast<int64_t>(assembled.perCreature.size()));
         span->setAttribute("wav.total_samples", static_cast<int64_t>(assembled.totalSamples));
         span->setAttribute("wav.sample_rate", static_cast<int64_t>(assembled.sampleRate));
+        span->setAttribute("wav.bgm_samples", static_cast<int64_t>(backgroundMusic.size()));
     }
 
     // ---- Input validation.
@@ -105,9 +106,9 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
             return Result<void>{ServerError(ServerError::InvalidData, msg)};
         }
         const uint16_t ch = it->second;
-        if (ch < 1 || ch > RTP_STREAMING_CHANNELS) {
-            std::string msg = fmt::format("writeDialogWav: voice '{}' has audio_channel {} (must be 1..{})", pc.voiceId,
-                                          ch, RTP_STREAMING_CHANNELS);
+        if (ch < 1 || ch >= RTP_STREAMING_CHANNELS) {
+            std::string msg = fmt::format("writeDialogWav: voice '{}' has audio_channel {} (must be 1..{}; {} is BGM)",
+                                          pc.voiceId, ch, RTP_STREAMING_CHANNELS - 1, RTP_STREAMING_CHANNELS);
             error(msg);
             if (span)
                 span->setError(msg);
@@ -159,7 +160,7 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     if (provenance && !provenance->empty()) {
         // Emit a complete 17-track TRACK_LIST (one per interleaved channel) so
         // Wave Agent / DAWs show the per-lane names (#51 follow-up).
-        ixmlChunk = makeIxmlChunk(buildDialogIxml(*provenance, RTP_STREAMING_CHANNELS));
+        ixmlChunk = makeIxmlChunk(buildIxml(*provenance, RTP_STREAMING_CHANNELS));
         const std::uint64_t withIxml = 36ull + dataBytes64 + ixmlChunk.size();
         if (withIxml > std::numeric_limits<std::uint32_t>::max()) {
             warn("writeDialogWav: scene too large to also carry a {}-byte iXML chunk; writing without provenance",
@@ -181,6 +182,10 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
         for (std::size_t t = 0; t < assembled.totalSamples; ++t) {
             interleaved[t * RTP_STREAMING_CHANNELS + vl.lane] = src[t];
         }
+    }
+    const auto bgmSamples = std::min<std::size_t>(assembled.totalSamples, backgroundMusic.size());
+    for (std::size_t t = 0; t < bgmSamples; ++t) {
+        interleaved[t * RTP_STREAMING_CHANNELS + (RTP_STREAMING_CHANNELS - 1)] = backgroundMusic[t];
     }
 
     // ---- Write the file.
@@ -236,6 +241,7 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
         span->setAttribute("wav.bytes", static_cast<int64_t>(kWavHeaderBytes + dataBytes + ixmlChunk.size()));
         span->setAttribute("wav.duration_s", durationS);
         span->setAttribute("wav.lanes_used", static_cast<int64_t>(lanes.size()));
+        span->setAttribute("wav.bgm_present", !backgroundMusic.empty());
         span->setAttribute("wav.ixml_bytes", static_cast<int64_t>(ixmlChunk.size()));
         span->setSuccess();
     }

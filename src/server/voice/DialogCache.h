@@ -47,7 +47,7 @@ struct CachedGeneration {
     /// Script provenance (source script id, title, track layout, full script
     /// text) so editor exports of this generation can embed it (#50). Empty for
     /// generations created before this was added.
-    DialogWavProvenance provenance;
+    WavProvenance provenance;
 };
 
 /// Index entry returned by listGenerations.
@@ -88,6 +88,6 @@ Result<void> saveGeneration(const std::string &cacheKey, const CachedGeneration 
 /// saved deep in the generate path before provenance is known. Written via
 /// .tmp + rename. NotFound if the generation's json doesn't exist.
 Result<void> updateGenerationProvenance(const std::string &cacheKey, const std::string &generationId,
-                                        const DialogWavProvenance &provenance);
+                                        const WavProvenance &provenance);
 
 } // namespace creatures::voice

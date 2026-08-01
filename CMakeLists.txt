@@ -567,6 +567,10 @@ add_executable(creature-server
         src/server/ws/service/CreatureService.cpp
         src/server/ws/service/DialogPreviewService.h
         src/server/ws/service/DialogPreviewService.cpp
+        src/server/ws/service/DialogMusicService.h
+        src/server/ws/service/DialogMusicService.cpp
+        src/server/ws/service/SoundRenditionService.h
+        src/server/ws/service/SoundRenditionService.cpp
         src/server/ws/service/DmxFixtureService.h
         src/server/ws/service/DmxFixtureService.cpp
         src/server/ws/service/MetricsService.h
@@ -685,6 +689,7 @@ add_executable(creature-server-test
         tests/model/LogItem_test.cpp
         tests/model/Animation_test.cpp
         tests/model/AnimationMetadata_test.cpp
+        tests/model/DialogScript_test.cpp
         tests/model/Track_dual_id_test.cpp
         tests/runtime/Activity_test.cpp
         tests/fixture/FixturePatternRunner_test.cpp
@@ -693,6 +698,7 @@ add_executable(creature-server-test
         src/server/fixture/FixturePatternRunner.cpp
         tests/util/SetAttributeOverload_test.cpp
         tests/util/AudioCache_test.cpp
+        tests/util/Slugify_test.cpp
         tests/server/ws/CreatureActivityMessage_test.cpp
         tests/server/ws/CreatureService_streaming_test.cpp
         tests/server/ws/CreatureService_activityOwnership_test.cpp
@@ -705,6 +711,7 @@ add_executable(creature-server-test
         src/server/config/Configuration.cpp
         tests/server/FakeWebsocketUtils.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
+        tests/server/voice/MusicClient_test.cpp
         tests/server/voice/SpeechTrackBuilder_test.cpp
         src/server/voice/SpeechTrackBuilder.cpp
         tests/server/voice/DialogPipeline_chunkTurns_test.cpp
@@ -747,6 +754,7 @@ add_executable(creature-server-test
         src/server/voice/DialogAnimation.cpp
         src/server/voice/DialogCache.cpp
         src/server/voice/DialogClient.cpp
+        src/server/voice/MusicClient.cpp
         src/server/voice/DialogPipeline.cpp
         src/server/voice/DialogWav.cpp
         tests/server/TestGlobals.cpp
@@ -759,10 +767,13 @@ add_executable(creature-server-test
         src/model/Track.cpp
         src/model/Creature.cpp
         src/model/DmxFixture.cpp
+        src/model/DialogScript.cpp
         src/model/Input.cpp
         src/model/StreamFrame.cpp
         src/model/VirtualStatusLights.cpp
         src/model/Storyboard.cpp
+        src/util/Slugify.cpp
+        src/util/Sha256.cpp
         src/server/creature/helpers.cpp
         src/server/fixture/helpers.cpp
         src/server/animation/helpers.cpp

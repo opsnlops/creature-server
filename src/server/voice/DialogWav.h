@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 
@@ -35,7 +36,8 @@ using VoiceChannelMap = std::unordered_map<std::string, uint16_t>;
 /// - Every voice in `assembled.perCreature` must have an entry in
 ///   `voiceToChannel`. Voices in the map without a matching perCreature entry
 ///   are fine (they just don't appear in the output).
-/// - Each mapped channel must be in [1, 17] and distinct from every other
+/// - Each mapped creature channel must be in [1, 16]; channel 17 is reserved
+///   for `backgroundMusic`.
 ///   mapped channel (two creatures clobbering the same lane = silent data
 ///   loss; fail at submit time instead).
 /// - `assembled.totalSamples` * 17 * 2 bytes must fit in a uint32_t — the WAV
@@ -55,6 +57,6 @@ using VoiceChannelMap = std::unordered_map<std::string, uint16_t>;
 /// `data` size, so the trailing chunk is invisible to playback and downmix.
 Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannelMap &voiceToChannel,
                             const std::filesystem::path &outPath, std::shared_ptr<OperationSpan> parentSpan = nullptr,
-                            const DialogWavProvenance *provenance = nullptr);
+                            const WavProvenance *provenance = nullptr, std::span<const int16_t> backgroundMusic = {});
 
 } // namespace creatures::voice

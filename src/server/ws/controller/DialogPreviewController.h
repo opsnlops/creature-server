@@ -23,8 +23,6 @@
 
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
-#include "server/audio/Mp3Writer.h"
-#include "server/audio/OggOpusWriter.h"
 #include "server/database.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
@@ -41,6 +39,7 @@
 #include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/DialogPreviewService.h"
+#include "server/ws/service/SoundRenditionService.h"
 #include "util/uuidUtils.h"
 
 namespace creatures {
@@ -81,6 +80,7 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
     /// only the cheap cache fast-path + job creation; all generation/assembly
     /// lives in the service.
     DialogPreviewService dialogPreviewService_;
+    SoundRenditionService renditionService_;
 
     /// Serialize a preview request DTO into the job framework's string-typed
     /// `details` field. The worker round-trips it back through the same
@@ -286,63 +286,47 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 std::vector<int16_t> samples(gen.audioPcm.size() / sizeof(int16_t));
                 std::memcpy(samples.data(), gen.audioPcm.data(), samples.size() * sizeof(int16_t));
 
-                // Mirror provenance (#50) into the container's tags (OpusTags / ID3v2
-                // TXXX — both take the same (key,value) list): title, script id, and the
-                // full script text as DESCRIPTION.
-                creatures::audio::OggComments comments;
-                const auto &prov = gen.provenance;
-                if (!prov.title.empty()) {
-                    comments.emplace_back("TITLE", prov.title);
+                auto renditionSpan =
+                    creatures::observability->createChildOperationSpan("SoundRenditionService.renderMonoPcm", span);
+                if (renditionSpan) {
+                    renditionSpan->setAttribute("dialog.cache_key", ck);
+                    renditionSpan->setAttribute("dialog.generation_id", gid);
+                    renditionSpan->setAttribute("rendition.format", wantMp3 ? "mp3" : "ogg_opus");
+                    renditionSpan->setAttribute("rendition.input_samples", static_cast<int64_t>(samples.size()));
+                    renditionSpan->setAttribute("cache.outcome", "bypass");
+                    renditionSpan->setAttribute("encoding.performed", true);
+                    renditionSpan->setAttribute("encoding.input_bytes",
+                                                static_cast<int64_t>(samples.size() * sizeof(int16_t)));
                 }
-                if (!prov.sourceScriptId.empty()) {
-                    comments.emplace_back("SOURCE_SCRIPT_ID", prov.sourceScriptId);
+                auto rendition = renditionService_.renderMonoPcm(samples, 48000, gen.provenance,
+                                                                 wantMp3 ? SoundRenditionFormat::Mp3
+                                                                         : SoundRenditionFormat::OggOpus);
+                if (!rendition.isSuccess()) {
+                    recordSpanError(renditionSpan, rendition.getError().value().getMessage(), "RenditionError",
+                                    rendition.getError().value().getCode());
+                    return bailFromServerError(span, rendition.getError().value());
                 }
-                if (!prov.script.empty()) {
-                    std::string scriptText;
-                    for (std::size_t i = 0; i < prov.script.size(); ++i) {
-                        if (i > 0) {
-                            scriptText += '\n';
-                        }
-                        scriptText += prov.script[i].speaker + ": " + prov.script[i].text;
-                    }
-                    comments.emplace_back("DESCRIPTION", scriptText);
+                const auto rendered = rendition.getValue().value();
+                if (renditionSpan) {
+                    renditionSpan->setAttribute("rendition.output_bytes", static_cast<int64_t>(rendered.bytes.size()));
+                    renditionSpan->setSuccess();
                 }
-
-                std::vector<uint8_t> bytes;
-                std::string mimeType;
-                std::string shareName;
-                if (wantMp3) {
-                    auto r = creatures::audio::encodeMonoToMp3(samples, creatures::audio::kShareableSampleRate,
-                                                               creatures::audio::kShareableMp3Bitrate, comments);
-                    if (!r.isSuccess()) {
-                        return bailHttp(span, Status::CODE_500, r.getError().value().getMessage());
-                    }
-                    bytes = r.getValue().value();
-                    mimeType = "audio/mpeg";
-                    shareName = fmt::format("dialog-preview-{}.mp3", gid.substr(0, 8));
-                } else {
-                    auto r = creatures::audio::encodeMonoToOggOpus(samples, creatures::audio::kShareableSampleRate,
-                                                                   creatures::audio::kShareableOpusBitrate, comments);
-                    if (!r.isSuccess()) {
-                        return bailHttp(span, Status::CODE_500, r.getError().value().getMessage());
-                    }
-                    bytes = r.getValue().value();
-                    mimeType = "audio/ogg";
-                    shareName = fmt::format("dialog-preview-{}.ogg", gid.substr(0, 8));
-                }
+                const auto shareName = fmt::format("dialog-preview-{}{}", gid.substr(0, 8), rendered.extension);
 
                 auto response = oatpp::web::protocol::http::outgoing::ResponseFactory::createResponse(
-                    Status::CODE_200,
-                    oatpp::String(reinterpret_cast<const char *>(bytes.data()), static_cast<v_int32>(bytes.size())));
-                response->putHeader("Content-Type", mimeType.c_str());
+                    Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(rendered.bytes.data()),
+                                                    static_cast<v_int32>(rendered.bytes.size())));
+                response->putHeader("Content-Type", rendered.mimeType.c_str());
                 response->putHeader("Content-Disposition", "attachment; filename=\"" + shareName + "\"");
+                response->putHeader("Cache-Control", "public, max-age=31536000, immutable");
                 response->putHeader("X-Dialog-Cache-Key", ck.c_str());
                 response->putHeader("X-Dialog-Generation-Id", gid.c_str());
                 if (span) {
                     span->setAttribute("dialog.cache_key", ck);
                     span->setAttribute("dialog.generation_id", gid);
                     span->setAttribute("rendition.format", wantMp3 ? "mp3" : "ogg");
-                    span->setAttribute("share.bytes", static_cast<int64_t>(bytes.size()));
+                    span->setAttribute("share.bytes", static_cast<int64_t>(rendered.bytes.size()));
+                    span->setAttribute("http.response.cache_control", "public, max-age=31536000, immutable");
                     span->setHttpStatus(200);
                 }
                 return response;

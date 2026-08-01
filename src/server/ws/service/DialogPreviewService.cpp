@@ -30,11 +30,11 @@ namespace {
 /// resolved creatures and the turns, so editor exports of this take can carry
 /// the source script, channel layout, and full script text. Mirrors what the
 /// permanent-render path stamps, sourced from the preview's own data.
-creatures::voice::DialogWavProvenance
+creatures::voice::WavProvenance
 buildPreviewProvenance(const std::vector<creatures::voice::DialogInput> &inputs,
                        const std::unordered_map<std::string, DialogPreviewService::PreviewCreature> &resolved,
                        const std::string &generationId, const std::string &scriptId, const std::string &title) {
-    creatures::voice::DialogWavProvenance p;
+    creatures::voice::WavProvenance p;
     p.sourceScriptId = scriptId;
     p.title = title;
     if (!generationId.empty()) {

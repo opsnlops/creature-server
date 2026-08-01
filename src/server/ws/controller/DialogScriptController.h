@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 
@@ -18,6 +19,7 @@
 #include "server/config.h"
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
+#include "server/script/DialogScriptMutationLock.h"
 #include "server/storage/Storage.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
@@ -173,6 +175,9 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 nlohmann::json parsed;
                 try {
                     parsed = buildScriptJsonForUpsert(std::string(*body), id, now, now);
+                    // Music references are created only by the promotion endpoint,
+                    // after it has verified the permanent WAV and embedded recipe.
+                    parsed.erase("background_music");
                 } catch (const nlohmann::json::exception &e) {
                     return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
                 } catch (const std::exception &e) {
@@ -231,18 +236,27 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
 
                 auto opSpan = creatures::observability->createChildOperationSpan(
                     "DialogScriptController.updateDialogScript", span);
+                const std::scoped_lock mutationLock(creatures::script::mutationMutex());
 
                 // Must exist — PUT replaces, not creates-via-id.
                 auto existing = creatures::db->getDialogScript(std::string(*scriptId), opSpan);
                 if (!existing.isSuccess()) {
                     return bailFromServerError(span, existing.getError().value());
                 }
-                const auto createdAt = existing.getValue().value().created_at;
+                const auto existingScript = existing.getValue().value();
+                const auto createdAt = existingScript.created_at;
 
                 nlohmann::json parsed;
                 try {
                     parsed =
                         buildScriptJsonForUpsert(std::string(*body), std::string(*scriptId), createdAt, nowMillis());
+                    // Treat accepted music as server-managed state. A normal script
+                    // edit must neither forge a path nor accidentally detach the take.
+                    if (existingScript.background_music) {
+                        parsed["background_music"] = creatures::dialogScriptToJson(existingScript)["background_music"];
+                    } else {
+                        parsed.erase("background_music");
+                    }
                 } catch (const nlohmann::json::exception &e) {
                     return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
                 } catch (const std::exception &e) {
@@ -382,6 +396,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                                    span->setAttribute("script.id", std::string(*scriptId));
                                auto opSpan = creatures::observability->createChildOperationSpan(
                                    "DialogScriptController.deleteDialogScript", span);
+                               const std::scoped_lock mutationLock(creatures::script::mutationMutex());
                                auto result = creatures::storage::deleteDialogScript(std::string(*scriptId), opSpan);
                                if (!result.isSuccess()) {
                                    return bailFromServerError(span, result.getError().value());
