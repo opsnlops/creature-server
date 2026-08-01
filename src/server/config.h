@@ -140,6 +140,8 @@
 //
 
 static constexpr uint16_t RTP_PORT = 5004;                          // Standard RTP port
+static constexpr uint16_t RTCP_PORT = RTP_PORT + 1;                 // Conventional RTP control port
+static constexpr uint32_t RTCP_REPORT_INTERVAL_MS = 1000;           // Active-stream timing update cadence
 static constexpr int RTP_SRATE = 48000;                             // "Full" Opus rate (48 kHz)
 static constexpr int RTP_STREAMING_CHANNELS = 17;                   // 16 creatures + 1 BGM
 static constexpr int RTP_FRAME_MS = 10;                             // 10 ms frames

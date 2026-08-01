@@ -8,6 +8,8 @@
 
 #include <chrono>
 #include <exception>
+#include <limits>
+#include <random>
 #include <stdexcept>
 
 #include <fmt/format.h>
@@ -32,6 +34,17 @@ namespace creatures {
 extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 } // namespace creatures
+
+namespace {
+
+uint32_t randomSynchronizationSourceBase() {
+    std::random_device randomDevice;
+    std::uniform_int_distribution<uint32_t> distribution(1U,
+                                                         std::numeric_limits<uint32_t>::max() - RTP_STREAMING_CHANNELS);
+    return distribution(randomDevice);
+}
+
+} // namespace
 
 MultiOpusRtpServer::MultiOpusRtpServer() {
     try {
@@ -71,7 +84,7 @@ MultiOpusRtpServer::MultiOpusRtpServer() {
         }
 
         // Set initial SSRC values - each channel gets its own sequential SSRC
-        rotateSynchronizationSourceIdentifiers();
+        rotateSynchronizationSourceIdentifiers(0, "startup", {});
         outputThread_ = std::thread(&MultiOpusRtpServer::runOutputWorker, this);
         isServerReady_.store(true);
 
@@ -90,6 +103,7 @@ MultiOpusRtpServer::~MultiOpusRtpServer() {
     if (outputThread_.joinable()) {
         outputThread_.join();
     }
+    rtcpSender_.shutdown();
 
     for (size_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
         if (rtpSessions_[channelIndex] && mediaStreams_[channelIndex]) {
@@ -103,8 +117,16 @@ MultiOpusRtpServer::~MultiOpusRtpServer() {
 
 RtpOutputLease MultiOpusRtpServer::acquireOutput(std::string ownerId) {
     auto lease = outputCoordinator_.acquire(std::move(ownerId));
-    const size_t purged = outputQueue_.eraseIf(
-        [&lease](const OutputCommand &command) { return command.lease.generation != lease.generation; });
+    size_t purged = 0;
+    {
+        auto guard = outputCoordinator_.lockIfCurrent(lease);
+        if (guard) {
+            readyGeneration_.store(0);
+            rtcpSender_.discardSessionUnless(lease.generation);
+            purged = outputQueue_.eraseIf(
+                [&lease](const OutputCommand &command) { return command.lease.generation != lease.generation; });
+        }
+    }
     info("RTP output acquired by {} at generation {} ({} stale command(s) purged)", lease.ownerId, lease.generation,
          purged);
     return lease;
@@ -112,6 +134,9 @@ RtpOutputLease MultiOpusRtpServer::acquireOutput(std::string ownerId) {
 
 void MultiOpusRtpServer::releaseOutput(const RtpOutputLease &lease) {
     outputCoordinator_.release(lease);
+    rtcpSender_.endSession(lease.generation);
+    uint64_t expectedGeneration = lease.generation;
+    readyGeneration_.compare_exchange_strong(expectedGeneration, 0);
     const size_t purged = outputQueue_.eraseIf(
         [&lease](const OutputCommand &command) { return command.lease.generation == lease.generation; });
     debug("RTP output release requested by {} at generation {} ({} queued command(s) purged)", lease.ownerId,
@@ -203,15 +228,26 @@ void MultiOpusRtpServer::processOutputCommand(const OutputCommand &command) {
 
             switch (command.type) {
             case OutputCommandType::Reset:
-                rotateSynchronizationSourceIdentifiers();
+                readyGeneration_.store(0);
+                rotateSynchronizationSourceIdentifiers(command.lease.generation, command.lease.ownerId,
+                                                       command.traceContext);
+                readyGeneration_.store(command.lease.generation);
                 break;
             case OutputCommandType::SilentFrame:
+                if (readyGeneration_.load() != command.lease.generation) {
+                    throw std::runtime_error("RTP silent frame rejected because its generation was not reset");
+                }
                 result = sendSilentFrameSet(command.frameIndex);
+                rtcpSender_.recordFrame(command.lease.generation, result.sentOctets);
                 frameClock_.advance();
                 break;
             case OutputCommandType::AudioFrame:
+                if (readyGeneration_.load() != command.lease.generation) {
+                    throw std::runtime_error("RTP audio frame rejected because its generation was not reset");
+                }
                 frameClock_.advance(command.skippedFrames);
                 result = sendAudioFrameSet(*command.buffer, command.frameIndex);
+                rtcpSender_.recordFrame(command.lease.generation, result.sentOctets);
                 frameClock_.advance();
                 break;
             }
@@ -220,10 +256,16 @@ void MultiOpusRtpServer::processOutputCommand(const OutputCommand &command) {
         // Guard's non-recursive coordinator mutex must be released first.
         if (command.releaseAfterSend) {
             outputCoordinator_.release(command.lease);
+            rtcpSender_.endSession(command.lease.generation);
+            uint64_t expectedGeneration = command.lease.generation;
+            readyGeneration_.compare_exchange_strong(expectedGeneration, 0);
         }
     } catch (...) {
-        if (command.releaseAfterSend) {
+        if (command.type == OutputCommandType::Reset || command.releaseAfterSend) {
             outputCoordinator_.release(command.lease);
+            rtcpSender_.endSession(command.lease.generation);
+            uint64_t expectedGeneration = command.lease.generation;
+            readyGeneration_.compare_exchange_strong(expectedGeneration, 0);
         }
         throw;
     }
@@ -353,31 +395,41 @@ rtp_error_t MultiOpusRtpServer::send(uint8_t channelIndex, const std::vector<uin
         opusEncodedFrame.size(), timestamp, RTP_NO_FLAGS);
 }
 
-void MultiOpusRtpServer::rotateSynchronizationSourceIdentifiers() {
+void MultiOpusRtpServer::rotateSynchronizationSourceIdentifiers(uint64_t generation, const std::string &ownerId,
+                                                                const AsyncAudioTraceContext &traceContext) {
+    nextSynchronizationSourceIdentifier_ = randomSynchronizationSourceBase();
     currentSynchronizationSourceIdentifier_ = nextSynchronizationSourceIdentifier_;
+    RtcpSender::SynchronizationSources synchronizationSources{};
 
     for (size_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
         if (mediaStreams_[channelIndex]) {
             // Assign fresh SSRC, then increment for next channel
-            mediaStreams_[channelIndex]->configure_ctx(RCC_SSRC, nextSynchronizationSourceIdentifier_++);
+            const uint32_t synchronizationSource = nextSynchronizationSourceIdentifier_++;
+            if (mediaStreams_[channelIndex]->configure_ctx(RCC_SSRC, synchronizationSource) != RTP_OK) {
+                throw std::runtime_error(fmt::format("unable to configure RTP SSRC for channel {}", channelIndex));
+            }
+            synchronizationSources[channelIndex] = synchronizationSource;
         }
     }
 
-    resetFrameTimestamp();
+    const auto clockMapping = resetFrameTimestamp();
+    rtcpSender_.beginSession(generation, ownerId, synchronizationSources, clockMapping, traceContext);
     debug("SSRC rotated! New range: {} to {}", currentSynchronizationSourceIdentifier_,
           nextSynchronizationSourceIdentifier_ - 1);
 }
 
 MultiOpusRtpServer::OutputResult MultiOpusRtpServer::sendSilentFrameSet(size_t primingFrameIndex) {
     const uint32_t timestamp = frameClock_.current();
-    OutputResult frameResult{RTP_OK, 0, timestamp};
+    OutputResult frameResult{RTP_OK, 0, timestamp, {}};
 
     for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
-        const auto transmissionResult =
-            send(channelIndex, encodedSilentFrames_[channelIndex][primingFrameIndex], timestamp);
+        const auto &encodedFrame = encodedSilentFrames_[channelIndex][primingFrameIndex];
+        const auto transmissionResult = send(channelIndex, encodedFrame, timestamp);
         if (transmissionResult != RTP_OK && frameResult.error == RTP_OK) {
             frameResult.error = transmissionResult;
             frameResult.firstFailedChannel = channelIndex;
+        } else if (transmissionResult == RTP_OK) {
+            frameResult.sentOctets[channelIndex] = static_cast<uint32_t>(encodedFrame.size());
         }
     }
     return frameResult;
@@ -386,21 +438,23 @@ MultiOpusRtpServer::OutputResult MultiOpusRtpServer::sendSilentFrameSet(size_t p
 MultiOpusRtpServer::OutputResult MultiOpusRtpServer::sendAudioFrameSet(const AudioStreamBuffer &buffer,
                                                                        size_t frameIndex) {
     const uint32_t timestamp = frameClock_.current();
-    OutputResult frameResult{RTP_OK, 0, timestamp};
+    OutputResult frameResult{RTP_OK, 0, timestamp, {}};
 
     for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
-        const auto transmissionResult = send(channelIndex, buffer.getEncodedFrame(channelIndex, frameIndex), timestamp);
+        const auto &encodedFrame = buffer.getEncodedFrame(channelIndex, frameIndex);
+        const auto transmissionResult = send(channelIndex, encodedFrame, timestamp);
         if (transmissionResult != RTP_OK && frameResult.error == RTP_OK) {
             frameResult.error = transmissionResult;
             frameResult.firstFailedChannel = channelIndex;
+        } else if (transmissionResult == RTP_OK) {
+            frameResult.sentOctets[channelIndex] = static_cast<uint32_t>(encodedFrame.size());
         }
     }
     return frameResult;
 }
 
-void MultiOpusRtpServer::resetFrameTimestamp() {
-    const auto elapsed = std::chrono::steady_clock::now().time_since_epoch();
-    const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-    const auto sampleClock = static_cast<uint64_t>(microseconds) * RTP_SRATE / 1000000ULL;
-    frameClock_.reset(static_cast<uint32_t>(sampleClock));
+RtpClockMapping MultiOpusRtpServer::resetFrameTimestamp() {
+    auto clockMapping = RtpClockMapping::capture(RTP_SRATE);
+    frameClock_.reset(clockMapping.rtpEpoch());
+    return clockMapping;
 }
