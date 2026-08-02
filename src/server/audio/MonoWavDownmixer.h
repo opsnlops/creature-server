@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -76,8 +77,10 @@ void downmixToMono(const int16_t *interleaved, size_t frames, int channels, int1
  * sound in the workshop is stored as.
  *
  * @param filePath path to the WAV file on disk
+ * @param maximumFrames optional maximum number of sample frames to accept;
+ * rejects the file from its header before allocating the destination buffer
  * @return the mono samples and the file's sample rate, or an error
  */
-Result<MonoWav> loadWavAsMono(const std::string &filePath);
+Result<MonoWav> loadWavAsMono(const std::string &filePath, std::optional<std::uint64_t> maximumFrames = std::nullopt);
 
 } // namespace creatures::audio

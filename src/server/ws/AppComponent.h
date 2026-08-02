@@ -1,6 +1,8 @@
 
 #pragma once
 
+#include <stdexcept>
+
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -19,10 +21,12 @@
 #include "ErrorHandler.h"
 #include "SwaggerComponent.h"
 
+#include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/ws/messaging/MessageProcessor.h"
 #include "server/ws/websocket/ClientCafe.h"
 #include "util/MessageQueue.h"
+#include "util/environment.h"
 #include "util/loggingUtils.h"
 
 namespace creatures {
@@ -61,8 +65,12 @@ class AppComponent {
      *  Create ConnectionProvider component which listens on the port
      */
     OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::network::ServerConnectionProvider>, serverConnectionProvider)([] {
+        const auto port = environmentToInt(SERVER_PORT_ENV, DEFAULT_SERVER_PORT);
+        if (port < 1 || port > 65535) {
+            throw std::runtime_error("SERVER_PORT must be between 1 and 65535");
+        }
         return oatpp::network::tcp::server::ConnectionProvider::createShared(
-            {"0.0.0.0", 8000, oatpp::network::Address::IP_4});
+            {"0.0.0.0", static_cast<v_uint16>(port), oatpp::network::Address::IP_4});
     }());
 
     /**

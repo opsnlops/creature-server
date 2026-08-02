@@ -1,5 +1,6 @@
 #include "DialogWav.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -32,6 +33,7 @@ constexpr uint16_t kBitsPerSample = 16;
 constexpr uint16_t kBytesPerSample = kBitsPerSample / 8;
 constexpr uint16_t kWavFormatPCM = 1;
 constexpr std::size_t kWavHeaderBytes = 44;
+constexpr std::size_t kInterleaveBlockFrames = 4096;
 
 /// Little-endian writers. WAV is always LE; macOS/Linux on x86_64 + arm64 are
 /// LE too, so a plain write would work — but explicit byte writes keep this
@@ -48,15 +50,23 @@ void writeU32LE(std::ostream &os, uint32_t v) {
 
 } // namespace
 
+std::size_t dialogPlaybackSampleCount(const DialogAssembled &assembled, std::span<const int16_t> backgroundMusic) {
+    return std::max(assembled.totalSamples, backgroundMusic.size());
+}
+
 Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannelMap &voiceToChannel,
                             const std::filesystem::path &outPath, std::shared_ptr<OperationSpan> parentSpan,
-                            const DialogWavProvenance *provenance) {
+                            const WavProvenance *provenance, std::span<const int16_t> backgroundMusic) {
+    const auto playbackSamples = dialogPlaybackSampleCount(assembled, backgroundMusic);
     auto span = creatures::observability->createChildOperationSpan("DialogWav.writeDialogWav", parentSpan);
     if (span) {
         span->setAttribute("wav.path", outPath.string());
         span->setAttribute("wav.voices", static_cast<int64_t>(assembled.perCreature.size()));
-        span->setAttribute("wav.total_samples", static_cast<int64_t>(assembled.totalSamples));
+        span->setAttribute("wav.dialog_samples", static_cast<int64_t>(assembled.totalSamples));
+        span->setAttribute("wav.show_samples", static_cast<int64_t>(playbackSamples));
+        span->setAttribute("wav.total_samples", static_cast<int64_t>(playbackSamples));
         span->setAttribute("wav.sample_rate", static_cast<int64_t>(assembled.sampleRate));
+        span->setAttribute("wav.bgm_samples", static_cast<int64_t>(backgroundMusic.size()));
     }
 
     // ---- Input validation.
@@ -105,9 +115,9 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
             return Result<void>{ServerError(ServerError::InvalidData, msg)};
         }
         const uint16_t ch = it->second;
-        if (ch < 1 || ch > RTP_STREAMING_CHANNELS) {
-            std::string msg = fmt::format("writeDialogWav: voice '{}' has audio_channel {} (must be 1..{})", pc.voiceId,
-                                          ch, RTP_STREAMING_CHANNELS);
+        if (ch < 1 || ch >= RTP_STREAMING_CHANNELS) {
+            std::string msg = fmt::format("writeDialogWav: voice '{}' has audio_channel {} (must be 1..{}; {} is BGM)",
+                                          pc.voiceId, ch, RTP_STREAMING_CHANNELS - 1, RTP_STREAMING_CHANNELS);
             error(msg);
             if (span)
                 span->setError(msg);
@@ -137,8 +147,7 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     // well under this — a 5-minute 17-channel 48k S16 file is ~490 MiB — but
     // reject explicitly rather than silently truncate the size field.
     const std::uint64_t totalChannels = RTP_STREAMING_CHANNELS;
-    const std::uint64_t dataBytes64 =
-        static_cast<std::uint64_t>(assembled.totalSamples) * totalChannels * kBytesPerSample;
+    const std::uint64_t dataBytes64 = static_cast<std::uint64_t>(playbackSamples) * totalChannels * kBytesPerSample;
     if (dataBytes64 > std::numeric_limits<std::uint32_t>::max() - kWavHeaderBytes) {
         std::string msg = fmt::format(
             "writeDialogWav: output {} bytes exceeds the 4 GiB WAV size-field cap (scene too long)", dataBytes64);
@@ -159,7 +168,7 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     if (provenance && !provenance->empty()) {
         // Emit a complete 17-track TRACK_LIST (one per interleaved channel) so
         // Wave Agent / DAWs show the per-lane names (#51 follow-up).
-        ixmlChunk = makeIxmlChunk(buildDialogIxml(*provenance, RTP_STREAMING_CHANNELS));
+        ixmlChunk = makeIxmlChunk(buildIxml(*provenance, RTP_STREAMING_CHANNELS));
         const std::uint64_t withIxml = 36ull + dataBytes64 + ixmlChunk.size();
         if (withIxml > std::numeric_limits<std::uint32_t>::max()) {
             warn("writeDialogWav: scene too large to also carry a {}-byte iXML chunk; writing without provenance",
@@ -168,20 +177,6 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
         }
     }
     const auto riffChunkSize = static_cast<std::uint32_t>(36 + dataBytes + ixmlChunk.size());
-
-    // ---- Interleave: build the full output buffer in memory.
-    //
-    // Walk the timeline once. For each sample t, write 17 lanes back-to-back;
-    // each lane that this scene assigned to a creature gets that creature's
-    // sample at t; all other lanes stay zero.
-    std::vector<int16_t> interleaved(static_cast<std::size_t>(assembled.totalSamples) * RTP_STREAMING_CHANNELS, 0);
-    for (const auto &vl : lanes) {
-        const auto &src = assembled.perCreature[vl.perCreatureIndex].pcm;
-        // Scatter src[t] → interleaved[t * 17 + lane].
-        for (std::size_t t = 0; t < assembled.totalSamples; ++t) {
-            interleaved[t * RTP_STREAMING_CHANNELS + vl.lane] = src[t];
-        }
-    }
 
     // ---- Write the file.
     std::ofstream out(outPath, std::ios::binary | std::ios::trunc);
@@ -209,10 +204,40 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     out.write("data", 4);
     writeU32LE(out, dataBytes);
 
-    // Sample data — int16_t is host-endian, host is LE on our targets.
+    // Sample data — interleave in bounded blocks so a long show does not need
+    // a nearly 1 GiB 17-channel buffer. int16_t is host-endian, and every
+    // supported host is LE.
     static_assert(sizeof(int16_t) == 2, "int16_t is exactly 2 bytes");
-    out.write(reinterpret_cast<const char *>(interleaved.data()),
-              static_cast<std::streamsize>(interleaved.size() * sizeof(int16_t)));
+    std::vector<int16_t> interleaved(kInterleaveBlockFrames * RTP_STREAMING_CHANNELS, 0);
+    for (std::size_t blockStart = 0; blockStart < playbackSamples; blockStart += kInterleaveBlockFrames) {
+        const auto blockFrames = std::min(kInterleaveBlockFrames, playbackSamples - blockStart);
+        const auto blockValues = blockFrames * RTP_STREAMING_CHANNELS;
+        std::fill_n(interleaved.begin(), blockValues, 0);
+
+        if (blockStart < assembled.totalSamples) {
+            const auto dialogFrames = std::min(blockFrames, assembled.totalSamples - blockStart);
+            for (const auto &vl : lanes) {
+                const auto &src = assembled.perCreature[vl.perCreatureIndex].pcm;
+                for (std::size_t frame = 0; frame < dialogFrames; ++frame) {
+                    interleaved[frame * RTP_STREAMING_CHANNELS + vl.lane] = src[blockStart + frame];
+                }
+            }
+        }
+
+        if (blockStart < backgroundMusic.size()) {
+            const auto musicFrames = std::min(blockFrames, backgroundMusic.size() - blockStart);
+            for (std::size_t frame = 0; frame < musicFrames; ++frame) {
+                interleaved[frame * RTP_STREAMING_CHANNELS + (RTP_STREAMING_CHANNELS - 1)] =
+                    backgroundMusic[blockStart + frame];
+            }
+        }
+
+        out.write(reinterpret_cast<const char *>(interleaved.data()),
+                  static_cast<std::streamsize>(blockValues * sizeof(int16_t)));
+        if (!out) {
+            break;
+        }
+    }
 
     // Trailing iXML provenance chunk, if any (#47).
     if (!ixmlChunk.empty()) {
@@ -228,14 +253,15 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
         return Result<void>{ServerError(ServerError::InternalError, msg)};
     }
 
-    const double durationS = static_cast<double>(assembled.totalSamples) / static_cast<double>(RTP_SRATE);
+    const double durationS = static_cast<double>(playbackSamples) / static_cast<double>(RTP_SRATE);
     info("writeDialogWav: wrote {} ({} samples, {} voices on lanes, {:.2f}s, {} bytes data)", outPath.string(),
-         assembled.totalSamples, lanes.size(), durationS, dataBytes);
+         playbackSamples, lanes.size(), durationS, dataBytes);
 
     if (span) {
         span->setAttribute("wav.bytes", static_cast<int64_t>(kWavHeaderBytes + dataBytes + ixmlChunk.size()));
         span->setAttribute("wav.duration_s", durationS);
         span->setAttribute("wav.lanes_used", static_cast<int64_t>(lanes.size()));
+        span->setAttribute("wav.bgm_present", !backgroundMusic.empty());
         span->setAttribute("wav.ixml_bytes", static_cast<int64_t>(ixmlChunk.size()));
         span->setSuccess();
     }

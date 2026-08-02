@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -22,7 +24,8 @@ namespace {
 class TemporaryPcmWav {
   public:
     TemporaryPcmWav(uint16_t channels, uint32_t sampleRate, const std::vector<int16_t> &samples,
-                    bool extensible = false, bool includeOddSizedJunkChunk = false) {
+                    bool extensible = false, bool includeOddSizedJunkChunk = false,
+                    std::optional<uint32_t> declaredDataSize = std::nullopt) {
         const auto unique = std::chrono::steady_clock::now().time_since_epoch().count();
         path_ =
             std::filesystem::temp_directory_path() / ("creature-server-mono-stream-" + std::to_string(unique) + ".wav");
@@ -64,7 +67,7 @@ class TemporaryPcmWav {
         }
 
         writeText(file, "data");
-        writeU32(file, dataSize);
+        writeU32(file, declaredDataSize.value_or(dataSize));
         for (const int16_t sample : samples) {
             writeU16(file, static_cast<uint16_t>(sample));
         }
@@ -325,6 +328,24 @@ TEST(MonoWavDownmixer, WholeFileHelperUsesStreamingReader) {
     ASSERT_EQ(mono.samples.size(), 2);
     EXPECT_EQ(mono.samples[0], 300);
     EXPECT_EQ(mono.samples[1], -200);
+}
+
+TEST(MonoWavDownmixer, WholeFileHelperRejectsFrameLimitBeforeLoadingSamples) {
+    const TemporaryPcmWav wav(1, 48000, {1, 2, 3, 4});
+
+    const auto result = loadWavAsMono(wav.path().string(), 3);
+
+    ASSERT_FALSE(result.isSuccess());
+    EXPECT_EQ(result.getError()->getCode(), ServerError::InvalidData);
+}
+
+TEST(MonoWavDownmixer, RejectsAChunkDeclaredPastEndOfFileBeforeAllocating) {
+    const TemporaryPcmWav wav(1, 48000, {123}, false, false, std::numeric_limits<uint32_t>::max());
+
+    const auto result = MonoWavStream::open(wav.path().string());
+
+    ASSERT_FALSE(result.isSuccess());
+    EXPECT_EQ(result.getError()->getCode(), creatures::ServerError::InvalidData);
 }
 
 } // namespace creatures::audio

@@ -37,6 +37,6 @@ Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmDat
 /// scene's script is appended after the `data` chunk (#50). Readers that walk
 /// chunks and honor the `data` size ignore it, so playback is unaffected.
 std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate,
-                                      const DialogWavProvenance *provenance = nullptr);
+                                      const WavProvenance *provenance = nullptr);
 
 } // namespace creatures::voice

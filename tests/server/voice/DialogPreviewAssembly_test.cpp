@@ -10,6 +10,8 @@ namespace {
 
 using creatures::voice::CachedGeneration;
 using creatures::voice::mergeChunkGenerations;
+using creatures::voice::normalizeCachedGenerationVoiceSegments;
+using creatures::voice::normalizeVoiceSegmentIndices;
 
 constexpr uint32_t kRate = 48000;
 constexpr double kGap = 0.30;
@@ -86,6 +88,48 @@ TEST(DialogPreviewAssembly, SingleChunkPassesThroughUnchanged) {
     EXPECT_DOUBLE_EQ(0.01, merged.forcedAlignment.words[0].startSeconds);
     EXPECT_EQ(0u, merged.voiceSegments[0].dialogInputIndex);
     EXPECT_FALSE(merged.generationId.empty());
+}
+
+TEST(DialogPreviewAssembly, NormalizesTaggedUtf8VoiceSegmentIndices) {
+    const std::vector<creatures::voice::DialogInput> inputs{
+        {"voice-A", "[excited] Beaky! BEAKY! I wanna tell you about Linux."},
+        {"voice-B", "[annoyed] What, again? You always talk about Linux, Mango."},
+        {"voice-A", "But Beaky, Linux 7.0 has been released! It’s seven now!"},
+        {"voice-B",
+         "[grumble] I don’t care, Mango. We live in a magical house on Whidbey Island! That’s way more important."},
+    };
+    std::vector<creatures::voice::DialogVoiceSegment> segments{
+        {"voice-A", 0, 53, 0, 0.0, 0.0},
+        {"voice-B", 53, 111, 1, 0.0, 0.0},
+        {"voice-A", 111, 166, 2, 0.0, 0.0},
+        {"voice-B", 166, 269, 3, 0.0, 0.0},
+    };
+
+    normalizeVoiceSegmentIndices(segments, inputs);
+
+    EXPECT_EQ(segments[0].characterStartIndex, 0u);
+    EXPECT_EQ(segments[0].characterEndIndex, 43u);
+    EXPECT_EQ(segments[1].characterStartIndex, 44u);
+    EXPECT_EQ(segments[1].characterEndIndex, 92u);
+    EXPECT_EQ(segments[2].characterStartIndex, 93u);
+    EXPECT_EQ(segments[2].characterEndIndex, 148u);
+    EXPECT_EQ(segments[3].characterStartIndex, 149u);
+    EXPECT_EQ(segments[3].characterEndIndex, 242u);
+}
+
+TEST(DialogPreviewAssembly, DoesNotNormalizeCachedSegmentsTwice) {
+    const std::vector<creatures::voice::DialogInput> inputs{{"voice-A", "[excited] It’s seven now!"}};
+    CachedGeneration generation;
+    generation.voiceSegments.push_back({"voice-A", 0, 25, 0, 0.0, 0.0});
+
+    normalizeCachedGenerationVoiceSegments(generation, inputs);
+    const auto normalizedStart = generation.voiceSegments[0].characterStartIndex;
+    const auto normalizedEnd = generation.voiceSegments[0].characterEndIndex;
+    normalizeCachedGenerationVoiceSegments(generation, inputs);
+
+    EXPECT_EQ(generation.voiceSegmentIndexSpace, creatures::voice::kVoiceSegmentIndexSpaceNormalized);
+    EXPECT_EQ(generation.voiceSegments[0].characterStartIndex, normalizedStart);
+    EXPECT_EQ(generation.voiceSegments[0].characterEndIndex, normalizedEnd);
 }
 
 } // namespace

@@ -77,6 +77,13 @@ Result<std::shared_ptr<MonoWavStream>> MonoWavStream::open(const std::string &fi
         const auto errorMsg = fmt::format("Unable to open WAV file: {}", filePath);
         return Result<std::shared_ptr<MonoWavStream>>{ServerError(ServerError::Forbidden, errorMsg)};
     }
+    std::error_code fileSizeError;
+    const auto fileSize = std::filesystem::file_size(filePath, fileSizeError);
+    if (fileSizeError) {
+        const auto errorMsg =
+            fmt::format("Unable to determine WAV file size for '{}': {}", filePath, fileSizeError.message());
+        return Result<std::shared_ptr<MonoWavStream>>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
 
     std::array<uint8_t, 12> riffHeader{};
     if (!readExact(stream->file_, riffHeader.data(), riffHeader.size()) ||
@@ -98,6 +105,13 @@ Result<std::shared_ptr<MonoWavStream>> MonoWavStream::open(const std::string &fi
 
         const uint32_t chunkSize = readLittleEndianU32(chunkHeader.data() + 4);
         const bool hasPaddingByte = (chunkSize & 1U) != 0;
+        const auto payloadPosition = stream->file_.tellg();
+        const auto paddedChunkSize = static_cast<std::uint64_t>(chunkSize) + (hasPaddingByte ? 1ULL : 0ULL);
+        if (payloadPosition < 0 || static_cast<std::uint64_t>(payloadPosition) > fileSize ||
+            paddedChunkSize > fileSize - static_cast<std::uint64_t>(payloadPosition)) {
+            const auto errorMsg = fmt::format("WAV file '{}' declares a chunk beyond the end of the file", filePath);
+            return Result<std::shared_ptr<MonoWavStream>>{ServerError(ServerError::InvalidData, errorMsg)};
+        }
 
         if (std::memcmp(chunkHeader.data(), "fmt ", 4) == 0) {
             if (chunkSize < 16) {
@@ -210,12 +224,17 @@ Result<size_t> MonoWavStream::readMonoFrames(std::span<int16_t> output) {
     return Result<size_t>{framesToRead};
 }
 
-Result<MonoWav> loadWavAsMono(const std::string &filePath) {
+Result<MonoWav> loadWavAsMono(const std::string &filePath, std::optional<std::uint64_t> maximumFrames) {
     auto streamResult = MonoWavStream::open(filePath);
     if (!streamResult.isSuccess()) {
         return Result<MonoWav>{streamResult.getError().value()};
     }
     const auto stream = streamResult.getValue().value();
+    if (maximumFrames && stream->totalFrames() > *maximumFrames) {
+        const auto errorMsg = fmt::format("WAV file '{}' has {} frames, exceeding the {}-frame limit", filePath,
+                                          stream->totalFrames(), *maximumFrames);
+        return Result<MonoWav>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
     if (stream->totalFrames() > std::numeric_limits<size_t>::max()) {
         const auto errorMsg = fmt::format("WAV file '{}' is too large to load into memory", filePath);
         return Result<MonoWav>{ServerError(ServerError::InvalidData, errorMsg)};

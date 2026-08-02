@@ -78,10 +78,13 @@ struct CreatureTrackInput {
 /// existing document in place. This is what powers "re-render a script" —
 /// the script's previously-rendered animation keeps its stable id, only the
 /// content changes (3.15.4+). Empty = fresh UUID, classic behavior.
+/// `minimumTotalSamples` extends the Animation with neutral frames when another
+/// accepted show asset (currently background music) outlasts the spoken dialog.
 Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
                                        const std::vector<CreatureTrackInput> &creatureInputs, uint32_t msPerFrame,
                                        const std::string &soundFilePath, const std::string &title,
                                        std::shared_ptr<OperationSpan> parentSpan = nullptr,
-                                       const std::string &existingAnimationId = std::string{});
+                                       const std::string &existingAnimationId = std::string{},
+                                       std::size_t minimumTotalSamples = 0);
 
 } // namespace creatures::voice

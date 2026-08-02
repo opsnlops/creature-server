@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "util/ObservabilityManager.h"
@@ -195,6 +196,23 @@ class DialogClient {
      * to forced-alignment as the spoken transcript.
      */
     static std::string stripTags(const std::string &text);
+
+    /// Count Unicode code points in a UTF-8 string. ElevenLabs forced
+    /// alignment returns one character entry per code point, while
+    /// std::string::size() counts encoded bytes.
+    static std::size_t utf8CodepointCount(std::string_view text);
+
+    /// Return the byte offset of every UTF-8 code-point boundary, including
+    /// offset zero and text.size(). Invalid bytes are treated as one-byte
+    /// code points so untrusted input cannot make indexing loop forever.
+    static std::vector<std::size_t> utf8CodepointByteOffsets(std::string_view text);
+
+    /// Map raw UTF-8 code-point boundaries to the canonical tag-stripped,
+    /// whitespace-normalized transcript boundaries.
+    static std::vector<std::size_t> tagStrippedCodepointBoundaryMap(std::string_view text);
+
+    /// Return whether one decoded UTF-8 code point is Unicode White_Space.
+    static bool isUnicodeWhitespace(std::string_view codepoint);
 };
 
 } // namespace creatures::voice

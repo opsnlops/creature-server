@@ -10,7 +10,7 @@
 namespace creatures::voice {
 
 /// Read the iXML chunk from a RIFF/WAVE file, returning its raw document string
-/// (the BWFXML written by buildDialogIxml), or std::nullopt if the file has no
+/// (the BWFXML written by buildIxml), or std::nullopt if the file has no
 /// iXML chunk or isn't a readable WAV.
 ///
 /// Walks the RIFF chunk list rather than assuming any fixed offset — the iXML
@@ -24,6 +24,11 @@ namespace creatures::voice {
 /// DIALOG_SCRIPT, …) — it is a deliberately small extractor, not a general XML
 /// parser.
 [[nodiscard]] std::optional<std::string> extractIxmlField(const std::string &ixmlDocument, const std::string &tag);
+
+/// Parse every project-owned provenance field from an iXML document. This is
+/// the inverse of buildIxml and the single parser used by promotion and
+/// shareable-rendition metadata mapping.
+[[nodiscard]] WavProvenance parseIxmlProvenance(const std::string &ixmlDocument);
 
 /// Parse the `<TRACK_LIST>` into structured tracks (channel → name). Returns an
 /// empty vector if there is no track list. The inverse of the writer's TRACK_LIST

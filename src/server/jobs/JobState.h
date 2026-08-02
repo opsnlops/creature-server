@@ -30,6 +30,7 @@ enum class JobType {
     Dialog,              // Generate a multi-character dialog scene (ElevenLabs Text-to-Dialogue + slice + assemble)
     DialogPreview,       // Generate (or load) a dialog preview take + return its metadata
     DialogPreviewExport, // Assemble a dialog preview's 17-channel WAV into the ad-hoc bucket
+    DialogMusic,         // Generate instrumental BGM for an exact cached dialog take
     VoiceFile,           // Single-voice TTS of text into a permanent sound file
 };
 
@@ -102,6 +103,8 @@ inline std::string toString(JobType type) {
         return "dialog-preview";
     case JobType::DialogPreviewExport:
         return "dialog-preview-export";
+    case JobType::DialogMusic:
+        return "dialog-music";
     case JobType::VoiceFile:
         return "voice-file";
     default:

@@ -6,10 +6,10 @@
 
 #include "server/voice/IxmlWriter.h"
 
-using creatures::voice::buildDialogIxml;
+using creatures::voice::buildIxml;
 using creatures::voice::DialogLipsyncTrack;
-using creatures::voice::DialogWavProvenance;
 using creatures::voice::makeIxmlChunk;
+using creatures::voice::WavProvenance;
 
 namespace {
 
@@ -20,8 +20,8 @@ uint32_t readU32LE(const std::vector<uint8_t> &bytes, std::size_t offset) {
            (static_cast<uint32_t>(bytes[offset + 2]) << 16) | (static_cast<uint32_t>(bytes[offset + 3]) << 24);
 }
 
-DialogWavProvenance sampleProvenance() {
-    DialogWavProvenance p;
+WavProvenance sampleProvenance() {
+    WavProvenance p;
     p.sourceScriptId = "abc-123";
     p.title = "Scene One";
     p.generationIds = {"g1", "g2", "g3"};
@@ -33,16 +33,16 @@ DialogWavProvenance sampleProvenance() {
 } // namespace
 
 TEST(IxmlWriter, EmptyProvenanceReportsEmpty) {
-    DialogWavProvenance p;
+    WavProvenance p;
     EXPECT_TRUE(p.empty());
     p.title = "x";
     EXPECT_FALSE(p.empty());
 }
 
 TEST(IxmlWriter, DocumentContainsAllFields) {
-    const auto xml = buildDialogIxml(sampleProvenance());
+    const auto xml = buildIxml(sampleProvenance());
     EXPECT_NE(xml.find("<BWFXML>"), std::string::npos);
-    EXPECT_NE(xml.find("<IXML_VERSION>1.5</IXML_VERSION>"), std::string::npos);
+    EXPECT_NE(xml.find("<IXML_VERSION>2.0</IXML_VERSION>"), std::string::npos);
     EXPECT_NE(xml.find("<SOURCE_SCRIPT_ID>abc-123</SOURCE_SCRIPT_ID>"), std::string::npos);
     EXPECT_NE(xml.find("<GENERATION_IDS>g1,g2,g3</GENERATION_IDS>"), std::string::npos);
     EXPECT_NE(xml.find("Dialog render: Scene One"), std::string::npos);
@@ -53,13 +53,46 @@ TEST(IxmlWriter, DocumentContainsAllFields) {
     EXPECT_NE(xml.find("Pip: Hi!"), std::string::npos);
 }
 
+TEST(IxmlWriter, EmitsStandardSlateFieldsAndPrivateMusicRecipe) {
+    WavProvenance p;
+    p.fileUid = "music-file-1";
+    p.take = "take-7";
+    p.circled = true;
+    p.title = "Library Scene";
+    p.tracks = {{1, "BGM"}};
+    creatures::voice::MusicWavProvenance music;
+    music.provider = "ElevenLabs";
+    music.modelId = "music_v2";
+    music.prompt = "Mysterious & playful";
+    music.sourceDialogDurationMs = 4200;
+    music.durationExtensionMs = 1800;
+    music.musicLengthMs = 6000;
+    music.requestJson = R"({"force_instrumental":true})";
+    music.musicGenerationId = "music-file-1";
+    p.music = music;
+
+    const auto xml = buildIxml(p);
+    EXPECT_NE(xml.find("<SCENE>Library Scene</SCENE>"), std::string::npos);
+    EXPECT_NE(xml.find("<TAKE>take-7</TAKE>"), std::string::npos);
+    EXPECT_NE(xml.find("<CIRCLED>TRUE</CIRCLED>"), std::string::npos);
+    EXPECT_NE(xml.find("<FILE_UID>music-file-1</FILE_UID>"), std::string::npos);
+    EXPECT_NE(xml.find("<FILE_SAMPLE_RATE>48000</FILE_SAMPLE_RATE>"), std::string::npos);
+    EXPECT_NE(xml.find("<AUDIO_BIT_DEPTH>16</AUDIO_BIT_DEPTH>"), std::string::npos);
+    EXPECT_NE(xml.find("<TRACK_COUNT>1</TRACK_COUNT>"), std::string::npos);
+    EXPECT_NE(xml.find("<MUSIC_PROVENANCE>"), std::string::npos);
+    EXPECT_NE(xml.find("Mysterious &amp; playful"), std::string::npos);
+    EXPECT_NE(xml.find("<SOURCE_DIALOG_DURATION_MS>4200</SOURCE_DIALOG_DURATION_MS>"), std::string::npos);
+    EXPECT_NE(xml.find("<DURATION_EXTENSION_MS>1800</DURATION_EXTENSION_MS>"), std::string::npos);
+    EXPECT_NE(xml.find("<MUSIC_LENGTH_MS>6000</MUSIC_LENGTH_MS>"), std::string::npos);
+}
+
 TEST(IxmlWriter, TotalChannelsEmitsCompleteContiguousTrackList) {
     // The used lanes are sparse (1, 2, 17), but a poly WAV needs a TRACK per
     // channel with TRACK_COUNT == channel count for Wave Agent / DAWs to show
     // the names.
-    DialogWavProvenance p;
+    WavProvenance p;
     p.tracks = {{1, "Beaky"}, {2, "Mango"}, {17, "BGM"}};
-    const auto xml = buildDialogIxml(p, 17);
+    const auto xml = buildIxml(p, 17);
 
     EXPECT_NE(xml.find("<TRACK_COUNT>17</TRACK_COUNT>"), std::string::npos);
     // Named lanes present.
@@ -80,10 +113,10 @@ TEST(IxmlWriter, TotalChannelsEmitsCompleteContiguousTrackList) {
 TEST(IxmlWriter, OmitsTrackListWhenNoTracks) {
     // A mono export carries provenance without a track list (a 17-track list
     // would misdescribe a 1-channel file).
-    DialogWavProvenance p;
+    WavProvenance p;
     p.title = "Mono Take";
     p.script = {{"Beaky", "hi"}};
-    const auto xml = buildDialogIxml(p);
+    const auto xml = buildIxml(p);
     EXPECT_EQ(xml.find("<TRACK_LIST>"), std::string::npos);
     EXPECT_EQ(xml.find("<TRACK_COUNT>"), std::string::npos);
     // The rest of the document is still there.
@@ -92,14 +125,14 @@ TEST(IxmlWriter, OmitsTrackListWhenNoTracks) {
 }
 
 TEST(IxmlWriter, EmitsLipsyncBlockWithPackedCues) {
-    DialogWavProvenance p;
+    WavProvenance p;
     DialogLipsyncTrack track;
     track.channel = 1;
     track.name = "Beaky";
     track.cues = {{0.0, 0.12, "B"}, {0.12, 0.25, "A"}, {0.25, 0.4, "X"}};
     p.lipsync = {track};
 
-    const auto xml = buildDialogIxml(p);
+    const auto xml = buildIxml(p);
     EXPECT_NE(xml.find("<LIPSYNC>"), std::string::npos);
     EXPECT_NE(xml.find("<CHANNEL_INDEX>1</CHANNEL_INDEX><NAME>Beaky</NAME>"), std::string::npos);
     // Cues packed as "start end shape;..." with 3-decimal seconds.
@@ -107,19 +140,27 @@ TEST(IxmlWriter, EmitsLipsyncBlockWithPackedCues) {
 }
 
 TEST(IxmlWriter, OmitsLipsyncBlockWhenAbsent) {
-    DialogWavProvenance p;
+    WavProvenance p;
     p.script = {{"Beaky", "hi"}};
-    EXPECT_EQ(buildDialogIxml(p).find("<LIPSYNC>"), std::string::npos);
+    EXPECT_EQ(buildIxml(p).find("<LIPSYNC>"), std::string::npos);
 }
 
 TEST(IxmlWriter, EscapesXmlMetacharacters) {
-    DialogWavProvenance p;
+    WavProvenance p;
     p.script = {{"A&B", "he said <\"hi\"> & 'bye'"}};
-    const auto xml = buildDialogIxml(p);
+    const auto xml = buildIxml(p);
     EXPECT_NE(xml.find("A&amp;B: he said &lt;&quot;hi&quot;&gt; &amp; &apos;bye&apos;"), std::string::npos);
     // No raw metacharacter from the payload leaks through (angle brackets only
     // belong to the tags we emit, never to the escaped content).
     EXPECT_EQ(xml.find("<\"hi\">"), std::string::npos);
+}
+
+TEST(IxmlWriter, ReplacesXml10ForbiddenControlCharacters) {
+    WavProvenance p;
+    p.title = std::string("scene\0name", 10);
+    const auto xml = buildIxml(p);
+    EXPECT_EQ(xml.find('\0'), std::string::npos);
+    EXPECT_NE(xml.find("<SCENE>scene name</SCENE>"), std::string::npos);
 }
 
 TEST(IxmlWriter, ChunkHasCorrectIdAndLittleEndianSize) {
@@ -144,7 +185,7 @@ TEST(IxmlWriter, ChunkEvenPayloadHasNoPad) {
 }
 
 TEST(IxmlWriter, RealDocumentRoundTripsThroughChunk) {
-    const auto xml = buildDialogIxml(sampleProvenance());
+    const auto xml = buildIxml(sampleProvenance());
     const auto chunk = makeIxmlChunk(xml);
     const auto payload = toString({chunk.begin() + 8, chunk.begin() + 8 + xml.size()});
     EXPECT_EQ(payload, xml);

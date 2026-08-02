@@ -40,8 +40,14 @@ inline constexpr std::size_t kBodyPreviewMax = 512;
 
 /// Header callback that captures the request-id (or x-request-id) value into
 /// the std::string pointed to by `userdata`. Case-insensitive match.
-inline size_t captureRequestIdHeader(char *data, size_t size, size_t nmemb, void *userdata) {
-    auto *requestId = static_cast<std::string *>(userdata);
+struct ResponseHeaders {
+    std::string requestId;
+    std::string songId;
+    std::string contentType;
+};
+
+inline size_t captureResponseHeader(char *data, size_t size, size_t nmemb, void *userdata) {
+    auto *captured = static_cast<ResponseHeaders *>(userdata);
     const size_t totalBytes = size * nmemb;
     std::string header(data, totalBytes);
 
@@ -49,7 +55,10 @@ inline size_t captureRequestIdHeader(char *data, size_t size, size_t nmemb, void
     std::transform(lower.begin(), lower.end(), lower.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-    if (lower.find("request-id:") == 0 || lower.find("x-request-id:") == 0) {
+    const auto capture = [&](const char *prefix, std::string &destination) {
+        if (lower.find(prefix) != 0) {
+            return;
+        }
         const auto colonPos = header.find(':');
         if (colonPos != std::string::npos) {
             std::string value = header.substr(colonPos + 1);
@@ -59,9 +68,14 @@ inline size_t captureRequestIdHeader(char *data, size_t size, size_t nmemb, void
             while (!value.empty() && (value.back() == '\r' || value.back() == '\n' || value.back() == ' ')) {
                 value.pop_back();
             }
-            *requestId = value;
+            destination = value;
         }
-    }
+    };
+    capture("request-id:", captured->requestId);
+    capture("x-request-id:", captured->requestId);
+    capture("x-elevenlabs-request-id:", captured->requestId);
+    capture("song-id:", captured->songId);
+    capture("content-type:", captured->contentType);
     return totalBytes;
 }
 
@@ -109,8 +123,8 @@ class ElevenLabsCall {
         curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYHOST, 2L);
         addHeader(fmt::format("xi-api-key: {}", apiKey));
         curl_easy_setopt(curl_, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl_, CURLOPT_HEADERFUNCTION, &captureRequestIdHeader);
-        curl_easy_setopt(curl_, CURLOPT_HEADERDATA, &requestId_);
+        curl_easy_setopt(curl_, CURLOPT_HEADERFUNCTION, &captureResponseHeader);
+        curl_easy_setopt(curl_, CURLOPT_HEADERDATA, &responseHeaders_);
     }
 
     ~ElevenLabsCall() {
@@ -132,7 +146,9 @@ class ElevenLabsCall {
 
     [[nodiscard]] bool initOk() const { return curl_ != nullptr; }
     [[nodiscard]] CURL *handle() const { return curl_; }
-    [[nodiscard]] const std::string &requestId() const { return requestId_; }
+    [[nodiscard]] const std::string &requestId() const { return responseHeaders_.requestId; }
+    [[nodiscard]] const std::string &songId() const { return responseHeaders_.songId; }
+    [[nodiscard]] const std::string &contentType() const { return responseHeaders_.contentType; }
 
     void addHeader(const std::string &header) { headers_ = curl_slist_append(headers_, header.c_str()); }
 
@@ -163,7 +179,7 @@ class ElevenLabsCall {
     CURL *curl_ = nullptr;
     curl_slist *headers_ = nullptr;
     curl_mime *mime_ = nullptr;
-    std::string requestId_;
+    ResponseHeaders responseHeaders_;
 };
 
 /// Map curl rc + http code into a Result<T> error, or std::nullopt on HTTP 200.

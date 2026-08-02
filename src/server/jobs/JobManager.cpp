@@ -28,17 +28,16 @@ std::string JobManager::createJob(JobType type, const std::string &details,
     if (job.span) {
         job.span->setAttribute("job.id", jobId);
         job.span->setAttribute("job.type", toString(type));
-        // job.details can contain user-supplied speech text. Record length
-        // and a short preview only — the full content is in the job state
-        // for the workers that need it.
+        // job.details can contain user-supplied speech text or music prompts.
+        // Keep creative content out of logs and telemetry; identifiers and
+        // request-shape attributes are attached by the endpoint/service.
         job.span->setAttribute("job.details_length", static_cast<int64_t>(details.size()));
-        job.span->setAttribute("job.details_preview", details.substr(0, 120));
         job.span->setAttribute("job.status", toString(JobStatus::Queued));
     }
 
     jobs_[jobId] = job;
 
-    debug("Created job {} of type {} with details: {}", jobId, toString(type), details);
+    debug("Created job {} of type {} with details_length={}", jobId, toString(type), details.size());
 
     return jobId;
 }
@@ -114,6 +113,7 @@ void JobManager::completeJob(const std::string &jobId, const std::string &result
         // exports to Honeycomb.
         if (it->second.span) {
             it->second.span->setAttribute("job.status", toString(JobStatus::Completed));
+            it->second.span->setAttribute("job.progress", 1.0);
             it->second.span->setAttribute("job.result_size", static_cast<int64_t>(result.size()));
             it->second.span->setSuccess();
             it->second.span->end();

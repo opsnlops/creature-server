@@ -127,6 +127,73 @@ TEST_F(DialogWavTest, PlacesEachVoiceInItsLaneAndZeroesOthers) {
     EXPECT_EQ(readS16LE(bytes, sampleOffset + 1 * 2), 0);
 }
 
+TEST_F(DialogWavTest, PlacesBackgroundMusicOnLane17AndPadsWithSilence) {
+    auto assembled = twoVoiceFixture(4);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+    const std::vector<int16_t> music = {3000, 4000};
+    auto r = writeDialogWav(assembled, m, tmpPath_, nullptr, nullptr, music);
+    ASSERT_TRUE(r.isSuccess());
+
+    const auto bytes = readFile(tmpPath_);
+    EXPECT_EQ(readS16LE(bytes, 44 + 16 * 2), 3000);
+    EXPECT_EQ(readS16LE(bytes, 44 + 17 * 2 + 16 * 2), 4000);
+    EXPECT_EQ(readS16LE(bytes, 44 + 2 * 17 * 2 + 16 * 2), 0);
+    EXPECT_EQ(readS16LE(bytes, 44 + 3 * 17 * 2 + 16 * 2), 0);
+}
+
+TEST_F(DialogWavTest, LongerBackgroundMusicExtendsTheShowAndLeavesVoiceLanesSilent) {
+    auto assembled = twoVoiceFixture(2);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+    const std::vector<int16_t> music = {3000, 4000, 5000, 6000};
+    auto r = writeDialogWav(assembled, m, tmpPath_, nullptr, nullptr, music);
+    ASSERT_TRUE(r.isSuccess());
+
+    const auto bytes = readFile(tmpPath_);
+    EXPECT_EQ(readU32LE(bytes, 40), 4u * 17 * 2);
+    EXPECT_EQ(bytes.size(), 44u + 4 * 17 * 2);
+
+    for (std::size_t sample = 0; sample < music.size(); ++sample) {
+        const auto frameOffset = 44 + sample * 17 * 2;
+        EXPECT_EQ(readS16LE(bytes, frameOffset + 16 * 2), music[sample]);
+        EXPECT_EQ(readS16LE(bytes, frameOffset), sample < 2 ? 1000 : 0);
+        EXPECT_EQ(readS16LE(bytes, frameOffset + 2), sample < 2 ? 2000 : 0);
+    }
+}
+
+TEST_F(DialogWavTest, PlaybackSampleCountUsesWhicheverAssetEndsLast) {
+    auto assembled = twoVoiceFixture(2);
+    const std::vector<int16_t> music = {3000, 4000, 5000, 6000};
+
+    EXPECT_EQ(creatures::voice::dialogPlaybackSampleCount(assembled, music), music.size());
+    EXPECT_EQ(creatures::voice::dialogPlaybackSampleCount(assembled, std::span<const int16_t>{}),
+              assembled.totalSamples);
+}
+
+TEST_F(DialogWavTest, StreamsInterleavingAcrossBoundedWriteBlocks) {
+    auto assembled = twoVoiceFixture(4097);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
+    std::vector<int16_t> music(5000, 3000);
+
+    const auto result = writeDialogWav(assembled, m, tmpPath_, nullptr, nullptr, music);
+    ASSERT_TRUE(result.isSuccess());
+
+    const auto bytes = readFile(tmpPath_);
+    EXPECT_EQ(readU32LE(bytes, 40), 5000u * 17 * 2);
+    for (const std::size_t sample : {4095u, 4096u, 4097u, 4999u}) {
+        const auto frameOffset = 44 + sample * 17 * 2;
+        EXPECT_EQ(readS16LE(bytes, frameOffset + 16 * 2), 3000);
+        EXPECT_EQ(readS16LE(bytes, frameOffset), sample < assembled.totalSamples ? 1000 : 0);
+    }
+}
+
+TEST_F(DialogWavTest, RejectsCreatureOnReservedBackgroundMusicLane) {
+    auto assembled = twoVoiceFixture(2);
+    VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 17}};
+    auto r = writeDialogWav(assembled, m, tmpPath_);
+    ASSERT_FALSE(r.isSuccess());
+    EXPECT_EQ(r.getError().value().getCode(), creatures::ServerError::InvalidData);
+}
+
 TEST_F(DialogWavTest, RejectsWrongSampleRate) {
     auto assembled = twoVoiceFixture(2);
     assembled.sampleRate = 44100;
@@ -206,7 +273,7 @@ TEST_F(DialogWavTest, EmbedsIxmlProvenanceChunkAfterData) {
     auto assembled = twoVoiceFixture(4);
     VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
 
-    creatures::voice::DialogWavProvenance prov;
+    creatures::voice::WavProvenance prov;
     prov.sourceScriptId = "script-123";
     prov.title = "Web Scale <Parrots>"; // metachars exercise XML escaping
     prov.generationIds = {"gen-1", "gen-2"};
@@ -249,7 +316,7 @@ TEST_F(DialogWavTest, ReadsBackEmbeddedIxml) {
     auto assembled = twoVoiceFixture(4);
     VoiceChannelMap m = {{"voice-A", 1}, {"voice-B", 2}};
 
-    creatures::voice::DialogWavProvenance prov;
+    creatures::voice::WavProvenance prov;
     prov.sourceScriptId = "script-xyz";
     prov.title = "Round Trip";
     prov.tracks = {{1, "Beaky"}, {2, "Pip"}, {17, "BGM"}};
@@ -262,7 +329,7 @@ TEST_F(DialogWavTest, ReadsBackEmbeddedIxml) {
     // emits the complete 17-channel TRACK_LIST.
     auto readBack = creatures::voice::readIxmlChunk(tmpPath_);
     ASSERT_TRUE(readBack.has_value());
-    EXPECT_EQ(*readBack, creatures::voice::buildDialogIxml(prov, 17));
+    EXPECT_EQ(*readBack, creatures::voice::buildIxml(prov, 17));
 }
 
 TEST_F(DialogWavTest, ReadIxmlReturnsNulloptWhenAbsent) {
