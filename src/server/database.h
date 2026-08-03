@@ -218,6 +218,12 @@ class Database {
     static Result<creatures::Track> parseTrackJson(json trackJson);
 
     /**
+     * Public wrapper around the private `animationFromJson` — exposed for testing that an
+     * animation serialized by our own DTOs parses back in (#117).
+     */
+    static Result<creatures::Animation> parseAnimationJson(json animationJson);
+
+    /**
      * Ensure supporting indexes (including TTL) for the ad-hoc animation collection exist.
      */
     Result<void> ensureAdHocAnimationIndexes(uint32_t ttlHours);

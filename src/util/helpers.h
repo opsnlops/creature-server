@@ -85,6 +85,32 @@ inline bool isUuidShape(std::string_view s) {
     return true;
 }
 
+/// Read a string field that may be absent OR present-but-`null`.
+///
+/// `nlohmann::json::value(key, fallback)` only falls back when the key is
+/// *absent* — a key that's present holding `null` throws `type_error.302`.
+/// oatpp serializes unset `String` DTO fields as explicit `null`s, so anything
+/// that round-trips through our own REST API (GET an animation, POST it back)
+/// arrives with nulls where the writer had nothing. Treat those the same as
+/// absent. See issue #117.
+///
+/// A present, non-null, non-string value still throws — that's a genuinely
+/// malformed request and the caller's `json::exception` handler turns it into
+/// a 400.
+///
+/// @param j the object to read from
+/// @param key the field name
+/// @param fallback returned when the key is absent or null
+/// @return the string value, or `fallback`
+inline std::string jsonStringOr(const nlohmann::json &j, const char *key, const std::string &fallback = "") {
+    if (!j.contains(key))
+        return fallback;
+    const auto &value = j.at(key);
+    if (value.is_null())
+        return fallback;
+    return value.get<std::string>();
+}
+
 /**
  * Convert a BSON array to a vector of strings
  *
