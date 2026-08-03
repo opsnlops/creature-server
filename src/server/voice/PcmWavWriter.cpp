@@ -69,12 +69,12 @@ Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmDat
 }
 
 std::vector<uint8_t> wrapMonoPcmAsWav(const std::vector<uint8_t> &pcm, uint32_t sampleRate,
-                                      const DialogWavProvenance *provenance) {
+                                      const WavProvenance *provenance) {
     // Optional iXML provenance chunk (#50), appended after `data`. Built up front
     // so its size folds into the RIFF container size.
     std::vector<uint8_t> ixmlChunk;
     if (provenance && !provenance->empty()) {
-        ixmlChunk = makeIxmlChunk(buildDialogIxml(*provenance));
+        ixmlChunk = makeIxmlChunk(buildIxml(*provenance));
     }
 
     std::vector<uint8_t> out;

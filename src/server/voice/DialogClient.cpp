@@ -1,5 +1,6 @@
 #include "DialogClient.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <exception>
 #include <utility>
@@ -23,48 +24,147 @@ namespace {
 using elevenlabs_http::appendToString;
 using elevenlabs_http::checkResponse;
 using elevenlabs_http::ElevenLabsCall;
-} // namespace
 
-std::string DialogClient::stripTags(const std::string &text) {
-    // Drop "[...]" tags, then collapse runs of whitespace to single spaces, then trim.
-    std::string noTags;
-    noTags.reserve(text.size());
-    int depth = 0;
-    for (char c : text) {
-        if (c == '[') {
-            ++depth;
-            continue;
+struct TagStrippedText {
+    std::string text;
+    std::vector<std::size_t> rawToNormalized;
+};
+
+bool isAsciiWhitespace(std::string_view codepoint) {
+    if (codepoint.size() != 1)
+        return false;
+    switch (codepoint[0]) {
+    case ' ':
+    case '\t':
+    case '\n':
+    case '\r':
+    case '\f':
+    case '\v':
+        return true;
+    default:
+        return false;
+    }
+}
+
+TagStrippedText makeTagStrippedText(std::string_view text) {
+    const auto byteOffsets = DialogClient::utf8CodepointByteOffsets(text);
+    std::vector<std::string> noTags;
+    noTags.reserve(byteOffsets.size());
+    std::vector<std::size_t> rawToNoTags(byteOffsets.size(), 0);
+    int tagDepth = 0;
+    for (std::size_t i = 0; i + 1 < byteOffsets.size(); ++i) {
+        const auto codepoint = text.substr(byteOffsets[i], byteOffsets[i + 1] - byteOffsets[i]);
+        if (codepoint == "[") {
+            ++tagDepth;
+        } else if (codepoint == "]") {
+            if (tagDepth > 0)
+                --tagDepth;
+        } else if (tagDepth == 0) {
+            noTags.emplace_back(codepoint);
         }
-        if (c == ']') {
-            if (depth > 0) {
-                --depth;
-            }
-            continue;
-        }
-        if (depth == 0) {
-            noTags.push_back(c);
-        }
+        rawToNoTags[i + 1] = noTags.size();
     }
 
-    std::string collapsed;
+    std::vector<std::string> collapsed;
     collapsed.reserve(noTags.size());
+    std::vector<std::size_t> noTagsToCollapsed(noTags.size() + 1, 0);
     bool inSpace = false;
-    for (char c : noTags) {
-        const bool isSpace = (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v');
-        if (isSpace) {
-            if (!inSpace && !collapsed.empty()) {
-                collapsed.push_back(' ');
-            }
+    for (std::size_t i = 0; i < noTags.size(); ++i) {
+        if (DialogClient::isUnicodeWhitespace(noTags[i])) {
+            if (!inSpace && !collapsed.empty())
+                collapsed.emplace_back(" ");
             inSpace = true;
         } else {
-            collapsed.push_back(c);
+            collapsed.push_back(noTags[i]);
             inSpace = false;
         }
+        noTagsToCollapsed[i + 1] = collapsed.size();
     }
-    while (!collapsed.empty() && collapsed.back() == ' ') {
+    if (!collapsed.empty() && collapsed.back() == " ")
         collapsed.pop_back();
+
+    TagStrippedText result;
+    for (const auto &codepoint : collapsed)
+        result.text += codepoint;
+    result.rawToNormalized.resize(rawToNoTags.size(), 0);
+    for (std::size_t i = 0; i < rawToNoTags.size(); ++i)
+        result.rawToNormalized[i] = std::min(noTagsToCollapsed[rawToNoTags[i]], collapsed.size());
+    return result;
+}
+} // namespace
+
+std::string DialogClient::stripTags(const std::string &text) { return makeTagStrippedText(text).text; }
+
+std::vector<std::size_t> DialogClient::utf8CodepointByteOffsets(std::string_view text) {
+    std::vector<std::size_t> offsets;
+    offsets.reserve(text.size() + 1);
+    offsets.push_back(0);
+
+    const auto isContinuation = [&](std::size_t index) {
+        return index < text.size() && (static_cast<unsigned char>(text[index]) & 0xC0U) == 0x80U;
+    };
+    const auto validSequenceLength = [&](std::size_t index) -> std::size_t {
+        const auto first = static_cast<unsigned char>(text[index]);
+        if (first < 0x80U)
+            return 1;
+        if ((first & 0xE0U) == 0xC0U && index + 1 < text.size() && isContinuation(index + 1)) {
+            const auto second = static_cast<unsigned char>(text[index + 1]);
+            return first >= 0xC2U && second >= 0x80U ? 2 : 0;
+        }
+        if ((first & 0xF0U) == 0xE0U && index + 2 < text.size() && isContinuation(index + 1) &&
+            isContinuation(index + 2)) {
+            const auto second = static_cast<unsigned char>(text[index + 1]);
+            if (first == 0xE0U && second < 0xA0U)
+                return 0; // overlong
+            if (first == 0xEDU && second >= 0xA0U)
+                return 0; // UTF-16 surrogate range
+            return 3;
+        }
+        if ((first & 0xF8U) == 0xF0U && index + 3 < text.size() && isContinuation(index + 1) &&
+            isContinuation(index + 2) && isContinuation(index + 3)) {
+            const auto second = static_cast<unsigned char>(text[index + 1]);
+            if (first == 0xF0U && second < 0x90U)
+                return 0; // overlong
+            if (first == 0xF4U && second > 0x8FU)
+                return 0; // above U+10FFFF
+            if (first > 0xF4U)
+                return 0;
+            return 4;
+        }
+        return 0;
+    };
+
+    for (std::size_t index = 0; index < text.size();) {
+        const auto length = validSequenceLength(index);
+        index += length == 0 ? 1 : length;
+        offsets.push_back(index);
     }
-    return collapsed;
+    return offsets;
+}
+
+std::size_t DialogClient::utf8CodepointCount(std::string_view text) {
+    return DialogClient::utf8CodepointByteOffsets(text).size() - 1;
+}
+
+std::vector<std::size_t> DialogClient::tagStrippedCodepointBoundaryMap(std::string_view text) {
+    return makeTagStrippedText(text).rawToNormalized;
+}
+
+bool DialogClient::isUnicodeWhitespace(std::string_view codepoint) {
+    if (isAsciiWhitespace(codepoint))
+        return true;
+    // Unicode White_Space code points outside ASCII, encoded as UTF-8.
+    if (codepoint == "\xC2\x85" || codepoint == "\xC2\xA0" || codepoint == "\xE1\x9A\x80" ||
+        codepoint == "\xE2\x80\xA8" || codepoint == "\xE2\x80\xA9" || codepoint == "\xE2\x80\xAF" ||
+        codepoint == "\xE2\x81\x9F" || codepoint == "\xE3\x80\x80") {
+        return true;
+    }
+    if (codepoint.size() == 3 && static_cast<unsigned char>(codepoint[0]) == 0xE2U &&
+        static_cast<unsigned char>(codepoint[1]) == 0x80U && static_cast<unsigned char>(codepoint[2]) >= 0x80U &&
+        static_cast<unsigned char>(codepoint[2]) <= 0x8AU) {
+        return true; // U+2000..U+200A
+    }
+    return false;
 }
 
 Result<DialogResult> DialogClient::generateDialog(const std::string &apiKey, const std::vector<DialogInput> &inputs,
@@ -74,11 +174,18 @@ Result<DialogResult> DialogClient::generateDialog(const std::string &apiKey, con
     if (span) {
         span->setAttribute("dialog.inputs", static_cast<int64_t>(inputs.size()));
         span->setAttribute("audio.format", outputFormat);
-        std::size_t totalChars = 0;
+        std::size_t totalBytes = 0;
+        std::size_t totalCodepoints = 0;
         for (const auto &in : inputs) {
-            totalChars += in.text.size();
+            totalBytes += in.text.size();
+            totalCodepoints += utf8CodepointCount(in.text);
         }
-        span->setAttribute("dialog.total_chars", static_cast<int64_t>(totalChars));
+        // Keep total_chars as bytes for historical dashboards; the explicit
+        // fields avoid mixing byte and Unicode-character units going forward.
+        span->setAttribute("dialog.total_chars", static_cast<int64_t>(totalBytes));
+        span->setAttribute("dialog.total_text_bytes", static_cast<int64_t>(totalBytes));
+        span->setAttribute("dialog.total_codepoint_count", static_cast<int64_t>(totalCodepoints));
+        span->setAttribute("dialog.character_index_unit", "unicode_codepoint");
     }
 
     if (inputs.empty()) {

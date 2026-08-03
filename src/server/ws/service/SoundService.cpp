@@ -29,6 +29,7 @@
 
 #include "util/ChildProcess.h"
 #include "util/ObservabilityManager.h"
+#include "util/Sha256.h"
 #include "util/helpers.h"
 
 #include "SoundService.h"
@@ -305,7 +306,10 @@ std::string SoundService::resolveAdHocSoundPath(const std::string &filename, std
 
     if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
         if (span) {
-            span->setAttribute("adhoc_sound.path", *found);
+            span->setAttribute("audio.file.hash", util::sha256Hex(filename));
+            span->setAttribute("audio.file.extension", fs::path(filename).extension().string());
+            span->setAttribute("audio.store", "ad_hoc");
+            span->setSuccess();
         }
         return *found;
     }
@@ -334,7 +338,10 @@ std::string SoundService::resolvePermanentSoundPath(const std::string &filename,
     // other subdir'd sound resolve too (issue #46).
     if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
         if (span) {
-            span->setAttribute("sound.path", *found);
+            span->setAttribute("audio.file.hash", util::sha256Hex(filename));
+            span->setAttribute("audio.file.extension", fs::path(filename).extension().string());
+            span->setAttribute("audio.store", "permanent");
+            span->setSuccess();
         }
         return *found;
     }
@@ -373,7 +380,8 @@ std::string SoundService::resolveAdHocSoundPath(const std::string &filename,
 
         if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
             if (span) {
-                span->setAttribute("audio.file.name", filename);
+                span->setAttribute("audio.file.hash", util::sha256Hex(filename));
+                span->setAttribute("audio.file.extension", fs::path(filename).extension().string());
                 span->setAttribute("audio.store", "ad_hoc");
                 span->setSuccess();
             }
@@ -405,7 +413,8 @@ std::string SoundService::resolvePermanentSoundPath(const std::string &filename,
         const fs::path root = config->getSoundFileLocation();
         if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
             if (span) {
-                span->setAttribute("audio.file.name", filename);
+                span->setAttribute("audio.file.hash", util::sha256Hex(filename));
+                span->setAttribute("audio.file.extension", fs::path(filename).extension().string());
                 span->setAttribute("audio.store", "permanent");
                 span->setSuccess();
             }

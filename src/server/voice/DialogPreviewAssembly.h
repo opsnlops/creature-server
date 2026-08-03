@@ -27,6 +27,16 @@ Result<CachedGeneration> generateChunkWithAlignment(DialogClient &client, const 
                                                     const std::vector<DialogInput> &chunk, const std::string &cacheKey,
                                                     std::shared_ptr<OperationSpan> span = nullptr);
 
+/// Rebase ElevenLabs' raw voice-segment character ranges onto the canonical
+/// transcript used by forced alignment: tag-stripped turns joined by one
+/// separator space.
+void normalizeVoiceSegmentIndices(std::vector<DialogVoiceSegment> &segments, const std::vector<DialogInput> &inputs);
+
+/// Normalize a cached generation exactly once in its in-memory lifetime. The
+/// persisted cache remains in the raw ElevenLabs coordinate space so legacy
+/// entries and newly written entries follow the same migration path.
+bool normalizeCachedGenerationVoiceSegments(CachedGeneration &generation, const std::vector<DialogInput> &inputs);
+
 /**
  * Merge per-chunk generations into ONE whole-scene generation for auditioning.
  *

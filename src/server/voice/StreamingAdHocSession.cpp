@@ -24,6 +24,7 @@
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/storage/Storage.h"
 #include "server/voice/SpeechTrackBuilder.h"
+#include "util/Slugify.h"
 #include "util/cache.h"
 #include "util/helpers.h"
 #include "util/uuidUtils.h"
@@ -40,33 +41,7 @@ extern std::shared_ptr<util::AudioCache> audioCache;
 
 namespace creatures::voice {
 
-namespace {
-
-std::string slugify(const std::string &value, std::size_t maxLength = 40) {
-    std::string slug;
-    slug.reserve(std::min<std::size_t>(value.size(), maxLength));
-    bool lastDash = false;
-    for (char c : value) {
-        if (std::isalnum(static_cast<unsigned char>(c))) {
-            slug.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-            lastDash = false;
-        } else if (std::isspace(static_cast<unsigned char>(c)) || c == '-' || c == '_') {
-            if (!lastDash && !slug.empty()) {
-                slug.push_back('-');
-                lastDash = true;
-            }
-        }
-        if (slug.size() >= maxLength)
-            break;
-    }
-    if (slug.empty())
-        slug = "speech";
-    if (slug.back() == '-')
-        slug.pop_back();
-    return slug;
-}
-
-} // namespace
+namespace {} // namespace
 
 // --- StreamingAdHocSession ---
 
@@ -340,7 +315,7 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
             }
 
             // 8. Build animation object
-            auto textSlug = slugify(tts.alignmentText.empty() ? text : tts.alignmentText);
+            auto textSlug = util::slugify(tts.alignmentText.empty() ? text : tts.alignmentText, 40, "speech");
             Animation animation = baseAnimation_;
             animation.id = util::generateUUID();
             animation.metadata.animation_id = animation.id;

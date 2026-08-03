@@ -1,7 +1,9 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
+#include <thread>
 
 #include "blockingconcurrentqueue.h"
 
@@ -33,7 +35,10 @@ class JobWorker : public creatures::StoppableThread {
      * @param jobManager The JobManager instance to use for job state
      */
     explicit JobWorker(std::shared_ptr<JobManager> jobManager);
-    ~JobWorker() override = default;
+    ~JobWorker() override;
+
+    void start() override;
+    void shutdown();
 
     /**
      * Queue a job for processing
@@ -43,6 +48,11 @@ class JobWorker : public creatures::StoppableThread {
      * @param jobId The unique job ID to process
      */
     void queueJob(const std::string &jobId);
+
+    /// Reserve one of the bounded music-generation slots and queue the job on
+    /// its dedicated worker. Returns false without queueing when both slots are
+    /// already queued/running.
+    [[nodiscard]] bool tryQueueMusicJob(const std::string &jobId);
 
   protected:
     /**
@@ -55,6 +65,13 @@ class JobWorker : public creatures::StoppableThread {
   private:
     std::shared_ptr<JobManager> jobManager_;
     std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> jobQueue_;
+    std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> musicJobQueue_;
+    std::atomic<std::size_t> musicJobsInFlight_{0};
+    std::thread musicThread_;
+
+    static constexpr std::size_t kMaxMusicJobsInFlight = 2;
+
+    void runMusicJobs();
 
     /**
      * Process a single job by dispatching to the appropriate handler
@@ -109,6 +126,9 @@ class JobWorker : public creatures::StoppableThread {
      * the downloadable file_name (+ generation_id, cache_key).
      */
     void handleDialogPreviewExportJob(JobState &jobState);
+
+    /// Generate and cache an instrumental ElevenLabs Music take for a dialog.
+    void handleDialogMusicJob(JobState &jobState);
 
     /**
      * Single-voice TTS of text into a permanent sound file.

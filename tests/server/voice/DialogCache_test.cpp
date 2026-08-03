@@ -14,7 +14,6 @@
 using creatures::voice::CachedGeneration;
 using creatures::voice::computeCacheKey;
 using creatures::voice::DialogInput;
-using creatures::voice::DialogWavProvenance;
 using creatures::voice::findLatestGeneration;
 using creatures::voice::ForcedAlignmentChar;
 using creatures::voice::ForcedAlignmentResult;
@@ -23,6 +22,7 @@ using creatures::voice::listGenerations;
 using creatures::voice::loadGeneration;
 using creatures::voice::saveGeneration;
 using creatures::voice::updateGenerationProvenance;
+using creatures::voice::WavProvenance;
 
 namespace {
 
@@ -106,6 +106,7 @@ TEST(DialogCacheSaveLoad, RoundTripsAllFields) {
     EXPECT_EQ(out.generationId, "gen-rt-1");
     EXPECT_EQ(out.audioPcm, in.audioPcm);
     EXPECT_EQ(out.turnsSummary, in.turnsSummary);
+    EXPECT_EQ(out.voiceSegmentIndexSpace, creatures::voice::kVoiceSegmentIndexSpaceRaw);
     ASSERT_EQ(out.voiceSegments.size(), 1u);
     EXPECT_EQ(out.voiceSegments[0].voiceId, "voice-A");
     EXPECT_EQ(out.voiceSegments[0].characterStartIndex, 0u);
@@ -160,7 +161,7 @@ TEST(DialogCacheUpdateProvenance, RewritesJsonAndLeavesAudioIntact) {
     ASSERT_TRUE(saveGeneration(key, in).isSuccess());
     ASSERT_TRUE(loadGeneration(key, "gen-upd-1").getValue().value().provenance.script.empty());
 
-    DialogWavProvenance prov;
+    WavProvenance prov;
     prov.title = "Stamped Later";
     prov.script = {{"Beaky", "added after the fact"}};
     ASSERT_TRUE(updateGenerationProvenance(key, "gen-upd-1", prov).isSuccess());
@@ -180,7 +181,7 @@ TEST(DialogCacheUpdateProvenance, NotFoundForMissingGeneration) {
     const auto key = computeCacheKey(turns);
     scope.track(key);
 
-    DialogWavProvenance prov;
+    WavProvenance prov;
     prov.title = "x";
     auto res = updateGenerationProvenance(key, "no-such-gen", prov);
     ASSERT_FALSE(res.isSuccess());

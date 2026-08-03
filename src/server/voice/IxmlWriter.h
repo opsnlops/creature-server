@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include <nlohmann/json_fwd.hpp>
 
 namespace creatures::voice {
 
@@ -70,7 +73,46 @@ struct DialogWordTrack {
 /// anonymous UUID-named file can be traced back to the script that made it
 /// (issue #47). A point-in-time snapshot, mirroring the semantics of
 /// `Animation.metadata.source_script_turns` — a copy, not a live pointer.
-struct DialogWavProvenance {
+/// Complete ElevenLabs Music replay recipe carried by both temporary audition
+/// WAVs and promoted permanent assets. `requestJson` is the canonical request
+/// body exactly as sent (the API key is never included); the structured fields
+/// stay duplicated inside that JSON intentionally so common metadata remains
+/// searchable without parsing JSON in a DAW.
+struct MusicWavProvenance {
+    std::string provider;
+    std::string endpoint;
+    std::string modelId;
+    std::string outputFormat;
+    int sourceChannels{0};
+    std::string channelTransform;
+    std::string generationMode;
+    std::string prompt;
+    int64_t sourceDialogDurationMs{0};
+    int64_t durationExtensionMs{0};
+    int64_t musicLengthMs{0};
+    bool forceInstrumental{true};
+    std::string requestJson;
+    std::string responseMetadataJson;
+    std::string compositionPlanJson;
+    std::string songMetadataJson;
+    std::string songId;
+    std::string requestId;
+    std::string generatedAt;
+    std::string musicGenerationId;
+    std::string sourceDialogGenerationId;
+    std::string sourceDialogCacheKey;
+    int64_t sourceScriptUpdatedAt{0};
+    std::string pcmSha256;
+
+    [[nodiscard]] bool empty() const { return requestJson.empty() && musicGenerationId.empty(); }
+
+    bool operator==(const MusicWavProvenance &) const = default;
+};
+
+struct WavProvenance {
+    std::string fileUid;                        // iXML FILE_UID for this immutable physical asset
+    std::string take;                           // iXML TAKE (usually generation/job id)
+    std::optional<bool> circled;                // accepted/promoted take when true
     std::string sourceScriptId;                 // may be empty (ad-hoc renders have none)
     std::string title;                          // scene title; may be empty
     std::vector<std::string> generationIds;     // per-chunk ElevenLabs generations, in order
@@ -78,14 +120,16 @@ struct DialogWavProvenance {
     std::vector<DialogScriptLine> script;       // ordered turns, speaker + text
     std::vector<DialogLipsyncTrack> lipsync;    // per-creature mouth cues (from ElevenLabs alignment)
     std::vector<DialogWordTrack> wordAlignment; // per-creature word timings (issue #56, Part 2)
+    std::optional<MusicWavProvenance> music;    // ElevenLabs Music recipe, when BGM is present
 
     /// True when there's nothing worth embedding — writers can skip the chunk.
     [[nodiscard]] bool empty() const {
-        return sourceScriptId.empty() && title.empty() && generationIds.empty() && tracks.empty() && script.empty() &&
-               lipsync.empty() && wordAlignment.empty();
+        return fileUid.empty() && take.empty() && !circled && sourceScriptId.empty() && title.empty() &&
+               generationIds.empty() && tracks.empty() && script.empty() && lipsync.empty() && wordAlignment.empty() &&
+               (!music || music->empty());
     }
 
-    bool operator==(const DialogWavProvenance &) const = default;
+    bool operator==(const WavProvenance &) const = default;
 };
 
 /// Build the iXML document (a BWFXML string) describing a dialog WAV's
@@ -98,7 +142,13 @@ struct DialogWavProvenance {
 /// Field recorders / Wave Agent / DAWs expect this (a sparse list with a
 /// mismatched count is ignored). When 0 (the default, e.g. a mono export), the
 /// TRACK_LIST is emitted only if `provenance.tracks` is non-empty, verbatim.
-[[nodiscard]] std::string buildDialogIxml(const DialogWavProvenance &provenance, int totalChannels = 0);
+[[nodiscard]] std::string buildIxml(const WavProvenance &provenance, int totalChannels = 0);
+
+/// Canonical JSON codec shared by every generation cache. Keeping it beside
+/// the type prevents dialog and music sidecars from inventing subtly different
+/// representations of the same WAV provenance.
+[[nodiscard]] nlohmann::json wavProvenanceToJson(const WavProvenance &provenance);
+[[nodiscard]] WavProvenance wavProvenanceFromJson(const nlohmann::json &json);
 
 /// Wrap an iXML document string as a complete RIFF `iXML` chunk: the 4-byte id,
 /// a little-endian 4-byte size, the payload, and a pad byte if the payload

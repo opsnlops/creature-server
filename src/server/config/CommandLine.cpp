@@ -422,10 +422,9 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     }
 
     auto voiceApiKey = program.get<std::string>("-v");
-    debug("read voice API key {} from command line", voiceApiKey);
+    debug("voice API key configured: {}", !voiceApiKey.empty());
     if (!voiceApiKey.empty()) {
         config->setVoiceApiKey(voiceApiKey);
-        debug("set our voice API key to {}", voiceApiKey);
     }
 
     auto rhubarbBinaryPath = program.get<std::string>("-r");
@@ -436,10 +435,9 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     }
 
     auto honeycombApiKey = program.get<std::string>("-h");
-    debug("read honeycomb API key {} from command line", honeycombApiKey);
+    debug("Honeycomb API key configured: {}", !honeycombApiKey.empty());
     if (!honeycombApiKey.empty()) {
         config->setHoneycombApiKey(honeycombApiKey);
-        debug("set our honeycomb API key to {}", honeycombApiKey);
     }
 
     auto eventLoopTraceSampling = program.get<double>("--event-loop-trace-sampling");

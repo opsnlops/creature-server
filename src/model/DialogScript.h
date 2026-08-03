@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,8 @@ inline constexpr std::size_t MAX_DIALOG_SCRIPT_TURNS = 200;
 inline constexpr std::size_t MAX_DIALOG_SCRIPT_TURN_TEXT = 4096;
 inline constexpr std::size_t MAX_DIALOG_SCRIPT_TITLE = 256;
 inline constexpr std::size_t MAX_DIALOG_SCRIPT_NOTES = 16384;
+inline constexpr std::size_t MAX_DIALOG_MUSIC_PROMPT = 4100;
+inline constexpr std::size_t MAX_DIALOG_MUSIC_SOUND_FILE = 1024;
 
 /// One line in a saved dialog script — same shape as a render-time turn but
 /// persisted so the script can be edited later and re-rendered. Mirrors
@@ -31,6 +34,15 @@ inline constexpr std::size_t MAX_DIALOG_SCRIPT_NOTES = 16384;
 struct DialogScriptTurn {
     std::string creature_id;
     std::string text;
+};
+
+struct DialogBackgroundMusic {
+    std::string sound_file;    // permanent, relative-to-sounds WAV path
+    std::string generation_id; // accepted server-side music generation UUID
+    std::string prompt;        // exact ElevenLabs prompt used for the accepted take
+    int64_t accepted_at{0};    // wall-clock milliseconds since epoch
+
+    bool operator==(const DialogBackgroundMusic &) const = default;
 };
 
 /// A saved multi-character dialog scene. Editable; CRUD'd via
@@ -44,6 +56,7 @@ struct DialogScript {
     std::string title;
     std::string notes; // free-form, may be empty
     std::vector<DialogScriptTurn> turns;
+    std::optional<DialogBackgroundMusic> background_music;
     // Wall-clock milliseconds since epoch — server-managed, not honored from
     // the client. created_at is set on first insert and never changes.
     int64_t created_at{0};
@@ -64,6 +77,16 @@ class DialogScriptTurnDto : public oatpp::DTO {
                             "expressive delivery; tags are removed from the spoken text but kept in the model input.";
     }
     DTO_FIELD(String, text);
+};
+
+class DialogBackgroundMusicDto : public oatpp::DTO {
+
+    DTO_INIT(DialogBackgroundMusicDto, DTO)
+
+    DTO_FIELD(String, sound_file);
+    DTO_FIELD(String, generation_id);
+    DTO_FIELD(String, prompt);
+    DTO_FIELD(Int64, accepted_at);
 };
 
 class DialogScriptDto : public oatpp::DTO {
@@ -87,6 +110,15 @@ class DialogScriptDto : public oatpp::DTO {
                             "reactivity order.";
     }
     DTO_FIELD(List<Object<DialogScriptTurnDto>>, turns);
+
+    DTO_FIELD_INFO(background_music) {
+        info->description = "Accepted instrumental background music. sound_file always names the permanent WAV used "
+                            "on dialog channel 17; MP3 is only an on-demand client rendition. Read-only: ordinary "
+                            "script create/update requests cannot set or replace it; use music promotion or the "
+                            "explicit clear-background-music endpoint.";
+        info->required = false;
+    }
+    DTO_FIELD(Object<DialogBackgroundMusicDto>, background_music);
 
     DTO_FIELD_INFO(created_at) {
         info->description = "Wall-clock milliseconds since Unix epoch when the script was first persisted. "

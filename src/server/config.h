@@ -26,6 +26,8 @@
 
 #define DB_URI_ENV "MONGO_URI"
 #define DEFAULT_DB_URI "mongodb://10.19.63.5/?serverSelectionTimeoutMS=2000"
+#define SERVER_PORT_ENV "SERVER_PORT"
+#define DEFAULT_SERVER_PORT 8000
 #define DB_NAME "creature_server"
 #define CREATURES_COLLECTION "creatures"
 #define ANIMATIONS_COLLECTION "animations"

@@ -30,11 +30,11 @@ namespace {
 /// resolved creatures and the turns, so editor exports of this take can carry
 /// the source script, channel layout, and full script text. Mirrors what the
 /// permanent-render path stamps, sourced from the preview's own data.
-creatures::voice::DialogWavProvenance
+creatures::voice::WavProvenance
 buildPreviewProvenance(const std::vector<creatures::voice::DialogInput> &inputs,
                        const std::unordered_map<std::string, DialogPreviewService::PreviewCreature> &resolved,
                        const std::string &generationId, const std::string &scriptId, const std::string &title) {
-    creatures::voice::DialogWavProvenance p;
+    creatures::voice::WavProvenance p;
     p.sourceScriptId = scriptId;
     p.title = title;
     if (!generationId.empty()) {
@@ -210,12 +210,24 @@ DialogPreviewService::probeCache(const oatpp::Object<DialogPreviewRequestDto> &b
                                                               std::string(*body->generation_id)))};
         }
         probe.generation = loadResult.getValue().value();
+        const bool normalized =
+            creatures::voice::normalizeCachedGenerationVoiceSegments(*probe.generation, probe.inputs);
+        if (opSpan) {
+            opSpan->setAttribute("dialog.segment_index_space", probe.generation->voiceSegmentIndexSpace);
+            opSpan->setAttribute("dialog.segment_normalization_applied", normalized);
+        }
         probe.cached = true;
     } else if (!probe.regenerate) {
         if (auto latest = creatures::voice::findLatestGeneration(probe.cacheKey)) {
             auto loadResult = creatures::voice::loadGeneration(probe.cacheKey, *latest);
             if (loadResult.isSuccess()) {
                 probe.generation = loadResult.getValue().value();
+                const bool normalized =
+                    creatures::voice::normalizeCachedGenerationVoiceSegments(*probe.generation, probe.inputs);
+                if (opSpan) {
+                    opSpan->setAttribute("dialog.segment_index_space", probe.generation->voiceSegmentIndexSpace);
+                    opSpan->setAttribute("dialog.segment_normalization_applied", normalized);
+                }
                 probe.cached = true;
             }
             // If the load failed for some odd reason, leave generation empty —
@@ -310,13 +322,23 @@ DialogPreviewService::loadOrGenerate(const oatpp::Object<DialogPreviewRequestDto
         auto chunkSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
                                                         fmt::format("DialogPreviewJob.chunk.{}", ci), opSpan)
                                                   : nullptr;
-        std::size_t chunkChars = 0;
+        std::size_t chunkInputBytes = 0;
+        std::size_t chunkTranscriptBytes = 0;
+        std::size_t chunkCodepoints = 0;
         for (const auto &input : chunk) {
-            chunkChars += creatures::voice::DialogClient::stripTags(input.text).size();
+            chunkInputBytes += input.text.size();
+            const auto stripped = creatures::voice::DialogClient::stripTags(input.text);
+            chunkTranscriptBytes += stripped.size();
+            chunkCodepoints += creatures::voice::DialogClient::utf8CodepointCount(stripped);
         }
         if (chunkSpan) {
             chunkSpan->setAttribute("dialog.chunk_index", static_cast<int64_t>(ci));
-            chunkSpan->setAttribute("dialog.chunk_char_count", static_cast<int64_t>(chunkChars));
+            // Keep chunk_char_count's historical tag-stripped byte semantics.
+            chunkSpan->setAttribute("dialog.chunk_char_count", static_cast<int64_t>(chunkTranscriptBytes));
+            chunkSpan->setAttribute("dialog.chunk_input_text_bytes", static_cast<int64_t>(chunkInputBytes));
+            chunkSpan->setAttribute("dialog.chunk_transcript_bytes", static_cast<int64_t>(chunkTranscriptBytes));
+            chunkSpan->setAttribute("dialog.chunk_codepoint_count", static_cast<int64_t>(chunkCodepoints));
+            chunkSpan->setAttribute("dialog.character_index_unit", "unicode_codepoint");
             chunkSpan->setAttribute("dialog.cache_key", chunkKey);
             if (!jobId.empty()) {
                 chunkSpan->setAttribute("job.id", jobId);
@@ -328,9 +350,12 @@ DialogPreviewService::loadOrGenerate(const oatpp::Object<DialogPreviewRequestDto
                 auto loadResult = creatures::voice::loadGeneration(chunkKey, *latest);
                 if (loadResult.isSuccess()) {
                     auto gen = loadResult.getValue().value();
+                    const bool normalized = creatures::voice::normalizeCachedGenerationVoiceSegments(gen, chunk);
                     if (chunkSpan) {
                         chunkSpan->setAttribute("dialog.cache_hit", true);
                         chunkSpan->setAttribute("dialog.generation_id", gen.generationId);
+                        chunkSpan->setAttribute("dialog.segment_index_space", gen.voiceSegmentIndexSpace);
+                        chunkSpan->setAttribute("dialog.segment_normalization_applied", normalized);
                         chunkSpan->setSuccess();
                     }
                     return gen;
@@ -463,6 +488,8 @@ DialogPreviewService::exportMultichannel(const PreviewOutcome &outcome, const st
     auto assembleResult =
         creatures::voice::assembleChunk(outcome.inputs, dr, outcome.generation.forcedAlignment, 48000);
     if (!assembleResult.isSuccess()) {
+        creatures::recordSpanError(opSpan, assembleResult.getError().value().getMessage(), "DialogAssemblyError",
+                                   assembleResult.getError().value().getCode());
         return creatures::Result<void>{assembleResult.getError().value()};
     }
     const auto assembled = assembleResult.getValue().value();

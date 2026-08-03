@@ -17,6 +17,14 @@ oatpp::Object<DialogScriptDto> convertToDto(const DialogScript &script) {
     dto->notes = script.notes;
     dto->created_at = script.created_at;
     dto->updated_at = script.updated_at;
+    if (script.background_music) {
+        auto music = DialogBackgroundMusicDto::createShared();
+        music->sound_file = script.background_music->sound_file;
+        music->generation_id = script.background_music->generation_id;
+        music->prompt = script.background_music->prompt;
+        music->accepted_at = script.background_music->accepted_at;
+        dto->background_music = music;
+    }
 
     auto turns = oatpp::List<oatpp::Object<DialogScriptTurnDto>>::createShared();
     for (const auto &t : script.turns) {
@@ -44,6 +52,19 @@ DialogScript convertFromDto(const std::shared_ptr<DialogScriptDto> &scriptDto) {
         script.created_at = *scriptDto->created_at;
     if (scriptDto->updated_at)
         script.updated_at = *scriptDto->updated_at;
+    if (scriptDto->background_music) {
+        DialogBackgroundMusic music;
+        const auto &dto = scriptDto->background_music;
+        if (dto->sound_file)
+            music.sound_file = dto->sound_file;
+        if (dto->generation_id)
+            music.generation_id = dto->generation_id;
+        if (dto->prompt)
+            music.prompt = dto->prompt;
+        if (dto->accepted_at)
+            music.accepted_at = *dto->accepted_at;
+        script.background_music = std::move(music);
+    }
     if (scriptDto->turns) {
         for (const auto &td : *scriptDto->turns) {
             if (!td)
@@ -66,6 +87,12 @@ nlohmann::json dialogScriptToJson(const DialogScript &script) {
     j["notes"] = script.notes;
     j["created_at"] = script.created_at;
     j["updated_at"] = script.updated_at;
+    if (script.background_music) {
+        j["background_music"] = {{"sound_file", script.background_music->sound_file},
+                                 {"generation_id", script.background_music->generation_id},
+                                 {"prompt", script.background_music->prompt},
+                                 {"accepted_at", script.background_music->accepted_at}};
+    }
     nlohmann::json turns = nlohmann::json::array();
     for (const auto &t : script.turns) {
         turns.push_back({{"creature_id", t.creature_id}, {"text", t.text}});

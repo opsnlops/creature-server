@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -419,6 +420,24 @@ TEST(MonoWavDownmixer, WholeFileHelperUsesStreamingReader) {
     ASSERT_EQ(mono.samples.size(), 2);
     EXPECT_EQ(mono.samples[0], 300);
     EXPECT_EQ(mono.samples[1], -200);
+}
+
+TEST(MonoWavDownmixer, WholeFileHelperRejectsFrameLimitBeforeLoadingSamples) {
+    const TemporaryPcmWav wav(1, 48000, {1, 2, 3, 4});
+
+    const auto result = loadWavAsMono(wav.path().string(), 3);
+
+    ASSERT_FALSE(result.isSuccess());
+    EXPECT_EQ(result.getError()->getCode(), ServerError::InvalidData);
+}
+
+TEST(MonoWavDownmixer, RejectsAChunkDeclaredPastEndOfFileBeforeAllocating) {
+    const TemporaryPcmWav wav(1, 48000, {123}, false, false, std::numeric_limits<uint32_t>::max());
+
+    const auto result = MonoWavStream::open(wav.path().string());
+
+    ASSERT_FALSE(result.isSuccess());
+    EXPECT_EQ(result.getError()->getCode(), creatures::ServerError::InvalidData);
 }
 
 } // namespace creatures::audio

@@ -27,6 +27,8 @@ namespace {
 /// before snapping back to the idle pose. Keeps the body from looking jerky at
 /// end-of-turn. At a typical 20ms/frame this is ~100ms of release tail.
 constexpr std::size_t kBodyTailFrames = 5;
+constexpr std::size_t kMaxDialogAnimationFrames = 120000;
+constexpr std::uint64_t kMaxEstimatedAnimationBsonBytes = 12ULL * 1024 * 1024;
 
 /// Match `assembled.perCreature` (indexed by voiceId) to `creatureInputs`
 /// (also indexed by voiceId). Returns the parallel index from creatureInputs
@@ -65,7 +67,7 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
                                        const std::vector<CreatureTrackInput> &creatureInputs, uint32_t msPerFrame,
                                        const std::string &soundFilePath, const std::string &title,
                                        std::shared_ptr<OperationSpan> parentSpan,
-                                       const std::string &existingAnimationId) {
+                                       const std::string &existingAnimationId, std::size_t minimumTotalSamples) {
     auto span = creatures::observability->createChildOperationSpan("DialogAnimation.buildDialogAnimation", parentSpan);
     if (span) {
         span->setAttribute("animation.title", title);
@@ -119,14 +121,65 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
     // gets emitted; mouth byte buffers may end one frame earlier than the
     // sample-aligned scene length, which is fine — they're zero-padded
     // implicitly via vector bounds-checking below.
-    const double totalMs =
-        static_cast<double>(assembled.totalSamples) * 1000.0 / static_cast<double>(assembled.sampleRate);
+    const auto showSamples = std::max(assembled.totalSamples, minimumTotalSamples);
+    if (span) {
+        span->setAttribute("animation.dialog_samples", static_cast<int64_t>(assembled.totalSamples));
+        span->setAttribute("animation.show_samples", static_cast<int64_t>(showSamples));
+    }
+    const double totalMs = static_cast<double>(showSamples) * 1000.0 / static_cast<double>(assembled.sampleRate);
     const auto totalFrames = static_cast<std::size_t>(std::ceil(totalMs / static_cast<double>(msPerFrame)));
+    if (span) {
+        span->setAttribute("animation.frames", static_cast<int64_t>(totalFrames));
+    }
     if (totalFrames == 0) {
         std::string msg = "buildDialogAnimation: scene rounds to zero frames";
         error(msg);
         if (span)
             span->setError(msg);
+        return Result<Animation>{ServerError(ServerError::InvalidData, msg)};
+    }
+    if (totalFrames > kMaxDialogAnimationFrames || totalFrames > std::numeric_limits<uint32_t>::max()) {
+        std::string msg = fmt::format("buildDialogAnimation: {} frames exceeds the {}-frame safety limit", totalFrames,
+                                      kMaxDialogAnimationFrames);
+        error(msg);
+        if (span)
+            recordSpanError(span, msg, "AnimationFrameLimitExceeded", ServerError::InvalidData);
+        return Result<Animation>{ServerError(ServerError::InvalidData, msg)};
+    }
+
+    // MongoDB documents cap at 16 MiB. Conservatively estimate each base64
+    // frame as a BSON array string element before materializing any tracks.
+    // Besides the string itself, every element carries a type byte, an array
+    // index cstring (up to 10 digits for uint32 frame indices), a four-byte
+    // string length, and its terminating NUL. Keep 4 MiB of additional
+    // headroom for track documents, metadata, ids, and script provenance.
+    std::uint64_t estimatedBsonBytes = 64 * 1024;
+    for (const auto &input : creatureInputs) {
+        if (input.baseFrames.empty()) {
+            continue; // The canonical validation below returns the precise error.
+        }
+        const auto frameWidth = static_cast<std::uint64_t>(input.baseFrames.front().size());
+        const auto encodedFrameBytes = 4ULL * ((frameWidth + 2) / 3);
+        constexpr std::uint64_t kBsonArrayElementOverhead = 1 + 10 + 1 + 4 + 1;
+        const auto bytesPerFrame = encodedFrameBytes + kBsonArrayElementOverhead;
+        if (bytesPerFrame > 0 &&
+            static_cast<std::uint64_t>(totalFrames) >
+                (kMaxEstimatedAnimationBsonBytes - std::min(estimatedBsonBytes, kMaxEstimatedAnimationBsonBytes)) /
+                    bytesPerFrame) {
+            estimatedBsonBytes = kMaxEstimatedAnimationBsonBytes + 1;
+            break;
+        }
+        estimatedBsonBytes += static_cast<std::uint64_t>(totalFrames) * bytesPerFrame;
+    }
+    if (span) {
+        span->setAttribute("animation.estimated_bson_bytes", static_cast<int64_t>(estimatedBsonBytes));
+    }
+    if (estimatedBsonBytes > kMaxEstimatedAnimationBsonBytes) {
+        std::string msg = fmt::format("buildDialogAnimation: estimated animation document size exceeds {} bytes",
+                                      kMaxEstimatedAnimationBsonBytes);
+        error(msg);
+        if (span)
+            recordSpanError(span, msg, "AnimationDocumentSizeLimitExceeded", ServerError::InvalidData);
         return Result<Animation>{ServerError(ServerError::InvalidData, msg)};
     }
 
@@ -206,7 +259,6 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
 
     if (span) {
         span->setAttribute("animation.id", animation.id);
-        span->setAttribute("animation.frames", static_cast<int64_t>(totalFrames));
         span->setAttribute("animation.duration_s", totalMs / 1000.0);
         span->setSuccess();
     }
