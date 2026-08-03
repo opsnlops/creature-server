@@ -18,9 +18,8 @@
 #include "SessionManager.h"
 #include "model/PlaylistStatus.h"
 #include "server/audio/AudioTransport.h"
-#include "server/audio/LocalSdlAudioTransport.h"
+#include "server/audio/LocalNativeAudioTransport.h"
 #include "server/audio/RtpAudioTransport.h"
-#include "server/audio/TravelMonoAudioTransport.h"
 #include "server/config/Configuration.h"
 #include "server/creature-server.h"
 #include "server/eventloop/eventloop.h"
@@ -842,12 +841,12 @@ CooperativeAnimationScheduler::createAudioTransport(std::shared_ptr<PlaybackSess
     }
 
     if (config->getTravelMode()) {
-        debug("Creating travel mono audio transport");
-        return std::make_shared<TravelMonoAudioTransport>();
+        debug("Creating travel native audio transport");
+        return std::make_shared<LocalNativeAudioTransport>(audio::NativePlaybackMode::Travel);
     }
 
-    debug("Creating local SDL audio transport");
-    return std::make_shared<LocalSdlAudioTransport>();
+    debug("Creating local native audio transport");
+    return std::make_shared<LocalNativeAudioTransport>(audio::NativePlaybackMode::Main);
 }
 
 void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<PlaybackSession> session,

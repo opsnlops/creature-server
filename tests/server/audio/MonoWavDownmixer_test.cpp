@@ -1,6 +1,6 @@
 //
 // MonoWavDownmixer_test.cpp
-// Tests for the travel-mode mono downmix
+// Tests for PCM WAV streaming, mono export, and travel stereo mixing
 //
 
 #include <array>
@@ -34,7 +34,8 @@ class TemporaryPcmWav {
         const uint32_t formatSize = extensible ? 40 : 16;
         const uint32_t junkStorageSize = includeOddSizedJunkChunk ? 12 : 0;
         const uint32_t dataSize = static_cast<uint32_t>(samples.size() * sizeof(int16_t));
-        const uint32_t riffSize = 4 + junkStorageSize + 8 + formatSize + 8 + dataSize;
+        const uint32_t dataChunkSize = declaredDataSize.value_or(dataSize);
+        const uint32_t riffSize = 4 + junkStorageSize + 8 + formatSize + 8 + dataChunkSize;
 
         writeText(file, "RIFF");
         writeU32(file, riffSize);
@@ -67,7 +68,7 @@ class TemporaryPcmWav {
         }
 
         writeText(file, "data");
-        writeU32(file, declaredDataSize.value_or(dataSize));
+        writeU32(file, dataChunkSize);
         for (const int16_t sample : samples) {
             writeU16(file, static_cast<uint16_t>(sample));
         }
@@ -316,6 +317,97 @@ TEST(MonoWavDownmixer, StreamingReaderAcceptsExtensibleSeventeenChannelPcm) {
     EXPECT_EQ(readResult.getValue().value(), 2);
     EXPECT_EQ(output[0], 1200);
     EXPECT_EQ(output[1], -800);
+}
+
+TEST(MonoWavDownmixer, RejectsDataChunkDeclaredBeyondPhysicalFile) {
+    const TemporaryPcmWav wav(17, 48000, std::vector<int16_t>(17, 0), false, false, UINT32_MAX);
+    auto openResult = MonoWavStream::open(wav.path().string());
+    ASSERT_FALSE(openResult.isSuccess());
+    EXPECT_EQ(openResult.getError()->getCode(), ServerError::InvalidData);
+}
+
+TEST(MonoWavDownmixer, TravelStereoRoutesDialogLanesAndAddsBgmToBoth) {
+    std::vector<int16_t> samples(17, 0);
+    samples[0] = 1000;
+    samples[1] = 2000;
+    samples[8] = 12000; // Unassigned travel dialog lane: must not leak into output.
+    samples[16] = 1000;
+    const TemporaryPcmWav wav(17, 48000, samples);
+
+    auto openResult =
+        MonoWavStream::open(wav.path().string(), {.dialogGainDb = 0.0F, .bgmGainDb = -6.0F, .limiterCeilingDb = 0.0F});
+    ASSERT_TRUE(openResult.isSuccess());
+    std::array<int16_t, 2> output{};
+    auto readResult = openResult.getValue().value()->readTravelStereoFrames(output);
+    ASSERT_TRUE(readResult.isSuccess());
+    EXPECT_NEAR(output[0], 1501, 1);
+    EXPECT_NEAR(output[1], 2501, 1);
+}
+
+TEST(MonoWavDownmixer, LocalOutputAppliesBgmGainOutsideTravelMode) {
+    std::vector<int16_t> samples(17, 0);
+    samples[0] = 1000;
+    samples[1] = 2000;
+    samples[2] = 3000;
+    samples[16] = 1000;
+    const TemporaryPcmWav wav(17, 48000, samples);
+
+    auto openResult =
+        MonoWavStream::open(wav.path().string(), {.dialogGainDb = 0.0F, .bgmGainDb = -6.0F, .limiterCeilingDb = 0.0F});
+    ASSERT_TRUE(openResult.isSuccess());
+    std::array<int16_t, 3> output{};
+    auto readResult = openResult.getValue().value()->readLocalOutputFrames(output, 3);
+    ASSERT_TRUE(readResult.isSuccess());
+    EXPECT_NEAR(output[0], 1501, 1);
+    EXPECT_NEAR(output[1], 2501, 1);
+    EXPECT_NEAR(output[2], 3501, 1);
+}
+
+TEST(MonoWavDownmixer, TravelStereoAppliesLimiterAfterBgmMix) {
+    std::vector<int16_t> samples(17, 0);
+    samples[0] = 30000;
+    samples[1] = 30000;
+    samples[16] = 30000;
+    const TemporaryPcmWav wav(17, 48000, samples);
+    auto openResult =
+        MonoWavStream::open(wav.path().string(), {.dialogGainDb = 0.0F, .bgmGainDb = 0.0F, .limiterCeilingDb = -6.0F});
+    ASSERT_TRUE(openResult.isSuccess());
+    std::array<int16_t, 2> output{};
+    auto readResult = openResult.getValue().value()->readTravelStereoFrames(output);
+    ASSERT_TRUE(readResult.isSuccess());
+    EXPECT_NEAR(output[0], 16422, 1);
+    EXPECT_NEAR(output[1], 16422, 1);
+}
+
+TEST(MonoWavDownmixer, TravelStereoDuplicatesMonoClips) {
+    const TemporaryPcmWav wav(1, 48000, {1234, -5678});
+    auto openResult = MonoWavStream::open(wav.path().string());
+    ASSERT_TRUE(openResult.isSuccess());
+    std::array<int16_t, 4> output{};
+    auto readResult = openResult.getValue().value()->readTravelStereoFrames(output);
+    ASSERT_TRUE(readResult.isSuccess());
+    EXPECT_EQ(readResult.getValue().value(), 2);
+    EXPECT_EQ(output, (std::array<int16_t, 4>{1234, 1234, -5678, -5678}));
+}
+
+TEST(MonoWavDownmixer, TravelStereoRejectsUnalignedOutputBuffer) {
+    const TemporaryPcmWav wav(1, 48000, {1234});
+    auto openResult = MonoWavStream::open(wav.path().string());
+    ASSERT_TRUE(openResult.isSuccess());
+    std::array<int16_t, 3> output{};
+    auto readResult = openResult.getValue().value()->readTravelStereoFrames(output);
+    EXPECT_FALSE(readResult.isSuccess());
+}
+
+TEST(MonoWavDownmixer, InterleavedReaderPreservesEveryChannel) {
+    const TemporaryPcmWav wav(3, 48000, {100, -200, 300, -400, 500, -600});
+    auto openResult = MonoWavStream::open(wav.path().string());
+    ASSERT_TRUE(openResult.isSuccess());
+    std::array<int16_t, 6> output{};
+    auto readResult = openResult.getValue().value()->readInterleavedFrames(output);
+    ASSERT_TRUE(readResult.isSuccess());
+    EXPECT_EQ(readResult.getValue().value(), 2);
+    EXPECT_EQ(output, (std::array<int16_t, 6>{100, -200, 300, -400, 500, -600}));
 }
 
 TEST(MonoWavDownmixer, WholeFileHelperUsesStreamingReader) {

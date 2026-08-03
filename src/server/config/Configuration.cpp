@@ -24,9 +24,20 @@ void Configuration::setMongoURI(std::string _mongoURI) { this->mongoURI = std::m
 
 // Audio Configuration
 
-uint8_t Configuration::getSoundDevice() const { return this->soundDevice; }
-
-void Configuration::setSoundDevice(const uint8_t _soundDevice) { this->soundDevice = _soundDevice; }
+std::optional<std::string> Configuration::getSoundDeviceName() const { return soundDeviceName; }
+void Configuration::setSoundDeviceName(std::string value) { soundDeviceName = std::move(value); }
+float Configuration::getDialogGainDb() const { return dialogGainDb; }
+void Configuration::setDialogGainDb(float value) { dialogGainDb = value; }
+float Configuration::getBgmGainDb() const { return bgmGainDb; }
+void Configuration::setBgmGainDb(float value) { bgmGainDb = value; }
+float Configuration::getLimiterCeilingDb() const { return limiterCeilingDb; }
+void Configuration::setLimiterCeilingDb(float value) { limiterCeilingDb = value; }
+std::optional<uint8_t> Configuration::getOutputVolumePercent() const { return outputVolumePercent; }
+void Configuration::setOutputVolumePercent(uint8_t value) { outputVolumePercent = value; }
+std::string Configuration::getAlsaMixerCard() const { return alsaMixerCard; }
+void Configuration::setAlsaMixerCard(std::string value) { alsaMixerCard = std::move(value); }
+std::string Configuration::getAlsaMixerElement() const { return alsaMixerElement; }
+void Configuration::setAlsaMixerElement(std::string value) { alsaMixerElement = std::move(value); }
 
 uint32_t Configuration::getSoundFrequency() const { return this->soundFrequency; }
 

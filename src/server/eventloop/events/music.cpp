@@ -10,12 +10,10 @@
 #include <typeinfo>
 #include <vector>
 
-#include <SDL.h>
 #include <spdlog/spdlog.h>
 
 #include "server/audio/LocalAudioPlaybackCoordinator.h"
-#include "server/audio/LocalSdlAudioTransport.h"
-#include "server/audio/TravelMonoAudioTransport.h"
+#include "server/audio/LocalNativeAudioTransport.h"
 #include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/eventloop/eventloop.h"
@@ -30,8 +28,6 @@
 namespace creatures {
 
 // ───── singletons from main.cpp ──────────────────────────────────────────
-extern const char *audioDevice;
-extern SDL_AudioSpec localAudioDeviceAudioSpec;
 extern std::shared_ptr<Configuration> config;
 extern std::shared_ptr<GPIO> gpioPins;
 extern std::shared_ptr<SystemCounters> metrics;
@@ -247,7 +243,7 @@ Result<framenum_t> MusicEvent::executeImpl() {
     return result;
 }
 
-// ───── Local SDL playback ────────────────────────────────────────────────
+// ───── Local native playback ─────────────────────────────────────────────
 Result<framenum_t> MusicEvent::playLocalAudio(std::shared_ptr<OperationSpan> parentSpan) {
     const bool travelMode = config->getTravelMode();
     const auto result = submitLocalAudio(filePath, travelMode, parentSpan, triggerTraceId_, triggerSpanId_);
@@ -275,6 +271,10 @@ Result<uint64_t> MusicEvent::submitLocalAudio(const std::string &localFilePath, 
         admissionSpan->setAttribute("audio.file.name", fileName);
         admissionSpan->setAttribute("audio.local.source", "standalone");
         admissionSpan->setAttribute("audio.local.mode", travelMode ? "travel" : "main");
+        admissionSpan->setAttribute("audio.local.backend", audio::nativeAudioBackendName());
+        admissionSpan->setAttribute("audio.device.name", config->getSoundDeviceName().value_or("default"));
+        admissionSpan->setAttribute("audio.output.sample_rate_hz", static_cast<int64_t>(config->getSoundFrequency()));
+        admissionSpan->setAttribute("audio.output.channels", static_cast<int64_t>(config->getSoundChannels()));
         admissionSpan->setAttribute("audio.local.queue_capacity", static_cast<int64_t>(1));
         if (!traceId.empty()) {
             admissionSpan->setAttribute("trigger.trace_id", traceId);
@@ -301,14 +301,16 @@ Result<uint64_t> MusicEvent::submitLocalAudio(const std::string &localFilePath, 
             {.id = "standalone:" + fileName,
              .source = "standalone",
              .mode = travelMode ? "travel" : "main",
+             .backend = audio::nativeAudioBackendName(),
+             .deviceName = config->getSoundDeviceName().value_or("default"),
+             .outputSampleRate = config->getSoundFrequency(),
+             .outputChannels = config->getSoundChannels(),
              .fileName = fileName,
              .triggerTraceId = traceId,
              .triggerSpanId = spanId,
              .play = [localPath = localFilePath, travelMode](const std::atomic<bool> &stopRequested) {
-                 if (travelMode) {
-                     return TravelMonoAudioTransport::playFileBlocking(localPath, stopRequested);
-                 }
-                 return LocalSdlAudioTransport::playFileBlocking(localPath, stopRequested);
+                 const auto mode = travelMode ? audio::NativePlaybackMode::Travel : audio::NativePlaybackMode::Main;
+                 return LocalNativeAudioTransport::playFileBlocking(localPath, mode, stopRequested);
              }});
     } catch (const std::exception &exception) {
         const std::string errorMessage = fmt::format("Local audio admission failed: {}", exception.what());
@@ -501,45 +503,6 @@ Result<framenum_t> MusicEvent::scheduleRtpAudio(std::shared_ptr<OperationSpan> p
 
     // Return success immediately - the RTP streaming happens in the background
     return Result<framenum_t>{this->frameNumber};
-}
-
-// ───── SDL helpers (unchanged) ────────────────────────────────────────────
-int MusicEvent::initSDL() {
-    debug("Initializing SDL for audio");
-    if (SDL_Init(SDL_INIT_AUDIO) < 0) {
-        error("SDL init failed: {}", SDL_GetError());
-        return 0;
-    }
-    debug("SDL initialized successfully!");
-    return 1;
-}
-
-int MusicEvent::locateAudioDevice() {
-    debug("Locating audio device for local playback");
-
-    localAudioDeviceAudioSpec = {};
-    localAudioDeviceAudioSpec.freq = static_cast<int>(config->getSoundFrequency());
-    localAudioDeviceAudioSpec.channels = config->getSoundChannels();
-    localAudioDeviceAudioSpec.format = AUDIO_F32SYS;
-    localAudioDeviceAudioSpec.samples = SOUND_BUFFER_SIZE;
-
-    audioDevice = SDL_GetAudioDeviceName(config->getSoundDevice(), 0);
-    if (!audioDevice) {
-        error("SDL_GetAudioDeviceName failed: {}", SDL_GetError());
-        return 0;
-    }
-
-    debug("Using audio device: {}", audioDevice);
-    return 1;
-}
-
-void MusicEvent::listAudioDevices() {
-    int n = SDL_GetNumAudioDevices(0);
-    debug("SDL reports {} audio devices available:", n);
-    for (int i = 0; i < n; ++i) {
-        const char *deviceName = SDL_GetAudioDeviceName(i, 0);
-        debug("  [{}] {}", i, deviceName ? deviceName : "Unknown");
-    }
 }
 
 } // namespace creatures

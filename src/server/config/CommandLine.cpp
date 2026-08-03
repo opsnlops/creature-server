@@ -1,4 +1,7 @@
+#include <algorithm>
 #include <arpa/inet.h>
+#include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <ifaddrs.h>
@@ -9,8 +12,6 @@
 #include <system_error>
 #include <utility>
 
-#include <SDL.h>
-
 #include <argparse/argparse.hpp>
 #include <fmt/format.h>
 
@@ -19,6 +20,8 @@
 
 #include "Version.h"
 
+#include "server/audio/AudioOutput.h"
+#include "server/audio/NativeAudioConfig.h"
 #include "server/config.h"
 #include "server/namespace-stuffs.h"
 #include "util/environment.h"
@@ -46,11 +49,44 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .default_value(environmentToString(DB_URI_ENV, DEFAULT_DB_URI))
         .nargs(1);
 
-    program.add_argument("-s", "--sound-device")
-        .help("sound device to use")
-        .default_value(environmentToInt(SOUND_DEVICE_NUMBER_ENV, DEFAULT_SOUND_DEVICE_NUMBER))
-        .nargs(1)
-        .scan<'i', int>();
+    program.add_argument("--audio-device-name")
+        .help("exact ALSA/CoreAudio output name from --list-sound-devices")
+        .default_value(environmentToString(SOUND_DEVICE_NAME_ENV, DEFAULT_SOUND_DEVICE_NAME))
+        .nargs(1);
+
+    program.add_argument("--dialog-gain-db")
+        .help("software gain for dialog channels in dB (-90 to +12)")
+        .default_value(environmentToDouble(DIALOG_GAIN_DB_ENV, DEFAULT_DIALOG_GAIN_DB))
+        .scan<'g', double>()
+        .nargs(1);
+
+    program.add_argument("--bgm-gain-db")
+        .help("software gain for the BGM channel in dB (-90 to +12)")
+        .default_value(environmentToDouble(BGM_GAIN_DB_ENV, DEFAULT_BGM_GAIN_DB))
+        .scan<'g', double>()
+        .nargs(1);
+
+    program.add_argument("--limiter-ceiling-db")
+        .help("post-mix limiter ceiling in dB (-90 to 0)")
+        .default_value(environmentToDouble(LIMITER_CEILING_DB_ENV, DEFAULT_LIMITER_CEILING_DB))
+        .scan<'g', double>()
+        .nargs(1);
+
+    program.add_argument("--output-volume-percent")
+        .help("optional ALSA hardware playback volume (0 to 100)")
+        .default_value(environmentToInt(OUTPUT_VOLUME_PERCENT_ENV, -1))
+        .scan<'i', int>()
+        .nargs(1);
+
+    program.add_argument("--alsa-mixer-card")
+        .help("ALSA mixer card used for --output-volume-percent")
+        .default_value(environmentToString(ALSA_MIXER_CARD_ENV, DEFAULT_ALSA_MIXER_CARD))
+        .nargs(1);
+
+    program.add_argument("--alsa-mixer-element")
+        .help("ALSA playback element used for --output-volume-percent")
+        .default_value(environmentToString(ALSA_MIXER_ELEMENT_ENV, DEFAULT_ALSA_MIXER_ELEMENT))
+        .nargs(1);
 
     program.add_argument("-c", "--sound-channels")
         .help("number of sound channels to use")
@@ -149,20 +185,23 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
      */
     auto &audioMode = program.add_mutually_exclusive_group();
     audioMode.add_argument("--local-audio")
-        .help("use local audio playback (default)")
-        .default_value(true)
+        .help("use native local audio playback instead of the default RTP transport")
+        .default_value(false)
         .implicit_value(true);
 
-    audioMode.add_argument("--rtp-audio").help("use RTP audio streaming").default_value(false).implicit_value(true);
+    audioMode.add_argument("--rtp-audio")
+        .help("use RTP audio streaming (default)")
+        .default_value(false)
+        .implicit_value(true);
 
     /*
      * Travel mode collapses the whole rig onto one host: the server and the controllers
-     * all run on the same Pi. It forces local audio (with a mono downmix of the
-     * 17-channel WAVs) and keeps sACN multicast from leaving the host. The HTTP and
+     * all run on the same Pi. It forces local stereo audio (dialog lanes 1/2,
+     * with BGM lane 17 on both) and keeps sACN multicast from leaving the host. The HTTP and
      * websocket server still binds 0.0.0.0 so the console can attach over the network.
      */
     program.add_argument("--travel-mode")
-        .help("single-host mode: host-local sACN, mono downmixed audio on the local sound device")
+        .help("single-Pi mode: host-local sACN and stereo local audio (dialog lanes 1/2 plus BGM)")
         .default_value(environmentToInt(TRAVEL_MODE_ENV, DEFAULT_TRAVEL_MODE) == 1)
         .implicit_value(true);
 
@@ -198,8 +237,6 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         std::exit(1);
     }
 
-    debug("Parsing the command line options");
-
     // Do the sound and network listing(s) first to avoid weird debug messages
     if (program.get<bool>("--list-sound-devices")) {
         listSoundDevices();
@@ -211,26 +248,36 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         std::exit(0);
     }
 
-    // Travel mode? Validate it before the audio mode is decided since it forces local audio.
-    auto travelMode = program.get<bool>("--travel-mode");
+    debug("Parsing the command line options");
+
+    // The always-on workshop host defaults to RTP. Travel mode is the explicit
+    // single-Pi deployment and always owns its ALSA output locally.
+    const bool travelMode = program.get<bool>("--travel-mode");
+    const bool explicitLocalAudio = program.get<bool>("--local-audio");
+    const bool explicitRtpAudio = program.get<bool>("--rtp-audio");
+    std::string configuredAudioMode = environmentToString(AUDIO_MODE_ENV, DEFAULT_AUDIO_MODE);
+    std::transform(configuredAudioMode.begin(), configuredAudioMode.end(), configuredAudioMode.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (configuredAudioMode != "rtp" && configuredAudioMode != "local") {
+        critical("{} must be 'rtp' or 'local'", AUDIO_MODE_ENV);
+        std::exit(1);
+    }
     if (travelMode) {
-        if (program.get<bool>("--rtp-audio")) {
-            std::cerr << "Error: --travel-mode and --rtp-audio cannot be used together. Travel mode plays\n"
-                         "a mono downmix on the local sound device."
-                      << std::endl;
+        if (explicitRtpAudio) {
+            critical("--travel-mode and --rtp-audio cannot be used together; travel mode plays a stereo mix on "
+                     "the local sound device");
             std::exit(1);
         }
         config->setTravelMode(true);
-        info("travel mode enabled: host-local sACN, mono downmixed local audio");
+        info("travel mode enabled: host-local sACN, stereo local audio with BGM on both channels");
     }
 
-    // What audio mode are we using?
-    if (program.get<bool>("--rtp-audio")) {
-        config->setAudioMode(Configuration::AudioMode::RTP);
-        debug("using RTP audio streaming");
-    } else {
+    if (travelMode || explicitLocalAudio || (!explicitRtpAudio && configuredAudioMode == "local")) {
         config->setAudioMode(Configuration::AudioMode::Local);
         debug("using local audio playback");
+    } else {
+        config->setAudioMode(Configuration::AudioMode::RTP);
+        debug("using RTP audio streaming");
     }
 
     // RTP fragmentation setting
@@ -247,14 +294,14 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         rtpAudioLoadWorkers = 1;
     }
     if (rtpAudioLoadWorkers < 1 || rtpAudioLoadWorkers > 32) {
-        std::cerr << "Error: --rtp-audio-load-workers must be between 1 and 32" << std::endl;
+        critical("--rtp-audio-load-workers must be between 1 and 32");
         std::exit(1);
     }
     config->setRtpAudioLoadWorkers(static_cast<uint32_t>(rtpAudioLoadWorkers));
 
     auto rtpAudioLoadQueueCapacity = program.get<int>("--rtp-audio-load-queue-capacity");
     if (rtpAudioLoadQueueCapacity < 1 || rtpAudioLoadQueueCapacity > 1024) {
-        std::cerr << "Error: --rtp-audio-load-queue-capacity must be between 1 and 1024" << std::endl;
+        critical("--rtp-audio-load-queue-capacity must be between 1 and 1024");
         std::exit(1);
     }
     config->setRtpAudioLoadQueueCapacity(static_cast<uint32_t>(rtpAudioLoadQueueCapacity));
@@ -264,7 +311,7 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     // Animation delay for audio sync compensation
     auto animationDelayMs = program.get<int>("--animation-delay-ms");
     if (animationDelayMs < 0) {
-        std::cerr << "Error: --animation-delay-ms must be non-negative" << std::endl;
+        critical("--animation-delay-ms must be non-negative");
         std::exit(1);
     }
     config->setAnimationDelayMs(static_cast<uint32_t>(animationDelayMs));
@@ -274,7 +321,7 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     auto streamingTimeoutFrames = program.get<int>("--streaming-timeout-frames");
     if (streamingTimeoutFrames <= 0) {
-        std::cerr << "Error: --streaming-timeout-frames must be greater than zero" << std::endl;
+        critical("--streaming-timeout-frames must be greater than zero");
         std::exit(1);
     }
     config->setStreamingTimeoutFrames(static_cast<uint32_t>(streamingTimeoutFrames));
@@ -282,7 +329,7 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     auto adHocTtlHours = program.get<int>("--adhoc-animation-ttl-hours");
     if (adHocTtlHours <= 0) {
-        std::cerr << "Error: --adhoc-animation-ttl-hours must be greater than zero" << std::endl;
+        critical("--adhoc-animation-ttl-hours must be greater than zero");
         std::exit(1);
     }
     config->setAdHocAnimationTtlHours(static_cast<uint32_t>(adHocTtlHours));
@@ -303,35 +350,68 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         debug("set our mongo URI to {}", mongoURI);
     }
 
-    if (config->getAudioMode() == Configuration::AudioMode::Local) {
-        debug("Local audio mode selected, setting local audio playback device");
-        auto soundDevice = program.get<int>("-s");
-        debug("read sound device {} from command line", soundDevice);
-        if (soundDevice >= 0) {
-            config->setSoundDevice(soundDevice);
-            debug("set our sound device to {}", soundDevice);
-        }
+    const auto soundDeviceName = program.get<std::string>("--audio-device-name");
+    if (soundDeviceName.size() > 512) {
+        critical("--audio-device-name must not exceed 512 characters");
+        std::exit(1);
+    }
+    if (!soundDeviceName.empty()) {
+        config->setSoundDeviceName(soundDeviceName);
+        debug("set native audio device name to '{}'", soundDeviceName);
     }
 
-    auto soundChannels = program.get<int>("-c");
+    const auto dialogGainDb = program.get<double>("--dialog-gain-db");
+    const auto bgmGainDb = program.get<double>("--bgm-gain-db");
+    const auto limiterCeilingDb = program.get<double>("--limiter-ceiling-db");
+    if (!std::isfinite(dialogGainDb) || !std::isfinite(bgmGainDb) || dialogGainDb < audio::MIN_AUDIO_GAIN_DB ||
+        dialogGainDb > audio::MAX_AUDIO_GAIN_DB || bgmGainDb < audio::MIN_AUDIO_GAIN_DB ||
+        bgmGainDb > audio::MAX_AUDIO_GAIN_DB) {
+        critical("--dialog-gain-db and --bgm-gain-db must be finite and between -90 and +12");
+        std::exit(1);
+    }
+    if (!std::isfinite(limiterCeilingDb) || limiterCeilingDb < audio::MIN_AUDIO_GAIN_DB || limiterCeilingDb > 0.0) {
+        critical("--limiter-ceiling-db must be finite and between -90 and 0");
+        std::exit(1);
+    }
+    config->setDialogGainDb(static_cast<float>(dialogGainDb));
+    config->setBgmGainDb(static_cast<float>(bgmGainDb));
+    config->setLimiterCeilingDb(static_cast<float>(limiterCeilingDb));
+
+    const auto outputVolumePercent = program.get<int>("--output-volume-percent");
+    if (outputVolumePercent < -1 || outputVolumePercent > 100) {
+        critical("--output-volume-percent must be between 0 and 100");
+        std::exit(1);
+    }
+    if (outputVolumePercent >= 0) {
+        config->setOutputVolumePercent(static_cast<uint8_t>(outputVolumePercent));
+    }
+    config->setAlsaMixerCard(program.get<std::string>("--alsa-mixer-card"));
+    config->setAlsaMixerElement(program.get<std::string>("--alsa-mixer-element"));
+
+    const auto soundChannels = program.get<int>("-c");
     debug("read sound channels {} from command line", soundChannels);
     if (travelMode) {
-        // The downmixer renders everything to mono in travel mode
-        if (program.is_used("-c") && soundChannels != 1) {
-            warn("ignoring --sound-channels {} in travel mode; audio is downmixed to mono", soundChannels);
+        if (program.is_used("-c") && soundChannels != 2) {
+            warn("ignoring --sound-channels {} in travel mode; travel output is stereo", soundChannels);
         }
-        config->setSoundChannels(1);
-        debug("travel mode: sound channels forced to 1 (mono)");
-    } else if (soundChannels > 0) {
+        config->setSoundChannels(2);
+        debug("travel mode: sound channels forced to 2 (stereo)");
+    } else if (soundChannels >= 1 && soundChannels <= 64) {
         config->setSoundChannels(soundChannels);
         debug("set our sound channels to {}", soundChannels);
+    } else {
+        critical("--sound-channels must be between 1 and 64");
+        std::exit(1);
     }
 
-    auto soundFrequency = program.get<int>("-f");
+    const auto soundFrequency = program.get<int>("-f");
     debug("read sound frequency {} from command line", soundFrequency);
-    if (soundFrequency > 0) {
+    if (soundFrequency >= 8000 && soundFrequency <= 384000) {
         config->setSoundFrequency(soundFrequency);
         debug("set our sound frequency to {}", soundFrequency);
+    } else {
+        critical("--sound-frequency must be between 8000 and 384000");
+        std::exit(1);
     }
 
     auto soundsLocation = program.get<std::string>("-l");
@@ -379,8 +459,7 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     auto lipSyncEngine = program.get<std::string>("--lip-sync-engine");
     if (lipSyncEngine != "whisper" && lipSyncEngine != "rhubarb") {
-        std::cerr << "Error: --lip-sync-engine must be 'whisper' or 'rhubarb', got '" << lipSyncEngine << "'"
-                  << std::endl;
+        critical("--lip-sync-engine must be 'whisper' or 'rhubarb', got '{}'", lipSyncEngine);
         std::exit(1);
     }
     config->setLipSyncEngine(lipSyncEngine);
@@ -396,30 +475,14 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
             debug("set our network device to {}", networkDevice);
         }
     } catch (const std::system_error &e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        critical(e.what());
         std::exit(1);
     }
 
     return config;
 }
 
-void CommandLine::listSoundDevices() {
-
-    if (SDL_Init(SDL_INIT_AUDIO) < 0) {
-        const std::string errorMessage = fmt::format("Couldn't initialize SDL: {}\n", SDL_GetError());
-        fprintf(stderr, "%s", errorMessage.c_str());
-        return;
-    }
-
-    const int numDevices = SDL_GetNumAudioDevices(0);
-    printf("Number of audio devices found: %d\n", numDevices);
-
-    for (int i = 0; i < numDevices; ++i) {
-        if (const char *deviceName = SDL_GetAudioDeviceName(i, 0)) {
-            printf(" Device: %d, Name: %s\n", i, deviceName);
-        }
-    }
-}
+void CommandLine::listSoundDevices() { audio::listAudioOutputDevices(std::cout); }
 
 /**
  * Converts from the friendly name of an interface (like eth0) to the index like the

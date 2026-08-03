@@ -153,6 +153,10 @@ set(OPUS_BUILD_STATIC         ON  CACHE BOOL "" FORCE)
 set(OPUS_BUILD_PROGRAMS       OFF CACHE BOOL "" FORCE)   # cli tools
 set(OPUS_BUILD_TESTING        OFF CACHE BOOL "" FORCE)
 
+# Opus treats the parent project's BUILD_TESTING=ON as a request for its own
+# self-tests even when OPUS_BUILD_TESTING is explicitly disabled. Shadow the
+# cache value only while adding Opus, then reveal it again for later setup.
+set(BUILD_TESTING OFF)
 FetchContent_Declare(
         opus
         GIT_REPOSITORY  https://github.com/xiph/opus.git
@@ -160,6 +164,7 @@ FetchContent_Declare(
         EXCLUDE_FROM_ALL   # keep Opus' install() rules (headers, .a, cmake configs, .pc) out of our .deb
 )
 FetchContent_MakeAvailable(opus)
+unset(BUILD_TESTING)
 #Optimise Opus even when the rest of the build is Debug
 target_compile_options(opus PRIVATE
         $<$<CONFIG:Debug>:-O3>
@@ -177,6 +182,24 @@ FetchContent_Declare(
         EXCLUDE_FROM_ALL   # keep Ogg's install() rules out of our .deb, same as Opus
 )
 FetchContent_MakeAvailable(ogg)
+
+# miniaudio is used only as an in-process WAV/MP3/FLAC decoder. Device I/O,
+# engine, and resource-manager code are disabled; ALSA/CoreAudio ownership
+# remains in the explicit native backends below.
+FetchContent_Declare(
+        miniaudio
+        GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+        GIT_TAG 0.11.25
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR cmake-unused
+        EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(miniaudio)
+set(MINIAUDIO_IMPLEMENTATION_SOURCE "${miniaudio_SOURCE_DIR}/miniaudio.c")
+set_source_files_properties(${MINIAUDIO_IMPLEMENTATION_SOURCE} PROPERTIES
+        COMPILE_DEFINITIONS "MA_NO_DEVICE_IO;MA_NO_ENGINE;MA_NO_RESOURCE_MANAGER"
+        COMPILE_OPTIONS "-w"
+)
 
 #Google Test
 FetchContent_Declare(
@@ -363,9 +386,27 @@ else()
     add_definitions(-DSWAGGER_UI_PATH="/usr/share/creature-server/swagger-ui/")
 endif()
 
-#SDL
-find_package(SDL2 REQUIRED)
-find_package(SDL2_mixer REQUIRED)
+# Native low-latency audio output. RTP mode does not initialize these devices,
+# but local/travel builds use the same ALSA/CoreAudio shape as the controller.
+set(AUDIO_PLATFORM_SOURCE)
+set(AUDIO_PLATFORM_LIBRARIES)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(ALSA REQUIRED)
+    set(AUDIO_PLATFORM_SOURCE src/server/audio/AlsaAudioOutput.cpp)
+    list(APPEND AUDIO_PLATFORM_LIBRARIES ${ALSA_LIBRARIES})
+elseif(APPLE)
+    find_library(AUDIOUNIT_FRAMEWORK AudioUnit REQUIRED)
+    find_library(COREAUDIO_FRAMEWORK CoreAudio REQUIRED)
+    find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+    set(AUDIO_PLATFORM_SOURCE src/server/audio/CoreAudioOutput.cpp)
+    list(APPEND AUDIO_PLATFORM_LIBRARIES
+            ${AUDIOUNIT_FRAMEWORK}
+            ${COREAUDIO_FRAMEWORK}
+            ${COREFOUNDATION_FRAMEWORK}
+    )
+else()
+    message(FATAL_ERROR "Native audio output is only implemented for Linux and macOS")
+endif()
 
 #OpenSSL for SHA - 256 hashing in audio cache
 find_package(OpenSSL REQUIRED)
@@ -375,7 +416,7 @@ find_package(CURL REQUIRED)
 
 #libmp3lame for the shareable-MP3 rendition endpoint (issue #57). LAME has no
 #first-class CMake build, so — unlike libopus/libogg which ride FetchContent —
-#it's linked as a system library the same way SDL2_mixer is (apt in the Docker
+#it's linked as a system library (apt in the Docker
 #images; see Dockerfile). CPACK_DEBIAN_PACKAGE_SHLIBDEPS then auto-adds the
 #libmp3lame0 runtime Depends to the .deb.
 pkg_check_modules(MP3LAME lame)                 # gives MP3LAME_LIBRARIES if lame.pc exists
@@ -395,9 +436,6 @@ endif()
 # whether lame.pc points -I at include/ (Debian) or include/lame/ (Homebrew).
 find_path(MP3LAME_INCLUDE_DIRS lame/lame.h)
 message(STATUS "Using libmp3lame: ${MP3LAME_LIBRARIES}")
-
-#Leave a message
-message(STATUS "Using SDL2 includes ${SDL2_INCLUDE_DIRS}")
 
 #Our source files. CONFIGURE_DEPENDS so adding a new .cpp in an existing
 #dir doesn't require editing this file (which would bust the Docker dep cache
@@ -425,6 +463,11 @@ file(GLOB serverFiles CONFIGURE_DEPENDS
         src/server/watchdog/*
         src/model/*
 )
+list(REMOVE_ITEM serverFiles
+        "${CMAKE_SOURCE_DIR}/src/server/audio/AlsaAudioOutput.cpp"
+        "${CMAKE_SOURCE_DIR}/src/server/audio/CoreAudioOutput.cpp"
+)
+list(APPEND serverFiles ${AUDIO_PLATFORM_SOURCE})
 
 file(GLOB clientFiles
         src/client/*
@@ -444,9 +487,8 @@ include_directories(
         util/
         ${UUID_INCLUDE_DIRS}
         ${argparse_SOURCE_DIR}/include
-        ${SDL2_INCLUDE_DIRS}
-        ${SDL2_MIXER_INCLUDE_DIRS}
         ${MP3LAME_INCLUDE_DIRS}
+        ${miniaudio_SOURCE_DIR}
         ${MOODYCAMEL_DIR}
         ${LIBBASE64_DIR}/include
         ${oatpp_INCLUDE_DIRS}
@@ -463,6 +505,7 @@ if (EXISTS ${CMAKE_SOURCE_DIR}/src/server/main.cpp)
 
 add_executable(creature-server
         ${serverFiles}
+        ${MINIAUDIO_IMPLEMENTATION_SOURCE}
         src/server/watchdog/Watchdog.cpp
         src/server/watchdog/Watchdog.h
 
@@ -620,6 +663,9 @@ add_executable(creature-server
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
+if(ALSA_FOUND)
+    target_compile_definitions(creature-server PRIVATE CREATURE_HAS_ALSA=1)
+endif()
 
 # Apply strict warning flags to our main executable only
 target_compile_options(creature-server PRIVATE ${CREATURE_SERVER_WARNING_FLAGS})
@@ -635,8 +681,6 @@ target_link_libraries(creature-server
         PRIVATE ${UUID_LIBRARIES}
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
-        SDL2::SDL2
-        SDL2_mixer::SDL2_mixer
         oatpp::oatpp
         oatpp::oatpp-swagger
         oatpp::oatpp-websocket
@@ -664,6 +708,7 @@ target_link_libraries(creature-server
         OpenSSL::Crypto
         CURL::libcurl
         ${MONGO_SYSTEM_LIBS}
+        ${AUDIO_PLATFORM_LIBRARIES}
 )
 
 install(TARGETS creature-server
@@ -729,6 +774,7 @@ add_executable(creature-server-test
         src/server/voice/IxmlTimedTokens.cpp
         tests/server/voice/DialogCache_test.cpp
         tests/server/audio/MonoWavDownmixer_test.cpp
+        tests/server/audio/DecodedAudioStream_test.cpp
         tests/server/audio/OggOpusWriter_test.cpp
         tests/server/audio/Mp3Writer_test.cpp
         tests/server/audio/SoundPathResolver_test.cpp
@@ -743,6 +789,8 @@ add_executable(creature-server-test
         tests/server/rtp/StandaloneRtpAdmission_test.cpp
         tests/server/voice/DialogPreviewAssembly_test.cpp
         src/server/audio/MonoWavDownmixer.cpp
+        src/server/audio/DecodedAudioStream.cpp
+        ${MINIAUDIO_IMPLEMENTATION_SOURCE}
         src/server/audio/OggOpusWriter.cpp
         src/server/audio/Mp3Writer.cpp
         src/server/audio/SoundPathResolver.cpp
@@ -798,8 +846,6 @@ target_link_libraries(creature-server-test
         PRIVATE ${UUID_LIBRARIES}
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
-        SDL2::SDL2
-        SDL2_mixer::SDL2_mixer
         oatpp::oatpp
         oatpp::oatpp-swagger
         oatpp::oatpp-websocket

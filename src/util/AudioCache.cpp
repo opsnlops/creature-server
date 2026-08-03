@@ -13,9 +13,8 @@
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 
-// For OGG/Opus file handling
-#include <opus/opus.h>
-#include <opus/opusfile.h>
+// For Opus cache compatibility metadata.
+#include <opus.h>
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>

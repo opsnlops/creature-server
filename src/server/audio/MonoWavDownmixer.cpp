@@ -1,12 +1,13 @@
 //
 // MonoWavDownmixer.cpp
-// Renders multi-channel WAV files down to mono for travel mode
+// Streams PCM WAV data for RTP, mono exports, and travel stereo playback
 //
 
 #include "MonoWavDownmixer.h"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -26,6 +27,8 @@ constexpr uint16_t MAX_WAV_CHANNELS = 64;
 constexpr int MIN_WAV_SAMPLE_RATE = 8000;
 constexpr int MAX_WAV_SAMPLE_RATE = 384000;
 constexpr size_t MAX_STREAM_READ_FRAMES = 4096;
+
+float decibelsToLinear(float decibels) { return std::pow(10.0F, decibels / 20.0F); }
 
 uint16_t readLittleEndianU16(const uint8_t *data) {
     return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8);
@@ -64,7 +67,7 @@ void downmixToMono(const int16_t *interleaved, const size_t frames, const int ch
     }
 }
 
-Result<std::shared_ptr<MonoWavStream>> MonoWavStream::open(const std::string &filePath) {
+Result<std::shared_ptr<MonoWavStream>> MonoWavStream::open(const std::string &filePath, DownmixConfig downmixConfig) {
     if (!std::filesystem::exists(filePath) || !std::filesystem::is_regular_file(filePath)) {
         const auto errorMsg = fmt::format("WAV file not found: {}", filePath);
         error(errorMsg);
@@ -72,6 +75,9 @@ Result<std::shared_ptr<MonoWavStream>> MonoWavStream::open(const std::string &fi
     }
 
     auto stream = std::shared_ptr<MonoWavStream>(new MonoWavStream());
+    stream->dialogGainLinear_ = decibelsToLinear(downmixConfig.dialogGainDb);
+    stream->bgmGainLinear_ = decibelsToLinear(downmixConfig.bgmGainDb);
+    stream->limiterCeilingLinear_ = decibelsToLinear(downmixConfig.limiterCeilingDb);
     stream->file_.open(filePath, std::ios::binary);
     if (!stream->file_.is_open()) {
         const auto errorMsg = fmt::format("Unable to open WAV file: {}", filePath);
@@ -198,28 +204,99 @@ Result<size_t> MonoWavStream::readMonoFrames(std::span<int16_t> output) {
         return Result<size_t>{0};
     }
 
+    const size_t framesToRead = static_cast<size_t>(
+        std::min<uint64_t>({dataBytesRemaining_ / blockAlign_, output.size(), MAX_STREAM_READ_FRAMES}));
+    interleavedBuffer_.resize(framesToRead * channels_);
+    auto readResult = readInterleavedFrames(interleavedBuffer_);
+    if (!readResult.isSuccess()) {
+        return readResult;
+    }
+    const size_t framesRead = readResult.getValue().value();
+    const float positiveLimit = static_cast<float>(INT16_MAX) * limiterCeilingLinear_;
+    const float negativeLimit = static_cast<float>(INT16_MIN) * limiterCeilingLinear_;
+    for (size_t frame = 0; frame < framesRead; ++frame) {
+        float accumulator = 0.0F;
+        for (uint16_t channel = 0; channel < channels_; ++channel) {
+            const float gain = channels_ == 17 && channel == 16 ? bgmGainLinear_ : dialogGainLinear_;
+            accumulator += static_cast<float>(interleavedBuffer_[frame * channels_ + channel]) * gain;
+        }
+        output[frame] = static_cast<int16_t>(std::clamp(accumulator, negativeLimit, positiveLimit));
+    }
+    return Result<size_t>{framesRead};
+}
+
+Result<size_t> MonoWavStream::readTravelStereoFrames(std::span<int16_t> output) {
+    constexpr size_t OUTPUT_CHANNELS = 2;
+    if (output.size() % OUTPUT_CHANNELS != 0) {
+        return Result<size_t>{ServerError(ServerError::InvalidData, "Travel audio buffer is not stereo aligned")};
+    }
+    return readLocalOutputFrames(output, OUTPUT_CHANNELS);
+}
+
+Result<size_t> MonoWavStream::readLocalOutputFrames(std::span<int16_t> output, uint16_t outputChannels) {
+    if (output.empty() || dataBytesRemaining_ == 0) {
+        return Result<size_t>{0};
+    }
+    if (outputChannels == 0 || output.size() % outputChannels != 0) {
+        return Result<size_t>{ServerError(ServerError::InvalidData, "Local audio buffer is not frame aligned")};
+    }
+
+    const size_t requestedFrames = output.size() / outputChannels;
+    const size_t framesToRead = static_cast<size_t>(
+        std::min<uint64_t>({dataBytesRemaining_ / blockAlign_, requestedFrames, MAX_STREAM_READ_FRAMES}));
+    interleavedBuffer_.resize(framesToRead * channels_);
+    auto readResult = readInterleavedFrames(interleavedBuffer_);
+    if (!readResult.isSuccess()) {
+        return readResult;
+    }
+
+    const size_t framesRead = readResult.getValue().value();
+    const float positiveLimit = static_cast<float>(INT16_MAX) * limiterCeilingLinear_;
+    const float negativeLimit = static_cast<float>(INT16_MIN) * limiterCeilingLinear_;
+    for (size_t frame = 0; frame < framesRead; ++frame) {
+        const auto source = interleavedBuffer_.data() + frame * channels_;
+        const float bgm = channels_ == 17 ? static_cast<float>(source[16]) * bgmGainLinear_ : 0.0F;
+        for (uint16_t outputChannel = 0; outputChannel < outputChannels; ++outputChannel) {
+            float mixed = 0.0F;
+            if (channels_ == 1) {
+                mixed = static_cast<float>(source[0]) * dialogGainLinear_;
+            } else if (channels_ == 17) {
+                if (outputChannel < 16) {
+                    mixed = static_cast<float>(source[outputChannel]) * dialogGainLinear_ + bgm;
+                } else if (outputChannel == 16) {
+                    mixed = bgm;
+                }
+            } else if (outputChannel < channels_) {
+                mixed = static_cast<float>(source[outputChannel]) * dialogGainLinear_;
+            }
+            output[frame * outputChannels + outputChannel] =
+                static_cast<int16_t>(std::clamp(mixed, negativeLimit, positiveLimit));
+        }
+    }
+    return Result<size_t>{framesRead};
+}
+
+Result<size_t> MonoWavStream::readInterleavedFrames(std::span<int16_t> output) {
+    if (output.empty() || dataBytesRemaining_ == 0) {
+        return Result<size_t>{0};
+    }
+    if (channels_ == 0 || output.size() % channels_ != 0) {
+        return Result<size_t>{ServerError(ServerError::InvalidData, "WAV output buffer is not frame aligned")};
+    }
     const uint64_t framesRemaining = dataBytesRemaining_ / blockAlign_;
+    const size_t requestedFrames = output.size() / channels_;
     const size_t framesToRead =
-        static_cast<size_t>(std::min<uint64_t>({framesRemaining, output.size(), MAX_STREAM_READ_FRAMES}));
+        static_cast<size_t>(std::min<uint64_t>({framesRemaining, requestedFrames, MAX_STREAM_READ_FRAMES}));
     const size_t bytesToRead = framesToRead * blockAlign_;
     sourceBuffer_.resize(bytesToRead);
-
     if (!readExact(file_, sourceBuffer_.data(), bytesToRead)) {
         return Result<size_t>{
             ServerError(ServerError::InvalidData, "WAV file ended before the declared audio data was read")};
     }
-
-    for (size_t frame = 0; frame < framesToRead; ++frame) {
-        const uint8_t *frameData = sourceBuffer_.data() + frame * blockAlign_;
-        int32_t accumulator = 0;
-        for (uint16_t channel = 0; channel < channels_; ++channel) {
-            const uint8_t *sampleData = frameData + channel * sizeof(int16_t);
-            accumulator += static_cast<int16_t>(readLittleEndianU16(sampleData));
-        }
-        output[frame] = static_cast<int16_t>(
-            std::clamp(accumulator, static_cast<int32_t>(INT16_MIN), static_cast<int32_t>(INT16_MAX)));
+    const size_t sampleCount = framesToRead * channels_;
+    for (size_t sample = 0; sample < sampleCount; ++sample) {
+        output[sample] = static_cast<int16_t>(readLittleEndianU16(sourceBuffer_.data() + sample * sizeof(int16_t)));
     }
-
     dataBytesRemaining_ -= bytesToRead;
     return Result<size_t>{framesToRead};
 }

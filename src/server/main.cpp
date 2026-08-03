@@ -14,9 +14,6 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 
-// SDL
-#include <SDL2/SDL.h>
-
 // E131Sever
 #include <E131Server.h>
 
@@ -27,13 +24,14 @@
 #include "uvgrtp/version.hh"
 
 // Opus
-#include <opus/opus.h>
+#include <opus.h>
 
 // Our stuff
 #include "Version.h"
 #include "model/PlaylistStatus.h"
 #include "server/animation/SessionManager.h"
 #include "server/audio/LocalAudioPlaybackCoordinator.h"
+#include "server/audio/NativeAudioPlaybackService.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
@@ -66,7 +64,6 @@
 
 using creatures::Database;
 using creatures::EventLoop;
-using creatures::MusicEvent;
 
 namespace creatures {
 std::shared_ptr<Configuration> config{};
@@ -122,8 +119,6 @@ FixtureActivityHook fixtureActivityHook;
 std::shared_ptr<GPIO> gpioPins;
 std::shared_ptr<SystemCounters> metrics;
 std::shared_ptr<StatusLights> statusLights;
-const char *audioDevice;
-SDL_AudioSpec localAudioDeviceAudioSpec;
 std::atomic serverShouldRun{true};
 
 // MoodyCamel queue for outgoing websocket messages
@@ -138,8 +133,11 @@ std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer;
 // Fixed worker pool for cooperative animation WAV/cache loads in RTP mode
 std::shared_ptr<rtp::AudioLoadExecutor> rtpAudioLoadExecutor;
 
-// Sole owner of the process-global SDL device in local/travel modes
+// Serializes requests for the process-global native output device.
 std::shared_ptr<audio::LocalAudioPlaybackCoordinator> localAudioPlaybackCoordinator;
+
+// Process-lifetime ALSA/CoreAudio owner in local/travel modes.
+std::shared_ptr<audio::NativeAudioPlaybackService> nativeAudioPlaybackService;
 
 // Audio cache for pre-encoded Opus files
 std::shared_ptr<util::AudioCache> audioCache;
@@ -265,7 +263,6 @@ int main(const int argc, char **argv) {
     info("Creature Server version {}", version);
     debug("spdlog version {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
     debug("fmt version {}", FMT_VERSION);
-    debug("SDL version {}.{}.{}", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
     debug("Sound file location: {}", creatures::config->getSoundFileLocation());
     debug("uvgrtp version {}", uvgrtp::get_version());
     debug("opus version {}", opus_get_version_string());
@@ -296,18 +293,60 @@ int main(const int argc, char **argv) {
     }
     cleanupAdHocTempDirectory(creatures::config->getAdHocAnimationTtlHours());
 
-    // RTP servers only parse WAV files and do not need a local output device.
-    // Requiring one made headless production hosts fail before RTP startup.
+    // RTP mode never probes a local output device. This keeps the normal
+    // headless production path independent of ALSA/CoreAudio availability.
     if (creatures::config->getAudioMode() != creatures::Configuration::AudioMode::RTP) {
-        if (!MusicEvent::initSDL()) {
-            error("Unable to start up SDL; halting");
+        creatures::audio::NativeAudioConfig nativeAudioConfig{
+            .deviceName = creatures::config->getSoundDeviceName(),
+            .sampleRate = creatures::config->getSoundFrequency(),
+            .channels = creatures::config->getSoundChannels(),
+            .dialogGainDb = creatures::config->getDialogGainDb(),
+            .bgmGainDb = creatures::config->getBgmGainDb(),
+            .limiterCeilingDb = creatures::config->getLimiterCeilingDb(),
+            .outputVolumePercent = creatures::config->getOutputVolumePercent(),
+            .alsaMixerCard = creatures::config->getAlsaMixerCard(),
+            .alsaMixerElement = creatures::config->getAlsaMixerElement(),
+        };
+        auto audioInitSpan = creatures::observability->createOperationSpan("audio.local.device.initialize");
+        if (audioInitSpan) {
+            audioInitSpan->setAttribute("audio.local.backend", creatures::audio::nativeAudioBackendName());
+            audioInitSpan->setAttribute("audio.local.mode", creatures::config->getTravelMode() ? "travel" : "main");
+            audioInitSpan->setAttribute("audio.device.name", nativeAudioConfig.deviceName.value_or("default"));
+            audioInitSpan->setAttribute("audio.output.sample_rate_hz",
+                                        static_cast<int64_t>(nativeAudioConfig.sampleRate));
+            audioInitSpan->setAttribute("audio.output.channels", static_cast<int64_t>(nativeAudioConfig.channels));
+            audioInitSpan->setAttribute("audio.dialog.gain_db", static_cast<double>(nativeAudioConfig.dialogGainDb));
+            audioInitSpan->setAttribute("audio.bgm.gain_db", static_cast<double>(nativeAudioConfig.bgmGainDb));
+            audioInitSpan->setAttribute("audio.limiter.ceiling_db",
+                                        static_cast<double>(nativeAudioConfig.limiterCeilingDb));
+            if (nativeAudioConfig.outputVolumePercent) {
+                audioInitSpan->setAttribute("audio.output.volume_percent",
+                                            static_cast<int64_t>(*nativeAudioConfig.outputVolumePercent));
+            }
+            audioInitSpan->setAttribute("audio.local.worker_count", static_cast<int64_t>(1));
+            audioInitSpan->setAttribute("audio.local.queue_capacity", static_cast<int64_t>(1));
+            if (!nativeAudioConfig.alsaMixerCard.empty()) {
+                audioInitSpan->setAttribute("audio.mixer.card", nativeAudioConfig.alsaMixerCard);
+            }
+            if (!nativeAudioConfig.alsaMixerElement.empty()) {
+                audioInitSpan->setAttribute("audio.mixer.element", nativeAudioConfig.alsaMixerElement);
+            }
+        }
+        creatures::nativeAudioPlaybackService = std::make_shared<creatures::audio::NativeAudioPlaybackService>();
+        if (!creatures::nativeAudioPlaybackService->initialize(std::move(nativeAudioConfig))) {
+            if (audioInitSpan) {
+                audioInitSpan->setAttribute("error.type", "AudioDeviceInitializationError");
+                audioInitSpan->setAttribute("error.code", "local_audio.device_initialization_failed");
+                audioInitSpan->setAttribute("error.message", "Unable to initialize native local audio");
+                audioInitSpan->setError("Unable to initialize native local audio");
+                audioInitSpan->end();
+            }
+            error("Unable to initialize native local audio; halting");
             std::exit(EXIT_FAILURE);
         }
-        debug("SDL started");
-        MusicEvent::listAudioDevices();
-        if (!MusicEvent::locateAudioDevice()) {
-            error("unable to open audio device; halting");
-            std::exit(EXIT_FAILURE);
+        if (audioInitSpan) {
+            audioInitSpan->setSuccess();
+            audioInitSpan->end();
         }
         std::weak_ptr<creatures::SystemCounters> weakMetrics = creatures::metrics;
         creatures::localAudioPlaybackCoordinator = std::make_shared<creatures::audio::LocalAudioPlaybackCoordinator>(
@@ -318,9 +357,10 @@ int main(const int argc, char **argv) {
                                                            stats.timedOut);
                 }
             });
-        info("Local audio coordinator started with one device worker and one last-request-wins pending slot");
+        info("Native local audio started with one device worker, bounded keepalive, and one last-request-wins "
+             "pending slot");
     } else {
-        debug("RTP mode does not require a local SDL audio device");
+        debug("RTP mode does not initialize a local audio device");
     }
 
     // Fire up the GPIO
@@ -502,11 +542,17 @@ int main(const int argc, char **argv) {
         debug("RTP animation audio loader stopped");
     }
 
-    // Join the sole SDL owner before the event loop and SDL begin teardown.
+    // Join the sole local playback worker before closing the native device.
     if (creatures::localAudioPlaybackCoordinator) {
         info("Stopping local audio coordinator...");
         creatures::localAudioPlaybackCoordinator->shutdown();
         debug("Local audio coordinator stopped");
+    }
+    if (creatures::nativeAudioPlaybackService) {
+        info("Stopping native audio output...");
+        creatures::nativeAudioPlaybackService->shutdown();
+        creatures::nativeAudioPlaybackService.reset();
+        debug("Native audio output stopped");
     }
 
     // Halt the event loop
@@ -517,11 +563,6 @@ int main(const int argc, char **argv) {
 
     creatures::gpioPins->serverOnline(false);
     creatures::statusLights->shutdown();
-
-    // Clean up SDL
-    info("shutting down SDL");
-    SDL_Quit();
-    debug("SDL shut down");
 
     // This most likely isn't needed, but given that there's so many threads
     // running, I figure it's a good thing to do.

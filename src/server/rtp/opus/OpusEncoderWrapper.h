@@ -9,7 +9,7 @@
 #pragma once
 
 #include <mutex>
-#include <opus/opus.h>
+#include <opus.h>
 #include <vector>
 
 #include "server/config.h"

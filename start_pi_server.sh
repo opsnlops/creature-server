@@ -1,21 +1,13 @@
 #!/usr/bin/env bash
 
-docker pull opsnlops/creature-server:arm64-dev
+set -euo pipefail
 
-CONTAINER_ID=$(docker run -d --rm -p6666:6666 \
-    --name creature-server \
-    -v /local/sounds:/app/sounds \
-    --device /dev/snd \
-    --env SOUND_FILE_LOCATION="/app/sounds" \
-    --env SOUND_DEVICE_NUMBER=1 \
-    --env SOUND_CHANNELS=6 \
-    --env SOUND_FREQUENCY=48000 \
-    --env SDL_AUDIODRIVER=pulse \
-    -v "/run/user/$UID/pulse/native:/run/user/$UID/pulse/native" \
-    -v "/usr/share/alsa:/usr/share/alsa" \
-    -v "/home/april/.config/pulse:/.config/pulse" \
-    --env "PULSE_SERVER=unix:/run/user/$UID/pulse/native" \
-    --user "$(id -u)" \
-    opsnlops/creature-server:arm64-dev)
+SERVER_BINARY=${CREATURE_SERVER_BINARY:-/usr/bin/creature-server}
+export SOUND_FILE_LOCATION=${SOUND_FILE_LOCATION:-/local/sounds}
 
-docker logs -f $CONTAINER_ID
+exec "${SERVER_BINARY}" \
+    --travel-mode \
+    --audio-device-name "${SOUND_DEVICE_NAME:-plughw:CARD=S3,DEV=0}" \
+    --sound-channels 2 \
+    --sound-frequency 48000 \
+    "$@"

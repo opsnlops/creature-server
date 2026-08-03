@@ -15,12 +15,11 @@ RUN apt update && apt install -y \
         git \
         libbson-dev \
         libcurl4-openssl-dev \
+        libasound2-dev \
         libmp3lame-dev \
-        libpipewire-0.3-dev \
         libprotobuf-dev \
         libpthreadpool-dev \
         libsasl2-dev \
-        libsdl2-mixer-dev \
         libssl-dev \
         libsystemd-dev \
         libutf8proc-dev \
@@ -87,6 +86,7 @@ RUN cd /build/creature-server/build && ninja -j4 deps_only
 
 COPY src/ /build/creature-server/src
 COPY tests/ /build/creature-server/tests
+COPY run_linux_tests.sh /build/creature-server/run_linux_tests.sh
 
 # Real project version goes here, AFTER the deps_only layer is sealed. The
 # Phase 2 cmake reconfigure below re-reads VERSION.txt and applies it to
@@ -99,42 +99,8 @@ COPY VERSION.txt /build/creature-server/
 # — once the FetchContent sources are already populated.
 RUN cd /build/creature-server/build && cmake .. && ninja -j4
 
-
-# Now build a small runtime
-FROM debian:trixie-slim AS runtime
-
-# Runtime dependencies
-# Note: List only top-level packages; apt pulls in their dependencies automatically
-RUN apt update && apt upgrade -y && \
-    apt install -y \
-        libcurl4 \
-        libmp3lame0 \
-        libprotobuf32 \
-        libsasl2-2 \
-        libsdl2-mixer-2.0-0 \
-        libssl3 \
-        libuuid1 \
-        libzstd1 \
-        locales-all \
-        pipewire && \
-    rm -rf /var/lib/apt/lists
-
-RUN mkdir /app
-COPY --from=build /build/creature-server/build/creature-server /app/creature-server
-COPY --from=build /usr/local/lib /usr/local/lib
-
-# Whisper model and CMU dictionary for lip sync
-RUN mkdir -p /usr/share/creature-server/data
-COPY --from=build /build/creature-server/build/data/ggml-base.en.bin /usr/share/creature-server/data/
-COPY --from=build /build/creature-server/build/data/cmudict.dict /usr/share/creature-server/data/
-
-EXPOSE 8000
-
-CMD ["/app/creature-server"]
-
-
-
-# Small build for creating a deb package
+# CPack package export for Linux validation from a macOS host. This is a build
+# artifact stage, not a runtime image; production installs the resulting .deb.
 FROM build AS package
 
 # Make a package

@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 
-#
-# Build an image the same way the GHA build does
-#
+set -euo pipefail
 
-docker build -f Dockerfile . --target package -t temp-image
-docker create --name temp-container temp-image
-mkdir -p package/ && docker cp temp-container:/package/ .
-docker rm temp-container
+PACKAGE_PLATFORM=${1:-linux/amd64}
+PACKAGE_IMAGE=creature-server-package-local
+PACKAGE_CONTAINER="creature-server-package-copy-$$"
+
+docker buildx build --platform "${PACKAGE_PLATFORM}" --file Dockerfile \
+    --target package --tag "${PACKAGE_IMAGE}" --load .
+docker create --name "${PACKAGE_CONTAINER}" "${PACKAGE_IMAGE}"
+trap 'docker rm --force "${PACKAGE_CONTAINER}" >/dev/null 2>&1 || true' EXIT
+mkdir -p package
+docker cp "${PACKAGE_CONTAINER}:/package/." package/
 
 ls -lart package/

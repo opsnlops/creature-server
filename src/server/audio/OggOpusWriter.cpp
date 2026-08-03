@@ -5,7 +5,7 @@
 
 #include <fmt/format.h>
 #include <ogg/ogg.h>
-#include <opus/opus.h>
+#include <opus.h>
 #include <spdlog/spdlog.h>
 
 #include "server/audio/OggOpusWriter.h"
