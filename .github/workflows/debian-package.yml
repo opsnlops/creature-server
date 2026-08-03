@@ -1,9 +1,14 @@
 name: Build, Test, and Package
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
 
 env:
   BUILD_TYPE: RelWithDebInfo
+  TRIXIE_ROOT: /tmp/debian-trixie
 
 jobs:
   build:
@@ -22,62 +27,77 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes \
-            ccache \
-            cmake \
-            dpkg-dev \
-            file \
-            libasound2-dev \
-            libbson-dev \
-            libcurl4-openssl-dev \
-            libmp3lame-dev \
-            libprotobuf-dev \
-            libpthreadpool-dev \
-            libsasl2-dev \
-            libssl-dev \
-            libsystemd-dev \
-            libutf8proc-dev \
-            libuv1-dev \
-            ninja-build \
-            pkgconf \
-            protobuf-compiler \
-            util-linux \
-            uuid-dev
-
-      - name: Cache compiled dependencies
+      - name: Cache compiled Debian dependencies
         uses: actions/cache@v4
         with:
           path: |
             build/_deps
             externals/build
             externals/install
-            ~/.cache/ccache
-          key: linux-deps-${{ matrix.architecture }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'externals/**/CMakeLists.txt', 'build_oatpp.sh') }}
+            .ccache
+          key: trixie-deps-${{ matrix.architecture }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'externals/**/CMakeLists.txt', 'build_oatpp.sh') }}
 
-      - name: Build oatpp
-        run: ./build_oatpp.sh
+      - name: Create Debian Trixie build environment
+        env:
+          DEBIAN_ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes debootstrap
+          sudo debootstrap \
+            --arch="${DEBIAN_ARCHITECTURE}" \
+            --variant=minbase \
+            trixie \
+            "${TRIXIE_ROOT}" \
+            https://deb.debian.org/debian
+          sudo mkdir -p "${TRIXIE_ROOT}/workspace"
+          sudo mount --bind "${GITHUB_WORKSPACE}" "${TRIXIE_ROOT}/workspace"
 
-      - name: Configure
-        run: >-
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Install Debian Trixie build dependencies
+        run: |
+          sudo chroot "${TRIXIE_ROOT}" /usr/bin/env DEBIAN_FRONTEND=noninteractive \
+            apt-get update
+          sudo chroot "${TRIXIE_ROOT}" /usr/bin/env DEBIAN_FRONTEND=noninteractive \
+            apt-get install --yes --no-install-recommends \
+              build-essential \
+              ca-certificates \
+              ccache \
+              cmake \
+              dpkg-dev \
+              file \
+              git \
+              libasound2-dev \
+              libbson-dev \
+              libcurl4-openssl-dev \
+              libmp3lame-dev \
+              libprotobuf-dev \
+              libpthreadpool-dev \
+              libsasl2-dev \
+              libssl-dev \
+              libsystemd-dev \
+              libutf8proc-dev \
+              libuv1-dev \
+              ninja-build \
+              pkgconf \
+              protobuf-compiler \
+              util-linux \
+              uuid-dev
 
-      - name: Build
-        run: cmake --build build --parallel 4
+      - name: Build, test, and package on Debian Trixie
+        run: |
+          sudo chroot "${TRIXIE_ROOT}" /usr/bin/env \
+            BUILD_TYPE="${BUILD_TYPE}" \
+            CCACHE_DIR=/workspace/.ccache \
+            /bin/bash /workspace/.github/scripts/build-debian-package.sh
 
-      - name: Test
-        run: ./run_linux_tests.sh build
-
-      - name: Create Debian package with CPack
-        run: cpack --config build/CPackConfig.cmake -G DEB -B package
-
-      - name: Inspect package metadata
-        run: dpkg-deb --info package/*.deb
+      - name: Return workspace ownership and remove chroot mount
+        if: always()
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" \
+            "${GITHUB_WORKSPACE}/build" \
+            "${GITHUB_WORKSPACE}/externals" \
+            "${GITHUB_WORKSPACE}/.ccache" \
+            "${GITHUB_WORKSPACE}/package" 2>/dev/null || true
+          sudo umount "${TRIXIE_ROOT}/workspace" 2>/dev/null || true
 
       - name: Save artifact
         uses: actions/upload-artifact@v7
