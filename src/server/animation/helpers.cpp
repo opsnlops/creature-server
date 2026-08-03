@@ -16,6 +16,10 @@ namespace creatures {
 
 Result<creatures::Track> Database::parseTrackJson(json trackJson) { return trackFromJson(std::move(trackJson)); }
 
+Result<creatures::Animation> Database::parseAnimationJson(json animationJson) {
+    return animationFromJson(std::move(animationJson));
+}
+
 Result<creatures::Track> Database::trackFromJson(json trackJson) {
 
     debug("attempting to create a Track from JSON via trackFromJson()");
@@ -41,8 +45,11 @@ Result<creatures::Track> Database::trackFromJson(json trackJson) {
             return ServerError(ServerError::InvalidData, errorMessage);
         }
 
-        track.creature_id = trackJson.value("creature_id", "");
-        track.fixture_id = trackJson.value("fixture_id", "");
+        // Both are optional-but-exclusive, and both arrive as an explicit `null`
+        // when an animation is round-tripped through our own API — the DTO
+        // serializer emits unset Strings as nulls (#117).
+        track.creature_id = jsonStringOr(trackJson, "creature_id");
+        track.fixture_id = jsonStringOr(trackJson, "fixture_id");
         debug("creature_id: '{}', fixture_id: '{}'", track.creature_id, track.fixture_id);
 
         const bool hasCreature = !track.creature_id.empty();
@@ -87,10 +94,12 @@ Result<creatures::AnimationMetadata> Database::animationMetadataFromJson(json an
         metadata.number_of_frames = animationMetadataJson["number_of_frames"];
         debug("number_of_frames: {}", metadata.number_of_frames);
 
-        metadata.note = animationMetadataJson["note"];
+        // `note` isn't a required field, and neither it nor `sound_file` is
+        // guaranteed to be non-null on the way back in (#117).
+        metadata.note = jsonStringOr(animationMetadataJson, "note");
         debug("note: {}", metadata.note);
 
-        metadata.sound_file = animationMetadataJson["sound_file"];
+        metadata.sound_file = jsonStringOr(animationMetadataJson, "sound_file");
         debug("sound_file: {}", metadata.sound_file);
 
         metadata.multitrack_audio = animationMetadataJson["multitrack_audio"];

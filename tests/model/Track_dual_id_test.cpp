@@ -54,6 +54,38 @@ TEST(TrackDualIdTest, RejectsBothSet) {
     EXPECT_FALSE(result.isSuccess());
 }
 
+TEST(TrackDualIdTest, AcceptsCreatureIdWithNullFixtureId) {
+    // This is exactly what our own GET endpoint emits for a creature track: the
+    // unset field is serialized as an explicit null, not omitted (#117).
+    auto j = makeTrackJson();
+    j["creature_id"] = "creature-1";
+    j["fixture_id"] = nullptr;
+    auto result = Database::parseTrackJson(j);
+    ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError()->getMessage() : "parse failed");
+    const auto track = result.getValue().value();
+    EXPECT_EQ(track.creature_id, "creature-1");
+    EXPECT_TRUE(track.fixture_id.empty());
+}
+
+TEST(TrackDualIdTest, AcceptsFixtureIdWithNullCreatureId) {
+    auto j = makeTrackJson();
+    j["creature_id"] = nullptr;
+    j["fixture_id"] = "fixture-1";
+    auto result = Database::parseTrackJson(j);
+    ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError()->getMessage() : "parse failed");
+    const auto track = result.getValue().value();
+    EXPECT_EQ(track.fixture_id, "fixture-1");
+    EXPECT_TRUE(track.creature_id.empty());
+}
+
+TEST(TrackDualIdTest, RejectsBothNull) {
+    auto j = makeTrackJson();
+    j["creature_id"] = nullptr;
+    j["fixture_id"] = nullptr;
+    auto result = Database::parseTrackJson(j);
+    EXPECT_FALSE(result.isSuccess());
+}
+
 TEST(TrackDualIdTest, RejectsBothPresentButEmpty) {
     // Defensive: both fields explicitly present but empty strings — same as neither.
     auto j = makeTrackJson();
