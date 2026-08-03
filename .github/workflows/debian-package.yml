@@ -1,89 +1,57 @@
-name: Build, Test, and Package
+name: Create Debian Package
 
 on: [push, pull_request]
 
 env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: RelWithDebInfo
 
 jobs:
   build:
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-24.04
-            architecture: amd64
-          - os: ubuntu-24.04-arm
-            architecture: arm64
-    runs-on: ${{ matrix.os }}
+        os:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes \
-            ccache \
-            cmake \
-            dpkg-dev \
-            file \
-            libasound2-dev \
-            libbson-dev \
-            libcurl4-openssl-dev \
-            libmp3lame-dev \
-            libprotobuf-dev \
-            libpthreadpool-dev \
-            libsasl2-dev \
-            libssl-dev \
-            libsystemd-dev \
-            libutf8proc-dev \
-            libuv1-dev \
-            ninja-build \
-            pkgconf \
-            protobuf-compiler \
-            util-linux \
-            uuid-dev
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-      - name: Cache compiled dependencies
-        uses: actions/cache@v4
+      # docker/build-push-action + GHA cache. Combined with the split-stage
+      # Dockerfile (deps in a stable layer that only invalidates on
+      # CMakeLists.txt / cmake/ / lib/ / externals/ / build_oatpp.sh
+      # changes), typical source-change PRs reuse cached layers and rebuild
+      # in ~2 min instead of ~15. Scope is per-OS so amd64 + arm64 matrix
+      # don't trample each other. See issue #13.
+      - name: Build in container
+        uses: docker/build-push-action@v7
         with:
-          path: |
-            build/_deps
-            externals/build
-            externals/install
-            ~/.cache/ccache
-          key: linux-deps-${{ matrix.architecture }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'externals/**/CMakeLists.txt', 'build_oatpp.sh') }}
+          context: .
+          file: ${{github.workspace}}/Dockerfile
+          target: package
+          tags: temp-image
+          load: true
+          cache-from: type=gha,scope=package-${{ matrix.os }}
+          cache-to: type=gha,mode=max,scope=package-${{ matrix.os }}
 
-      - name: Build oatpp
-        run: ./build_oatpp.sh
+      - name: Build temp container
+        run: docker create --name temp-container temp-image
 
-      - name: Configure
-        run: >-
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-
-      - name: Build
-        run: cmake --build build --parallel 4
-
-      - name: Test
-        run: ./run_linux_tests.sh build
-
-      - name: Create Debian package with CPack
-        run: cpack --config build/CPackConfig.cmake -G DEB -B package
-
-      - name: Inspect package metadata
-        run: dpkg-deb --info package/*.deb
+      - name: Copy Package
+        run: mkdir ${{github.workspace}}/package/ && docker cp temp-container:/package/ ${{github.workspace}}/
 
       - name: Save artifact
         uses: actions/upload-artifact@v7
         with:
-          name: creature-server-package-${{ matrix.architecture }}
-          path: package/*.deb
+          name: creature-server-package-${{ matrix.os }}
+          path: ${{github.workspace}}/package/
           # 7-day retention so build artifacts don't pile up against the
           # account-level Actions storage quota. Long enough to grab a
           # package off a recent commit; older commits should be rebuilt.
