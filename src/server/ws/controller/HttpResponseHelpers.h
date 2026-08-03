@@ -59,13 +59,14 @@ inline oatpp::Object<StatusDto> buildStatusDto(int code, const std::string &mess
 template <typename Self> class HttpResponseHelpers {
   protected:
     using HttpStatus = oatpp::web::protocol::http::Status;
-    using OutgoingResponse = oatpp::web::protocol::http::outgoing::Response;
+    using HttpOutgoingResponse = oatpp::web::protocol::http::outgoing::Response;
 
     // Generic error-envelope helper. `statusStringOverride` is rarely needed
     // — defaultStatusForCode covers 404 → "not_found" and everything else.
     template <typename SpanT>
-    std::shared_ptr<OutgoingResponse> bailHttp(const SpanT &span, const HttpStatus &status, const std::string &message,
-                                               const char *statusStringOverride = nullptr) {
+    std::shared_ptr<HttpOutgoingResponse> bailHttp(const SpanT &span, const HttpStatus &status,
+                                                   const std::string &message,
+                                                   const char *statusStringOverride = nullptr) {
         auto dto = buildStatusDto(status.code, message, statusStringOverride);
         if (span)
             span->setHttpStatus(status.code);
@@ -77,7 +78,7 @@ template <typename Self> class HttpResponseHelpers {
     // mapping (NotFound→404, InvalidData→400, Conflict→409, Forbidden→403,
     // everything else→500).
     template <typename SpanT>
-    std::shared_ptr<OutgoingResponse> bailFromServerError(const SpanT &span, const creatures::ServerError &error) {
+    std::shared_ptr<HttpOutgoingResponse> bailFromServerError(const SpanT &span, const creatures::ServerError &error) {
         const int code = creatures::serverErrorToStatusCode(error.getCode());
         return bailHttp(span, HttpStatus(code, statusReasonForCode(code)), error.getMessage());
     }
@@ -86,8 +87,8 @@ template <typename Self> class HttpResponseHelpers {
     // value is "yes, it worked." Status code defaults to 200 but can be any
     // 2xx (e.g. 201 Created on a POST).
     template <typename SpanT>
-    std::shared_ptr<OutgoingResponse> okStatus(const SpanT &span, const HttpStatus &status,
-                                               const std::string &message) {
+    std::shared_ptr<HttpOutgoingResponse> okStatus(const SpanT &span, const HttpStatus &status,
+                                                   const std::string &message) {
         auto dto = buildStatusDto(status.code, message, STATUS_OK);
         if (span)
             span->setHttpStatus(status.code);
