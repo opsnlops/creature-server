@@ -34,7 +34,7 @@ class CooperativeAnimationScheduler {
      *    and audio load (issues #62/#63)
      * 3. Broadcasts the (reason, running) activity state
      * 4. Loads and decodes audio buffer if present
-     * 5. Creates appropriate AudioTransport (RTP or SDL)
+     * 5. Creates the appropriate RTP or native-local AudioTransport
      * 6. Sets up lifecycle callbacks (status lights, metrics)
      * 7. Schedules initial PlaybackRunnerEvent
      *
@@ -79,7 +79,7 @@ class CooperativeAnimationScheduler {
      * Create appropriate audio transport for the configuration
      *
      * @param session The playback session
-     * @return AudioTransport instance (RTP or SDL)
+     * @return RTP or native-local AudioTransport instance
      */
     static std::shared_ptr<class AudioTransport> createAudioTransport(std::shared_ptr<PlaybackSession> session);
 

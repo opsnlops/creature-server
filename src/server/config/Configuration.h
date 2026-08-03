@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 
 #include "server/config.h"
@@ -40,8 +41,14 @@ class Configuration {
     /** @return MongoDB connection URI string */
     std::string getMongoURI() const;
 
-    /** @return The sound device number to use */
-    uint8_t getSoundDevice() const;
+    /** @return Stable exact native output device name, if configured. */
+    std::optional<std::string> getSoundDeviceName() const;
+    float getDialogGainDb() const;
+    float getBgmGainDb() const;
+    float getLimiterCeilingDb() const;
+    std::optional<uint8_t> getOutputVolumePercent() const;
+    std::string getAlsaMixerCard() const;
+    std::string getAlsaMixerElement() const;
 
     /** @return Audio sampling frequency in Hz */
     uint32_t getSoundFrequency() const;
@@ -109,8 +116,13 @@ class Configuration {
     /** @param _mongoURI MongoDB connection URI */
     void setMongoURI(std::string _mongoURI);
 
-    /** @param _soundDevice Sound device number */
-    void setSoundDevice(uint8_t _soundDevice);
+    void setSoundDeviceName(std::string _soundDeviceName);
+    void setDialogGainDb(float _dialogGainDb);
+    void setBgmGainDb(float _bgmGainDb);
+    void setLimiterCeilingDb(float _limiterCeilingDb);
+    void setOutputVolumePercent(uint8_t _outputVolumePercent);
+    void setAlsaMixerCard(std::string _alsaMixerCard);
+    void setAlsaMixerElement(std::string _alsaMixerElement);
 
     /** @param _soundFrequency Audio sampling frequency in Hz */
     void setSoundFrequency(uint32_t _soundFrequency);
@@ -182,8 +194,14 @@ class Configuration {
 
     // Audio configuration
 
-    /** Sound device number for audio output */
-    uint8_t soundDevice = DEFAULT_SOUND_DEVICE_NUMBER;
+    /** Exact ALSA/CoreAudio device name. Empty selects the platform default. */
+    std::optional<std::string> soundDeviceName;
+    float dialogGainDb = DEFAULT_DIALOG_GAIN_DB;
+    float bgmGainDb = DEFAULT_BGM_GAIN_DB;
+    float limiterCeilingDb = DEFAULT_LIMITER_CEILING_DB;
+    std::optional<uint8_t> outputVolumePercent;
+    std::string alsaMixerCard = DEFAULT_ALSA_MIXER_CARD;
+    std::string alsaMixerElement = DEFAULT_ALSA_MIXER_ELEMENT;
 
     /** Audio sampling frequency in Hz */
     uint32_t soundFrequency = DEFAULT_SOUND_FREQUENCY;
@@ -195,9 +213,10 @@ class Configuration {
     std::string soundFileLocation = DEFAULT_SOUND_FILE_LOCATION;
 
     /** Audio mode for playback */
-    AudioMode audioMode = AudioMode::Local; ///< Default to local playback
+    /** Workshop/default mode is RTP; local output is an explicit or travel-mode opt-in. */
+    AudioMode audioMode = AudioMode::RTP;
 
-    /** Travel mode: server and controllers share one host; audio is downmixed to mono */
+    /** Travel mode: server and controllers share one Pi; local output is stereo */
     bool travelMode = DEFAULT_TRAVEL_MODE;
 
     /** Whether to fragment RTP packets for standard MTU networks (WiFi, etc.) */

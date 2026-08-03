@@ -924,7 +924,7 @@ constexpr uint32_t kDialogSampleRate = 48000;
 /// Subdirectory under the server's sound file location where permanent dialog
 /// scenes live. metadata.sound_file stores the relative path under this dir;
 /// playback layers prepend `getSoundFileLocation()` for any non-absolute path
-/// (see LocalSdlAudioTransport.cpp).
+/// (see DecodedAudioStream.cpp).
 constexpr const char *kPermanentDialogSubdir = "dialog";
 
 /// Maximum unique voice IDs per ElevenLabs Text-to-Dialogue submission. The

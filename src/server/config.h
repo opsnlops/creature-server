@@ -38,10 +38,20 @@
 #define SOUND_FILE_LOCATION_ENV "SOUND_FILE_LOCATION"
 #define DEFAULT_SOUND_FILE_LOCATION "sounds/"
 
-// The number of the sound device to use. The devices are enumerated when the
-// server starts, so use that number.
-#define SOUND_DEVICE_NUMBER_ENV "SOUND_DEVICE_NUMBER"
-#define DEFAULT_SOUND_DEVICE_NUMBER 0
+#define SOUND_DEVICE_NAME_ENV "SOUND_DEVICE_NAME"
+#define DEFAULT_SOUND_DEVICE_NAME ""
+
+#define DIALOG_GAIN_DB_ENV "DIALOG_GAIN_DB"
+#define DEFAULT_DIALOG_GAIN_DB 0.0
+#define BGM_GAIN_DB_ENV "BGM_GAIN_DB"
+#define DEFAULT_BGM_GAIN_DB 0.0
+#define LIMITER_CEILING_DB_ENV "LIMITER_CEILING_DB"
+#define DEFAULT_LIMITER_CEILING_DB -1.0
+#define OUTPUT_VOLUME_PERCENT_ENV "OUTPUT_VOLUME_PERCENT"
+#define ALSA_MIXER_CARD_ENV "ALSA_MIXER_CARD"
+#define DEFAULT_ALSA_MIXER_CARD "default"
+#define ALSA_MIXER_ELEMENT_ENV "ALSA_MIXER_ELEMENT"
+#define DEFAULT_ALSA_MIXER_ELEMENT ""
 
 #define SOUND_FREQUENCY_ENV "SOUND_FREQUENCY"
 #define DEFAULT_SOUND_FREQUENCY 48000
@@ -50,10 +60,10 @@
 #define DEFAULT_SOUND_CHANNELS 6
 
 #define AUDIO_MODE_ENV "AUDIO_MODE"
-// The default is defined in the Configuration class
+#define DEFAULT_AUDIO_MODE "rtp"
 
-// Travel mode: server + controllers all on one host. Forces local audio with a
-// mono downmix and keeps sACN multicast on-host (TTL 0).
+// Travel mode: server + controllers all on one Pi. Forces stereo local audio
+// and keeps sACN multicast on-host (TTL 0).
 #define TRAVEL_MODE_ENV "TRAVEL_MODE"
 #define DEFAULT_TRAVEL_MODE 0
 

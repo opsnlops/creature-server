@@ -48,7 +48,7 @@ Audio model:
 - Per-creature RTP channel is fixed from Creature.audio_channel; clients already listen per-creature + BGM.
 - Sessions reset SSRC only for channels they own (per-session); multiple sessions can stream concurrently on distinct channels.
 - BGM is global last-writer-wins; ad-hoc animations do not touch BGM.
-- SDL path unchanged; scoped to the session.
+- Local/travel playback uses the single-owner native ALSA/CoreAudio service and is scoped to the session.
 
 DMX/runner model:
 - One runner per active session (single or joint). Joint session runner owns tracks for all involved creatures and uses shared clock.

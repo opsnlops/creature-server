@@ -1,7 +1,9 @@
 #include "LocalAudioPlaybackCoordinator.h"
 
 #include <algorithm>
+#include <cctype>
 #include <exception>
+#include <filesystem>
 #include <stdexcept>
 #include <string_view>
 #include <typeinfo>
@@ -49,7 +51,28 @@ std::shared_ptr<OperationSpan> startPlaybackSpan(const LocalAudioPlaybackCoordin
     span->setAttribute("audio.local.job_id", job.id);
     span->setAttribute("audio.local.source", job.source);
     span->setAttribute("audio.local.mode", job.mode);
+    if (!job.backend.empty()) {
+        span->setAttribute("audio.local.backend", job.backend);
+    }
+    if (!job.deviceName.empty()) {
+        span->setAttribute("audio.device.name", job.deviceName);
+    }
+    if (job.outputSampleRate > 0) {
+        span->setAttribute("audio.output.sample_rate_hz", static_cast<int64_t>(job.outputSampleRate));
+    }
+    if (job.outputChannels > 0) {
+        span->setAttribute("audio.output.channels", static_cast<int64_t>(job.outputChannels));
+    }
     span->setAttribute("audio.file.name", job.fileName);
+    std::string fileFormat = std::filesystem::path(job.fileName).extension().string();
+    if (!fileFormat.empty() && fileFormat.front() == '.') {
+        fileFormat.erase(fileFormat.begin());
+    }
+    std::transform(fileFormat.begin(), fileFormat.end(), fileFormat.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (!fileFormat.empty()) {
+        span->setAttribute("audio.file.format", fileFormat);
+    }
     span->setAttribute("audio.local.queue_capacity", static_cast<int64_t>(1));
     span->setAttribute("audio.local.queue_wait_ms", queueWaitMs);
     if (!job.sessionId.empty()) {
@@ -92,6 +115,13 @@ void finishPlaybackSpan(const std::shared_ptr<OperationSpan> &span,
 
     span->setAttribute("audio.local.outcome", LocalAudioPlaybackCoordinator::outcomeName(result.outcome));
     span->setAttribute("audio.local.playback_duration_ms", playbackDurationMs);
+    span->setAttribute("audio.output.underruns", static_cast<int64_t>(result.deviceUnderruns));
+    if (result.sourceFrames > 0) {
+        span->setAttribute("audio.source.frames", static_cast<int64_t>(result.sourceFrames));
+    }
+    if (result.decodedFrames > 0) {
+        span->setAttribute("audio.decoded.frames", static_cast<int64_t>(result.decodedFrames));
+    }
     if (!result.stopReason.empty()) {
         span->setAttribute("audio.local.stop_reason", result.stopReason);
     }

@@ -11,6 +11,12 @@
 
 namespace creatures::audio {
 
+struct DownmixConfig {
+    float dialogGainDb{0.0F};
+    float bgmGainDb{0.0F};
+    float limiterCeilingDb{0.0F};
+};
+
 /**
  * A WAV file rendered down to a single mono channel
  */
@@ -22,13 +28,13 @@ struct MonoWav {
 /**
  * Bounded-memory reader for signed 16-bit PCM WAV files.
  *
- * The reader keeps only the caller-requested chunk in memory and downmixes it
- * directly to mono. Travel mode uses this instead of SDL_LoadWAV so a long
- * 17-channel file does not need to fit in the Raspberry Pi's RAM.
+ * The reader keeps only the caller-requested chunk in memory. It supports raw
+ * interleaved reads, mono export, and bounded-memory local-output mixes, so
+ * a long 17-channel file does not need to fit in the Raspberry Pi's RAM.
  */
 class MonoWavStream {
   public:
-    static Result<std::shared_ptr<MonoWavStream>> open(const std::string &filePath);
+    static Result<std::shared_ptr<MonoWavStream>> open(const std::string &filePath, DownmixConfig downmixConfig = {});
 
     /**
      * Read and downmix up to output.size() sample frames.
@@ -36,6 +42,28 @@ class MonoWavStream {
      * @return number of mono samples written; zero means end of file
      */
     Result<size_t> readMonoFrames(std::span<int16_t> output);
+
+    /**
+     * Render travel audio as interleaved stereo.
+     *
+     * For the workshop's 17-channel format, dialog lanes 1 and 2 route to
+     * output channels 1 and 2 respectively. BGM lane 17 is added equally to
+     * both outputs. Mono WAVs are duplicated; other multichannel WAVs preserve
+     * their first two lanes.
+     */
+    Result<size_t> readTravelStereoFrames(std::span<int16_t> interleavedStereoOutput);
+
+    /**
+     * Render WAV audio to the configured native output channel count.
+     *
+     * A 17-channel workshop WAV routes dialog lanes to their matching output
+     * lanes and adds BGM lane 17 equally to every dialog output. Mono input is
+     * duplicated; ordinary multichannel input preserves matching lanes.
+     */
+    Result<size_t> readLocalOutputFrames(std::span<int16_t> interleavedOutput, uint16_t outputChannels);
+
+    /** Read interleaved PCM frames without downmixing. */
+    Result<size_t> readInterleavedFrames(std::span<int16_t> output);
 
     [[nodiscard]] int sampleRate() const { return sampleRate_; }
     [[nodiscard]] uint16_t channels() const { return channels_; }
@@ -51,6 +79,10 @@ class MonoWavStream {
     uint64_t totalFrames_{0};
     uint64_t dataBytesRemaining_{0};
     std::vector<uint8_t> sourceBuffer_;
+    std::vector<int16_t> interleavedBuffer_;
+    float dialogGainLinear_{1.0F};
+    float bgmGainLinear_{1.0F};
+    float limiterCeilingLinear_{1.0F};
 };
 
 /**

@@ -80,9 +80,6 @@ class MusicEvent : public EventBase<MusicEvent> {
                                              std::shared_ptr<class OperationSpan> parentSpan = nullptr,
                                              const std::string &triggerTraceId = {},
                                              const std::string &triggerSpanId = {});
-    static int initSDL();
-    static int locateAudioDevice();
-    static void listAudioDevices();
 
   private:
     std::string filePath;
@@ -91,7 +88,7 @@ class MusicEvent : public EventBase<MusicEvent> {
     std::string triggerSpanId_;
 
     /**
-     * Play audio locally through SDL (traditional mode)
+     * Play audio locally through the native platform backend
      * @param parentSpan Optional observability span for tracing
      */
     Result<framenum_t> playLocalAudio(std::shared_ptr<class OperationSpan> parentSpan = nullptr);

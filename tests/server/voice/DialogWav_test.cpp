@@ -220,7 +220,7 @@ TEST_F(DialogWavTest, EmbedsIxmlProvenanceChunkAfterData) {
     const uint32_t dataBytes = 4u * 17 * 2;
 
     // Audio is untouched: the data chunk size and its payload are unchanged, so
-    // every SDL/readWavInfo consumer still reads exactly the same samples.
+    // every PCM WAV/readWavInfo consumer still reads exactly the same samples.
     ASSERT_TRUE(std::memcmp(&bytes[36], "data", 4) == 0);
     EXPECT_EQ(readU32LE(bytes, 40), dataBytes);
 

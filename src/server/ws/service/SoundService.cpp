@@ -501,8 +501,6 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
 
         const bool rtpMode = config->getAudioMode() == Configuration::AudioMode::RTP;
         const bool travelMode = config->getTravelMode();
-        OATPP_ASSERT_HTTP(!travelMode || extension == ".wav", Status::CODE_400,
-                          "Travel mode local playback requires a WAV file");
         if (serviceSpan) {
             serviceSpan->setAttribute("audio.store", resolvedSound->fromPermanentStore ? "permanent" : "ad_hoc");
             serviceSpan->setAttribute("audio.file.size", static_cast<int64_t>(fileSize));

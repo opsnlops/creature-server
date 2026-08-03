@@ -14,10 +14,10 @@
 #include <thread>
 #include <unordered_map>
 
-#include <SDL2/SDL.h>
 #include <spdlog/spdlog.h>
 
 #include "AudioStreamBuffer.h"
+#include "server/audio/MonoWavDownmixer.h"
 #include "server/rtp/opus/OpusPriming.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
@@ -132,37 +132,25 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
-    SDL_AudioSpec spec{};
-    Uint8 *raw = nullptr;
-    Uint32 len = 0;
-
     debug("Loading WAV file: {}", audioFilePath);
 
-    // SDL_LoadWAV returns nullptr on failure
-    if (!SDL_LoadWAV(audioFilePath.c_str(), &spec, &raw, &len)) {
-        const auto errorMsg = fmt::format("SDL failed to load WAV file '{}': {}", audioFilePath, SDL_GetError());
+    auto wavResult = audio::MonoWavStream::open(audioFilePath);
+    if (!wavResult.isSuccess()) {
+        const auto errorMsg = wavResult.getError()->getMessage();
         if (span) {
             span->setError(errorMsg);
         }
         error(errorMsg);
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
-
-    // RAII wrapper to ensure SDL memory gets freed
-    struct SDLWavGuard {
-        Uint8 *data;
-        ~SDLWavGuard() {
-            if (data)
-                SDL_FreeWAV(data);
-        }
-    } guard{raw};
+    const auto wav = wavResult.getValue().value();
 
     // Validate audio format
-    if (spec.freq != RTP_SRATE || spec.format != AUDIO_S16 || spec.channels != RTP_STREAMING_CHANNELS) {
-        const auto errorMsg = fmt::format("WAV file format not supported: {}, {} Hz, {} ch, format 0x{:X} "
-                                          "(expected {} Hz, {} ch, format 0x{:X})",
-                                          audioFilePath, spec.freq, spec.channels, spec.format, RTP_SRATE,
-                                          RTP_STREAMING_CHANNELS, AUDIO_S16);
+    if (wav->sampleRate() != RTP_SRATE || wav->channels() != RTP_STREAMING_CHANNELS) {
+        const auto errorMsg =
+            fmt::format("WAV file format not supported: {}, {} Hz, {} channels "
+                        "(expected {} Hz, {} channels, signed 16-bit PCM)",
+                        audioFilePath, wav->sampleRate(), wav->channels(), RTP_SRATE, RTP_STREAMING_CHANNELS);
         error(errorMsg);
         if (span) {
             span->setError(errorMsg);
@@ -171,7 +159,7 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
     }
 
     // Calculate frame counts with overflow protection
-    if (len == 0) {
+    if (wav->totalFrames() == 0) {
         const auto errorMsg = fmt::format("WAV file has zero length: {}", audioFilePath);
         error(errorMsg);
         if (span) {
@@ -180,7 +168,23 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
-    const auto totalSamples = static_cast<size_t>(len) / sizeof(int16_t);
+    if (wav->totalFrames() > SIZE_MAX / RTP_STREAMING_CHANNELS) {
+        const auto errorMsg = fmt::format("WAV file sample count overflows address space: {}", audioFilePath);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
+    const auto totalSamples = static_cast<size_t>(wav->totalFrames()) * RTP_STREAMING_CHANNELS;
+    constexpr size_t MAX_RTP_PCM_BYTES = 512ULL * 1024ULL * 1024ULL;
+    if (totalSamples > MAX_RTP_PCM_BYTES / sizeof(int16_t)) {
+        const auto errorMsg =
+            fmt::format("WAV file decoded PCM exceeds {} byte RTP load limit: {}", MAX_RTP_PCM_BYTES, audioFilePath);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
 
     // Validate divisor to prevent division by zero
     const auto samplesPerFrame = static_cast<uint64_t>(RTP_STREAMING_CHANNELS) * RTP_SAMPLES;
@@ -228,7 +232,38 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
-    debug("WAV file loaded: {} total samples, {} frames per channel", totalSamples, numberOfFramesPerChannel_);
+    const size_t sampleFramesToEncode = numberOfFramesPerChannel_ * RTP_SAMPLES;
+    const size_t samplesToEncode = sampleFramesToEncode * RTP_STREAMING_CHANNELS;
+    debug("WAV file loaded: {} declared samples, {} samples used for {} frames per channel", totalSamples,
+          samplesToEncode, numberOfFramesPerChannel_);
+
+    std::vector<int16_t> pcmSamples(samplesToEncode);
+    size_t sampleFramesRead = 0;
+    while (sampleFramesRead < sampleFramesToEncode) {
+        const size_t framesRemaining = sampleFramesToEncode - sampleFramesRead;
+        const size_t framesRequested = std::min<size_t>(4096, framesRemaining);
+        auto readResult = wav->readInterleavedFrames(
+            std::span<int16_t>(pcmSamples)
+                .subspan(sampleFramesRead * RTP_STREAMING_CHANNELS, framesRequested * RTP_STREAMING_CHANNELS));
+        if (!readResult.isSuccess()) {
+            if (span) {
+                span->setError(readResult.getError()->getMessage());
+            }
+            return Result<size_t>{readResult.getError().value()};
+        }
+        const size_t framesRead = readResult.getValue().value();
+        if (framesRead == 0) {
+            break;
+        }
+        sampleFramesRead += framesRead;
+    }
+    if (sampleFramesRead < sampleFramesToEncode) {
+        const auto errorMsg = fmt::format("WAV file '{}' ended before its declared sample data", audioFilePath);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
+    }
 
     // Prepare for Opus encoding
     debug("Encoding {} frames to Opus", numberOfFramesPerChannel_);
@@ -239,7 +274,7 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
             frameVector.resize(numberOfFramesPerChannel_);
         }
 
-        const int16_t *pcm = reinterpret_cast<const int16_t *>(raw);
+        const int16_t *pcm = pcmSamples.data();
 
         // Encode all 17 channels in parallel — each channel is independent
         // with its own Opus encoder state, so this is trivially parallelizable.

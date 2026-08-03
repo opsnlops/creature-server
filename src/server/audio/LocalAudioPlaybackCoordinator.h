@@ -15,11 +15,11 @@
 namespace creatures::audio {
 
 /**
- * Single-worker coordinator for the process-global SDL audio device.
+ * Single-worker coordinator for the process-global native audio device.
  *
- * SDL and SDL_mixer device lifecycle is process-global in this application.
+ * NativeAudioPlaybackService owns one ALSA/CoreAudio device for the process.
  * Both animation transports and the ad-hoc sound endpoint submit here so only
- * one owner can open, play, and close the configured device at a time.
+ * one playback request drives it at a time.
  *
  * Submission is last-request-wins and never waits for playback: the active
  * request is asked to stop, the single pending slot is replaced, and the sole
@@ -43,6 +43,9 @@ class LocalAudioPlaybackCoordinator {
         std::string errorMessage;
         std::string stopReason;
         std::exception_ptr exception;
+        uint64_t sourceFrames{0};
+        uint64_t decodedFrames{0};
+        uint64_t deviceUnderruns{0};
     };
 
     struct Stats {
@@ -63,6 +66,10 @@ class LocalAudioPlaybackCoordinator {
         std::string id;
         std::string source;
         std::string mode;
+        std::string backend;
+        std::string deviceName;
+        uint32_t outputSampleRate{0};
+        uint16_t outputChannels{0};
         std::string fileName;
         std::string sessionId;
         std::string animationId;

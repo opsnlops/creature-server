@@ -1,15 +1,8 @@
 #!/usr/bin/env bash
 
-docker pull opsnlops/creature-server:arm64
+set -euo pipefail
 
-CONTAINER_ID=$(docker run -d --rm -p6666:6666 \
-	--name creature-server \
-	-v /local/sounds:/app/sounds \
-	--device /dev/snd \
-	--device /dev/gpiomem \
-	--env SOUND_FILE_LOCATION="/app/sounds" \
-	--env SOUND_DEVICE_NUMBER=0 \
-	--env SOUND_CHANNELS=6 \
-	opsnlops/creature-server:arm64)
+SERVER_BINARY=${CREATURE_SERVER_BINARY:-/usr/bin/creature-server}
+export SOUND_FILE_LOCATION=${SOUND_FILE_LOCATION:-/local/sounds}
 
-docker logs -f $CONTAINER_ID
+exec "${SERVER_BINARY}" "$@"
