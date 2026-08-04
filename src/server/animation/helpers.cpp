@@ -114,6 +114,32 @@ Result<creatures::AnimationMetadata> Database::animationMetadataFromJson(json an
         // Animation claiming descent from a fake script, or attach a 100 MB
         // CoW blob — security review C1. Enforce the same bounds the
         // DialogScript validator uses.
+        // Stage provenance (#119). All optional — animations rendered before
+        // stages existed simply don't carry it. Validated as strictly as the
+        // script provenance above, and for the same reason: this parser is
+        // reachable from the user-facing /api/v1/animation upsert.
+        if (animationMetadataJson.contains("source_stage_id") && !animationMetadataJson["source_stage_id"].is_null()) {
+            if (!animationMetadataJson["source_stage_id"].is_string()) {
+                std::string errorMessage = "AnimationMetadata 'source_stage_id' must be a string";
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            const auto stageId = animationMetadataJson["source_stage_id"].get<std::string>();
+            if (!stageId.empty() && !isUuidShape(stageId)) {
+                std::string errorMessage = "AnimationMetadata 'source_stage_id' must be a UUID";
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            metadata.source_stage_id = stageId;
+        }
+        if (animationMetadataJson.contains("source_stage_updated_at") &&
+            animationMetadataJson["source_stage_updated_at"].is_number_integer()) {
+            metadata.source_stage_updated_at = animationMetadataJson["source_stage_updated_at"].get<int64_t>();
+        }
+        if (animationMetadataJson.contains("render_seed") && animationMetadataJson["render_seed"].is_number_integer()) {
+            metadata.render_seed = animationMetadataJson["render_seed"].get<uint64_t>();
+        }
+
         if (animationMetadataJson.contains("source_script_id") &&
             !animationMetadataJson["source_script_id"].is_null()) {
             if (!animationMetadataJson["source_script_id"].is_string()) {

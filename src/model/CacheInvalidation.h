@@ -21,6 +21,7 @@ enum class CacheType {
     Fixture,
     DialogScriptList,
     StoryboardList,
+    StageList,
     Unknown,
 };
 

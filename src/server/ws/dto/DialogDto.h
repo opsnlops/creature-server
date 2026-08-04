@@ -78,6 +78,15 @@ class DialogRequestDto : public oatpp::DTO {
     }
     DTO_FIELD(String, title);
 
+    DTO_FIELD_INFO(stage_id) {
+        info->description = "Optional Stage UUID. Binds this render to a physical arrangement so creatures aim "
+                            "their heads at whoever is speaking. Overrides the script's own stage_id when both are "
+                            "set. Omit for no head aiming — the rendered frames are then identical to a pre-#119 "
+                            "render.";
+        info->required = false;
+    }
+    DTO_FIELD(String, stage_id);
+
     DTO_FIELD_INFO(generation_id) {
         info->description = "Optional: use a specific cached generation (from a prior /preview call) instead of "
                             "calling ElevenLabs again. If unset, the server auto-reuses the latest cached generation "

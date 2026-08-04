@@ -35,7 +35,7 @@ struct CreatureTrackInput {
     std::string creatureId;
 
     /// Full stored creature JSON (motors[], inputs[], mouth_slot, ...). The
-    /// neutral-frame builder reads motors[] + inputs[] + mouth_slot from here.
+    /// track builder reads mouth_slot from here.
     nlohmann::json creatureJson;
 
     /// Base body-motion frames, already loaded from the DB and base64-decoded.
@@ -48,8 +48,28 @@ struct CreatureTrackInput {
     /// Length must equal the scene's total frame count. Used both as the byte
     /// written into the frame's mouth_slot AND as the "is speaking at frame f"
     /// predicate — any non-zero entry means this creature is being voiced at
-    /// that frame and gets base body motion; zero entries → neutral pose.
+    /// that frame and gets base body motion; zero entries → idle.
     std::vector<uint8_t> mouthBytes;
+
+    /// Frames of the creature's chosen idle animation, cycled while it is
+    /// silent (#119). Optional: empty means "freeze on baseFrames[0]", the
+    /// pre-#119 behavior. Must be the same width as `baseFrames` — the
+    /// builder checks and falls back to freezing if it isn't.
+    std::vector<std::vector<uint8_t>> idleFrames;
+
+    /// Random starting phase into `idleFrames`, so two creatures that drew
+    /// the same idle animation don't loop in lockstep.
+    std::size_t idleStartOffset{0};
+
+    /// Per-frame head-aiming bytes from GazeTrack (#119), and the slots they
+    /// belong in. All empty when no stage was bound to the render, in which
+    /// case the produced frames are byte-identical to the pre-#119 output.
+    std::vector<uint8_t> gazePanBytes;
+    std::vector<uint8_t> gazeElevationBytes;
+    std::vector<uint8_t> gazeCockBytes;
+    std::size_t gazePanSlot{0};
+    std::size_t gazeElevationSlot{0};
+    std::size_t gazeCockSlot{0};
 };
 
 /// Build the multi-creature Animation for a finished dialog scene.

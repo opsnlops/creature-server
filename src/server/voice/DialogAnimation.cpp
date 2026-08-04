@@ -204,8 +204,23 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
         // Resolve mouth_slot from the creature JSON. The shared builder
         // bounds-checks against the frame width and skips the write if out
         // of range — the canonical Beaky-chest defensive guard (3.14.4 fix).
+        // Prefer the degree-of-freedom reference (#120): if the config names
+        // the input driving the mouth, resolve its slot from inputs[]. The
+        // raw mouth_slot number is the fallback for configs that predate it.
         std::size_t mouthSlot = std::numeric_limits<std::size_t>::max();
-        if (input.creatureJson.contains("mouth_slot") && input.creatureJson["mouth_slot"].is_number()) {
+        if (input.creatureJson.contains("mouth_input") && input.creatureJson["mouth_input"].is_string() &&
+            input.creatureJson.contains("inputs") && input.creatureJson["inputs"].is_array()) {
+            const auto wanted = input.creatureJson["mouth_input"].get<std::string>();
+            for (const auto &inputJson : input.creatureJson["inputs"]) {
+                if (inputJson.is_object() && inputJson.value("name", std::string{}) == wanted &&
+                    inputJson.contains("slot") && inputJson["slot"].is_number()) {
+                    mouthSlot = inputJson["slot"].get<std::size_t>();
+                    break;
+                }
+            }
+        }
+        if (mouthSlot == std::numeric_limits<std::size_t>::max() && input.creatureJson.contains("mouth_slot") &&
+            input.creatureJson["mouth_slot"].is_number()) {
             mouthSlot = input.creatureJson["mouth_slot"].get<std::size_t>();
         }
 
@@ -229,10 +244,10 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
 
         // Build the per-creature track via the shared builder (issue #15).
         // dialogIdleMode + kBodyTailFrames carry the dialog-specific behavior:
-        // silent frames freeze on baseFrames[0] (the speech-loop's idle pose,
-        // not a re-derived neutral — see 3.15.3) and each speaking run
-        // extends forward by kBodyTailFrames so the body doesn't snap to
-        // neutral the instant a turn ends.
+        // each speaking run extends forward by kBodyTailFrames so the body
+        // doesn't snap the instant a turn ends, and silent frames cycle the
+        // creature's idle loop (#119) — or, when it has none, freeze on
+        // baseFrames[0] exactly as they did before (3.15.3).
         SpeechTrackInput trackInput;
         trackInput.baseFrames = input.baseFrames;
         trackInput.mouthBytes = input.mouthBytes;
@@ -240,16 +255,25 @@ Result<Animation> buildDialogAnimation(const DialogAssembled &assembled,
         trackInput.totalFrames = totalFrames;
         trackInput.creatureId = input.creatureId;
         trackInput.animationId = animation.id;
+        trackInput.gazePanBytes = input.gazePanBytes;
+        trackInput.gazeElevationBytes = input.gazeElevationBytes;
+        trackInput.gazeCockBytes = input.gazeCockBytes;
+        trackInput.gazePanSlot = input.gazePanSlot;
+        trackInput.gazeElevationSlot = input.gazeElevationSlot;
+        trackInput.gazeCockSlot = input.gazeCockSlot;
         SpeechTrackOptions trackOptions;
         trackOptions.dialogIdleMode = true;
         trackOptions.bodyTailFrames = kBodyTailFrames;
+        trackOptions.idleFrames = input.idleFrames;
+        trackOptions.idleStartOffset = input.idleStartOffset;
         auto trackResult = buildSpeechTrack(trackInput, trackOptions, span);
         if (!trackResult.isSuccess()) {
             return Result<Animation>{trackResult.getError().value()};
         }
-        debug("buildDialogAnimation: creature '{}' (voice '{}'): {} total frames, {} speaking, {} silent",
+        debug("buildDialogAnimation: creature '{}' (voice '{}'): {} total frames, {} speaking, {} silent ({})",
               input.creatureId, input.voiceId, totalFrames, trackResult.getValue()->speakingFrameCount,
-              totalFrames - trackResult.getValue()->speakingFrameCount);
+              totalFrames - trackResult.getValue()->speakingFrameCount,
+              trackResult.getValue()->idleFramesUsed ? "cycling idle loop" : "frozen on baseFrames[0]");
 
         animation.tracks.push_back(std::move(trackResult.getValue()->track));
     }

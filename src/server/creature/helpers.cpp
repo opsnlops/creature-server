@@ -1,6 +1,9 @@
 
+#include <algorithm>
+#include <optional>
 #include <string>
 
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <mongocxx/pool.hpp>
@@ -156,24 +159,6 @@ Result<creatures::Creature> Database::creatureFromJson(json creatureJson, std::s
             debug("Parsed {} idle animation IDs", creature.idle_animation_ids.size());
         }
 
-        if (creature.id.empty()) {
-            std::string errorMessage = "Creature ID is empty";
-            warn(errorMessage);
-            span->setError(errorMessage);
-            span->setAttribute("error.type", "InvalidData");
-            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
-        }
-
-        if (creature.name.empty()) {
-            std::string errorMessage = "Creature name is empty";
-            warn(errorMessage);
-            span->setError(errorMessage);
-            span->setAttribute("error.type", "InvalidData");
-            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
-        }
-
         // Check and parse inputs
         if (creatureJson.contains("inputs")) {
             for (const auto &inputJson : creatureJson["inputs"]) {
@@ -239,6 +224,143 @@ Result<creatures::Creature> Database::creatureFromJson(json creatureJson, std::s
         } else {
             warn("No inputs for {} found in JSON", creature.name);
             // Don't fail, this isn't fatal
+        }
+
+        // mouth_input (#120): the degree-of-freedom style reference to the
+        // axis lip-sync drives. Optional; when absent the raw mouth_slot is
+        // used, so existing configs are unaffected.
+        if (creatureJson.contains("mouth_input") && !creatureJson["mouth_input"].is_null()) {
+            if (!creatureJson["mouth_input"].is_string()) {
+                std::string errorMessage = "'mouth_input' must be a string naming one of this creature's inputs";
+                warn(errorMessage);
+                span->setError(errorMessage);
+                span->setAttribute("error.type", "InvalidData");
+                return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            creature.mouth_input = creatureJson["mouth_input"].get<std::string>();
+            if (!creature.mouth_input.empty() &&
+                !creatures::inputSlotByName(creature, creature.mouth_input).has_value()) {
+                std::string errorMessage = fmt::format(
+                    "'mouth_input' names '{}', which is not one of this creature's inputs", creature.mouth_input);
+                warn(errorMessage);
+                span->setError(errorMessage);
+                span->setAttribute("error.type", "InvalidData");
+                return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+        }
+
+        // Gaze axes (#119). Optional, and they MUST stay optional: the
+        // controller's JSON file is the source of truth and is only re-read at
+        // registration, so making this required would break every existing
+        // controller at boot.
+        //
+        // Each axis names an entry in `inputs` rather than repeating its slot,
+        // because input layouts differ between creature families. We verify
+        // the name resolves here, at parse time, so a typo is a 400 on upload
+        // rather than a silently-dead axis discovered on stage.
+        if (creatureJson.contains("gaze") && !creatureJson["gaze"].is_null()) {
+            const auto &gazeJson = creatureJson["gaze"];
+            if (!gazeJson.is_object()) {
+                std::string errorMessage = "'gaze' must be an object";
+                warn(errorMessage);
+                span->setError(errorMessage);
+                span->setAttribute("error.type", "InvalidData");
+                return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+
+            auto parseGazeAxis = [&](const char *axisName,
+                                     std::optional<creatures::GazeAxis> &target) -> std::optional<std::string> {
+                if (!gazeJson.contains(axisName) || gazeJson[axisName].is_null()) {
+                    return std::nullopt;
+                }
+                const auto &axisJson = gazeJson[axisName];
+                if (!axisJson.is_object()) {
+                    return fmt::format("'gaze.{}' must be an object", axisName);
+                }
+                if (!axisJson.contains("input") || !axisJson["input"].is_string()) {
+                    return fmt::format("'gaze.{}' requires a string 'input' naming one of this creature's inputs",
+                                       axisName);
+                }
+                creatures::GazeAxis axis{};
+                axis.input = axisJson["input"].get<std::string>();
+                if (axis.input.empty()) {
+                    return fmt::format("'gaze.{}.input' is empty", axisName);
+                }
+
+                // The whole point of naming the input instead of numbering a
+                // slot: catch the mismatch now, while we can say what's wrong.
+                const auto matchingInput =
+                    std::find_if(creature.inputs.begin(), creature.inputs.end(),
+                                 [&](const creatures::Input &i) { return i.name == axis.input; });
+                if (matchingInput == creature.inputs.end()) {
+                    std::string known;
+                    for (const auto &i : creature.inputs) {
+                        known += known.empty() ? i.name : ", " + i.name;
+                    }
+                    return fmt::format("'gaze.{}.input' names '{}', which is not one of this creature's inputs ({})",
+                                       axisName, axis.input, known.empty() ? "none defined" : known);
+                }
+
+                for (const char *required : {"degrees_at_min", "degrees_at_max"}) {
+                    if (!axisJson.contains(required) || !axisJson[required].is_number()) {
+                        return fmt::format("'gaze.{}' requires a numeric '{}'", axisName, required);
+                    }
+                }
+                axis.degrees_at_min = axisJson["degrees_at_min"].get<float>();
+                axis.degrees_at_max = axisJson["degrees_at_max"].get<float>();
+                if (axis.degrees_at_min == axis.degrees_at_max) {
+                    return fmt::format("'gaze.{}' has degrees_at_min == degrees_at_max (the axis has no range)",
+                                       axisName);
+                }
+
+                if (axisJson.contains("listening_amount") && !axisJson["listening_amount"].is_null()) {
+                    if (!axisJson["listening_amount"].is_number()) {
+                        return fmt::format("'gaze.{}.listening_amount' must be a number", axisName);
+                    }
+                    axis.listening_amount = axisJson["listening_amount"].get<float>();
+                    if (axis.listening_amount < 0.0f || axis.listening_amount > 1.0f) {
+                        return fmt::format("'gaze.{}.listening_amount' must be between 0 and 1", axisName);
+                    }
+                }
+
+                target = axis;
+                return std::nullopt;
+            };
+
+            creatures::GazeConfig gaze;
+            for (const auto &[axisName, target] :
+                 std::initializer_list<std::pair<const char *, std::optional<creatures::GazeAxis> *>>{
+                     {"pan", &gaze.pan}, {"elevation", &gaze.elevation}, {"cock", &gaze.cock}}) {
+                if (auto axisError = parseGazeAxis(axisName, *target)) {
+                    warn(*axisError);
+                    span->setError(*axisError);
+                    span->setAttribute("error.type", "InvalidData");
+                    return Result<creatures::Creature>{ServerError(ServerError::InvalidData, *axisError)};
+                }
+            }
+            if (gaze.pan || gaze.elevation || gaze.cock) {
+                creature.gaze = gaze;
+                debug("Gaze axes: pan={}, elevation={}, cock={}", gaze.pan.has_value(), gaze.elevation.has_value(),
+                      gaze.cock.has_value());
+            }
+        }
+
+        if (creature.id.empty()) {
+            std::string errorMessage = "Creature ID is empty";
+            warn(errorMessage);
+            span->setError(errorMessage);
+            span->setAttribute("error.type", "InvalidData");
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
+
+        if (creature.name.empty()) {
+            std::string errorMessage = "Creature name is empty";
+            warn(errorMessage);
+            span->setError(errorMessage);
+            span->setAttribute("error.type", "InvalidData");
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+            return Result<creatures::Creature>{ServerError(ServerError::InvalidData, errorMessage)};
         }
 
         debug("✅ Successfully created creature from JSON: id='{}', name='{}', audio_channel={}, channel_offset={}, "

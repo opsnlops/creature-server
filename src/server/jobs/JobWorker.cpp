@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include "model/Animation.h"
+#include "model/Stage.h"
 #include "server/animation/SessionManager.h"
 #include "server/audio/MonoWavDownmixer.h"
 #include "server/config.h"
@@ -31,6 +32,7 @@
 #include "server/voice/DialogPipeline.h"
 #include "server/voice/DialogPreviewAssembly.h"
 #include "server/voice/DialogWav.h"
+#include "server/voice/GazeTrack.h"
 #include "server/voice/IxmlReader.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/MusicClient.h"
@@ -546,8 +548,8 @@ void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
 
         auto rhubarbData = RhubarbSoundData::fromJsonString(lipSyncResult.getValue().value());
 
-        auto trackResult = processor.replaceAxisDataWithSoundData(rhubarbData, creature.mouth_slot, track,
-                                                                  animation.metadata.milliseconds_per_frame);
+        auto trackResult = processor.replaceAxisDataWithSoundData(rhubarbData, creatures::resolvedMouthSlot(creature),
+                                                                  track, animation.metadata.milliseconds_per_frame);
         if (!trackResult.isSuccess()) {
             failJob(trackResult.getError()->getMessage());
             return;
@@ -955,7 +957,7 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         voice::SpeechTrackInput trackInput;
         trackInput.baseFrames = resolved.baseFrames;
         trackInput.mouthBytes = mouthData;
-        trackInput.mouthSlot = creature.mouth_slot;
+        trackInput.mouthSlot = creatures::resolvedMouthSlot(creature);
         trackInput.totalFrames = targetFrames;
         trackInput.creatureId = creatureId;
         trackInput.animationId = adHocAnimation.id;
@@ -1191,9 +1193,16 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     std::string title = reqDto->title ? std::string(*reqDto->title) : std::string{};
     const std::string requestedGenerationId =
         reqDto->generation_id ? std::string(*reqDto->generation_id) : std::string{};
+    // Stage binding (#119): the request wins over the script's own stage_id,
+    // which is how you render a travel version of a mainstage scene.
+    std::string stageId = reqDto->stage_id ? std::string(*reqDto->stage_id) : std::string{};
     if (title.empty()) {
         title = fmt::format("Dialog {}", jobState.jobId);
     }
+    // Remembered so the stage suffix can be appended once the stage is loaded
+    // — a mainstage and a travel rendition of one script otherwise look
+    // identical in the console's animation list.
+    const std::string baseTitle = title;
 
     if (jobState.span) {
         jobState.span->setAttribute("dialog.turns", static_cast<int64_t>(rawTurns.size()));
@@ -1634,7 +1643,18 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     std::vector<voice::CreatureTrackInput> creatureInputs;
     creatureInputs.reserve(assembled.perCreature.size());
 
-    std::mt19937 rng(static_cast<uint32_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
+    // Every random choice below — which speech loop and idle animation each
+    // creature draws, the idle start phases, and each creature's gaze reaction
+    // timing — derives from this one seed, which gets stamped into the
+    // animation's metadata (#119).
+    //
+    // That's what makes a stage re-render trustworthy: replay with the same
+    // seed against a moved stage and ONLY the gaze bytes change. Without it,
+    // nudging one creature would reshuffle everyone's idle animation and you
+    // could never see what your edit actually did.
+    const uint64_t renderSeed =
+        static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    std::mt19937 rng(static_cast<uint32_t>(renderSeed));
 
     for (const auto &pc : assembled.perCreature) {
         const DialogJobCreature *cinfo = nullptr;
@@ -1695,6 +1715,61 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                 fmt::format("creature '{}': base anim {} track has zero frames", cinfo->creatureId, chosenId));
         }
 
+        // ---- Idle loop for this creature's silent stretches (#119) --------
+        // Entirely best-effort: every failure path below just leaves
+        // idleFrames empty, and buildSpeechTrack falls back to freezing on
+        // baseFrames[0] — the pre-#119 behavior. A creature that can't idle
+        // must never fail the render.
+        std::vector<std::vector<uint8_t>> idleFrames;
+        std::size_t idleStartOffset = 0;
+        if (cinfo->creatureJson.contains("idle_animation_ids") &&
+            cinfo->creatureJson["idle_animation_ids"].is_array() &&
+            !cinfo->creatureJson["idle_animation_ids"].empty()) {
+
+            const auto idleIds = cinfo->creatureJson["idle_animation_ids"].get<std::vector<std::string>>();
+            std::uniform_int_distribution<std::size_t> idleDist(0, idleIds.size() - 1);
+            const auto idleChosenId = idleIds[idleDist(rng)];
+
+            auto idleAnimResult = creatures::db->getAnimation(idleChosenId, jobState.span);
+            if (!idleAnimResult.isSuccess()) {
+                warn("creature '{}': idle anim {} failed to load ({}); freezing during silence instead",
+                     cinfo->creatureId, idleChosenId, idleAnimResult.getError().value().getMessage());
+            } else {
+                const auto idleAnim = idleAnimResult.getValue().value();
+                auto idleTrackIt = std::find_if(idleAnim.tracks.begin(), idleAnim.tracks.end(),
+                                                [&](const Track &t) { return t.creature_id == cinfo->creatureId; });
+
+                if (idleAnim.metadata.milliseconds_per_frame != *msPerFrame) {
+                    // Cycling it anyway would play the idle loop at the wrong
+                    // speed. Same guard the speech loop gets, but non-fatal.
+                    warn("creature '{}': idle anim {} is {} ms/frame but the scene is {}; freezing during silence "
+                         "instead",
+                         cinfo->creatureId, idleChosenId, idleAnim.metadata.milliseconds_per_frame, *msPerFrame);
+                } else if (idleTrackIt == idleAnim.tracks.end()) {
+                    warn("creature '{}': idle anim {} has no track for this creature; freezing during silence instead",
+                         cinfo->creatureId, idleChosenId);
+                } else {
+                    for (const auto &ef : idleTrackIt->frames) {
+                        idleFrames.push_back(decodeBase64(ef));
+                    }
+                    if (idleFrames.empty() || idleFrames.front().size() != baseFrames.front().size()) {
+                        warn("creature '{}': idle anim {} frames unusable ({} frames, width {} vs speech width {}); "
+                             "freezing during silence instead",
+                             cinfo->creatureId, idleChosenId, idleFrames.size(),
+                             idleFrames.empty() ? 0 : idleFrames.front().size(), baseFrames.front().size());
+                        idleFrames.clear();
+                    } else {
+                        // Random phase so two creatures that drew the same
+                        // idle animation don't loop in lockstep.
+                        std::uniform_int_distribution<std::size_t> phaseDist(0, idleFrames.size() - 1);
+                        idleStartOffset = phaseDist(rng);
+                        debug("creature '{}': idling on anim {} ({} frames) from phase {} during silence",
+                              cinfo->creatureId, idleChosenId, idleFrames.size(), idleStartOffset);
+                    }
+                }
+            }
+        }
+
         RhubarbSoundData snd;
         snd.metadata.duration = static_cast<double>(showTimelineSamples) / static_cast<double>(assembled.sampleRate);
         snd.metadata.soundFile = wavPath.filename().string();
@@ -1707,11 +1782,102 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         cti.creatureJson = cinfo->creatureJson;
         cti.baseFrames = std::move(baseFrames);
         cti.mouthBytes = std::move(mouthBytes);
+        cti.idleFrames = std::move(idleFrames);
+        cti.idleStartOffset = idleStartOffset;
         creatureInputs.push_back(std::move(cti));
     }
     if (!msPerFrame) {
         return failJob("post-assembly: msPerFrame not set (no creatures had usable base animations)");
     }
+
+    // ---- Head aiming (#119) ------------------------------------------------
+    // Entirely optional and entirely best-effort: without a stage, or with a
+    // stage that doesn't place these creatures, every gaze stream stays empty
+    // and the rendered frames are byte-identical to a pre-#119 render.
+    creatures::Stage renderStage;
+    bool haveStage = false;
+    if (!stageId.empty()) {
+        auto stageResult = creatures::db->getStage(stageId, jobState.span);
+        if (!stageResult.isSuccess()) {
+            // A dangling stage id shouldn't cost you the whole render — the
+            // dialog is expensive and the head aiming is a garnish.
+            warn("Dialog job {}: stage {} could not be loaded ({}); rendering without head aiming", jobState.jobId,
+                 stageId, stageResult.getError().value().getMessage());
+        } else {
+            renderStage = stageResult.getValue().value();
+            haveStage = true;
+            if (!renderStage.title.empty()) {
+                title = fmt::format("{} — {}", baseTitle, renderStage.title);
+            }
+        }
+    }
+
+    if (haveStage) {
+        const auto placements = creatures::stagePlacements(renderStage);
+
+        // Resolve every creature in the scene that this stage actually places.
+        std::vector<voice::GazeGeometry> geometries;
+        std::unordered_map<std::string, std::size_t> geometryByCreature;
+        for (const auto &placement : placements) {
+            auto creatureResult = creatures::db->getCreature(placement.creature_id, jobState.span);
+            if (!creatureResult.isSuccess() || !creatureResult.getValue().has_value()) {
+                warn("Dialog job {}: stage {} places unknown creature {}; skipping it", jobState.jobId, stageId,
+                     placement.creature_id);
+                continue;
+            }
+            auto geometry = voice::resolveGazeGeometry(creatureResult.getValue().value(), placement);
+            geometryByCreature.emplace(placement.creature_id, geometries.size());
+            geometries.push_back(std::move(geometry));
+        }
+
+        // Who holds the floor when, derived from the same mouth-byte streams
+        // the tracks are built from. Merge gaps up to the body tail so
+        // between-word silence doesn't shred a turn into dozens of spans.
+        std::vector<std::string> timelineIds;
+        std::vector<std::span<const uint8_t>> timelineMouths;
+        timelineIds.reserve(creatureInputs.size());
+        timelineMouths.reserve(creatureInputs.size());
+        for (const auto &cti : creatureInputs) {
+            timelineIds.push_back(cti.creatureId);
+            timelineMouths.emplace_back(cti.mouthBytes);
+        }
+        const std::size_t gapTolerance = std::max<std::size_t>(1, 400 / std::max<uint32_t>(1, *msPerFrame));
+        const auto timeline = voice::buildSpeakerTimeline(timelineIds, timelineMouths, totalFrames, gapTolerance);
+
+        std::size_t aimedCreatures = 0;
+        for (auto &cti : creatureInputs) {
+            auto it = geometryByCreature.find(cti.creatureId);
+            if (it == geometryByCreature.end()) {
+                continue; // not placed on this stage; it just won't look around
+            }
+            // Per-creature rng stream. Seeded off the shared generator so the
+            // whole render stays reproducible from one seed, but drawn per
+            // creature so each gets independent reaction timing — which is the
+            // entire point of the jitter model.
+            std::mt19937 gazeRng(static_cast<uint32_t>(rng()));
+            auto gaze =
+                voice::buildGazeTrack(geometries[it->second], geometries, timeline, totalFrames, *msPerFrame, gazeRng);
+            if (gaze.empty()) {
+                continue; // creature has no gaze config
+            }
+            cti.gazePanBytes = std::move(gaze.panBytes);
+            cti.gazeElevationBytes = std::move(gaze.elevationBytes);
+            cti.gazeCockBytes = std::move(gaze.cockBytes);
+            cti.gazePanSlot = gaze.panSlot;
+            cti.gazeElevationSlot = gaze.elevationSlot;
+            cti.gazeCockSlot = gaze.cockSlot;
+            ++aimedCreatures;
+        }
+
+        info("Dialog job {}: stage '{}' aimed {} of {} creatures over {} speaker spans", jobState.jobId,
+             renderStage.title, aimedCreatures, creatureInputs.size(), timeline.size());
+        if (jobState.span) {
+            jobState.span->setAttribute("dialog.stage_id", stageId);
+            jobState.span->setAttribute("dialog.stage_title", renderStage.title);
+            jobState.span->setAttribute("dialog.aimed_creatures", static_cast<int64_t>(aimedCreatures));
+        }
+    }
+
     updateProgress(0.85f);
 
     // ---- Re-render dedupe: if this scene is being rendered FROM a script and
@@ -1722,7 +1888,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // each render is conceptually a fresh take.
     std::string existingAnimationId;
     if (!sourceScriptId.empty() && persistence == DialogPersistence::Permanent) {
-        auto lookup = creatures::db->findAnimationIdBySourceScriptId(sourceScriptId, jobState.span);
+        auto lookup = creatures::db->findAnimationIdBySourceScriptId(sourceScriptId, stageId, jobState.span);
         if (lookup.isSuccess() && lookup.getValue().value().has_value()) {
             existingAnimationId = lookup.getValue().value().value();
             info("Dialog job {}: re-rendering existing animation {} for script {}", jobState.jobId, existingAnimationId,
@@ -1757,6 +1923,20 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         animation.metadata.source_script_id = sourceScriptId;
         if (jobState.span) {
             jobState.span->setAttribute("animation.source_script_id", sourceScriptId);
+        }
+    }
+
+    // Stage provenance (#119). The seed is stamped unconditionally — it
+    // describes how THIS render was produced whether or not a stage was
+    // involved. The stage pointer and its updated_at only when one was bound;
+    // together they answer "is this animation stale?" with a comparison
+    // instead of a diff.
+    animation.metadata.render_seed = renderSeed;
+    if (haveStage) {
+        animation.metadata.source_stage_id = renderStage.id;
+        animation.metadata.source_stage_updated_at = renderStage.updated_at;
+        if (jobState.span) {
+            jobState.span->setAttribute("animation.source_stage_id", renderStage.id);
         }
     }
 

@@ -13,6 +13,7 @@
 #include "model/DialogScript.h"
 #include "model/DmxFixture.h"
 #include "model/Playlist.h"
+#include "model/Stage.h"
 #include "model/Storyboard.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
@@ -164,6 +165,13 @@ struct StoragePath {
 // deleteStoryboard + CacheType::StoryboardList
 [[nodiscard]] Result<void> deleteStoryboard(const storyboardId_t &storyboardId,
                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// upsertStage + CacheType::StageList
+[[nodiscard]] Result<creatures::Stage> publishStage(const std::string &stageJson,
+                                                    std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// deleteStage + CacheType::StageList
+[[nodiscard]] Result<void> deleteStage(const stageId_t &stageId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
 // deleteAnimation + CacheType::Animation. (publishAnimation /
 // republishAnimation already exist for the write side from the original

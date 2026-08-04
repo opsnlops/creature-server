@@ -43,16 +43,38 @@ struct ResolvedSpeechBase {
     uint32_t baseMsPerFrame{0};
 };
 
-// Loads + resolves the base frames a speech track will cycle. RNG comes in
-// by reference so tests can pin the choice with a seeded generator;
+// Which per-creature animation list a resolve call is drawing from. Only
+// affects error-message wording and span attributes — the resolve/decode/
+// validate work is identical for both.
+enum class LoopKind {
+    Speech, // Creature::speech_loop_animation_ids
+    Idle,   // Creature::idle_animation_ids
+};
+
+// The shared resolver: pick one id at random from `animationIds`, load it,
+// find the creature's track, decode the base64 frames, validate widths. RNG
+// comes in by reference so tests can pin the choice with a seeded generator;
 // production callers thread their existing rng through unchanged.
 //
-// Returns InvalidData on: empty speech_loop_animation_ids, base animation
-// missing the creature's track, empty frames, inconsistent frame widths.
-// DatabaseError if the DB lookup itself fails.
+// Returns InvalidData on: empty animationIds, animation missing the creature's
+// track, empty frames, inconsistent frame widths. DatabaseError if the DB
+// lookup itself fails.
+Result<ResolvedSpeechBase> resolveLoopFrames(const creatures::Creature &creature,
+                                             const std::vector<std::string> &animationIds, LoopKind kind,
+                                             creatures::Database &db, std::mt19937 &rng,
+                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// Loads + resolves the base frames a speech track will cycle.
 Result<ResolvedSpeechBase> resolveSpeechBaseFrames(const creatures::Creature &creature, creatures::Database &db,
                                                    std::mt19937 &rng,
                                                    std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// Same, for the idle loop a listening creature cycles during silence (#119).
+// Callers treat failure as non-fatal: the track falls back to freezing on
+// baseFrames[0], which is exactly the pre-#119 behavior.
+Result<ResolvedSpeechBase> resolveIdleBaseFrames(const creatures::Creature &creature, creatures::Database &db,
+                                                 std::mt19937 &rng,
+                                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
 // =============================================================================
 // buildSpeechTrack — assemble the per-creature Track from decoded base frames
@@ -84,6 +106,19 @@ struct SpeechTrackInput {
     // Stamped onto the resulting Track.
     std::string creatureId;
     std::string animationId;
+
+    // ---- Head-look layer (#119) -----------------------------------------
+    // Per-frame servo bytes for the creature's head axes, produced by
+    // GazeTrack. Written LAST, over whatever the body loop put in those
+    // slots — the loops carry absolute positions, so adding an offset would
+    // clip. Empty (the default) leaves both slots entirely alone, which is
+    // what a render with no stage bound produces.
+    std::span<const uint8_t> gazePanBytes{};
+    std::span<const uint8_t> gazeElevationBytes{};
+    std::span<const uint8_t> gazeCockBytes{};
+    std::size_t gazePanSlot{0};
+    std::size_t gazeElevationSlot{0};
+    std::size_t gazeCockSlot{0};
 };
 
 struct SpeechTrackOptions {
@@ -103,6 +138,34 @@ struct SpeechTrackOptions {
     // 0 disables the tail (silent immediately after the last non-zero mouth
     // byte). Ignored when dialogIdleMode is false.
     std::size_t bodyTailFrames{0};
+
+    // ---- Idle loop during silence (#119) --------------------------------
+    // Frames of the creature's chosen idle animation, cycled during silent
+    // stretches instead of freezing on baseFrames[0]. Empty (the default)
+    // reproduces the pre-#119 freeze exactly, byte for byte — every fallback
+    // in the resolver funnels here, so a missing or malformed idle animation
+    // degrades to old behavior rather than failing the render.
+    //
+    // Must be the same frame width as baseFrames; the caller validates that
+    // and passes an empty span if it doesn't hold.
+    std::span<const std::vector<uint8_t>> idleFrames{};
+
+    // Starting phase into idleFrames. Randomized per creature so that two
+    // creatures who happen to draw the SAME idle animation don't loop in
+    // lockstep — which reads as broken rather than as idle.
+    std::size_t idleStartOffset{0};
+
+    // Byte-wise linear blend applied across each speech<->idle transition, so
+    // the body eases between the two loops instead of snapping. 0 disables.
+    // Ignored when idleFrames is empty.
+    std::size_t crossfadeFrames{10};
+
+    // Value forced at mouthSlot on silent frames, but ONLY when idleFrames is
+    // in use. An idle animation is authored to play standalone and may move
+    // the beak; under someone else's voice that reads as silent mouthing. The
+    // frozen-baseFrames[0] fallback deliberately does NOT get this treatment —
+    // that frame is the authoritative rest pose, mouth value included.
+    std::uint8_t mouthRestByte{0};
 };
 
 struct SpeechTrackResult {
@@ -121,6 +184,17 @@ struct SpeechTrackResult {
     // False → mouthSlot was out of range for the frame width; mouth bytes
     // were silently dropped. Caller may want to surface this on a span.
     bool mouthSlotInRange{true};
+
+    // True → silent frames cycled an idle loop; false → they froze on
+    // baseFrames[0] (either because no idle animation resolved, or because
+    // this isn't dialogIdleMode). For span attributes and debug logs.
+    bool idleFramesUsed{false};
+
+    // True → gaze bytes were actually written for that axis. False can mean
+    // "no stage bound", "creature has no such axis", or "slot out of range".
+    bool gazePanApplied{false};
+    bool gazeElevationApplied{false};
+    bool gazeCockApplied{false};
 };
 
 // The shared inner loop. Cycles base frames + (when in range) writes mouth

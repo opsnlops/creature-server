@@ -120,6 +120,20 @@ Result<creatures::DialogScript> Database::dialogScriptFromJson(json scriptJson,
             script.turns.push_back(std::move(turn));
         }
 
+        // stage_id (#119): optional pointer to the physical arrangement this
+        // script is normally rendered against. Not validated against the
+        // stages collection here — a script may legitimately outlive a stage,
+        // and the render path handles a dangling id by skipping head aiming.
+        if (scriptJson.contains("stage_id") && !scriptJson["stage_id"].is_null()) {
+            if (!scriptJson["stage_id"].is_string()) {
+                return invalidScriptData<DialogScript>(span, "Dialog script 'stage_id' must be a string");
+            }
+            script.stage_id = scriptJson["stage_id"].get<std::string>();
+            if (!script.stage_id.empty() && !isUuidShape(script.stage_id)) {
+                return invalidScriptData<DialogScript>(span, "Dialog script 'stage_id' is not a UUID");
+            }
+        }
+
         if (scriptJson.contains("background_music") && !scriptJson["background_music"].is_null()) {
             const auto &musicJson = scriptJson["background_music"];
             if (!musicJson.is_object()) {

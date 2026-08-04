@@ -1137,6 +1137,34 @@ CreatureService::validateCreatureConfig(const std::string &jsonCreature, std::sh
     auto creature = creatureResult.getValue().value();
     resultDto->creature_id = creature.id.c_str();
 
+    // Degree-of-freedom sanity: the mouth reference has to actually point at
+    // the beak (issue #120). The slot NUMBER is meaningless on its own and
+    // differs per creature; what matters is the link. A mismatch means the
+    // viseme stream is driving whatever axis happens to sit at that slot —
+    // body_lean, head_height — instead of the beak, so the bird's mouth never
+    // moves and something else twitches in time with the words.
+    if (const auto matches = creatures::mouthSlotMatchesBeak(creature); matches.has_value() && !*matches) {
+        const auto beakSlot = creatures::inputSlotByName(creature, "beak");
+        const auto effectiveSlot = creatures::resolvedMouthSlot(creature);
+        std::string atThatSlot = "nothing";
+        for (const auto &input : creature.inputs) {
+            if (input.slot == effectiveSlot) {
+                atThatSlot = input.name;
+                break;
+            }
+        }
+        auto message = fmt::format(
+            "mouth points at slot {} ('{}') but this creature's beak is at slot {}. Lip sync will drive '{}' "
+            "instead of the beak. Set \"mouth_input\": \"beak\", or correct mouth_slot to {}.",
+            effectiveSlot, atThatSlot, *beakSlot, atThatSlot, *beakSlot);
+        warn("Creature '{}': {}", creature.name, message);
+        resultDto->valid = false;
+        resultDto->error_messages->push_back(message.c_str());
+        if (span) {
+            span->setAttribute("creature.mouth_slot_matches_beak", false);
+        }
+    }
+
     auto checkAnimations = [&](const std::vector<std::string> &ids) {
         for (const auto &animationId : ids) {
             if (animationId.empty()) {

@@ -457,6 +457,7 @@ file(GLOB serverFiles CONFIGURE_DEPENDS
         src/server/metrics/*
         src/server/playlist/*
         src/server/script/*
+        src/server/stage/*
         src/server/storage/*
         src/server/storyboard/*
         src/server/voice/*
@@ -822,12 +823,16 @@ add_executable(creature-server-test
         src/model/Input.cpp
         src/model/StreamFrame.cpp
         src/model/VirtualStatusLights.cpp
+        src/model/Stage.cpp
         src/model/Storyboard.cpp
         src/util/Slugify.cpp
         src/util/Sha256.cpp
         src/server/creature/helpers.cpp
         src/server/fixture/helpers.cpp
         src/server/animation/helpers.cpp
+        tests/server/voice/GazeTrack_test.cpp
+        src/server/voice/GazeTrack.cpp
+        src/server/stage/helpers.cpp
         src/server/storyboard/helpers.cpp
         src/server/ws/service/CreatureService.cpp
         src/server/ws/dto/websocket/MessageTypes.cpp

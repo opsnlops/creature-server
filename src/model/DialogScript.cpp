@@ -87,6 +87,9 @@ nlohmann::json dialogScriptToJson(const DialogScript &script) {
     j["notes"] = script.notes;
     j["created_at"] = script.created_at;
     j["updated_at"] = script.updated_at;
+    if (!script.stage_id.empty()) {
+        j["stage_id"] = script.stage_id;
+    }
     if (script.background_music) {
         j["background_music"] = {{"sound_file", script.background_music->sound_file},
                                  {"generation_id", script.background_music->generation_id},

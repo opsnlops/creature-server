@@ -34,6 +34,7 @@ using json = nlohmann::json;
 #include "model/DmxFixture.h"
 #include "model/Playlist.h"
 #include "model/SortBy.h"
+#include "model/Stage.h"
 #include "model/Storyboard.h"
 #include "model/Track.h"
 #include "server/namespace-stuffs.h"
@@ -126,6 +127,24 @@ class Database {
     Result<void> deleteAnimation(const animationId_t &animationId,
                                  const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
+    /// One animation rendered against a stage, and whether the stage has been
+    /// edited since (#119). Enough for the console to say "5 animations, 3 out
+    /// of date" without pulling the (large) track blobs.
+    struct StageAnimationRef {
+        std::string animation_id;
+        std::string title;
+        std::string source_script_id;
+        int64_t source_stage_updated_at{0};
+        bool stale{false};
+    };
+
+    /// Every animation rendered against `stageId`, newest stage-stamp first.
+    /// `stageUpdatedAt` is the stage's CURRENT updated_at; anything rendered
+    /// against an older stamp is flagged stale.
+    Result<std::vector<StageAnimationRef>>
+    listAnimationsBySourceStageId(const std::string &stageId, int64_t stageUpdatedAt,
+                                  const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+
     /// Find an existing permanent Animation rendered from the given DialogScript
     /// (matches on metadata.source_script_id). Returns the matching animation_id
     /// in the optional, or an empty optional if nothing is rendered for this
@@ -134,7 +153,7 @@ class Database {
     /// accumulating duplicates (3.15.4+). Only searches the permanent
     /// collection — adhoc renders are TTL'd and don't dedupe.
     Result<std::optional<animationId_t>>
-    findAnimationIdBySourceScriptId(const std::string &scriptId,
+    findAnimationIdBySourceScriptId(const std::string &scriptId, const std::string &stageId,
                                     const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
     Result<std::string> playStoredAnimation(const animationId_t &animationId, universe_t universe,
                                             const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
@@ -201,6 +220,19 @@ class Database {
     listStoryboards(const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
     Result<creatures::Storyboard> upsertStoryboard(const std::string &storyboardJson,
                                                    const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    // Stage stuff — where each creature sits and which way it faces (#119).
+    // Geometry the server reads (creature_id/x/y/z/yaw) is validated; the
+    // console-owned extras ride along opaque. See model/Stage.h.
+    Result<creatures::Stage> getStage(const stageId_t &stageId,
+                                      const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<std::vector<creatures::Stage>> listStages(const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<creatures::Stage> upsertStage(const std::string &stageJson,
+                                         const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<void> deleteStage(const stageId_t &stageId, const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+
+    /// Parse + validate a Stage JSON document without persisting.
+    static Result<creatures::Stage> parseStageJson(json stageJson, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
     Result<void> deleteStoryboard(const storyboardId_t &storyboardId,
                                   const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
@@ -282,6 +314,8 @@ class Database {
 
     static Result<creatures::DialogScript> dialogScriptFromJson(json scriptJson,
                                                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    static Result<creatures::Stage> stageFromJson(json stageJson, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     static Result<creatures::Storyboard> storyboardFromJson(json storyboardJson,
                                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);

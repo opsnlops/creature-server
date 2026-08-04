@@ -181,4 +181,18 @@ Result<void> Database::deleteStoryboard(const storyboardId_t & /*storyboardId*/,
     return Result<void>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
 }
 
+Result<creatures::Stage> Database::upsertStage(const std::string & /*stageJson*/,
+                                               const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
+    if (g_pretendSuccess)
+        return Result<creatures::Stage>{creatures::Stage{}};
+    return Result<creatures::Stage>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
+}
+
+Result<void> Database::deleteStage(const stageId_t & /*stageId*/,
+                                   const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
+    if (g_pretendSuccess)
+        return Result<void>{};
+    return Result<void>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
+}
+
 } // namespace creatures

@@ -269,6 +269,16 @@ Result<creatures::Storyboard> publishStoryboard(const std::string &storyboardJso
         CacheType::StoryboardList);
 }
 
+Result<creatures::Stage> publishStage(const std::string &stageJson, std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "publishStage", [&] { return creatures::db->upsertStage(stageJson, parentSpan); }, CacheType::StageList);
+}
+
+Result<void> deleteStage(const stageId_t &stageId, std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "deleteStage", [&] { return creatures::db->deleteStage(stageId, parentSpan); }, CacheType::StageList);
+}
+
 Result<void> deleteStoryboard(const storyboardId_t &storyboardId, std::shared_ptr<OperationSpan> parentSpan) {
     return runPublisher(
         "deleteStoryboard", [&] { return creatures::db->deleteStoryboard(storyboardId, parentSpan); },

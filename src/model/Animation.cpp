@@ -60,6 +60,13 @@ nlohmann::json animationToJson(const Animation &animation) {
     if (!animation.metadata.source_script_id.empty()) {
         metadata["source_script_id"] = animation.metadata.source_script_id;
     }
+    if (!animation.metadata.source_stage_id.empty()) {
+        metadata["source_stage_id"] = animation.metadata.source_stage_id;
+        metadata["source_stage_updated_at"] = animation.metadata.source_stage_updated_at;
+    }
+    if (animation.metadata.render_seed != 0) {
+        metadata["render_seed"] = animation.metadata.render_seed;
+    }
     if (!animation.metadata.source_script_turns.empty()) {
         nlohmann::json turns = nlohmann::json::array();
         for (const auto &t : animation.metadata.source_script_turns) {
