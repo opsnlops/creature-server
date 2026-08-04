@@ -587,9 +587,15 @@ Deleting a stage leaves its animations intact and re-renderable from their
 | 4 — the gaze layer | **done** |
 | 5 — binding a stage to a render | **done** |
 | 6 — provenance, staleness, discovery | **done** |
-| 6 — motion-only re-render execution | **not started** |
+| 6 — motion-only re-render execution | **done** |
 
-416 tests pass. `VERSION.txt` bumped to 3.36.0.
+All server-side parts are complete. 416 tests pass, zero project warnings,
+`VERSION.txt` at 3.37.0.
+
+**Nothing aims yet.** The feature is inert until the `gaze` blocks carry
+measured degrees and a stage exists with real perch heights — see "Calibration
+is still outstanding" below. The Console also can't author a stage yet
+(opsnlops/creature-console#67).
 
 ### Changed from the original plan
 
@@ -637,17 +643,31 @@ general principle now has support in code: `inputSlotByName`,
 `resolvedMouthSlot` (new optional `mouth_input`), and `mouthSlotMatchesBeak`,
 with `POST /api/v1/creature/validate` failing loudly on a mismatch.
 
-### What remains
+### The re-render, as built
 
-The motion-only re-render **execution** — `POST /api/v1/stage/{id}/rerender`,
-`POST /api/v1/animation/{id}/rerender`, and the `handleStageRerenderJob` that
-recovers mouth bytes via `parseIxmlLipsync` (falling back to scraping
-`mouth_slot`) and rebuilds tracks against the new stage. Everything it depends
-on is in place: `render_seed`, `source_stage_id` / `source_stage_updated_at`,
-the `(script, stage)` reuse key, and `GET /api/v1/stage/{id}/animations` to
-find the affected set.
+`JobType::StageRerender` / `handleStageRerenderJob`, reached through
+`POST /api/v1/stage/{id}/rerender` (optionally `{"stale_only": true}`) and
+`POST /api/v1/animation/{id}/rerender` (optionally `{"stage_id": "..."}`).
+Both return 202 with a job id.
 
-The hard constraint stands: that job must never call ElevenLabs.
+It never calls ElevenLabs. Mouth bytes come back out of the rendered WAV's
+iXML LIPSYNC block, mapped to creatures by `audio_channel`, falling back to
+scraping the existing track's mouth slot. **The fallback has a caveat:** a
+creature that froze on its speech loop's first frame carries that frame's
+mouth value through every silent frame, so scraping can mistake silence for
+speech if the loop author left the beak open. iXML is authoritative.
+
+`render_seed` turned out to be insufficient on its own, so
+`metadata.source_render_choices` was added — which speech loop and idle
+animation each creature drew, plus its idle phase. Replaying the seed alone
+would have required consuming the rng in exactly the original order, and would
+have picked differently if a creature gained an animation since. Recording the
+resolved choices makes body motion reproduce by construction, so a stage edit
+provably changes only the head aiming.
+
+Per-animation re-render OVERWRITES in place. To keep both a mainstage and a
+travel rendition, render the script twice with different `stage_id`s — the
+`(script, stage)` key makes those coexist.
 
 ### Calibration is still outstanding
 
