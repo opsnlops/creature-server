@@ -108,6 +108,19 @@ class JobWorker : public creatures::StoppableThread {
      */
     void handleDialogJob(JobState &jobState);
 
+    /// Rebuild existing dialog animations' motion against a changed Stage.
+    ///
+    /// MOTION ONLY: this job must never call ElevenLabs. eleven_v3 is
+    /// nondeterministic and exposes no seed, so regenerating audio for a
+    /// geometry change would produce a different performance — the show would
+    /// change because someone nudged a perch. The existing WAV is reused
+    /// untouched; only the animation's tracks are rebuilt.
+    ///
+    /// Details payload: {"animation_ids": ["..."], "stage_id": "..."}.
+    /// An empty stage_id re-renders each animation against its own recorded
+    /// source_stage_id.
+    void handleStageRerenderJob(JobState &jobState);
+
     /**
      * Generate (or load) a dialog preview take and return its metadata.
      *

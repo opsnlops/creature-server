@@ -11,6 +11,16 @@
 
 namespace creatures {
 
+/// One creature's resolved loop choices for a single render (#119).
+struct CreatureRenderChoice {
+    std::string creature_id;
+    std::string speech_loop_animation_id;
+    std::string idle_animation_id; // empty when the creature had none usable
+    uint32_t idle_start_offset{0};
+
+    bool operator==(const CreatureRenderChoice &) const = default;
+};
+
 struct AnimationMetadata {
     std::string animation_id;
     std::string title;
@@ -44,6 +54,16 @@ struct AnimationMetadata {
     // Without it, every creature would reshuffle its idle animation too and
     // you could never see what your edit actually did.
     uint64_t render_seed{0};
+
+    /// Which loops each creature actually drew at render time (#119).
+    ///
+    /// The seed alone isn't enough to reproduce these: replaying it would
+    /// require the re-render to consume the rng in exactly the same order as
+    /// the original, and would silently pick differently if a creature gained
+    /// an animation in its config since. Recording the resolved choices makes
+    /// a re-render reproduce the same body motion by construction, so a stage
+    /// edit provably changes only the head aiming.
+    std::vector<CreatureRenderChoice> source_render_choices;
 };
 
 #include OATPP_CODEGEN_BEGIN(DTO)

@@ -67,6 +67,16 @@ nlohmann::json animationToJson(const Animation &animation) {
     if (animation.metadata.render_seed != 0) {
         metadata["render_seed"] = animation.metadata.render_seed;
     }
+    if (!animation.metadata.source_render_choices.empty()) {
+        nlohmann::json choices = nlohmann::json::array();
+        for (const auto &choice : animation.metadata.source_render_choices) {
+            choices.push_back({{"creature_id", choice.creature_id},
+                               {"speech_loop_animation_id", choice.speech_loop_animation_id},
+                               {"idle_animation_id", choice.idle_animation_id},
+                               {"idle_start_offset", choice.idle_start_offset}});
+        }
+        metadata["source_render_choices"] = choices;
+    }
     if (!animation.metadata.source_script_turns.empty()) {
         nlohmann::json turns = nlohmann::json::array();
         for (const auto &t : animation.metadata.source_script_turns) {

@@ -19,6 +19,7 @@
 #include "model/Stage.h"
 #include "server/animation/SessionManager.h"
 #include "server/audio/MonoWavDownmixer.h"
+#include "server/audio/SoundPathResolver.h"
 #include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/creature/UniverseResolver.h"
@@ -278,6 +279,9 @@ void JobWorker::processJob(const std::string &jobId) {
         case JobType::DialogMusic:
             info("Handling job {} as DialogMusic type", jobId);
             handleDialogMusicJob(jobState);
+            break;
+        case JobType::StageRerender:
+            handleStageRerenderJob(jobState);
             break;
         case JobType::VoiceFile:
             info("Handling job {} as VoiceFile type", jobId);
@@ -1076,6 +1080,383 @@ std::shared_ptr<voice::TextToViseme> getDialogTextToViseme() {
 
 } // namespace
 
+// ===========================================================================
+// Stage re-render (#119)
+//
+// Rebuild an existing dialog animation's MOTION against a changed Stage,
+// reusing its audio exactly as it is.
+//
+// The hard constraint: this must never call ElevenLabs. eleven_v3 is
+// nondeterministic and exposes no seed, so regenerating audio because someone
+// moved a perch would change the performance itself. Everything needed to
+// rebuild the motion is already persisted:
+//
+//   * the speaking timeline and mouth bytes, recoverable from the rendered
+//     WAV's iXML LIPSYNC block (falling back to scraping the existing track's
+//     mouth slot);
+//   * which loops each creature drew, from metadata.source_render_choices;
+//   * the gaze timing seed, from metadata.render_seed.
+//
+// With the choices and seed replayed, a re-render against an UNCHANGED stage
+// reproduces the animation byte for byte, and a re-render against a moved
+// creature changes only the head-aiming bytes. That property is what makes
+// this safe to run over a whole show.
+// ===========================================================================
+void JobWorker::handleStageRerenderJob(JobState &jobState) {
+    auto broadcastProgress = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobProgressToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast stage re-render progress: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto broadcastCompletion = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobCompleteToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast stage re-render completion: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto updateProgress = [&](float v) {
+        jobManager_->updateJobProgress(jobState.jobId, v);
+        broadcastProgress(jobState.jobId);
+    };
+    auto failJob = [&](const std::string &msg) {
+        error("Stage re-render job {} failed: {}", jobState.jobId, msg);
+        if (jobState.span) {
+            jobState.span->setError(msg);
+        }
+        jobManager_->failJob(jobState.jobId, msg);
+        broadcastCompletion(jobState.jobId);
+    };
+
+    std::vector<std::string> animationIds;
+    std::string requestedStageId;
+    try {
+        auto details = nlohmann::json::parse(jobState.details);
+        if (details.contains("animation_ids") && details["animation_ids"].is_array()) {
+            for (const auto &entry : details["animation_ids"]) {
+                if (entry.is_string() && !entry.get<std::string>().empty()) {
+                    animationIds.push_back(entry.get<std::string>());
+                }
+            }
+        }
+        requestedStageId = details.value("stage_id", std::string{});
+    } catch (const std::exception &e) {
+        return failJob(fmt::format("could not parse job details: {}", e.what()));
+    }
+
+    if (animationIds.empty()) {
+        return failJob("no animation_ids to re-render");
+    }
+    if (jobState.span) {
+        jobState.span->setAttribute("rerender.animation_count", static_cast<int64_t>(animationIds.size()));
+        jobState.span->setAttribute("rerender.stage_id", requestedStageId);
+    }
+
+    std::size_t succeeded = 0;
+    std::vector<std::string> failures;
+
+    for (std::size_t index = 0; index < animationIds.size(); ++index) {
+        const auto &animationId = animationIds[index];
+        updateProgress(static_cast<float>(index) / static_cast<float>(animationIds.size()));
+
+        auto animationResult = creatures::db->getAnimation(animationId, jobState.span);
+        if (!animationResult.isSuccess()) {
+            failures.push_back(fmt::format("{}: {}", animationId, animationResult.getError()->getMessage()));
+            continue;
+        }
+        auto animation = animationResult.getValue().value();
+
+        const auto msPerFrame = animation.metadata.milliseconds_per_frame;
+        const auto totalFrames = static_cast<std::size_t>(animation.metadata.number_of_frames);
+        if (msPerFrame == 0 || totalFrames == 0) {
+            failures.push_back(fmt::format("{}: animation has no usable frame timing", animationId));
+            continue;
+        }
+
+        // Which stage to aim against: the request's, or the one this animation
+        // was originally rendered with.
+        const std::string stageId = requestedStageId.empty() ? animation.metadata.source_stage_id : requestedStageId;
+        if (stageId.empty()) {
+            failures.push_back(fmt::format("{}: no stage to re-render against", animationId));
+            continue;
+        }
+        auto stageResult = creatures::db->getStage(stageId, jobState.span);
+        if (!stageResult.isSuccess()) {
+            failures.push_back(
+                fmt::format("{}: stage {}: {}", animationId, stageId, stageResult.getError()->getMessage()));
+            continue;
+        }
+        const auto stage = stageResult.getValue().value();
+        const auto placements = creatures::stagePlacements(stage);
+
+        // Recover each creature's mouth bytes. Preferred source is the iXML
+        // LIPSYNC block in the rendered WAV, which is authoritative; scraping
+        // the existing track's mouth slot is the fallback for renders that
+        // predate it. The distinction matters: a creature that froze on its
+        // speech loop's first frame carries that frame's mouth value through
+        // every silent frame, so scraping can mistake silence for speech if
+        // the loop author left the beak open.
+        std::unordered_map<std::string, std::vector<uint8_t>> mouthByCreature;
+        std::string mouthSource = "scrape";
+
+        if (!animation.metadata.sound_file.empty()) {
+            // Map audio channel -> creature id once, so the per-lipsync-track
+            // lookup below is a hash hit rather than a database round trip
+            // inside a nested loop.
+            std::unordered_map<uint16_t, std::string> creatureByChannel;
+            for (const auto &track : animation.tracks) {
+                if (track.creature_id.empty()) {
+                    continue;
+                }
+                auto creatureResult = creatures::db->getCreature(track.creature_id, jobState.span);
+                if (creatureResult.isSuccess() && creatureResult.getValue().has_value()) {
+                    creatureByChannel.emplace(creatureResult.getValue().value().audio_channel, track.creature_id);
+                }
+            }
+
+            const auto soundRoot = config->getSoundFileLocation();
+            if (auto resolved = creatures::audio::resolveSoundInRoot(soundRoot, animation.metadata.sound_file)) {
+                if (auto ixml = voice::readIxmlChunk(*resolved)) {
+                    const auto lipsyncTracks = voice::parseIxmlLipsync(*ixml);
+                    creatures::SoundDataProcessor processor;
+                    for (const auto &lipsync : lipsyncTracks) {
+                        auto channelIt = creatureByChannel.find(lipsync.channel);
+                        if (channelIt == creatureByChannel.end()) {
+                            continue;
+                        }
+                        RhubarbSoundData snd;
+                        snd.metadata.duration =
+                            static_cast<double>(totalFrames) * static_cast<double>(msPerFrame) / 1000.0;
+                        snd.metadata.soundFile = animation.metadata.sound_file;
+                        snd.mouthCues.reserve(lipsync.cues.size());
+                        for (const auto &cue : lipsync.cues) {
+                            RhubarbMouthCue converted;
+                            converted.start = cue.start;
+                            converted.end = cue.end;
+                            converted.value = cue.shape;
+                            snd.mouthCues.push_back(converted);
+                        }
+                        mouthByCreature[channelIt->second] = processor.processSoundData(snd, msPerFrame, totalFrames);
+                    }
+                    if (!mouthByCreature.empty()) {
+                        mouthSource = "ixml";
+                    }
+                }
+            }
+        }
+
+        // Rebuild every track.
+        std::mt19937 rng(static_cast<uint32_t>(animation.metadata.render_seed));
+
+        // Resolve the geometry of everyone this stage places, so each creature
+        // can aim at the others.
+        std::vector<voice::GazeGeometry> geometries;
+        std::unordered_map<std::string, std::size_t> geometryByCreature;
+        for (const auto &placement : placements) {
+            auto creatureResult = creatures::db->getCreature(placement.creature_id, jobState.span);
+            if (!creatureResult.isSuccess() || !creatureResult.getValue().has_value()) {
+                continue;
+            }
+            geometryByCreature.emplace(placement.creature_id, geometries.size());
+            geometries.push_back(voice::resolveGazeGeometry(creatureResult.getValue().value(), placement));
+        }
+
+        creatures::Animation rebuilt = animation;
+        rebuilt.tracks.clear();
+        rebuilt.tracks.reserve(animation.tracks.size());
+
+        // The speaker timeline, from the recovered mouth bytes.
+        std::vector<std::string> timelineIds;
+        std::vector<std::span<const uint8_t>> timelineMouths;
+        std::vector<std::vector<uint8_t>> mouthStorage;
+        mouthStorage.reserve(animation.tracks.size());
+        for (const auto &track : animation.tracks) {
+            if (track.creature_id.empty()) {
+                continue;
+            }
+            auto it = mouthByCreature.find(track.creature_id);
+            if (it == mouthByCreature.end()) {
+                continue;
+            }
+            mouthStorage.push_back(it->second);
+            timelineIds.push_back(track.creature_id);
+        }
+        for (const auto &stored : mouthStorage) {
+            timelineMouths.emplace_back(stored);
+        }
+        const std::size_t gapTolerance = std::max<std::size_t>(1, 400 / std::max<uint32_t>(1, msPerFrame));
+        const auto timeline = voice::buildSpeakerTimeline(timelineIds, timelineMouths, totalFrames, gapTolerance);
+
+        bool trackFailure = false;
+        for (const auto &track : animation.tracks) {
+            // Fixture tracks and anything without a creature pass through
+            // untouched — this job only rebuilds creature motion.
+            if (track.creature_id.empty()) {
+                rebuilt.tracks.push_back(track);
+                continue;
+            }
+
+            auto creatureResult = creatures::db->getCreature(track.creature_id, jobState.span);
+            if (!creatureResult.isSuccess() || !creatureResult.getValue().has_value()) {
+                failures.push_back(fmt::format("{}: creature {} not found", animationId, track.creature_id));
+                trackFailure = true;
+                break;
+            }
+            const auto creature = creatureResult.getValue().value();
+
+            // Replay the recorded loop choices so the body motion is
+            // reproduced rather than re-drawn.
+            const auto choiceIt = std::find_if(
+                animation.metadata.source_render_choices.begin(), animation.metadata.source_render_choices.end(),
+                [&](const creatures::CreatureRenderChoice &c) { return c.creature_id == track.creature_id; });
+            if (choiceIt == animation.metadata.source_render_choices.end()) {
+                failures.push_back(fmt::format(
+                    "{}: no recorded render choices for creature {} — this animation predates them and can't be "
+                    "re-rendered without changing its body motion",
+                    animationId, track.creature_id));
+                trackFailure = true;
+                break;
+            }
+
+            auto loadLoopFrames = [&](const std::string &loopAnimationId,
+                                      std::vector<std::vector<uint8_t>> &out) -> std::string {
+                if (loopAnimationId.empty()) {
+                    return {};
+                }
+                auto loopResult = creatures::db->getAnimation(loopAnimationId, jobState.span);
+                if (!loopResult.isSuccess()) {
+                    return loopResult.getError()->getMessage();
+                }
+                const auto loopAnimation = loopResult.getValue().value();
+                auto loopTrack = std::find_if(loopAnimation.tracks.begin(), loopAnimation.tracks.end(),
+                                              [&](const Track &t) { return t.creature_id == track.creature_id; });
+                if (loopTrack == loopAnimation.tracks.end()) {
+                    return fmt::format("animation {} has no track for this creature", loopAnimationId);
+                }
+                for (const auto &frame : loopTrack->frames) {
+                    out.push_back(decodeBase64(frame));
+                }
+                return {};
+            };
+
+            std::vector<std::vector<uint8_t>> baseFrames;
+            if (auto err = loadLoopFrames(choiceIt->speech_loop_animation_id, baseFrames); !err.empty()) {
+                failures.push_back(fmt::format("{}: speech loop for {}: {}", animationId, track.creature_id, err));
+                trackFailure = true;
+                break;
+            }
+            if (baseFrames.empty()) {
+                failures.push_back(
+                    fmt::format("{}: speech loop for {} decoded to zero frames", animationId, track.creature_id));
+                trackFailure = true;
+                break;
+            }
+            std::vector<std::vector<uint8_t>> idleFrames;
+            if (auto err = loadLoopFrames(choiceIt->idle_animation_id, idleFrames); !err.empty()) {
+                // Non-fatal, exactly as at first render: fall back to freezing.
+                warn("Stage re-render {}: idle loop for {} unavailable ({}); freezing during silence", animationId,
+                     track.creature_id, err);
+                idleFrames.clear();
+            }
+
+            // Mouth bytes: iXML if we recovered them, else scrape this track.
+            std::vector<uint8_t> mouthBytes;
+            const std::size_t mouthSlot = creatures::resolvedMouthSlot(creature);
+            if (auto it = mouthByCreature.find(track.creature_id); it != mouthByCreature.end()) {
+                mouthBytes = it->second;
+            } else {
+                mouthBytes.reserve(track.frames.size());
+                for (const auto &encoded : track.frames) {
+                    const auto decoded = decodeBase64(encoded);
+                    mouthBytes.push_back(mouthSlot < decoded.size() ? decoded[mouthSlot] : 0);
+                }
+            }
+
+            // Gaze against the NEW stage.
+            std::mt19937 gazeRng(static_cast<uint32_t>(rng()));
+            voice::GazeTrack gaze;
+            if (auto it = geometryByCreature.find(track.creature_id); it != geometryByCreature.end()) {
+                gaze = voice::buildGazeTrack(geometries[it->second], geometries, timeline, totalFrames, msPerFrame,
+                                             gazeRng);
+            }
+
+            voice::SpeechTrackInput trackInput;
+            trackInput.baseFrames = baseFrames;
+            trackInput.mouthBytes = mouthBytes;
+            trackInput.mouthSlot = mouthSlot;
+            trackInput.totalFrames = totalFrames;
+            trackInput.creatureId = track.creature_id;
+            trackInput.animationId = animation.id;
+            trackInput.gazePanBytes = gaze.panBytes;
+            trackInput.gazeElevationBytes = gaze.elevationBytes;
+            trackInput.gazeCockBytes = gaze.cockBytes;
+            trackInput.gazePanSlot = gaze.panSlot;
+            trackInput.gazeElevationSlot = gaze.elevationSlot;
+            trackInput.gazeCockSlot = gaze.cockSlot;
+
+            voice::SpeechTrackOptions trackOptions;
+            trackOptions.dialogIdleMode = true;
+            trackOptions.bodyTailFrames = 5;
+            trackOptions.idleFrames = idleFrames;
+            trackOptions.idleStartOffset = choiceIt->idle_start_offset;
+
+            auto trackResult = voice::buildSpeechTrack(trackInput, trackOptions, jobState.span);
+            if (!trackResult.isSuccess()) {
+                failures.push_back(fmt::format("{}: {}", animationId, trackResult.getError()->getMessage()));
+                trackFailure = true;
+                break;
+            }
+            auto newTrack = trackResult.getValue()->track;
+            // Keep the track's identity — this is the same track, re-motioned.
+            newTrack.id = track.id;
+            rebuilt.tracks.push_back(std::move(newTrack));
+        }
+
+        if (trackFailure) {
+            continue;
+        }
+
+        // Re-stamp the stage provenance. The sound file, script provenance,
+        // seed and render choices all carry over untouched — that's the point.
+        rebuilt.metadata.source_stage_id = stage.id;
+        rebuilt.metadata.source_stage_updated_at = stage.updated_at;
+
+        auto published =
+            creatures::storage::publishAnimation(creatures::animationToJson(rebuilt).dump(), jobState.span);
+        if (!published.isSuccess()) {
+            failures.push_back(fmt::format("{}: {}", animationId, published.getError()->getMessage()));
+            continue;
+        }
+
+        info("Stage re-render {}: rebuilt animation {} against stage '{}' ({} tracks, mouth source: {})",
+             jobState.jobId, animationId, stage.title, rebuilt.tracks.size(), mouthSource);
+        ++succeeded;
+    }
+
+    updateProgress(1.0f);
+
+    nlohmann::json result;
+    result["rerendered"] = succeeded;
+    result["requested"] = animationIds.size();
+    result["failures"] = failures;
+    if (jobState.span) {
+        jobState.span->setAttribute("rerender.succeeded", static_cast<int64_t>(succeeded));
+        jobState.span->setAttribute("rerender.failed", static_cast<int64_t>(failures.size()));
+    }
+
+    if (succeeded == 0 && !failures.empty()) {
+        return failJob(fmt::format("no animations could be re-rendered: {}", failures.front()));
+    }
+    jobManager_->completeJob(jobState.jobId, result.dump());
+    broadcastCompletion(jobState.jobId);
+}
+
 void JobWorker::handleDialogJob(JobState &jobState) {
     auto broadcastProgress = [this](const std::string &jobId) {
         auto updated = jobManager_->getJob(jobId);
@@ -1656,6 +2037,9 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     std::mt19937 rng(static_cast<uint32_t>(renderSeed));
 
+    std::vector<creatures::CreatureRenderChoice> renderChoices;
+    renderChoices.reserve(assembled.perCreature.size());
+
     for (const auto &pc : assembled.perCreature) {
         const DialogJobCreature *cinfo = nullptr;
         for (const auto &c : creaturesCache) {
@@ -1722,6 +2106,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         // must never fail the render.
         std::vector<std::vector<uint8_t>> idleFrames;
         std::size_t idleStartOffset = 0;
+        std::string chosenIdleId;
         if (cinfo->creatureJson.contains("idle_animation_ids") &&
             cinfo->creatureJson["idle_animation_ids"].is_array() &&
             !cinfo->creatureJson["idle_animation_ids"].empty()) {
@@ -1763,6 +2148,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                         // idle animation don't loop in lockstep.
                         std::uniform_int_distribution<std::size_t> phaseDist(0, idleFrames.size() - 1);
                         idleStartOffset = phaseDist(rng);
+                        chosenIdleId = idleChosenId;
                         debug("creature '{}': idling on anim {} ({} frames) from phase {} during silence",
                               cinfo->creatureId, idleChosenId, idleFrames.size(), idleStartOffset);
                     }
@@ -1785,6 +2171,16 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         cti.idleFrames = std::move(idleFrames);
         cti.idleStartOffset = idleStartOffset;
         creatureInputs.push_back(std::move(cti));
+
+        // Record what this creature actually drew, so a later stage re-render
+        // reproduces the same body motion by construction rather than by
+        // replaying the rng in exactly the right order (#119).
+        creatures::CreatureRenderChoice choice;
+        choice.creature_id = cinfo->creatureId;
+        choice.speech_loop_animation_id = chosenId;
+        choice.idle_animation_id = chosenIdleId;
+        choice.idle_start_offset = static_cast<uint32_t>(idleStartOffset);
+        renderChoices.push_back(std::move(choice));
     }
     if (!msPerFrame) {
         return failJob("post-assembly: msPerFrame not set (no creatures had usable base animations)");
@@ -1932,6 +2328,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // together they answer "is this animation stale?" with a comparison
     // instead of a diff.
     animation.metadata.render_seed = renderSeed;
+    animation.metadata.source_render_choices = renderChoices;
     if (haveStage) {
         animation.metadata.source_stage_id = renderStage.id;
         animation.metadata.source_stage_updated_at = renderStage.updated_at;

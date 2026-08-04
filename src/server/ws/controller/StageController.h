@@ -17,10 +17,13 @@
 #include "model/Stage.h"
 #include "server/config.h"
 #include "server/database.h"
+#include "server/jobs/JobManager.h"
+#include "server/jobs/JobWorker.h"
 #include "server/namespace-stuffs.h"
 #include "server/storage/Storage.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
+#include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/StatusDto.h"
 #include "util/uuidUtils.h"
 #include "util/websocketUtils.h"
@@ -28,6 +31,8 @@
 namespace creatures {
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<jobs::JobManager> jobManager;
+extern std::shared_ptr<jobs::JobWorker> jobWorker;
 } // namespace creatures
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
@@ -335,6 +340,164 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
                     span->setHttpStatus(200);
                 }
                 return jsonResponse(Status::CODE_200, envelope);
+            });
+    }
+
+    ENDPOINT_INFO(rerenderStage) {
+        info->summary = "Re-render the animations built on this stage against its current geometry";
+        info->description =
+            "Rebuilds each animation's MOTION only — the existing audio is reused untouched, and no speech is "
+            "regenerated. That is a correctness requirement, not an optimisation: the dialogue model is "
+            "nondeterministic and exposes no seed, so regenerating audio because a creature moved would change the "
+            "performance itself.\n\n"
+            "Because each animation records the loops its creatures drew and the seed its gaze timing came from, a "
+            "re-render against an UNCHANGED stage reproduces the animation exactly, and a re-render after moving a "
+            "creature changes only the head-aiming bytes.\n\n"
+            "Body: {\"stale_only\": true} to skip animations already current with this stage. Returns 202 with a "
+            "job_id; listen for job-progress and job-complete.";
+        info->addTag("Stages");
+        info->pathParams["stageId"].description = "Stage UUID";
+        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/stage/{stageId}/rerender", rerenderStage, PATH(String, stageId), BODY_STRING(String, body),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "POST /api/v1/stage/{stageId}/rerender", "POST", "api/v1/stage/{stageId}/rerender", "rerenderStage",
+            "StageController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                if (!stageId || !isUuidShape(std::string(*stageId))) {
+                    return bailHttp(span, Status::CODE_400, "stageId must be a UUID");
+                }
+                if (span)
+                    span->setAttribute("stage.id", std::string(*stageId));
+
+                // Body is optional; an absent or empty one means "everything".
+                bool staleOnly = false;
+                if (body && !body->empty()) {
+                    try {
+                        const auto parsed = nlohmann::json::parse(std::string(*body));
+                        if (parsed.is_object()) {
+                            staleOnly = parsed.value("stale_only", false);
+                        }
+                    } catch (const nlohmann::json::exception &e) {
+                        return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
+                    }
+                }
+
+                auto opSpan = creatures::observability->createChildOperationSpan("StageController.rerenderStage", span);
+                auto stageResult = creatures::db->getStage(std::string(*stageId), opSpan);
+                if (!stageResult.isSuccess()) {
+                    return bailFromServerError(span, stageResult.getError().value());
+                }
+                const auto stage = stageResult.getValue().value();
+
+                auto listResult = creatures::db->listAnimationsBySourceStageId(stage.id, stage.updated_at, opSpan);
+                if (!listResult.isSuccess()) {
+                    return bailFromServerError(span, listResult.getError().value());
+                }
+
+                // Bind to a named local: getValue() hands back the optional BY
+                // VALUE, so iterating .value() directly would walk a vector
+                // that died at the end of the expression.
+                const auto refs = listResult.getValue().value();
+
+                nlohmann::json animationIds = nlohmann::json::array();
+                for (const auto &ref : refs) {
+                    if (staleOnly && !ref.stale) {
+                        continue;
+                    }
+                    animationIds.push_back(ref.animation_id);
+                }
+                if (animationIds.empty()) {
+                    return okStatus(span, Status::CODE_200,
+                                    staleOnly ? "Nothing to do — every animation on this stage is up to date"
+                                              : "No animations are rendered against this stage");
+                }
+
+                nlohmann::json details;
+                details["animation_ids"] = animationIds;
+                details["stage_id"] = stage.id;
+
+                const std::string jobId =
+                    creatures::jobManager->createJob(creatures::jobs::JobType::StageRerender, details.dump(), span);
+                creatures::jobWorker->queueJob(jobId);
+
+                auto response = JobCreatedDto::createShared();
+                response->job_id = jobId.c_str();
+                response->job_type = "stage-rerender";
+                response->message = fmt::format("Re-rendering {} animation(s) against stage '{}'. No audio is "
+                                                "regenerated. Listen for job-progress and job-complete.",
+                                                animationIds.size(), stage.title)
+                                        .c_str();
+                if (span) {
+                    span->setAttribute("job.id", jobId);
+                    span->setAttribute("rerender.animation_count", static_cast<int64_t>(animationIds.size()));
+                    span->setHttpStatus(202);
+                }
+                return createDtoResponse(Status::CODE_202, response);
+            });
+    }
+
+    ENDPOINT_INFO(rerenderAnimation) {
+        info->summary = "Re-render one animation's motion against a stage";
+        info->description =
+            "Motion only — the existing audio is reused untouched and no speech is regenerated.\n\n"
+            "Body: {\"stage_id\": \"...\"} to aim against a different stage than the one this animation was "
+            "rendered with; omit it to rebuild against its own recorded stage. Note this OVERWRITES the animation in "
+            "place. To keep both a mainstage and a travel rendition, render the script twice with different "
+            "stage_ids instead — animations are keyed by (script, stage), so the two coexist.\n\n"
+            "Returns 202 with a job_id.";
+        info->addTag("Stages");
+        info->pathParams["animationId"].description = "Animation UUID";
+        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/animation/{animationId}/rerender", rerenderAnimation, PATH(String, animationId),
+             BODY_STRING(String, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "POST /api/v1/animation/{animationId}/rerender", "POST", "api/v1/animation/{animationId}/rerender",
+            "rerenderAnimation", "StageController", request,
+            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                if (!animationId || !isUuidShape(std::string(*animationId))) {
+                    return bailHttp(span, Status::CODE_400, "animationId must be a UUID");
+                }
+                if (span)
+                    span->setAttribute("animation.id", std::string(*animationId));
+
+                std::string targetStageId;
+                if (body && !body->empty()) {
+                    try {
+                        const auto parsed = nlohmann::json::parse(std::string(*body));
+                        if (parsed.is_object()) {
+                            targetStageId = parsed.value("stage_id", std::string{});
+                        }
+                    } catch (const nlohmann::json::exception &e) {
+                        return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
+                    }
+                }
+                if (!targetStageId.empty() && !isUuidShape(targetStageId)) {
+                    return bailHttp(span, Status::CODE_400, "stage_id must be a UUID");
+                }
+
+                nlohmann::json details;
+                details["animation_ids"] = nlohmann::json::array({std::string(*animationId)});
+                details["stage_id"] = targetStageId;
+
+                const std::string jobId =
+                    creatures::jobManager->createJob(creatures::jobs::JobType::StageRerender, details.dump(), span);
+                creatures::jobWorker->queueJob(jobId);
+
+                auto response = JobCreatedDto::createShared();
+                response->job_id = jobId.c_str();
+                response->job_type = "stage-rerender";
+                response->message = "Re-rendering animation motion. No audio is regenerated. Listen for "
+                                    "job-progress and job-complete.";
+                if (span) {
+                    span->setAttribute("job.id", jobId);
+                    span->setHttpStatus(202);
+                }
+                return createDtoResponse(Status::CODE_202, response);
             });
     }
 
