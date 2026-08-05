@@ -156,6 +156,25 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
                            });
     }
 
+    ENDPOINT_INFO(invalidate_stage_list) {
+        info->summary = "Sends a message to all clients to invalidate their stage-list cache";
+        info->addTag("Debug");
+        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/debug/cache-invalidate/stage-list", invalidate_stage_list,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/v1/debug/cache-invalidate/stage-list", "GET", "api/v1/debug/cache-invalidate/stage-list",
+            "invalidate_stage_list", "DebugController", request, [&](const auto &span) {
+                creatures::storage::broadcastCacheInvalidation(CacheType::StageList);
+                auto statusMessage = fmt::format("Stage list cache invalidation scheduled for {} frames from now",
+                                                 CACHE_INVALIDATION_DELAY_TIME);
+                debug(statusMessage);
+                return okStatus(span, Status::CODE_200, statusMessage);
+            });
+    }
+
     ENDPOINT_INFO(invalidate_sound_list) {
         info->summary = "Sends a message to all clients to invalidate their sound-list cache";
         info->addTag("Debug");
