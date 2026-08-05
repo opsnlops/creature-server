@@ -68,6 +68,16 @@ struct AnimationMetadata {
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
+class CreatureRenderChoiceDto final : public oatpp::DTO {
+
+    DTO_INIT(CreatureRenderChoiceDto, DTO /* extends */)
+
+    DTO_FIELD(String, creature_id);
+    DTO_FIELD(String, speech_loop_animation_id);
+    DTO_FIELD(String, idle_animation_id);
+    DTO_FIELD(UInt32, idle_start_offset);
+};
+
 class AnimationMetadataDto final : public oatpp::DTO {
 
     DTO_INIT(AnimationMetadataDto, DTO /* extends */)
@@ -113,6 +123,14 @@ class AnimationMetadataDto final : public oatpp::DTO {
         info->required = false;
     }
     DTO_FIELD(UInt64, render_seed);
+
+    DTO_FIELD_INFO(source_render_choices) {
+        info->description = "Which speech loop and idle animation each creature drew at render time, and its idle "
+                            "start phase. Replayed by a stage re-render so body motion reproduces exactly and only "
+                            "the head aiming changes.";
+        info->required = false;
+    }
+    DTO_FIELD(List<Object<CreatureRenderChoiceDto>>, source_render_choices);
 
     DTO_FIELD_INFO(source_script_id) {
         info->description = "If this animation was rendered from a saved DialogScript, the script's UUID. Empty/absent "

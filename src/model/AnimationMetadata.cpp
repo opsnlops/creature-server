@@ -38,6 +38,23 @@ AnimationMetadata convertFromDto(const std::shared_ptr<AnimationMetadataDto> &an
     if (animationMetadataDto->render_seed) {
         metadata.render_seed = *animationMetadataDto->render_seed;
     }
+    if (animationMetadataDto->source_render_choices) {
+        for (const auto &choiceDto : *animationMetadataDto->source_render_choices) {
+            if (!choiceDto) {
+                continue;
+            }
+            CreatureRenderChoice choice;
+            if (choiceDto->creature_id)
+                choice.creature_id = choiceDto->creature_id;
+            if (choiceDto->speech_loop_animation_id)
+                choice.speech_loop_animation_id = choiceDto->speech_loop_animation_id;
+            if (choiceDto->idle_animation_id)
+                choice.idle_animation_id = choiceDto->idle_animation_id;
+            if (choiceDto->idle_start_offset)
+                choice.idle_start_offset = *choiceDto->idle_start_offset;
+            metadata.source_render_choices.push_back(std::move(choice));
+        }
+    }
     if (animationMetadataDto->source_script_id) {
         metadata.source_script_id = animationMetadataDto->source_script_id;
     }
@@ -72,6 +89,18 @@ std::shared_ptr<AnimationMetadataDto> convertToDto(const AnimationMetadata &anim
     }
     if (animationMetadata.render_seed != 0) {
         metadataDto->render_seed = animationMetadata.render_seed;
+    }
+    if (!animationMetadata.source_render_choices.empty()) {
+        auto choices = oatpp::List<oatpp::Object<CreatureRenderChoiceDto>>::createShared();
+        for (const auto &choice : animationMetadata.source_render_choices) {
+            auto choiceDto = CreatureRenderChoiceDto::createShared();
+            choiceDto->creature_id = choice.creature_id;
+            choiceDto->speech_loop_animation_id = choice.speech_loop_animation_id;
+            choiceDto->idle_animation_id = choice.idle_animation_id;
+            choiceDto->idle_start_offset = choice.idle_start_offset;
+            choices->push_back(choiceDto);
+        }
+        metadataDto->source_render_choices = choices;
     }
     if (!animationMetadata.source_script_id.empty()) {
         metadataDto->source_script_id = animationMetadata.source_script_id;
