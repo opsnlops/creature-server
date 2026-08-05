@@ -17,6 +17,11 @@ oatpp::Object<DialogScriptDto> convertToDto(const DialogScript &script) {
     dto->notes = script.notes;
     dto->created_at = script.created_at;
     dto->updated_at = script.updated_at;
+    // Omitted when unset so a client can tell "no stage bound" from "bound to
+    // the empty string" (#123).
+    if (!script.stage_id.empty()) {
+        dto->stage_id = script.stage_id;
+    }
     if (script.background_music) {
         auto music = DialogBackgroundMusicDto::createShared();
         music->sound_file = script.background_music->sound_file;
@@ -52,6 +57,8 @@ DialogScript convertFromDto(const std::shared_ptr<DialogScriptDto> &scriptDto) {
         script.created_at = *scriptDto->created_at;
     if (scriptDto->updated_at)
         script.updated_at = *scriptDto->updated_at;
+    if (scriptDto->stage_id)
+        script.stage_id = scriptDto->stage_id;
     if (scriptDto->background_music) {
         DialogBackgroundMusic music;
         const auto &dto = scriptDto->background_music;
