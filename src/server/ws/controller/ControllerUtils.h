@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include <oatpp/core/data/stream/BufferStream.hpp>
 #include <oatpp/web/protocol/http/Http.hpp>
 #include <oatpp/web/protocol/http/incoming/Request.hpp>
 
@@ -83,6 +84,61 @@ auto withSpanStatus(const std::shared_ptr<creatures::RequestSpan> &span, F &&wor
 /// stamp endpoint/controller name, bump the REST counter, and wrap the body
 /// in withSpanStatus so error paths are correctly reflected on the span.
 /// `work` receives the span (which may be nullptr) and returns the response.
+/// Consume an entity body the client sent on a method whose handlers never
+/// read one (issue #122).
+///
+/// oatpp only reads the request body when an endpoint declares one via
+/// BODY_STRING/BODY_DTO. None of our GET or DELETE endpoints do — there's
+/// nothing legitimate to read — so if a client sends a body anyway, those
+/// bytes stay in the socket. On a keep-alive connection the NEXT request is
+/// then parsed starting at the leftovers, and its method token arrives with
+/// the previous body glued to the front:
+///
+///     "No mapping for HTTP-method: '{}DELETE', URL: '/api/v1/stage/...'"
+///
+/// That's HTTP framing corruption, not a routing failure, and it's in the
+/// request-smuggling family — the next request's shape is influenced by the
+/// previous request's body. It presents as an intermittent 404 because it
+/// depends on landing on a pooled connection.
+///
+/// Draining here rather than adding BODY_STRING to every GET and DELETE keeps
+/// it impossible to forget on a new endpoint. It is deliberately scoped to
+/// methods we know never declare a body: draining one oatpp has already read
+/// would block waiting for bytes the peer isn't going to send.
+template <typename SpanT>
+inline void drainUnreadRequestBody(const std::string &method,
+                                   const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request,
+                                   const SpanT &span) {
+    if (method != "GET" && method != "DELETE") {
+        return; // POST/PUT/PATCH declare their bodies; oatpp has read them already.
+    }
+    if (!request) {
+        return;
+    }
+
+    // Only touch the stream when the client actually framed a body. Reading
+    // when there is nothing to read risks blocking on the socket.
+    const auto contentLength = request->getHeader("Content-Length");
+    const bool hasContentLength = contentLength && contentLength->size() > 0 && contentLength != "0";
+    const auto transferEncoding = request->getHeader("Transfer-Encoding");
+    const bool isChunked = transferEncoding && transferEncoding->size() > 0;
+    if (!hasContentLength && !isChunked) {
+        return;
+    }
+
+    try {
+        oatpp::data::stream::BufferOutputStream sink;
+        request->transferBodyToStream(&sink);
+        if (span) {
+            span->setAttribute("http.request.body_drained", static_cast<int64_t>(sink.getCurrentPosition()));
+        }
+    } catch (const std::exception &e) {
+        // A failure here means the connection is already in a bad state; the
+        // response still goes out and oatpp will tear the connection down.
+        warn("failed to drain unread {} request body: {}", method, e.what());
+    }
+}
+
 template <typename F>
 auto runEndpoint(const std::string &spanName, const std::string &method, const std::string &path,
                  const std::string &endpointName, const std::string &controllerName,
@@ -100,6 +156,7 @@ auto runEndpoint(const std::string &spanName, const std::string &method, const s
         span->setAttribute("endpoint.name", endpointName);
         span->setAttribute("controller.name", controllerName);
     }
+    drainUnreadRequestBody(method, request, span);
     return withSpanStatus(span, [&] { return work(span); });
 }
 
