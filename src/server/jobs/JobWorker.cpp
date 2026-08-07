@@ -1604,10 +1604,28 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     if (title.empty()) {
         title = fmt::format("Dialog {}", jobState.jobId);
     }
-    // Remembered so the stage suffix can be appended once the stage is loaded
-    // — a mainstage and a travel rendition of one script otherwise look
-    // identical in the console's animation list.
-    const std::string baseTitle = title;
+
+    // Resolve the stage up front rather than at the point head aiming needs
+    // it, because the title depends on it and the audio filename depends on
+    // the title (#126). A mainstage and a travel rendition of one script
+    // otherwise produce identical titles AND identical-looking filenames.
+    creatures::Stage renderStage;
+    bool haveStage = false;
+    if (!stageId.empty()) {
+        auto stageResult = creatures::db->getStage(stageId, jobState.span);
+        if (!stageResult.isSuccess()) {
+            // A dangling stage id shouldn't cost you the whole render — the
+            // dialog is expensive and the head aiming is a garnish.
+            warn("Dialog job {}: stage {} could not be loaded ({}); rendering without head aiming", jobState.jobId,
+                 stageId, stageResult.getError().value().getMessage());
+        } else {
+            renderStage = stageResult.getValue().value();
+            haveStage = true;
+            if (!renderStage.title.empty()) {
+                title = fmt::format("{} — {}", title, renderStage.title);
+            }
+        }
+    }
 
     if (jobState.span) {
         jobState.span->setAttribute("dialog.turns", static_cast<int64_t>(rawTurns.size()));
@@ -1936,8 +1954,19 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // AdHoc stores absolute) so this handler doesn't reinvent it.
     const auto wavBucket = persistence == DialogPersistence::AdHoc ? creatures::storage::Persistence::AdHoc
                                                                    : creatures::storage::Persistence::Permanent;
-    const auto wavFilename = persistence == DialogPersistence::AdHoc ? fmt::format("dialog_{}.wav", jobState.jobId)
-                                                                     : fmt::format("{}.wav", jobState.jobId);
+    // Name the audio after what it IS, not after the job that made it (#126).
+    // A UUID is the only label this file carries once it leaves the system —
+    // in the sound store, the Console's sound list, and most importantly the
+    // shared MP3 rendition, which derives its name from this basename.
+    //
+    // `title` already carries the stage suffix, so a mainstage and a travel
+    // rendition of one scene get distinguishable names. The short job-id tail
+    // keeps re-renders and identically-titled scripts from colliding.
+    const auto titleSlug = util::slugify(title, 48, "dialog");
+    const auto idTail = jobState.jobId.substr(0, 8);
+    const auto wavFilename = persistence == DialogPersistence::AdHoc
+                                 ? fmt::format("dialog_{}-{}.wav", titleSlug, idTail)
+                                 : fmt::format("{}-{}.wav", titleSlug, idTail);
     std::optional<std::string> wavSubdir;
     if (persistence == DialogPersistence::Permanent) {
         wavSubdir = std::string(kPermanentDialogSubdir);
@@ -2214,24 +2243,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // Entirely optional and entirely best-effort: without a stage, or with a
     // stage that doesn't place these creatures, every gaze stream stays empty
     // and the rendered frames are byte-identical to a pre-#119 render.
-    creatures::Stage renderStage;
-    bool haveStage = false;
-    if (!stageId.empty()) {
-        auto stageResult = creatures::db->getStage(stageId, jobState.span);
-        if (!stageResult.isSuccess()) {
-            // A dangling stage id shouldn't cost you the whole render — the
-            // dialog is expensive and the head aiming is a garnish.
-            warn("Dialog job {}: stage {} could not be loaded ({}); rendering without head aiming", jobState.jobId,
-                 stageId, stageResult.getError().value().getMessage());
-        } else {
-            renderStage = stageResult.getValue().value();
-            haveStage = true;
-            if (!renderStage.title.empty()) {
-                title = fmt::format("{} — {}", baseTitle, renderStage.title);
-            }
-        }
-    }
-
+    // `renderStage` / `haveStage` were resolved up front, alongside the title.
     if (haveStage) {
         const auto placements = creatures::stagePlacements(renderStage);
 
