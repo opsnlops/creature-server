@@ -1621,8 +1621,16 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         } else {
             renderStage = stageResult.getValue().value();
             haveStage = true;
+            // Only append if it isn't already there. A re-render often
+            // submits the previous animation's title back, which already
+            // carries the suffix — appending unconditionally produced
+            // "Scene 3 — Travel — Travel", and one more each time.
             if (!renderStage.title.empty()) {
-                title = fmt::format("{} — {}", title, renderStage.title);
+                const auto suffix = fmt::format(" — {}", renderStage.title);
+                if (title.size() < suffix.size() ||
+                    title.compare(title.size() - suffix.size(), suffix.size(), suffix) != 0) {
+                    title += suffix;
+                }
             }
         }
     }
@@ -2319,10 +2327,19 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // accumulating duplicates. AdHoc renders skip this — they have TTL and
     // each render is conceptually a fresh take.
     std::string existingAnimationId;
+    std::string supersededSoundFile;
     if (!sourceScriptId.empty() && persistence == DialogPersistence::Permanent) {
         auto lookup = creatures::db->findAnimationIdBySourceScriptId(sourceScriptId, stageId, jobState.span);
         if (lookup.isSuccess() && lookup.getValue().value().has_value()) {
             existingAnimationId = lookup.getValue().value().value();
+            // Remember what this animation currently points at. The render
+            // below writes a NEW audio file and repoints the animation, so
+            // without this the old one is orphaned on disk forever — and
+            // these run to hundreds of MB (#128).
+            if (auto previous = creatures::db->getAnimation(existingAnimationId, jobState.span);
+                previous.isSuccess() && previous.getValue().has_value()) {
+                supersededSoundFile = previous.getValue().value().metadata.sound_file;
+            }
             info("Dialog job {}: re-rendering existing animation {} for script {}", jobState.jobId, existingAnimationId,
                  sourceScriptId);
             if (jobState.span) {
@@ -2401,6 +2418,32 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         }
     }
     wavCleanup.release();
+
+    // The new audio is committed and the animation points at it, so the file
+    // it used to point at is now unreferenced (#128). Delete it — a long scene
+    // is hundreds of MB and every re-render used to leave one behind.
+    //
+    // Deliberately after the publish succeeded: losing the old file while the
+    // new one failed to land would leave the animation pointing at nothing.
+    if (!supersededSoundFile.empty() && supersededSoundFile != animation.metadata.sound_file) {
+        auto refs = creatures::db->countAnimationsBySoundFile(supersededSoundFile, jobState.span);
+        if (!refs.isSuccess()) {
+            warn("Dialog job {}: could not check references for superseded sound '{}' ({}); leaving it in place",
+                 jobState.jobId, supersededSoundFile, refs.getError().value().getMessage());
+        } else if (refs.getValue().value() > 0) {
+            // Something still points at it — a hand-edited animation, most
+            // likely. Never delete audio another animation is using.
+            info("Dialog job {}: superseded sound '{}' is still referenced by {} animation(s); leaving it",
+                 jobState.jobId, supersededSoundFile, refs.getValue().value());
+        } else {
+            auto removed = creatures::storage::deleteSupersededDialogSound(supersededSoundFile, jobState.span);
+            if (!removed.isSuccess()) {
+                warn("Dialog job {}: cleanup of '{}' failed: {}", jobState.jobId, supersededSoundFile,
+                     removed.getError().value().getMessage());
+            }
+        }
+    }
+
     updateProgress(0.95f);
 
     // ---- Optional autoplay. Universe was validated above to be common across

@@ -316,4 +316,65 @@ std::filesystem::path resolveSoundPath(const std::string &stored) {
     return std::filesystem::path(creatures::config->getSoundFileLocation()) / p;
 }
 
+Result<void> deleteSupersededDialogSound(const std::string &stored, std::shared_ptr<OperationSpan> parentSpan) {
+    (void)parentSpan; // no DB call to trace here; the caller's span covers it
+
+    auto declineQuietly = [&](const char *reason) {
+        debug("not deleting superseded sound '{}': {}", stored, reason);
+        return Result<void>{};
+    };
+
+    if (stored.empty()) {
+        return declineQuietly("empty reference");
+    }
+
+    // Only this pipeline's own generated audio is ever a candidate. Sounds a
+    // human uploaded live at the root of the sound tree, not under dialog/.
+    if (stored.rfind("dialog/", 0) != 0) {
+        return declineQuietly("not under dialog/");
+    }
+    if (!creatures::config) {
+        return declineQuietly("no configuration available to resolve the sound root");
+    }
+
+    std::error_code ec;
+    const auto root =
+        std::filesystem::weakly_canonical(std::filesystem::path(creatures::config->getSoundFileLocation()), ec);
+    if (ec) {
+        return declineQuietly("sound root could not be resolved");
+    }
+    const auto target = std::filesystem::weakly_canonical(resolveSoundPath(stored), ec);
+    if (ec) {
+        return declineQuietly("path could not be resolved");
+    }
+
+    // sound_file arrives from a stored Animation, which is client-writable via
+    // the animation upsert. Containment is checked on the CANONICAL paths so a
+    // reference like dialog/../../etc/passwd cannot escape the tree.
+    const auto rootStr = root.string();
+    const auto targetStr = target.string();
+    if (targetStr.size() <= rootStr.size() || targetStr.compare(0, rootStr.size(), rootStr) != 0 ||
+        targetStr[rootStr.size()] != std::filesystem::path::preferred_separator) {
+        warn("refusing to delete sound '{}': resolves to '{}', outside the sound root '{}'", stored, targetStr,
+             rootStr);
+        return Result<void>{};
+    }
+
+    if (!std::filesystem::exists(target, ec) || ec) {
+        return declineQuietly("file does not exist");
+    }
+
+    const auto size = std::filesystem::file_size(target, ec);
+    std::filesystem::remove(target, ec);
+    if (ec) {
+        // A failed cleanup is not a failed render. Say so and move on.
+        warn("could not delete superseded sound '{}': {}", targetStr, ec.message());
+        return Result<void>{};
+    }
+
+    info("deleted superseded dialog sound '{}' ({:.1f} MB)", stored, static_cast<double>(size) / 1e6);
+    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
+    return Result<void>{};
+}
+
 } // namespace creatures::storage

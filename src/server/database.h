@@ -127,6 +127,12 @@ class Database {
     Result<void> deleteAnimation(const animationId_t &animationId,
                                  const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
+    /// How many animations reference this sound file (matched on
+    /// metadata.sound_file). Used before deleting a superseded dialog render's
+    /// audio, so a file shared by more than one animation is never removed.
+    Result<int64_t> countAnimationsBySoundFile(const std::string &soundFile,
+                                               const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+
     /// One animation rendered against a stage, and whether the stage has been
     /// edited since (#119). Enough for the console to say "5 animations, 3 out
     /// of date" without pulling the (large) track blobs.

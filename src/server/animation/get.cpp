@@ -403,4 +403,48 @@ Database::listAnimationsBySourceStageId(const std::string &stageId, int64_t stag
     }
 }
 
+Result<int64_t> Database::countAnimationsBySoundFile(const std::string &soundFile,
+                                                     const std::shared_ptr<OperationSpan> &parentSpan) {
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.countAnimationsBySoundFile", parentSpan);
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
+        dbSpan->setAttribute("database.operation", "count_documents");
+        dbSpan->setAttribute("database.system", "mongodb");
+        dbSpan->setAttribute("database.name", DB_NAME);
+        dbSpan->setAttribute("sound.file", soundFile);
+    }
+    if (soundFile.empty()) {
+        if (dbSpan)
+            dbSpan->setSuccess();
+        return Result<int64_t>{static_cast<int64_t>(0)};
+    }
+
+    auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+    if (!collectionResult.isSuccess()) {
+        auto err = collectionResult.getError().value();
+        recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
+        return Result<int64_t>{err};
+    }
+    auto collection = collectionResult.getValue().value();
+
+    try {
+        auto filter = bsoncxx::builder::stream::document{} << "metadata.sound_file" << soundFile
+                                                           << bsoncxx::builder::stream::finalize;
+        const auto count = static_cast<int64_t>(collection.count_documents(filter.view()));
+        if (dbSpan) {
+            dbSpan->setAttribute("animations.count", count);
+            dbSpan->setSuccess();
+        }
+        return Result<int64_t>{count};
+    } catch (const std::exception &e) {
+        std::string errorMessage = fmt::format("Failed to count animations for sound {}: {}", soundFile, e.what());
+        error(errorMessage);
+        if (dbSpan) {
+            dbSpan->recordException(e);
+        }
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
+        return Result<int64_t>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+}
+
 } // namespace creatures

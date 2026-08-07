@@ -163,3 +163,35 @@ TEST_F(StorageTest, AllocateAndResolveRoundTripAdHoc) {
 }
 
 } // namespace creatures::storage
+
+// ===========================================================================
+// Superseded dialog audio cleanup (issue #128)
+//
+// Re-rendering a dialog script writes new audio and repoints the animation,
+// orphaning the previous file. These are large — a long scene runs to
+// hundreds of MB — so the guards on what may be deleted matter more than
+// usual. A wrong delete here destroys show audio.
+// ===========================================================================
+
+TEST(DeleteSupersededDialogSoundTest, RefusesAnythingOutsideTheDialogSubdirectory) {
+    // Hand-uploaded sounds live at the root of the tree. Only this pipeline's
+    // own generated audio is ever a candidate.
+    EXPECT_TRUE(creatures::storage::deleteSupersededDialogSound("nerdAlert.wav").isSuccess());
+    EXPECT_TRUE(creatures::storage::deleteSupersededDialogSound("sounds/thing.wav").isSuccess());
+    EXPECT_TRUE(creatures::storage::deleteSupersededDialogSound("").isSuccess());
+}
+
+TEST(DeleteSupersededDialogSoundTest, RefusesPathTraversalOutOfTheSoundRoot) {
+    // sound_file is client-writable through the animation upsert, so a
+    // reference that climbs out of the tree must never be followed.
+    for (const auto *evil :
+         {"dialog/../../etc/passwd", "dialog/../../../tmp/x.wav", "dialog/subdir/../../../outside.wav"}) {
+        EXPECT_TRUE(creatures::storage::deleteSupersededDialogSound(evil).isSuccess())
+            << evil << " should decline, not error";
+    }
+}
+
+TEST(DeleteSupersededDialogSoundTest, MissingFileIsNotAnError) {
+    // Cleanup must never fail a render that already succeeded.
+    EXPECT_TRUE(creatures::storage::deleteSupersededDialogSound("dialog/definitely-not-here-9f1fd726.wav").isSuccess());
+}
