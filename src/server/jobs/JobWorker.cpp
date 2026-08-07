@@ -1543,6 +1543,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // turns (no script to point at); populated when loading from a script.
     std::string sourceScriptId;
     std::string scriptStageId; // the script's own stage binding, if it has one (#128)
+    std::string scriptTitle;   // the script's own title, used when the request doesn't give one
     std::vector<creatures::DialogScriptTurn> sourceScriptTurns;
     std::optional<creatures::DialogBackgroundMusic> backgroundMusic;
     if (hasScriptId) {
@@ -1570,6 +1571,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         sourceScriptTurns = script.turns;
         backgroundMusic = script.background_music;
         scriptStageId = script.stage_id;
+        scriptTitle = script.title;
     } else {
         rawTurns.reserve(reqDto->turns->size());
         sourceScriptTurns.reserve(reqDto->turns->size());
@@ -1617,6 +1619,17 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         if (!stageId.empty()) {
             debug("Dialog job {}: inheriting stage {} from script {}", jobState.jobId, stageId, sourceScriptId);
         }
+    }
+    // Title precedence: what the request asked for, else the script's own
+    // title, else a last-resort job id.
+    //
+    // The script fallback matters more than it looks. Rendering from a saved
+    // script without an explicit title is the ORDINARY case, and falling
+    // straight to "Dialog <uuid>" put a UUID back into the title — and
+    // therefore straight back into the audio filename, undoing #126 for the
+    // most common path.
+    if (title.empty()) {
+        title = scriptTitle;
     }
     if (title.empty()) {
         title = fmt::format("Dialog {}", jobState.jobId);
