@@ -1271,6 +1271,32 @@ void JobWorker::handleStageRerenderJob(JobState &jobState) {
         rebuilt.tracks.clear();
         rebuilt.tracks.reserve(animation.tracks.size());
 
+        // Fill any creature iXML didn't cover by scraping its existing track's
+        // mouth slot. This has to happen BEFORE the timeline is built, not
+        // lazily per track further down: the timeline is what tells every
+        // creature who to look at, so a creature missing from it doesn't just
+        // lose its own mouth bytes — it silently removes a speaker from the
+        // scene. With iXML unavailable that left the timeline completely
+        // empty, every creature holding its opening gaze for the whole
+        // animation, and the job still reporting success.
+        for (const auto &track : animation.tracks) {
+            if (track.creature_id.empty() || mouthByCreature.count(track.creature_id)) {
+                continue;
+            }
+            auto creatureResult = creatures::db->getCreature(track.creature_id, jobState.span);
+            if (!creatureResult.isSuccess() || !creatureResult.getValue().has_value()) {
+                continue;
+            }
+            const std::size_t slot = creatures::resolvedMouthSlot(creatureResult.getValue().value());
+            std::vector<uint8_t> scraped;
+            scraped.reserve(track.frames.size());
+            for (const auto &encoded : track.frames) {
+                const auto decoded = decodeBase64(encoded);
+                scraped.push_back(slot < decoded.size() ? decoded[slot] : 0);
+            }
+            mouthByCreature[track.creature_id] = std::move(scraped);
+        }
+
         // The speaker timeline, from the recovered mouth bytes.
         std::vector<std::string> timelineIds;
         std::vector<std::span<const uint8_t>> timelineMouths;
@@ -1290,6 +1316,12 @@ void JobWorker::handleStageRerenderJob(JobState &jobState) {
         for (const auto &stored : mouthStorage) {
             timelineMouths.emplace_back(stored);
         }
+
+        // An empty timeline means nobody is recorded as speaking, so no
+        // creature would ever re-aim. That's an unusable re-render, not a
+        // quiet no-op — fail loudly rather than write a scene where everyone
+        // stares straight ahead.
+
         const std::size_t gapTolerance = std::max<std::size_t>(1, 400 / std::max<uint32_t>(1, msPerFrame));
         const auto timeline = voice::buildSpeakerTimeline(timelineIds, timelineMouths, totalFrames, gapTolerance);
 
@@ -1365,18 +1397,10 @@ void JobWorker::handleStageRerenderJob(JobState &jobState) {
                 idleFrames.clear();
             }
 
-            // Mouth bytes: iXML if we recovered them, else scrape this track.
-            std::vector<uint8_t> mouthBytes;
+            // Recovered above, for every creature, before the timeline was
+            // built — so this is always a hit.
             const std::size_t mouthSlot = creatures::resolvedMouthSlot(creature);
-            if (auto it = mouthByCreature.find(track.creature_id); it != mouthByCreature.end()) {
-                mouthBytes = it->second;
-            } else {
-                mouthBytes.reserve(track.frames.size());
-                for (const auto &encoded : track.frames) {
-                    const auto decoded = decodeBase64(encoded);
-                    mouthBytes.push_back(mouthSlot < decoded.size() ? decoded[mouthSlot] : 0);
-                }
-            }
+            const std::vector<uint8_t> mouthBytes = mouthByCreature[track.creature_id];
 
             // Gaze against the NEW stage.
             std::mt19937 gazeRng(static_cast<uint32_t>(rng()));
