@@ -1542,6 +1542,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // Provenance for the rendered Animation. Empty when rendering from inline
     // turns (no script to point at); populated when loading from a script.
     std::string sourceScriptId;
+    std::string scriptStageId; // the script's own stage binding, if it has one (#128)
     std::vector<creatures::DialogScriptTurn> sourceScriptTurns;
     std::optional<creatures::DialogBackgroundMusic> backgroundMusic;
     if (hasScriptId) {
@@ -1568,6 +1569,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         sourceScriptId = script.id;
         sourceScriptTurns = script.turns;
         backgroundMusic = script.background_music;
+        scriptStageId = script.stage_id;
     } else {
         rawTurns.reserve(reqDto->turns->size());
         sourceScriptTurns.reserve(reqDto->turns->size());
@@ -1598,9 +1600,24 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     std::string title = reqDto->title ? std::string(*reqDto->title) : std::string{};
     const std::string requestedGenerationId =
         reqDto->generation_id ? std::string(*reqDto->generation_id) : std::string{};
-    // Stage binding (#119): the request wins over the script's own stage_id,
-    // which is how you render a travel version of a mainstage scene.
-    std::string stageId = reqDto->stage_id ? std::string(*reqDto->stage_id) : std::string{};
+    // Stage binding (#119). Three cases, and the middle one is the ordinary
+    // render (#128):
+    //
+    //   request sets an id  -> use it (this is how you render a travel
+    //                          version of a mainstage scene)
+    //   request omits it    -> inherit the script's own stage_id, which is
+    //                          the entire reason DialogScript carries one
+    //   request sends ""    -> force no stage, so the override works in both
+    //                          directions rather than only toward "more"
+    std::string stageId;
+    if (reqDto->stage_id) {
+        stageId = std::string(*reqDto->stage_id); // may be "" — deliberate opt-out
+    } else {
+        stageId = scriptStageId;
+        if (!stageId.empty()) {
+            debug("Dialog job {}: inheriting stage {} from script {}", jobState.jobId, stageId, sourceScriptId);
+        }
+    }
     if (title.empty()) {
         title = fmt::format("Dialog {}", jobState.jobId);
     }
