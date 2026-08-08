@@ -41,7 +41,7 @@ Result<creatures::DialogScript> Database::upsertDialogScript(const std::string &
 
     if (upsertSpan) {
         upsertSpan->setAttribute("database.collection", DIALOG_SCRIPTS_COLLECTION);
-        upsertSpan->setAttribute("database.operation", "update_one");
+        upsertSpan->setAttribute("database.operation", "replace_one");
         upsertSpan->setAttribute("database.system", "mongodb");
         upsertSpan->setAttribute("database.name", DB_NAME);
     }
@@ -110,13 +110,21 @@ Result<creatures::DialogScript> Database::upsertDialogScript(const std::string &
         bsoncxx::builder::stream::document filter_builder;
         filter_builder << "id" << id;
 
-        mongocxx::options::update update_options;
-        update_options.upsert(true);
+        // REPLACE, not $set (#134). A $set upsert can only ever add or change
+        // fields — a key that isn't mentioned is left alone, so removing one is
+        // not expressible. Clearing an accepted voice take or accepted music
+        // therefore wrote the rest of the document, bumped updated_at, and
+        // returned 200 while the acceptance stayed in Mongo untouched.
+        //
+        // The consequence for callers: whatever is handed to this function IS
+        // the stored document. Server-managed fields (background_music,
+        // accepted_voice) have to be carried forward explicitly by the edit
+        // paths rather than surviving by the merge's accident — see
+        // DialogScriptController::updateDialogScript.
+        mongocxx::options::replace replace_options;
+        replace_options.upsert(true);
 
-        collection.update_one(filter_builder.view(),
-                              bsoncxx::builder::stream::document{} << "$set" << bsonDoc.view()
-                                                                   << bsoncxx::builder::stream::finalize,
-                              update_options);
+        collection.replace_one(filter_builder.view(), bsonDoc.view(), replace_options);
         if (mongoSpan)
             mongoSpan->setSuccess();
 

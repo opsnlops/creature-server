@@ -134,6 +134,42 @@ Result<creatures::DialogScript> Database::dialogScriptFromJson(json scriptJson,
             }
         }
 
+        // accepted_voice (#131): the explicitly chosen take. Optional, and
+        // preserved verbatim across ordinary edits — an acceptance is never
+        // silently dropped, only reported stale when the turns move on.
+        if (scriptJson.contains("accepted_voice") && !scriptJson["accepted_voice"].is_null()) {
+            const auto &voiceJson = scriptJson["accepted_voice"];
+            if (!voiceJson.is_object()) {
+                return invalidScriptData<DialogScript>(span, "Dialog script 'accepted_voice' must be an object");
+            }
+            creatures::AcceptedVoice voice;
+            voice.generation_id = voiceJson.value("generation_id", std::string{});
+            voice.dialog_cache_key = voiceJson.value("dialog_cache_key", std::string{});
+            voice.sound_file = voiceJson.value("sound_file", std::string{});
+            if (voiceJson.contains("accepted_at") && voiceJson["accepted_at"].is_number_integer()) {
+                voice.accepted_at = voiceJson["accepted_at"].get<int64_t>();
+            }
+
+            if (voice.generation_id.empty() || !isUuidShape(voice.generation_id)) {
+                return invalidScriptData<DialogScript>(span,
+                                                       "Dialog script 'accepted_voice.generation_id' must be a UUID");
+            }
+            // 64 lowercase hex — the shape computeCacheKey produces. Checked
+            // because the staleness comparison is only meaningful against a
+            // real key; a malformed one would read as permanently stale.
+            if (voice.dialog_cache_key.size() != 64 ||
+                voice.dialog_cache_key.find_first_not_of("0123456789abcdef") != std::string::npos) {
+                return invalidScriptData<DialogScript>(
+                    span, "Dialog script 'accepted_voice.dialog_cache_key' must be a 64-character lowercase hex "
+                          "sha256");
+            }
+            if (voice.sound_file.size() > MAX_DIALOG_MUSIC_SOUND_FILE) {
+                return invalidScriptData<DialogScript>(
+                    span, "Dialog script 'accepted_voice.sound_file' is unreasonably long");
+            }
+            script.accepted_voice = std::move(voice);
+        }
+
         if (scriptJson.contains("background_music") && !scriptJson["background_music"].is_null()) {
             const auto &musicJson = scriptJson["background_music"];
             if (!musicJson.is_object()) {
@@ -175,6 +211,29 @@ Result<creatures::DialogScript> Database::dialogScriptFromJson(json scriptJson,
                     span, "Dialog script background music accepted_at must be a positive integer");
             }
             music.accepted_at = musicJson["accepted_at"].get<int64_t>();
+
+            // Which voice take the music was composed against (#136). Optional:
+            // music accepted before this was recorded has neither, and that has
+            // to keep parsing — a validation error here would make every
+            // pre-existing script with music un-editable.
+            if (musicJson.contains("source_dialog_generation_id") &&
+                musicJson["source_dialog_generation_id"].is_string()) {
+                music.source_dialog_generation_id = musicJson["source_dialog_generation_id"].get<std::string>();
+                if (!music.source_dialog_generation_id.empty() && !isUuidShape(music.source_dialog_generation_id)) {
+                    return invalidScriptData<DialogScript>(
+                        span, "Dialog script 'background_music.source_dialog_generation_id' must be a UUID");
+                }
+            }
+            if (musicJson.contains("source_dialog_cache_key") && musicJson["source_dialog_cache_key"].is_string()) {
+                music.source_dialog_cache_key = musicJson["source_dialog_cache_key"].get<std::string>();
+                if (!music.source_dialog_cache_key.empty() &&
+                    (music.source_dialog_cache_key.size() != 64 ||
+                     music.source_dialog_cache_key.find_first_not_of("0123456789abcdef") != std::string::npos)) {
+                    return invalidScriptData<DialogScript>(
+                        span, "Dialog script 'background_music.source_dialog_cache_key' must be a 64-character "
+                              "lowercase hex sha256");
+                }
+            }
             script.background_music = std::move(music);
         }
 

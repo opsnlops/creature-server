@@ -15,6 +15,7 @@
 #include "server/jobs/JobState.h"
 #include "server/jobs/JobWorker.h"
 #include "server/namespace-stuffs.h"
+#include "server/voice/ScriptCacheKey.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/DialogDto.h"
@@ -82,6 +83,46 @@ class DialogController : public oatpp::web::server::api::ApiController, public H
                 }
                 if (hasScriptId && !isUuidShape(std::string(*requestBody->script_id))) {
                     return bailHttp(span, Status::CODE_400, "script_id must be a UUID");
+                }
+
+                // ---- Accepted voice take gate (#131) -----------------------
+                // Strict, not fallback-soft: un-auditioned audio must never
+                // reach the birds. Enforced HERE rather than in the worker so
+                // the caller gets a synchronous 400 instead of a job that
+                // accepts, queues, and then fails.
+                //
+                // Only script renders are gated. Inline `turns` have no script
+                // to carry an acceptance, so they keep working as they always
+                // have. An explicit generation_id is still an override, for
+                // the CLI and tooling.
+                const bool hasExplicitGeneration = requestBody->generation_id && !requestBody->generation_id->empty();
+                if (hasScriptId && !hasExplicitGeneration) {
+                    auto gateSpan =
+                        creatures::observability->createChildOperationSpan("DialogController.acceptedVoiceGate", span);
+                    auto scriptResult = creatures::db->getDialogScript(std::string(*requestBody->script_id), gateSpan);
+                    if (!scriptResult.isSuccess()) {
+                        return bailFromServerError(span, scriptResult.getError().value());
+                    }
+                    const auto script = scriptResult.getValue().value();
+
+                    if (!script.accepted_voice) {
+                        return bailHttp(span, Status::CODE_400,
+                                        "no accepted voice take — audition and accept one first");
+                    }
+                    const auto fresh = creatures::voice::acceptedVoiceIsFresh(script, gateSpan);
+                    if (!fresh.has_value()) {
+                        return bailHttp(span, Status::CODE_400,
+                                        "could not check the accepted voice take against the script's turns — a "
+                                        "creature is missing or has no voice configured");
+                    }
+                    if (!*fresh) {
+                        return bailHttp(span, Status::CODE_400,
+                                        "the accepted voice take predates the current turns — re-audition and "
+                                        "accept");
+                    }
+                    if (span) {
+                        span->setAttribute("dialog.accepted_generation_id", script.accepted_voice->generation_id);
+                    }
                 }
                 if (!requestBody->persistence ||
                     (*requestBody->persistence != "adhoc" && *requestBody->persistence != "permanent")) {

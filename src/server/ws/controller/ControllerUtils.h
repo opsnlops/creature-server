@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <cctype>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -8,6 +11,8 @@
 #include <oatpp/core/data/stream/BufferStream.hpp>
 #include <oatpp/web/protocol/http/Http.hpp>
 #include <oatpp/web/protocol/http/incoming/Request.hpp>
+#include <oatpp/web/protocol/http/outgoing/Body.hpp>
+#include <oatpp/web/protocol/http/outgoing/Response.hpp>
 
 #include "server/metrics/counters.h"
 #include "util/ObservabilityManager.h"
@@ -158,6 +163,130 @@ auto runEndpoint(const std::string &spanName, const std::string &method, const s
     }
     drainUnreadRequestBody(method, request, span);
     return withSpanStatus(span, [&] { return work(span); });
+}
+
+// =============================================================================
+// HEAD support for file-serving routes (#139)
+//
+// oatpp routes by exact method, so an unmapped HEAD falls through to the
+// router's 404 — with the 404's Content-Length. A client sizing a download
+// before committing to it was told a 28 MiB take was a 181-byte stub.
+//
+// RFC 9110: HEAD is GET without the body — same status, same headers. The
+// only honest way to guarantee that is to run the GET and drop the bytes,
+// which is what these two do. It costs the server the read (or the encode,
+// for renditions) and saves the transfer, and Content-Length is right by
+// construction rather than by a second code path that can drift.
+// =============================================================================
+
+/// A body that declares a Content-Length and then writes nothing.
+///
+/// oatpp overwrites Content-Length from `getKnownSize()` after the body
+/// declares its headers, so a plain empty response can only ever say zero.
+/// Reporting the size here and returning EOF from the read callback is what
+/// lets the header stay truthful while no payload goes out.
+class HeadBody : public oatpp::web::protocol::http::outgoing::Body {
+  public:
+    explicit HeadBody(v_int64 size) : size_(size) {}
+
+    oatpp::v_io_size read(void *, v_buff_size, oatpp::async::Action &) override {
+        return 0; // EOF straight away — a HEAD response carries no body
+    }
+    void declareHeaders(oatpp::web::protocol::http::Headers &) override {}
+    p_char8 getKnownData() override { return nullptr; }
+    v_int64 getKnownSize() override { return size_; }
+
+  private:
+    v_int64 size_;
+};
+
+/// Streams a file to the socket in chunks while still declaring an exact
+/// Content-Length (#140).
+///
+/// The routes this replaces read the whole file into a `std::vector` and then
+/// let `oatpp::String` copy it again — two full-size allocations per request,
+/// so one 300 MB scene cost ~600 MB of RSS on a box that is also running the
+/// show's event loop.
+///
+/// Deliberately NOT oatpp's `StreamingBody`: its `getKnownSize()` returns -1,
+/// which switches the response to `Transfer-Encoding: chunked` and drops
+/// Content-Length entirely — silently undoing #139, since HEAD's whole job is
+/// to report that length. A known size keeps the response fixed-length and
+/// keeps HEAD honest.
+///
+/// The file handle is opened by the handler and held here for the life of the
+/// response. That's what makes this safe against a concurrent rewrite: the
+/// storage facade writes via `.tmp` + rename, so a replacement gets a new
+/// inode and this fd keeps reading the bytes whose length we already promised.
+class FileBody : public oatpp::web::protocol::http::outgoing::Body {
+  public:
+    FileBody(const std::string &path, v_int64 size) : size_(size), remaining_(size) {
+        // Set the buffer before open() so reads come from a decent-sized
+        // window; the transfer loop hands us the header buffer, which is small.
+        stream_.rdbuf()->pubsetbuf(ioBuffer_.data(), static_cast<std::streamsize>(ioBuffer_.size()));
+        stream_.open(path, std::ios::binary);
+    }
+
+    [[nodiscard]] bool isOpen() const { return stream_.is_open(); }
+
+    oatpp::v_io_size read(void *buffer, v_buff_size count, oatpp::async::Action &) override {
+        if (remaining_ <= 0) {
+            return 0;
+        }
+        const auto want = static_cast<std::streamsize>(std::min<v_int64>(static_cast<v_int64>(count), remaining_));
+        stream_.read(static_cast<char *>(buffer), want);
+        const auto got = stream_.gcount();
+        if (got <= 0) {
+            // Short read against a length we already sent. Framing is now
+            // wrong for this connection, so say so loudly rather than let it
+            // look like a mysterious client-side truncation (#122's family).
+            warn("file body ended {} bytes early — the response is short of its declared Content-Length", remaining_);
+            remaining_ = 0;
+            return 0;
+        }
+        remaining_ -= got;
+        return static_cast<oatpp::v_io_size>(got);
+    }
+
+    void declareHeaders(oatpp::web::protocol::http::Headers &) override {}
+    p_char8 getKnownData() override { return nullptr; }
+    v_int64 getKnownSize() override { return size_; }
+
+  private:
+    std::array<char, 65536> ioBuffer_{}; // declared first: the stream points at it
+    std::ifstream stream_;
+    v_int64 size_;
+    v_int64 remaining_;
+};
+
+/// Convert a fully-formed GET response into its HEAD equivalent: same status,
+/// same headers, same Content-Length, no body. Errors convert too — a 404 for
+/// a missing file stays a 404 with the error's own length.
+inline std::shared_ptr<oatpp::web::protocol::http::outgoing::Response>
+asHeadResponse(const std::shared_ptr<oatpp::web::protocol::http::outgoing::Response> &full) {
+    if (!full) {
+        return full;
+    }
+    const auto body = full->getBody();
+    const v_int64 size = body ? body->getKnownSize() : 0;
+    auto head = oatpp::web::protocol::http::outgoing::Response::createShared(
+        full->getStatus(), std::make_shared<HeadBody>(size < 0 ? 0 : size));
+    for (const auto &header : full->getHeaders().getAll()) {
+        head->putHeader(header.first.toString(), header.second.toString());
+    }
+    // Some headers aren't on the response yet — a body declares its own at send
+    // time, which is where a DTO response's Content-Type comes from. Ask the
+    // real body what it would have added, so HEAD doesn't quietly drop it.
+    // Content-Length is deliberately not taken from here: Response::send
+    // recomputes it from the body it actually has, which is ours.
+    if (body) {
+        oatpp::web::protocol::http::Headers declared;
+        body->declareHeaders(declared);
+        for (const auto &header : declared.getAll()) {
+            head->putHeaderIfNotExists(header.first.toString(), header.second.toString());
+        }
+    }
+    return head;
 }
 
 // isUuidShape lives in util/helpers.h so non-controller callers (JobWorker,

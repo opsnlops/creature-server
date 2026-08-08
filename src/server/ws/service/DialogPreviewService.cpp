@@ -10,6 +10,7 @@
 #include "server/config/Configuration.h"
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
+#include "server/storage/Storage.h"
 #include "server/voice/DialogPipeline.h"
 #include "server/voice/DialogPreviewAssembly.h"
 #include "server/voice/DialogWav.h"
@@ -503,6 +504,82 @@ DialogPreviewService::exportMultichannel(const PreviewOutcome &outcome, const st
         return creatures::Result<void>{writeResult.getError().value()};
     }
     return creatures::Result<void>{};
+}
+
+creatures::Result<std::filesystem::path>
+DialogPreviewService::ensureAdHocExport(const PreviewOutcome &outcome,
+                                        const std::shared_ptr<creatures::OperationSpan> &opSpan) {
+    auto pathResult = creatures::storage::voiceTakeAdHocPath(outcome.generation.generationId);
+    if (!pathResult.isSuccess()) {
+        return creatures::Result<std::filesystem::path>{pathResult.getError().value()};
+    }
+    const auto wavPath = pathResult.getValue().value();
+
+    // Already there — the same take assembled twice is byte-identical, so
+    // rewriting it would only burn I/O. A zero-byte file is a half-finished
+    // write from a crashed run and gets rebuilt.
+    std::error_code ec;
+    if (std::filesystem::exists(wavPath, ec) && !ec && std::filesystem::file_size(wavPath, ec) > 0 && !ec) {
+        if (opSpan) {
+            opSpan->setAttribute("dialog.ad_hoc_export_reused", true);
+        }
+        return creatures::Result<std::filesystem::path>{wavPath};
+    }
+
+    auto exported = exportMultichannel(outcome, wavPath, opSpan);
+    if (!exported.isSuccess()) {
+        return creatures::Result<std::filesystem::path>{exported.getError().value()};
+    }
+    if (opSpan) {
+        opSpan->setAttribute("dialog.ad_hoc_export_reused", false);
+    }
+    debug("wrote ad-hoc take export for generation {}", outcome.generation.generationId);
+    return creatures::Result<std::filesystem::path>{wavPath};
+}
+
+creatures::Result<std::filesystem::path>
+DialogPreviewService::ensureAdHocExportForTake(const std::vector<creatures::DialogScriptTurn> &turns,
+                                               const std::string &cacheKey, const std::string &generationId,
+                                               const std::shared_ptr<creatures::OperationSpan> &opSpan) {
+    if (turns.empty()) {
+        return creatures::Result<std::filesystem::path>{
+            creatures::ServerError(creatures::ServerError::InvalidData, "script has no turns")};
+    }
+
+    // The preview pipeline speaks DTOs; a stored script speaks model structs.
+    // They carry the same two fields, so the conversion is a shim rather than
+    // a second source of truth.
+    auto turnDtos = oatpp::List<oatpp::Object<DialogTurnDto>>::createShared();
+    for (const auto &turn : turns) {
+        auto dto = DialogTurnDto::createShared();
+        dto->creature_id = turn.creature_id.c_str();
+        dto->text = turn.text.c_str();
+        turnDtos->push_back(dto);
+    }
+
+    auto resolvedResult = resolveCreatures(turnDtos, opSpan);
+    if (!resolvedResult.isSuccess()) {
+        return creatures::Result<std::filesystem::path>{resolvedResult.getError().value()};
+    }
+
+    auto generationResult = creatures::voice::loadGeneration(cacheKey, generationId);
+    if (!generationResult.isSuccess()) {
+        return creatures::Result<std::filesystem::path>{generationResult.getError().value()};
+    }
+
+    PreviewOutcome outcome;
+    outcome.generation = generationResult.getValue().value();
+    outcome.cacheKey = cacheKey;
+    outcome.cached = true;
+    outcome.resolved = resolvedResult.getValue().value();
+    outcome.inputs = buildDialogInputs(turnDtos, outcome.resolved);
+
+    // Generations written before the index-space fix carry raw ElevenLabs
+    // character indices; every other load path normalizes them, so this one
+    // has to as well or the slicing lands in the wrong place.
+    creatures::voice::normalizeCachedGenerationVoiceSegments(outcome.generation, outcome.inputs);
+
+    return ensureAdHocExport(outcome, opSpan);
 }
 
 } // namespace creatures::ws

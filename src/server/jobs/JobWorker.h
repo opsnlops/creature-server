@@ -151,6 +151,19 @@ class JobWorker : public creatures::StoppableThread {
      * invalidation on success.
      */
     void handleVoiceFileJob(JobState &jobState);
+
+    /**
+     * Finish accepting a voice take whose 17-channel audio isn't on disk yet.
+     *
+     * Details JSON is {script_id, generation_id, dialog_cache_key}. Assembles
+     * the take's WAV from the cached generation — never an ElevenLabs call, so
+     * the performance is unchanged — then demotes any outgoing take, promotes
+     * this one, and stamps `accepted_voice` on the script. Completion result is
+     * the canonical DialogScriptDto JSON, the same body the synchronous accept
+     * returns. The controller only enqueues this when the audio is missing; the
+     * ordinary path stays a 200.
+     */
+    void handleVoiceTakeAcceptJob(JobState &jobState);
 };
 
 } // namespace creatures::jobs

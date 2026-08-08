@@ -36,11 +36,48 @@ struct DialogScriptTurn {
     std::string text;
 };
 
+/// The voice take an author explicitly chose for a script (#131).
+///
+/// Mirrors DialogBackgroundMusic: an explicit, script-level choice the render
+/// reads, rather than something reconstructed from provenance after the fact.
+///
+/// `dialog_cache_key` is the staleness test — sha256 of the turns this take
+/// was accepted against. When it stops matching the script's current turns
+/// the acceptance is stale: still reported, never auto-cleared. Nothing
+/// chosen is ever silently un-chosen.
+///
+/// `sound_file` is the PROMOTED, permanent audio. Takes are generated as
+/// ad-hoc sounds with a 24 h TTL; accepting moves the chosen one into the
+/// real sounds directory so the script can reference it indefinitely, and
+/// clearing moves it back. The sounds directory therefore holds at most one
+/// take per script.
+struct AcceptedVoice {
+    std::string generation_id;
+    std::string dialog_cache_key; // sha256 of the turns accepted against
+    std::string sound_file;       // promoted, permanent, relative to the sound root
+    int64_t accepted_at{0};       // wall-clock milliseconds since epoch
+
+    bool operator==(const AcceptedVoice &) const = default;
+};
+
+/// The two `source_dialog_*` fields record which VOICE take the music was
+/// composed against (#136). Music is fitted to a specific performance's
+/// timing and length, so when the accepted voice changes, accepted music
+/// that predates it is describing audio that will never render again.
+/// Without this the Console can only report candidates as stale — the
+/// already-accepted card sits green and silent, which is the worst kind of
+/// wrong on the surface where scenes are actually built.
+///
+/// Both are empty on music accepted before this was recorded. That's
+/// reported as "no verdict", never as "fresh" — an unknown provenance must
+/// not read as a passing one.
 struct DialogBackgroundMusic {
-    std::string sound_file;    // permanent, relative-to-sounds WAV path
-    std::string generation_id; // accepted server-side music generation UUID
-    std::string prompt;        // exact ElevenLabs prompt used for the accepted take
-    int64_t accepted_at{0};    // wall-clock milliseconds since epoch
+    std::string sound_file;                  // permanent, relative-to-sounds WAV path
+    std::string generation_id;               // accepted server-side music generation UUID
+    std::string prompt;                      // exact ElevenLabs prompt used for the accepted take
+    int64_t accepted_at{0};                  // wall-clock milliseconds since epoch
+    std::string source_dialog_generation_id; // voice take this was composed against
+    std::string source_dialog_cache_key;     // sha256 of the turns at composition time
 
     bool operator==(const DialogBackgroundMusic &) const = default;
 };
@@ -57,6 +94,8 @@ struct DialogScript {
     std::string notes; // free-form, may be empty
     std::vector<DialogScriptTurn> turns;
     std::optional<DialogBackgroundMusic> background_music;
+    /// The explicitly accepted voice take, if one has been chosen (#131).
+    std::optional<AcceptedVoice> accepted_voice;
     /// Stage this script is normally rendered against (#119). Empty = none.
     /// A render request may override it; that's how you produce a travel
     /// rendition of a mainstage scene.
@@ -83,6 +122,29 @@ class DialogScriptTurnDto : public oatpp::DTO {
     DTO_FIELD(String, text);
 };
 
+class AcceptedVoiceDto : public oatpp::DTO {
+
+    DTO_INIT(AcceptedVoiceDto, DTO)
+
+    DTO_FIELD_INFO(generation_id) { info->description = "UUID of the accepted dialog generation."; }
+    DTO_FIELD(String, generation_id);
+
+    DTO_FIELD_INFO(dialog_cache_key) {
+        info->description = "sha256 of the turns this take was accepted against. When it no longer matches the "
+                            "script's current turns the acceptance is stale — reported, never auto-cleared.";
+    }
+    DTO_FIELD(String, dialog_cache_key);
+
+    DTO_FIELD_INFO(sound_file) {
+        info->description = "Promoted permanent WAV for the accepted take, relative to the sound root. Outlives the "
+                            "24h preview TTL, so the Console can always play it back.";
+    }
+    DTO_FIELD(String, sound_file);
+
+    DTO_FIELD_INFO(accepted_at) { info->description = "Wall-clock milliseconds since epoch when it was accepted."; }
+    DTO_FIELD(Int64, accepted_at);
+};
+
 class DialogBackgroundMusicDto : public oatpp::DTO {
 
     DTO_INIT(DialogBackgroundMusicDto, DTO)
@@ -91,6 +153,21 @@ class DialogBackgroundMusicDto : public oatpp::DTO {
     DTO_FIELD(String, generation_id);
     DTO_FIELD(String, prompt);
     DTO_FIELD(Int64, accepted_at);
+
+    DTO_FIELD_INFO(source_dialog_generation_id) {
+        info->description = "The voice take this music was composed against. Compare with "
+                            "accepted_voice.generation_id to tell whether the music still matches the performance "
+                            "it was fitted to. Absent on music accepted before this was recorded — show no "
+                            "verdict rather than a passing one.";
+        info->required = false;
+    }
+    DTO_FIELD(String, source_dialog_generation_id);
+
+    DTO_FIELD_INFO(source_dialog_cache_key) {
+        info->description = "sha256 of the script's turns at the time the music was composed.";
+        info->required = false;
+    }
+    DTO_FIELD(String, source_dialog_cache_key);
 };
 
 class DialogScriptDto : public oatpp::DTO {
@@ -130,6 +207,13 @@ class DialogScriptDto : public oatpp::DTO {
         info->required = false;
     }
     DTO_FIELD(Object<DialogBackgroundMusicDto>, background_music);
+
+    DTO_FIELD_INFO(accepted_voice) {
+        info->description = "The explicitly accepted voice take, if one has been chosen. Absent means no take has "
+                            "been accepted — renders from this script are blocked until one is.";
+        info->required = false;
+    }
+    DTO_FIELD(Object<AcceptedVoiceDto>, accepted_voice);
 
     DTO_FIELD_INFO(created_at) {
         info->description = "Wall-clock milliseconds since Unix epoch when the script was first persisted. "

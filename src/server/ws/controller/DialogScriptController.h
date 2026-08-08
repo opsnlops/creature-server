@@ -178,8 +178,12 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 try {
                     parsed = buildScriptJsonForUpsert(std::string(*body), id, now, now);
                     // Music references are created only by the promotion endpoint,
-                    // after it has verified the permanent WAV and embedded recipe.
+                    // after it has verified the permanent WAV and embedded recipe;
+                    // an acceptance likewise only comes from the accept endpoint,
+                    // which promotes the audio first. A brand new script has
+                    // neither, whatever the body claims.
                     parsed.erase("background_music");
+                    parsed.erase("accepted_voice");
                 } catch (const nlohmann::json::exception &e) {
                     return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
                 } catch (const std::exception &e) {
@@ -252,12 +256,21 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 try {
                     parsed =
                         buildScriptJsonForUpsert(std::string(*body), std::string(*scriptId), createdAt, nowMillis());
-                    // Treat accepted music as server-managed state. A normal script
-                    // edit must neither forge a path nor accidentally detach the take.
+                    // Accepted music and the accepted voice take are server-managed:
+                    // an ordinary script edit must neither forge one nor detach one.
+                    // Carrying them forward is now load-bearing rather than tidy —
+                    // the upsert replaces the document (#134), so anything not
+                    // written here is gone.
+                    const auto existingJson = creatures::dialogScriptToJson(existingScript);
                     if (existingScript.background_music) {
-                        parsed["background_music"] = creatures::dialogScriptToJson(existingScript)["background_music"];
+                        parsed["background_music"] = existingJson["background_music"];
                     } else {
                         parsed.erase("background_music");
+                    }
+                    if (existingScript.accepted_voice) {
+                        parsed["accepted_voice"] = existingJson["accepted_voice"];
+                    } else {
+                        parsed.erase("accepted_voice");
                     }
                 } catch (const nlohmann::json::exception &e) {
                     return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
@@ -466,6 +479,69 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     span->setHttpStatus(200);
                 }
                 return createDtoResponse(Status::CODE_200, resultDto);
+            });
+    }
+
+    ENDPOINT_INFO(clearAcceptedVoice) {
+        info->summary = "Clear the script's accepted voice take";
+        info->description =
+            "Un-accepts the chosen take (#131). The promoted audio is DEMOTED back to the ad-hoc bucket, which "
+            "restarts its 24h TTL and gives a change-your-mind window before the sweep reclaims it.\n\n"
+            "Idempotent: clearing a script that has no acceptance returns the script unchanged without bumping "
+            "updated_at or broadcasting.";
+        info->addTag("Multi-character Dialog");
+        info->pathParams["scriptId"].description = "Dialog script UUID";
+        info->addResponse<Object<DialogScriptDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("DELETE", "api/v1/animation/dialog/script/{scriptId}/voice", clearAcceptedVoice, PATH(String, scriptId),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "DELETE /api/v1/animation/dialog/script/{scriptId}/voice", "DELETE",
+            "api/v1/animation/dialog/script/{scriptId}/voice", "clearAcceptedVoice", "DialogScriptController", request,
+            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                if (!scriptId || !isUuidShape(std::string(*scriptId))) {
+                    return bailHttp(span, Status::CODE_400, "scriptId must be a UUID");
+                }
+                auto opSpan = creatures::observability->createChildOperationSpan(
+                    "DialogScriptController.clearAcceptedVoice", span);
+                auto existing = creatures::db->getDialogScript(std::string(*scriptId), opSpan);
+                if (!existing.isSuccess()) {
+                    return bailFromServerError(span, existing.getError().value());
+                }
+                auto existingScript = existing.getValue().value();
+                if (span) {
+                    span->setAttribute("voice.was_accepted", existingScript.accepted_voice.has_value());
+                }
+
+                // Nothing accepted — return the script untouched rather than
+                // bumping updated_at for a no-op.
+                if (!existingScript.accepted_voice) {
+                    if (span)
+                        span->setHttpStatus(200);
+                    return createDtoResponse(Status::CODE_200, creatures::convertToDto(existingScript));
+                }
+
+                // Demote first: if the move fails we would rather keep the
+                // acceptance pointing at a file that still exists than clear
+                // it and strand the audio in the permanent tree.
+                auto demoted = creatures::storage::demoteVoiceTake(
+                    existingScript.accepted_voice->sound_file, existingScript.accepted_voice->generation_id, opSpan);
+                if (!demoted.isSuccess()) {
+                    return bailFromServerError(span, demoted.getError().value());
+                }
+
+                auto updated = creatures::dialogScriptToJson(existingScript);
+                updated.erase("accepted_voice");
+                updated["updated_at"] = std::max(nowMillis(), existingScript.updated_at + 1);
+                auto published = creatures::storage::publishDialogScript(updated.dump(), opSpan);
+                if (!published.isSuccess()) {
+                    return bailFromServerError(span, published.getError().value());
+                }
+                if (span)
+                    span->setHttpStatus(200);
+                return createDtoResponse(Status::CODE_200, creatures::convertToDto(published.getValue().value()));
             });
     }
 

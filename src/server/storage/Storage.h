@@ -143,6 +143,44 @@ struct StoragePath {
                                                        std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
 // =============================================================================
+// Accepted voice takes (#131)
+//
+// Takes are generated as ad-hoc sounds with a 24h TTL so an author can
+// re-audition candidates for a day. Accepting one MOVES it into the permanent
+// tree — not a copy — because the script references it indefinitely and it
+// must outlive the TTL. Clearing or replacing moves it back, restarting the
+// TTL and giving a change-your-mind window.
+//
+// Moving rather than copying is what keeps the invariant: the sounds
+// directory holds at most one take per script, the accepted one. Never
+// duplicates, never orphans. It's the #130 disk problem avoided by design.
+// =============================================================================
+
+// Where a preview export lands in the ad-hoc bucket, by generation id. Shared
+// so promote and demote agree on the filename without duplicating the format.
+[[nodiscard]] std::string voiceTakeAdHocFilename(const std::string &generationId);
+
+// Absolute path of a take's 17-channel WAV in the ad-hoc bucket. The one place
+// that knows the layout — the preview export writes here, promote reads here,
+// demote writes back here. Fails only if the ad-hoc root can't be resolved.
+[[nodiscard]] Result<std::filesystem::path> voiceTakeAdHocPath(const std::string &generationId);
+
+// Move a take's audio out of ad-hoc and into the permanent tree under
+// `dialog/voice/`. `filename` should follow the #126 convention (slugified
+// script title + short id) so the file is identifiable on disk and in the
+// Console's sound list. Fires SoundList + AdHocSoundList.
+[[nodiscard]] Result<StoragePath> promoteVoiceTake(const std::string &generationId, std::string filename,
+                                                   std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// Move a promoted take back to ad-hoc so the TTL sweep can reclaim it.
+// `stored` is whatever was on AcceptedVoice::sound_file. Guarded like
+// deleteSupersededDialogSound: only files under `dialog/voice/`, containment
+// checked on canonical paths. A refusal returns success having done nothing —
+// failing to demote must never fail an acceptance that otherwise worked.
+[[nodiscard]] Result<void> demoteVoiceTake(const std::string &stored, const std::string &generationId,
+                                           std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// =============================================================================
 // DB-only publishers — each pairs the db->* call with the matching cache
 // invalidation so callers can't fire one without the other (issue #11
 // expansion: same footgun as the file-storage publishers, just at the

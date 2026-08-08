@@ -105,3 +105,152 @@ TEST(DialogScriptStageBindingTest, StageIdSurvivesTheJsonRoundTrip) {
     unbound.title = "unbound";
     EXPECT_FALSE(creatures::dialogScriptToJson(unbound).contains("stage_id"));
 }
+
+// ===========================================================================
+// Accepted voice take (issue #131)
+//
+// Both round trips, deliberately. The DTO conversion has been the gap twice
+// now — stage_id (#123) and source_render_choices — both times because only
+// the JSON path was covered and every HTTP response goes through the DTO.
+// ===========================================================================
+
+namespace {
+
+creatures::AcceptedVoice sampleAcceptedVoice() {
+    creatures::AcceptedVoice v;
+    v.generation_id = "9f1fd726-3b78-4b4a-b9aa-fdf7f4a62329";
+    v.dialog_cache_key = std::string(64, 'a');
+    v.sound_file = "dialog/voice/beaky-loves-magic-9f1fd726.wav";
+    v.accepted_at = 1786000000000;
+    return v;
+}
+
+} // namespace
+
+TEST(AcceptedVoiceTest, SurvivesConvertToDto) {
+    creatures::DialogScript script;
+    script.id = "6bf1f0e4-2c9e-4a2f-9f8a-6c7d1e2b3a45";
+    script.title = "scene";
+    script.accepted_voice = sampleAcceptedVoice();
+
+    const auto dto = creatures::convertToDto(script);
+    ASSERT_TRUE(dto->accepted_voice);
+    EXPECT_EQ(std::string(*dto->accepted_voice->generation_id), sampleAcceptedVoice().generation_id);
+    EXPECT_EQ(std::string(*dto->accepted_voice->dialog_cache_key), sampleAcceptedVoice().dialog_cache_key);
+    EXPECT_EQ(std::string(*dto->accepted_voice->sound_file), sampleAcceptedVoice().sound_file);
+    EXPECT_EQ(*dto->accepted_voice->accepted_at, 1786000000000);
+}
+
+TEST(AcceptedVoiceTest, SurvivesTheFullDtoRoundTrip) {
+    creatures::DialogScript script;
+    script.id = "6bf1f0e4-2c9e-4a2f-9f8a-6c7d1e2b3a45";
+    script.title = "scene";
+    script.accepted_voice = sampleAcceptedVoice();
+
+    const auto back = creatures::convertFromDto(creatures::convertToDto(script).getPtr());
+    ASSERT_TRUE(back.accepted_voice.has_value());
+    EXPECT_EQ(*back.accepted_voice, sampleAcceptedVoice());
+}
+
+TEST(AcceptedVoiceTest, SurvivesTheJsonRoundTrip) {
+    creatures::DialogScript script;
+    script.id = "6bf1f0e4-2c9e-4a2f-9f8a-6c7d1e2b3a45";
+    script.title = "scene";
+    script.accepted_voice = sampleAcceptedVoice();
+
+    const auto json = creatures::dialogScriptToJson(script);
+    ASSERT_TRUE(json.contains("accepted_voice"));
+    EXPECT_EQ(json["accepted_voice"]["generation_id"].get<std::string>(), sampleAcceptedVoice().generation_id);
+    EXPECT_EQ(json["accepted_voice"]["dialog_cache_key"].get<std::string>(), sampleAcceptedVoice().dialog_cache_key);
+    EXPECT_EQ(json["accepted_voice"]["sound_file"].get<std::string>(), sampleAcceptedVoice().sound_file);
+    EXPECT_EQ(json["accepted_voice"]["accepted_at"].get<int64_t>(), 1786000000000);
+}
+
+TEST(AcceptedVoiceTest, ScriptWithNoAcceptanceOmitsTheFieldEntirely) {
+    creatures::DialogScript script;
+    script.id = "6bf1f0e4-2c9e-4a2f-9f8a-6c7d1e2b3a45";
+    script.title = "unaccepted";
+
+    EXPECT_FALSE(creatures::convertToDto(script)->accepted_voice);
+    EXPECT_FALSE(creatures::dialogScriptToJson(script).contains("accepted_voice"));
+}
+
+// ===========================================================================
+// Music composition source (issue #136)
+//
+// Music is fitted to one voice take's timing and length. Without recording
+// which take, the Console can flag stale *candidates* but the already-accepted
+// card stays green — describing audio that will never render again. These pin
+// all three conversion directions, because that asymmetry is exactly how
+// stage_id (#123) and source_render_choices shipped broken: JSON covered, DTO
+// silently dropping the field on every response.
+// ===========================================================================
+
+namespace {
+
+creatures::DialogScript scriptWithMusic() {
+    creatures::DialogScript script;
+    script.id = "7aaf11a0-d75d-4ca2-891d-9f3493dc66e4";
+    script.title = "Moonlit argument";
+    script.turns = {{"55a2af23-e797-462b-8c91-e0bc23b86fd4", "I knew you'd come back."}};
+    script.background_music =
+        creatures::DialogBackgroundMusic{"dialog/music/moonlit-argument--bgm--uneasy-strings--0123456789ab.wav",
+                                         "01234567-89ab-4def-8123-456789abcdef",
+                                         "uneasy chamber strings, restrained and instrumental",
+                                         123456789,
+                                         "9f8e7d6c-5b4a-4938-8271-6f5e4d3c2b1a",
+                                         std::string(64, 'a')};
+    return script;
+}
+
+} // namespace
+
+TEST(MusicCompositionSource, SurvivesTheJsonRoundTrip) {
+    const auto script = scriptWithMusic();
+    const auto json = creatures::dialogScriptToJson(script);
+    EXPECT_EQ(json["background_music"]["source_dialog_generation_id"],
+              script.background_music->source_dialog_generation_id);
+    EXPECT_EQ(json["background_music"]["source_dialog_cache_key"], script.background_music->source_dialog_cache_key);
+}
+
+TEST(MusicCompositionSource, SurvivesConvertToDto) {
+    const auto script = scriptWithMusic();
+    const auto dto = creatures::convertToDto(script);
+    ASSERT_TRUE(dto->background_music);
+    ASSERT_TRUE(dto->background_music->source_dialog_generation_id);
+    EXPECT_EQ(std::string(*dto->background_music->source_dialog_generation_id),
+              script.background_music->source_dialog_generation_id);
+    ASSERT_TRUE(dto->background_music->source_dialog_cache_key);
+    EXPECT_EQ(std::string(*dto->background_music->source_dialog_cache_key),
+              script.background_music->source_dialog_cache_key);
+}
+
+TEST(MusicCompositionSource, SurvivesTheFullDtoRoundTrip) {
+    const auto script = scriptWithMusic();
+    const auto roundTrip = creatures::convertFromDto(creatures::convertToDto(script).getPtr());
+    ASSERT_TRUE(roundTrip.background_music.has_value());
+    EXPECT_EQ(*roundTrip.background_music, *script.background_music);
+}
+
+TEST(MusicCompositionSource, MusicWithoutASourceOmitsTheFieldsRatherThanSendingThemEmpty) {
+    // An unrecorded source must be distinguishable from a known-empty one, so
+    // the Console shows "no verdict" instead of a passing one. Music accepted
+    // before #136 lands is in exactly this state.
+    auto script = scriptWithMusic();
+    script.background_music->source_dialog_generation_id.clear();
+    script.background_music->source_dialog_cache_key.clear();
+
+    const auto json = creatures::dialogScriptToJson(script);
+    EXPECT_FALSE(json["background_music"].contains("source_dialog_generation_id"));
+    EXPECT_FALSE(json["background_music"].contains("source_dialog_cache_key"));
+
+    const auto dto = creatures::convertToDto(script);
+    ASSERT_TRUE(dto->background_music);
+    EXPECT_FALSE(dto->background_music->source_dialog_generation_id);
+    EXPECT_FALSE(dto->background_music->source_dialog_cache_key);
+
+    // And the older shape still round-trips, so pre-#136 music keeps working.
+    const auto roundTrip = creatures::convertFromDto(dto.getPtr());
+    ASSERT_TRUE(roundTrip.background_music.has_value());
+    EXPECT_EQ(*roundTrip.background_music, *script.background_music);
+}

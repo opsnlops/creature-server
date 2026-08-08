@@ -34,6 +34,8 @@ enum class JobType {
     VoiceFile,           // Single-voice TTS of text into a permanent sound file
     StageRerender,       // Rebuild an existing dialog animation's motion against a changed Stage.
                          // MOTION ONLY — never regenerates audio. See handleStageRerenderJob.
+    VoiceTakeAccept,     // Assemble a take's missing 17-channel audio, then promote it and record
+                         // the acceptance. Only used when the audio isn't already on disk (#131).
 };
 
 /**
@@ -111,6 +113,8 @@ inline std::string toString(JobType type) {
         return "voice-file";
     case JobType::StageRerender:
         return "stage-rerender";
+    case JobType::VoiceTakeAccept:
+        return "voice-take-accept";
     default:
         return "unknown";
     }

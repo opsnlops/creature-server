@@ -12,6 +12,7 @@
 
 #include "App.h"
 #include "AppComponent.h"
+#include "HeadRoutes.h"
 #include "SwaggerComponent.h"
 #include "controller/AnimationController.h"
 #include "controller/CreatureController.h"
@@ -20,14 +21,15 @@
 #include "controller/DialogMusicController.h"
 #include "controller/DialogPreviewController.h"
 #include "controller/DialogScriptController.h"
+#include "controller/DialogVoiceController.h"
 #include "controller/DmxFixtureController.h"
 #include "controller/JobController.h"
 #include "controller/MetricsController.h"
 #include "controller/PlaylistController.h"
 #include "controller/SoundController.h"
 #include "controller/SpeechToTextController.h"
-#include "controller/StaticController.h"
 #include "controller/StageController.h"
+#include "controller/StaticController.h"
 #include "controller/StoryboardController.h"
 #include "controller/StreamingAdHocController.h"
 #include "controller/VoiceController.h"
@@ -81,12 +83,17 @@ void App::run() {
     docEndpoints.append(router->addController(DialogMusicController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DialogPreviewController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DialogScriptController::createShared())->getEndpoints());
+    docEndpoints.append(router->addController(DialogVoiceController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(StageController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(StoryboardController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(StaticController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(VoiceController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(WebSocketController::createShared())->getEndpoints());
     router->addController(oatpp::swagger::Controller::createShared(docEndpoints));
+
+    // HEAD is GET without the body (#139). Mapped here, once, so it holds for
+    // every route including ones added later — see HeadRoutes.h.
+    creatures::ws::registerHeadRoutes(router, docEndpoints);
 
     router->addController(AnimationController::createShared());
     router->addController(CreatureController::createShared());
