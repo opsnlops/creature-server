@@ -160,6 +160,11 @@ struct StoragePath {
 // so promote and demote agree on the filename without duplicating the format.
 [[nodiscard]] std::string voiceTakeAdHocFilename(const std::string &generationId);
 
+// Absolute path of a take's 17-channel WAV in the ad-hoc bucket. The one place
+// that knows the layout — the preview export writes here, promote reads here,
+// demote writes back here. Fails only if the ad-hoc root can't be resolved.
+[[nodiscard]] Result<std::filesystem::path> voiceTakeAdHocPath(const std::string &generationId);
+
 // Move a take's audio out of ad-hoc and into the permanent tree under
 // `dialog/voice/`. `filename` should follow the #126 convention (slugified
 // script title + short id) so the file is identifiable on disk and in the

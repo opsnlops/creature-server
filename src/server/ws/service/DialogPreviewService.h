@@ -12,6 +12,7 @@
 
 #include <oatpp/core/Types.hpp>
 
+#include "model/DialogScript.h"
 #include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
 #include "server/ws/dto/DialogDto.h"
@@ -88,6 +89,28 @@ class DialogPreviewService {
     /// on any failure.
     creatures::Result<void> exportMultichannel(const PreviewOutcome &outcome, const std::filesystem::path &wavPath,
                                                const std::shared_ptr<creatures::OperationSpan> &opSpan);
+
+    /// Make sure this take's 17-channel WAV exists in the ad-hoc bucket,
+    /// assembling it if it doesn't, and return where it lives.
+    ///
+    /// April's take lifecycle (#131) is "every generated take is an ad-hoc
+    /// sound" — browsable and re-auditionable for 24 h, and the thing that
+    /// acceptance promotes into the permanent tree. Until this existed only
+    /// the explicit multichannel *export* job wrote that file, so accepting a
+    /// take that had merely been generated failed on a file that was never
+    /// written. Idempotent: an existing non-empty WAV is left alone.
+    creatures::Result<std::filesystem::path> ensureAdHocExport(const PreviewOutcome &outcome,
+                                                               const std::shared_ptr<creatures::OperationSpan> &opSpan);
+
+    /// Same, for a caller that holds a script rather than a preview request —
+    /// acceptance, which knows the turns, the cache key and the take, but has
+    /// none of the resolution the preview pipeline did. Rebuilds just enough
+    /// of a PreviewOutcome (creature → voice + audio_channel, the cached
+    /// generation) to assemble the WAV. Never calls ElevenLabs: the take is
+    /// read from the generation cache, so the performance is unchanged.
+    creatures::Result<std::filesystem::path>
+    ensureAdHocExportForTake(const std::vector<creatures::DialogScriptTurn> &turns, const std::string &cacheKey,
+                             const std::string &generationId, const std::shared_ptr<creatures::OperationSpan> &opSpan);
 
     /// Pack our internal voice_segments / forced_alignment into the response DTO.
     static void populateMetaResponse(oatpp::Object<DialogPreviewMetaResponseDto> &dto,

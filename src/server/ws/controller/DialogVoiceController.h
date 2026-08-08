@@ -15,12 +15,12 @@
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/storage/Storage.h"
-#include "server/voice/DialogCache.h"
 #include "server/voice/ScriptCacheKey.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/DialogVoiceDto.h"
 #include "server/ws/dto/StatusDto.h"
+#include "server/ws/service/DialogPreviewService.h"
 #include "util/Slugify.h"
 
 namespace creatures {
@@ -126,26 +126,36 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                                     "edited after this take was auditioned. Re-audition and accept again.");
                 }
 
-                // And the take itself has to still exist in the generation
-                // cache under that key.
-                auto generation = creatures::voice::loadGeneration(cacheKey, generationId);
-                if (!generation.isSuccess()) {
-                    return bailHttp(span, Status::CODE_404,
-                                    fmt::format("generation '{}' not found for this script's turns (expired or "
-                                                "never existed)",
-                                                generationId));
+                if (script.accepted_voice && script.accepted_voice->generation_id == generationId) {
+                    // Already accepted — nothing to do, and re-promoting would
+                    // look for an ad-hoc file that has already moved.
+                    if (span)
+                        span->setHttpStatus(200);
+                    return createDtoResponse(Status::CODE_200, creatures::convertToDto(script));
                 }
 
-                // Replacing: demote the outgoing take first so the sounds
-                // directory never briefly holds two.
+                // Promotion moves the take's 17-channel WAV out of the ad-hoc
+                // bucket, so make sure one is actually there. Generation writes
+                // it now (#131), but a take from before that, or one whose file
+                // the ad-hoc sweep took while its generation survived, would
+                // otherwise dead-end: re-auditioning returns the same cached
+                // take and never rebuilds the missing WAV. Assembling from the
+                // cached generation costs no ElevenLabs call and no change of
+                // performance.
+                //
+                // This runs BEFORE the outgoing take is demoted: everything
+                // that can fail has to fail while the previously accepted take
+                // is still whole, or a failed acceptance leaves the script
+                // pointing at audio that has moved.
+                DialogPreviewService previewService;
+                auto exported = previewService.ensureAdHocExportForTake(script.turns, cacheKey, generationId, opSpan);
+                if (!exported.isSuccess()) {
+                    return bailFromServerError(span, exported.getError().value());
+                }
+
+                // Replacing: demote the outgoing take so the sounds directory
+                // never holds two takes for one script.
                 if (script.accepted_voice) {
-                    if (script.accepted_voice->generation_id == generationId) {
-                        // Already accepted — nothing to do, and re-promoting
-                        // would look for an ad-hoc file that has already moved.
-                        if (span)
-                            span->setHttpStatus(200);
-                        return createDtoResponse(Status::CODE_200, creatures::convertToDto(script));
-                    }
                     auto demoted = creatures::storage::demoteVoiceTake(script.accepted_voice->sound_file,
                                                                        script.accepted_voice->generation_id, opSpan);
                     if (!demoted.isSuccess()) {

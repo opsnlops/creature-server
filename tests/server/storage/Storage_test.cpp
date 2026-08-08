@@ -162,6 +162,95 @@ TEST_F(StorageTest, AllocateAndResolveRoundTripAdHoc) {
     EXPECT_EQ(resolveSoundPath(r.getValue().value().forMetadata), r.getValue().value().absolute);
 }
 
+// ===========================================================================
+// Accepted voice take promote / demote (#131)
+//
+// The invariant under test: the permanent sounds directory holds at most one
+// take per script, because acceptance MOVES the audio rather than copying it.
+// ===========================================================================
+
+namespace {
+
+/// Put a stand-in take WAV where a generated take's export would be.
+std::filesystem::path writeAdHocTake(const std::string &generationId, const std::string &contents) {
+    auto path = voiceTakeAdHocPath(generationId);
+    EXPECT_TRUE(path.isSuccess()) << "ad-hoc root should always resolve";
+    std::filesystem::create_directories(path.getValue().value().parent_path());
+    std::ofstream out(path.getValue().value(), std::ios::binary);
+    out << contents;
+    return path.getValue().value();
+}
+
+} // namespace
+
+TEST_F(StorageTest, VoiceTakeAdHocPathEndsWithTheSharedFilename) {
+    // promote, demote and the preview export all have to agree on where a
+    // take's WAV lives; they agree by going through this one function.
+    auto path = voiceTakeAdHocPath("abc123");
+    ASSERT_TRUE(path.isSuccess());
+    EXPECT_EQ(path.getValue().value().filename().string(), voiceTakeAdHocFilename("abc123"));
+}
+
+TEST_F(StorageTest, PromoteVoiceTakeMovesRatherThanCopies) {
+    const std::string generationId = "0f7c2a11-promote";
+    const auto source = writeAdHocTake(generationId, "take audio");
+
+    auto promoted = promoteVoiceTake(generationId, "coffee-0f7c2a11.wav");
+    ASSERT_TRUE(promoted.isSuccess()) << promoted.getError()->getMessage();
+    EXPECT_EQ(promoted.getValue().value().forMetadata, std::string("dialog/voice/coffee-0f7c2a11.wav"));
+    EXPECT_TRUE(std::filesystem::exists(promoted.getValue().value().absolute));
+
+    // Moved: nothing is left behind in ad-hoc to be swept or re-promoted.
+    EXPECT_FALSE(std::filesystem::exists(source));
+}
+
+TEST_F(StorageTest, PromoteVoiceTakeWithoutAdHocAudioSaysWhatIsActuallyWrong) {
+    // A take generated seconds ago hits this path too when its 17-channel WAV
+    // was never written, so the message must not blame the 24h TTL.
+    auto promoted = promoteVoiceTake("2b8e44c9-never-exported", "scene-2b8e44c9.wav");
+    ASSERT_FALSE(promoted.isSuccess());
+    EXPECT_EQ(promoted.getError()->getCode(), ServerError::NotFound);
+    const std::string message = promoted.getError()->getMessage();
+    EXPECT_NE(message.find("never exported"), std::string::npos) << message;
+}
+
+TEST_F(StorageTest, DemoteReturnsTheTakeToWherePromoteWouldFindItAgain) {
+    const std::string generationId = "9d31ff02-roundtrip";
+    writeAdHocTake(generationId, "take audio");
+
+    auto promoted = promoteVoiceTake(generationId, "coffee-9d31ff02.wav");
+    ASSERT_TRUE(promoted.isSuccess()) << promoted.getError()->getMessage();
+
+    ASSERT_TRUE(demoteVoiceTake(promoted.getValue().value().forMetadata, generationId).isSuccess());
+    EXPECT_FALSE(std::filesystem::exists(promoted.getValue().value().absolute));
+
+    // Un-accepting has to be reversible: the same take can be accepted again
+    // without regenerating audio.
+    auto again = promoteVoiceTake(generationId, "coffee-9d31ff02.wav");
+    ASSERT_TRUE(again.isSuccess()) << again.getError()->getMessage();
+    EXPECT_TRUE(std::filesystem::exists(again.getValue().value().absolute));
+}
+
+TEST_F(StorageTest, ReplacingATakeLeavesExactlyOneInThePermanentTree) {
+    writeAdHocTake("take-a", "A");
+    writeAdHocTake("take-b", "B");
+
+    auto a = promoteVoiceTake("take-a", "coffee-take-a.wav");
+    ASSERT_TRUE(a.isSuccess()) << a.getError()->getMessage();
+
+    // What the accept endpoint does when replacing: demote the outgoing take,
+    // then promote the incoming one.
+    ASSERT_TRUE(demoteVoiceTake(a.getValue().value().forMetadata, "take-a").isSuccess());
+    auto b = promoteVoiceTake("take-b", "coffee-take-b.wav");
+    ASSERT_TRUE(b.isSuccess()) << b.getError()->getMessage();
+
+    std::size_t takesOnDisk = 0;
+    for (const auto &entry : std::filesystem::directory_iterator(permanentRoot_ / "dialog" / "voice")) {
+        takesOnDisk += entry.is_regular_file() ? 1 : 0;
+    }
+    EXPECT_EQ(takesOnDisk, 1u) << "the sounds directory must hold at most one take per script";
+}
+
 } // namespace creatures::storage
 
 // ===========================================================================

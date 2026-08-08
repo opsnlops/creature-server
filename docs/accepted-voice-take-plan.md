@@ -103,6 +103,35 @@ Note this differs from music promotion, which *copies* (the ad-hoc candidate
 survives to TTL). Moving is what keeps the invariant, and it's the same disk
 problem as #130 solved by design rather than by cleanup.
 
+### "Take generated" wasn't true (found in live testing on 3.40)
+
+The first row of that table described an intention, not the code. Only the
+explicit multichannel **export** job ever wrote
+`preview-exports/dialog-17ch-<gen>.wav` — and that is exactly the file
+`promoteVoiceTake` moves. So accepting a take that had merely been *generated*
+404'd on a file that was never written, and the error blamed the 24 h TTL for
+a take thirty seconds old.
+
+Two changes make the row true:
+
+1. **Generation writes the ad-hoc export.** The preview job assembles the
+   17-channel WAV alongside the metadata it already returns. This is what makes
+   "generate four takes, come back tomorrow, pick one" work — the takes are
+   real ad-hoc sounds for a day, not just cache entries. Non-fatal: a scene
+   whose creatures have no usable `audio_channel` still returns its metadata,
+   and accept reports the channel problem precisely if asked to promote it.
+2. **Accept assembles it if it's missing.** Otherwise a take generated before
+   this change dead-ends: re-auditioning returns the same cached take and never
+   rebuilds the WAV, so there is no way back to an acceptable state short of
+   regenerating — which, on eleven_v3, is a *different performance*. Assembly
+   reads the cached generation, so it costs no ElevenLabs call. It runs before
+   the outgoing take is demoted, so a failed acceptance leaves the previously
+   accepted take whole.
+
+Both go through one `ensureAdHocExport`, which skips a WAV that is already
+there. `storage::voiceTakeAdHocPath` is now the single place that knows where
+a take's audio lives — export writes it, promote reads it, demote returns it.
+
 ## Endpoints
 
 | method | path | body |

@@ -2606,6 +2606,20 @@ void JobWorker::handleDialogPreviewJob(JobState &jobState) {
     }
     const auto outcome = outcomeResult.getValue().value();
 
+    // Every generated take is an ad-hoc sound (#131): browsable and
+    // re-auditionable for 24 h, and the file acceptance later promotes into
+    // the permanent tree. Writing it here rather than only in the explicit
+    // export job is what makes "generate four takes, come back tomorrow, pick
+    // one" work. Non-fatal: a scene whose creatures have no usable
+    // audio_channel still has perfectly good metadata to return, and accept
+    // will say so precisely if it's ever asked to promote this take.
+    updateProgress(0.95f);
+    auto exportResult = service.ensureAdHocExport(outcome, jobState.span);
+    if (!exportResult.isSuccess()) {
+        warn("dialog preview job {}: could not write the ad-hoc take export: {}", jobState.jobId,
+             exportResult.getError().value().getMessage());
+    }
+
     auto dto = ws::DialogPreviewMetaResponseDto::createShared();
     ws::DialogPreviewService::populateMetaResponse(dto, outcome.generation, outcome.cacheKey, outcome.cached);
 
@@ -2676,18 +2690,13 @@ void JobWorker::handleDialogPreviewExportJob(JobState &jobState) {
 
     // Write the 17-channel WAV into the ad-hoc sound bucket so it's downloadable
     // through GET /api/v1/sound/ad-hoc/{filename} and shareable for free.
-    auto adHocRootResult = creatures::storage::root(creatures::storage::Persistence::AdHoc);
-    if (!adHocRootResult.isSuccess()) {
-        return failJob(fmt::format("Unable to access ad-hoc root: {}", adHocRootResult.getError()->getMessage()));
-    }
-    const auto exportDir = adHocRootResult.getValue().value() / "preview-exports";
-    const auto fileName = fmt::format("dialog-17ch-{}.wav", outcome.generation.generationId);
-    const auto wavPath = exportDir / fileName;
-
-    auto exportResult = service.exportMultichannel(outcome, wavPath, jobState.span);
+    // Generation writes this file too (#131), so this is usually a no-op that
+    // just hands back the path.
+    auto exportResult = service.ensureAdHocExport(outcome, jobState.span);
     if (!exportResult.isSuccess()) {
         return failJob(exportResult.getError().value().getMessage());
     }
+    const auto fileName = exportResult.getValue().value().filename().string();
     updateProgress(0.95f);
 
     auto resultDto = ws::DialogPreviewExportResultDto::createShared();

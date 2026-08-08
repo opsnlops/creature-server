@@ -413,23 +413,36 @@ std::string voiceTakeAdHocFilename(const std::string &generationId) {
     return fmt::format("dialog-17ch-{}.wav", generationId);
 }
 
+Result<std::filesystem::path> voiceTakeAdHocPath(const std::string &generationId) {
+    auto adHocRoot = root(Persistence::AdHoc);
+    if (!adHocRoot.isSuccess()) {
+        return Result<std::filesystem::path>{adHocRoot.getError().value()};
+    }
+    return Result<std::filesystem::path>{adHocRoot.getValue().value() / kAdHocExportSubdir /
+                                         voiceTakeAdHocFilename(generationId)};
+}
+
 Result<StoragePath> promoteVoiceTake(const std::string &generationId, std::string filename,
                                      std::shared_ptr<OperationSpan> parentSpan) {
     (void)parentSpan;
 
-    auto adHocRoot = root(Persistence::AdHoc);
-    if (!adHocRoot.isSuccess()) {
-        return Result<StoragePath>{adHocRoot.getError().value()};
+    auto sourceResult = voiceTakeAdHocPath(generationId);
+    if (!sourceResult.isSuccess()) {
+        return Result<StoragePath>{sourceResult.getError().value()};
     }
-    const auto source = adHocRoot.getValue().value() / kAdHocExportSubdir / voiceTakeAdHocFilename(generationId);
+    const auto source = sourceResult.getValue().value();
 
     std::error_code ec;
     if (!std::filesystem::exists(source, ec) || ec) {
-        return Result<StoragePath>{ServerError(
-            ServerError::NotFound,
-            fmt::format("take audio for generation {} is no longer in the ad-hoc bucket — it may have been swept by "
-                        "the 24h TTL. Re-audition and accept again.",
-                        generationId))};
+        // Callers are expected to have assembled the export first; reaching
+        // here means it couldn't be built and couldn't be found. Don't blame
+        // the TTL — a take generated seconds ago hits this too when its
+        // 17-channel WAV was never written.
+        return Result<StoragePath>{
+            ServerError(ServerError::NotFound,
+                        fmt::format("no ad-hoc audio exists for take {} — it was never exported to a 17-channel "
+                                    "WAV, or the ad-hoc sweep has already reclaimed it",
+                                    generationId))};
     }
 
     auto target = allocateSoundPath(Persistence::Permanent, std::move(filename), std::string(kVoiceTakeSubdir));
@@ -493,12 +506,12 @@ Result<void> demoteVoiceTake(const std::string &stored, const std::string &gener
         return declineQuietly("file does not exist");
     }
 
-    auto adHocRoot = root(Persistence::AdHoc);
-    if (!adHocRoot.isSuccess()) {
+    auto destinationResult = voiceTakeAdHocPath(generationId);
+    if (!destinationResult.isSuccess()) {
         warn("could not resolve the ad-hoc root to demote '{}'; leaving it in place", stored);
         return Result<void>{};
     }
-    const auto destination = adHocRoot.getValue().value() / kAdHocExportSubdir / voiceTakeAdHocFilename(generationId);
+    const auto destination = destinationResult.getValue().value();
 
     auto moved = moveFile(source, destination);
     if (!moved.isSuccess()) {
