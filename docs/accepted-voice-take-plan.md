@@ -120,24 +120,40 @@ Two changes make the row true:
    real ad-hoc sounds for a day, not just cache entries. Non-fatal: a scene
    whose creatures have no usable `audio_channel` still returns its metadata,
    and accept reports the channel problem precisely if asked to promote it.
-2. **Accept assembles it if it's missing.** Otherwise a take generated before
-   this change dead-ends: re-auditioning returns the same cached take and never
-   rebuilds the WAV, so there is no way back to an acceptable state short of
-   regenerating — which, on eleven_v3, is a *different performance*. Assembly
-   reads the cached generation, so it costs no ElevenLabs call. It runs before
-   the outgoing take is demoted, so a failed acceptance leaves the previously
-   accepted take whole.
+2. **Accept assembles it if it's missing, as a job.** Otherwise a take
+   generated before this change dead-ends: re-auditioning returns the same
+   cached take and never rebuilds the WAV, so there is no way back to an
+   acceptable state short of regenerating — which, on eleven_v3, is a
+   *different performance*. Assembly reads the cached generation, so it costs
+   no ElevenLabs call.
 
 Both go through one `ensureAdHocExport`, which skips a WAV that is already
 there. `storage::voiceTakeAdHocPath` is now the single place that knows where
 a take's audio lives — export writes it, promote reads it, demote returns it.
 
+**Accept is 200 or 202**, the same shape as `POST /preview/meta`: 200 with the
+updated script when the audio is already on disk (the ordinary case, now that
+generation writes it), 202 with a `job_id` when it has to be assembled — a
+long scene is hundreds of MB and doesn't belong in a request. The
+`voice-take-accept` job's completion result is the same script body the 200
+returns, so a client that got a 202 ends up with exactly what a 200 would have
+given it.
+
+Validation stays synchronous either way: bad UUIDs, a missing script, a stale
+`dialog_cache_key`, and a `generation_id` that was never cached are all
+answered before any job is promised. The job re-checks the cache key before
+stamping, because the turns can change during a long assembly.
+
+Ordering matters on both paths: assembly happens **before** the outgoing take
+is demoted, so a failure leaves the previously accepted take whole rather than
+half-moved.
+
 ## Endpoints
 
-| method | path | body |
-|---|---|---|
-| POST | `/api/v1/animation/dialog/voice/accept` | `{script_id, generation_id, dialog_cache_key}` |
-| DELETE | `/api/v1/animation/dialog/script/{scriptId}/voice` | — |
+| method | path | body | returns |
+|---|---|---|---|
+| POST | `/api/v1/animation/dialog/voice/accept` | `{script_id, generation_id, dialog_cache_key}` | 200 script, or 202 `job_id` if the audio needs assembling |
+| DELETE | `/api/v1/animation/dialog/script/{scriptId}/voice` | — | 200 script |
 
 Accept validates the generation exists for that cache key, demotes any
 previously accepted take, promotes the new one, stamps `accepted_voice`, and

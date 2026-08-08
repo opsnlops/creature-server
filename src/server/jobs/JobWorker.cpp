@@ -38,6 +38,7 @@
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/MusicClient.h"
 #include "server/voice/RhubarbData.h"
+#include "server/voice/ScriptCacheKey.h"
 #include "server/voice/SoundDataProcessor.h"
 #include "server/voice/SpeechGenerationManager.h"
 #include "server/voice/SpeechTrackBuilder.h"
@@ -286,6 +287,10 @@ void JobWorker::processJob(const std::string &jobId) {
         case JobType::VoiceFile:
             info("Handling job {} as VoiceFile type", jobId);
             handleVoiceFileJob(jobState);
+            break;
+        case JobType::VoiceTakeAccept:
+            info("Handling job {} as VoiceTakeAccept type", jobId);
+            handleVoiceTakeAcceptJob(jobState);
             break;
         default:
             error("Unknown job type for job {}: {}", jobId, toString(jobState.jobType));
@@ -2789,6 +2794,138 @@ void JobWorker::handleVoiceFileJob(JobState &jobState) {
         jobState.span->setSuccess();
     }
     info("Voice file job {} succeeded", jobState.jobId);
+    broadcastCompletion(jobState.jobId);
+}
+
+void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
+    auto broadcastProgress = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobProgressToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast voice take accept progress: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto broadcastCompletion = [this](const std::string &jobId) {
+        auto updated = jobManager_->getJob(jobId);
+        if (updated) {
+            auto r = broadcastJobCompleteToAllClients(*updated);
+            if (!r.isSuccess()) {
+                warn("Failed to broadcast voice take accept completion: {}", r.getError()->getMessage());
+            }
+        }
+    };
+    auto updateProgress = [&](float v) {
+        jobManager_->updateJobProgress(jobState.jobId, v);
+        broadcastProgress(jobState.jobId);
+    };
+    auto failJob = [&](const std::string &msg) {
+        error("Voice take accept job {} failed: {}", jobState.jobId, msg);
+        if (jobState.span) {
+            jobState.span->setError(msg);
+        }
+        jobManager_->failJob(jobState.jobId, msg);
+        broadcastCompletion(jobState.jobId);
+    };
+
+    std::string scriptId, generationId, cacheKey;
+    try {
+        auto details = nlohmann::json::parse(jobState.details);
+        scriptId = details.value("script_id", std::string{});
+        generationId = details.value("generation_id", std::string{});
+        cacheKey = details.value("dialog_cache_key", std::string{});
+    } catch (const std::exception &e) {
+        return failJob(fmt::format("could not parse job details: {}", e.what()));
+    }
+    if (scriptId.empty() || generationId.empty() || cacheKey.empty()) {
+        return failJob("voice take accept job needs script_id, generation_id and dialog_cache_key");
+    }
+    if (jobState.span) {
+        jobState.span->setAttribute("script.id", scriptId);
+        jobState.span->setAttribute("dialog.generation_id", generationId);
+        jobState.span->setAttribute("dialog.cache_key", cacheKey);
+    }
+
+    updateProgress(0.05f);
+
+    auto existing = creatures::db->getDialogScript(scriptId, jobState.span);
+    if (!existing.isSuccess()) {
+        return failJob(existing.getError().value().getMessage());
+    }
+    auto script = existing.getValue().value();
+
+    // The controller checked this before enqueuing, but assembly takes long
+    // enough that the turns can change underneath us. Re-check rather than
+    // stamp an acceptance that is stale the moment it lands.
+    auto currentKey = creatures::voice::computeScriptCacheKey(script.turns, jobState.span);
+    if (!currentKey.isSuccess()) {
+        return failJob(currentKey.getError().value().getMessage());
+    }
+    if (currentKey.getValue().value() != cacheKey) {
+        return failJob("the script's turns changed while this take's audio was being assembled — re-audition and "
+                       "accept again");
+    }
+
+    updateProgress(0.10f);
+
+    // The expensive part, and the only reason this is a job: a long scene's
+    // 17-channel WAV runs to hundreds of MB. Reads the cached generation, so
+    // no ElevenLabs call and no change of performance.
+    ws::DialogPreviewService previewService;
+    auto exported = previewService.ensureAdHocExportForTake(script.turns, cacheKey, generationId, jobState.span);
+    if (!exported.isSuccess()) {
+        return failJob(exported.getError().value().getMessage());
+    }
+
+    updateProgress(0.85f);
+
+    // Demote after the assembly, so a failure above leaves the previously
+    // accepted take whole rather than half-moved.
+    if (script.accepted_voice && script.accepted_voice->generation_id != generationId) {
+        auto demoted = creatures::storage::demoteVoiceTake(script.accepted_voice->sound_file,
+                                                           script.accepted_voice->generation_id, jobState.span);
+        if (!demoted.isSuccess()) {
+            return failJob(demoted.getError().value().getMessage());
+        }
+    }
+
+    const auto filename =
+        fmt::format("{}-{}.wav", creatures::util::slugify(script.title, 48, "dialog"), generationId.substr(0, 8));
+    auto promoted = creatures::storage::promoteVoiceTake(generationId, filename, jobState.span);
+    if (!promoted.isSuccess()) {
+        return failJob(promoted.getError().value().getMessage());
+    }
+
+    creatures::AcceptedVoice accepted;
+    accepted.generation_id = generationId;
+    accepted.dialog_cache_key = cacheKey;
+    accepted.sound_file = promoted.getValue().value().forMetadata;
+    accepted.accepted_at =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    script.accepted_voice = accepted;
+
+    auto updated = creatures::dialogScriptToJson(script);
+    updated["updated_at"] = std::max(accepted.accepted_at, script.updated_at + 1);
+    auto published = creatures::storage::publishDialogScript(updated.dump(), jobState.span);
+    if (!published.isSuccess()) {
+        return failJob(published.getError().value().getMessage());
+    }
+
+    // Same body the synchronous accept returns, so a client that got a 202
+    // ends up with exactly what a 200 would have given it.
+    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+    auto dto = creatures::convertToDto(published.getValue().value());
+
+    updateProgress(1.0f);
+    jobManager_->completeJob(jobState.jobId, jsonMapper->writeToString(dto)->c_str());
+    if (jobState.span) {
+        jobState.span->setAttribute("voice.sound_file", accepted.sound_file);
+        jobState.span->setSuccess();
+    }
+    info("accepted voice take {} for script '{}' -> {} (job {})", generationId, script.title, accepted.sound_file,
+         jobState.jobId);
     broadcastCompletion(jobState.jobId);
 }
 

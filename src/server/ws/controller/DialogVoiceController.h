@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <string>
 
 #include <fmt/format.h>
+#include <nlohmann/json.hpp>
 
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
@@ -13,19 +15,24 @@
 
 #include "model/DialogScript.h"
 #include "server/database.h"
+#include "server/jobs/JobManager.h"
+#include "server/jobs/JobWorker.h"
 #include "server/namespace-stuffs.h"
 #include "server/storage/Storage.h"
+#include "server/voice/DialogCache.h"
 #include "server/voice/ScriptCacheKey.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/DialogVoiceDto.h"
+#include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/StatusDto.h"
-#include "server/ws/service/DialogPreviewService.h"
 #include "util/Slugify.h"
 
 namespace creatures {
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObservabilityManager> observability;
+extern std::shared_ptr<jobs::JobManager> jobManager;
+extern std::shared_ptr<jobs::JobWorker> jobWorker;
 } // namespace creatures
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
@@ -65,9 +72,14 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
             "`dialog_cache_key` must match sha256 of the script's CURRENT turns. Accepting a take auditioned "
             "against turns that have since been edited is rejected rather than stored as immediately-stale.\\n\\n"
             "Accepting when a take is already accepted replaces it, demoting the previous audio back to ad-hoc "
-            "(its TTL restarts). The sounds directory holds at most one take per script.";
+            "(its TTL restarts). The sounds directory holds at most one take per script.\\n\\n"
+            "Usually returns 200 with the updated script. Returns 202 with a job_id when the take's audio has to "
+            "be assembled first — a take generated before the server wrote exports at generation time, or one "
+            "whose ad-hoc file has been swept. The job's completion result is the same script body the 200 "
+            "returns. No ElevenLabs call is made either way; the take's performance never changes.";
         info->addTag("Multi-character Dialog");
         info->addResponse<Object<DialogScriptDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
     }
@@ -135,22 +147,59 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                 }
 
                 // Promotion moves the take's 17-channel WAV out of the ad-hoc
-                // bucket, so make sure one is actually there. Generation writes
-                // it now (#131), but a take from before that, or one whose file
-                // the ad-hoc sweep took while its generation survived, would
-                // otherwise dead-end: re-auditioning returns the same cached
-                // take and never rebuilds the missing WAV. Assembling from the
-                // cached generation costs no ElevenLabs call and no change of
-                // performance.
-                //
-                // This runs BEFORE the outgoing take is demoted: everything
-                // that can fail has to fail while the previously accepted take
-                // is still whole, or a failed acceptance leaves the script
-                // pointing at audio that has moved.
-                DialogPreviewService previewService;
-                auto exported = previewService.ensureAdHocExportForTake(script.turns, cacheKey, generationId, opSpan);
-                if (!exported.isSuccess()) {
-                    return bailFromServerError(span, exported.getError().value());
+                // bucket, so there has to be one. Generation writes it now
+                // (#131), which makes this the ordinary case — a plain, fast
+                // 200 with the canonical script.
+                auto adHocPath = creatures::storage::voiceTakeAdHocPath(generationId);
+                if (!adHocPath.isSuccess()) {
+                    return bailFromServerError(span, adHocPath.getError().value());
+                }
+                std::error_code ec;
+                const auto &takeAudio = adHocPath.getValue().value();
+                const bool audioReady =
+                    std::filesystem::exists(takeAudio, ec) && !ec && std::filesystem::file_size(takeAudio, ec) > 0;
+
+                if (!audioReady) {
+                    // A take from before generation wrote its export, or one
+                    // whose file the ad-hoc sweep took while its generation
+                    // survived. It can be rebuilt from the cached generation —
+                    // no ElevenLabs call, so the performance is unchanged — but
+                    // a long scene is hundreds of MB of assembly, which is a
+                    // job, not a request. Mirrors /preview/meta: 200 when the
+                    // work is already done, 202 when it isn't.
+                    //
+                    // Check the take exists before promising a job, so "that
+                    // generation id isn't real" is still a synchronous 404.
+                    const auto takes = creatures::voice::listGenerations(cacheKey);
+                    const bool known = std::any_of(takes.begin(), takes.end(), [&](const auto &entry) {
+                        return entry.generationId == generationId;
+                    });
+                    if (!known) {
+                        return bailHttp(span, Status::CODE_404,
+                                        fmt::format("generation '{}' not found for this script's turns (expired or "
+                                                    "never existed)",
+                                                    generationId));
+                    }
+
+                    nlohmann::json details;
+                    details["script_id"] = scriptId;
+                    details["generation_id"] = generationId;
+                    details["dialog_cache_key"] = cacheKey;
+                    const std::string jobId = creatures::jobManager->createJob(
+                        creatures::jobs::JobType::VoiceTakeAccept, details.dump(), span);
+                    creatures::jobWorker->queueJob(jobId);
+                    if (span) {
+                        span->setAttribute("job.id", jobId);
+                        span->setHttpStatus(202);
+                    }
+                    auto accepted202 = JobCreatedDto::createShared();
+                    accepted202->job_id = jobId.c_str();
+                    accepted202->job_type = "voice-take-accept";
+                    accepted202->message =
+                        "This take's audio has to be assembled before it can be accepted. Listen for job-progress "
+                        "and job-complete WebSocket messages on this job_id, or poll GET /api/v1/job/{job_id}; the "
+                        "completion result is the updated script.";
+                    return createDtoResponse(Status::CODE_202, accepted202);
                 }
 
                 // Replacing: demote the outgoing take so the sounds directory
