@@ -1542,8 +1542,9 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // Provenance for the rendered Animation. Empty when rendering from inline
     // turns (no script to point at); populated when loading from a script.
     std::string sourceScriptId;
-    std::string scriptStageId; // the script's own stage binding, if it has one (#128)
-    std::string scriptTitle;   // the script's own title, used when the request doesn't give one
+    std::string scriptStageId;             // the script's own stage binding, if it has one (#128)
+    std::string scriptTitle;               // the script's own title, used when the request doesn't give one
+    std::string acceptedVoiceGenerationId; // the script's accepted take, if any (#131)
     std::vector<creatures::DialogScriptTurn> sourceScriptTurns;
     std::optional<creatures::DialogBackgroundMusic> backgroundMusic;
     if (hasScriptId) {
@@ -1572,6 +1573,9 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         backgroundMusic = script.background_music;
         scriptStageId = script.stage_id;
         scriptTitle = script.title;
+        if (script.accepted_voice) {
+            acceptedVoiceGenerationId = script.accepted_voice->generation_id;
+        }
     } else {
         rawTurns.reserve(reqDto->turns->size());
         sourceScriptTurns.reserve(reqDto->turns->size());
@@ -1778,13 +1782,43 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         const auto &c = creaturesCache[byCreatureId.at(cid)];
         inputs.push_back({c.voiceId, text});
     }
-    auto chunksResult = voice::chunkTurns(inputs);
-    if (!chunksResult.isSuccess()) {
-        return failJob(chunksResult.getError().value().getMessage());
+    // ---- Accepted voice take (#131) ---------------------------------------
+    // When the script has one and the request didn't override it, render from
+    // that exact take. The controller already refused the request if the
+    // acceptance was missing or stale, so reaching here means it's good.
+    //
+    // The take is a WHOLE-SCENE generation — the preview assembles all chunks
+    // and saves the merged result under computeCacheKey(all inputs). So skip
+    // chunking entirely and treat the scene as one chunk: the per-chunk cache
+    // key then equals the whole-scene key by construction, and the existing
+    // explicit-generation_id path picks it up unchanged.
+    //
+    // Without this, a multi-chunk script could be accepted and never rendered
+    // — the render would look for the take in per-chunk caches it was never
+    // stored in. That would make a long scene permanently unrenderable under
+    // the strict gate.
+    std::string effectiveGenerationId = requestedGenerationId;
+    bool renderingAcceptedTake = false;
+    if (effectiveGenerationId.empty() && !acceptedVoiceGenerationId.empty()) {
+        effectiveGenerationId = acceptedVoiceGenerationId;
+        renderingAcceptedTake = true;
     }
-    const auto chunks = chunksResult.getValue().value();
+
+    std::vector<std::vector<voice::DialogInput>> chunks;
+    if (renderingAcceptedTake) {
+        chunks.push_back(inputs);
+        info("Dialog job {}: rendering the script's accepted take {} as a single whole-scene chunk", jobState.jobId,
+             effectiveGenerationId);
+    } else {
+        auto chunksResult = voice::chunkTurns(inputs);
+        if (!chunksResult.isSuccess()) {
+            return failJob(chunksResult.getError().value().getMessage());
+        }
+        chunks = chunksResult.getValue().value();
+    }
     if (jobState.span) {
         jobState.span->setAttribute("dialog.chunks", static_cast<int64_t>(chunks.size()));
+        jobState.span->setAttribute("dialog.rendering_accepted_take", renderingAcceptedTake);
     }
 
     // ---- Per-chunk: text-to-dialogue + forced-alignment + assemble.
@@ -1831,9 +1865,9 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         // for multi-chunk scenes the id would only match one chunk's cache
         // anyway, and we don't want to confuse the user about which chunk
         // got reused.
-        const bool useExplicitId = !requestedGenerationId.empty() && chunks.size() == 1;
+        const bool useExplicitId = !effectiveGenerationId.empty() && chunks.size() == 1;
         if (useExplicitId) {
-            auto loadResult = voice::loadGeneration(cacheKey, requestedGenerationId);
+            auto loadResult = voice::loadGeneration(cacheKey, effectiveGenerationId);
             if (loadResult.isSuccess()) {
                 auto gen = loadResult.getValue().value();
                 segmentNormalizationApplied = voice::normalizeCachedGenerationVoiceSegments(gen, chunk);
@@ -1843,10 +1877,10 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                 chunkAlignment = std::move(gen.forcedAlignment);
                 cacheHit = true;
                 info("Dialog job {}: chunk {} using requested generation_id={}", jobState.jobId, ci,
-                     requestedGenerationId);
+                     effectiveGenerationId);
             } else {
                 warn("Dialog job {}: requested generation_id={} not in cache for this chunk — regenerating",
-                     jobState.jobId, requestedGenerationId);
+                     jobState.jobId, effectiveGenerationId);
             }
         }
         if (!cacheHit) {
