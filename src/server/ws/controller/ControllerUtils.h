@@ -274,6 +274,18 @@ asHeadResponse(const std::shared_ptr<oatpp::web::protocol::http::outgoing::Respo
     for (const auto &header : full->getHeaders().getAll()) {
         head->putHeader(header.first.toString(), header.second.toString());
     }
+    // Some headers aren't on the response yet — a body declares its own at send
+    // time, which is where a DTO response's Content-Type comes from. Ask the
+    // real body what it would have added, so HEAD doesn't quietly drop it.
+    // Content-Length is deliberately not taken from here: Response::send
+    // recomputes it from the body it actually has, which is ours.
+    if (body) {
+        oatpp::web::protocol::http::Headers declared;
+        body->declareHeaders(declared);
+        for (const auto &header : declared.getAll()) {
+            head->putHeaderIfNotExists(header.first.toString(), header.second.toString());
+        }
+    }
     return head;
 }
 
