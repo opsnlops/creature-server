@@ -469,6 +469,69 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
             });
     }
 
+    ENDPOINT_INFO(clearAcceptedVoice) {
+        info->summary = "Clear the script's accepted voice take";
+        info->description =
+            "Un-accepts the chosen take (#131). The promoted audio is DEMOTED back to the ad-hoc bucket, which "
+            "restarts its 24h TTL and gives a change-your-mind window before the sweep reclaims it.\n\n"
+            "Idempotent: clearing a script that has no acceptance returns the script unchanged without bumping "
+            "updated_at or broadcasting.";
+        info->addTag("Multi-character Dialog");
+        info->pathParams["scriptId"].description = "Dialog script UUID";
+        info->addResponse<Object<DialogScriptDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("DELETE", "api/v1/animation/dialog/script/{scriptId}/voice", clearAcceptedVoice, PATH(String, scriptId),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "DELETE /api/v1/animation/dialog/script/{scriptId}/voice", "DELETE",
+            "api/v1/animation/dialog/script/{scriptId}/voice", "clearAcceptedVoice", "DialogScriptController", request,
+            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                if (!scriptId || !isUuidShape(std::string(*scriptId))) {
+                    return bailHttp(span, Status::CODE_400, "scriptId must be a UUID");
+                }
+                auto opSpan = creatures::observability->createChildOperationSpan(
+                    "DialogScriptController.clearAcceptedVoice", span);
+                auto existing = creatures::db->getDialogScript(std::string(*scriptId), opSpan);
+                if (!existing.isSuccess()) {
+                    return bailFromServerError(span, existing.getError().value());
+                }
+                auto existingScript = existing.getValue().value();
+                if (span) {
+                    span->setAttribute("voice.was_accepted", existingScript.accepted_voice.has_value());
+                }
+
+                // Nothing accepted — return the script untouched rather than
+                // bumping updated_at for a no-op.
+                if (!existingScript.accepted_voice) {
+                    if (span)
+                        span->setHttpStatus(200);
+                    return createDtoResponse(Status::CODE_200, creatures::convertToDto(existingScript));
+                }
+
+                // Demote first: if the move fails we would rather keep the
+                // acceptance pointing at a file that still exists than clear
+                // it and strand the audio in the permanent tree.
+                auto demoted = creatures::storage::demoteVoiceTake(
+                    existingScript.accepted_voice->sound_file, existingScript.accepted_voice->generation_id, opSpan);
+                if (!demoted.isSuccess()) {
+                    return bailFromServerError(span, demoted.getError().value());
+                }
+
+                auto updated = creatures::dialogScriptToJson(existingScript);
+                updated.erase("accepted_voice");
+                updated["updated_at"] = std::max(nowMillis(), existingScript.updated_at + 1);
+                auto published = creatures::storage::publishDialogScript(updated.dump(), opSpan);
+                if (!published.isSuccess()) {
+                    return bailFromServerError(span, published.getError().value());
+                }
+                if (span)
+                    span->setHttpStatus(200);
+                return createDtoResponse(Status::CODE_200, creatures::convertToDto(published.getValue().value()));
+            });
+    }
+
     ENDPOINT_INFO(deleteDialogScript) {
         info->summary = "Delete a saved dialog script";
         info->description = "Animations rendered from this script aren't touched — they carry a CoW snapshot of the "

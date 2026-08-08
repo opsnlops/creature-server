@@ -27,6 +27,7 @@
 #include "controller/SoundController.h"
 #include "controller/SpeechToTextController.h"
 #include "controller/StaticController.h"
+#include "controller/DialogVoiceController.h"
 #include "controller/StageController.h"
 #include "controller/StoryboardController.h"
 #include "controller/StreamingAdHocController.h"
@@ -81,6 +82,7 @@ void App::run() {
     docEndpoints.append(router->addController(DialogMusicController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DialogPreviewController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DialogScriptController::createShared())->getEndpoints());
+    docEndpoints.append(router->addController(DialogVoiceController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(StageController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(StoryboardController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(StaticController::createShared())->getEndpoints());

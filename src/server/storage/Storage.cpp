@@ -377,4 +377,140 @@ Result<void> deleteSupersededDialogSound(const std::string &stored, std::shared_
     return Result<void>{};
 }
 
+namespace {
+
+constexpr const char *kVoiceTakeSubdir = "dialog/voice";
+constexpr const char *kAdHocExportSubdir = "preview-exports";
+
+/// Move a file between buckets. rename() is the fast path; buckets can sit on
+/// different filesystems, so fall back to copy + remove rather than failing.
+Result<void> moveFile(const std::filesystem::path &from, const std::filesystem::path &to) {
+    std::error_code ec;
+    std::filesystem::create_directories(to.parent_path(), ec);
+    std::filesystem::rename(from, to, ec);
+    if (!ec) {
+        return Result<void>{};
+    }
+    ec.clear();
+    std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        return Result<void>{
+            ServerError(ServerError::InternalError,
+                        fmt::format("could not move '{}' to '{}': {}", from.string(), to.string(), ec.message()))};
+    }
+    std::filesystem::remove(from, ec);
+    if (ec) {
+        // The copy landed, so the move succeeded from the caller's point of
+        // view; the leftover is a tidiness problem, not a correctness one.
+        warn("moved '{}' to '{}' but could not remove the original: {}", from.string(), to.string(), ec.message());
+    }
+    return Result<void>{};
+}
+
+} // namespace
+
+std::string voiceTakeAdHocFilename(const std::string &generationId) {
+    return fmt::format("dialog-17ch-{}.wav", generationId);
+}
+
+Result<StoragePath> promoteVoiceTake(const std::string &generationId, std::string filename,
+                                     std::shared_ptr<OperationSpan> parentSpan) {
+    (void)parentSpan;
+
+    auto adHocRoot = root(Persistence::AdHoc);
+    if (!adHocRoot.isSuccess()) {
+        return Result<StoragePath>{adHocRoot.getError().value()};
+    }
+    const auto source = adHocRoot.getValue().value() / kAdHocExportSubdir / voiceTakeAdHocFilename(generationId);
+
+    std::error_code ec;
+    if (!std::filesystem::exists(source, ec) || ec) {
+        return Result<StoragePath>{ServerError(
+            ServerError::NotFound,
+            fmt::format("take audio for generation {} is no longer in the ad-hoc bucket — it may have been swept by "
+                        "the 24h TTL. Re-audition and accept again.",
+                        generationId))};
+    }
+
+    auto target = allocateSoundPath(Persistence::Permanent, std::move(filename), std::string(kVoiceTakeSubdir));
+    if (!target.isSuccess()) {
+        return Result<StoragePath>{target.getError().value()};
+    }
+    const auto destination = target.getValue().value();
+
+    auto moved = moveFile(source, destination.absolute);
+    if (!moved.isSuccess()) {
+        return Result<StoragePath>{moved.getError().value()};
+    }
+
+    info("promoted voice take {} to '{}'", generationId, destination.forMetadata);
+    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
+    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
+    return Result<StoragePath>{destination};
+}
+
+Result<void> demoteVoiceTake(const std::string &stored, const std::string &generationId,
+                             std::shared_ptr<OperationSpan> parentSpan) {
+    (void)parentSpan;
+
+    auto declineQuietly = [&](const char *reason) {
+        debug("not demoting voice take '{}': {}", stored, reason);
+        return Result<void>{};
+    };
+
+    if (stored.empty()) {
+        return declineQuietly("empty reference");
+    }
+    // Only ever touch this pipeline's own promoted takes.
+    if (stored.rfind(std::string(kVoiceTakeSubdir) + "/", 0) != 0) {
+        return declineQuietly("not under dialog/voice/");
+    }
+    if (!creatures::config) {
+        return declineQuietly("no configuration available to resolve the sound root");
+    }
+
+    std::error_code ec;
+    const auto permanentRoot =
+        std::filesystem::weakly_canonical(std::filesystem::path(creatures::config->getSoundFileLocation()), ec);
+    if (ec) {
+        return declineQuietly("sound root could not be resolved");
+    }
+    const auto source = std::filesystem::weakly_canonical(resolveSoundPath(stored), ec);
+    if (ec) {
+        return declineQuietly("path could not be resolved");
+    }
+
+    // sound_file is client-writable through the script upsert, so containment
+    // is checked on the canonical paths — same guard as #130.
+    const auto rootStr = permanentRoot.string();
+    const auto srcStr = source.string();
+    if (srcStr.size() <= rootStr.size() || srcStr.compare(0, rootStr.size(), rootStr) != 0 ||
+        srcStr[rootStr.size()] != std::filesystem::path::preferred_separator) {
+        warn("refusing to demote voice take '{}': resolves outside the sound root", stored);
+        return Result<void>{};
+    }
+    if (!std::filesystem::exists(source, ec) || ec) {
+        return declineQuietly("file does not exist");
+    }
+
+    auto adHocRoot = root(Persistence::AdHoc);
+    if (!adHocRoot.isSuccess()) {
+        warn("could not resolve the ad-hoc root to demote '{}'; leaving it in place", stored);
+        return Result<void>{};
+    }
+    const auto destination = adHocRoot.getValue().value() / kAdHocExportSubdir / voiceTakeAdHocFilename(generationId);
+
+    auto moved = moveFile(source, destination);
+    if (!moved.isSuccess()) {
+        // Demotion failing must never fail the acceptance that triggered it.
+        warn("could not demote voice take '{}': {}", stored, moved.getError().value().getMessage());
+        return Result<void>{};
+    }
+
+    info("demoted voice take '{}' back to ad-hoc (TTL restarted)", stored);
+    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
+    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
+    return Result<void>{};
+}
+
 } // namespace creatures::storage
