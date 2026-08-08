@@ -105,3 +105,72 @@ TEST(DialogScriptStageBindingTest, StageIdSurvivesTheJsonRoundTrip) {
     unbound.title = "unbound";
     EXPECT_FALSE(creatures::dialogScriptToJson(unbound).contains("stage_id"));
 }
+
+// ===========================================================================
+// Accepted voice take (issue #131)
+//
+// Both round trips, deliberately. The DTO conversion has been the gap twice
+// now — stage_id (#123) and source_render_choices — both times because only
+// the JSON path was covered and every HTTP response goes through the DTO.
+// ===========================================================================
+
+namespace {
+
+creatures::AcceptedVoice sampleAcceptedVoice() {
+    creatures::AcceptedVoice v;
+    v.generation_id = "9f1fd726-3b78-4b4a-b9aa-fdf7f4a62329";
+    v.dialog_cache_key = std::string(64, 'a');
+    v.sound_file = "dialog/voice/beaky-loves-magic-9f1fd726.wav";
+    v.accepted_at = 1786000000000;
+    return v;
+}
+
+} // namespace
+
+TEST(AcceptedVoiceTest, SurvivesConvertToDto) {
+    creatures::DialogScript script;
+    script.id = "6bf1f0e4-2c9e-4a2f-9f8a-6c7d1e2b3a45";
+    script.title = "scene";
+    script.accepted_voice = sampleAcceptedVoice();
+
+    const auto dto = creatures::convertToDto(script);
+    ASSERT_TRUE(dto->accepted_voice);
+    EXPECT_EQ(std::string(*dto->accepted_voice->generation_id), sampleAcceptedVoice().generation_id);
+    EXPECT_EQ(std::string(*dto->accepted_voice->dialog_cache_key), sampleAcceptedVoice().dialog_cache_key);
+    EXPECT_EQ(std::string(*dto->accepted_voice->sound_file), sampleAcceptedVoice().sound_file);
+    EXPECT_EQ(*dto->accepted_voice->accepted_at, 1786000000000);
+}
+
+TEST(AcceptedVoiceTest, SurvivesTheFullDtoRoundTrip) {
+    creatures::DialogScript script;
+    script.id = "6bf1f0e4-2c9e-4a2f-9f8a-6c7d1e2b3a45";
+    script.title = "scene";
+    script.accepted_voice = sampleAcceptedVoice();
+
+    const auto back = creatures::convertFromDto(creatures::convertToDto(script).getPtr());
+    ASSERT_TRUE(back.accepted_voice.has_value());
+    EXPECT_EQ(*back.accepted_voice, sampleAcceptedVoice());
+}
+
+TEST(AcceptedVoiceTest, SurvivesTheJsonRoundTrip) {
+    creatures::DialogScript script;
+    script.id = "6bf1f0e4-2c9e-4a2f-9f8a-6c7d1e2b3a45";
+    script.title = "scene";
+    script.accepted_voice = sampleAcceptedVoice();
+
+    const auto json = creatures::dialogScriptToJson(script);
+    ASSERT_TRUE(json.contains("accepted_voice"));
+    EXPECT_EQ(json["accepted_voice"]["generation_id"].get<std::string>(), sampleAcceptedVoice().generation_id);
+    EXPECT_EQ(json["accepted_voice"]["dialog_cache_key"].get<std::string>(), sampleAcceptedVoice().dialog_cache_key);
+    EXPECT_EQ(json["accepted_voice"]["sound_file"].get<std::string>(), sampleAcceptedVoice().sound_file);
+    EXPECT_EQ(json["accepted_voice"]["accepted_at"].get<int64_t>(), 1786000000000);
+}
+
+TEST(AcceptedVoiceTest, ScriptWithNoAcceptanceOmitsTheFieldEntirely) {
+    creatures::DialogScript script;
+    script.id = "6bf1f0e4-2c9e-4a2f-9f8a-6c7d1e2b3a45";
+    script.title = "unaccepted";
+
+    EXPECT_FALSE(creatures::convertToDto(script)->accepted_voice);
+    EXPECT_FALSE(creatures::dialogScriptToJson(script).contains("accepted_voice"));
+}

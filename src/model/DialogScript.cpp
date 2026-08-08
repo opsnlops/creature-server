@@ -22,6 +22,14 @@ oatpp::Object<DialogScriptDto> convertToDto(const DialogScript &script) {
     if (!script.stage_id.empty()) {
         dto->stage_id = script.stage_id;
     }
+    if (script.accepted_voice) {
+        auto voice = AcceptedVoiceDto::createShared();
+        voice->generation_id = script.accepted_voice->generation_id;
+        voice->dialog_cache_key = script.accepted_voice->dialog_cache_key;
+        voice->sound_file = script.accepted_voice->sound_file;
+        voice->accepted_at = script.accepted_voice->accepted_at;
+        dto->accepted_voice = voice;
+    }
     if (script.background_music) {
         auto music = DialogBackgroundMusicDto::createShared();
         music->sound_file = script.background_music->sound_file;
@@ -59,6 +67,18 @@ DialogScript convertFromDto(const std::shared_ptr<DialogScriptDto> &scriptDto) {
         script.updated_at = *scriptDto->updated_at;
     if (scriptDto->stage_id)
         script.stage_id = scriptDto->stage_id;
+    if (scriptDto->accepted_voice) {
+        AcceptedVoice voice;
+        if (scriptDto->accepted_voice->generation_id)
+            voice.generation_id = scriptDto->accepted_voice->generation_id;
+        if (scriptDto->accepted_voice->dialog_cache_key)
+            voice.dialog_cache_key = scriptDto->accepted_voice->dialog_cache_key;
+        if (scriptDto->accepted_voice->sound_file)
+            voice.sound_file = scriptDto->accepted_voice->sound_file;
+        if (scriptDto->accepted_voice->accepted_at)
+            voice.accepted_at = *scriptDto->accepted_voice->accepted_at;
+        script.accepted_voice = std::move(voice);
+    }
     if (scriptDto->background_music) {
         DialogBackgroundMusic music;
         const auto &dto = scriptDto->background_music;
@@ -96,6 +116,12 @@ nlohmann::json dialogScriptToJson(const DialogScript &script) {
     j["updated_at"] = script.updated_at;
     if (!script.stage_id.empty()) {
         j["stage_id"] = script.stage_id;
+    }
+    if (script.accepted_voice) {
+        j["accepted_voice"] = {{"generation_id", script.accepted_voice->generation_id},
+                               {"dialog_cache_key", script.accepted_voice->dialog_cache_key},
+                               {"sound_file", script.accepted_voice->sound_file},
+                               {"accepted_at", script.accepted_voice->accepted_at}};
     }
     if (script.background_music) {
         j["background_music"] = {{"sound_file", script.background_music->sound_file},
