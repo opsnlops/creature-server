@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <cctype>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -195,6 +198,65 @@ class HeadBody : public oatpp::web::protocol::http::outgoing::Body {
 
   private:
     v_int64 size_;
+};
+
+/// Streams a file to the socket in chunks while still declaring an exact
+/// Content-Length (#140).
+///
+/// The routes this replaces read the whole file into a `std::vector` and then
+/// let `oatpp::String` copy it again — two full-size allocations per request,
+/// so one 300 MB scene cost ~600 MB of RSS on a box that is also running the
+/// show's event loop.
+///
+/// Deliberately NOT oatpp's `StreamingBody`: its `getKnownSize()` returns -1,
+/// which switches the response to `Transfer-Encoding: chunked` and drops
+/// Content-Length entirely — silently undoing #139, since HEAD's whole job is
+/// to report that length. A known size keeps the response fixed-length and
+/// keeps HEAD honest.
+///
+/// The file handle is opened by the handler and held here for the life of the
+/// response. That's what makes this safe against a concurrent rewrite: the
+/// storage facade writes via `.tmp` + rename, so a replacement gets a new
+/// inode and this fd keeps reading the bytes whose length we already promised.
+class FileBody : public oatpp::web::protocol::http::outgoing::Body {
+  public:
+    FileBody(const std::string &path, v_int64 size) : size_(size), remaining_(size) {
+        // Set the buffer before open() so reads come from a decent-sized
+        // window; the transfer loop hands us the header buffer, which is small.
+        stream_.rdbuf()->pubsetbuf(ioBuffer_.data(), static_cast<std::streamsize>(ioBuffer_.size()));
+        stream_.open(path, std::ios::binary);
+    }
+
+    [[nodiscard]] bool isOpen() const { return stream_.is_open(); }
+
+    oatpp::v_io_size read(void *buffer, v_buff_size count, oatpp::async::Action &) override {
+        if (remaining_ <= 0) {
+            return 0;
+        }
+        const auto want = static_cast<std::streamsize>(std::min<v_int64>(static_cast<v_int64>(count), remaining_));
+        stream_.read(static_cast<char *>(buffer), want);
+        const auto got = stream_.gcount();
+        if (got <= 0) {
+            // Short read against a length we already sent. Framing is now
+            // wrong for this connection, so say so loudly rather than let it
+            // look like a mysterious client-side truncation (#122's family).
+            warn("file body ended {} bytes early — the response is short of its declared Content-Length", remaining_);
+            remaining_ = 0;
+            return 0;
+        }
+        remaining_ -= got;
+        return static_cast<oatpp::v_io_size>(got);
+    }
+
+    void declareHeaders(oatpp::web::protocol::http::Headers &) override {}
+    p_char8 getKnownData() override { return nullptr; }
+    v_int64 getKnownSize() override { return size_; }
+
+  private:
+    std::array<char, 65536> ioBuffer_{}; // declared first: the stream points at it
+    std::ifstream stream_;
+    v_int64 size_;
+    v_int64 remaining_;
 };
 
 /// Convert a fully-formed GET response into its HEAD equivalent: same status,

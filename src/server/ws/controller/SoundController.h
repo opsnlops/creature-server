@@ -422,48 +422,48 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
     std::shared_ptr<OutgoingResponse> servePermanentSound(const std::shared_ptr<IncomingRequest> &request,
                                                           const oatpp::String &filename, const char *method) {
         debug("Request to serve sound file: {}", std::string(filename));
-        return runEndpoint(std::string(method) + " /api/v1/sound/{filename}", method,
-                           "/api/v1/sound/" + std::string(filename), "getSound", "SoundController", request,
-                           [&](const auto &span) {
-                               // Sanitize the filename
-                               std::string safeFilename;
-                               try {
-                                   safeFilename = sanitizeFilename(filename);
-                               } catch (const std::invalid_argument &e) {
-                                   warn("Attempt to serve {} failed: {}", std::string(filename), e.what());
-                                   return bailHttp(span, Status::CODE_403, e.what());
-                               }
+        return runEndpoint(
+            std::string(method) + " /api/v1/sound/{filename}", method, "/api/v1/sound/" + std::string(filename),
+            "getSound", "SoundController", request, [&](const auto &span) {
+                // Sanitize the filename
+                std::string safeFilename;
+                try {
+                    safeFilename = sanitizeFilename(filename);
+                } catch (const std::invalid_argument &e) {
+                    warn("Attempt to serve {} failed: {}", std::string(filename), e.what());
+                    return bailHttp(span, Status::CODE_403, e.what());
+                }
 
-                               // Resolve via the service: top-level first, then a recursive
-                               // basename search so dialog/ renders resolve too (#46). Throws
-                               // an HTTP error (404/400) that withSpanStatus stamps.
-                               std::string canonicalPath = m_soundService.resolvePermanentSoundPath(safeFilename);
+                // Resolve via the service: top-level first, then a recursive
+                // basename search so dialog/ renders resolve too (#46). Throws
+                // an HTTP error (404/400) that withSpanStatus stamps.
+                std::string canonicalPath = m_soundService.resolvePermanentSoundPath(safeFilename);
 
-                               std::ifstream file(canonicalPath, std::ios::binary | std::ios::ate);
-                               if (!file.is_open()) {
-                                   info("Attempt to serve {} failed: {}", std::string(filename), "Not found.");
-                                   return bailHttp(span, Status::CODE_404, "File not found.");
-                               }
+                std::error_code sizeError;
+                const auto fileSize = static_cast<std::int64_t>(std::filesystem::file_size(canonicalPath, sizeError));
+                if (sizeError) {
+                    info("Attempt to serve {} failed: {}", std::string(filename), "Not found.");
+                    return bailHttp(span, Status::CODE_404, "File not found.");
+                }
+                auto mimeType = getMimeType(canonicalPath);
 
-                               std::streamsize fileSize = file.tellg();
-                               file.seekg(0, std::ios::beg);
-                               auto mimeType = getMimeType(canonicalPath);
+                // Streamed, not buffered (#140): these run to hundreds of MB
+                // for a long scene, and the old path allocated the whole file
+                // twice per request.
+                auto body = std::make_shared<FileBody>(canonicalPath, fileSize);
+                if (!body->isOpen()) {
+                    return bailHttp(span, Status::CODE_500, "Error reading file.");
+                }
 
-                               std::vector<char> buffer(fileSize);
-                               if (!file.read(buffer.data(), fileSize)) {
-                                   return bailHttp(span, Status::CODE_500, "Error reading file.");
-                               }
+                metrics->incrementSoundFilesServed();
+                info("Serving sound file: {} ({}, {} bytes)", std::string(filename), mimeType, fileSize);
 
-                               metrics->incrementSoundFilesServed();
-                               info("Serving sound file: {} ({}, {} bytes)", std::string(filename), mimeType, fileSize);
-
-                               auto response = ResponseFactory::createResponse(
-                                   Status::CODE_200, oatpp::String((const char *)buffer.data(), fileSize));
-                               response->putHeader("Content-Type", mimeType.c_str());
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return response;
-                           });
+                auto response = OutgoingResponse::createShared(Status::CODE_200, body);
+                response->putHeader("Content-Type", mimeType.c_str());
+                if (span)
+                    span->setHttpStatus(200);
+                return response;
+            });
     }
 
   public:
@@ -496,47 +496,47 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
     }
     std::shared_ptr<OutgoingResponse> serveAdHocSound(const std::shared_ptr<IncomingRequest> &request,
                                                       const oatpp::String &filename, const char *method) {
-        return runEndpoint(std::string(method) + " /api/v1/sound/ad-hoc/{filename}", method,
-                           "api/v1/sound/ad-hoc/" + std::string(filename), "getAdHocSound", "SoundController", request,
-                           [&](const auto &span) {
-                               std::string safeFilename;
-                               try {
-                                   safeFilename = sanitizeFilename(filename);
-                               } catch (const std::invalid_argument &e) {
-                                   return bailHttp(span, Status::CODE_403, e.what());
-                               }
+        return runEndpoint(
+            std::string(method) + " /api/v1/sound/ad-hoc/{filename}", method,
+            "api/v1/sound/ad-hoc/" + std::string(filename), "getAdHocSound", "SoundController", request,
+            [&](const auto &span) {
+                std::string safeFilename;
+                try {
+                    safeFilename = sanitizeFilename(filename);
+                } catch (const std::invalid_argument &e) {
+                    return bailHttp(span, Status::CODE_403, e.what());
+                }
 
-                               std::string filePath;
-                               try {
-                                   filePath = m_soundService.resolveAdHocSoundPath(safeFilename);
-                               } catch (oatpp::web::protocol::http::HttpError &err) {
-                                   // withSpanStatus catches HttpError and stamps the right code; rethrow.
-                                   throw;
-                               }
+                std::string filePath;
+                try {
+                    filePath = m_soundService.resolveAdHocSoundPath(safeFilename);
+                } catch (oatpp::web::protocol::http::HttpError &err) {
+                    // withSpanStatus catches HttpError and stamps the right code; rethrow.
+                    throw;
+                }
 
-                               std::ifstream file(filePath, std::ios::binary | std::ios::ate);
-                               if (!file.is_open()) {
-                                   return bailHttp(span, Status::CODE_404, "File not found.");
-                               }
+                std::error_code sizeError;
+                const auto fileSize = static_cast<std::int64_t>(std::filesystem::file_size(filePath, sizeError));
+                if (sizeError) {
+                    return bailHttp(span, Status::CODE_404, "File not found.");
+                }
 
-                               std::streamsize fileSize = file.tellg();
-                               file.seekg(0, std::ios::beg);
+                // Streamed, not buffered (#140). This is the route the
+                // 17-channel dialog takes come down, so it is the one that
+                // most wants flat memory.
+                auto body = std::make_shared<FileBody>(filePath, fileSize);
+                if (!body->isOpen()) {
+                    return bailHttp(span, Status::CODE_500, "Error reading file.");
+                }
 
-                               std::vector<char> buffer(fileSize);
-                               if (!file.read(buffer.data(), fileSize)) {
-                                   return bailHttp(span, Status::CODE_500, "Error reading file.");
-                               }
-
-                               auto mimeType = getMimeType(filePath);
-                               auto response = ResponseFactory::createResponse(
-                                   Status::CODE_200, oatpp::String((const char *)buffer.data(), fileSize));
-                               response->putHeader("Content-Type", mimeType.c_str());
-                               response->putHeader("Content-Disposition",
-                                                   "attachment; filename=\"" + safeFilename + "\"");
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return response;
-                           });
+                auto mimeType = getMimeType(filePath);
+                auto response = OutgoingResponse::createShared(Status::CODE_200, body);
+                response->putHeader("Content-Type", mimeType.c_str());
+                response->putHeader("Content-Disposition", "attachment; filename=\"" + safeFilename + "\"");
+                if (span)
+                    span->setHttpStatus(200);
+                return response;
+            });
     }
 
   public:
