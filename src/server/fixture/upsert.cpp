@@ -43,7 +43,7 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
     auto upsertSpan = creatures::observability->createChildOperationSpan("Database.upsertFixture", parentSpan);
     if (upsertSpan) {
         upsertSpan->setAttribute("database.collection", FIXTURES_COLLECTION);
-        upsertSpan->setAttribute("database.operation", "update_one");
+        upsertSpan->setAttribute("database.operation", "replace_one");
         upsertSpan->setAttribute("database.system", "mongodb");
         upsertSpan->setAttribute("database.name", DB_NAME);
     }
@@ -74,16 +74,6 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
             upsertSpan->setAttribute("fixture.id", fixture.id);
         }
 
-        // Convert the JSON string into BSON
-        auto bsonSpan = creatures::observability->createChildOperationSpan("upsertFixture.json-to-bson", upsertSpan);
-        auto bsonResult = JsonParser::jsonStringToBson(fixtureJson, fmt::format("fixture {}", fixture.id), bsonSpan);
-        if (!bsonResult.isSuccess()) {
-            auto err = bsonResult.getError().value();
-            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
-            return Result<DmxFixture>{err};
-        }
-        auto bsonDoc = bsonResult.getValue().value();
-
         auto collectionSpan =
             creatures::observability->createChildOperationSpan("upsertFixture.get-collection", upsertSpan);
         auto collectionResult = getCollection(FIXTURES_COLLECTION);
@@ -110,11 +100,16 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
 
         // Preserve semantics (issue #68): universe assignment is runtime/deployment state
         // with its own endpoint (PUT /universe), so a config upsert that omits
-        // assigned_universe must not clobber it. The $set below already leaves the DB
-        // field alone — backfill the parsed fixture from the existing document so the
-        // cache, the runtime universe map, and the response DTO agree with what the DB
-        // actually holds. Consequence: an upsert can assign a universe but never unassign
-        // one; unassignment goes through the universe endpoint.
+        // assigned_universe must not clobber it. Backfill the parsed fixture from the
+        // existing document so the cache, the runtime universe map, and the response DTO
+        // agree with what the DB actually holds. Consequence: an upsert can assign a
+        // universe but never unassign one; unassignment goes through the universe endpoint.
+        //
+        // This USED to lean on $set leaving the absent field alone, which meant the
+        // written document genuinely omitted assigned_universe and only the in-memory
+        // fixture was repaired. Now that the write replaces the document (#135), the
+        // backfill has to reach the bytes we store — so it runs BEFORE the JSON is
+        // serialized below, and the preserved universe is written back explicitly.
         if (!fixture.assigned_universe.has_value()) {
             auto existingDoc = collection.find_one(filter_builder.view());
             if (existingDoc) {
@@ -134,13 +129,28 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
             }
         }
 
-        mongocxx::options::update update_options;
-        update_options.upsert(true);
+        // Serialize AFTER the backfill, from the client's own document plus the
+        // preserved universe, so unknown client fields still round-trip.
+        if (fixture.assigned_universe.has_value()) {
+            jsonObject["assigned_universe"] = static_cast<int64_t>(*fixture.assigned_universe);
+        }
 
-        collection.update_one(filter_builder.view(),
-                              bsoncxx::builder::stream::document{} << "$set" << bsonDoc.view()
-                                                                   << bsoncxx::builder::stream::finalize,
-                              update_options);
+        auto bsonSpan = creatures::observability->createChildOperationSpan("upsertFixture.json-to-bson", upsertSpan);
+        auto bsonResult =
+            JsonParser::jsonStringToBson(jsonObject.dump(), fmt::format("fixture {}", fixture.id), bsonSpan);
+        if (!bsonResult.isSuccess()) {
+            auto err = bsonResult.getError().value();
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
+            return Result<DmxFixture>{err};
+        }
+        auto bsonDoc = bsonResult.getValue().value();
+
+        // REPLACE, not $set (#135) — see the comment above about why the backfill
+        // had to move.
+        mongocxx::options::replace replace_options;
+        replace_options.upsert(true);
+
+        collection.replace_one(filter_builder.view(), bsonDoc.view(), replace_options);
         if (mongoSpan)
             mongoSpan->setSuccess();
 

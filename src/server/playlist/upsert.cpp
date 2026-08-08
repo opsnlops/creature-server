@@ -39,7 +39,7 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
     auto upsertSpan = creatures::observability->createChildOperationSpan("Database.upsertPlaylist", parentSpan);
     if (upsertSpan) {
         upsertSpan->setAttribute("database.collection", PLAYLISTS_COLLECTION);
-        upsertSpan->setAttribute("database.operation", "update_one");
+        upsertSpan->setAttribute("database.operation", "replace_one");
         upsertSpan->setAttribute("database.system", "mongodb");
         upsertSpan->setAttribute("database.name", DB_NAME);
     }
@@ -101,13 +101,14 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         bsoncxx::builder::stream::document filter_builder;
         filter_builder << "id" << playlist.id;
 
-        mongocxx::options::update update_options;
-        update_options.upsert(true);
+        // REPLACE, not $set (#135). A $set upsert cannot remove a field, so no
+        // caller can ever delete one — the failure is silent and returns 200.
+        // See #134, where clearing an accepted voice take did exactly that.
+        // The document handed to this function IS the stored document.
+        mongocxx::options::replace replace_options;
+        replace_options.upsert(true);
 
-        collection.update_one(filter_builder.view(),
-                              bsoncxx::builder::stream::document{} << "$set" << bsonDoc.view()
-                                                                   << bsoncxx::builder::stream::finalize,
-                              update_options);
+        collection.replace_one(filter_builder.view(), bsonDoc.view(), replace_options);
         if (mongoSpan)
             mongoSpan->setSuccess();
 

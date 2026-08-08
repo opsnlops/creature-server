@@ -211,9 +211,12 @@ Two consequences worth knowing:
 - Unknown fields a client stored on a script no longer survive a
   server-initiated write, because `dialogScriptToJson` only emits what the
   model knows. Under `$set` they lingered.
-- Every other collection's upsert is still `$set`. None of them attempt a
-  field deletion today, so nothing is broken — but the same trap is armed in
-  each. Tracked separately.
+- Every other collection's upsert carried the same trap. All seven are now
+  replaces (#135), each with its own merge-reliance dealt with: the fixture
+  universe backfill had to move before serialization, and animation render
+  provenance is carried forward in the DB layer. `setFixtureUniverse` stays a
+  `$set`/`$unset` partial update — it is a genuine field-level write, and it
+  could already delete.
 
 ## Files
 

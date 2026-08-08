@@ -1,7 +1,10 @@
 #include "server/config.h"
 
 #include "spdlog/spdlog.h"
+#include <algorithm>
+#include <array>
 #include <chrono>
+#include <vector>
 
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/builder/stream/helpers.hpp>
@@ -44,7 +47,7 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
     auto upsertSpan = creatures::observability->createChildOperationSpan("Database.upsertAnimation", parentSpan);
     if (upsertSpan) {
         upsertSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
-        upsertSpan->setAttribute("database.operation", "update_one");
+        upsertSpan->setAttribute("database.operation", "replace_one");
         upsertSpan->setAttribute("database.system", "mongodb");
         upsertSpan->setAttribute("database.name", DB_NAME);
     }
@@ -82,16 +85,6 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         if (upsertSpan)
             upsertSpan->setAttribute("animation.id", animation.id);
 
-        auto bsonSpan = creatures::observability->createChildOperationSpan("upsertAnimation.json-to-bson", upsertSpan);
-        auto bsonResult =
-            JsonParser::jsonStringToBson(animationJson, fmt::format("animation {}", animation.id), bsonSpan);
-        if (!bsonResult.isSuccess()) {
-            auto err = bsonResult.getError().value();
-            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
-            return Result<creatures::Animation>{err};
-        }
-        auto bsonDoc = bsonResult.getValue().value();
-
         auto collectionSpan =
             creatures::observability->createChildOperationSpan("upsertAnimation.get-collection", upsertSpan);
         auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
@@ -115,13 +108,96 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         bsoncxx::builder::stream::document filter_builder;
         filter_builder << "id" << animation.id;
 
-        mongocxx::options::update update_options;
-        update_options.upsert(true);
+        // Carry render provenance forward when the incoming document doesn't
+        // have it (#135). These fields are written by the render and the stage
+        // re-render, never by a human, and they're what make a re-render
+        // reproducible — render_seed and source_render_choices pin the body
+        // motion, source_stage_placements is the CoW snapshot that survives the
+        // stage being deleted.
+        //
+        // The Console's rename is a full round-trip — GET, set metadata.title,
+        // PUT — through a DTO that doesn't model these three. Swift's Codable
+        // drops what it doesn't model, so a rename posts an animation with the
+        // provenance missing. Under $set the absent keys survived by accident;
+        // under a replace they'd be silently stripped, and a rename would
+        // quietly cost you the ability to re-render that animation against a
+        // moved stage.
+        //
+        // Doing this in the DB layer rather than in the upsert endpoint is
+        // deliberate: it holds for every caller, including client builds that
+        // predate the fix and never update themselves.
+        static constexpr std::array<const char *, 7> provenanceKeys{
+            "source_script_id",        "source_script_turns",   "source_stage_id", "source_stage_updated_at",
+            "source_stage_placements", "source_render_choices", "render_seed"};
+        std::vector<std::string> preserved;
+        if (jsonObject.contains("metadata") && jsonObject["metadata"].is_object()) {
+            auto &incomingMeta = jsonObject["metadata"];
+            const bool anyMissing = std::any_of(provenanceKeys.begin(), provenanceKeys.end(),
+                                                [&](const char *key) { return !incomingMeta.contains(key); });
+            if (anyMissing) {
+                if (auto existingDoc = collection.find_one(filter_builder.view())) {
+                    // RELAXED, explicitly. bsoncxx::to_json defaults to LEGACY
+                    // extended JSON, which renders an int64 as
+                    // {"$numberLong": "123"} — that would turn render_seed and
+                    // source_stage_updated_at into objects on the way back in,
+                    // corrupting exactly the fields this code exists to protect.
+                    // Relaxed renders numbers as numbers. The provenance fields
+                    // are only strings, numbers, arrays and plain objects, so
+                    // nothing here needs a $-wrapped representation.
+                    const auto existingJson = nlohmann::json::parse(
+                        bsoncxx::to_json(existingDoc->view(), bsoncxx::ExtendedJsonMode::k_relaxed));
+                    if (existingJson.contains("metadata") && existingJson["metadata"].is_object()) {
+                        const auto &existingMeta = existingJson["metadata"];
+                        for (const auto *key : provenanceKeys) {
+                            if (!incomingMeta.contains(key) && existingMeta.contains(key)) {
+                                incomingMeta[key] = existingMeta[key];
+                                preserved.emplace_back(key);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (!preserved.empty()) {
+            debug("upsertAnimation: preserving {} provenance field(s) for animation {}", preserved.size(),
+                  animation.id);
+            if (upsertSpan) {
+                upsertSpan->setAttribute("animation.provenance_preserved_count",
+                                         static_cast<int64_t>(preserved.size()));
+            }
+            // Re-parse so the returned animation matches what we're about to
+            // store. #134's real damage was an endpoint reporting a state it
+            // had never written; carrying fields forward silently would be a
+            // smaller version of the same lie. Only on the rare path that
+            // actually changed something — a re-parse walks every track.
+            auto repaired = animationFromJson(jsonObject);
+            if (repaired.isSuccess()) {
+                animation = repaired.getValue().value();
+            } else {
+                // The document was valid a moment ago and we only added fields
+                // read back out of the database, so this shouldn't happen.
+                // Store it anyway and say so — the write is still correct.
+                warn("upsertAnimation: could not re-parse animation {} after preserving provenance: {}", animation.id,
+                     repaired.getError().value().getMessage());
+            }
+        }
 
-        collection.update_one(filter_builder.view(),
-                              bsoncxx::builder::stream::document{} << "$set" << bsonDoc.view()
-                                                                   << bsoncxx::builder::stream::finalize,
-                              update_options);
+        auto bsonSpan = creatures::observability->createChildOperationSpan("upsertAnimation.json-to-bson", upsertSpan);
+        auto bsonResult =
+            JsonParser::jsonStringToBson(jsonObject.dump(), fmt::format("animation {}", animation.id), bsonSpan);
+        if (!bsonResult.isSuccess()) {
+            auto err = bsonResult.getError().value();
+            recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
+            return Result<creatures::Animation>{err};
+        }
+        auto bsonDoc = bsonResult.getValue().value();
+
+        // REPLACE, not $set (#135). See #134 for what a $set upsert costs: it
+        // cannot remove a field, so a clear reports success and stores nothing.
+        mongocxx::options::replace replace_options;
+        replace_options.upsert(true);
+
+        collection.replace_one(filter_builder.view(), bsonDoc.view(), replace_options);
         if (mongoSpan)
             mongoSpan->setSuccess();
 
