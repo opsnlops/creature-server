@@ -114,6 +114,60 @@ Result<creatures::AnimationMetadata> Database::animationMetadataFromJson(json an
         // Animation claiming descent from a fake script, or attach a 100 MB
         // CoW blob — security review C1. Enforce the same bounds the
         // DialogScript validator uses.
+        // Stage provenance (#119). All optional — animations rendered before
+        // stages existed simply don't carry it. Validated as strictly as the
+        // script provenance above, and for the same reason: this parser is
+        // reachable from the user-facing /api/v1/animation upsert.
+        if (animationMetadataJson.contains("source_stage_id") && !animationMetadataJson["source_stage_id"].is_null()) {
+            if (!animationMetadataJson["source_stage_id"].is_string()) {
+                std::string errorMessage = "AnimationMetadata 'source_stage_id' must be a string";
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            const auto stageId = animationMetadataJson["source_stage_id"].get<std::string>();
+            if (!stageId.empty() && !isUuidShape(stageId)) {
+                std::string errorMessage = "AnimationMetadata 'source_stage_id' must be a UUID";
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            metadata.source_stage_id = stageId;
+        }
+        if (animationMetadataJson.contains("source_stage_updated_at") &&
+            animationMetadataJson["source_stage_updated_at"].is_number_integer()) {
+            metadata.source_stage_updated_at = animationMetadataJson["source_stage_updated_at"].get<int64_t>();
+        }
+        if (animationMetadataJson.contains("render_seed") && animationMetadataJson["render_seed"].is_number_integer()) {
+            metadata.render_seed = animationMetadataJson["render_seed"].get<uint64_t>();
+        }
+        if (animationMetadataJson.contains("source_render_choices") &&
+            animationMetadataJson["source_render_choices"].is_array()) {
+            // Bounded by the audio-lane ceiling for the same reason the CoW
+            // script snapshot is bounded: this parser is reachable from the
+            // user-facing upsert, so a client must not be able to attach an
+            // unbounded blob.
+            const auto &choicesJson = animationMetadataJson["source_render_choices"];
+            if (choicesJson.size() > 16) {
+                std::string errorMessage = "AnimationMetadata 'source_render_choices' has more than 16 entries";
+                warn(errorMessage);
+                return Result<creatures::AnimationMetadata>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            for (const auto &choiceJson : choicesJson) {
+                if (!choiceJson.is_object()) {
+                    continue;
+                }
+                creatures::CreatureRenderChoice choice;
+                choice.creature_id = choiceJson.value("creature_id", std::string{});
+                choice.speech_loop_animation_id = choiceJson.value("speech_loop_animation_id", std::string{});
+                choice.idle_animation_id = choiceJson.value("idle_animation_id", std::string{});
+                if (choiceJson.contains("idle_start_offset") && choiceJson["idle_start_offset"].is_number_integer()) {
+                    choice.idle_start_offset = choiceJson["idle_start_offset"].get<uint32_t>();
+                }
+                if (!choice.creature_id.empty()) {
+                    metadata.source_render_choices.push_back(std::move(choice));
+                }
+            }
+        }
+
         if (animationMetadataJson.contains("source_script_id") &&
             !animationMetadataJson["source_script_id"].is_null()) {
             if (!animationMetadataJson["source_script_id"].is_string()) {

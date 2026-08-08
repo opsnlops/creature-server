@@ -32,6 +32,8 @@ enum class JobType {
     DialogPreviewExport, // Assemble a dialog preview's 17-channel WAV into the ad-hoc bucket
     DialogMusic,         // Generate instrumental BGM for an exact cached dialog take
     VoiceFile,           // Single-voice TTS of text into a permanent sound file
+    StageRerender,       // Rebuild an existing dialog animation's motion against a changed Stage.
+                         // MOTION ONLY — never regenerates audio. See handleStageRerenderJob.
 };
 
 /**
@@ -107,6 +109,8 @@ inline std::string toString(JobType type) {
         return "dialog-music";
     case JobType::VoiceFile:
         return "voice-file";
+    case JobType::StageRerender:
+        return "stage-rerender";
     default:
         return "unknown";
     }

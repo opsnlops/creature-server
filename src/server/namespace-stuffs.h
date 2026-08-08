@@ -19,3 +19,4 @@ using playlistId_t = std::string;
 using fixtureId_t = std::string;
 using scriptId_t = std::string;
 using storyboardId_t = std::string;
+using stageId_t = std::string;

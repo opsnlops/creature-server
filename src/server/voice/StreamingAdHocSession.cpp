@@ -294,7 +294,7 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
             SpeechTrackInput trackInput;
             trackInput.baseFrames = decodedBaseFrames_;
             trackInput.mouthBytes = mouthData;
-            trackInput.mouthSlot = creature_.mouth_slot;
+            trackInput.mouthSlot = creatures::resolvedMouthSlot(creature_);
             trackInput.totalFrames = targetFrames;
             trackInput.creatureId = creatureId_;
             trackInput.animationId = ""; // stamped onto the Animation below

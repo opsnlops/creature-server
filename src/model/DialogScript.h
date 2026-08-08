@@ -57,6 +57,10 @@ struct DialogScript {
     std::string notes; // free-form, may be empty
     std::vector<DialogScriptTurn> turns;
     std::optional<DialogBackgroundMusic> background_music;
+    /// Stage this script is normally rendered against (#119). Empty = none.
+    /// A render request may override it; that's how you produce a travel
+    /// rendition of a mainstage scene.
+    std::string stage_id;
     // Wall-clock milliseconds since epoch — server-managed, not honored from
     // the client. created_at is set on first insert and never changes.
     int64_t created_at{0};
@@ -92,6 +96,13 @@ class DialogBackgroundMusicDto : public oatpp::DTO {
 class DialogScriptDto : public oatpp::DTO {
 
     DTO_INIT(DialogScriptDto, DTO /* extends */)
+
+    DTO_FIELD_INFO(stage_id) {
+        info->description = "Optional Stage UUID this script is normally rendered against, so re-renders stay "
+                            "consistent. A render request may override it.";
+        info->required = false;
+    }
+    DTO_FIELD(String, stage_id);
 
     DTO_FIELD_INFO(id) { info->description = "Script UUID. Server-generated on create."; }
     DTO_FIELD(String, id);

@@ -29,6 +29,32 @@ AnimationMetadata convertFromDto(const std::shared_ptr<AnimationMetadataDto> &an
     metadata.sound_file = animationMetadataDto->sound_file;
     metadata.number_of_frames = animationMetadataDto->number_of_frames;
     metadata.multitrack_audio = animationMetadataDto->multitrack_audio;
+    if (animationMetadataDto->source_stage_id) {
+        metadata.source_stage_id = animationMetadataDto->source_stage_id;
+    }
+    if (animationMetadataDto->source_stage_updated_at) {
+        metadata.source_stage_updated_at = *animationMetadataDto->source_stage_updated_at;
+    }
+    if (animationMetadataDto->render_seed) {
+        metadata.render_seed = *animationMetadataDto->render_seed;
+    }
+    if (animationMetadataDto->source_render_choices) {
+        for (const auto &choiceDto : *animationMetadataDto->source_render_choices) {
+            if (!choiceDto) {
+                continue;
+            }
+            CreatureRenderChoice choice;
+            if (choiceDto->creature_id)
+                choice.creature_id = choiceDto->creature_id;
+            if (choiceDto->speech_loop_animation_id)
+                choice.speech_loop_animation_id = choiceDto->speech_loop_animation_id;
+            if (choiceDto->idle_animation_id)
+                choice.idle_animation_id = choiceDto->idle_animation_id;
+            if (choiceDto->idle_start_offset)
+                choice.idle_start_offset = *choiceDto->idle_start_offset;
+            metadata.source_render_choices.push_back(std::move(choice));
+        }
+    }
     if (animationMetadataDto->source_script_id) {
         metadata.source_script_id = animationMetadataDto->source_script_id;
     }
@@ -57,6 +83,25 @@ std::shared_ptr<AnimationMetadataDto> convertToDto(const AnimationMetadata &anim
     metadataDto->sound_file = animationMetadata.sound_file;
     metadataDto->number_of_frames = animationMetadata.number_of_frames;
     metadataDto->multitrack_audio = animationMetadata.multitrack_audio;
+    if (!animationMetadata.source_stage_id.empty()) {
+        metadataDto->source_stage_id = animationMetadata.source_stage_id;
+        metadataDto->source_stage_updated_at = animationMetadata.source_stage_updated_at;
+    }
+    if (animationMetadata.render_seed != 0) {
+        metadataDto->render_seed = animationMetadata.render_seed;
+    }
+    if (!animationMetadata.source_render_choices.empty()) {
+        auto choices = oatpp::List<oatpp::Object<CreatureRenderChoiceDto>>::createShared();
+        for (const auto &choice : animationMetadata.source_render_choices) {
+            auto choiceDto = CreatureRenderChoiceDto::createShared();
+            choiceDto->creature_id = choice.creature_id;
+            choiceDto->speech_loop_animation_id = choice.speech_loop_animation_id;
+            choiceDto->idle_animation_id = choice.idle_animation_id;
+            choiceDto->idle_start_offset = choice.idle_start_offset;
+            choices->push_back(choiceDto);
+        }
+        metadataDto->source_render_choices = choices;
+    }
     if (!animationMetadata.source_script_id.empty()) {
         metadataDto->source_script_id = animationMetadata.source_script_id;
     }

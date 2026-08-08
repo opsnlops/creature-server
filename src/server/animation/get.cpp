@@ -206,7 +206,7 @@ Result<creatures::Animation> Database::getAnimation(const animationId_t &animati
 }
 
 Result<std::optional<animationId_t>>
-Database::findAnimationIdBySourceScriptId(const std::string &scriptId,
+Database::findAnimationIdBySourceScriptId(const std::string &scriptId, const std::string &stageId,
                                           const std::shared_ptr<OperationSpan> &parentSpan) {
     auto dbSpan =
         creatures::observability->createChildOperationSpan("Database.findAnimationIdBySourceScriptId", parentSpan);
@@ -216,6 +216,7 @@ Database::findAnimationIdBySourceScriptId(const std::string &scriptId,
         dbSpan->setAttribute("database.system", "mongodb");
         dbSpan->setAttribute("database.name", DB_NAME);
         dbSpan->setAttribute("script.id", scriptId);
+        dbSpan->setAttribute("stage.id", stageId);
     }
 
     if (scriptId.empty()) {
@@ -236,8 +237,23 @@ Database::findAnimationIdBySourceScriptId(const std::string &scriptId,
     try {
         // Project just `id` — we don't need the (potentially large) tracks blob
         // for a dedupe check.
-        auto filter = bsoncxx::builder::stream::document{} << "metadata.source_script_id" << scriptId
-                                                           << bsoncxx::builder::stream::finalize;
+        //
+        // The key is (script, stage), not script alone (#119): rendering the
+        // same scene for the travel stage must produce a SECOND animation
+        // rather than clobbering the mainstage one, so both renditions stay
+        // live. An empty stageId matches documents with no stage — which is
+        // every animation rendered before stages existed, so the old
+        // no-stage behavior is preserved exactly.
+        auto filterBuilder = bsoncxx::builder::stream::document{};
+        filterBuilder << "metadata.source_script_id" << scriptId;
+        if (stageId.empty()) {
+            filterBuilder << "metadata.source_stage_id" << bsoncxx::builder::stream::open_document << "$in"
+                          << bsoncxx::builder::stream::open_array << bsoncxx::types::b_null{} << ""
+                          << bsoncxx::builder::stream::close_array << bsoncxx::builder::stream::close_document;
+        } else {
+            filterBuilder << "metadata.source_stage_id" << stageId;
+        }
+        auto filter = filterBuilder << bsoncxx::builder::stream::finalize;
         auto projection = bsoncxx::builder::stream::document{} << "id" << 1 << "_id" << 0
                                                                << bsoncxx::builder::stream::finalize;
         mongocxx::options::find opts;
@@ -285,6 +301,149 @@ Database::findAnimationIdBySourceScriptId(const std::string &scriptId,
             dbSpan->setError(msg);
         }
         return Result<std::optional<animationId_t>>{ServerError(ServerError::InternalError, msg)};
+    }
+}
+
+Result<std::vector<Database::StageAnimationRef>>
+Database::listAnimationsBySourceStageId(const std::string &stageId, int64_t stageUpdatedAt,
+                                        const std::shared_ptr<OperationSpan> &parentSpan) {
+    auto dbSpan =
+        creatures::observability->createChildOperationSpan("Database.listAnimationsBySourceStageId", parentSpan);
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
+        dbSpan->setAttribute("database.operation", "find");
+        dbSpan->setAttribute("database.system", "mongodb");
+        dbSpan->setAttribute("database.name", DB_NAME);
+        dbSpan->setAttribute("stage.id", stageId);
+    }
+
+    std::vector<StageAnimationRef> refs;
+    if (stageId.empty()) {
+        if (dbSpan)
+            dbSpan->setSuccess();
+        return Result<std::vector<StageAnimationRef>>{refs};
+    }
+
+    auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+    if (!collectionResult.isSuccess()) {
+        auto err = collectionResult.getError().value();
+        recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
+        return Result<std::vector<StageAnimationRef>>{err};
+    }
+    auto collection = collectionResult.getValue().value();
+
+    try {
+        // Project only the provenance we need. Animation documents carry every
+        // base64 frame for every track, so pulling whole documents here would
+        // move megabytes to answer a question about a handful of scalars.
+        auto filter = bsoncxx::builder::stream::document{} << "metadata.source_stage_id" << stageId
+                                                           << bsoncxx::builder::stream::finalize;
+        auto projection = bsoncxx::builder::stream::document{} << "id" << 1 << "metadata.title" << 1
+                                                               << "metadata.source_script_id" << 1
+                                                               << "metadata.source_stage_updated_at" << 1 << "_id" << 0
+                                                               << bsoncxx::builder::stream::finalize;
+        mongocxx::options::find opts;
+        opts.projection(projection.view());
+
+        auto cursor = collection.find(filter.view(), opts);
+        for (auto doc : cursor) {
+            StageAnimationRef ref;
+            auto idElement = doc["id"];
+            if (!idElement || idElement.type() != bsoncxx::type::k_utf8) {
+                warn("listAnimationsBySourceStageId: matching doc has no string 'id' field — ignoring");
+                continue;
+            }
+            ref.animation_id = std::string(idElement.get_string().value);
+
+            if (auto metadata = doc["metadata"]; metadata && metadata.type() == bsoncxx::type::k_document) {
+                auto metadataView = metadata.get_document().view();
+                if (auto title = metadataView["title"]; title && title.type() == bsoncxx::type::k_utf8) {
+                    ref.title = std::string(title.get_string().value);
+                }
+                if (auto script = metadataView["source_script_id"]; script && script.type() == bsoncxx::type::k_utf8) {
+                    ref.source_script_id = std::string(script.get_string().value);
+                }
+                if (auto stamp = metadataView["source_stage_updated_at"]; stamp) {
+                    if (stamp.type() == bsoncxx::type::k_int64) {
+                        ref.source_stage_updated_at = stamp.get_int64().value;
+                    } else if (stamp.type() == bsoncxx::type::k_int32) {
+                        ref.source_stage_updated_at = stamp.get_int32().value;
+                    }
+                }
+            }
+
+            // Rendered against an older version of this stage than the one
+            // currently stored, so its head aiming no longer matches reality.
+            ref.stale = ref.source_stage_updated_at < stageUpdatedAt;
+            refs.push_back(std::move(ref));
+        }
+
+        // Most out-of-date first: that's the order you want to act on.
+        std::sort(refs.begin(), refs.end(), [](const StageAnimationRef &a, const StageAnimationRef &b) {
+            return a.source_stage_updated_at < b.source_stage_updated_at;
+        });
+
+        if (dbSpan) {
+            dbSpan->setAttribute("animations.count", static_cast<int64_t>(refs.size()));
+            dbSpan->setAttribute("animations.stale_count",
+                                 static_cast<int64_t>(std::count_if(
+                                     refs.begin(), refs.end(), [](const StageAnimationRef &r) { return r.stale; })));
+            dbSpan->setSuccess();
+        }
+        return Result<std::vector<StageAnimationRef>>{refs};
+
+    } catch (const std::exception &e) {
+        std::string errorMessage = fmt::format("Failed to list animations for stage {}: {}", stageId, e.what());
+        error(errorMessage);
+        if (dbSpan) {
+            dbSpan->recordException(e);
+        }
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
+        return Result<std::vector<StageAnimationRef>>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+}
+
+Result<int64_t> Database::countAnimationsBySoundFile(const std::string &soundFile,
+                                                     const std::shared_ptr<OperationSpan> &parentSpan) {
+    auto dbSpan = creatures::observability->createChildOperationSpan("Database.countAnimationsBySoundFile", parentSpan);
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
+        dbSpan->setAttribute("database.operation", "count_documents");
+        dbSpan->setAttribute("database.system", "mongodb");
+        dbSpan->setAttribute("database.name", DB_NAME);
+        dbSpan->setAttribute("sound.file", soundFile);
+    }
+    if (soundFile.empty()) {
+        if (dbSpan)
+            dbSpan->setSuccess();
+        return Result<int64_t>{static_cast<int64_t>(0)};
+    }
+
+    auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+    if (!collectionResult.isSuccess()) {
+        auto err = collectionResult.getError().value();
+        recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
+        return Result<int64_t>{err};
+    }
+    auto collection = collectionResult.getValue().value();
+
+    try {
+        auto filter = bsoncxx::builder::stream::document{} << "metadata.sound_file" << soundFile
+                                                           << bsoncxx::builder::stream::finalize;
+        const auto count = static_cast<int64_t>(collection.count_documents(filter.view()));
+        if (dbSpan) {
+            dbSpan->setAttribute("animations.count", count);
+            dbSpan->setSuccess();
+        }
+        return Result<int64_t>{count};
+    } catch (const std::exception &e) {
+        std::string errorMessage = fmt::format("Failed to count animations for sound {}: {}", soundFile, e.what());
+        error(errorMessage);
+        if (dbSpan) {
+            dbSpan->recordException(e);
+        }
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
+        return Result<int64_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
 

@@ -13,6 +13,7 @@
 #include "model/DialogScript.h"
 #include "model/DmxFixture.h"
 #include "model/Playlist.h"
+#include "model/Stage.h"
 #include "model/Storyboard.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
@@ -121,6 +122,26 @@ struct StoragePath {
 // in StoragePath.
 [[nodiscard]] std::filesystem::path resolveSoundPath(const std::string &stored);
 
+// Delete a permanent sound file that nothing references any more, and fire
+// CacheType::SoundList.
+//
+// Exists because re-rendering a dialog script writes a NEW audio file and
+// repoints the animation at it, leaving the previous one on disk forever.
+// These are large — hundreds of megabytes for a long scene — so the orphans
+// accumulate fast.
+//
+// Refuses, rather than deletes, when:
+//   * the reference resolves outside the permanent sound root (path traversal
+//     — `sound_file` is client-writable via the animation upsert);
+//   * the reference isn't under `dialog/` (only this pipeline's own generated
+//     audio is ever a candidate; hand-uploaded sounds live at the root);
+//   * any animation still references it (checked by the caller).
+//
+// A refusal is not an error — it returns success having done nothing, because
+// leaving a file behind must never fail a render that already succeeded.
+[[nodiscard]] Result<void> deleteSupersededDialogSound(const std::string &stored,
+                                                       std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
 // =============================================================================
 // DB-only publishers — each pairs the db->* call with the matching cache
 // invalidation so callers can't fire one without the other (issue #11
@@ -164,6 +185,13 @@ struct StoragePath {
 // deleteStoryboard + CacheType::StoryboardList
 [[nodiscard]] Result<void> deleteStoryboard(const storyboardId_t &storyboardId,
                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// upsertStage + CacheType::StageList
+[[nodiscard]] Result<creatures::Stage> publishStage(const std::string &stageJson,
+                                                    std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// deleteStage + CacheType::StageList
+[[nodiscard]] Result<void> deleteStage(const stageId_t &stageId, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
 // deleteAnimation + CacheType::Animation. (publishAnimation /
 // republishAnimation already exist for the write side from the original
