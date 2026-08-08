@@ -72,9 +72,10 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                                                       const oatpp::String &filename, const std::string &spanName,
                                                       const std::string &pathBase, const std::string &endpointName,
                                                       const std::string &format, const std::string &extension,
-                                                      SoundRenditionFormat renditionFormat) {
+                                                      SoundRenditionFormat renditionFormat,
+                                                      const char *method = "GET") {
         return runEndpoint(
-            spanName, "GET", pathBase + "{filename}", endpointName, "SoundController", request,
+            spanName, method, pathBase + "{filename}", endpointName, "SoundController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
                 std::string safeFilename;
                 try {
@@ -416,11 +417,14 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "/api/v1/sound/{filename}", getSound, PATH(String, filename),
-             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+    /// Shared by GET and HEAD so the two can't disagree about status, headers
+    /// or Content-Length (#139).
+    std::shared_ptr<OutgoingResponse> servePermanentSound(const std::shared_ptr<IncomingRequest> &request,
+                                                          const oatpp::String &filename, const char *method) {
         debug("Request to serve sound file: {}", std::string(filename));
-        return runEndpoint("GET /api/v1/sound/{filename}", "GET", "/api/v1/sound/" + std::string(filename), "getSound",
-                           "SoundController", request, [&](const auto &span) {
+        return runEndpoint(std::string(method) + " /api/v1/sound/{filename}", method,
+                           "/api/v1/sound/" + std::string(filename), "getSound", "SoundController", request,
+                           [&](const auto &span) {
                                // Sanitize the filename
                                std::string safeFilename;
                                try {
@@ -462,6 +466,27 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                            });
     }
 
+  public:
+    ENDPOINT("GET", "/api/v1/sound/{filename}", getSound, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return servePermanentSound(request, filename, "GET");
+    }
+
+    ENDPOINT_INFO(headSound) {
+        info->summary = "Headers for a sound file, without the bytes";
+        info->description = "RFC 9110 HEAD: identical status and headers to GET, including Content-Length, with "
+                            "no body. Use it to size or probe a file before committing to the download — these "
+                            "run to hundreds of MB for a long scene.";
+        info->addTag("Sounds");
+        info->addResponse<String>(Status::CODE_200, "audio/wav");
+        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("HEAD", "/api/v1/sound/{filename}", headSound, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return asHeadResponse(servePermanentSound(request, filename, "HEAD"));
+    }
+
     ENDPOINT_INFO(getAdHocSound) {
         info->summary = "Retrieve an ad-hoc generated sound file";
         info->addTag("Sounds");
@@ -469,10 +494,11 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("GET", "api/v1/sound/ad-hoc/{filename}", getAdHocSound, PATH(String, filename),
-             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("GET /api/v1/sound/ad-hoc/{filename}", "GET", "api/v1/sound/ad-hoc/" + std::string(filename),
-                           "getAdHocSound", "SoundController", request, [&](const auto &span) {
+    std::shared_ptr<OutgoingResponse> serveAdHocSound(const std::shared_ptr<IncomingRequest> &request,
+                                                      const oatpp::String &filename, const char *method) {
+        return runEndpoint(std::string(method) + " /api/v1/sound/ad-hoc/{filename}", method,
+                           "api/v1/sound/ad-hoc/" + std::string(filename), "getAdHocSound", "SoundController", request,
+                           [&](const auto &span) {
                                std::string safeFilename;
                                try {
                                    safeFilename = sanitizeFilename(filename);
@@ -513,6 +539,26 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                            });
     }
 
+  public:
+    ENDPOINT("GET", "api/v1/sound/ad-hoc/{filename}", getAdHocSound, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return serveAdHocSound(request, filename, "GET");
+    }
+
+    ENDPOINT_INFO(headAdHocSound) {
+        info->summary = "Headers for an ad-hoc sound file, without the bytes";
+        info->description = "RFC 9110 HEAD: identical status and headers to GET, including Content-Length. This is "
+                            "the route the 17-channel dialog takes are served from, so sizing before download "
+                            "matters most here.";
+        info->addTag("Sounds");
+        info->addResponse<String>(Status::CODE_200, "audio/wav");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("HEAD", "api/v1/sound/ad-hoc/{filename}", headAdHocSound, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return asHeadResponse(serveAdHocSound(request, filename, "HEAD"));
+    }
+
     ENDPOINT_INFO(getShareableSound) {
         info->summary = "Encode a stored sound to Ogg/Opus for sharing (downmixed to mono)";
         info->description =
@@ -532,6 +578,21 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return renderRendition(request, filename, "GET /api/v1/sound/shareable/{filename}", "api/v1/sound/shareable/",
                                "getShareableSound", "ogg", ".ogg", SoundRenditionFormat::OggOpus);
+    }
+
+    ENDPOINT_INFO(headShareableSound) {
+        info->summary = "Headers for the Ogg/Opus rendition, without the bytes";
+        info->description = "RFC 9110 HEAD. The rendition is still produced so Content-Length is the real encoded "
+                            "size — only the transfer is skipped.";
+        info->addTag("Sounds");
+        info->addResponse<String>(Status::CODE_200, "audio/ogg");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("HEAD", "api/v1/sound/shareable/{filename}", headShareableSound, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return asHeadResponse(renderRendition(request, filename, "HEAD /api/v1/sound/shareable/{filename}",
+                                              "api/v1/sound/shareable/", "getShareableSound", "ogg", ".ogg",
+                                              SoundRenditionFormat::OggOpus, "HEAD"));
     }
 
     ENDPOINT_INFO(getSoundMp3) {
@@ -554,6 +615,21 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return renderRendition(request, filename, "GET /api/v1/sound/mp3/{filename}", "api/v1/sound/mp3/",
                                "getSoundMp3", "mp3", ".mp3", SoundRenditionFormat::Mp3);
+    }
+
+    ENDPOINT_INFO(headSoundMp3) {
+        info->summary = "Headers for the MP3 rendition, without the bytes";
+        info->description = "RFC 9110 HEAD. The rendition is still produced so Content-Length is the real encoded "
+                            "size — only the transfer is skipped.";
+        info->addTag("Sounds");
+        info->addResponse<String>(Status::CODE_200, "audio/mpeg");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("HEAD", "api/v1/sound/mp3/{filename}", headSoundMp3, PATH(String, filename),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return asHeadResponse(renderRendition(request, filename, "HEAD /api/v1/sound/mp3/{filename}",
+                                              "api/v1/sound/mp3/", "getSoundMp3", "mp3", ".mp3",
+                                              SoundRenditionFormat::Mp3, "HEAD"));
     }
 
     ENDPOINT_INFO(getSoundProvenance) {
