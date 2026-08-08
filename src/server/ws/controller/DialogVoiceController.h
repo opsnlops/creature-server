@@ -154,10 +154,17 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                 if (!adHocPath.isSuccess()) {
                     return bailFromServerError(span, adHocPath.getError().value());
                 }
+                // By value: getValue() returns a fresh optional, so binding a
+                // reference to its contents would dangle the moment the
+                // temporary died — and the resulting garbage path never
+                // exists, which reads as "assemble it" on every single accept.
                 std::error_code ec;
-                const auto &takeAudio = adHocPath.getValue().value();
+                const std::filesystem::path takeAudio = adHocPath.getValue().value();
                 const bool audioReady =
                     std::filesystem::exists(takeAudio, ec) && !ec && std::filesystem::file_size(takeAudio, ec) > 0;
+                if (span) {
+                    span->setAttribute("voice.take_audio_ready", audioReady);
+                }
 
                 if (!audioReady) {
                     // A take from before generation wrote its export, or one

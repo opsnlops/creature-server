@@ -181,6 +181,40 @@ renders only.
 
 ---
 
+### Clearing didn't persist (#134, found on 3.40.1)
+
+`DELETE .../voice` demoted the audio, bumped `updated_at`, returned 200 with
+`accepted_voice: null` — and left the acceptance in Mongo. `upsertDialogScript`
+wrote `$set` with `upsert(true)`, and a `$set` can only add or change: a key
+absent from the update document is left untouched. So `updated.erase(...)`
+followed by a publish was structurally incapable of removing anything. The 200
+was built from the in-memory document, so the endpoint truthfully reported a
+state it had never stored.
+
+Worse than a no-op, because the demote *did* run: every clear produced an
+acceptance pointing at audio that had moved back to ad-hoc, and once the TTL
+swept it the script referenced a file that no longer existed. The accept
+endpoint's already-accepted short-circuit then locked the phantom in — the
+obvious repair, re-accepting the same take, returned 200 and did nothing.
+
+The upsert now uses `replace_one`. **The document handed to it is the stored
+document**, which makes deletion expressible and is what every caller already
+assumed. That inverts one responsibility: server-managed fields used to
+survive an ordinary script edit by the merge's accident, and now have to be
+carried forward deliberately. `updateDialogScript` re-attaches both
+`background_music` and `accepted_voice` from the stored script, and
+`createDialogScript` strips both — a new script has neither, whatever the body
+claims, which also closes a path for a client to forge an acceptance.
+
+Two consequences worth knowing:
+
+- Unknown fields a client stored on a script no longer survive a
+  server-initiated write, because `dialogScriptToJson` only emits what the
+  model knows. Under `$set` they lingered.
+- Every other collection's upsert is still `$set`. None of them attempt a
+  field deletion today, so nothing is broken — but the same trap is armed in
+  each. Tracked separately.
+
 ## Files
 
 - `src/model/DialogScript.{h,cpp}` — `AcceptedVoice` struct, DTO, `dialogScriptToJson`

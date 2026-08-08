@@ -178,8 +178,12 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 try {
                     parsed = buildScriptJsonForUpsert(std::string(*body), id, now, now);
                     // Music references are created only by the promotion endpoint,
-                    // after it has verified the permanent WAV and embedded recipe.
+                    // after it has verified the permanent WAV and embedded recipe;
+                    // an acceptance likewise only comes from the accept endpoint,
+                    // which promotes the audio first. A brand new script has
+                    // neither, whatever the body claims.
                     parsed.erase("background_music");
+                    parsed.erase("accepted_voice");
                 } catch (const nlohmann::json::exception &e) {
                     return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
                 } catch (const std::exception &e) {
@@ -252,12 +256,21 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 try {
                     parsed =
                         buildScriptJsonForUpsert(std::string(*body), std::string(*scriptId), createdAt, nowMillis());
-                    // Treat accepted music as server-managed state. A normal script
-                    // edit must neither forge a path nor accidentally detach the take.
+                    // Accepted music and the accepted voice take are server-managed:
+                    // an ordinary script edit must neither forge one nor detach one.
+                    // Carrying them forward is now load-bearing rather than tidy —
+                    // the upsert replaces the document (#134), so anything not
+                    // written here is gone.
+                    const auto existingJson = creatures::dialogScriptToJson(existingScript);
                     if (existingScript.background_music) {
-                        parsed["background_music"] = creatures::dialogScriptToJson(existingScript)["background_music"];
+                        parsed["background_music"] = existingJson["background_music"];
                     } else {
                         parsed.erase("background_music");
+                    }
+                    if (existingScript.accepted_voice) {
+                        parsed["accepted_voice"] = existingJson["accepted_voice"];
+                    } else {
+                        parsed.erase("accepted_voice");
                     }
                 } catch (const nlohmann::json::exception &e) {
                     return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
