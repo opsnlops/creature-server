@@ -60,11 +60,24 @@ struct AcceptedVoice {
     bool operator==(const AcceptedVoice &) const = default;
 };
 
+/// The two `source_dialog_*` fields record which VOICE take the music was
+/// composed against (#136). Music is fitted to a specific performance's
+/// timing and length, so when the accepted voice changes, accepted music
+/// that predates it is describing audio that will never render again.
+/// Without this the Console can only report candidates as stale — the
+/// already-accepted card sits green and silent, which is the worst kind of
+/// wrong on the surface where scenes are actually built.
+///
+/// Both are empty on music accepted before this was recorded. That's
+/// reported as "no verdict", never as "fresh" — an unknown provenance must
+/// not read as a passing one.
 struct DialogBackgroundMusic {
-    std::string sound_file;    // permanent, relative-to-sounds WAV path
-    std::string generation_id; // accepted server-side music generation UUID
-    std::string prompt;        // exact ElevenLabs prompt used for the accepted take
-    int64_t accepted_at{0};    // wall-clock milliseconds since epoch
+    std::string sound_file;                  // permanent, relative-to-sounds WAV path
+    std::string generation_id;               // accepted server-side music generation UUID
+    std::string prompt;                      // exact ElevenLabs prompt used for the accepted take
+    int64_t accepted_at{0};                  // wall-clock milliseconds since epoch
+    std::string source_dialog_generation_id; // voice take this was composed against
+    std::string source_dialog_cache_key;     // sha256 of the turns at composition time
 
     bool operator==(const DialogBackgroundMusic &) const = default;
 };
@@ -140,6 +153,21 @@ class DialogBackgroundMusicDto : public oatpp::DTO {
     DTO_FIELD(String, generation_id);
     DTO_FIELD(String, prompt);
     DTO_FIELD(Int64, accepted_at);
+
+    DTO_FIELD_INFO(source_dialog_generation_id) {
+        info->description = "The voice take this music was composed against. Compare with "
+                            "accepted_voice.generation_id to tell whether the music still matches the performance "
+                            "it was fitted to. Absent on music accepted before this was recorded — show no "
+                            "verdict rather than a passing one.";
+        info->required = false;
+    }
+    DTO_FIELD(String, source_dialog_generation_id);
+
+    DTO_FIELD_INFO(source_dialog_cache_key) {
+        info->description = "sha256 of the script's turns at the time the music was composed.";
+        info->required = false;
+    }
+    DTO_FIELD(String, source_dialog_cache_key);
 };
 
 class DialogScriptDto : public oatpp::DTO {

@@ -284,6 +284,26 @@ DialogMusicService::promote(const std::string &generationId, std::shared_ptr<Req
             existingIxml ? voice::parseIxmlProvenance(*existingIxml) : voice::WavProvenance{};
         if (existingProvenance.music && existingProvenance.music->musicGenerationId == generationId &&
             !existingProvenance.music->requestJson.empty()) {
+            // Backfill the composition source if this music was accepted before
+            // it was recorded (#136). The WAV has carried it all along, so
+            // re-promoting the same generation repairs the script rather than
+            // returning early with a block the Console can't render a verdict
+            // for. Only writes when something actually changed.
+            const auto &existingMusic = *existingProvenance.music;
+            if (script.background_music->source_dialog_generation_id.empty() &&
+                !existingMusic.sourceDialogGenerationId.empty()) {
+                script.background_music->source_dialog_generation_id = existingMusic.sourceDialogGenerationId;
+                script.background_music->source_dialog_cache_key = existingMusic.sourceDialogCacheKey;
+                script.updated_at = nowMillis();
+                auto backfilled = storage::publishDialogScript(dialogScriptToJson(script).dump(), span);
+                if (!backfilled.isSuccess()) {
+                    return fail(backfilled.getError().value(), "DialogScriptPublishError");
+                }
+                info("backfilled music composition source for script {} from embedded provenance", script.id);
+                if (span) {
+                    span->setAttribute("music.source_backfilled", true);
+                }
+            }
             auto dto = DialogMusicPromotionResultDto::createShared();
             dto->music_generation_id = generationId;
             dto->sound_file = script.background_music->sound_file;
@@ -394,8 +414,16 @@ DialogMusicService::promote(const std::string &generationId, std::shared_ptr<Req
         publicationSpan->setSuccess();
     }
 
-    script.background_music =
-        DialogBackgroundMusic{permanentPath.forMetadata, generationId, provenance.music->prompt, nowMillis()};
+    // Carry the composition source onto the accepted block (#136). It comes from
+    // the candidate's embedded iXML, which this function has already checksum-
+    // verified and read back off disk — a stronger source than the request that
+    // started the generation, because it travels with the audio.
+    script.background_music = DialogBackgroundMusic{permanentPath.forMetadata,
+                                                    generationId,
+                                                    provenance.music->prompt,
+                                                    nowMillis(),
+                                                    provenance.music->sourceDialogGenerationId,
+                                                    provenance.music->sourceDialogCacheKey};
     script.updated_at = nowMillis();
     auto published = storage::publishDialogScript(dialogScriptToJson(script).dump(), span);
     if (!published.isSuccess()) {

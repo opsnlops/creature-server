@@ -211,6 +211,29 @@ Result<creatures::DialogScript> Database::dialogScriptFromJson(json scriptJson,
                     span, "Dialog script background music accepted_at must be a positive integer");
             }
             music.accepted_at = musicJson["accepted_at"].get<int64_t>();
+
+            // Which voice take the music was composed against (#136). Optional:
+            // music accepted before this was recorded has neither, and that has
+            // to keep parsing — a validation error here would make every
+            // pre-existing script with music un-editable.
+            if (musicJson.contains("source_dialog_generation_id") &&
+                musicJson["source_dialog_generation_id"].is_string()) {
+                music.source_dialog_generation_id = musicJson["source_dialog_generation_id"].get<std::string>();
+                if (!music.source_dialog_generation_id.empty() && !isUuidShape(music.source_dialog_generation_id)) {
+                    return invalidScriptData<DialogScript>(
+                        span, "Dialog script 'background_music.source_dialog_generation_id' must be a UUID");
+                }
+            }
+            if (musicJson.contains("source_dialog_cache_key") && musicJson["source_dialog_cache_key"].is_string()) {
+                music.source_dialog_cache_key = musicJson["source_dialog_cache_key"].get<std::string>();
+                if (!music.source_dialog_cache_key.empty() &&
+                    (music.source_dialog_cache_key.size() != 64 ||
+                     music.source_dialog_cache_key.find_first_not_of("0123456789abcdef") != std::string::npos)) {
+                    return invalidScriptData<DialogScript>(
+                        span, "Dialog script 'background_music.source_dialog_cache_key' must be a 64-character "
+                              "lowercase hex sha256");
+                }
+            }
             script.background_music = std::move(music);
         }
 

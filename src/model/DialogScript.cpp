@@ -36,6 +36,13 @@ oatpp::Object<DialogScriptDto> convertToDto(const DialogScript &script) {
         music->generation_id = script.background_music->generation_id;
         music->prompt = script.background_music->prompt;
         music->accepted_at = script.background_music->accepted_at;
+        // #136: which voice take this was composed against. Omitted rather than
+        // sent empty when unrecorded, so the client can tell "unknown" from
+        // "known to be nothing" and show no verdict instead of a false one.
+        if (!script.background_music->source_dialog_generation_id.empty())
+            music->source_dialog_generation_id = script.background_music->source_dialog_generation_id;
+        if (!script.background_music->source_dialog_cache_key.empty())
+            music->source_dialog_cache_key = script.background_music->source_dialog_cache_key;
         dto->background_music = music;
     }
 
@@ -90,6 +97,10 @@ DialogScript convertFromDto(const std::shared_ptr<DialogScriptDto> &scriptDto) {
             music.prompt = dto->prompt;
         if (dto->accepted_at)
             music.accepted_at = *dto->accepted_at;
+        if (dto->source_dialog_generation_id)
+            music.source_dialog_generation_id = dto->source_dialog_generation_id;
+        if (dto->source_dialog_cache_key)
+            music.source_dialog_cache_key = dto->source_dialog_cache_key;
         script.background_music = std::move(music);
     }
     if (scriptDto->turns) {
@@ -128,6 +139,12 @@ nlohmann::json dialogScriptToJson(const DialogScript &script) {
                                  {"generation_id", script.background_music->generation_id},
                                  {"prompt", script.background_music->prompt},
                                  {"accepted_at", script.background_music->accepted_at}};
+        if (!script.background_music->source_dialog_generation_id.empty()) {
+            j["background_music"]["source_dialog_generation_id"] = script.background_music->source_dialog_generation_id;
+        }
+        if (!script.background_music->source_dialog_cache_key.empty()) {
+            j["background_music"]["source_dialog_cache_key"] = script.background_music->source_dialog_cache_key;
+        }
     }
     nlohmann::json turns = nlohmann::json::array();
     for (const auto &t : script.turns) {
