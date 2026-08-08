@@ -243,6 +243,87 @@ DialogMusicService::generate(const oatpp::Object<DialogMusicRequestDto> &request
 }
 
 Result<oatpp::Object<DialogMusicPromotionResultDto>>
+DialogMusicService::backfillMusicSourceFromPromotedFile(const std::string &generationId,
+                                                        const std::shared_ptr<OperationSpan> &span) const {
+    using PromotionResult = Result<oatpp::Object<DialogMusicPromotionResultDto>>;
+    const auto notFound = [](const std::string &message) {
+        return PromotionResult{ServerError(ServerError::NotFound, message)};
+    };
+
+    auto scriptsResult = creatures::db->listDialogScripts(span);
+    if (!scriptsResult.isSuccess()) {
+        return PromotionResult{scriptsResult.getError().value()};
+    }
+    const auto scripts = scriptsResult.getValue().value();
+
+    const auto match = std::find_if(scripts.begin(), scripts.end(), [&](const DialogScript &s) {
+        return s.background_music && s.background_music->generation_id == generationId;
+    });
+    if (match == scripts.end()) {
+        return notFound(fmt::format("no accepted music references generation {}", generationId));
+    }
+    auto script = *match;
+
+    const auto promotedPath = storage::resolveSoundPath(script.background_music->sound_file);
+    std::error_code ec;
+    if (!std::filesystem::exists(promotedPath, ec) || ec) {
+        return PromotionResult{
+            ServerError(ServerError::NotFound,
+                        fmt::format("script '{}' references music at '{}', which is missing from the permanent store",
+                                    script.title, script.background_music->sound_file))};
+    }
+
+    const auto ixml = voice::readIxmlChunk(promotedPath);
+    const auto provenance = ixml ? voice::parseIxmlProvenance(*ixml) : voice::WavProvenance{};
+    if (!provenance.music || provenance.music->musicGenerationId != generationId) {
+        return PromotionResult{ServerError(ServerError::InvalidData,
+                                           fmt::format("the promoted music for script '{}' does not carry embedded "
+                                                       "provenance for generation {}, so its composition source "
+                                                       "cannot be recovered",
+                                                       script.title, generationId))};
+    }
+
+    const auto buildDto = [&] {
+        auto dto = DialogMusicPromotionResultDto::createShared();
+        dto->music_generation_id = generationId;
+        dto->sound_file = script.background_music->sound_file;
+        dto->mp3_url = fmt::format("/api/v1/sound/mp3/{}.mp3", promotedPath.stem().string());
+        return dto;
+    };
+
+    // Nothing to repair is still a success — this path is reached by re-running
+    // an accept that already holds, and it should be as idempotent as the
+    // ordinary one.
+    if (!script.background_music->source_dialog_generation_id.empty() ||
+        provenance.music->sourceDialogGenerationId.empty()) {
+        if (span) {
+            span->setAttribute("music.source_backfilled", false);
+            span->setAttribute("music.recovered_from_promoted_file", true);
+            span->setSuccess();
+        }
+        return PromotionResult{buildDto()};
+    }
+
+    script.background_music->source_dialog_generation_id = provenance.music->sourceDialogGenerationId;
+    script.background_music->source_dialog_cache_key = provenance.music->sourceDialogCacheKey;
+    script.updated_at = nowMillis();
+    auto published = storage::publishDialogScript(dialogScriptToJson(script).dump(), span);
+    if (!published.isSuccess()) {
+        return PromotionResult{published.getError().value()};
+    }
+
+    info("recovered music composition source for script '{}' from the promoted WAV (generation {} has aged out of "
+         "the candidate cache)",
+         script.title, generationId);
+    if (span) {
+        span->setAttribute("music.source_backfilled", true);
+        span->setAttribute("music.recovered_from_promoted_file", true);
+        span->setSuccess();
+    }
+    return PromotionResult{buildDto()};
+}
+
+Result<oatpp::Object<DialogMusicPromotionResultDto>>
 DialogMusicService::promote(const std::string &generationId, std::shared_ptr<RequestSpan> parentSpan) const {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DialogMusicService.promote", parentSpan)
@@ -262,6 +343,18 @@ DialogMusicService::promote(const std::string &generationId, std::shared_ptr<Req
     }
     auto loaded = voice::loadMusicGeneration(generationId);
     if (!loaded.isSuccess()) {
+        // The candidate aged out of the TTL'd cache, but promotion COPIES —
+        // the permanent WAV is still there, still carrying the same embedded
+        // provenance. That's exactly the state the oldest accepted music is
+        // in, which is to say precisely the music that most needs the #136
+        // backfill. Repair from the promoted file instead of refusing.
+        auto repaired = backfillMusicSourceFromPromotedFile(generationId, span);
+        if (repaired.isSuccess()) {
+            return repaired;
+        }
+        if (repaired.getError().value().getCode() != ServerError::NotFound) {
+            return fail(repaired.getError().value(), "MusicSourceBackfillError");
+        }
         return fail(loaded.getError().value(), "MusicCacheLoadError");
     }
     auto candidate = loaded.getValue().value();
