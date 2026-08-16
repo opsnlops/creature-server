@@ -578,6 +578,9 @@ add_executable(creature-server
         src/server/ws/ErrorHandler.cpp
         src/server/ws/ErrorHandler.h
 
+        src/server/ws/RequestBodyDrain.cpp
+        src/server/ws/RequestBodyDrain.h
+
         src/server/ws/controller/CreatureController.h
         src/server/ws/controller/DebugController.h
         src/server/ws/controller/DmxFixtureController.h
@@ -753,6 +756,8 @@ add_executable(creature-server-test
         tests/server/ws/HttpResponseHelpers_test.cpp
         tests/server/ws/ErrorHandler_test.cpp
         src/server/ws/ErrorHandler.cpp
+        tests/server/ws/RequestBodyDrain_test.cpp
+        src/server/ws/RequestBodyDrain.cpp
         tests/server/storyboard/StoryboardParse_test.cpp
         tests/server/storage/Storage_test.cpp
         tests/server/storage/StoragePublishers_test.cpp

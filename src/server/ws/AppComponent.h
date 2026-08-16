@@ -19,6 +19,7 @@
 #include <CreatureVoices.h>
 
 #include "ErrorHandler.h"
+#include "RequestBodyDrain.h"
 #include "SwaggerComponent.h"
 
 #include "server/config.h"
@@ -87,8 +88,16 @@ class AppComponent {
         OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>,
                         objectMapper); // get ObjectMapper component
 
-        auto connectionHandler = oatpp::web::server::HttpConnectionHandler::createShared(router);
+        // Swap in a body decoder that records whether the endpoint read the request
+        // body, so the drain interceptor below can discard unread bodies instead of
+        // letting them poison the next request on a keep-alive connection (issue #142).
+        auto components = std::make_shared<oatpp::web::server::HttpProcessor::Components>(router);
+        components->bodyDecoder = std::make_shared<TrackingBodyDecoder>();
+
+        auto connectionHandler = std::make_shared<oatpp::web::server::HttpConnectionHandler>(components);
         connectionHandler->setErrorHandler(std::make_shared<ErrorHandler>(objectMapper));
+        connectionHandler->addRequestInterceptor(std::make_shared<RequestBodyDrainRequestInterceptor>());
+        connectionHandler->addResponseInterceptor(std::make_shared<RequestBodyDrainResponseInterceptor>());
         return connectionHandler;
     }());
 
