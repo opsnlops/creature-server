@@ -236,6 +236,27 @@ Result<SpeechTrackResult> buildSpeechTrack(const SpeechTrackInput &input, const 
     std::size_t fadeRemaining = 0;
     const std::size_t fadeTotal = useIdleLoop ? options.crossfadeFrames : 0;
 
+    // Cock-axis ownership (issue #144). The cock aims at nothing — it's the
+    // quizzical listening tilt — and a speaking creature holds it level, so
+    // the gaze layer emits a dead constant for the whole of every turn it
+    // holds. On a differential neck (head_height + head_tilt -> neck_left /
+    // neck_right) that strips most of the life out of the head: Beaky's tilt
+    // went from 82 distinct values in her loop to literally one in the render.
+    //
+    // So the loop owns head_tilt while a creature is speaking, and gaze owns it
+    // while it's listening. Ownership changes are eased over the same window as
+    // the body crossfade, because a hard handover between two unrelated values
+    // is exactly the twitch this axis is supposed to avoid.
+    //
+    // Note this is a WRITE-side decision only — buildGazeTrack still computes
+    // the full cock stream and consumes its rng identically, so `render_seed`
+    // reproducibility is unaffected.
+    const std::size_t cockFadeTotal = options.crossfadeFrames;
+    int cockFadeSource = -1;
+    int lastCockByte = -1;
+    std::size_t cockFadeRemaining = 0;
+    bool cockOwnedByGazePrev = false;
+
     std::size_t speakingCounter = options.startOffset;
     std::size_t idleCounter = options.idleStartOffset;
     for (std::size_t f = 0; f < input.totalFrames; ++f) {
@@ -295,7 +316,29 @@ Result<SpeechTrackResult> buildSpeechTrack(const SpeechTrackInput &input, const 
             frame[input.gazeElevationSlot] = input.gazeElevationBytes[f];
         }
         if (cockSlotInRange && f < input.gazeCockBytes.size()) {
-            frame[input.gazeCockSlot] = input.gazeCockBytes[f];
+            // Listening -> gaze aims the tilt. Speaking -> whatever the body
+            // loop already put in this slot stays.
+            const bool cockOwnedByGaze = !speakingAt[f];
+            if (f > 0 && cockOwnedByGaze != cockOwnedByGazePrev && cockFadeTotal > 0 && lastCockByte >= 0) {
+                cockFadeSource = lastCockByte;
+                cockFadeRemaining = cockFadeTotal;
+            }
+            cockOwnedByGazePrev = cockOwnedByGaze;
+
+            int cockByte = cockOwnedByGaze ? static_cast<int>(input.gazeCockBytes[f])
+                                           : static_cast<int>(frame[input.gazeCockSlot]);
+            if (cockFadeRemaining > 0 && cockFadeSource >= 0) {
+                // Ease from the value we last emitted toward the new owner's
+                // (moving) value, mirroring how the body crossfade works.
+                const double t =
+                    static_cast<double>(cockFadeTotal - cockFadeRemaining + 1) / static_cast<double>(cockFadeTotal + 1);
+                cockByte = static_cast<int>(
+                    std::lround(static_cast<double>(cockFadeSource) +
+                                (static_cast<double>(cockByte) - static_cast<double>(cockFadeSource)) * t));
+                --cockFadeRemaining;
+            }
+            frame[input.gazeCockSlot] = static_cast<uint8_t>(std::clamp(cockByte, 0, 255));
+            lastCockByte = cockByte;
         }
 
         std::string raw(reinterpret_cast<const char *>(frame.data()), frame.size());

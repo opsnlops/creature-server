@@ -1226,7 +1226,15 @@ void JobWorker::handleStageRerenderJob(JobState &jobState) {
             }
 
             const auto soundRoot = config->getSoundFileLocation();
-            if (auto resolved = creatures::audio::resolveSoundInRoot(soundRoot, animation.metadata.sound_file)) {
+            // resolveSoundInRoot takes a BARE FILENAME and searches for it
+            // recursively; it rejects anything carrying a path component as a
+            // traversal attempt. `sound_file` is stored with its subdirectory
+            // ("dialog/scene-abc123.wav"), so handing it over unchanged always
+            // returned nullopt and this whole iXML branch was dead — every
+            // dialog re-render silently fell through to scraping the mouth
+            // slot, which is the lossy path the design calls a last resort.
+            const std::string soundBasename = std::filesystem::path(animation.metadata.sound_file).filename().string();
+            if (auto resolved = creatures::audio::resolveSoundInRoot(soundRoot, soundBasename)) {
                 if (auto ixml = voice::readIxmlChunk(*resolved)) {
                     const auto lipsyncTracks = voice::parseIxmlLipsync(*ixml);
                     creatures::SoundDataProcessor processor;
@@ -1872,7 +1880,24 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         // got reused.
         const bool useExplicitId = !effectiveGenerationId.empty() && chunks.size() == 1;
         if (useExplicitId) {
-            auto loadResult = voice::loadGeneration(cacheKey, effectiveGenerationId);
+            // An ACCEPTED take lives in the durable store; look there first.
+            // The ephemeral cache is only ever an optimisation (issue #146).
+            auto loadResult = renderingAcceptedTake
+                                  ? voice::loadAcceptedGeneration(cacheKey, effectiveGenerationId)
+                                  : Result<voice::CachedGeneration>{ServerError(ServerError::NotFound, "not accepted")};
+            if (!loadResult.isSuccess()) {
+                loadResult = voice::loadGeneration(cacheKey, effectiveGenerationId);
+            }
+            if (!loadResult.isSuccess() && renderingAcceptedTake) {
+                // Never regenerate behind the user's back. They auditioned and
+                // accepted a specific performance; silently producing a
+                // different one is the exact failure the accepted-take feature
+                // exists to prevent, and it costs money doing it.
+                return failJob(fmt::format(
+                    "the script's accepted voice take {} could not be loaded ({}). Refusing to regenerate audio, "
+                    "which would produce a different performance — re-accept a take for this script.",
+                    effectiveGenerationId, loadResult.getError().value().getMessage()));
+            }
             if (loadResult.isSuccess()) {
                 auto gen = loadResult.getValue().value();
                 segmentNormalizationApplied = voice::normalizeCachedGenerationVoiceSegments(gen, chunk);
@@ -2880,6 +2905,20 @@ void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
 
     updateProgress(0.85f);
 
+    // Make the take durable BEFORE anything is demoted or published (#146).
+    //
+    // Acceptance has to mean "this exact performance, forever", but the
+    // generation only exists in temp space that a cron sweep or a reboot may
+    // delete. Once that happens the render finds nothing and quietly
+    // regenerates a DIFFERENT take. Copy it somewhere permanent first, and
+    // fail the acceptance outright if we can't — an acceptance we cannot
+    // honour later is worse than no acceptance at all.
+    auto madeDurable = creatures::voice::saveAcceptedGeneration(cacheKey, generationId);
+    if (!madeDurable.isSuccess()) {
+        return failJob(
+            fmt::format("could not store the accepted take durably: {}", madeDurable.getError().value().getMessage()));
+    }
+
     // Demote after the assembly, so a failure above leaves the previously
     // accepted take whole rather than half-moved.
     if (script.accepted_voice && script.accepted_voice->generation_id != generationId) {
@@ -2888,6 +2927,9 @@ void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
         if (!demoted.isSuccess()) {
             return failJob(demoted.getError().value().getMessage());
         }
+        // Best effort — a leftover durable copy costs disk, not correctness.
+        creatures::voice::removeAcceptedGeneration(script.accepted_voice->dialog_cache_key,
+                                                   script.accepted_voice->generation_id);
     }
 
     const auto filename =

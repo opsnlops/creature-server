@@ -1,0 +1,88 @@
+[Unit]
+Description=Creature Server (travel rig — single-Pi mode)
+Documentation=https://github.com/opsnlops/creature-server
+After=network-online.target docker.service
+Wants=network-online.target
+
+# MongoDB runs as a Docker container on the travel server (`mongodb`, mongo:4.4)
+# rather than as a native service, so dockerd has to be up first.
+#
+# Deliberately After= and not Requires=: a container that is running but not yet
+# accepting connections still fails our 2 s server-selection timeout. Rather than
+# try to express container readiness in unit ordering, let the server exit and
+# have Restart= bring it straight back. It converges in a few seconds and needs
+# no health-check plumbing.
+
+[Service]
+Type=exec
+
+# A real user, NOT DynamicUser= as the sibling relay units use. Those are
+# stateless; this one owns persistent state under /srv/sounds (rendered WAVs,
+# the per-host Opus cache, and the durable accepted-voice takes) and needs the
+# `audio` group for ALSA playback, which travel mode does locally.
+User=april
+Group=april
+SupplementaryGroups=audio
+
+# Baked-in defaults for this host; /etc/default/creature-server overrides them.
+#
+# Secrets go in that file and NEVER in this unit — unit files are world-readable
+# under /lib/systemd/system. Set VOICE_API_KEY (ElevenLabs) and HONEYCOMB_API_KEY
+# there; the server reads both from the environment. Without VOICE_API_KEY the
+# server still runs and stage re-renders still work — only fresh dialog
+# generation needs it.
+Environment=CREATURE_MONGO_URI=mongodb://127.0.0.1/?serverSelectionTimeoutMS=2000
+Environment=CREATURE_SOUNDS=/srv/sounds
+EnvironmentFile=-/etc/default/creature-server
+
+# --travel-mode is the whole point of this host: host-local sACN (multicast
+# TTL 0, so frames never leave the box) and stereo local audio. The creature
+# controllers run locally here and receive via loopback.
+ExecStart=/usr/bin/creature-server \
+    --travel-mode \
+    --mongodb-uri ${CREATURE_MONGO_URI} \
+    --sounds-location ${CREATURE_SOUNDS} \
+    $CREATURE_SERVER_EXTRA_ARGS
+
+Restart=always
+RestartSec=5
+
+# The event loop runs at 50 Hz and serves websockets to the Console.
+LimitNOFILE=8192
+
+# ---------------------------------------------------------------------------
+# Hardening
+# ---------------------------------------------------------------------------
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+# ProtectSystem=strict makes the ENTIRE hierarchy read-only, /tmp included, so
+# both writable trees have to be named explicitly.
+#
+#   /srv/sounds  rendered WAVs, .opus_cache/<hostname>, dialog/voice-takes
+#   /tmp         generation cache + job scratch, see the PrivateTmp note below
+ReadWritePaths=/srv/sounds /tmp
+
+# PrivateTmp is deliberately OFF, unlike creature-audio-relay and
+# creature-sacn-relay on this same host.
+#
+# The ElevenLabs generation cache lives at /tmp/creature-adhoc/dialog-cache and
+# lipsync job scratch at /tmp/creature-lipsync. A private /tmp is destroyed on
+# every restart, so each restart would throw the voice cache away and the next
+# dialog render would re-pay ElevenLabs for audio it already had. The cron sweep
+# that ages the cache out also expects the shared path.
+#
+# Correctness is not at stake — accepted voice takes are stored durably under
+# /srv/sounds/dialog/voice-takes since issue #146 — but the money is.
+PrivateTmp=no
+
+# ProtectHome=yes hides /home, so this unit can only run the PACKAGED binary at
+# /usr/bin/creature-server. To run a build from ~/code/creature-server/build,
+# change ExecStart and set ProtectHome=no.
+
+[Install]
+WantedBy=multi-user.target

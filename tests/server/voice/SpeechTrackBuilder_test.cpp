@@ -245,4 +245,84 @@ TEST(SpeechTrackBuilder, MouthBytesShorterThanTotalFramesIsHandled) {
     EXPECT_EQ(decode(result.getValue()->track.frames[4])[2], 0xBB); // base frame B's byte
 }
 
+// =============================================================================
+// Cock-axis ownership (issue #144).
+//
+// The gaze layer holds a speaking creature's cock at a dead constant for the
+// whole turn, which stripped Beaky's head_tilt from 82 distinct values down to
+// 1. The loop keeps the tilt while speaking; gaze takes it while listening.
+// =============================================================================
+TEST(SpeechTrackBuilder, LoopKeepsTheCockAxisWhileSpeaking) {
+    // Speaking throughout: mouth is voiced on every frame.
+    std::vector<uint8_t> mouth(6, 0x05);
+    auto input = baseInput(mouth, /*mouthSlot=*/4, /*totalFrames=*/6);
+
+    // Gaze wants a hard 0x11 on slot 1 for every frame.
+    std::vector<uint8_t> cock(6, 0x11);
+    input.gazeCockBytes = cock;
+    input.gazeCockSlot = 1;
+
+    SpeechTrackOptions options;
+    options.crossfadeFrames = 0; // isolate ownership from the handover easing
+
+    auto result = buildSpeechTrack(input, options);
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+
+    // Every frame is a speaking frame, so the body loop's own tilt survives
+    // untouched — A, B, C, A, B, C — rather than being flattened to 0x11.
+    const std::vector<uint8_t> expected{0xAA, 0xBB, 0xCC, 0xAA, 0xBB, 0xCC};
+    for (std::size_t f = 0; f < expected.size(); ++f) {
+        EXPECT_EQ(decode(result.getValue()->track.frames[f])[1], expected[f]) << "frame " << f;
+    }
+}
+
+TEST(SpeechTrackBuilder, GazeTakesTheCockAxisWhileListening) {
+    // Silent throughout, so this creature is listening the whole time.
+    std::vector<uint8_t> mouth(6, 0x00);
+    auto input = baseInput(mouth, /*mouthSlot=*/4, /*totalFrames=*/6);
+
+    std::vector<uint8_t> cock(6, 0x11);
+    input.gazeCockBytes = cock;
+    input.gazeCockSlot = 1;
+
+    SpeechTrackOptions options;
+    options.dialogIdleMode = true; // required for silent frames to be possible
+    options.bodyTailFrames = 0;
+    options.crossfadeFrames = 0;
+
+    auto result = buildSpeechTrack(input, options);
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+
+    for (std::size_t f = 0; f < 6; ++f) {
+        EXPECT_EQ(decode(result.getValue()->track.frames[f])[1], 0x11) << "frame " << f;
+    }
+}
+
+TEST(SpeechTrackBuilder, CockHandoverIsEasedRatherThanSnapped) {
+    // Speaks for the first half, listens for the second. The tilt must not jump
+    // straight from the loop's value to the gaze value at the boundary.
+    std::vector<uint8_t> mouth{0x05, 0x05, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00};
+    auto input = baseInput(mouth, /*mouthSlot=*/4, /*totalFrames=*/8);
+
+    std::vector<uint8_t> cock(8, 0xF0);
+    input.gazeCockBytes = cock;
+    input.gazeCockSlot = 1;
+
+    SpeechTrackOptions options;
+    options.dialogIdleMode = true;
+    options.bodyTailFrames = 0;
+    options.crossfadeFrames = 3;
+
+    auto result = buildSpeechTrack(input, options);
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+
+    // Frame 3 is the first listening frame. Easing means it must not already
+    // be sitting on the gaze value.
+    const int atHandover = decode(result.getValue()->track.frames[3])[1];
+    EXPECT_LT(atHandover, 0xF0) << "cock snapped straight to the gaze value";
+
+    // ...but by the end of the fade it has arrived.
+    EXPECT_EQ(decode(result.getValue()->track.frames[7])[1], 0xF0);
+}
+
 } // namespace creatures::voice

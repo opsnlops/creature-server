@@ -35,6 +35,25 @@ std::filesystem::path dialogCacheRoot() {
     return std::filesystem::temp_directory_path() / "creature-adhoc" / "dialog-cache";
 }
 
+/// Root of the DURABLE store for accepted takes (issue #146).
+///
+/// The cache root above is temp space that a cron sweep — and any reboot —
+/// is entitled to delete. That is fine for an optimisation, and fatal for an
+/// acceptance: a take the user auditioned and accepted has to still be there
+/// tomorrow, or the render quietly regenerates a different performance.
+///
+/// So accepted takes get copied under the permanent sound root, which is
+/// never auto-cleaned and is what gets backed up and synced between machines.
+std::filesystem::path acceptedTakeRoot() {
+    auto r = creatures::storage::root(creatures::storage::Persistence::Permanent);
+    if (r.isSuccess()) {
+        return r.getValue().value() / "dialog" / "voice-takes";
+    }
+    // No permanent root configured. Returning the temp root would silently
+    // reintroduce the bug, so return empty and let callers fail loudly.
+    return {};
+}
+
 std::filesystem::path cacheKeyDir(const std::string &cacheKey) { return dialogCacheRoot() / cacheKey; }
 
 std::filesystem::path pcmPath(const std::string &cacheKey, const std::string &generationId) {
@@ -227,9 +246,16 @@ std::optional<std::string> findLatestGeneration(const std::string &cacheKey) {
     return gens.front().generationId;
 }
 
-Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::string &generationId) {
-    const auto pcmFile = pcmPath(cacheKey, generationId);
-    const auto jsonFile = jsonPath(cacheKey, generationId);
+/// Shared reader for both the ephemeral cache and the durable accepted-take
+/// store — they use identical on-disk layout, only a different root.
+static Result<CachedGeneration> loadGenerationFromDir(const std::filesystem::path &dir, const std::string &cacheKey,
+                                                      const std::string &generationId) {
+    if (dir.empty()) {
+        return Result<CachedGeneration>{
+            ServerError(ServerError::InternalError, "DialogCache: no root configured for this store")};
+    }
+    const auto pcmFile = dir / (generationId + ".pcm");
+    const auto jsonFile = dir / (generationId + ".json");
     std::error_code ec;
     if (!std::filesystem::exists(pcmFile, ec) || !std::filesystem::exists(jsonFile, ec)) {
         return Result<CachedGeneration>{ServerError(
@@ -273,6 +299,86 @@ Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::
     }
     gen.audioPcm = std::move(audio);
     return gen;
+}
+
+Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::string &generationId) {
+    return loadGenerationFromDir(cacheKeyDir(cacheKey), cacheKey, generationId);
+}
+
+Result<CachedGeneration> loadAcceptedGeneration(const std::string &cacheKey, const std::string &generationId) {
+    const auto root = acceptedTakeRoot();
+    if (root.empty()) {
+        return Result<CachedGeneration>{
+            ServerError(ServerError::InternalError,
+                        "DialogCache: no permanent sound root configured, so accepted takes cannot be stored")};
+    }
+    return loadGenerationFromDir(root / cacheKey, cacheKey, generationId);
+}
+
+Result<void> saveAcceptedGeneration(const std::string &cacheKey, const std::string &generationId) {
+    if (cacheKey.empty() || generationId.empty()) {
+        return Result<void>{ServerError(ServerError::InvalidData, "DialogCache: cacheKey/generationId is empty")};
+    }
+    const auto root = acceptedTakeRoot();
+    if (root.empty()) {
+        return Result<void>{ServerError(ServerError::InternalError,
+                                        "DialogCache: no permanent sound root configured; refusing to accept a take "
+                                        "that could only live in temp space")};
+    }
+
+    const auto srcPcm = pcmPath(cacheKey, generationId);
+    const auto srcJson = jsonPath(cacheKey, generationId);
+    std::error_code ec;
+    if (!std::filesystem::exists(srcPcm, ec) || !std::filesystem::exists(srcJson, ec)) {
+        return Result<void>{
+            ServerError(ServerError::NotFound,
+                        fmt::format("DialogCache: generation '{}/{}' is not in the cache, so it cannot be made durable",
+                                    cacheKey, generationId))};
+    }
+
+    const auto dir = root / cacheKey;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        return Result<void>{ServerError(ServerError::InternalError,
+                                        fmt::format("DialogCache: mkdir {} failed: {}", dir.string(), ec.message()))};
+    }
+
+    // .tmp + rename, same reasoning as saveGeneration: a half-copied take must
+    // never look loadable.
+    for (const auto &[src, name] :
+         {std::pair{srcPcm, generationId + ".pcm"}, std::pair{srcJson, generationId + ".json"}}) {
+        const auto dst = dir / name;
+        const auto tmp = dst.string() + ".tmp";
+        std::filesystem::copy_file(src, tmp, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) {
+            return Result<void>{
+                ServerError(ServerError::InternalError,
+                            fmt::format("DialogCache: copy {} -> {} failed: {}", src.string(), tmp, ec.message()))};
+        }
+        std::filesystem::rename(tmp, dst, ec);
+        if (ec) {
+            std::filesystem::remove(tmp, ec);
+            return Result<void>{ServerError(ServerError::InternalError,
+                                            fmt::format("DialogCache: rename {} -> {} failed", tmp, dst.string()))};
+        }
+    }
+
+    info("DialogCache: accepted take {}/{} is now durable in {}", cacheKey, generationId, dir.string());
+    return Result<void>{};
+}
+
+Result<void> removeAcceptedGeneration(const std::string &cacheKey, const std::string &generationId) {
+    const auto root = acceptedTakeRoot();
+    if (root.empty() || cacheKey.empty() || generationId.empty()) {
+        return Result<void>{};
+    }
+    std::error_code ec;
+    const auto dir = root / cacheKey;
+    std::filesystem::remove(dir / (generationId + ".pcm"), ec);
+    std::filesystem::remove(dir / (generationId + ".json"), ec);
+    // Best effort: prune the key directory if it's now empty.
+    std::filesystem::remove(dir, ec);
+    return Result<void>{};
 }
 
 Result<void> saveGeneration(const std::string &cacheKey, const CachedGeneration &gen) {
