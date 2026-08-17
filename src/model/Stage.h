@@ -46,15 +46,29 @@ inline constexpr int32_t STAGE_CURRENT_VERSION = 1;
 ///     +y  above the listener's ears    -y  below
 ///     -z  in front of the listener     +z  behind them
 ///
-///   `yaw` is which way the creature faces, in degrees, same convention as a
-///   bearing: 0 = facing +Z, +90 = facing +X. It is NOT relative to the
-///   listener; it's an absolute heading in the stage frame.
+///   `yaw` is which way the creature faces, in degrees. It is NOT relative to
+///   the listener; it's an absolute heading in the stage frame.
+///
+///   YAW SIGN (issue #144) — easy to get backwards, and backwards is invisible
+///   in review because every head still moves, just to the wrong place:
+///
+///     0 = facing +Z, +90 = facing -X (the listener's left).
+///
+///   `voice::bearingDegrees()` uses this exact same sense, so a bearing and a
+///   yaw subtract directly with no conversion. That is deliberate: the code
+///   previously carried two mirrored conventions and quietly subtracted one
+///   from the other, which pinned every neck to a mechanical rail.
+///
+///   Beware when testing this: mirroring the convention leaves every angle
+///   MAGNITUDE unchanged and only flips directions, so any check that compares
+///   absolute angles will pass either way. Only real hardware, or a test that
+///   asserts on a signed value, can tell the two apart.
 struct StagePlacement {
     std::string creature_id;
     float x{0.0f};
     float y{0.0f};
     float z{0.0f};
-    float yaw{0.0f}; // degrees, normalized to (-180, 180]
+    float yaw{0.0f}; // degrees CCW from +Z, normalized to (-180, 180]
 
     bool operator==(const StagePlacement &) const = default;
 };
@@ -127,9 +141,9 @@ class StageDto : public oatpp::DTO {
 
     DTO_FIELD_INFO(placements) {
         info->description = "Array of creature placements. Each has creature_id plus x/y/z in metres relative to the "
-                            "listener (who is at the origin, facing -Z) and yaw in degrees (0 = facing +Z, +90 = "
-                            "facing +X). Coordinates are clamped to +/-5 m. Extra per-placement keys are preserved "
-                            "verbatim.";
+                            "listener (who is at the origin, facing -Z) and yaw in degrees measured counterclockwise "
+                            "from +Z viewed from above (0 = facing +Z, +90 = facing -X). Coordinates are clamped to "
+                            "+/-5 m. Extra per-placement keys are preserved verbatim.";
     }
     DTO_FIELD(Any, placements);
 

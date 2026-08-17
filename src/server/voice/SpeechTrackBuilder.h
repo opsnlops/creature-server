@@ -194,6 +194,9 @@ struct SpeechTrackResult {
     // "no stage bound", "creature has no such axis", or "slot out of range".
     bool gazePanApplied{false};
     bool gazeElevationApplied{false};
+    // Cock is the exception: true means the axis was eligible, but it is only
+    // written on frames where the creature is listening — while it speaks, its
+    // body loop keeps the tilt (issue #144).
     bool gazeCockApplied{false};
 };
 

@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <random>
 #include <set>
+#include <vector>
 
 #include "server/voice/GazeTrack.h"
 
@@ -19,10 +21,19 @@ using namespace creatures::voice;
 // checked against externally-computed values.
 //
 //   name   x      y      z      yaw     pan range    elevation range
-//   A    -2.4   +0.10  -3.0    +35     +/-55        +/-30
-//   B    -0.8   -0.30  -3.4    +15     +/-60 (inv)  +/-30
-//   C    +0.8   -0.50  -3.4    -15     +/-50        +/-30
-//   D    +2.4   +0.25  -3.0    -35     +/-45        +/-30
+//   A    -2.4   +0.10  -3.0    -35     +/-55        +/-30
+//   B    -0.8   -0.30  -3.4    -15     +/-60 (inv)  +/-30
+//   C    +0.8   -0.50  -3.4    +15     +/-50        +/-30
+//   D    +2.4   +0.25  -3.0    +35     +/-45        +/-30
+//
+// NOTE (issue #144): yaw and bearingDegrees() share one rotational sense —
+// 0 = facing +Z, +90 = facing -X — so they subtract directly. The plan doc's
+// table lists these yaws as +35/+15/-15/-35 and its relative angles with the
+// opposite sign, because it was written against a mirrored reading. The
+// geometry is unchanged: all four birds still angle inward in the conversation
+// V, and every angle MAGNITUDE below matches the plan. Only the directions
+// flipped — which is precisely what the old absolute-value analysis could not
+// see, and what the real birds settled.
 // ===========================================================================
 
 namespace {
@@ -40,7 +51,7 @@ GazeGeometry creatureA() {
     g.x = -2.4f;
     g.y = 0.10f;
     g.z = -3.0f;
-    g.yaw = 35.0f;
+    g.yaw = -35.0f;
     g.pan = pan(-55.0f, 55.0f);
     g.elevation = elevation(-30.0f, 30.0f);
     g.cock = cock(-20.0f, 20.0f);
@@ -53,7 +64,7 @@ GazeGeometry creatureB() {
     g.x = -0.8f;
     g.y = -0.30f;
     g.z = -3.4f;
-    g.yaw = 15.0f;
+    g.yaw = -15.0f;
     // Inverted pan motor: degrees_at_0 > degrees_at_255.
     g.pan = pan(60.0f, -60.0f);
     g.elevation = elevation(-30.0f, 30.0f);
@@ -67,7 +78,7 @@ GazeGeometry creatureC() {
     g.x = 0.8f;
     g.y = -0.50f;
     g.z = -3.4f;
-    g.yaw = -15.0f;
+    g.yaw = 15.0f;
     g.pan = pan(-50.0f, 50.0f);
     g.elevation = elevation(-30.0f, 30.0f);
     g.cock = cock(-20.0f, 20.0f);
@@ -80,7 +91,7 @@ GazeGeometry creatureD() {
     g.x = 2.4f;
     g.y = 0.25f;
     g.z = -3.0f;
-    g.yaw = -35.0f;
+    g.yaw = 35.0f;
     g.pan = pan(-45.0f, 45.0f);
     g.elevation = elevation(-30.0f, 30.0f);
     g.cock = cock(-20.0f, 20.0f);
@@ -88,6 +99,8 @@ GazeGeometry creatureD() {
 }
 
 // Relative pan angle (after yaw, before soft-clip) from one creature to another.
+// Mirrors what buildGazeTrack does exactly — if this drifts from the
+// implementation the Layout B table stops proving anything.
 float relativePan(const GazeGeometry &from, const GazeGeometry &to) {
     return creatures::normalizeDegrees(bearingDegrees(from.x, from.z, to.x, to.z) - from.yaw);
 }
@@ -106,9 +119,11 @@ TEST(GazeGeometryTest, BearingZeroPointsTowardPositiveZ) {
     EXPECT_NEAR(bearingDegrees(0.0f, 0.0f, 0.0f, 1.0f), 0.0f, 0.001f);
 }
 
-TEST(GazeGeometryTest, BearingNinetyPointsTowardPositiveX) {
-    EXPECT_NEAR(bearingDegrees(0.0f, 0.0f, 1.0f, 0.0f), 90.0f, 0.001f);
-    EXPECT_NEAR(bearingDegrees(0.0f, 0.0f, -1.0f, 0.0f), -90.0f, 0.001f);
+TEST(GazeGeometryTest, BearingNinetyPointsTowardNegativeX) {
+    // Same rotational sense as a placement's yaw (issue #144). A target on the
+    // listener's right (+X) is a NEGATIVE bearing.
+    EXPECT_NEAR(bearingDegrees(0.0f, 0.0f, -1.0f, 0.0f), 90.0f, 0.001f);
+    EXPECT_NEAR(bearingDegrees(0.0f, 0.0f, 1.0f, 0.0f), -90.0f, 0.001f);
 }
 
 TEST(GazeGeometryTest, BearingStraightBehindIsOneEighty) {
@@ -120,19 +135,73 @@ TEST(GazeGeometryTest, BearingOfCoincidentPointsIsZero) {
 }
 
 // ---------------------------------------------------------------------------
+// Yaw sign convention (issue #144).
+//
+// These are the tests that would have caught BOTH halves of the bug: the
+// railed necks (wrong magnitude) and the birds turning away from each other
+// (wrong direction). The direction half needs a SIGNED assertion — an
+// absolute-angle check passes against a mirrored convention.
+// ---------------------------------------------------------------------------
+
+TEST(GazeYawConventionTest, ATargetOnTheListenersRightIsANegativeBearing) {
+    // Pins the DIRECTION, not just the magnitude. A mirrored convention gives
+    // identical |angles| everywhere, so this is the assertion that catches it.
+    EXPECT_LT(bearingDegrees(0.0f, 0.0f, 1.0f, 0.0f), 0.0f);
+    EXPECT_GT(bearingDegrees(0.0f, 0.0f, -1.0f, 0.0f), 0.0f);
+}
+
+TEST(GazeYawConventionTest, ACreatureYawedAtItsNeighbourNeedsNoPan) {
+    // End-to-end statement of the convention: a creature at the origin, a
+    // target dead on its left (-X), yawed to face exactly there. The relative
+    // angle must be zero — it is already pointing at the target.
+    GazeGeometry self = creatureA();
+    self.x = 0.0f;
+    self.z = 0.0f;
+    self.yaw = 90.0f; // facing -X
+    GazeGeometry target = creatureB();
+    target.x = -5.0f;
+    target.z = 0.0f;
+
+    EXPECT_NEAR(relativePan(self, target), 0.0f, 0.001f);
+}
+
+TEST(GazeYawConventionTest, PositiveRelativeAngleMeansTurnToYourRight) {
+    // The sign that reaches the servo. A creature facing +Z has its right hand
+    // toward -X, so a target at -X must produce a POSITIVE relative angle —
+    // which a `degrees_at_min: -55, degrees_at_max: 55` calibration then maps
+    // to a byte above centre. Getting this backwards makes every creature turn
+    // away from whoever is speaking (issue #144).
+    GazeGeometry self = creatureA();
+    self.x = 0.0f;
+    self.z = 0.0f;
+    self.yaw = 0.0f; // facing +Z
+    GazeGeometry target = creatureB();
+    target.z = 0.0f;
+
+    target.x = -5.0f; // the creature's right
+    EXPECT_GT(relativePan(self, target), 0.0f);
+    EXPECT_GT(angleToByte(*self.pan, softClip(relativePan(self, target), 0.0f, 55.0f)), 128);
+
+    target.x = 5.0f; // the creature's left
+    EXPECT_LT(relativePan(self, target), 0.0f);
+    EXPECT_LT(angleToByte(*self.pan, softClip(relativePan(self, target), 0.0f, 55.0f)), 128);
+}
+
+// ---------------------------------------------------------------------------
 // The plan's Layout A finding: creatures in a row need ~90 degrees to face
 // each other. This is the whole reason the design leans on tilt.
 // ---------------------------------------------------------------------------
 
 TEST(GazeGeometryTest, SideBySideCreaturesNeedNearNinetyDegreesOfPan) {
-    // Layout A yaws (+12 / +4 / -4 / -12) over the same positions.
+    // Layout A yaws over the same positions. In the counterclockwise stage
+    // frame the plan's "+12 / +4 / -4 / -12" inward lean is -12 / -4 / +4 / +12.
     GazeGeometry a = creatureA();
-    a.yaw = 12.0f;
+    a.yaw = -12.0f;
     GazeGeometry b = creatureB();
-    b.yaw = 4.0f;
+    b.yaw = -4.0f;
 
-    EXPECT_NEAR(relativePan(a, b), 92.0f, 0.5f);
-    EXPECT_NEAR(relativePan(b, a), -80.0f, 0.5f);
+    EXPECT_NEAR(relativePan(a, b), -92.0f, 0.5f);
+    EXPECT_NEAR(relativePan(b, a), 80.0f, 0.5f);
 }
 
 // ---------------------------------------------------------------------------
@@ -145,21 +214,131 @@ TEST(GazeGeometryTest, LayoutBRelativePanAnglesMatchThePlan) {
     const auto c = creatureC();
     const auto d = creatureD();
 
-    EXPECT_NEAR(relativePan(a, b), 69.0f, 0.5f);
-    EXPECT_NEAR(relativePan(a, c), 62.1f, 0.5f);
-    EXPECT_NEAR(relativePan(a, d), 55.0f, 0.5f);
+    EXPECT_NEAR(relativePan(a, b), -69.0f, 0.5f);
+    EXPECT_NEAR(relativePan(a, c), -62.1f, 0.5f);
+    EXPECT_NEAR(relativePan(a, d), -55.0f, 0.5f);
 
-    EXPECT_NEAR(relativePan(b, a), -91.0f, 0.5f);
-    EXPECT_NEAR(relativePan(b, c), 75.0f, 0.5f);
-    EXPECT_NEAR(relativePan(b, d), 67.9f, 0.5f);
+    EXPECT_NEAR(relativePan(b, a), 91.0f, 0.5f);
+    EXPECT_NEAR(relativePan(b, c), -75.0f, 0.5f);
+    EXPECT_NEAR(relativePan(b, d), -67.9f, 0.5f);
 
-    EXPECT_NEAR(relativePan(c, a), -67.9f, 0.5f);
-    EXPECT_NEAR(relativePan(c, b), -75.0f, 0.5f);
-    EXPECT_NEAR(relativePan(c, d), 91.0f, 0.5f);
+    EXPECT_NEAR(relativePan(c, a), 67.9f, 0.5f);
+    EXPECT_NEAR(relativePan(c, b), 75.0f, 0.5f);
+    EXPECT_NEAR(relativePan(c, d), -91.0f, 0.5f);
 
-    EXPECT_NEAR(relativePan(d, a), -55.0f, 0.5f);
-    EXPECT_NEAR(relativePan(d, b), -62.1f, 0.5f);
-    EXPECT_NEAR(relativePan(d, c), -69.0f, 0.5f);
+    EXPECT_NEAR(relativePan(d, a), 55.0f, 0.5f);
+    EXPECT_NEAR(relativePan(d, b), 62.1f, 0.5f);
+    EXPECT_NEAR(relativePan(d, c), 69.0f, 0.5f);
+}
+
+// ---------------------------------------------------------------------------
+// Regression: the real Mainstage geometry (issue #144).
+//
+// These coordinates are copied verbatim from the production stage document —
+// the one that rendered 13 animations with every neck pinned to a rail. The
+// Layout B fixture above could not catch the bug because its yaws are nearly
+// symmetric about zero, so a sign flip barely moved the numbers. A real stage
+// is asymmetric and exposes it immediately.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+GazeGeometry mainstageBeaky() {
+    GazeGeometry g = creatureA();
+    g.creatureId = "beaky";
+    g.x = -2.577455f;
+    g.y = 0.0f;
+    g.z = -1.502611f;
+    g.yaw = -28.339203f;
+    return g;
+}
+
+GazeGeometry mainstageMango() {
+    GazeGeometry g = creatureB();
+    g.creatureId = "mango";
+    g.x = 2.0887685f;
+    g.y = -1.2386177f;
+    g.z = -1.5978843f;
+    g.yaw = 25.424255f;
+    g.pan = pan(-55.0f, 55.0f); // real config is not inverted
+    return g;
+}
+
+GazeGeometry mainstageCaroll() {
+    GazeGeometry g = creatureC();
+    g.creatureId = "caroll";
+    g.x = -2.8784513f;
+    g.y = 0.0f;
+    g.z = 1.6575658f;
+    g.yaw = -126.86983f;
+    g.pan = pan(-55.0f, 55.0f);
+    return g;
+}
+
+/// A placement that is only ever a gaze *target* — these three creatures have
+/// no `gaze` block in the real config, so they never aim, but the birds that do
+/// still have to be able to tell them apart.
+GazeGeometry mainstageTarget(const char *id, float x, float y, float z) {
+    GazeGeometry g;
+    g.creatureId = id;
+    g.x = x;
+    g.y = y;
+    g.z = z;
+    return g;
+}
+
+/// Everyone on the real Mainstage, in document order.
+std::vector<GazeGeometry> mainstageEveryone() {
+    return {mainstageBeaky(),
+            mainstageMango(),
+            mainstageTarget("kenny", 3.8180733f, 0.0f, 3.2056637f),
+            mainstageTarget("cobalt", 1.9081712f, 0.0f, 1.8085831f),
+            mainstageTarget("crow", 3.964439f, 0.0f, 4.243669f),
+            mainstageCaroll()};
+}
+
+} // namespace
+
+TEST(MainstageRegressionTest, BeakyCanActuallyReachHerTargets) {
+    const auto beaky = mainstageBeaky();
+    GazeGeometry listener;
+    listener.x = listener.y = listener.z = 0.0f;
+
+    // Before the fix these were 119.5 and 88.1 degrees — both far outside a
+    // +/-55 neck, so both soft-clipped to the same rail.
+    EXPECT_NEAR(relativePan(beaky, mainstageMango()), -62.8f, 1.0f);
+    EXPECT_NEAR(relativePan(beaky, listener), -31.4f, 1.0f);
+    EXPECT_NEAR(relativePan(beaky, mainstageCaroll()), 33.8f, 1.0f);
+}
+
+TEST(MainstageRegressionTest, PanIsNotPinnedToARail) {
+    const auto stage = mainstageEveryone();
+    // Only these three carry a `gaze` block in the real config, so only these
+    // three aim. Everyone else is scenery they have to be able to look at.
+    const std::vector<GazeGeometry> lookers{mainstageBeaky(), mainstageMango(), mainstageCaroll()};
+    GazeGeometry listener;
+    listener.x = listener.y = listener.z = 0.0f;
+
+    for (const auto &self : lookers) {
+        std::vector<int> bytes;
+        for (const auto &target : stage) {
+            if (target.creatureId == self.creatureId) {
+                continue;
+            }
+            bytes.push_back(
+                angleToByte(*self.pan, softClip(relativePan(self, target), self.pan->centre(), self.pan->range())));
+        }
+        bytes.push_back(
+            angleToByte(*self.pan, softClip(relativePan(self, listener), self.pan->centre(), self.pan->range())));
+
+        for (const auto b : bytes) {
+            EXPECT_GT(b, 8) << self.creatureId << " is jammed against the low rail";
+            EXPECT_LT(b, 247) << self.creatureId << " is jammed against the high rail";
+        }
+        const int spread =
+            *std::max_element(bytes.begin(), bytes.end()) - *std::min_element(bytes.begin(), bytes.end());
+        EXPECT_GT(spread, 60) << self.creatureId << " cannot visibly distinguish its targets";
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -428,9 +607,12 @@ TEST(GazeTrackTest, HeadActuallyMovesWhenTheSpeakerChanges) {
     const auto track = buildGazeTrack(self, {creatureB()}, twoTurnScene(), 400, 20, rng, options);
     ASSERT_EQ(track.panBytes.size(), 400u);
 
+    // Sampled while B still holds the floor. Past frame ~335 the scene has
+    // been quiet long enough that everyone settles home, which is a different
+    // behaviour with its own tests below.
     const auto atStart = track.panBytes[10];
-    const auto atEnd = track.panBytes[399];
-    EXPECT_GT(std::abs(static_cast<int>(atEnd) - static_cast<int>(atStart)), 40)
+    const auto whileWatchingB = track.panBytes[250];
+    EXPECT_GT(std::abs(static_cast<int>(whileWatchingB) - static_cast<int>(atStart)), 40)
         << "expected a large, visible pan sweep when the floor changed";
 }
 
@@ -442,9 +624,23 @@ TEST(GazeTrackTest, ReactionIsDelayedRatherThanInstant) {
     const auto track = buildGazeTrack(self, {creatureB()}, twoTurnScene(), 400, 20, rng, options);
 
     // The turn changes at frame 140. With a minimum 150 ms reaction at
-    // 20 ms/frame, nothing should have moved by frame 145.
-    EXPECT_EQ(track.panBytes[141], track.panBytes[140]);
-    EXPECT_EQ(track.panBytes[145], track.panBytes[140]);
+    // 20 ms/frame the sweep cannot begin before frame 147, so the only motion
+    // up to then is micro-drift.
+    //
+    // Asserting equality here would be wrong: drift runs every frame, and the
+    // exact drift value depends on draws from std::uniform_real_distribution,
+    // which the standard does NOT specify. libc++ and libstdc++ produce
+    // different sequences from the same mt19937 state, so a pinned byte passes
+    // on macOS and fails on Linux. Assert the property instead.
+    const int atChange = track.panBytes[140];
+    for (std::size_t f = 141; f <= 147; ++f) {
+        EXPECT_LE(std::abs(static_cast<int>(track.panBytes[f]) - atChange), 6)
+            << "frame " << f << " moved before the reaction delay elapsed";
+    }
+
+    // And by the time travel has finished it must have gone somewhere. Frame
+    // 250 is still inside B's turn, before the settle-home kicks in.
+    EXPECT_GT(std::abs(static_cast<int>(track.panBytes[250]) - atChange), 40);
 }
 
 TEST(GazeTrackTest, CreaturesDoNotAllMoveInUnison) {
@@ -456,10 +652,16 @@ TEST(GazeTrackTest, CreaturesDoNotAllMoveInUnison) {
     GazeOptions options;
     options.ignoreTurnChance = 0.0f; // isolate timing spread from the skip draw
 
+    // Sampled across many seeds rather than exactly four, because the specific
+    // draws from std::uniform_int_distribution are implementation-defined (see
+    // ReactionIsDelayedRatherThanInstant). Four samples can legitimately land
+    // close together on one standard library and far apart on another; the
+    // behaviour being asserted is that the delays are *spread*, not that any
+    // particular creature starts on any particular frame.
     std::vector<std::size_t> firstMovementFrames;
-    for (std::size_t i = 0; i < everyone.size(); ++i) {
+    for (std::size_t i = 0; i < 24; ++i) {
         std::mt19937 rng(static_cast<uint32_t>(500 + i));
-        const auto track = buildGazeTrack(everyone[i], everyone, scene, 400, 20, rng, options);
+        const auto track = buildGazeTrack(everyone[i % everyone.size()], everyone, scene, 400, 20, rng, options);
         if (track.panBytes.empty()) {
             continue;
         }
@@ -478,10 +680,17 @@ TEST(GazeTrackTest, CreaturesDoNotAllMoveInUnison) {
         }
     }
 
-    ASSERT_GE(firstMovementFrames.size(), 3u);
+    ASSERT_GE(firstMovementFrames.size(), 12u);
     const auto minFrame = *std::min_element(firstMovementFrames.begin(), firstMovementFrames.end());
     const auto maxFrame = *std::max_element(firstMovementFrames.begin(), firstMovementFrames.end());
-    EXPECT_GT(maxFrame - minFrame, 3u) << "creatures started moving too close together";
+    // Reaction delay spans 150-550 ms at 20 ms/frame, so the reachable spread
+    // is ~20 frames. Requiring a third of that is comfortably inside what any
+    // sane distribution produces over 24 samples, while still failing outright
+    // if the jitter were removed and every head moved on the same cue.
+    EXPECT_GT(maxFrame - minFrame, 6u) << "creatures started moving too close together";
+
+    const std::set<std::size_t> distinct(firstMovementFrames.begin(), firstMovementFrames.end());
+    EXPECT_GE(distinct.size(), 4u) << "reaction delays are not actually being varied";
 }
 
 TEST(GazeTrackTest, HoldingATargetStillDrifts) {
@@ -551,6 +760,94 @@ TEST(GazeTrackTest, OvershootNeverWrapsAround) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Playing to the house, and settling home afterwards.
+//
+// A speaker addresses the audience rather than the previous speaker, and once
+// the floor goes quiet everyone eases back to a neutral, head-forward pose.
+// That last part is not cosmetic: a dialog animation that ends with a head
+// held hard over hands off to an idle loop at a completely different position,
+// and the creature snaps its neck across the gap.
+// ---------------------------------------------------------------------------
+
+TEST(GazeTrackTest, ASpeakerPlaysToTheAudienceNotToTheOtherCreature) {
+    // B speaks first, then A. While A is speaking it must aim at the listener
+    // at the origin, NOT back at B.
+    const auto self = creatureA();
+    const auto other = creatureB();
+    std::mt19937 rng(11);
+    GazeOptions options;
+    options.ignoreTurnChance = 0.0f;
+    options.neutralReturnHoldMs = 1000000; // isolate from the settle
+    const std::vector<SpeakerSpan> scene{SpeakerSpan{0, 100, "B"}, SpeakerSpan{140, 400, "A"}};
+
+    const auto track = buildGazeTrack(self, {other}, scene, 400, 20, rng, options);
+    ASSERT_EQ(track.panBytes.size(), 400u);
+
+    GazeGeometry listener;
+    listener.x = listener.y = listener.z = 0.0f;
+    const int towardListener =
+        angleToByte(*self.pan, softClip(relativePan(self, listener), self.pan->centre(), self.pan->range()));
+    const int towardB =
+        angleToByte(*self.pan, softClip(relativePan(self, other), self.pan->centre(), self.pan->range()));
+    ASSERT_GT(std::abs(towardListener - towardB), 20) << "fixture can't distinguish the two targets";
+
+    const int settled = track.panBytes[399];
+    EXPECT_LT(std::abs(settled - towardListener), 12) << "speaker should be addressing the audience";
+    EXPECT_GT(std::abs(settled - towardB), 20) << "speaker should NOT be aimed at the other creature";
+}
+
+TEST(GazeTrackTest, HeadsSettleToNeutralOnceTheFloorGoesQuiet) {
+    const auto self = creatureA();
+    std::mt19937 rng(5);
+    GazeOptions options;
+    options.ignoreTurnChance = 0.0f;
+    options.neutralReturnHoldMs = 500; // 25 frames at 20 ms
+    // B talks, then a long silence to the end of the scene.
+    const std::vector<SpeakerSpan> scene{SpeakerSpan{0, 100, "B"}};
+
+    const auto track = buildGazeTrack(self, {creatureB()}, scene, 400, 20, rng, options);
+    ASSERT_EQ(track.panBytes.size(), 400u);
+
+    const int neutral = angleToByte(*self.pan, self.pan->centre());
+    EXPECT_LT(std::abs(static_cast<int>(track.panBytes[399]) - neutral), 12)
+        << "head should have relaxed back to centre by the end of the scene";
+
+    // Gently: no frame-to-frame jump on the way home. This is the property that
+    // keeps the handoff to the idle loop from snapping. The bound is generous
+    // enough to allow a brisk settle (the whole point of tuning
+    // neutralReturnTravelScale down) while still catching an actual snap, which
+    // would be tens of bytes in a single frame.
+    for (std::size_t f = 101; f < 400; ++f) {
+        EXPECT_LE(std::abs(static_cast<int>(track.panBytes[f]) - static_cast<int>(track.panBytes[f - 1])), 12)
+            << "frame " << f << " jumped on the way to neutral";
+    }
+}
+
+TEST(GazeTrackTest, ABreathBetweenSentencesDoesNotSendTheHeadHome) {
+    // The failure mode the hold exists to prevent: a short pause mid-scene
+    // must not walk every head back to centre and straight out again.
+    const auto self = creatureA();
+    std::mt19937 rng(5);
+    GazeOptions options;
+    options.ignoreTurnChance = 0.0f;
+    options.neutralReturnHoldMs = 1500;
+    // B pauses for 20 frames (400 ms) between two sentences.
+    const std::vector<SpeakerSpan> scene{SpeakerSpan{0, 100, "B"}, SpeakerSpan{120, 400, "B"}};
+
+    const auto track = buildGazeTrack(self, {creatureB()}, scene, 400, 20, rng, options);
+
+    const int neutral = angleToByte(*self.pan, self.pan->centre());
+    // Sampled mid-scene: the tail settle is unconditional, so by frame ~308
+    // this creature is already winding down toward neutral for the handoff.
+    const int towardB = track.panBytes[200];
+    ASSERT_GT(std::abs(towardB - neutral), 20) << "fixture needs B well off centre";
+    for (std::size_t f = 100; f < 140; ++f) {
+        EXPECT_GT(std::abs(static_cast<int>(track.panBytes[f]) - neutral), 12)
+            << "frame " << f << " drifted home during a short pause";
+    }
+}
+
 TEST(GazeTrackTest, AlwaysIgnoringTurnsLeavesTheHeadPut) {
     // The other side of the skip draw: a creature that ignores every turn
     // change should never re-aim, only drift.
@@ -558,10 +855,17 @@ TEST(GazeTrackTest, AlwaysIgnoringTurnsLeavesTheHeadPut) {
     std::mt19937 rng(7);
     GazeOptions options;
     options.ignoreTurnChance = 1.0f;
+    // Settling home is NOT a turn reaction and deliberately ignores this knob,
+    // so push it out of range to isolate what this test is about.
+    options.neutralReturnHoldMs = 1000000;
     const auto track = buildGazeTrack(self, {creatureB()}, twoTurnScene(), 400, 20, rng, options);
     ASSERT_EQ(track.panBytes.size(), 400u);
 
-    for (std::size_t f = 0; f < track.panBytes.size(); ++f) {
+    // Only up to frame 300: the end-of-scene settle is deliberately
+    // unconditional (it is what stops the handoff to the idle loop from
+    // snapping), so it moves the head even for a creature that ignores every
+    // turn. That behaviour has its own test.
+    for (std::size_t f = 0; f < 300; ++f) {
         EXPECT_LT(std::abs(static_cast<int>(track.panBytes[f]) - static_cast<int>(track.panBytes[0])), 12)
             << "frame " << f;
     }
@@ -798,9 +1102,10 @@ TEST(GazeCockTest, CockDoesNotDrift) {
     const auto track = buildGazeTrack(self, {creatureB()}, {SpeakerSpan{0, 400, "B"}}, 400, 20, rng, options);
 
     ASSERT_EQ(track.cockBytes.size(), 400u);
-    // Well after the lean has settled, it should be perfectly still.
-    for (std::size_t f = 301; f < 400; ++f) {
-        EXPECT_EQ(track.cockBytes[f], track.cockBytes[300]) << "frame " << f;
+    // Well after the lean has settled, and before the end-of-scene settle
+    // starts unwinding everything back to level, it should be perfectly still.
+    for (std::size_t f = 201; f < 300; ++f) {
+        EXPECT_EQ(track.cockBytes[f], track.cockBytes[200]) << "frame " << f;
     }
 }
 
@@ -812,6 +1117,10 @@ TEST(GazeCockTest, ACockPersistsAcrossTurnsRatherThanRedrawing) {
     options.ignoreTurnChance = 0.0f;
     options.chanceOfCock = 1.0f;
     options.cockPersistence = 1.0f; // pin it so the assertion isn't seed-dependent
+    // This exchange ends at frame 240 with 160 frames of silence after it, which
+    // would settle the head — including the cock — back to level. That is
+    // correct behaviour, but it isn't what this test is about.
+    options.neutralReturnHoldMs = 1000000;
 
     // A rapid four-way exchange — exactly the case where re-cocking every turn
     // would look fidgety.
@@ -826,14 +1135,16 @@ TEST(GazeCockTest, ACockPersistsAcrossTurnsRatherThanRedrawing) {
 
     // Count how many distinct settled values the cock takes. With persistence
     // pinned on it should adopt one lean and keep it.
+    // Sampled before the end-of-scene settle, which deliberately unwinds the
+    // cock back to level along with everything else.
     std::set<int> settledValues;
-    for (std::size_t f = 300; f < 400; ++f) {
+    for (std::size_t f = 250; f < 300; ++f) {
         settledValues.insert(track.cockBytes[f]);
     }
     EXPECT_EQ(settledValues.size(), 1u) << "the cock should be perfectly still once held";
 
     // And it should be an actual lean, not level.
-    EXPECT_GT(std::abs(static_cast<int>(track.cockBytes[399]) - 128), 5);
+    EXPECT_GT(std::abs(static_cast<int>(track.cockBytes[299]) - 128), 5);
 }
 
 TEST(GazeCockTest, ZeroPersistenceLetsTheCockChange) {

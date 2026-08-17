@@ -81,9 +81,12 @@ float bearingDegrees(float fromX, float fromZ, float toX, float toZ) {
     if (dx == 0.0f && dz == 0.0f) {
         return 0.0f;
     }
-    // atan2(dx, dz) rather than the usual atan2(y, x): our zero bearing points
-    // along +Z and angles grow toward +X.
-    return std::atan2(dx, dz) * kRadToDeg;
+    // Note the NEGATED dx (issue #144). Zero points along +Z and angles grow
+    // toward -X, which is the same rotational sense the Console uses for a
+    // placement's `yaw` — so the two can simply be subtracted. It also makes a
+    // positive result mean "turn to your right", which is what a hand-written
+    // `degrees_at_min: -55, degrees_at_max: 55` calibration naturally reads as.
+    return std::atan2(-dx, dz) * kRadToDeg;
 }
 
 float elevationDegrees(float fromX, float fromY, float fromZ, float toX, float toY, float toZ) {
@@ -223,6 +226,10 @@ GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometr
     const float cockRange = self.cock ? self.cock->range() : 0.0f;
 
     auto aimAt = [&](float targetX, float targetY, float targetZ, float &panOut, float &elevationOut) {
+        // bearingDegrees and `yaw` are deliberately in the SAME rotational
+        // sense (issue #144), so this is a plain subtraction. They used not to
+        // be, and mixing the two mirrored frames is what pinned every neck to a
+        // mechanical rail while still looking entirely reasonable in review.
         const float bearing = bearingDegrees(self.x, self.z, targetX, targetZ);
         const float relative = creatures::normalizeDegrees(bearing - self.yaw);
         panOut = softClip(relative, panCentre, panRange);
@@ -245,13 +252,18 @@ GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometr
         return true;
     };
 
-    // Walk the timeline building the sequence of target changes. Listeners
-    // watch the current speaker; a speaker looks at whoever spoke before them.
+    // Walk the timeline building the sequence of target changes. A speaker
+    // plays to the audience; listeners watch whoever holds the floor; when the
+    // floor goes quiet for long enough, everyone eases back to a neutral,
+    // head-forward pose rather than holding their last target indefinitely.
     struct GazeSegmentLocal {
         std::size_t changeFrame{0};
         float panAngle{0.0f};
         float elevationAngle{0.0f};
         float cockAngle{0.0f};
+        // A relax-to-neutral rather than an aim. Moves slower and never
+        // overshoots — settling back is not a reaction to anything.
+        bool neutral{false};
     };
     // Which way this creature favours cocking its head. Drawn once per scene,
     // before anything else touches the rng, so it stays stable and the stream
@@ -261,29 +273,76 @@ GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometr
     std::vector<GazeSegmentLocal> segments;
     segments.push_back(GazeSegmentLocal{0, listenerPan, listenerElevation, cockCentre});
 
-    std::string previousSpeaker;
+    // How long the floor must stay quiet before heads drift home, and how far
+    // into that silence the move begins.
+    const auto neutralHoldFrames = msToFrames(options.neutralReturnHoldMs, msPerFrame);
+
+    // Insert a relax-to-neutral segment if the floor has been quiet since
+    // `quietSince` for longer than the hold. `quietSince` is the end of the
+    // last span anyone was speaking in.
+    // Roughly how long the unwind itself takes. Used two ways: a mid-scene gap
+    // has to be long enough to actually finish one (a settle that gets yanked
+    // back after two frames IS the jerk we're removing), and the end-of-scene
+    // settle has to start early enough to complete before the track runs out.
+    const auto neutralTravelFrames =
+        msToFrames(static_cast<uint32_t>(std::lround(options.maxPanTravelMs * options.neutralReturnTravelScale)) +
+                       options.minReactionMs + options.settleMs,
+                   msPerFrame);
+
+    auto pushNeutral = [&](std::size_t at) {
+        const auto &last = segments.back();
+        if (std::abs(last.panAngle - panCentre) < 0.5f && std::abs(last.elevationAngle - elevationCentre) < 0.5f &&
+            std::abs(last.cockAngle - cockCentre) < 0.5f) {
+            return; // already neutral
+        }
+        if (!segments.empty() && at <= segments.back().changeFrame) {
+            return; // would land on or before the move already in flight
+        }
+        segments.push_back(GazeSegmentLocal{at, panCentre, elevationCentre, cockCentre, true});
+    };
+
+    auto considerNeutralReturn = [&](std::size_t quietSince, std::size_t nextChange) {
+        if (quietSince == 0) {
+            return; // nothing has been said yet; the opening pose stands
+        }
+        const std::size_t returnAt = quietSince + neutralHoldFrames;
+        // Require room to actually complete the unwind before the next turn,
+        // otherwise the head starts home and is immediately hauled back.
+        if (returnAt + neutralTravelFrames >= nextChange || returnAt >= totalFrames) {
+            return;
+        }
+        pushNeutral(returnAt);
+    };
+
+    // Past this point there isn't room to complete a head move before the track
+    // ends, so no new aim is worth starting — the only thing left to do is wind
+    // down. Without this, a turn (or a fresh head-cock) landing in the last
+    // second leaves the head committed to a target it never reaches, and blocks
+    // the settle that makes the handoff to the idle loop smooth.
+    const std::size_t latestUsefulStart = totalFrames > neutralTravelFrames ? totalFrames - neutralTravelFrames : 0;
+
+    std::size_t quietSince = 0; // frame the floor last went quiet
     for (const auto &span : timeline) {
         float panAngle = 0.0f;
         float elevationAngle = 0.0f;
         bool resolved = false;
         const bool selfIsSpeaking = span.creatureId == self.creatureId;
 
+        // Relax toward neutral across a long gap before this turn opens.
+        considerNeutralReturn(quietSince, span.startFrame);
+        quietSince = std::max(quietSince, span.endFrame);
+
         if (selfIsSpeaking) {
-            // We're speaking: address whoever held the floor before us, or
-            // play to the listener if we opened the scene.
-            if (!previousSpeaker.empty()) {
-                resolved = aimAtCreature(previousSpeaker, panAngle, elevationAngle);
-            }
-            if (!resolved) {
-                panAngle = listenerPan;
-                elevationAngle = listenerElevation;
-                resolved = true;
-            }
+            // We're the one talking, so play to the house. (This used to aim at
+            // whoever spoke previously, which reads as two birds muttering at
+            // each other rather than performing to a room.)
+            panAngle = listenerPan;
+            elevationAngle = listenerElevation;
+            resolved = true;
         } else {
             resolved = aimAtCreature(span.creatureId, panAngle, elevationAngle);
         }
 
-        previousSpeaker = span.creatureId;
         if (!resolved) {
             continue; // speaker isn't on this stage; hold whatever we had
         }
@@ -325,7 +384,26 @@ GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometr
         if (drawFloat(rng, 0.0f, 1.0f) < options.ignoreTurnChance) {
             continue;
         }
-        segments.push_back(GazeSegmentLocal{span.startFrame, panAngle, elevationAngle, cockAngle});
+        // Too late in the scene to be worth starting; wind down instead. The
+        // rng draws above still happened, so the stream stays deterministic.
+        if (span.startFrame >= latestUsefulStart) {
+            continue;
+        }
+        segments.push_back(GazeSegmentLocal{span.startFrame, panAngle, elevationAngle, cockAngle, false});
+    }
+
+    // The end of the scene is the case that actually matters, and it is NOT
+    // just "a long enough gap". A dialog usually stops within a fraction of a
+    // second of the last word, so the ordinary hold never elapses and the head
+    // would be left held hard over on its final target. Playback then hands off
+    // to an idle loop whose head is somewhere else entirely, and the creature
+    // snaps its neck across the difference.
+    //
+    // So the tail settle is unconditional, and it starts late enough to look
+    // like winding down but early enough to actually arrive — even if that
+    // means beginning while the last few words are still being said.
+    if (quietSince > 0 && totalFrames > 0) {
+        pushNeutral(std::min(quietSince + neutralHoldFrames, latestUsefulStart));
     }
 
     // Per-creature drift phase and period, drawn once so the wander is stable
@@ -364,13 +442,27 @@ GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometr
         // One reaction delay shared by every axis — a head starts moving as a
         // head — but slightly different travel times, so the gaze traces a
         // curve instead of a straight diagonal.
-        const auto reactionFrames = msToFrames(drawUint(rng, options.minReactionMs, options.maxReactionMs), msPerFrame);
-        const auto panTravelMs = drawUint(rng, options.minPanTravelMs, options.maxPanTravelMs);
+        auto reactionFrames = msToFrames(drawUint(rng, options.minReactionMs, options.maxReactionMs), msPerFrame);
+        auto panTravelMs = drawUint(rng, options.minPanTravelMs, options.maxPanTravelMs);
         const float elevationScale = drawFloat(rng, options.elevationTravelScaleMin, options.elevationTravelScaleMax);
+        float overshoot = drawFloat(rng, options.minOvershootDegrees, options.maxOvershootDegrees);
+
+        // Settling home doesn't overshoot, and it doesn't get a reaction delay
+        // either — there is no cue to react to. Budgeting the full draw here is
+        // what made the wind-down start uselessly early and cut short the time
+        // creatures spent actually looking at each other.
+        //
+        // The draws above still happen unconditionally so the rng stream stays
+        // in lockstep regardless of where the neutral returns land.
+        if (segment.neutral) {
+            panTravelMs = static_cast<uint32_t>(std::lround(panTravelMs * options.neutralReturnTravelScale));
+            reactionFrames = msToFrames(options.minReactionMs, msPerFrame);
+            overshoot = 0.0f;
+        }
+
         const auto panTravelFrames = std::max<std::size_t>(1, msToFrames(panTravelMs, msPerFrame));
         const auto elevationTravelFrames = std::max<std::size_t>(
             1, msToFrames(static_cast<uint32_t>(std::lround(panTravelMs * elevationScale)), msPerFrame));
-        const float overshoot = drawFloat(rng, options.minOvershootDegrees, options.maxOvershootDegrees);
 
         PlannedMove move;
         move.start = segment.changeFrame + reactionFrames;

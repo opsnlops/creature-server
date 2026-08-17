@@ -1,0 +1,32 @@
+# /etc/default/creature-server — travel server
+#
+# Read by creature-server-travel.service via `EnvironmentFile=-`. The leading
+# dash means the service still starts if this file is absent, so the box boots
+# fine before it exists.
+#
+# THIS FILE HOLDS SECRETS. The unit file is world-readable; this must not be:
+#
+#     sudo install -m 0640 -o root -g root \
+#         creature-server.default.example /etc/default/creature-server
+#
+# ---------------------------------------------------------------------------
+
+# ElevenLabs. Only needed to GENERATE new dialog audio. Stage re-renders,
+# playback, and streaming all work without it — see issue #146. Leaving it
+# unset is a reasonable choice on a travel rig: it makes an accidental dialog
+# render fail loudly instead of quietly spending money.
+#VOICE_API_KEY=
+
+# Honeycomb. Unset means traces are simply not exported; the server logs a
+# connection error per batch and carries on.
+#HONEYCOMB_API_KEY=
+
+# Overrides for the values baked into the unit.
+#CREATURE_MONGO_URI=mongodb://127.0.0.1/?serverSelectionTimeoutMS=2000
+#CREATURE_SOUNDS=/srv/sounds
+
+# Anything else to append to the command line, e.g.:
+#   --network-device eth0        (default is already eth0)
+#   --use-gpio                   (Pi GPIO — off by default)
+#   --animation-delay-ms 120     (audio sync compensation)
+#CREATURE_SERVER_EXTRA_ARGS=

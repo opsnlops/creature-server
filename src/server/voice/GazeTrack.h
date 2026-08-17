@@ -89,14 +89,20 @@ struct GazeGeometry {
     float y{0.0f};
     float z{0.0f};
 
-    // Which way this creature faces, degrees. 0 = facing +Z, +90 = facing +X.
+    // Which way this creature faces, degrees, copied verbatim from the stage
+    // placement: 0 = facing +Z, +90 = facing -X. Same rotational sense as
+    // bearingDegrees() above, so the two subtract directly.
     float yaw{0.0f};
 
     // Absent axis = that degree of freedom isn't driven. A creature with none
     // of them is left entirely alone.
     std::optional<ResolvedGazeAxis> pan;       // left/right, normally neck_rotate
     std::optional<ResolvedGazeAxis> elevation; // up/down, normally head_height
-    std::optional<ResolvedGazeAxis> cock;      // sideways tilt, normally head_tilt
+    // Sideways tilt, normally head_tilt. Note the track builder only WRITES
+    // this while the creature is listening — a speaking creature's tilt is left
+    // to its body loop (issue #144). The stream is still computed for every
+    // frame so the rng consumption stays fixed.
+    std::optional<ResolvedGazeAxis> cock;
 };
 
 /// Resolve a creature's `gaze` config into slot-indexed axes by looking each
@@ -178,6 +184,20 @@ struct GazeOptions {
     float cockPersistence{0.75f};  // chance of holding an existing cock
     float preferredSideBias{0.8f}; // chance of cocking to this creature's favoured side
 
+    // ---- Settling home --------------------------------------------------
+    // Once nobody holds the floor, heads ease back to a neutral head-forward
+    // pose instead of staying locked on their last target. The hold is
+    // deliberately longer than an ordinary pause between sentences — a breath
+    // mid-conversation must not send four heads home and straight back.
+    uint32_t neutralReturnHoldMs{1500};
+    // How much slower settling home is than a head turn. Relaxing, not
+    // reacting: it also skips the overshoot and the reaction delay entirely.
+    //
+    // This directly sets how early the wind-down starts, and therefore how much
+    // of the scene the creatures spend actually looking at each other. Keep it
+    // modest — 2.5 was tried on hardware and read as a long, listless drift.
+    float neutralReturnTravelScale{1.4f};
+
     // Probability that a listener simply doesn't react to a given turn change
     // and keeps watching whoever it was already watching. Four creatures all
     // reacting to every single turn reads as mechanical.
@@ -188,9 +208,17 @@ struct GazeOptions {
 // Geometry primitives — exposed so tests can pin them directly.
 // ---------------------------------------------------------------------------
 
-/// Compass-style bearing from one point to another in the stage's XZ plane,
-/// in degrees: 0 = toward +Z, +90 = toward +X. Returns 0 for coincident
-/// points (a creature can't meaningfully look at itself).
+/// Bearing from one point to another in the stage's XZ plane, in degrees:
+/// 0 = toward +Z, +90 = toward -X. Returns 0 for coincident points (a creature
+/// can't meaningfully look at itself).
+///
+/// The +90-is-toward-MINUS-X part is load-bearing (issue #144). It puts this in
+/// the same rotational sense as a StagePlacement's `yaw`, so the two subtract
+/// directly, and it makes a positive relative angle mean "turn to your right" —
+/// which is how a `degrees_at_min: -55, degrees_at_max: 55` calibration reads.
+/// Measuring it the other way round is a mirror image: every magnitude is
+/// identical and every direction is backwards, so it survives any test that
+/// compares absolute angles.
 [[nodiscard]] float bearingDegrees(float fromX, float fromZ, float toX, float toZ);
 
 /// Elevation from one point to another, in degrees: 0 = level, positive = the
@@ -229,10 +257,11 @@ buildSpeakerTimeline(const std::vector<std::string> &creatureIds,
 
 /// Build one creature's head-aiming byte streams.
 ///
-/// Gaze targets: listeners watch whoever currently holds the floor; a speaker
-/// looks at whoever spoke before them; the first speaker of a scene plays to
-/// the listener at the origin. Between turns, everyone holds their last target
-/// rather than resetting, so heads don't twitch back to centre in every gap.
+/// Gaze targets: a speaker plays to the audience — the listener at the origin —
+/// while everyone else watches whoever currently holds the floor. Once the
+/// floor has been quiet for `neutralReturnHoldMs`, heads ease back to a neutral
+/// head-forward pose; short pauses between sentences are ridden out on the last
+/// target so nobody twitches home and back mid-conversation.
 ///
 /// `rng` is taken by reference and consumed in a fixed order, so seeding it
 /// identically reproduces the result exactly. That is what makes re-rendering

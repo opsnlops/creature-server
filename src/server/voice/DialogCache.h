@@ -80,7 +80,30 @@ std::optional<std::string> findLatestGeneration(const std::string &cacheKey);
 
 /// Read a specific cached generation. Returns NotFound if either the .pcm or
 /// .json file is missing or unreadable, InvalidData if the .json is malformed.
+///
+/// NOTE: this reads the EPHEMERAL cache, which a cron sweep or a reboot may
+/// have emptied. Never treat a miss here as "so regenerate" for a take the
+/// user accepted — see loadAcceptedGeneration (issue #146).
 Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::string &generationId);
+
+/// Read a generation from the DURABLE accepted-take store (issue #146).
+///
+/// Acceptance means "this exact performance, forever". The ephemeral cache
+/// cannot carry that promise: it lives in temp space, so after a sweep, a
+/// reboot, or a move to another machine, an accepted take would silently
+/// regenerate through ElevenLabs and produce a DIFFERENT take. Accepted takes
+/// are therefore copied under the permanent sound root, which is never
+/// auto-cleaned, and rendered from here.
+Result<CachedGeneration> loadAcceptedGeneration(const std::string &cacheKey, const std::string &generationId);
+
+/// Copy a generation out of the ephemeral cache into the durable accepted-take
+/// store. Called when a take is accepted, while the cache entry is still known
+/// to be present. NotFound if it isn't.
+Result<void> saveAcceptedGeneration(const std::string &cacheKey, const std::string &generationId);
+
+/// Drop a take from the durable store — used when a different take is accepted
+/// in its place. Best effort: never fails a job.
+Result<void> removeAcceptedGeneration(const std::string &cacheKey, const std::string &generationId);
 
 /// Persist a generation to disk: writes both `${cacheKey}/{id}.pcm` and
 /// `${cacheKey}/{id}.json`. Creates the directory if missing. Writes via a

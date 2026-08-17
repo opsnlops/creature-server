@@ -87,5 +87,23 @@ TEST_F(SoundPathResolverTest, RejectsAbsoluteAndTraversalPaths) {
     EXPECT_FALSE(resolveSoundInRoot(root_, "dialog/hello.wav").has_value());
 }
 
+TEST_F(SoundPathResolverTest, StoredSoundFilePathsMustBeReducedToTheirBasenameFirst) {
+    // AnimationMetadata::sound_file is stored WITH its subdirectory, e.g.
+    // "dialog/scene-abc123.wav". Handing that straight to this function is
+    // rejected by the traversal guard above — correctly, but silently, since
+    // the return is just nullopt.
+    //
+    // That is exactly how issue #145 happened: the stage re-render passed
+    // `sound_file` unchanged, so its iXML lipsync recovery never once ran and
+    // every dialog fell through to the lossy mouth-slot scrape. A caller
+    // holding a stored path has to take .filename() first.
+    const std::string stored = "dialog/" + dialogUuid_;
+    EXPECT_FALSE(resolveSoundInRoot(root_, stored).has_value());
+
+    auto r = resolveSoundInRoot(root_, fs::path(stored).filename().string());
+    ASSERT_TRUE(r.has_value());
+    EXPECT_EQ(fs::path(*r), fs::canonical(root_ / "dialog" / dialogUuid_));
+}
+
 } // namespace
 } // namespace creatures::audio

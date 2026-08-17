@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include "server/config/Configuration.h"
 #include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
 
@@ -19,7 +20,10 @@ using creatures::voice::ForcedAlignmentChar;
 using creatures::voice::ForcedAlignmentResult;
 using creatures::voice::ForcedAlignmentWord;
 using creatures::voice::listGenerations;
+using creatures::voice::loadAcceptedGeneration;
 using creatures::voice::loadGeneration;
+using creatures::voice::removeAcceptedGeneration;
+using creatures::voice::saveAcceptedGeneration;
 using creatures::voice::saveGeneration;
 using creatures::voice::updateGenerationProvenance;
 using creatures::voice::WavProvenance;
@@ -286,4 +290,122 @@ TEST(DialogCacheList, OrphanJsonWithoutPcmIsIgnored) {
     const auto gens = listGenerations(key);
     ASSERT_EQ(gens.size(), 1u) << "only the real generation should count";
     EXPECT_EQ(gens[0].generationId, "real-gen");
+}
+
+// =============================================================================
+// Durable accepted-take store (issue #146).
+//
+// The ephemeral cache lives in temp space that a cron sweep or a reboot may
+// delete. An ACCEPTED take must outlive that: on a machine with a cold cache
+// the render was silently regenerating through ElevenLabs and producing a
+// different performance than the one the user auditioned.
+// =============================================================================
+
+namespace creatures {
+extern std::shared_ptr<Configuration> config;
+}
+
+namespace {
+
+/// Exposes the protected sound-root setter so Persistence::Permanent has a
+/// real directory. Same trick Storage_test uses.
+class TestConfiguration : public creatures::Configuration {
+  public:
+    using Configuration::setSoundFileLocation;
+};
+
+class AcceptedTakeTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        permanentRoot_ = std::filesystem::temp_directory_path() /
+                         ("accepted-take-test-" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
+        std::filesystem::create_directories(permanentRoot_);
+        savedConfig_ = creatures::config;
+        auto testConfig = std::make_shared<TestConfiguration>();
+        testConfig->setSoundFileLocation(permanentRoot_.string());
+        creatures::config = testConfig;
+    }
+    void TearDown() override {
+        creatures::config = savedConfig_;
+        std::error_code ec;
+        std::filesystem::remove_all(permanentRoot_, ec);
+    }
+    std::filesystem::path permanentRoot_;
+    std::shared_ptr<creatures::Configuration> savedConfig_;
+};
+
+} // namespace
+
+TEST_F(AcceptedTakeTest, SurvivesTheEphemeralCacheBeingWiped) {
+    // The whole point: accept a take, blow away the cache the way a reboot or
+    // the cron sweep would, and it must still load.
+    CacheScope scope;
+    const auto key = computeCacheKey({turn("voice-A", "durable please")});
+    scope.track(key);
+
+    auto gen = sampleGen("gen-durable", {9, 8, 7, 6, 5});
+    ASSERT_TRUE(saveGeneration(key, gen).isSuccess());
+    ASSERT_TRUE(saveAcceptedGeneration(key, "gen-durable").isSuccess());
+
+    std::error_code ec;
+    std::filesystem::remove_all(cacheDirFor(key), ec);
+    ASSERT_FALSE(loadGeneration(key, "gen-durable").isSuccess()) << "cache should be gone";
+
+    auto loaded = loadAcceptedGeneration(key, "gen-durable");
+    ASSERT_TRUE(loaded.isSuccess()) << loaded.getError().value().getMessage();
+    // By value, NOT by reference: Result::getValue() returns std::optional<T>
+    // by value, so `const auto &` would bind into a temporary that dies at the
+    // end of the full expression. That segfaults rather than failing cleanly.
+    const auto g = loaded.getValue().value();
+    EXPECT_EQ(g.generationId, "gen-durable");
+    EXPECT_EQ(g.audioPcm, (std::vector<uint8_t>{9, 8, 7, 6, 5}));
+    // The alignment is the part the render needs and the promoted WAV lacks.
+    ASSERT_EQ(g.forcedAlignment.words.size(), 1u);
+    EXPECT_EQ(g.forcedAlignment.words[0].text, "hi");
+    EXPECT_EQ(g.forcedAlignment.characters.size(), 2u);
+    ASSERT_EQ(g.voiceSegments.size(), 1u);
+    EXPECT_EQ(g.voiceSegments[0].voiceId, "voice-A");
+}
+
+TEST_F(AcceptedTakeTest, CannotAcceptATakeThatIsNotInTheCache) {
+    // Acceptance we could not honour later is worse than no acceptance, so
+    // this has to fail rather than record a pointer to nothing.
+    const auto key = computeCacheKey({turn("voice-A", "never generated")});
+    auto result = saveAcceptedGeneration(key, "gen-missing");
+    EXPECT_FALSE(result.isSuccess());
+}
+
+TEST_F(AcceptedTakeTest, LoadingAnUnacceptedTakeIsNotFound) {
+    CacheScope scope;
+    const auto key = computeCacheKey({turn("voice-A", "cached but not accepted")});
+    scope.track(key);
+    ASSERT_TRUE(saveGeneration(key, sampleGen("gen-only-cached")).isSuccess());
+
+    EXPECT_FALSE(loadAcceptedGeneration(key, "gen-only-cached").isSuccess())
+        << "being in the cache must not imply being accepted";
+}
+
+TEST_F(AcceptedTakeTest, RemoveDropsTheDurableCopy) {
+    CacheScope scope;
+    const auto key = computeCacheKey({turn("voice-A", "superseded")});
+    scope.track(key);
+    ASSERT_TRUE(saveGeneration(key, sampleGen("gen-old")).isSuccess());
+    ASSERT_TRUE(saveAcceptedGeneration(key, "gen-old").isSuccess());
+    ASSERT_TRUE(loadAcceptedGeneration(key, "gen-old").isSuccess());
+
+    ASSERT_TRUE(removeAcceptedGeneration(key, "gen-old").isSuccess());
+    EXPECT_FALSE(loadAcceptedGeneration(key, "gen-old").isSuccess());
+}
+
+TEST_F(AcceptedTakeTest, DurableStoreLivesUnderThePermanentSoundRoot) {
+    // Not temp space — that is the entire bug. If this ever points back at
+    // temp_directory_path the acceptance guarantee is void again.
+    CacheScope scope;
+    const auto key = computeCacheKey({turn("voice-A", "where do I live")});
+    scope.track(key);
+    ASSERT_TRUE(saveGeneration(key, sampleGen("gen-located")).isSuccess());
+    ASSERT_TRUE(saveAcceptedGeneration(key, "gen-located").isSuccess());
+
+    const auto expected = permanentRoot_ / "dialog" / "voice-takes" / key / "gen-located.pcm";
+    EXPECT_TRUE(std::filesystem::exists(expected)) << expected.string();
 }
