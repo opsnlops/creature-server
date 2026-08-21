@@ -795,7 +795,12 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         Creature creature;
         std::string creatureName;
         auto textSlug = util::slugify(text, 40, "speech");
-        auto timestamp = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
+        // Whole seconds only: a raw system_clock time point makes fmt's %S
+        // print fractional seconds, and this timestamp lands in a FILENAME —
+        // the extra dot makes the basename unservable through the rendition
+        // route's one-dot sanitizer.
+        auto timestamp = fmt::format(
+            "{:%Y%m%d%H%M%S}", std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()));
 
         if (jobState.span) {
             jobState.span->setAttribute("speech.attempted_engine", std::string("websocket_streaming"));

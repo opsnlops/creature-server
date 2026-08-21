@@ -202,7 +202,10 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
 
     // Kick off full pipeline (TTS + WAV wrap + Opus + animation build) in background.
     auto creatureName = creature_.name.empty() ? creatureId_ : creature_.name;
-    auto timestamp = fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now());
+    // Whole seconds only — a raw system_clock time point makes fmt's %S print
+    // fractional seconds, which is noise in a display title.
+    auto timestamp = fmt::format("{:%Y%m%d%H%M%S}",
+                                 std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()));
 
     auto future =
         std::async(std::launch::async, [this, text, sentenceIndex, creatureName, timestamp]() -> Result<Animation> {
@@ -511,7 +514,9 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish() {
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
             .count();
     exchange.title =
-        fmt::format("{} - {} - {}", creatureName, fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now()),
+        fmt::format("{} - {} - {}", creatureName,
+                    fmt::format("{:%Y%m%d%H%M%S}",
+                                std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now())),
                     util::slugify(fullText_, 40, "exchange"));
 
     if (parts.empty()) {

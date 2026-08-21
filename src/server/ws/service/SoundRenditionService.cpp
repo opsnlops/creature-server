@@ -92,8 +92,12 @@ SoundRenditionService::provenanceTags(const creatures::voice::WavProvenance &pro
         add("GENERATION_IDS", ids);
     }
     if (!provenance.tracks.empty()) {
+        // The iXML may carry a complete 17-lane TRACK_LIST (recorders want the
+        // full layout); the display tag only lists the lanes someone is on.
         std::string trackList;
         for (const auto &track : provenance.tracks) {
+            if (track.name.empty())
+                continue;
             if (!trackList.empty())
                 trackList += "; ";
             trackList += std::to_string(track.channel) + ": " + track.name;
