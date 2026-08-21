@@ -550,7 +550,9 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish() {
             warn("Failed to stitch exchange WAV for session {}: {}", sessionId_, stitchResult.getError()->getMessage());
             exchange.status = EXCHANGE_STATUS_FAILED;
         } else {
-            const auto &stitched = stitchResult.getValue().value();
+            // Result::getValue() returns the optional BY VALUE — copy, never
+            // bind a reference through it (it dangles).
+            const auto stitched = stitchResult.getValue().value();
             exchange.sound_file = stitchedPath.string();
             exchange.duration_ms = stitched.totalDurationMs;
             for (size_t i = 0; i < parts.size() && i < stitched.partDurationsMs.size(); i++) {

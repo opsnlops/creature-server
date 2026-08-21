@@ -1,9 +1,7 @@
 #pragma once
 
-#include <cctype>
 #include <filesystem>
-#include <fstream>
-#include <vector>
+#include <string_view>
 
 #include <oatpp-swagger/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
@@ -337,23 +335,14 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
     enum class ExchangeAudio { Wav, Mp3, Ogg };
 
     /// Strict UUID shape check — the session id becomes part of an on-disk
-    /// path, so nothing but [0-9a-fA-F-] in the canonical 8-4-4-4-12 layout
-    /// gets anywhere near the filesystem.
+    /// path, so nothing but the canonical 8-4-4-4-12 hex layout gets anywhere
+    /// near the filesystem. Delegates to the codebase's one trust-boundary
+    /// UUID gate (security review M4).
     static bool isUuid(const oatpp::String &value) {
-        if (!value || value->size() != 36) {
+        if (!value) {
             return false;
         }
-        const auto &s = *value;
-        for (size_t i = 0; i < s.size(); i++) {
-            if (i == 8 || i == 13 || i == 18 || i == 23) {
-                if (s[i] != '-') {
-                    return false;
-                }
-            } else if (!std::isxdigit(static_cast<unsigned char>(s[i]))) {
-                return false;
-            }
-        }
-        return true;
+        return creatures::isUuidShape(std::string_view(value->c_str(), value->size()));
     }
 
     /// A Content-Disposition-safe take on the exchange title: quotes, control
@@ -401,17 +390,26 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
             return bailHttp(span, Status::CODE_404, "Exchange audio has expired");
         }
 
-        std::vector<uint8_t> bytes;
+        std::shared_ptr<HttpOutgoingResponse> response;
         std::string mimeType;
         std::string extension;
+        int64_t bodyBytes = 0;
         if (format == ExchangeAudio::Wav) {
-            std::ifstream file(wavPath, std::ios::binary);
-            bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-            if (bytes.empty()) {
+            // Streamed, not buffered (#140): a long exchange's 17-channel WAV
+            // runs to hundreds of MB and must never be slurped into memory.
+            std::error_code sizeError;
+            const auto fileSize = std::filesystem::file_size(wavPath, sizeError);
+            if (sizeError) {
+                return bailHttp(span, Status::CODE_404, "Exchange audio has expired");
+            }
+            auto body = std::make_shared<FileBody>(wavPath.string(), static_cast<v_int64>(fileSize));
+            if (!body->isOpen()) {
                 return bailHttp(span, Status::CODE_500, "Unable to read exchange audio");
             }
+            response = OutgoingResponse::createShared(Status::CODE_200, body);
             mimeType = "audio/wav";
             extension = ".wav";
+            bodyBytes = static_cast<int64_t>(fileSize);
         } else {
             const auto renditionFormat =
                 format == ExchangeAudio::Mp3 ? SoundRenditionFormat::Mp3 : SoundRenditionFormat::OggOpus;
@@ -419,16 +417,16 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
             if (!encoded.isSuccess()) {
                 return bailFromServerError(span, encoded.getError().value());
             }
-            auto rendition = encoded.getValue().value();
-            bytes = std::move(rendition.bytes);
+            const auto rendition = encoded.getValue().value();
+            response = ResponseFactory::createResponse(
+                Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(rendition.bytes.data()),
+                                                static_cast<v_buff_size>(rendition.bytes.size())));
             mimeType = rendition.mimeType;
             extension = rendition.extension;
+            bodyBytes = static_cast<int64_t>(rendition.bytes.size());
         }
 
         const auto attachmentName = safeAttachmentName(exchange.title, exchange.session_id) + extension;
-        auto response = ResponseFactory::createResponse(
-            Status::CODE_200,
-            oatpp::String(reinterpret_cast<const char *>(bytes.data()), static_cast<v_buff_size>(bytes.size())));
         response->putHeader("Content-Type", mimeType.c_str());
         response->putHeader("Content-Disposition", "attachment; filename=\"" + attachmentName + "\"");
         // A UUID-addressed exchange can never change once finalized, and the
@@ -436,7 +434,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         // basename-addressed ad-hoc renditions (which stay no-store).
         response->putHeader("Cache-Control", "public, max-age=31536000, immutable");
         if (span) {
-            span->setAttribute("rendition.bytes", static_cast<int64_t>(bytes.size()));
+            span->setAttribute("rendition.bytes", bodyBytes);
             span->setHttpStatus(200);
         }
         return response;

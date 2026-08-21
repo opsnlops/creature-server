@@ -163,7 +163,9 @@ Result<StitchedWavInfo> stitchMultichannelWavs(const std::vector<std::filesystem
         if (!located.isSuccess()) {
             return Result<StitchedWavInfo>{located.getError().value()};
         }
-        const auto &chunk = located.getValue().value();
+        // Copy, not a reference — Result::getValue() returns the optional by
+        // value, so a reference through .value() would dangle.
+        const auto chunk = located.getValue().value();
         const auto &first = chunks.empty() ? chunk : chunks.front();
         if (chunk.channels != first.channels || chunk.sampleRate != first.sampleRate ||
             chunk.bitsPerSample != first.bitsPerSample) {
