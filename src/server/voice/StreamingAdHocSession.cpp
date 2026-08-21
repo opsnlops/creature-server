@@ -339,8 +339,10 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
             Animation animation = baseAnimation_;
             animation.id = util::generateUUID();
             animation.metadata.animation_id = animation.id;
+            // Slug before timestamp — these become filenames, and the words are
+            // what make them readable in Finder.
             animation.metadata.title =
-                fmt::format("{} - {} - s{} - {}", creatureName, timestamp, sentenceIndex, textSlug);
+                fmt::format("{} - s{} - {} - {}", creatureName, sentenceIndex, textSlug, timestamp);
             animation.metadata.sound_file = wavPath.string();
             animation.metadata.note = fmt::format("Streaming sentence {}: {}", sentenceIndex, text);
             animation.metadata.number_of_frames = static_cast<uint32_t>(encodedFrames.size());
@@ -513,11 +515,12 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish() {
     exchange.finished_at_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
             .count();
+    // Slug before timestamp — this title becomes the download filename, and
+    // the words are what make it readable in Finder.
     exchange.title =
-        fmt::format("{} - {} - {}", creatureName,
+        fmt::format("{} - {} - {}", creatureName, util::slugify(fullText_, 40, "exchange"),
                     fmt::format("{:%Y%m%d%H%M%S}",
-                                std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now())),
-                    util::slugify(fullText_, 40, "exchange"));
+                                std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now())));
 
     if (parts.empty()) {
         exchange.status = EXCHANGE_STATUS_FAILED;
