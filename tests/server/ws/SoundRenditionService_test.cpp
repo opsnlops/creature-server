@@ -46,14 +46,15 @@ TEST(SoundRenditionService, ScriptSpeakersBecomeTheArtist) {
 
 TEST(SoundRenditionService, TrackLanesBecomeTheArtistWhenThereIsNoScript) {
     WavProvenance provenance;
-    provenance.tracks = {{1, "Beaky"}, {2, "Kenny"}, {17, "BGM"}};
+    // A complete lane map like a stitched exchange carries: mostly-empty lanes.
+    provenance.tracks = {{1, "Beaky"}, {2, "Kenny"}, {3, ""}, {4, ""}, {17, "BGM"}};
 
     const auto comments = SoundRenditionService::provenanceTags(provenance);
     // The BGM music lane is not a performer.
     EXPECT_EQ("Beaky, Kenny", tagValue(comments, "ARTIST"));
     // No script and no music recipe: no genre to claim.
     EXPECT_EQ("", tagValue(comments, "GENRE"));
-    // But the full channel map still rides along.
+    // The channel map rides along, but silent (unnamed) lanes stay out of it.
     EXPECT_EQ("1: Beaky; 2: Kenny; 17: BGM", tagValue(comments, "TRACK_LIST"));
 }
 
@@ -134,6 +135,36 @@ TEST(SoundRenditionService, BorrowsTheFallbackTitleWhenTheWavHasNoProvenance) {
     ASSERT_TRUE(rendition.isSuccess());
     EXPECT_TRUE(consulted);
     EXPECT_TRUE(containsBytes(rendition.getValue().value().bytes, "Borrowed Animation Title"));
+}
+
+// A stitched exchange WAV (17-channel, iXML provenance) flows through the same
+// rendition path as everything else and comes out fully tagged (issue #150).
+TEST(SoundRenditionService, StitchedExchangeWavRendersAsATaggedMp3) {
+    const std::vector<uint8_t> pcm(9600, 0); // 100ms of S16 silence
+    const auto partPath = std::filesystem::temp_directory_path() / "creature-server-exchange-part.wav";
+    ASSERT_TRUE(creatures::voice::writePcmToMultichannelWav(pcm, partPath, 3, 48000).isSuccess());
+
+    WavProvenance provenance;
+    provenance.title = "Beaky - Front Door Report";
+    provenance.fileUid = "session-uuid-42";
+    provenance.script = {{"Beaky", "Somebody's at the door!"}};
+    provenance.tracks = {{3, "Beaky"}};
+
+    const auto stitchedPath = std::filesystem::temp_directory_path() / "creature-server-exchange-stitched.wav";
+    ASSERT_TRUE(creatures::voice::stitchMultichannelWavs({partPath}, stitchedPath, provenance).isSuccess());
+
+    SoundRenditionService service;
+    auto rendition = service.renderWav(stitchedPath, SoundRenditionFormat::Mp3);
+    std::filesystem::remove(partPath);
+    std::filesystem::remove(stitchedPath);
+
+    ASSERT_TRUE(rendition.isSuccess()) << rendition.getError()->getMessage();
+    // Result::getValue() returns the optional BY VALUE — copy, never bind a
+    // reference through it.
+    const auto bytes = rendition.getValue().value().bytes;
+    EXPECT_TRUE(containsBytes(bytes, "Beaky - Front Door Report")); // TIT2
+    EXPECT_TRUE(containsBytes(bytes, "Somebody's at the door!"));   // USLT lyrics
+    EXPECT_TRUE(containsBytes(bytes, "April's Creature Workshop")); // album/publisher
 }
 
 TEST(SoundRenditionService, PrefersTheWavsOwnTitleOverTheFallback) {

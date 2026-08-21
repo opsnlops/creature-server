@@ -109,6 +109,21 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation & /*anima
     return Result<void>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
 }
 
+Result<void> Database::insertAdHocExchange(const creatures::AdHocExchange & /*exchange*/,
+                                           std::chrono::system_clock::time_point /*createdAt*/,
+                                           std::shared_ptr<OperationSpan> /*parentSpan*/) {
+    if (g_pretendSuccess)
+        return Result<void>{};
+    return Result<void>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
+}
+
+Result<void> Database::finalizeAdHocExchange(const creatures::AdHocExchange & /*exchange*/,
+                                             std::shared_ptr<OperationSpan> /*parentSpan*/) {
+    if (g_pretendSuccess)
+        return Result<void>{};
+    return Result<void>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
+}
+
 Result<void> Database::deleteAnimation(const animationId_t & /*animationId*/,
                                        const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
     if (g_pretendSuccess)

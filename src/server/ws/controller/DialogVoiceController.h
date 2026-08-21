@@ -219,8 +219,7 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                     }
                 }
 
-                const auto filename =
-                    fmt::format("{}-{}.wav", util::slugify(script.title, 48, "dialog"), generationId.substr(0, 8));
+                const auto filename = util::exportBasename(script.title, generationId) + ".wav";
                 auto promoted = creatures::storage::promoteVoiceTake(generationId, filename, opSpan);
                 if (!promoted.isSuccess()) {
                     return bailFromServerError(span, promoted.getError().value());

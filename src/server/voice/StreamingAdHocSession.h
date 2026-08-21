@@ -20,6 +20,15 @@
 
 namespace creatures::voice {
 
+/// What finish() learned about the session, for an honest /finish response and
+/// the exchange record (issue #150).
+struct StreamingFinishResult {
+    std::string lastAnimationId; // empty when no sentence rendered
+    std::string exchangeStatus;  // ready | partial | failed
+    int partsRendered{0};
+    int partsTotal{0};
+};
+
 /**
  * StreamingAdHocSession
  *
@@ -36,8 +45,8 @@ namespace creatures::voice {
  */
 class StreamingAdHocSession {
   public:
-    StreamingAdHocSession(const std::string &sessionId, const std::string &creatureId,
-                           bool resumePlaylist, std::shared_ptr<RequestSpan> parentSpan);
+    StreamingAdHocSession(const std::string &sessionId, const std::string &creatureId, bool resumePlaylist,
+                          std::shared_ptr<RequestSpan> parentSpan);
 
     ~StreamingAdHocSession();
 
@@ -58,10 +67,11 @@ class StreamingAdHocSession {
 
     /**
      * Signal that no more sentences are coming. Waits for the playback thread
-     * to finish processing all queued animations, then cleans up.
-     * Returns the last animation ID.
+     * to finish processing all queued animations (every sentence WAV exists on
+     * disk once that join returns), then stitches the parts into one exchange
+     * WAV with iXML provenance and finalizes the exchange record (issue #150).
      */
-    Result<std::string> finish();
+    Result<StreamingFinishResult> finish();
 
     [[nodiscard]] const std::string &getSessionId() const { return sessionId_; }
     [[nodiscard]] int getChunksReceived() const { return chunksReceived_; }
@@ -96,6 +106,18 @@ class StreamingAdHocSession {
     std::string fullText_;
     int chunksReceived_ = 0;
 
+    // Per-sentence text, in order — becomes the exchange's script provenance.
+    std::vector<std::string> sentenceTexts_;
+
+    // What happened to each sentence, recorded by the playback thread (under
+    // futuresMutex_) as it consumes the futures in order. Read by finish()
+    // after the playback thread joins.
+    struct SentenceOutcome {
+        bool success{false};
+        std::string animationId;
+    };
+    std::vector<SentenceOutcome> sentenceOutcomes_;
+
     // TextToViseme (loaded once in start())
     TextToViseme textToViseme_;
 
@@ -110,7 +132,7 @@ class StreamingAdHocSession {
 
     // Playback thread — spawned on first addText(), joins in finish()
     std::thread playbackThread_;
-    std::atomic<bool> finished_{false};  // Signals: no more sentences coming
+    std::atomic<bool> finished_{false}; // Signals: no more sentences coming
 
     // Frame offset synchronization: each sentence waits for the previous one's
     // offset before building, so body motion is seamless. Uses promise/future pairs.
@@ -131,9 +153,8 @@ class StreamingAdHocSessionManager {
   public:
     static StreamingAdHocSessionManager &instance();
 
-    std::shared_ptr<StreamingAdHocSession> createSession(const std::string &creatureId,
-                                                          bool resumePlaylist,
-                                                          std::shared_ptr<RequestSpan> parentSpan);
+    std::shared_ptr<StreamingAdHocSession> createSession(const std::string &creatureId, bool resumePlaylist,
+                                                         std::shared_ptr<RequestSpan> parentSpan);
 
     std::shared_ptr<StreamingAdHocSession> getSession(const std::string &sessionId);
 

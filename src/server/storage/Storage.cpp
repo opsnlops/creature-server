@@ -207,6 +207,20 @@ Result<void> publishAdHocAnimation(const creatures::Animation &animation, std::s
         CacheType::AdHocAnimationList, CacheType::AdHocSoundList);
 }
 
+Result<void> publishAdHocExchange(const creatures::AdHocExchange &exchange, std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "publishAdHocExchange",
+        [&] { return creatures::db->insertAdHocExchange(exchange, std::chrono::system_clock::now(), parentSpan); },
+        CacheType::AdHocExchangeList);
+}
+
+Result<void> finalizeAdHocExchange(const creatures::AdHocExchange &exchange,
+                                   std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "finalizeAdHocExchange", [&] { return creatures::db->finalizeAdHocExchange(exchange, parentSpan); },
+        CacheType::AdHocExchangeList);
+}
+
 Result<creatures::Animation> republishAnimation(const std::string &animationJson,
                                                 std::shared_ptr<OperationSpan> parentSpan) {
     // Animation only — no SoundList invalidation because the sound file

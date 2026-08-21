@@ -18,6 +18,7 @@ enum class CacheType {
     SoundList,
     AdHocAnimationList,
     AdHocSoundList,
+    AdHocExchangeList,
     Fixture,
     DialogScriptList,
     StoryboardList,

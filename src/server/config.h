@@ -33,6 +33,7 @@
 #define ANIMATIONS_COLLECTION "animations"
 #define PLAYLISTS_COLLECTION "playlists"
 #define ADHOC_ANIMATIONS_COLLECTION "adhoc_animations"
+#define ADHOC_EXCHANGES_COLLECTION "adhoc_exchanges"
 #define FIXTURES_COLLECTION "fixtures"
 #define DIALOG_SCRIPTS_COLLECTION "dialog_scripts"
 #define STORYBOARDS_COLLECTION "storyboards"

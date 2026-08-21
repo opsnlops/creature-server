@@ -29,6 +29,24 @@ namespace creatures::voice {
 Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmData, const std::filesystem::path &wavPath,
                                               uint16_t audioChannel, uint32_t sampleRate);
 
+/// Result of stitching session parts into one WAV (issue #150).
+struct StitchedWavInfo {
+    uint64_t totalDurationMs{0};
+    std::vector<uint64_t> partDurationsMs; // parallel to the input paths
+};
+
+/// Concatenate the PCM of several same-format multichannel WAVs into one file,
+/// appending an iXML chunk built from `provenance` (issue #150). This is how a
+/// streaming ad-hoc session's s1..sN.wav become a single exchange WAV: parts
+/// are identical 17-channel/48k/S16 files and playback is gapless, so plain
+/// data-chunk concatenation reproduces exactly what was heard.
+///
+/// Every input must match the first part's fmt (PCM, channel count, sample
+/// rate, 16-bit); a mismatch is InvalidData. Data is streamed, not slurped —
+/// a long exchange never has to fit in memory.
+Result<StitchedWavInfo> stitchMultichannelWavs(const std::vector<std::filesystem::path> &parts,
+                                               const std::filesystem::path &outPath, const WavProvenance &provenance);
+
 /// Wrap raw mono S16 LE PCM in a canonical 44-byte mono WAV header, in memory.
 /// The one shared implementation of the helper previously duplicated in
 /// DialogPreviewController and JobWorker (issue #11).
