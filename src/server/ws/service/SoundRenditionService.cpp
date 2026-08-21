@@ -46,8 +46,8 @@ std::string performerList(const creatures::voice::WavProvenance &provenance) {
 
 } // namespace
 
-SoundRenditionService::Comments
-SoundRenditionService::provenanceTags(const creatures::voice::WavProvenance &provenance) {
+SoundRenditionService::Comments SoundRenditionService::provenanceTags(const creatures::voice::WavProvenance &provenance,
+                                                                      const std::string &artistOverride) {
     Comments comments;
     const auto add = [&](const char *key, const std::string &value) {
         if (!value.empty()) {
@@ -58,7 +58,15 @@ SoundRenditionService::provenanceTags(const creatures::voice::WavProvenance &pro
     // Display metadata so players don't show "Unknown Artist" (#148). The MP3 writer maps
     // these keys onto the standard ID3 frames; the Ogg writer passes them through as
     // standard Vorbis comments.
-    const auto performers = performerList(provenance);
+    //
+    // Script speakers are the cast when a script exists. Without one, an
+    // animation-document override beats lane inference — the iXML TRACK_LIST
+    // is a channel map, and legacy files name lanes whose creatures don't
+    // perform in this piece (#153).
+    std::string performers = performerList(provenance);
+    if (provenance.script.empty() && !artistOverride.empty()) {
+        performers = artistOverride;
+    }
     add("ARTIST", performers.empty() ? std::string{kWorkshopName} : performers);
     add("ALBUMARTIST", kWorkshopName);
     add("ALBUM", kWorkshopName);
@@ -149,9 +157,9 @@ SoundRenditionService::provenanceTags(const creatures::voice::WavProvenance &pro
 
 creatures::Result<SoundRendition>
 SoundRenditionService::renderMonoPcm(const std::vector<int16_t> &samples, int sampleRate,
-                                     const creatures::voice::WavProvenance &provenance,
-                                     SoundRenditionFormat format) const {
-    const auto comments = provenanceTags(provenance);
+                                     const creatures::voice::WavProvenance &provenance, SoundRenditionFormat format,
+                                     const std::string &artistOverride) const {
+    const auto comments = provenanceTags(provenance, artistOverride);
     creatures::Result<std::vector<uint8_t>> encoded =
         format == SoundRenditionFormat::Mp3
             ? creatures::audio::encodeMonoToMp3(samples, sampleRate, creatures::audio::kShareableMp3Bitrate, comments)
@@ -169,7 +177,7 @@ SoundRenditionService::renderMonoPcm(const std::vector<int16_t> &samples, int sa
 
 creatures::Result<SoundRendition> SoundRenditionService::renderWav(const std::filesystem::path &wavPath,
                                                                    SoundRenditionFormat format,
-                                                                   const TitleProvider &fallbackTitle) const {
+                                                                   const MetadataProvider &fallback) const {
     auto mono = creatures::audio::loadWavAsMono(wavPath.string());
     if (!mono.isSuccess()) {
         return creatures::Result<SoundRendition>{mono.getError().value()};
@@ -178,11 +186,18 @@ creatures::Result<SoundRendition> SoundRenditionService::renderWav(const std::fi
     if (const auto ixml = creatures::voice::readIxmlChunk(wavPath)) {
         provenance = creatures::voice::parseIxmlProvenance(*ixml);
     }
-    if (provenance.title.empty() && fallbackTitle) {
-        provenance.title = fallbackTitle();
+    // Consult the fallback only when the iXML leaves a gap — fully-tagged
+    // files (every modern render) never pay for the lookup.
+    std::string artistOverride;
+    if (fallback && (provenance.title.empty() || provenance.script.empty())) {
+        const auto metadata = fallback();
+        if (provenance.title.empty()) {
+            provenance.title = metadata.title;
+        }
+        artistOverride = metadata.artist;
     }
     const auto value = mono.getValue().value();
-    return renderMonoPcm(value.samples, value.sampleRate, provenance, format);
+    return renderMonoPcm(value.samples, value.sampleRate, provenance, format, artistOverride);
 }
 
 } // namespace creatures::ws

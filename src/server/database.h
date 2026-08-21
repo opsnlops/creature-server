@@ -139,14 +139,23 @@ class Database {
     Result<int64_t> countAnimationsBySoundFile(const std::string &soundFile,
                                                const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
-    /// The title of an animation whose metadata.sound_file ends in this basename
+    /// What an animation document can tell a rendition about its sound file:
+    /// the display title and who actually performs (resolved from the tracks'
+    /// creature ids, in track order). #148 for the title, #153 for the
+    /// performers — an iXML TRACK_LIST is a channel map, not a cast list, so
+    /// the animation's tracks are the truth about who is in the piece.
+    struct AnimationSoundInfo {
+        std::string title;                       // may be empty
+        std::vector<std::string> performerNames; // may be empty (unresolvable creatures are skipped)
+    };
+
+    /// Info for the animation whose metadata.sound_file ends in this basename
     /// (dialog renders store a relative path like "dialog/<uuid>.wav", while the
-    /// rendition endpoints are addressed by bare basename). Lets a shared MP3/Ogg
-    /// of a provenance-less WAV still carry a real title (#148). Empty optional
-    /// when no animation references the file or the match has no title.
-    Result<std::optional<std::string>>
-    findAnimationTitleBySoundFile(const std::string &soundFileBasename,
-                                  const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    /// rendition endpoints are addressed by bare basename). Empty optional when
+    /// no animation references the file.
+    Result<std::optional<AnimationSoundInfo>>
+    findAnimationSoundInfoBySoundFile(const std::string &soundFileBasename,
+                                      const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
     /// One animation rendered against a stage, and whether the stage has been
     /// edited since (#119). Enough for the console to say "5 animations, 3 out

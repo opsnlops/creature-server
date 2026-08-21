@@ -126,15 +126,45 @@ TEST(SoundRenditionService, BorrowsTheFallbackTitleWhenTheWavHasNoProvenance) {
 
     SoundRenditionService service;
     bool consulted = false;
-    auto rendition = service.renderWav(path, SoundRenditionFormat::Mp3, [&consulted]() -> std::string {
-        consulted = true;
-        return "Borrowed Animation Title";
-    });
+    auto rendition =
+        service.renderWav(path, SoundRenditionFormat::Mp3, [&consulted]() -> SoundRenditionService::FallbackMetadata {
+            consulted = true;
+            return {"Borrowed Animation Title", ""};
+        });
     std::filesystem::remove(path);
 
     ASSERT_TRUE(rendition.isSuccess());
     EXPECT_TRUE(consulted);
     EXPECT_TRUE(containsBytes(rendition.getValue().value().bytes, "Borrowed Animation Title"));
+}
+
+// The #153 bug: an iXML TRACK_LIST is a channel map, so a legacy file may name
+// lanes whose creatures don't perform. The animation document's cast wins.
+TEST(SoundRenditionService, AnimationCastOverridesLaneNamesWhenThereIsNoScript) {
+    WavProvenance provenance;
+    provenance.title = "Skit - Bird Flu and Swine Flu";
+    provenance.tracks = {{1, "Beaky"}, {2, "Mango"}, {3, "Kenny"}, {4, "Dev Board"}, {17, "BGM"}};
+
+    const auto comments = SoundRenditionService::provenanceTags(provenance, "Beaky, Mango");
+    EXPECT_EQ("Beaky, Mango", tagValue(comments, "ARTIST"));
+    // The channel map itself is truthful and stays complete.
+    EXPECT_EQ("1: Beaky; 2: Mango; 3: Kenny; 4: Dev Board; 17: BGM", tagValue(comments, "TRACK_LIST"));
+}
+
+TEST(SoundRenditionService, ScriptSpeakersStillBeatTheAnimationCastOverride) {
+    WavProvenance provenance;
+    provenance.script = {{"Beaky", "It's my show."}};
+
+    const auto comments = SoundRenditionService::provenanceTags(provenance, "Kenny, Dev Board");
+    EXPECT_EQ("Beaky", tagValue(comments, "ARTIST"));
+}
+
+TEST(SoundRenditionService, LaneNamesStillApplyWhenNoOverrideIsAvailable) {
+    WavProvenance provenance;
+    provenance.tracks = {{1, "Beaky"}, {17, "BGM"}};
+
+    const auto comments = SoundRenditionService::provenanceTags(provenance, "");
+    EXPECT_EQ("Beaky", tagValue(comments, "ARTIST"));
 }
 
 // A stitched exchange WAV (17-channel, iXML provenance) flows through the same
@@ -174,14 +204,17 @@ TEST(SoundRenditionService, PrefersTheWavsOwnTitleOverTheFallback) {
 
     SoundRenditionService service;
     bool consulted = false;
-    auto rendition = service.renderWav(path, SoundRenditionFormat::Mp3, [&consulted]() -> std::string {
-        consulted = true;
-        return "The Wrong Title";
-    });
+    auto rendition =
+        service.renderWav(path, SoundRenditionFormat::Mp3, [&consulted]() -> SoundRenditionService::FallbackMetadata {
+            consulted = true;
+            return {"The Wrong Title", ""};
+        });
     std::filesystem::remove(path);
 
     ASSERT_TRUE(rendition.isSuccess());
-    EXPECT_FALSE(consulted);
+    // The WAV has a title but no script, so the fallback IS consulted (for the
+    // cast) — but its title must not replace the WAV's own.
+    EXPECT_TRUE(consulted);
     EXPECT_TRUE(containsBytes(rendition.getValue().value().bytes, "The Real Title"));
 }
 

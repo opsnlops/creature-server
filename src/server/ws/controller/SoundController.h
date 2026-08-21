@@ -127,21 +127,33 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     if (!fileSizeError)
                         renditionSpan->setAttribute("encoding.input_bytes", static_cast<int64_t>(inputBytes));
                 }
-                // If the WAV carries no iXML title (older renders, ad-hoc files), borrow
-                // the title of the animation that references it, so the shared file still
-                // shows a real name instead of its filename (#148). Best-effort: a lookup
-                // failure just means no title, never a failed rendition.
-                const auto animationTitleFallback = [&sourceWav, &renditionSpan]() -> std::string {
-                    auto lookup = creatures::db->findAnimationTitleBySoundFile(sourceWav, renditionSpan);
+                // If the WAV's iXML is missing a title or a script, borrow both the
+                // title (#148) and the actual cast (#153) from the animation that
+                // references it — the animation's tracks say who really performs,
+                // where a legacy iXML TRACK_LIST is just a channel map. Best-effort:
+                // a lookup failure means missing tags, never a failed rendition.
+                const auto animationFallback =
+                    [&sourceWav, &renditionSpan]() -> creatures::ws::SoundRenditionService::FallbackMetadata {
+                    creatures::ws::SoundRenditionService::FallbackMetadata metadata;
+                    auto lookup = creatures::db->findAnimationSoundInfoBySoundFile(sourceWav, renditionSpan);
                     if (!lookup.isSuccess()) {
-                        warn("Animation-title lookup for {} failed: {}", sourceWav,
-                             lookup.getError().value().getMessage());
-                        return {};
+                        warn("Animation lookup for {} failed: {}", sourceWav, lookup.getError().value().getMessage());
+                        return metadata;
                     }
-                    const auto title = lookup.getValue().value();
-                    return title ? *title : std::string{};
+                    const auto info = lookup.getValue().value();
+                    if (!info) {
+                        return metadata;
+                    }
+                    metadata.title = info->title;
+                    for (const auto &name : info->performerNames) {
+                        if (!metadata.artist.empty()) {
+                            metadata.artist += ", ";
+                        }
+                        metadata.artist += name;
+                    }
+                    return metadata;
                 };
-                auto encoded = renditionService_.renderWav(resolved->path, renditionFormat, animationTitleFallback);
+                auto encoded = renditionService_.renderWav(resolved->path, renditionFormat, animationFallback);
                 if (!encoded.isSuccess()) {
                     const auto error = encoded.getError().value();
                     recordSpanError(renditionSpan, error.getMessage(), "RenditionError", error.getCode());
