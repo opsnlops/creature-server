@@ -291,6 +291,12 @@ int main(const int argc, char **argv) {
         auto error = adHocIndexResult.getError().value();
         warn("Unable to ensure ad-hoc animation TTL index: {}", error.getMessage());
     }
+    auto exchangeIndexResult =
+        creatures::db->ensureAdHocExchangeIndexes(creatures::config->getAdHocAnimationTtlHours());
+    if (!exchangeIndexResult.isSuccess()) {
+        auto error = exchangeIndexResult.getError().value();
+        warn("Unable to ensure ad-hoc exchange indexes: {}", error.getMessage());
+    }
     cleanupAdHocTempDirectory(creatures::config->getAdHocAnimationTtlHours());
 
     // RTP mode never probes a local output device. This keeps the normal

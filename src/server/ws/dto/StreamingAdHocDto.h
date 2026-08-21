@@ -71,8 +71,21 @@ class StreamingAdHocFinishResponseDto : public oatpp::DTO {
     DTO_FIELD(String, session_id);
     DTO_FIELD(String, status);
     DTO_FIELD(String, message);
+
+    DTO_FIELD_INFO(animation_id) { info->description = "The last sentence's animation id; empty if nothing rendered"; }
     DTO_FIELD(String, animation_id);
+
     DTO_FIELD(Boolean, playback_triggered);
+
+    // Exchange-export additions (issue #150). Additive — older clients ignore them.
+    DTO_FIELD_INFO(exchange_status) { info->description = "ready | partial | failed"; }
+    DTO_FIELD(String, exchange_status);
+
+    DTO_FIELD_INFO(parts_rendered) { info->description = "Sentences that rendered and played"; }
+    DTO_FIELD(Int32, parts_rendered);
+
+    DTO_FIELD_INFO(parts_total) { info->description = "Sentences the session received"; }
+    DTO_FIELD(Int32, parts_total);
 };
 
 } // namespace creatures::ws

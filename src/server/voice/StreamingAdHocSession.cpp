@@ -15,6 +15,7 @@
 #include "PcmWavWriter.h"
 #include "RhubarbData.h"
 #include "SoundDataProcessor.h"
+#include "model/AdHocExchange.h"
 #include "model/Animation.h"
 #include "server/animation/SessionManager.h"
 #include "server/config.h"
@@ -147,6 +148,21 @@ Result<void> StreamingAdHocSession::start() {
         textToViseme_.loadCmuDict(cmuDictPath);
     }
 
+    // Record the exchange right away (status "streaming") so the exchange list
+    // can answer "what's being said right now" (issue #150). Best-effort: a
+    // record-keeping failure must never block the creature from speaking.
+    {
+        creatures::AdHocExchange exchange;
+        exchange.session_id = sessionId_;
+        exchange.creature_id = creatureId_;
+        exchange.creature_name = creature_.name.empty() ? creatureId_ : creature_.name;
+        exchange.status = EXCHANGE_STATUS_STREAMING;
+        auto publishResult = creatures::storage::publishAdHocExchange(exchange, startSpan);
+        if (!publishResult.isSuccess()) {
+            warn("Unable to record ad-hoc exchange {}: {}", sessionId_, publishResult.getError()->getMessage());
+        }
+    }
+
     info("StreamingAdHocSession started: session={}, voice={}, model={}, base_anim={} ({} frames)", sessionId_,
          voiceId_, modelId_, baseAnimationId, decodedBaseFrames_.size());
 
@@ -167,6 +183,7 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
     }
     fullText_ += text;
     chunksReceived_++;
+    sentenceTexts_.push_back(text);
 
     int sentenceIndex = chunksReceived_;
 
@@ -395,6 +412,7 @@ void StreamingAdHocSession::playbackThreadFunc() {
             if (!animResult.isSuccess()) {
                 warn("Sentence {} failed: {}", sentenceIndex, animResult.getError()->getMessage());
                 lock.lock();
+                sentenceOutcomes_.push_back({false, ""});
                 nextIndex++;
                 continue;
             }
@@ -413,6 +431,7 @@ void StreamingAdHocSession::playbackThreadFunc() {
             }
 
             lock.lock();
+            sentenceOutcomes_.push_back({true, animation.id});
             nextIndex++;
         }
 
@@ -425,13 +444,13 @@ void StreamingAdHocSession::playbackThreadFunc() {
     info("Playback thread finished for session {} (last animation: {})", sessionId_, lastAnimationId);
 }
 
-Result<std::string> StreamingAdHocSession::finish() {
+Result<StreamingFinishResult> StreamingAdHocSession::finish() {
     auto finishSpan = creatures::observability
                           ? creatures::observability->createChildOperationSpan("StreamingAdHocSession.finish", span_)
                           : nullptr;
 
     if (fullText_.empty()) {
-        return Result<std::string>{ServerError(ServerError::InvalidData, "No text was added to the session")};
+        return Result<StreamingFinishResult>{ServerError(ServerError::InvalidData, "No text was added to the session")};
     }
 
     if (finishSpan) {
@@ -462,25 +481,109 @@ Result<std::string> StreamingAdHocSession::finish() {
     // No invalidations fired here — each sentence's publishAdHocAnimation above
     // already invalidates AdHocAnimationList + AdHocSoundList as the chunk lands.
 
-    // Determine the last animation ID
+    // The playback thread is joined, so every sentence's WAV that will ever
+    // exist is on disk now — harvest the outcomes and stitch the exchange
+    // (issue #150). No lock needed: nothing else touches these vectors anymore.
+    const auto creatureName = creature_.name.empty() ? creatureId_ : creature_.name;
+    std::vector<AdHocExchangePart> parts;
+    std::vector<std::filesystem::path> partWavs;
     std::string lastAnimationId;
-    {
-        std::lock_guard<std::mutex> lock(futuresMutex_);
-        // The playback thread already consumed all futures, but we tracked
-        // the count. The last animation ID was logged by the playback thread.
-        // For the response, we just report success.
+    for (size_t i = 0; i < sentenceOutcomes_.size(); i++) {
+        const auto &outcome = sentenceOutcomes_[i];
+        if (!outcome.success) {
+            continue;
+        }
+        AdHocExchangePart part;
+        part.index = static_cast<uint32_t>(i + 1);
+        part.animation_id = outcome.animationId;
+        part.text = i < sentenceTexts_.size() ? sentenceTexts_[i] : "";
+        parts.push_back(std::move(part));
+        partWavs.push_back(tempDir / fmt::format("s{}.wav", i + 1));
+        lastAnimationId = outcome.animationId;
+    }
+
+    creatures::AdHocExchange exchange;
+    exchange.session_id = sessionId_;
+    exchange.creature_id = creatureId_;
+    exchange.creature_name = creatureName;
+    exchange.transcript = fullText_;
+    exchange.finished_at_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    exchange.title =
+        fmt::format("{} - {} - {}", creatureName, fmt::format("{:%Y%m%d%H%M%S}", std::chrono::system_clock::now()),
+                    util::slugify(fullText_, 40, "exchange"));
+
+    if (parts.empty()) {
+        exchange.status = EXCHANGE_STATUS_FAILED;
+    } else {
+        // The stitched WAV is the first ad-hoc artifact with real provenance:
+        // the #148 tag mapping turns this into TITLE/ARTIST/LYRICS on the MP3.
+        WavProvenance provenance;
+        provenance.fileUid = sessionId_;
+        provenance.take = "exchange";
+        provenance.title = exchange.title;
+        provenance.tracks = {{audioChannel_, creatureName}};
+        for (const auto &part : parts) {
+            provenance.script.push_back({creatureName, part.text});
+        }
+        {
+            // The ElevenLabs request ids are already tracked for prosody
+            // chaining; all promises are resolved by now (failed sentences
+            // resolve to ""), but guard with wait_for anyway — a promise
+            // missed on an error path must not hang finish() forever.
+            std::lock_guard<std::mutex> lock(offsetMutex_);
+            for (const auto &requestIdFuture : requestIdFutures_) {
+                if (requestIdFuture.valid() &&
+                    requestIdFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                    const auto &requestId = requestIdFuture.get();
+                    if (!requestId.empty()) {
+                        provenance.generationIds.push_back(requestId);
+                    }
+                }
+            }
+        }
+
+        const auto stitchedPath = tempDir / fmt::format("{}.wav", sessionId_);
+        auto stitchResult = stitchMultichannelWavs(partWavs, stitchedPath, provenance);
+        if (!stitchResult.isSuccess()) {
+            warn("Failed to stitch exchange WAV for session {}: {}", sessionId_, stitchResult.getError()->getMessage());
+            exchange.status = EXCHANGE_STATUS_FAILED;
+        } else {
+            const auto &stitched = stitchResult.getValue().value();
+            exchange.sound_file = stitchedPath.string();
+            exchange.duration_ms = stitched.totalDurationMs;
+            for (size_t i = 0; i < parts.size() && i < stitched.partDurationsMs.size(); i++) {
+                parts[i].duration_ms = stitched.partDurationsMs[i];
+            }
+            exchange.status =
+                static_cast<int>(parts.size()) == chunksReceived_ ? EXCHANGE_STATUS_READY : EXCHANGE_STATUS_PARTIAL;
+        }
+    }
+    exchange.parts = parts;
+
+    // Best-effort like the insert in start(): the speech already played, so a
+    // failed record update must never turn /finish into an error.
+    auto finalizeResult = creatures::storage::finalizeAdHocExchange(exchange, finishSpan);
+    if (!finalizeResult.isSuccess()) {
+        warn("Unable to finalize ad-hoc exchange {}: {}", sessionId_, finalizeResult.getError()->getMessage());
     }
 
     if (finishSpan) {
-        finishSpan->setAttribute("animations_built", static_cast<int64_t>(chunksReceived_));
+        finishSpan->setAttribute("animations_built", static_cast<int64_t>(parts.size()));
+        finishSpan->setAttribute("exchange.status", exchange.status);
         finishSpan->setSuccess();
     }
 
-    info("StreamingAdHocSession finished: session={}, {} sentences processed", sessionId_, chunksReceived_);
+    info("StreamingAdHocSession finished: session={}, {}/{} sentences rendered, exchange '{}'", sessionId_,
+         parts.size(), chunksReceived_, exchange.status);
 
-    // Return a non-empty string to indicate success; the actual animation IDs
-    // were handled by the playback thread
-    return std::string("pipelined-playback");
+    StreamingFinishResult summary;
+    summary.lastAnimationId = lastAnimationId;
+    summary.exchangeStatus = exchange.status;
+    summary.partsRendered = static_cast<int>(parts.size());
+    summary.partsTotal = chunksReceived_;
+    return summary;
 }
 
 // --- StreamingAdHocSessionManager ---

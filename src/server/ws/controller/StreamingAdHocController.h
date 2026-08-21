@@ -1,21 +1,32 @@
 #pragma once
 
+#include <cctype>
+#include <filesystem>
+#include <fstream>
+#include <vector>
+
 #include <oatpp-swagger/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
+#include <oatpp/web/protocol/http/outgoing/ResponseFactory.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "model/AdHocExchange.h"
+#include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/voice/StreamingAdHocSession.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/dto/StreamingAdHocDto.h"
+#include "server/ws/service/SoundRenditionService.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
 
 namespace creatures {
 extern std::shared_ptr<Configuration> config;
+extern std::shared_ptr<Database> db;
+extern std::shared_ptr<ObservabilityManager> observability;
 } // namespace creatures
 
 namespace creatures::ws {
@@ -169,24 +180,269 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
                                    return bailFromServerError(span, finishResult.getError().value());
                                }
 
-                               auto animationId = finishResult.getValue().value();
+                               const auto summary = finishResult.getValue().value();
 
                                auto response = StreamingAdHocFinishResponseDto::createShared();
                                response->session_id = sessionId;
                                response->status = "completed";
                                response->message = "Speech generated and playback triggered";
-                               response->animation_id = animationId.c_str();
-                               response->playback_triggered = true;
+                               response->animation_id = summary.lastAnimationId.c_str();
+                               response->playback_triggered = summary.partsRendered > 0;
+                               response->exchange_status = summary.exchangeStatus.c_str();
+                               response->parts_rendered = summary.partsRendered;
+                               response->parts_total = summary.partsTotal;
 
                                if (span) {
                                    span->setAttribute("session.id", std::string(sessionId->c_str()));
-                                   span->setAttribute("animation.id", animationId);
+                                   span->setAttribute("animation.id", summary.lastAnimationId);
+                                   span->setAttribute("exchange.status", summary.exchangeStatus);
                                    span->setHttpStatus(200);
                                }
 
                                return createDtoResponse(Status::CODE_200, response);
                            });
     }
+
+    // --- Exchange export (issue #150) ---
+    //
+    // One "exchange" is one completed streaming session, stitched into a
+    // single WAV with iXML provenance at /finish time. These endpoints list
+    // exchanges and serve the stitched audio (raw, or rendered to MP3/Ogg
+    // with full tags via the #148 machinery).
+
+    ENDPOINT_INFO(listExchanges) {
+        info->summary = "List streamed ad-hoc exchanges, newest first";
+        info->description = "One exchange per streaming session, including in-flight ones (status 'streaming'). "
+                            "TTL'd with the ad-hoc artifacts they reference.";
+        info->addTag("Streaming Ad-Hoc Speech");
+        info->addResponse<Object<AdHocExchangeListDto>>(Status::CODE_200, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchanges", listExchanges,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/animation/ad-hoc-stream/exchanges", "GET",
+                           "api/v1/animation/ad-hoc-stream/exchanges", "listExchanges", "StreamingAdHocController",
+                           request, [&](const auto &span) {
+                               int limit = 50;
+                               if (auto limitParam = request->getQueryParameter("limit")) {
+                                   try {
+                                       limit = std::stoi(std::string(limitParam->c_str()));
+                                   } catch (const std::exception &) {
+                                       return bailHttp(span, Status::CODE_400, "limit must be an integer");
+                                   }
+                                   if (limit < 1 || limit > 500) {
+                                       return bailHttp(span, Status::CODE_400, "limit must be between 1 and 500");
+                                   }
+                               }
+
+                               auto opSpan = creatures::observability
+                                                 ? creatures::observability->createChildOperationSpan(
+                                                       "StreamingAdHocController.listExchanges", span)
+                                                 : nullptr;
+                               auto listResult = creatures::db->listAdHocExchanges(limit, opSpan);
+                               if (!listResult.isSuccess()) {
+                                   return bailFromServerError(span, listResult.getError().value());
+                               }
+                               const auto records = listResult.getValue().value();
+
+                               auto response = AdHocExchangeListDto::createShared();
+                               response->items = oatpp::Vector<oatpp::Object<AdHocExchangeDto>>::createShared();
+                               for (const auto &record : records) {
+                                   response->items->push_back(convertToDto(record.exchange, record.createdAt));
+                               }
+                               response->count = static_cast<uint32_t>(response->items->size());
+
+                               if (span) {
+                                   span->setAttribute("exchanges.count", static_cast<int64_t>(records.size()));
+                                   span->setHttpStatus(200);
+                               }
+                               return createDtoResponse(Status::CODE_200, response);
+                           });
+    }
+
+    ENDPOINT_INFO(getExchange) {
+        info->summary = "Get one streamed ad-hoc exchange";
+        info->addTag("Streaming Ad-Hoc Speech");
+        info->addResponse<Object<AdHocExchangeDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchange/{sessionId}", getExchange, PATH(String, sessionId),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/v1/animation/ad-hoc-stream/exchange/{sessionId}", "GET",
+            "api/v1/animation/ad-hoc-stream/exchange/{sessionId}", "getExchange", "StreamingAdHocController", request,
+            [&](const auto &span) {
+                if (!isUuid(sessionId)) {
+                    return bailHttp(span, Status::CODE_400, "sessionId must be a UUID");
+                }
+                auto opSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                             "StreamingAdHocController.getExchange", span)
+                                                       : nullptr;
+                auto lookup = creatures::db->getAdHocExchange(sessionId->c_str(), opSpan);
+                if (!lookup.isSuccess()) {
+                    return bailFromServerError(span, lookup.getError().value());
+                }
+                const auto record = lookup.getValue().value();
+                if (span) {
+                    span->setAttribute("session.id", std::string(sessionId->c_str()));
+                    span->setAttribute("exchange.status", record.exchange.status);
+                    span->setHttpStatus(200);
+                }
+                return createDtoResponse(Status::CODE_200, convertToDto(record.exchange, record.createdAt));
+            });
+    }
+
+    ENDPOINT_INFO(getExchangeAudioMp3) {
+        info->summary = "Download a whole exchange as one fully-tagged MP3";
+        info->addTag("Streaming Ad-Hoc Speech");
+        info->addResponse<String>(Status::CODE_200, "audio/mpeg");
+        info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.mp3", getExchangeAudioMp3,
+             PATH(String, sessionId), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.mp3", "GET",
+                           "api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.mp3", "getExchangeAudioMp3",
+                           "StreamingAdHocController", request,
+                           [&](const auto &span) { return serveExchangeAudio(sessionId, ExchangeAudio::Mp3, span); });
+    }
+
+    ENDPOINT_INFO(getExchangeAudioOgg) {
+        info->summary = "Download a whole exchange as one tagged Ogg/Opus file";
+        info->addTag("Streaming Ad-Hoc Speech");
+        info->addResponse<String>(Status::CODE_200, "audio/ogg");
+        info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.ogg", getExchangeAudioOgg,
+             PATH(String, sessionId), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.ogg", "GET",
+                           "api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.ogg", "getExchangeAudioOgg",
+                           "StreamingAdHocController", request,
+                           [&](const auto &span) { return serveExchangeAudio(sessionId, ExchangeAudio::Ogg, span); });
+    }
+
+    ENDPOINT_INFO(getExchangeAudioWav) {
+        info->summary = "Download a whole exchange as the stitched 17-channel WAV";
+        info->addTag("Streaming Ad-Hoc Speech");
+        info->addResponse<String>(Status::CODE_200, "audio/wav");
+        info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.wav", getExchangeAudioWav,
+             PATH(String, sessionId), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.wav", "GET",
+                           "api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.wav", "getExchangeAudioWav",
+                           "StreamingAdHocController", request,
+                           [&](const auto &span) { return serveExchangeAudio(sessionId, ExchangeAudio::Wav, span); });
+    }
+
+  private:
+    enum class ExchangeAudio { Wav, Mp3, Ogg };
+
+    /// Strict UUID shape check — the session id becomes part of an on-disk
+    /// path, so nothing but [0-9a-fA-F-] in the canonical 8-4-4-4-12 layout
+    /// gets anywhere near the filesystem.
+    static bool isUuid(const oatpp::String &value) {
+        if (!value || value->size() != 36) {
+            return false;
+        }
+        const auto &s = *value;
+        for (size_t i = 0; i < s.size(); i++) {
+            if (i == 8 || i == 13 || i == 18 || i == 23) {
+                if (s[i] != '-') {
+                    return false;
+                }
+            } else if (!std::isxdigit(static_cast<unsigned char>(s[i]))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// A Content-Disposition-safe take on the exchange title: quotes, control
+    /// characters, and path separators become hyphens.
+    static std::string safeAttachmentName(const std::string &title, const std::string &fallback) {
+        std::string name = title.empty() ? fallback : title;
+        for (auto &c : name) {
+            if (c == '"' || c == '\\' || c == '/' || static_cast<unsigned char>(c) < 0x20) {
+                c = '-';
+            }
+        }
+        return name;
+    }
+
+    template <typename SpanT>
+    std::shared_ptr<HttpOutgoingResponse> serveExchangeAudio(const oatpp::String &sessionId, ExchangeAudio format,
+                                                             const SpanT &span) {
+        if (!isUuid(sessionId)) {
+            return bailHttp(span, Status::CODE_400, "sessionId must be a UUID");
+        }
+        auto opSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                     "StreamingAdHocController.serveExchangeAudio", span)
+                                               : nullptr;
+        auto lookup = creatures::db->getAdHocExchange(sessionId->c_str(), opSpan);
+        if (!lookup.isSuccess()) {
+            return bailFromServerError(span, lookup.getError().value());
+        }
+        const auto record = lookup.getValue().value();
+        const auto &exchange = record.exchange;
+        if (span) {
+            span->setAttribute("session.id", exchange.session_id);
+            span->setAttribute("exchange.status", exchange.status);
+        }
+
+        if (exchange.status == EXCHANGE_STATUS_STREAMING) {
+            auto response = bailHttp(span, Status::CODE_409, "Exchange is still streaming; try again shortly");
+            response->putHeader("Retry-After", "5");
+            return response;
+        }
+        if (exchange.status == EXCHANGE_STATUS_FAILED || exchange.sound_file.empty()) {
+            return bailHttp(span, Status::CODE_410, "Exchange rendered no audio");
+        }
+        const std::filesystem::path wavPath(exchange.sound_file);
+        if (!std::filesystem::exists(wavPath)) {
+            return bailHttp(span, Status::CODE_404, "Exchange audio has expired");
+        }
+
+        std::vector<uint8_t> bytes;
+        std::string mimeType;
+        std::string extension;
+        if (format == ExchangeAudio::Wav) {
+            std::ifstream file(wavPath, std::ios::binary);
+            bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+            if (bytes.empty()) {
+                return bailHttp(span, Status::CODE_500, "Unable to read exchange audio");
+            }
+            mimeType = "audio/wav";
+            extension = ".wav";
+        } else {
+            const auto renditionFormat =
+                format == ExchangeAudio::Mp3 ? SoundRenditionFormat::Mp3 : SoundRenditionFormat::OggOpus;
+            auto encoded = renditionService_.renderWav(wavPath, renditionFormat);
+            if (!encoded.isSuccess()) {
+                return bailFromServerError(span, encoded.getError().value());
+            }
+            auto rendition = encoded.getValue().value();
+            bytes = std::move(rendition.bytes);
+            mimeType = rendition.mimeType;
+            extension = rendition.extension;
+        }
+
+        const auto attachmentName = safeAttachmentName(exchange.title, exchange.session_id) + extension;
+        auto response = ResponseFactory::createResponse(
+            Status::CODE_200,
+            oatpp::String(reinterpret_cast<const char *>(bytes.data()), static_cast<v_buff_size>(bytes.size())));
+        response->putHeader("Content-Type", mimeType.c_str());
+        response->putHeader("Content-Disposition", "attachment; filename=\"" + attachmentName + "\"");
+        // A UUID-addressed exchange can never change once finalized, and the
+        // encoders are deterministic — immutability is honest here, unlike the
+        // basename-addressed ad-hoc renditions (which stay no-store).
+        response->putHeader("Cache-Control", "public, max-age=31536000, immutable");
+        if (span) {
+            span->setAttribute("rendition.bytes", static_cast<int64_t>(bytes.size()));
+            span->setHttpStatus(200);
+        }
+        return response;
+    }
+
+    creatures::ws::SoundRenditionService renditionService_;
 };
 
 } // namespace creatures::ws

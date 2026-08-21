@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 
+#include "model/AdHocExchange.h"
 #include "model/Animation.h"
 #include "model/CacheInvalidation.h"
 #include "model/Creature.h"
@@ -107,6 +108,17 @@ struct StoragePath {
 // Persist an ad-hoc animation (insertAdHocAnimation collection, TTL-cleaned)
 // and fire `CacheType::AdHocAnimationList` + `CacheType::AdHocSoundList`.
 [[nodiscard]] Result<void> publishAdHocAnimation(const creatures::Animation &animation,
+                                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// Insert a new streaming ad-hoc exchange record (status "streaming") and fire
+// `CacheType::AdHocExchangeList` (issue #150).
+[[nodiscard]] Result<void> publishAdHocExchange(const creatures::AdHocExchange &exchange,
+                                                std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// Overwrite an exchange's mutable fields once its session finishes (status,
+// title, transcript, stitched sound file, parts) and fire
+// `CacheType::AdHocExchangeList`.
+[[nodiscard]] Result<void> finalizeAdHocExchange(const creatures::AdHocExchange &exchange,
                                                  std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
 // Republish an existing permanent animation — updates an Animation that's

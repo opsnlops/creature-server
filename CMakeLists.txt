@@ -741,6 +741,8 @@ add_executable(creature-server-test
         tests/model/DialogScript_test.cpp
         tests/model/Track_dual_id_test.cpp
         tests/model/Animation_roundtrip_test.cpp
+        tests/model/AdHocExchange_test.cpp
+        src/model/AdHocExchange.cpp
         tests/runtime/Activity_test.cpp
         tests/fixture/FixturePatternRunner_test.cpp
         tests/fixture/FixturePatternRunner_setLive_test.cpp

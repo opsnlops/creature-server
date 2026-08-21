@@ -27,6 +27,7 @@
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
+#include "model/AdHocExchange.h"
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
 #include "model/Creature.h"
@@ -45,6 +46,11 @@ namespace creatures {
 
 struct AdHocAnimationRecord {
     creatures::Animation animation;
+    std::chrono::system_clock::time_point createdAt;
+};
+
+struct AdHocExchangeRecord {
+    creatures::AdHocExchange exchange;
     std::chrono::system_clock::time_point createdAt;
 };
 
@@ -284,6 +290,23 @@ class Database {
     Result<std::vector<AdHocAnimationRecord>> listAdHocAnimations(std::shared_ptr<OperationSpan> parentSpan = nullptr);
     Result<creatures::Animation> getAdHocAnimation(const animationId_t &animationId,
                                                    std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    // Ad-hoc exchange stuff — one document per streaming ad-hoc session, so a
+    // whole conversation turn can be exported as a single file (issue #150).
+    // Same TTL story as the ad-hoc animations the parts reference.
+    Result<void> ensureAdHocExchangeIndexes(uint32_t ttlHours);
+    Result<void> insertAdHocExchange(const creatures::AdHocExchange &exchange,
+                                     std::chrono::system_clock::time_point createdAt,
+                                     std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    /// Overwrite the mutable fields of an exchange (matched on session_id) once
+    /// the session finishes: status, title, transcript, sound_file, duration,
+    /// finished_at, parts. The BSON created_at (TTL clock) is left untouched.
+    Result<void> finalizeAdHocExchange(const creatures::AdHocExchange &exchange,
+                                       std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<std::vector<AdHocExchangeRecord>> listAdHocExchanges(int limit,
+                                                                std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<AdHocExchangeRecord> getAdHocExchange(const std::string &sessionId,
+                                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
      * Request that the database perform a health check
