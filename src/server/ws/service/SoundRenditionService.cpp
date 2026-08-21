@@ -63,10 +63,12 @@ SoundRenditionService::provenanceTags(const creatures::voice::WavProvenance &pro
     add("ALBUMARTIST", kWorkshopName);
     add("ALBUM", kWorkshopName);
     add("PUBLISHER", kWorkshopName);
-    if (!provenance.script.empty()) {
-        add("GENRE", "Spoken Word");
-    } else if (provenance.music) {
+    // Music wins the genre: a dialog with a score is a soundtrack, not plain
+    // spoken word (April's call on #148).
+    if (provenance.music) {
         add("GENRE", "Soundtrack");
+    } else if (!provenance.script.empty()) {
+        add("GENRE", "Spoken Word");
     }
     if (provenance.music) {
         const auto &modelId = provenance.music->modelId;

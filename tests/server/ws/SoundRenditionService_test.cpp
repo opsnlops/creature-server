@@ -80,6 +80,19 @@ TEST(SoundRenditionService, WorkshopIsTheArtistOfLastResort) {
     EXPECT_EQ("April's Creature Workshop", tagValue(comments, "ALBUM"));
 }
 
+TEST(SoundRenditionService, DialogsWithMusicAreTaggedAsSoundtrackNotSpokenWord) {
+    WavProvenance provenance;
+    provenance.script = {{"Beaky", "How many UUs does it take?"}, {"Mango", "Let's form a committee."}};
+    provenance.music.emplace();
+    provenance.music->prompt = "gentle hymn underscore";
+
+    const auto comments = SoundRenditionService::provenanceTags(provenance);
+    // Music wins the genre even when there's a script (#148).
+    EXPECT_EQ("Soundtrack", tagValue(comments, "GENRE"));
+    // Everything else still reflects the dialog.
+    EXPECT_EQ("Beaky, Mango", tagValue(comments, "ARTIST"));
+}
+
 TEST(SoundRenditionService, MusicOnlyRendersAreTaggedAsSoundtrack) {
     WavProvenance provenance;
     provenance.music.emplace();
