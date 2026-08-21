@@ -1,5 +1,6 @@
 #include "server/config.h"
 
+#include <algorithm>
 #include <cctype>
 
 #include "spdlog/spdlog.h"
@@ -449,11 +450,12 @@ Result<int64_t> Database::countAnimationsBySoundFile(const std::string &soundFil
     }
 }
 
-Result<std::optional<std::string>>
-Database::findAnimationTitleBySoundFile(const std::string &soundFileBasename,
-                                        const std::shared_ptr<OperationSpan> &parentSpan) {
+Result<std::optional<Database::AnimationSoundInfo>>
+Database::findAnimationSoundInfoBySoundFile(const std::string &soundFileBasename,
+                                            const std::shared_ptr<OperationSpan> &parentSpan) {
+    using InfoResult = Result<std::optional<Database::AnimationSoundInfo>>;
     auto dbSpan =
-        creatures::observability->createChildOperationSpan("Database.findAnimationTitleBySoundFile", parentSpan);
+        creatures::observability->createChildOperationSpan("Database.findAnimationSoundInfoBySoundFile", parentSpan);
     if (dbSpan) {
         dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
         dbSpan->setAttribute("database.operation", "find_one");
@@ -464,14 +466,14 @@ Database::findAnimationTitleBySoundFile(const std::string &soundFileBasename,
     if (soundFileBasename.empty()) {
         if (dbSpan)
             dbSpan->setSuccess();
-        return Result<std::optional<std::string>>{std::optional<std::string>{}};
+        return InfoResult{std::optional<AnimationSoundInfo>{}};
     }
 
     auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
     if (!collectionResult.isSuccess()) {
         auto err = collectionResult.getError().value();
         recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
-        return Result<std::optional<std::string>>{err};
+        return InfoResult{err};
     }
     auto collection = collectionResult.getValue().value();
 
@@ -491,45 +493,77 @@ Database::findAnimationTitleBySoundFile(const std::string &soundFileBasename,
                       << "metadata.sound_file" << bsoncxx::builder::stream::open_document << "$regex"
                       << fmt::format("(^|/){}$", escaped) << bsoncxx::builder::stream::close_document
                       << bsoncxx::builder::stream::finalize;
-        auto projection = bsoncxx::builder::stream::document{} << "metadata.title" << 1 << "_id" << 0
-                                                               << bsoncxx::builder::stream::finalize;
+        auto projection = bsoncxx::builder::stream::document{} << "metadata.title" << 1 << "tracks.creature_id" << 1
+                                                               << "_id" << 0 << bsoncxx::builder::stream::finalize;
         mongocxx::options::find opts;
         opts.projection(projection.view());
 
         auto maybe = collection.find_one(filter.view(), opts);
         if (dbSpan) {
-            dbSpan->setAttribute("title.found", static_cast<bool>(maybe));
+            dbSpan->setAttribute("animation.found", static_cast<bool>(maybe));
         }
         if (!maybe) {
             if (dbSpan)
                 dbSpan->setSuccess();
-            return Result<std::optional<std::string>>{std::optional<std::string>{}};
+            return InfoResult{std::optional<AnimationSoundInfo>{}};
         }
 
+        AnimationSoundInfo info;
         auto metadataElem = maybe->view()["metadata"];
         if (metadataElem && metadataElem.type() == bsoncxx::type::k_document) {
             auto titleElem = metadataElem.get_document().view()["title"];
             if (titleElem && titleElem.type() == bsoncxx::type::k_string) {
-                const std::string title{titleElem.get_string().value};
-                if (!title.empty()) {
-                    if (dbSpan)
-                        dbSpan->setSuccess();
-                    return Result<std::optional<std::string>>{std::optional<std::string>{title}};
+                info.title = std::string{titleElem.get_string().value};
+            }
+        }
+
+        // The animation's tracks are the cast list (#153): resolve each
+        // distinct creature id to a name, in track order. A creature that no
+        // longer exists just drops out — better an incomplete cast than a
+        // failed rendition or a stale id in the ARTIST tag.
+        auto tracksElem = maybe->view()["tracks"];
+        if (tracksElem && tracksElem.type() == bsoncxx::type::k_array) {
+            std::vector<std::string> seenIds;
+            for (const auto &trackElem : tracksElem.get_array().value) {
+                if (trackElem.type() != bsoncxx::type::k_document) {
+                    continue;
+                }
+                auto idElem = trackElem.get_document().view()["creature_id"];
+                if (!idElem || idElem.type() != bsoncxx::type::k_string) {
+                    continue;
+                }
+                const std::string creatureId{idElem.get_string().value};
+                if (creatureId.empty() || std::find(seenIds.begin(), seenIds.end(), creatureId) != seenIds.end()) {
+                    continue;
+                }
+                seenIds.push_back(creatureId);
+                auto creatureResult = getCreature(creatureId, dbSpan);
+                if (creatureResult.isSuccess()) {
+                    const auto name = creatureResult.getValue().value().name;
+                    if (!name.empty()) {
+                        info.performerNames.push_back(name);
+                    }
+                } else {
+                    debug("Skipping unresolvable creature {} while naming performers for {}", creatureId,
+                          soundFileBasename);
                 }
             }
         }
-        if (dbSpan)
+
+        if (dbSpan) {
+            dbSpan->setAttribute("performers.count", static_cast<int64_t>(info.performerNames.size()));
             dbSpan->setSuccess();
-        return Result<std::optional<std::string>>{std::optional<std::string>{}};
+        }
+        return InfoResult{std::optional<AnimationSoundInfo>{std::move(info)}};
     } catch (const std::exception &e) {
         std::string errorMessage =
-            fmt::format("Failed to look up animation title for sound {}: {}", soundFileBasename, e.what());
+            fmt::format("Failed to look up animation sound info for {}: {}", soundFileBasename, e.what());
         error(errorMessage);
         if (dbSpan) {
             dbSpan->recordException(e);
         }
         recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
-        return Result<std::optional<std::string>>{ServerError(ServerError::InternalError, errorMessage)};
+        return InfoResult{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
 
