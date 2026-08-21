@@ -214,9 +214,9 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
                     renditionSpan->setAttribute("rendition.output_bytes", static_cast<int64_t>(rendered.bytes.size()));
                     renditionSpan->setSuccess();
                 }
-                const auto downloadName =
-                    fmt::format("{}--bgm--{}--{}.mp3", util::slugify(generation.getValue().value().title, 48, "dialog"),
-                                util::slugify(generation.getValue().value().prompt, 56, "music"), value.substr(0, 12));
+                const auto downloadName = util::bgmExportBasename(generation.getValue().value().title,
+                                                                  generation.getValue().value().prompt, value) +
+                                          ".mp3";
                 auto response = ResponseFactory::createResponse(
                     Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(rendered.bytes.data()),
                                                     static_cast<v_buff_size>(rendered.bytes.size())));

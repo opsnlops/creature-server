@@ -346,13 +346,12 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         return creatures::isUuidShape(std::string_view(value->c_str(), value->size()));
     }
 
-    /// Download filename in the #126 dialog-export shape: slugified title plus
-    /// a short session-id tail, so identically-worded exchanges don't collide.
-    /// e.g. "beaky-somebody-is-at-the-door-e3af1c4d.mp3"
+    /// Download filename in the shared export shape (#126, #152): slugified
+    /// title plus a short session-id tail, so identically-worded exchanges
+    /// don't collide. e.g. "beaky-somebody-is-at-the-door-e3af1c4d.mp3"
     static std::string attachmentBasename(const creatures::AdHocExchange &exchange) {
-        const auto titleSlug =
-            util::slugify(exchange.title.empty() ? exchange.creature_name : exchange.title, 48, "exchange");
-        return fmt::format("{}-{}", titleSlug, exchange.session_id.substr(0, 8));
+        return util::exportBasename(exchange.title.empty() ? exchange.creature_name : exchange.title,
+                                    exchange.session_id, 48, "exchange");
     }
 
     template <typename SpanT>

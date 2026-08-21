@@ -13,6 +13,33 @@ TEST(Slugify, AppliesLimitAndFallback) {
 }
 
 // ===========================================================================
+// The shared export-name shape (#126, #152): "{slug}-{short id}". One helper
+// so dialog renders, voice takes, BGM exports, and exchange downloads can't
+// drift apart.
+// ===========================================================================
+
+TEST(ExportBasename, SlugPlusEightCharIdTail) {
+    EXPECT_EQ(creatures::util::exportBasename("The Great Seed Heist", "a1b2c3d4-e5f6-7890-abcd-ef0123456789"),
+              "the-great-seed-heist-a1b2c3d4");
+}
+
+TEST(ExportBasename, HonorsCustomFallbackAndTailLength) {
+    EXPECT_EQ(creatures::util::exportBasename("!!!", "a1b2c3d4e5f6", 48, "exchange", 12), "exchange-a1b2c3d4e5f6");
+}
+
+TEST(ExportBasename, ToleratesAnIdShorterThanTheTail) {
+    EXPECT_EQ(creatures::util::exportBasename("Beep", "ab"), "beep-ab");
+}
+
+TEST(BgmExportBasename, TripleAgreesBetweenWavAndMp3Sites) {
+    // The exact shape both DialogMusicService (WAV) and DialogMusicController
+    // (MP3 download) must produce for the same generation.
+    EXPECT_EQ(creatures::util::bgmExportBasename("Scene 3 — Travel", "Mysterious, Playful Orchestra!",
+                                                 "0123456789abcdef0123"),
+              "scene-3-travel--bgm--mysterious-playful-orchestra--0123456789ab");
+}
+
+// ===========================================================================
 // Dialog audio filenames (issue #126)
 //
 // Rendered dialog WAVs are named from the render title rather than the job

@@ -479,10 +479,7 @@ DialogMusicService::promote(const std::string &generationId, std::shared_ptr<Req
             "ChecksumMismatch");
     }
     const auto acceptedWav = voice::wrapMonoPcmAsWav(pcm, 48000, &provenance);
-    const auto titleSlug = util::slugify(script.title, 48, "dialog");
-    const auto promptSlug = util::slugify(provenance.music->prompt, 56, "music");
-    const auto shortId = generationId.substr(0, 12);
-    const auto filename = fmt::format("{}--bgm--{}--{}.wav", titleSlug, promptSlug, shortId);
+    const auto filename = util::bgmExportBasename(script.title, provenance.music->prompt, generationId) + ".wav";
     auto write =
         storage::writeSoundFile(storage::Persistence::Permanent, filename, acceptedWav, std::string("dialog/music"));
     if (!write.isSuccess()) {

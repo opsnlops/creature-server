@@ -2069,11 +2069,9 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     // `title` already carries the stage suffix, so a mainstage and a travel
     // rendition of one scene get distinguishable names. The short job-id tail
     // keeps re-renders and identically-titled scripts from colliding.
-    const auto titleSlug = util::slugify(title, 48, "dialog");
-    const auto idTail = jobState.jobId.substr(0, 8);
-    const auto wavFilename = persistence == DialogPersistence::AdHoc
-                                 ? fmt::format("dialog_{}-{}.wav", titleSlug, idTail)
-                                 : fmt::format("{}-{}.wav", titleSlug, idTail);
+    const auto exportName = util::exportBasename(title, jobState.jobId);
+    const auto wavFilename = persistence == DialogPersistence::AdHoc ? fmt::format("dialog_{}.wav", exportName)
+                                                                     : fmt::format("{}.wav", exportName);
     std::optional<std::string> wavSubdir;
     if (persistence == DialogPersistence::Permanent) {
         wavSubdir = std::string(kPermanentDialogSubdir);
@@ -2937,8 +2935,7 @@ void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
                                                    script.accepted_voice->generation_id);
     }
 
-    const auto filename =
-        fmt::format("{}-{}.wav", creatures::util::slugify(script.title, 48, "dialog"), generationId.substr(0, 8));
+    const auto filename = creatures::util::exportBasename(script.title, generationId) + ".wav";
     auto promoted = creatures::storage::promoteVoiceTake(generationId, filename, jobState.span);
     if (!promoted.isSuccess()) {
         return failJob(promoted.getError().value().getMessage());

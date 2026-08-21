@@ -27,4 +27,15 @@ std::string slugify(const std::string &value, std::size_t maxLength, const std::
     return slug.empty() ? fallback : slug;
 }
 
+std::string exportBasename(const std::string &title, const std::string &id, std::size_t maxLength,
+                           const std::string &fallback, std::size_t idTail) {
+    return slugify(title, maxLength, fallback) + "-" + id.substr(0, std::min(idTail, id.size()));
+}
+
+std::string bgmExportBasename(const std::string &scriptTitle, const std::string &prompt,
+                              const std::string &generationId) {
+    return slugify(scriptTitle, 48, "dialog") + "--bgm--" + slugify(prompt, 56, "music") + "--" +
+           generationId.substr(0, std::min<std::size_t>(12, generationId.size()));
+}
+
 } // namespace creatures::util
