@@ -28,6 +28,7 @@
 #include "server/ws/service/SoundRenditionService.h"
 #include "server/ws/service/SoundService.h"
 
+#include "server/database.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
 #include "server/metrics/counters.h"
@@ -48,6 +49,7 @@ extern std::shared_ptr<SystemCounters> metrics;
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<jobs::JobManager> jobManager;
 extern std::shared_ptr<jobs::JobWorker> jobWorker;
+extern std::shared_ptr<Database> db;
 } // namespace creatures
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
@@ -125,7 +127,21 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     if (!fileSizeError)
                         renditionSpan->setAttribute("encoding.input_bytes", static_cast<int64_t>(inputBytes));
                 }
-                auto encoded = renditionService_.renderWav(resolved->path, renditionFormat);
+                // If the WAV carries no iXML title (older renders, ad-hoc files), borrow
+                // the title of the animation that references it, so the shared file still
+                // shows a real name instead of its filename (#148). Best-effort: a lookup
+                // failure just means no title, never a failed rendition.
+                const auto animationTitleFallback = [&sourceWav, &renditionSpan]() -> std::string {
+                    auto lookup = creatures::db->findAnimationTitleBySoundFile(sourceWav, renditionSpan);
+                    if (!lookup.isSuccess()) {
+                        warn("Animation-title lookup for {} failed: {}", sourceWav,
+                             lookup.getError().value().getMessage());
+                        return {};
+                    }
+                    const auto title = lookup.getValue().value();
+                    return title ? *title : std::string{};
+                };
+                auto encoded = renditionService_.renderWav(resolved->path, renditionFormat, animationTitleFallback);
                 if (!encoded.isSuccess()) {
                     const auto error = encoded.getError().value();
                     recordSpanError(renditionSpan, error.getMessage(), "RenditionError", error.getCode());

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,8 +24,14 @@ class SoundRenditionService {
   public:
     using Comments = std::vector<std::pair<std::string, std::string>>;
 
+    /// Lazy source for a title when the WAV's iXML has none (older renders and
+    /// deliberately-lean ad-hoc files). Only invoked in that case, so callers can
+    /// back it with a database lookup without paying for it on tagged files (#148).
+    using TitleProvider = std::function<std::string()>;
+
     [[nodiscard]] creatures::Result<SoundRendition> renderWav(const std::filesystem::path &wavPath,
-                                                              SoundRenditionFormat format) const;
+                                                              SoundRenditionFormat format,
+                                                              const TitleProvider &fallbackTitle = {}) const;
 
     [[nodiscard]] creatures::Result<SoundRendition> renderMonoPcm(const std::vector<int16_t> &samples, int sampleRate,
                                                                   const creatures::voice::WavProvenance &provenance,
