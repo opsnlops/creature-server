@@ -31,6 +31,31 @@ TEST(ExportBasename, ToleratesAnIdShorterThanTheTail) {
     EXPECT_EQ(creatures::util::exportBasename("Beep", "ab"), "beep-ab");
 }
 
+// ===========================================================================
+// Display-title excerpts (#157): titles keep their natural punctuation — the
+// slug is only for filenames.
+// ===========================================================================
+
+TEST(TitleExcerpt, KeepsNaturalPunctuation) {
+    EXPECT_EQ(creatures::util::titleExcerpt("Oh, the front door is open!"), "Oh, the front door is open!");
+}
+
+TEST(TitleExcerpt, CollapsesWhitespaceAndTrims) {
+    EXPECT_EQ(creatures::util::titleExcerpt("  Hey!   The show\nstarts soon.  "), "Hey! The show starts soon.");
+}
+
+TEST(TitleExcerpt, TruncatesAtAWordBoundaryWithAnEllipsis) {
+    EXPECT_EQ(creatures::util::titleExcerpt("The quick brown fox jumps over the lazy dog", 15), "The quick brown…");
+}
+
+TEST(TitleExcerpt, DropsSeparatorsBeforeTheEllipsis) {
+    EXPECT_EQ(creatures::util::titleExcerpt("Well, hello there, my friend", 18), "Well, hello there…");
+}
+
+TEST(TitleExcerpt, FallsBackWhenNothingSurvives) {
+    EXPECT_EQ(creatures::util::titleExcerpt("   ", 60, "exchange"), "exchange");
+}
+
 TEST(BgmExportBasename, TripleAgreesBetweenWavAndMp3Sites) {
     // The exact shape both DialogMusicService (WAV) and DialogMusicController
     // (MP3 download) must produce for the same generation.
