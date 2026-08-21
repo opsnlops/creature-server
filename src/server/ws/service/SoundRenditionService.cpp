@@ -162,7 +162,8 @@ SoundRenditionService::renderMonoPcm(const std::vector<int16_t> &samples, int sa
 }
 
 creatures::Result<SoundRendition> SoundRenditionService::renderWav(const std::filesystem::path &wavPath,
-                                                                   SoundRenditionFormat format) const {
+                                                                   SoundRenditionFormat format,
+                                                                   const TitleProvider &fallbackTitle) const {
     auto mono = creatures::audio::loadWavAsMono(wavPath.string());
     if (!mono.isSuccess()) {
         return creatures::Result<SoundRendition>{mono.getError().value()};
@@ -170,6 +171,9 @@ creatures::Result<SoundRendition> SoundRenditionService::renderWav(const std::fi
     creatures::voice::WavProvenance provenance;
     if (const auto ixml = creatures::voice::readIxmlChunk(wavPath)) {
         provenance = creatures::voice::parseIxmlProvenance(*ixml);
+    }
+    if (provenance.title.empty() && fallbackTitle) {
+        provenance.title = fallbackTitle();
     }
     const auto value = mono.getValue().value();
     return renderMonoPcm(value.samples, value.sampleRate, provenance, format);

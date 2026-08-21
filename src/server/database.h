@@ -133,6 +133,15 @@ class Database {
     Result<int64_t> countAnimationsBySoundFile(const std::string &soundFile,
                                                const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
+    /// The title of an animation whose metadata.sound_file ends in this basename
+    /// (dialog renders store a relative path like "dialog/<uuid>.wav", while the
+    /// rendition endpoints are addressed by bare basename). Lets a shared MP3/Ogg
+    /// of a provenance-less WAV still carry a real title (#148). Empty optional
+    /// when no animation references the file or the match has no title.
+    Result<std::optional<std::string>>
+    findAnimationTitleBySoundFile(const std::string &soundFileBasename,
+                                  const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+
     /// One animation rendered against a stage, and whether the stage has been
     /// edited since (#119). Enough for the console to say "5 animations, 3 out
     /// of date" without pulling the (large) track blobs.

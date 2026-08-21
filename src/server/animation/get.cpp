@@ -1,5 +1,7 @@
 #include "server/config.h"
 
+#include <cctype>
+
 #include "spdlog/spdlog.h"
 
 #include <bsoncxx/builder/stream/document.hpp>
@@ -444,6 +446,90 @@ Result<int64_t> Database::countAnimationsBySoundFile(const std::string &soundFil
         }
         recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
         return Result<int64_t>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+}
+
+Result<std::optional<std::string>>
+Database::findAnimationTitleBySoundFile(const std::string &soundFileBasename,
+                                        const std::shared_ptr<OperationSpan> &parentSpan) {
+    auto dbSpan =
+        creatures::observability->createChildOperationSpan("Database.findAnimationTitleBySoundFile", parentSpan);
+    if (dbSpan) {
+        dbSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
+        dbSpan->setAttribute("database.operation", "find_one");
+        dbSpan->setAttribute("database.system", "mongodb");
+        dbSpan->setAttribute("database.name", DB_NAME);
+        dbSpan->setAttribute("sound.file", soundFileBasename);
+    }
+    if (soundFileBasename.empty()) {
+        if (dbSpan)
+            dbSpan->setSuccess();
+        return Result<std::optional<std::string>>{std::optional<std::string>{}};
+    }
+
+    auto collectionResult = getCollection(ANIMATIONS_COLLECTION);
+    if (!collectionResult.isSuccess()) {
+        auto err = collectionResult.getError().value();
+        recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
+        return Result<std::optional<std::string>>{err};
+    }
+    auto collection = collectionResult.getValue().value();
+
+    try {
+        // metadata.sound_file may be a bare basename or a relative path like
+        // "dialog/<uuid>.wav", so match on the trailing path component. The
+        // basename is regex-escaped; callers pass sanitized names but this
+        // keeps the query literal regardless.
+        std::string escaped;
+        for (const char c : soundFileBasename) {
+            if (!std::isalnum(static_cast<unsigned char>(c))) {
+                escaped += '\\';
+            }
+            escaped += c;
+        }
+        auto filter = bsoncxx::builder::stream::document{}
+                      << "metadata.sound_file" << bsoncxx::builder::stream::open_document << "$regex"
+                      << fmt::format("(^|/){}$", escaped) << bsoncxx::builder::stream::close_document
+                      << bsoncxx::builder::stream::finalize;
+        auto projection = bsoncxx::builder::stream::document{} << "metadata.title" << 1 << "_id" << 0
+                                                               << bsoncxx::builder::stream::finalize;
+        mongocxx::options::find opts;
+        opts.projection(projection.view());
+
+        auto maybe = collection.find_one(filter.view(), opts);
+        if (dbSpan) {
+            dbSpan->setAttribute("title.found", static_cast<bool>(maybe));
+        }
+        if (!maybe) {
+            if (dbSpan)
+                dbSpan->setSuccess();
+            return Result<std::optional<std::string>>{std::optional<std::string>{}};
+        }
+
+        auto metadataElem = maybe->view()["metadata"];
+        if (metadataElem && metadataElem.type() == bsoncxx::type::k_document) {
+            auto titleElem = metadataElem.get_document().view()["title"];
+            if (titleElem && titleElem.type() == bsoncxx::type::k_string) {
+                const std::string title{titleElem.get_string().value};
+                if (!title.empty()) {
+                    if (dbSpan)
+                        dbSpan->setSuccess();
+                    return Result<std::optional<std::string>>{std::optional<std::string>{title}};
+                }
+            }
+        }
+        if (dbSpan)
+            dbSpan->setSuccess();
+        return Result<std::optional<std::string>>{std::optional<std::string>{}};
+    } catch (const std::exception &e) {
+        std::string errorMessage =
+            fmt::format("Failed to look up animation title for sound {}: {}", soundFileBasename, e.what());
+        error(errorMessage);
+        if (dbSpan) {
+            dbSpan->recordException(e);
+        }
+        recordSpanError(dbSpan, errorMessage, "std::exception", ServerError::InternalError);
+        return Result<std::optional<std::string>>{ServerError(ServerError::InternalError, errorMessage)};
     }
 }
 

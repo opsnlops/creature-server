@@ -1,14 +1,19 @@
 
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "server/voice/PcmWavWriter.h"
 #include "server/ws/service/SoundRenditionService.h"
 
 namespace {
 
 using creatures::voice::WavProvenance;
+using creatures::ws::SoundRenditionFormat;
 using creatures::ws::SoundRenditionService;
 
 std::string tagValue(const SoundRenditionService::Comments &comments, const std::string &key) {
@@ -86,6 +91,54 @@ TEST(SoundRenditionService, MusicOnlyRendersAreTaggedAsSoundtrack) {
     EXPECT_EQ("Soundtrack", tagValue(comments, "GENRE"));
     EXPECT_EQ("April's Creature Workshop", tagValue(comments, "ARTIST"));
     EXPECT_EQ("ElevenLabs Music (music_v2)", tagValue(comments, "COMPOSER"));
+}
+
+// Write a small mono 48kHz WAV (optionally carrying iXML provenance) to a temp file.
+std::filesystem::path writeTempWav(const std::string &name, const WavProvenance *provenance) {
+    const std::vector<uint8_t> pcm(9600, 0); // 100ms of silence, S16 mono at 48kHz
+    const auto bytes = creatures::voice::wrapMonoPcmAsWav(pcm, 48000, provenance);
+    const auto path = std::filesystem::temp_directory_path() / name;
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    return path;
+}
+
+bool containsBytes(const std::vector<uint8_t> &haystack, const std::string &needle) {
+    return std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end()) != haystack.end();
+}
+
+TEST(SoundRenditionService, BorrowsTheFallbackTitleWhenTheWavHasNoProvenance) {
+    const auto path = writeTempWav("creature-server-rendition-untitled.wav", nullptr);
+
+    SoundRenditionService service;
+    bool consulted = false;
+    auto rendition = service.renderWav(path, SoundRenditionFormat::Mp3, [&consulted]() -> std::string {
+        consulted = true;
+        return "Borrowed Animation Title";
+    });
+    std::filesystem::remove(path);
+
+    ASSERT_TRUE(rendition.isSuccess());
+    EXPECT_TRUE(consulted);
+    EXPECT_TRUE(containsBytes(rendition.getValue().value().bytes, "Borrowed Animation Title"));
+}
+
+TEST(SoundRenditionService, PrefersTheWavsOwnTitleOverTheFallback) {
+    WavProvenance provenance;
+    provenance.title = "The Real Title";
+    const auto path = writeTempWav("creature-server-rendition-titled.wav", &provenance);
+
+    SoundRenditionService service;
+    bool consulted = false;
+    auto rendition = service.renderWav(path, SoundRenditionFormat::Mp3, [&consulted]() -> std::string {
+        consulted = true;
+        return "The Wrong Title";
+    });
+    std::filesystem::remove(path);
+
+    ASSERT_TRUE(rendition.isSuccess());
+    EXPECT_FALSE(consulted);
+    EXPECT_TRUE(containsBytes(rendition.getValue().value().bytes, "The Real Title"));
 }
 
 } // namespace
