@@ -11,9 +11,13 @@
 
 namespace creatures::audio {
 
-/// User comments to embed as ID3v2 TXXX (user-defined text) frames, as (key, value)
-/// pairs. Used to mirror dialog provenance (TITLE, SOURCE_SCRIPT_ID, DESCRIPTION) into a
-/// shared .mp3, the same way OggComments mirrors it into the Ogg's OpusTags (#47, #57).
+/// User comments to embed as ID3v2 frames, as (key, value) pairs using the
+/// Vorbis-comment vocabulary, the same way OggComments mirrors dialog provenance into the
+/// Ogg's OpusTags (#47, #57). Display keys map to the standard frames players read —
+/// TITLE→TIT2, ARTIST→TPE1, ALBUMARTIST→TPE2, ALBUM→TALB, GENRE→TCON, PUBLISHER→TPUB,
+/// COMPOSER→TCOM, ENCODER→TSSE, DESCRIPTION→COMM, LYRICS→USLT — and everything else
+/// (SOURCE_SCRIPT_ID, TRACK_LIST, MUSIC_*, …) becomes a TXXX frame. The encoder adds
+/// TSSE (encoder settings) and TLEN (exact duration) on its own (#148).
 using Id3Comments = std::vector<std::pair<std::string, std::string>>;
 
 /// Bitrate for the shareable MP3 rendition. 128 kbps CBR mono matches the Ogg endpoint's

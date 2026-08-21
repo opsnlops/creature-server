@@ -32,25 +32,75 @@ void appendSyncsafe32(std::vector<uint8_t> &out, uint32_t value) {
     out.push_back(static_cast<uint8_t>(value & 0x7f));
 }
 
-// A minimal ID3v2.4.0 tag carrying one TXXX (user-defined text) frame per comment, so a
-// shared .mp3 mirrors the dialog provenance the Ogg endpoint puts in OpusTags (#47, #57).
-// Each TXXX body is: encoding byte 0x03 (UTF-8), the key as the frame's "description",
-// a 0x00 terminator, then the value. v2.4 frame sizes are syncsafe.
-std::vector<uint8_t> buildId3v2Tag(const Id3Comments &comments) {
-    std::vector<uint8_t> frames;
-    for (const auto &[key, value] : comments) {
-        std::vector<uint8_t> body;
-        body.push_back(0x03); // UTF-8
-        body.insert(body.end(), key.begin(), key.end());
-        body.push_back(0x00); // description/value separator
-        body.insert(body.end(), value.begin(), value.end());
+// Comment keys use the Vorbis-comment vocabulary (shared with OggOpusWriter). The ones
+// players actually display get translated to the standard ID3v2.4 frames here — without
+// this, everything lands in TXXX and MP3 players show "Unknown Artist" (#148).
+const char *standardTextFrameId(const std::string &key) {
+    if (key == "TITLE")
+        return "TIT2";
+    if (key == "ARTIST")
+        return "TPE1";
+    if (key == "ALBUMARTIST")
+        return "TPE2"; // "band/orchestra" — players render it as Album Artist
+    if (key == "ALBUM")
+        return "TALB";
+    if (key == "GENRE")
+        return "TCON";
+    if (key == "PUBLISHER")
+        return "TPUB";
+    if (key == "COMPOSER")
+        return "TCOM";
+    if (key == "ENCODER")
+        return "TSSE"; // "software/hardware and settings used for encoding"
+    return nullptr;
+}
 
-        const std::string frameId = "TXXX";
-        frames.insert(frames.end(), frameId.begin(), frameId.end());
+// A minimal ID3v2.4.0 tag, so a shared .mp3 mirrors the dialog provenance the Ogg
+// endpoint puts in OpusTags (#47, #57). Keys with a standard frame mapping become that
+// text frame (encoding byte 0x03 = UTF-8, then the value), DESCRIPTION becomes a COMM
+// frame, and everything else becomes a TXXX (user-defined text) frame whose body is:
+// encoding byte, the key as the frame's "description", a 0x00 terminator, then the
+// value. v2.4 frame sizes are syncsafe. When @p lengthMs is nonzero a TLEN (length in
+// milliseconds) frame is appended, since we skip the Xing header players would otherwise
+// get an exact duration from.
+std::vector<uint8_t> buildId3v2Tag(const Id3Comments &comments, uint64_t lengthMs) {
+    std::vector<uint8_t> frames;
+    const auto appendFrame = [&frames](const char *frameId, const std::vector<uint8_t> &body) {
+        frames.insert(frames.end(), frameId, frameId + 4);
         appendSyncsafe32(frames, static_cast<uint32_t>(body.size()));
         frames.push_back(0x00); // frame flags
         frames.push_back(0x00);
         frames.insert(frames.end(), body.begin(), body.end());
+    };
+
+    for (const auto &[key, value] : comments) {
+        std::vector<uint8_t> body;
+        body.push_back(0x03); // UTF-8
+        if (const char *frameId = standardTextFrameId(key)) {
+            body.insert(body.end(), value.begin(), value.end());
+            appendFrame(frameId, body);
+        } else if (key == "DESCRIPTION" || key == "LYRICS") {
+            // COMM (comment) and USLT (unsynchronized lyrics) share a body layout:
+            // encoding, 3-byte language, empty content descriptor (terminated), text.
+            const std::string language = "eng";
+            body.insert(body.end(), language.begin(), language.end());
+            body.push_back(0x00);
+            body.insert(body.end(), value.begin(), value.end());
+            appendFrame(key == "LYRICS" ? "USLT" : "COMM", body);
+        } else {
+            body.insert(body.end(), key.begin(), key.end());
+            body.push_back(0x00); // description/value separator
+            body.insert(body.end(), value.begin(), value.end());
+            appendFrame("TXXX", body);
+        }
+    }
+
+    if (lengthMs > 0) {
+        std::vector<uint8_t> body;
+        body.push_back(0x03); // UTF-8
+        const auto text = std::to_string(lengthMs);
+        body.insert(body.end(), text.begin(), text.end());
+        appendFrame("TLEN", body);
     }
 
     std::vector<uint8_t> tag;
@@ -113,7 +163,13 @@ Result<std::vector<uint8_t>> encodeMonoToMp3(const std::vector<int16_t> &samples
 
     std::vector<uint8_t> out;
     if (!comments.empty()) {
-        const auto tag = buildId3v2Tag(comments);
+        // Mark it up as much as possible (#148): alongside the caller's tags, record the
+        // encoder settings (TSSE) and the exact duration (TLEN — both deterministic).
+        Id3Comments augmented = comments;
+        augmented.emplace_back("ENCODER",
+                               fmt::format("LAME {} ({} kbps CBR mono)", get_lame_version(), bitrate / 1000));
+        const uint64_t lengthMs = samples.size() * 1000ull / static_cast<uint64_t>(kShareableSampleRate);
+        const auto tag = buildId3v2Tag(augmented, lengthMs);
         out.insert(out.end(), tag.begin(), tag.end());
     }
 
