@@ -18,6 +18,7 @@
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/dto/StreamingAdHocDto.h"
 #include "server/ws/service/SoundRenditionService.h"
+#include "util/Slugify.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
 
@@ -345,16 +346,13 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         return creatures::isUuidShape(std::string_view(value->c_str(), value->size()));
     }
 
-    /// A Content-Disposition-safe take on the exchange title: quotes, control
-    /// characters, and path separators become hyphens.
-    static std::string safeAttachmentName(const std::string &title, const std::string &fallback) {
-        std::string name = title.empty() ? fallback : title;
-        for (auto &c : name) {
-            if (c == '"' || c == '\\' || c == '/' || static_cast<unsigned char>(c) < 0x20) {
-                c = '-';
-            }
-        }
-        return name;
+    /// Download filename in the #126 dialog-export shape: slugified title plus
+    /// a short session-id tail, so identically-worded exchanges don't collide.
+    /// e.g. "beaky-somebody-is-at-the-door-e3af1c4d.mp3"
+    static std::string attachmentBasename(const creatures::AdHocExchange &exchange) {
+        const auto titleSlug =
+            util::slugify(exchange.title.empty() ? exchange.creature_name : exchange.title, 48, "exchange");
+        return fmt::format("{}-{}", titleSlug, exchange.session_id.substr(0, 8));
     }
 
     template <typename SpanT>
@@ -426,7 +424,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
             bodyBytes = static_cast<int64_t>(rendition.bytes.size());
         }
 
-        const auto attachmentName = safeAttachmentName(exchange.title, exchange.session_id) + extension;
+        const auto attachmentName = attachmentBasename(exchange) + extension;
         response->putHeader("Content-Type", mimeType.c_str());
         response->putHeader("Content-Disposition", "attachment; filename=\"" + attachmentName + "\"");
         // A UUID-addressed exchange can never change once finalized, and the
