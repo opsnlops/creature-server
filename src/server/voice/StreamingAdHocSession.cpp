@@ -509,9 +509,12 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish() {
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
             .count();
     // Name the exchange after what it IS (#126), like dialog renders: creature
-    // plus the words. No timestamp — created_at rides in the record, and the
-    // download filename gets a session-id tail for uniqueness.
-    exchange.title = fmt::format("{} - {}", creatureName, util::slugify(fullText_, 48, "exchange"));
+    // plus the words — with their natural punctuation, because this title
+    // lands in the ID3 tags (#157). The download filename slugifies it, so
+    // the dashes still show up exactly where they belong. No timestamp —
+    // created_at rides in the record, and the filename gets a session-id
+    // tail for uniqueness.
+    exchange.title = fmt::format("{} - {}", creatureName, util::titleExcerpt(fullText_, 60, "exchange"));
 
     if (parts.empty()) {
         exchange.status = EXCHANGE_STATUS_FAILED;

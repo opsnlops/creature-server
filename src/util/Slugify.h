@@ -19,6 +19,13 @@ namespace creatures::util {
 [[nodiscard]] std::string exportBasename(const std::string &title, const std::string &id, std::size_t maxLength = 48,
                                          const std::string &fallback = "dialog", std::size_t idTail = 8);
 
+/// Natural-language excerpt for display titles (#157): whitespace collapsed,
+/// truncated at a word boundary with an ellipsis when the text runs long. The
+/// slug is only for filenames — a display title keeps its punctuation
+/// ("Oh, the front door is open!", not "oh-the-front-door-is-open").
+[[nodiscard]] std::string titleExcerpt(const std::string &text, std::size_t maxLength = 60,
+                                       const std::string &fallback = "untitled");
+
 /// The accepted-BGM naming triple: "{title slug}--bgm--{prompt slug}--{id12}".
 /// One definition keeps the permanent WAV (DialogMusicService) and the MP3
 /// download name (DialogMusicController) describing the same identity.
