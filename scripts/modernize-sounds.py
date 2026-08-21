@@ -965,10 +965,6 @@ def build_plan(server, sounds_dir, only, gate=False, backup_dir=DEFAULT_BACKUP_D
     lane_of = {c["id"]: c.get("audio_channel") for c in creature_items}
     name_of = {c["id"]: c.get("name", "?") for c in creature_items}
     mouth_of = {c["id"]: c.get("mouth_slot", 4) for c in creature_items}
-    # Every creature that owns a lane, so the TRACK_LIST names the whole rig.
-    lane_names = {c.get("audio_channel"): c.get("name", "")
-                  for c in creature_items if c.get("audio_channel")}
-    lane_names[BGM_LANE] = "BGM"
 
     animations = get_json(f"{server}/api/v1/animation")
 
@@ -1000,7 +996,7 @@ def build_plan(server, sounds_dir, only, gate=False, backup_dir=DEFAULT_BACKUP_D
             "dest_path": dest_path,
             "in_place": dest_name == source_name,
             "multitrack_audio": item.get("multitrack_audio", False),
-            "lane_names": lane_names,
+            "lane_names": {},  # filled from this animation's cast below (#155)
             "creature_names": [],
         }
 
@@ -1018,6 +1014,14 @@ def build_plan(server, sounds_dir, only, gate=False, backup_dir=DEFAULT_BACKUP_D
             creature_ids = [t.get("creature_id") for t in (detail.get("tracks") or [])]
             entry["creature_names"] = [name_of.get(cid, cid) for cid in creature_ids]
             entry["creature_ids"] = creature_ids
+            # Name only the lanes this animation's cast occupies -- naming the
+            # whole rig stamped silent lanes with creature names, which read as
+            # performers downstream (#153/#155). The TRACK_LIST stays complete
+            # (17 entries); silent lanes just have empty names. Lane 17 is
+            # always labeled BGM by convention (not a music-presence signal).
+            entry["lane_names"] = {lane_of[cid]: name_of.get(cid, "")
+                                   for cid in creature_ids if lane_of.get(cid)}
+            entry["lane_names"][BGM_LANE] = "BGM"
             # Speaker gating routes each creature to its own lane, so it isn't
             # limited to the two bird lanes the way an unseparable mix is.
             pool = {lane_of.get(cid) for cid in creature_ids} - {None}
@@ -1396,10 +1400,16 @@ def build_standalone_plan(sounds_dir, backup_dir, only, lanes_override=None):
 
 
 def apply_standalone(job, sounds_dir, backup_dir, lane_names):
+    # A standalone sound has no animation to name a cast, but we know exactly
+    # which lanes the conversion put audio on — name only those (#155), plus
+    # the conventional BGM label on lane 17.
+    stamp_names = {lane: lane_names.get(lane, "") for lane in job["lanes"]}
+    stamp_names[BGM_LANE] = "BGM"
+
     if job.get("metadata_only"):
         if job["needs_stamp"]:
             document = build_ixml(
-                title=job["stem"], take="", file_uid="", lane_names=lane_names,
+                title=job["stem"], take="", file_uid="", lane_names=stamp_names,
                 transcript=job["transcript"], mouth_cues=job["cues"],
                 lanes=job["lanes"],
             )
@@ -1436,7 +1446,7 @@ def apply_standalone(job, sounds_dir, backup_dir, lane_names):
 
     if (job["cues"] or job["transcript"]) and not has_ixml(job["dest_path"]):
         document = build_ixml(
-            title=job["stem"], take="", file_uid="", lane_names=lane_names,
+            title=job["stem"], take="", file_uid="", lane_names=stamp_names,
             transcript=job["transcript"], mouth_cues=job["cues"], lanes=job["lanes"],
         )
         size = append_ixml_chunk(job["dest_path"], document)
@@ -1519,7 +1529,7 @@ def run_standalone(args, lane_names, lanes_override=None):
         sys.exit(1)
 
 
-def run_restamp(args, lane_names, name_to_lane):
+def run_restamp(args, lane_of, name_of, name_to_lane):
     """Rebuild every animation sound's iXML from the best sidecars available.
 
     Audio is untouched -- this only swaps the metadata chunk, and only when the
@@ -1567,11 +1577,20 @@ def run_restamp(args, lane_names, name_to_lane):
         if texts:
             transcript = "\n".join(texts)
 
+        # Name only this animation's cast (#155): the whole-rig map stamped
+        # silent lanes with creature names, which read as performers
+        # downstream. Lane 17 stays "BGM" by convention.
+        detail = get_json(f"{args.server}/api/v1/animation/{item['animation_id']}")
+        creature_ids = [t.get("creature_id") for t in (detail.get("tracks") or [])]
+        cast_lane_names = {lane_of[cid]: name_of.get(cid, "")
+                           for cid in creature_ids if lane_of.get(cid)}
+        cast_lane_names[BGM_LANE] = "BGM"
+
         lanes = sorted(lipsync_by_lane) or list(ALLOWED_LANES)
         document = build_ixml(
             title=item.get("title", ""),
             take=item["animation_id"], file_uid=item["animation_id"],
-            lane_names=lane_names, transcript=transcript,
+            lane_names=cast_lane_names, transcript=transcript,
             mouth_cues=[] if lipsync_by_lane else cues,
             lanes=lanes,
             note=GATED_NOTE if is_speaker_gated(path) else None,
@@ -1661,13 +1680,18 @@ def main():
     if args.standalone or args.restamp:
         creatures = get_json(f"{args.server}/api/v1/creature")
         items = creatures["items"] if isinstance(creatures, dict) else creatures
+        # Rig-wide lane->name map: standalone stamping restricts it to the
+        # lanes a file actually uses; restamp builds a per-animation cast
+        # instead (#155).
         lane_names = {c.get("audio_channel"): c.get("name", "")
                       for c in items if c.get("audio_channel")}
         lane_names[BGM_LANE] = "BGM"
         if args.restamp:
+            lane_of = {c["id"]: c.get("audio_channel") for c in items}
+            name_of = {c["id"]: c.get("name", "?") for c in items}
             name_to_lane = {c.get("name", "").lower(): c.get("audio_channel")
                             for c in items if c.get("audio_channel")}
-            run_restamp(args, lane_names, name_to_lane)
+            run_restamp(args, lane_of, name_of, name_to_lane)
             return
         run_standalone(args, lane_names, lanes_override)
         return
