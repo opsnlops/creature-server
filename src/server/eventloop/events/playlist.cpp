@@ -4,7 +4,6 @@
 #include <random>
 #include <stdexcept>
 #include <unordered_set>
-#include <vector>
 
 #include "spdlog/spdlog.h"
 
@@ -80,7 +79,7 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
     auto playlist = playlistResult.getValue().value();
     debug("playlist found. name: {}", playlist.name);
 
-    auto chosenResult = chooseWeightedAnimation(playlist);
+    auto chosenResult = chooseWeightedAnimation(playlist, span);
     if (!chosenResult.isSuccess()) {
         return Result<framenum_t>{chosenResult.getError().value()};
     }
@@ -249,30 +248,65 @@ Result<Playlist> PlaylistEvent::fetchPlaylist(const PlaylistStatus &playlistStat
     return Result<Playlist>{playlist};
 }
 
-Result<std::string> PlaylistEvent::chooseWeightedAnimation(const Playlist &playlist) {
-    std::vector<std::string> choices;
-    for (const auto &playlistItem : playlist.items) {
-        for (uint32_t i = 0; i < playlistItem.weight; i++) {
-            choices.push_back(playlistItem.animation_id);
-        }
-        debug("added an animation to the list. {} now possible", choices.size());
+Result<std::string> PlaylistEvent::chooseWeightedAnimation(const Playlist &playlist,
+                                                           std::shared_ptr<OperationSpan> span) {
+    if (span) {
+        span->setAttribute("playlist.id", playlist.id);
+        span->setAttribute("playlist.items.count", static_cast<int64_t>(playlist.items.size()));
     }
 
-    if (choices.empty()) {
+    const auto recordSelectionError = [&span](const std::string &message, const char *type) {
+        if (!span) {
+            return;
+        }
+        span->setError(message);
+        span->setAttribute("error.type", type);
+        span->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+        span->setAttribute("error.message", message);
+    };
+
+    auto totalWeightResult = playlistTotalWeight(playlist);
+    if (!totalWeightResult.isSuccess() || totalWeightResult.getValue().value() == 0) {
         std::string errorMessage =
             fmt::format("Playlist {} has no animations to schedule. Halting playlist playback.", playlist.id);
+        const char *errorType = "EmptyPlaylist";
+        if (!totalWeightResult.isSuccess()) {
+            errorMessage = fmt::format("Playlist {} has invalid weights: {}. Halting playlist playback.", playlist.id,
+                                       totalWeightResult.getError()->getMessage());
+            errorType = "InvalidPlaylistWeights";
+        }
         warn(errorMessage);
         sessionManager->clearPlaylist(activeUniverse);
         sendEmptyPlaylistUpdate(activeUniverse);
+        if (span) {
+            if (totalWeightResult.isSuccess()) {
+                span->setAttribute("playlist.weight.total", static_cast<int64_t>(0));
+            }
+        }
+        recordSelectionError(errorMessage, errorType);
         return Result<std::string>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<size_t> dis(0, choices.size() - 1);
-    size_t theChosenOne = dis(gen);
+    const auto totalWeight = totalWeightResult.getValue().value();
+    if (span) {
+        span->setAttribute("playlist.weight.total", static_cast<int64_t>(totalWeight));
+    }
 
-    return Result<std::string>{choices[theChosenOne]};
+    std::random_device rd;
+    std::mt19937_64 generator(rd());
+    std::uniform_int_distribution<uint64_t> distribution(0, totalWeight - 1);
+    auto selectionResult = playlistAnimationAtWeight(playlist, distribution(generator));
+    if (!selectionResult.isSuccess()) {
+        const auto errorMessage =
+            fmt::format("Playlist {} selection failed: {}", playlist.id, selectionResult.getError()->getMessage());
+        error(errorMessage);
+        sessionManager->clearPlaylist(activeUniverse);
+        sendEmptyPlaylistUpdate(activeUniverse);
+        recordSelectionError(errorMessage, "PlaylistSelectionInvariant");
+        return Result<std::string>{ServerError(ServerError::InternalError, errorMessage)};
+    }
+
+    return selectionResult;
 }
 
 Result<Animation> PlaylistEvent::fetchAnimation(const std::string &animationId, std::shared_ptr<OperationSpan> span) {

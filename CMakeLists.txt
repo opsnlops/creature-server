@@ -542,6 +542,8 @@ add_executable(creature-server
         src/model/Playlist.cpp
         src/model/PlaylistItem.h
         src/model/PlaylistItem.cpp
+        src/server/ws/dto/PlaylistItemDto.h
+        src/server/ws/dto/PlaylistItemDto.cpp
         src/model/PlaylistStatus.h
         src/model/PlaylistStatus.cpp
         src/model/StreamFrame.cpp
@@ -739,6 +741,8 @@ if (EXISTS ${CMAKE_SOURCE_DIR}/tests/server/TestGlobals.cpp)
 add_executable(creature-server-test
         tests/model/Creature_test.cpp
         tests/model/Input_test.cpp
+        tests/model/PlaylistItem_test.cpp
+        tests/model/Playlist_test.cpp
         tests/model/DmxFixture_test.cpp
         tests/model/LogItem_test.cpp
         tests/model/Animation_test.cpp
@@ -837,6 +841,7 @@ add_executable(creature-server-test
         src/model/AnimationMetadata.cpp
         src/model/Playlist.cpp
         src/model/PlaylistItem.cpp
+        src/server/ws/dto/PlaylistItemDto.cpp
         src/model/SortBy.h
         src/model/Track.cpp
         src/model/Creature.cpp

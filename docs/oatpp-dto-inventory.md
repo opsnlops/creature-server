@@ -54,7 +54,7 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/LogItem.h` | `LogItemDto` | Outbound WebSocket log payload | No neutral codec |
 | `src/model/Notice.h` | `NoticeDto` | Inbound and outbound WebSocket notice payload | No neutral codec |
 | `src/model/Playlist.h` | `PlaylistDto` | REST list/detail/upsert response | Database-owned `playlistFromJson`; no neutral serializer |
-| `src/model/PlaylistItem.h` | `PlaylistItemDto` | Nested playlist input/response | Database-owned `playlistItemFromJson`; no neutral serializer |
+| `src/server/ws/dto/PlaylistItemDto.h` (moved from `src/model/PlaylistItem.h`) | `PlaylistItemDto` | Temporary oat++ adapter for nested playlist input/response | Strict model-owned `playlistItemToJson` / `playlistItemFromJson` |
 | `src/model/PlaylistStatus.h` | `PlaylistStatusDto` | REST and outbound WebSocket status payload | No neutral codec |
 | `src/model/Sound.h` | `DialogTurnDto`, `SoundTrackDto`, `MouthCueDto`, `TrackMouthCuesDto`, `WordTimingDto`, `TrackWordsDto`, `SoundDto` | Sound lists and heavy metadata response; dialog-generation support | No complete neutral codec |
 | `src/model/Stage.h` | `StageDto` | Swagger documentation only; runtime serialization bypasses it | `stageToJson`; database-owned `stageFromJson` |

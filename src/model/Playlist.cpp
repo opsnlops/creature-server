@@ -1,4 +1,5 @@
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,34 @@ namespace creatures {
 std::vector<std::string> playlist_required_fields = {"id", "number_of_items", "items"};
 
 std::vector<std::string> playlistitems_required_fields = {"animation_id", "weight"};
+
+Result<uint64_t> playlistTotalWeight(const Playlist &playlist) {
+    uint64_t totalWeight = 0;
+    for (const auto &item : playlist.items) {
+        if (item.weight > std::numeric_limits<uint64_t>::max() - totalWeight) {
+            return Result<uint64_t>{
+                ServerError(ServerError::InvalidData, "Playlist total weight exceeds the supported range")};
+        }
+        totalWeight += item.weight;
+    }
+    return Result<uint64_t>{totalWeight};
+}
+
+Result<animationId_t> playlistAnimationAtWeight(const Playlist &playlist, uint64_t selectedWeight) {
+    uint64_t cumulativeWeight = 0;
+    for (const auto &item : playlist.items) {
+        if (item.weight > std::numeric_limits<uint64_t>::max() - cumulativeWeight) {
+            return Result<animationId_t>{
+                ServerError(ServerError::InvalidData, "Playlist total weight exceeds the supported range")};
+        }
+        cumulativeWeight += item.weight;
+        if (selectedWeight < cumulativeWeight) {
+            return Result<animationId_t>{item.animation_id};
+        }
+    }
+    return Result<animationId_t>{
+        ServerError(ServerError::InvalidData, "Selected playlist weight is outside the playlist total")};
+}
 
 oatpp::Object<PlaylistDto> convertToDto(const Playlist &playlist) {
     auto playlistDto = PlaylistDto::createShared();
@@ -37,7 +66,7 @@ Playlist convertFromDto(const std::shared_ptr<PlaylistDto> &playlistDto) {
     // Ensure the list is initialized before iterating
     playlist.items = std::vector<PlaylistItem>();
     for (const auto &listItem : *playlistDto->items.getPtr()) {
-        playlist.items.push_back(convertFromDto(listItem.getPtr()));
+        playlist.items.push_back(convertFromDto(listItem));
     }
 
     return playlist;

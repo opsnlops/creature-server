@@ -1,34 +1,44 @@
 
 
-#include <string>
-
-#include <oatpp/core/Types.hpp>
-#include <spdlog/spdlog.h>
-
 #include "model/PlaylistItem.h"
+
+#include "model/JsonCodec.h"
+#include "util/helpers.h"
 
 namespace creatures {
 
-std::vector<std::string> playlistitem_required_fields = {"animation_id", "weight"};
+namespace {
 
-// Convert a DTO to the real thing
-PlaylistItem convertFromDto(const std::shared_ptr<PlaylistItemDto> &playlistItemDto) {
-
-    trace("Converting PlaylistItemDto to PlaylistItem");
-
-    PlaylistItem playlistItem;
-    playlistItem.animation_id = playlistItemDto->animation_id;
-    playlistItem.weight = playlistItemDto->weight;
-    trace("animation_id: {}, weight: {}", playlistItem.animation_id, playlistItem.weight);
-
-    return playlistItem;
+template <typename T> Result<PlaylistItem> forwardError(const Result<T> &result) {
+    return Result<PlaylistItem>{result.getError().value()};
 }
 
-oatpp::Object<PlaylistItemDto> convertToDto(const PlaylistItem &playlistItem) {
-    auto playlistItemDto = PlaylistItemDto::createShared();
-    playlistItemDto->animation_id = playlistItem.animation_id;
-    playlistItemDto->weight = playlistItem.weight;
-    return playlistItemDto;
+} // namespace
+
+nlohmann::json playlistItemToJson(const PlaylistItem &playlistItem) {
+    return {{"animation_id", playlistItem.animation_id}, {"weight", playlistItem.weight}};
+}
+
+Result<PlaylistItem> playlistItemFromJson(const nlohmann::json &json, std::string_view path) {
+    auto fieldsResult = json_codec::rejectUnknownFields(json, path, {"animation_id", "weight"});
+    if (!fieldsResult.isSuccess())
+        return forwardError(fieldsResult);
+
+    auto animationIdResult = json_codec::requiredString(json, path, "animation_id", 36);
+    if (!animationIdResult.isSuccess())
+        return forwardError(animationIdResult);
+    if (!isUuidShape(animationIdResult.getValue().value())) {
+        return json_codec::invalid<PlaylistItem>(fmt::format("{}.animation_id must be a UUID", path));
+    }
+
+    auto weightResult = json_codec::requiredUnsigned<uint32_t>(json, path, "weight", MAX_PLAYLIST_ITEM_WEIGHT);
+    if (!weightResult.isSuccess())
+        return forwardError(weightResult);
+    if (weightResult.getValue().value() == 0) {
+        return json_codec::invalid<PlaylistItem>(fmt::format("{}.weight must be greater than zero", path));
+    }
+
+    return Result<PlaylistItem>{PlaylistItem{animationIdResult.getValue().value(), weightResult.getValue().value()}};
 }
 
 } // namespace creatures

@@ -228,7 +228,7 @@ Migrate leaf models before aggregate models.
 - [x] `Input`
 - [x] `Track`
 - [x] `AnimationMetadata` and render-choice types
-- [ ] `PlaylistItem`
+- [x] `PlaylistItem`
 - [ ] `Notice`
 - [ ] `LogItem` and log-level serialization
 - [ ] `CacheInvalidation`
@@ -254,6 +254,14 @@ body limit and input-count limit, and validate aggregate constraints that no
 single input can decide: occupied slot range, duplicate names, and overlapping
 slot ranges. Storage-width maxima in the leaf codec are not a substitute for
 those Creature-level physical constraints.
+
+The `PlaylistItem` checkpoint is likewise structural until the Playlist
+aggregate adopts it. Its canonical contract requires an animation UUID and a
+weight from 1 through 999. The Playlist checkpoint must cap item count, reject
+duplicate animation IDs, derive or verify `number_of_items`, bound total
+weight, and activate the leaf parser. Playback already uses checked cumulative
+weighted selection rather than allocating one string per unit of weight. The
+matching Swift validation cleanup is tracked in `creature-console#84`.
 
 For every model:
 

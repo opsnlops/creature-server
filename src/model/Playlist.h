@@ -10,6 +10,7 @@
 #include "server/namespace-stuffs.h"
 
 #include "model/PlaylistItem.h"
+#include "server/ws/dto/PlaylistItemDto.h"
 
 namespace creatures {
 
@@ -19,6 +20,9 @@ struct Playlist {
     std::vector<PlaylistItem> items;
     uint32_t number_of_items;
 };
+
+Result<uint64_t> playlistTotalWeight(const Playlist &playlist);
+Result<animationId_t> playlistAnimationAtWeight(const Playlist &playlist, uint64_t selectedWeight);
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
