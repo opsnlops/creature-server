@@ -4,11 +4,15 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "Input.h"
 
 #include "server/namespace-stuffs.h"
+#include "util/Result.h"
 
 /**
  * Note to myself for later!
@@ -158,6 +162,23 @@ struct Creature {
      */
     struct RuntimeState {};
 };
+
+inline constexpr std::size_t MAX_CREATURE_REQUEST_BODY_BYTES = 1024ULL * 1024ULL;
+inline constexpr std::size_t MAX_CREATURE_NAME_BYTES = 128;
+inline constexpr std::size_t MAX_CREATURE_INPUTS = 64;
+inline constexpr std::size_t MAX_CREATURE_ANIMATION_IDS_PER_LIST = 256;
+inline constexpr std::size_t MAX_CREATURE_INPUT_SLOT_END = 512;
+
+/// Canonical framework-neutral configuration representation. Runtime state is
+/// intentionally absent: the controller configuration is the source of truth,
+/// while runtime state belongs to the server process.
+nlohmann::json creatureToJson(const Creature &creature);
+
+/// Parse and validate the modeled portion of a controller-owned config.
+/// Unknown top-level fields are deliberately tolerated so newer controller
+/// firmware can preserve hardware-specific settings that this server does not
+/// yet model. Nested modeled objects are strict.
+Result<Creature> creatureFromJson(const nlohmann::json &json, std::string_view path = "creature");
 
 /**
  * Slot of the input with the given name, or nullopt if this creature has no

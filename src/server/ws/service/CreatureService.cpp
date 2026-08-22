@@ -542,7 +542,7 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
          * We have to do this twice because the database stores whatever the client gives us. This means
          * that we need to pass in the raw JSON, but we also need to validate it here.
          */
-        auto jsonResult = JsonParser::parseJsonString(jsonCreature, "creature upsert validation");
+        auto jsonResult = JsonParser::parseApiJsonString(jsonCreature, "creature upsert validation", validationSpan);
         if (!jsonResult.isSuccess()) {
             auto parseError = jsonResult.getError().value();
             errorMessage = parseError.getMessage();

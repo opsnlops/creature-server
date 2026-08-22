@@ -64,7 +64,7 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
     try {
         auto parseJsonSpan =
             creatures::observability->createChildOperationSpan("upsertCreature.parse-json", upsertSpan);
-        auto jsonResult = JsonParser::parseJsonString(creatureJson, "creature upsert", parseJsonSpan);
+        auto jsonResult = JsonParser::parseApiJsonString(creatureJson, "creature upsert", parseJsonSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
             recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());

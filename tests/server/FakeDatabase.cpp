@@ -53,7 +53,7 @@ Result<nlohmann::json> Database::getAnimationJson(const animationId_t & /*animat
 
 Result<creatures::Animation> Database::getAnimation(const animationId_t &animationId,
                                                     const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
-    if (animationId == "anim-good") {
+    if (animationId == "22222222-2222-4222-8222-222222222222") {
         creatures::Animation animation;
         animation.id = animationId;
         animation.metadata.animation_id = animationId;
@@ -64,12 +64,12 @@ Result<creatures::Animation> Database::getAnimation(const animationId_t &animati
         creatures::Track track;
         track.id = "track-good";
         track.animation_id = animationId;
-        track.creature_id = "creature-123";
+        track.creature_id = "4754fc0e-1706-11ef-931d-bbb95a696e2e";
         animation.tracks.push_back(track);
         return Result<creatures::Animation>{animation};
     }
 
-    if (animationId == "anim-mismatch") {
+    if (animationId == "11111111-1111-4111-8111-111111111111") {
         creatures::Animation animation;
         animation.id = animationId;
         animation.metadata.animation_id = animationId;
