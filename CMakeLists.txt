@@ -744,6 +744,9 @@ add_executable(creature-server-test
         tests/model/AdHocExchange_test.cpp
         src/model/AdHocExchange.cpp
         tests/runtime/Activity_test.cpp
+        tests/server/animation/SessionManager_ownership_test.cpp
+        src/server/animation/SessionManager.cpp
+        src/server/animation/PlaybackSession.cpp
         tests/fixture/FixturePatternRunner_test.cpp
         tests/fixture/FixturePatternRunner_setLive_test.cpp
         tests/fixture/FixtureBindingDispatcher_test.cpp

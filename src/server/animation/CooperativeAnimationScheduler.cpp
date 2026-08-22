@@ -108,6 +108,8 @@ void unwindAdoptedAudioSession(const std::shared_ptr<PlaybackSession> &session, 
         span->setAttribute("session.abort.removed", abortResult.sessionRemoved);
         span->setAttribute("animation.queue.dropped_count", static_cast<int64_t>(abortResult.queuedAnimationsDropped));
         span->setAttribute("playlist.cleared", abortResult.playlistCleared);
+        span->setAttribute("playlist.resumed_after_failed_interrupt", abortResult.playlistResumed);
+        span->setAttribute("playlist.stopped_after_failed_interrupt", abortResult.playlistStopped);
     }
 
     // A newer adoption owns the universe and already scheduled this session's
@@ -167,6 +169,36 @@ void unwindAdoptedAudioSession(const std::shared_ptr<PlaybackSession> &session, 
             emptyStatus.universe = universe;
             emptyStatus.playing = false;
             broadcastPlaylistStatusToAllClients(emptyStatus);
+        } else if (abortResult.playlistResumed || abortResult.playlistStopped) {
+            // The failed session was the interrupter; abortLoadingSession already
+            // applied its stored decision (Active or Stopped) — without this the
+            // playlist stayed Interrupted forever, because PlaylistEvents stop
+            // rescheduling while Interrupted and no runner ever fires for a
+            // session that never loaded (issue #100).
+            info("Interrupted playlist on universe {} {} after its interrupting session failed to load", universe,
+                 abortResult.playlistResumed ? "resumes" : "stays stopped (resume was declined)");
+            std::optional<PlaylistStatus> snapshot;
+            if (capturedSessionManager) {
+                snapshot = capturedSessionManager->getPlaylistStatus(universe);
+            }
+            if (snapshot) {
+                broadcastPlaylistStatusToAllClients(*snapshot);
+            }
+            if (abortResult.playlistResumed) {
+                // Same guard as the onFinish resume path: only reschedule a
+                // playlist whose snapshot actually names one.
+                if (snapshot && !snapshot->playlist.empty()) {
+                    if (eventLoop) {
+                        eventLoop->scheduleEvent(
+                            std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe));
+                    } else {
+                        warn("Interrupted playlist resume after failed interrupt skipped: event loop unavailable");
+                    }
+                } else {
+                    warn("Interrupted playlist state inconsistent - playlist snapshot missing for universe {}",
+                         universe);
+                }
+            }
         }
     } catch (const std::exception &ex) {
         error("Audio loader teardown could not halt playlist on universe {}: {}", universe, ex.what());
@@ -213,7 +245,7 @@ struct AsyncAudioLoadContext {
 Result<std::shared_ptr<PlaybackSession>>
 CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const Animation &animation,
                                                  universe_t universe, creatures::runtime::ActivityReason reason,
-                                                 bool cancelEntireUniverse) {
+                                                 bool cancelEntireUniverse, const std::string &chainId) {
     // Create observability span
     auto scheduleSpan =
         observability ? observability->createOperationSpan("CooperativeAnimationScheduler.scheduleAnimation") : nullptr;
@@ -346,6 +378,9 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
     // the valid session it intended to replace before returning Conflict.
     auto session = std::make_shared<PlaybackSession>(animation, universe, startingFrame, scheduleSpan);
     session->setActivityReason(reason);
+    // Chain ownership must be set before adoption publishes the session — the
+    // SessionManager reads it under its mutex for queue/cleanup scoping (issue #100).
+    session->setChainId(chainId);
     if (scheduleSpan) {
         scheduleSpan->setAttribute("session.id", session->getSessionId());
     }
@@ -885,9 +920,11 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
         // Check if this session was cancelled vs finished naturally
         bool wasCancelled = false;
         std::string sessionId;
+        std::string chainId;
         if (auto session = weakSession.lock()) {
             wasCancelled = session->isCancelled();
             sessionId = session->getSessionId();
+            chainId = session->getChainId();
         }
 
         if (!sessionManager) {
@@ -919,19 +956,30 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
             sessionManager->clearSession(universe, sessionId);
         }
 
-        // Check animation queue before idle/playlist logic.
-        // Streaming ad-hoc speech queues sentence animations here for seamless chaining.
-        auto nextQueued = sessionManager->popQueuedAnimation(universe);
+        // Check animation queue before idle/playlist logic. Streaming ad-hoc speech
+        // queues sentence animations here for seamless chaining. Pops are scoped to
+        // this session's chain (issue #100) — a bystander session finishing on the
+        // universe can't start another chain's sentence.
+        std::optional<Animation> nextQueued;
+        if (!chainId.empty()) {
+            nextQueued = sessionManager->popQueuedAnimation(universe, chainId);
+        }
         if (nextQueued) {
             info("Animation queue: scheduling next animation '{}' on universe {}", nextQueued->metadata.title,
                  universe);
 
             // scheduleAnimation adopts (registers) the session itself — see issue #62.
+            // The next hop inherits the chain id so it can drain (or, on failure,
+            // drop) the rest of its own chain (issue #100).
             auto nextResult = CooperativeAnimationScheduler::scheduleAnimation(
-                eventLoop->getNextFrameNumber(), *nextQueued, universe, creatures::runtime::ActivityReason::AdHoc);
+                eventLoop->getNextFrameNumber(), *nextQueued, universe, creatures::runtime::ActivityReason::AdHoc,
+                false, chainId);
 
             if (!nextResult.isSuccess()) {
                 warn("Animation queue: failed to schedule next: {}", nextResult.getError()->getMessage());
+                // The chain just died with no session left to drain or drop its
+                // remaining entries — orphans would block the queue (issue #100).
+                sessionManager->dropChainEntries(universe, chainId);
             }
 
             // Don't turn off status light — next animation starts immediately
