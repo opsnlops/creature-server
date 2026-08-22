@@ -225,6 +225,20 @@ class PlaybackSession {
     void setActivityGeneration(uint64_t generation) { activityGeneration_ = generation; }
 
     /**
+     * Chain owner id for chained playback (streaming ad-hoc speech).
+     *
+     * Every playback session belonging to one speech chain carries the chain's
+     * stable id (the StreamingAdHocSession's session id) — per-hop playback
+     * session ids can't own the shared animation queue because each sentence
+     * gets a new one. Set before the session is published (like the activity
+     * generation) and immutable afterwards; empty for non-chained sessions.
+     * SessionManager uses it to scope queue pops and cleanup to the owning
+     * chain (issue #100).
+     */
+    [[nodiscard]] const std::string &getChainId() const { return chainId_; }
+    void setChainId(std::string chainId) { chainId_ = std::move(chainId); }
+
+    /**
      * Get track states (for DMX emission)
      *
      * Only the playback runner (event loop thread) may use this — it mutates playback
@@ -256,6 +270,9 @@ class PlaybackSession {
     // Activity write generation — written once in registerSession (under the
     // SessionManager mutex, before the session is published), read-only after (issue #87).
     uint64_t activityGeneration_{0};
+
+    // Chain owner id — written once before publication, read-only after (issue #100).
+    std::string chainId_;
 
     // Per-track decoded frames and playback state
     std::vector<TrackState> trackStates_;
