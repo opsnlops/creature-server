@@ -15,6 +15,7 @@
 #include "spdlog/spdlog.h"
 #include "util/ObservabilityManager.h"
 #include "util/helpers.h"
+#include "util/uuidUtils.h"
 #include <algorithm>
 #include <unordered_set>
 
@@ -163,6 +164,12 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
                           cancelEntireUniverse ? "active" : "overlapping", universe);
                     cancelSessionLocked(existing);
                     cancelledSessions.push_back(existing);
+                    // A cancelled chain is dead — its onFinish early-returns
+                    // without popping, so drop its queued sentences now. Not
+                    // when the replacement continues the same chain (issue #100).
+                    if (!existing->getChainId().empty() && existing->getChainId() != session->getChainId()) {
+                        eraseChainEntriesLocked(it->second, existing->getChainId(), universe);
+                    }
                 } else {
                     survivors.push_back(existing);
                 }
@@ -177,6 +184,7 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
             // Only promote to Active when explicitly registering a playlist session
             if (isPlaylist) {
                 it->second.playlistState = PlaylistState::Active;
+                it->second.playlistOwnerSessionId = session->getSessionId();
             }
             debug("SessionManager: updated session on universe {} (playlist_state: {}, active_sessions: {})", universe,
                   static_cast<int>(it->second.playlistState), it->second.activeSessions.size());
@@ -185,6 +193,9 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
             UniverseState state;
             state.activeSessions.push_back(session);
             state.playlistState = isPlaylist ? PlaylistState::Active : PlaylistState::None;
+            if (isPlaylist) {
+                state.playlistOwnerSessionId = session->getSessionId();
+            }
             universeStates_[universe] = state;
             info("SessionManager: registered new session on universe {} (playlist: {})", universe, isPlaylist);
         }
@@ -203,10 +214,9 @@ void SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
     }
 }
 
-Result<std::shared_ptr<PlaybackSession>> SessionManager::interrupt(universe_t universe,
-                                                                   const Animation &interruptAnimation,
-                                                                   bool shouldResumePlaylist,
-                                                                   std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::shared_ptr<PlaybackSession>>
+SessionManager::interrupt(universe_t universe, const Animation &interruptAnimation, bool shouldResumePlaylist,
+                          std::shared_ptr<RequestSpan> parentSpan, const std::string &chainId) {
     auto span = observability ? observability->createOperationSpan("SessionManager.interrupt", parentSpan) : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
@@ -225,6 +235,18 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interrupt(universe_t un
     }
 
     bool interruptedPlaylist = false;
+    bool tookOverInterrupted = false;
+    bool previousShouldResume = false;
+    std::string previousOwnerToken;
+
+    // Every interrupt owns the resolution of the playlist it pauses. For chained
+    // speech the token is the stable chain id; otherwise mint a one-off token that
+    // is also stamped on the session (as its chain id) by scheduleAnimation. The
+    // token must exist BEFORE the schedule call: scheduleAnimation submits the
+    // async audio load, and a fast load failure runs abortLoadingSession
+    // immediately — stamping afterwards would let that abort miss the stored
+    // resume decision and strand the playlist Interrupted (issue #100 review).
+    const std::string ownerToken = chainId.empty() ? creatures::util::generateUUID() : chainId;
 
     // Mark the playlist interrupted *before* scheduling so PlaylistEvents pause and the
     // onFinish resume logic knows to restart it. The sessions themselves are NOT cancelled
@@ -247,31 +269,57 @@ Result<std::shared_ptr<PlaybackSession>> SessionManager::interrupt(universe_t un
             if (it->second.playlistState == PlaylistState::Active) {
                 it->second.playlistState = PlaylistState::Interrupted;
                 it->second.shouldResumePlaylist = shouldResumePlaylist;
+                it->second.interruptOwnerToken = ownerToken;
                 interruptedPlaylist = true;
                 info("SessionManager: marked playlist on universe {} as interrupted (resume: {})", universe,
                      shouldResumePlaylist);
+            } else if (it->second.playlistState == PlaylistState::Interrupted) {
+                // A second interrupt over a still-pending one takes over the whole
+                // resolution — token AND decision — matching the onFinish rule that
+                // the replacing interrupt handles resume when IT finishes. Taking
+                // only the token would resolve with the previous interrupt's
+                // decision (issue #100 review).
+                previousShouldResume = it->second.shouldResumePlaylist;
+                previousOwnerToken = it->second.interruptOwnerToken;
+                it->second.shouldResumePlaylist = shouldResumePlaylist;
+                it->second.interruptOwnerToken = ownerToken;
+                tookOverInterrupted = true;
+                info("SessionManager: interrupt takeover on universe {} (resume: {})", universe, shouldResumePlaylist);
             }
         }
     }
 
     if (span) {
         span->setAttribute("interrupted_playlist", interruptedPlaylist);
+        span->setAttribute("interrupt.took_over_pending", tookOverInterrupted);
     }
 
     // Schedule the interrupt animation. Adoption inside scheduleAnimation cancels every
     // active session on the universe and registers the new one in one critical section.
     auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(
         eventLoop->getNextFrameNumber(), interruptAnimation, universe, creatures::runtime::ActivityReason::AdHoc,
-        /*cancelEntireUniverse=*/true);
+        /*cancelEntireUniverse=*/true, ownerToken);
 
     if (!sessionResult.isSuccess()) {
-        // Nothing was cancelled — undo the playlist-interrupted mark so it keeps playing.
-        if (interruptedPlaylist) {
+        // Undo the ownership this interrupt claimed. Guarded on the state still
+        // being Interrupted with OUR token: a post-adoption commit failure has
+        // already run abortLoadingSession, which resolved the playlist per the
+        // stored decision — that resolution must stand.
+        {
             std::lock_guard<std::mutex> lock(mutex_);
             auto it = universeStates_.find(universe);
-            if (it != universeStates_.end() && it->second.playlistState == PlaylistState::Interrupted) {
-                it->second.playlistState = PlaylistState::Active;
-                it->second.shouldResumePlaylist = false;
+            if (it != universeStates_.end() && it->second.playlistState == PlaylistState::Interrupted &&
+                it->second.interruptOwnerToken == ownerToken) {
+                if (interruptedPlaylist) {
+                    // Nothing was cancelled — the playlist keeps playing.
+                    it->second.playlistState = PlaylistState::Active;
+                    it->second.shouldResumePlaylist = false;
+                    it->second.interruptOwnerToken.clear();
+                } else if (tookOverInterrupted) {
+                    // Hand the resolution back to the interrupt we tried to replace.
+                    it->second.shouldResumePlaylist = previousShouldResume;
+                    it->second.interruptOwnerToken = previousOwnerToken;
+                }
             }
         }
         error("SessionManager: failed to schedule interrupt animation: {}", sessionResult.getError()->getMessage());
@@ -415,6 +463,7 @@ bool SessionManager::resumePlaylist(universe_t universe) {
     info("SessionManager: resuming playlist on universe {}", universe);
     it->second.playlistState = PlaylistState::Active;
     it->second.shouldResumePlaylist = false;
+    it->second.interruptOwnerToken.clear();
     if (it->second.playlistStatus) {
         it->second.playlistStatus->playing = true;
     }
@@ -430,21 +479,27 @@ bool SessionManager::consumeInterruptResumeDecision(universe_t universe) {
         return false;
     }
 
-    if (it->second.shouldResumePlaylist) {
+    return applyInterruptResumeDecisionLocked(universe, it->second);
+}
+
+bool SessionManager::applyInterruptResumeDecisionLocked(universe_t universe, UniverseState &state) {
+    state.interruptOwnerToken.clear();
+
+    if (state.shouldResumePlaylist) {
         info("SessionManager: resuming playlist on universe {} after interrupt", universe);
-        it->second.playlistState = PlaylistState::Active;
-        it->second.shouldResumePlaylist = false;
-        if (it->second.playlistStatus) {
-            it->second.playlistStatus->playing = true;
+        state.playlistState = PlaylistState::Active;
+        state.shouldResumePlaylist = false;
+        if (state.playlistStatus) {
+            state.playlistStatus->playing = true;
         }
         return true;
     }
 
     info("SessionManager: interrupt on universe {} declined playlist resume; stopping playlist", universe);
-    it->second.playlistState = PlaylistState::Stopped;
-    if (it->second.playlistStatus) {
-        it->second.playlistStatus->playing = false;
-        it->second.playlistStatus->current_animation.clear();
+    state.playlistState = PlaylistState::Stopped;
+    if (state.playlistStatus) {
+        state.playlistStatus->playing = false;
+        state.playlistStatus->current_animation.clear();
     }
     return false;
 }
@@ -482,6 +537,7 @@ void SessionManager::cancelSessionsForCreatures(universe_t universe, const std::
                 debug("SessionManager: cancelling session on universe {} for creature-specific request", universe);
                 cancelSessionLocked(session);
                 cancelledSessions.push_back(session);
+                eraseChainEntriesLocked(it->second, session->getChainId(), universe);
             } else {
                 survivors.push_back(session);
             }
@@ -640,6 +696,7 @@ void SessionManager::stopPlaylist(universe_t universe) {
         info("SessionManager: stopping playlist on universe {}", universe);
         it->second.playlistState = PlaylistState::Stopped;
         it->second.shouldResumePlaylist = false;
+        it->second.interruptOwnerToken.clear();
         if (it->second.playlistStatus) {
             it->second.playlistStatus->playing = false;
             it->second.playlistStatus->current_animation.clear();
@@ -652,6 +709,7 @@ void SessionManager::stopPlaylist(universe_t universe) {
                 !session->isCancelled()) {
                 cancelSessionLocked(session);
                 cancelledSessions.push_back(session);
+                eraseChainEntriesLocked(it->second, session->getChainId(), universe);
             } else {
                 survivors.push_back(session);
             }
@@ -672,6 +730,10 @@ void SessionManager::startPlaylist(universe_t universe, const std::string &playl
     auto &state = universeStates_[universe];
     state.playlistState = PlaylistState::Active;
     state.shouldResumePlaylist = false;
+    state.interruptOwnerToken.clear();
+    // No session has been adopted for this playlist yet; the first
+    // registerSession(isPlaylist=true) stamps the owner (issue #100).
+    state.playlistOwnerSessionId.clear();
     state.playlistId = playlistId;
     if (!state.playlistStatus) {
         state.playlistStatus = PlaylistStatus{};
@@ -715,25 +777,45 @@ SessionManager::LoadingSessionAbortResult SessionManager::abortLoadingSession(un
         return result;
     }
 
-    const bool wasPlaylist = (*sessionIt)->getActivityReason() == creatures::runtime::ActivityReason::Playlist;
+    // Copy identity before erasing the iterator; the shared_ptr keeps the
+    // session alive but the vector slot doesn't.
+    const auto abortedSession = *sessionIt;
+    const bool wasPlaylist = abortedSession->getActivityReason() == creatures::runtime::ActivityReason::Playlist;
+    const std::string chainId = abortedSession->getChainId();
+    const std::string ownerToken = chainId.empty() ? sessionId : chainId;
     state.activeSessions.erase(sessionIt);
     result.sessionRemoved = true;
 
-    result.queuedAnimationsDropped = state.animationQueue.size();
-    if (!state.animationQueue.empty()) {
-        std::queue<Animation> empty;
-        state.animationQueue.swap(empty);
+    // Drop only the failed session's own chain entries. A bystander chain's
+    // queued sentences — or any other session's state — must survive this
+    // session's failure (issue #100).
+    if (!chainId.empty()) {
+        result.queuedAnimationsDropped =
+            std::erase_if(state.animationQueue, [&chainId](const UniverseState::QueuedAnimation &queued) {
+                return queued.chainId == chainId;
+            });
     }
 
-    if (wasPlaylist) {
-        state.playlistState = PlaylistState::None;
-        state.shouldResumePlaylist = false;
-        state.playlistId.clear();
-        state.playlistStatus.reset();
+    // A failed interrupter resolves the playlist it interrupted per its stored
+    // decision — otherwise the playlist would stay Interrupted forever, since
+    // the session that was supposed to consume the decision on finish never
+    // ran (issue #100). The owner token covers the whole chain, so a failing
+    // sentence-two still resolves what sentence-one's interrupt started.
+    if (state.playlistState == PlaylistState::Interrupted && !state.interruptOwnerToken.empty() &&
+        state.interruptOwnerToken == ownerToken) {
+        const bool resumed = applyInterruptResumeDecisionLocked(universe, state);
+        result.playlistResumed = resumed;
+        result.playlistStopped = !resumed;
+    }
+
+    // Clear playlist state only when the failed session is its exact current
+    // owner; another playlist session's state survives (issue #100).
+    if (wasPlaylist && state.playlistOwnerSessionId == sessionId) {
+        clearPlaylistStateLocked(state);
         result.playlistCleared = true;
     }
 
-    if (state.activeSessions.empty() && state.playlistState == PlaylistState::None) {
+    if (state.activeSessions.empty() && state.playlistState == PlaylistState::None && state.animationQueue.empty()) {
         universeStates_.erase(stateIt);
     }
 
@@ -792,36 +874,113 @@ void SessionManager::clearPlaylist(universe_t universe) {
     if (it == universeStates_.end()) {
         return;
     }
-    it->second.playlistState = PlaylistState::None;
-    it->second.shouldResumePlaylist = false;
-    it->second.playlistId.clear();
-    it->second.playlistStatus.reset();
+    clearPlaylistStateLocked(it->second);
 
-    if (it->second.activeSessions.empty()) {
+    // Queued chain entries are load-bearing state: a live speech chain may be
+    // between hops (its next session not yet registered) when a stop-playlist
+    // request lands, and erasing the whole universe state here would silently
+    // truncate it (issue #100).
+    if (it->second.activeSessions.empty() && it->second.animationQueue.empty()) {
         universeStates_.erase(it);
     }
 }
 
-// --- Animation Queue ---
-
-void SessionManager::queueAnimation(universe_t universe, const Animation &animation) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto &state = universeStates_[universe];
-    state.animationQueue.push(animation);
-    info("SessionManager: queued animation '{}' on universe {} (queue depth: {})", animation.metadata.title, universe,
-         state.animationQueue.size());
+void SessionManager::clearPlaylistStateLocked(UniverseState &state) {
+    state.playlistState = PlaylistState::None;
+    state.shouldResumePlaylist = false;
+    state.playlistId.clear();
+    state.playlistStatus.reset();
+    state.playlistOwnerSessionId.clear();
+    state.interruptOwnerToken.clear();
 }
 
-std::optional<Animation> SessionManager::popQueuedAnimation(universe_t universe) {
+std::size_t SessionManager::eraseChainEntriesLocked(UniverseState &state, const std::string &chainId,
+                                                    universe_t universe) {
+    if (chainId.empty() || state.animationQueue.empty()) {
+        return 0;
+    }
+    const auto dropped = std::erase_if(state.animationQueue, [&chainId](const UniverseState::QueuedAnimation &queued) {
+        return queued.chainId == chainId;
+    });
+    if (dropped > 0) {
+        warn("SessionManager: dropped {} queued animation(s) for dead chain {} on universe {}", dropped, chainId,
+             universe);
+    }
+    return dropped;
+}
+
+// --- Animation Queue ---
+
+bool SessionManager::queueAnimation(universe_t universe, const Animation &animation, const std::string &chainId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (chainId.empty()) {
+        warn("SessionManager: refusing to queue animation '{}' on universe {} with no chain id — an ownerless entry "
+             "could never be popped (issue #100)",
+             animation.metadata.title, universe);
+        return false;
+    }
+
+    // Only accept entries while a live session of this chain exists: with
+    // chain-owned popping, an entry enqueued after its chain died could never
+    // be drained and would sit in the universe state forever (issue #100).
+    // Cancelled sessions don't count — their onFinish skips the queue.
+    auto it = universeStates_.find(universe);
+    bool chainAlive = false;
+    if (it != universeStates_.end()) {
+        for (const auto &session : it->second.activeSessions) {
+            if (session && !session->isCancelled() && session->getChainId() == chainId) {
+                chainAlive = true;
+                break;
+            }
+        }
+    }
+    if (!chainAlive) {
+        warn("SessionManager: not queueing animation '{}' on universe {} — its chain {} has no live session",
+             animation.metadata.title, universe, chainId);
+        return false;
+    }
+
+    it->second.animationQueue.push_back(UniverseState::QueuedAnimation{animation, chainId});
+    info("SessionManager: queued animation '{}' on universe {} for chain {} (queue depth: {})",
+         animation.metadata.title, universe, chainId, it->second.animationQueue.size());
+    return true;
+}
+
+void SessionManager::dropChainEntries(universe_t universe, const std::string &chainId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = universeStates_.find(universe);
+    if (it == universeStates_.end()) {
+        return;
+    }
+    eraseChainEntriesLocked(it->second, chainId, universe);
+}
+
+std::optional<Animation> SessionManager::popQueuedAnimation(universe_t universe, const std::string &chainId) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = universeStates_.find(universe);
     if (it == universeStates_.end() || it->second.animationQueue.empty()) {
         return std::nullopt;
     }
-    auto animation = std::move(it->second.animationQueue.front());
-    it->second.animationQueue.pop();
-    debug("SessionManager: popped queued animation '{}' from universe {} (remaining: {})", animation.metadata.title,
-          universe, it->second.animationQueue.size());
+    // Only the owning chain may drain its entries — a bystander session
+    // finishing on the same universe must not start another chain's sentence.
+    // Match the finisher's EARLIEST entry rather than only the front, so a
+    // foreign entry (another live chain's, or a not-yet-purged orphan) can't
+    // block this chain (issue #100 review).
+    if (chainId.empty()) {
+        return std::nullopt;
+    }
+    auto &queue = it->second.animationQueue;
+    auto entryIt = std::find_if(queue.begin(), queue.end(), [&chainId](const UniverseState::QueuedAnimation &queued) {
+        return queued.chainId == chainId;
+    });
+    if (entryIt == queue.end()) {
+        return std::nullopt;
+    }
+    auto animation = std::move(entryIt->animation);
+    queue.erase(entryIt);
+    debug("SessionManager: popped queued animation '{}' from universe {} for chain {} (remaining: {})",
+          animation.metadata.title, universe, chainId, it->second.animationQueue.size());
     return animation;
 }
 
@@ -829,17 +988,6 @@ bool SessionManager::hasQueuedAnimation(universe_t universe) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = universeStates_.find(universe);
     return it != universeStates_.end() && !it->second.animationQueue.empty();
-}
-
-void SessionManager::clearAnimationQueue(universe_t universe) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = universeStates_.find(universe);
-    if (it == universeStates_.end() || it->second.animationQueue.empty()) {
-        return;
-    }
-    warn("SessionManager: dropping {} queued animation(s) on universe {}", it->second.animationQueue.size(), universe);
-    std::queue<Animation> empty;
-    it->second.animationQueue.swap(empty);
 }
 
 } // namespace creatures

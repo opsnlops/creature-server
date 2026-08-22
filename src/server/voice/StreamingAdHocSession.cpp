@@ -17,10 +17,12 @@
 #include "SoundDataProcessor.h"
 #include "model/AdHocExchange.h"
 #include "model/Animation.h"
+#include "server/animation/CooperativeAnimationScheduler.h"
 #include "server/animation/SessionManager.h"
 #include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/database.h"
+#include "server/eventloop/eventloop.h"
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/storage/Storage.h"
@@ -37,6 +39,7 @@ extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<Database> db;
 extern std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMap;
 extern std::shared_ptr<SessionManager> sessionManager;
+extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<util::AudioCache> audioCache;
 } // namespace creatures
 
@@ -421,19 +424,39 @@ void StreamingAdHocSession::playbackThreadFunc() {
             auto animation = animResult.getValue().value();
             lastAnimationId = animation.id;
 
+            bool dispatched = true;
             if (nextIndex == 0) {
                 info("Sentence {}: interrupt() for immediate playback (pipelined!)", sentenceIndex);
-                auto sessionResult = creatures::sessionManager->interrupt(universe_, animation, resumePlaylist_);
+                // Our session id is the chain id: every sentence's playback session
+                // carries it, so queue entries and failure cleanup stay scoped to
+                // this chain (issue #100).
+                auto sessionResult =
+                    creatures::sessionManager->interrupt(universe_, animation, resumePlaylist_, nullptr, sessionId_);
                 if (!sessionResult.isSuccess()) {
                     warn("Sentence {} playback failed: {}", sentenceIndex, sessionResult.getError()->getMessage());
+                    dispatched = false;
                 }
             } else {
                 info("Sentence {}: queueAnimation() for chained playback", sentenceIndex);
-                creatures::sessionManager->queueAnimation(universe_, animation);
+                const bool queued = creatures::sessionManager->queueAnimation(universe_, animation, sessionId_);
+                if (!queued) {
+                    // The chain went quiet — a short earlier sentence finished
+                    // before this render resolved. Play the sentence now instead
+                    // of stranding an entry no session could ever pop (issue #100).
+                    info("Sentence {}: chain idle, scheduling directly", sentenceIndex);
+                    auto scheduled = creatures::CooperativeAnimationScheduler::scheduleAnimation(
+                        creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0, animation, universe_,
+                        creatures::runtime::ActivityReason::AdHoc, false, sessionId_);
+                    if (!scheduled.isSuccess()) {
+                        warn("Sentence {} direct playback failed: {}", sentenceIndex,
+                             scheduled.getError()->getMessage());
+                        dispatched = false;
+                    }
+                }
             }
 
             lock.lock();
-            sentenceOutcomes_.push_back({true, animation.id});
+            sentenceOutcomes_.push_back({dispatched, dispatched ? animation.id : ""});
             nextIndex++;
         }
 
