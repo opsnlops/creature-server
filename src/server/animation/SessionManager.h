@@ -2,11 +2,11 @@
 
 #include <atomic>
 #include <cstddef>
+#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <queue>
 #include <string>
 #include <vector>
 
@@ -87,11 +87,17 @@ class SessionManager {
      * @param universe The universe to interrupt
      * @param interruptAnimation The animation to play as an interrupt
      * @param shouldResumePlaylist Whether to automatically resume playlist after interrupt
+     * @param parentSpan Optional parent span
+     * @param chainId Stable chain id when this interrupt starts a chained speech
+     *                sequence (issue #100) — stamped on the created session so the
+     *                whole chain, not just sentence one, owns the queue entries and
+     *                the playlist-resume decision
      * @return The session for the interrupt animation, or error
      */
     Result<std::shared_ptr<PlaybackSession>> interrupt(universe_t universe, const Animation &interruptAnimation,
                                                        bool shouldResumePlaylist = false,
-                                                       std::shared_ptr<RequestSpan> parentSpan = nullptr);
+                                                       std::shared_ptr<RequestSpan> parentSpan = nullptr,
+                                                       const std::string &chainId = {});
 
     /**
      * Interrupt only idle playback for a specific set of creatures.
@@ -243,6 +249,12 @@ class SessionManager {
     struct LoadingSessionAbortResult {
         bool sessionRemoved{false};
         bool playlistCleared{false};
+        // The failed session was the interrupter of an Interrupted playlist, so its
+        // stored resume decision was applied in-lock: back to Active (resumed) or
+        // Stopped. Without this the playlist stayed Interrupted forever when its
+        // interrupting session never loaded (issue #100).
+        bool playlistResumed{false};
+        bool playlistStopped{false};
         std::size_t queuedAnimationsDropped{0};
     };
 
@@ -253,6 +265,11 @@ class SessionManager {
      * If a newer adoption already removed the session, this is a no-op. That
      * ownership check and the queue/playlist cleanup share one mutex section so
      * a late failure cannot erase state belonging to the replacement session.
+     *
+     * Cleanup is owner-aware (issue #100): only queue entries belonging to the
+     * failed session's chain are dropped, playlist state is cleared only when
+     * the failed session is the exact current playlist owner, and a failed
+     * interrupter resolves the interrupted playlist per its stored decision.
      */
     LoadingSessionAbortResult abortLoadingSession(universe_t universe, const std::string &sessionId);
 
@@ -260,32 +277,43 @@ class SessionManager {
      * Queue an animation to play on a universe after the current animation finishes.
      *
      * Used by the streaming ad-hoc speech pipeline to chain sentence animations
-     * seamlessly. The queued animation plays automatically when the current one
-     * completes — no callback chaining needed.
+     * seamlessly. The queued animation plays automatically when the owning chain's
+     * current animation completes — entries are chain-owned (issue #100), so a
+     * bystander session finishing on the universe can neither pop nor drop them.
+     *
+     * The enqueue is refused when no live session carries the chain id: an
+     * entry whose chain already died could never be popped. The caller sees
+     * that via the return value and can schedule the animation directly
+     * instead — a slow TTS render can legitimately outlive its chain's
+     * previous sentence.
+     *
+     * @return true if the animation was queued; false if it was refused
+     *         (missing chain id, or no live session carries the chain id)
      */
-    void queueAnimation(universe_t universe, const Animation &animation);
+    [[nodiscard]] bool queueAnimation(universe_t universe, const Animation &animation, const std::string &chainId);
 
     /**
-     * Pop the next queued animation for a universe, if any.
+     * Drop any queued entries owned by the given chain (issue #100).
      *
-     * @return The next animation, or std::nullopt if the queue is empty
+     * For chain-death paths that don't go through abortLoadingSession or a
+     * cancellation — e.g. the onFinish next-hop schedule failing synchronously.
      */
-    std::optional<Animation> popQueuedAnimation(universe_t universe);
+    void dropChainEntries(universe_t universe, const std::string &chainId);
+
+    /**
+     * Pop the next queued animation owned by the given chain, if any.
+     *
+     * Only the front entry is considered, and only when it belongs to the
+     * finishing session's chain — a session with no chain id pops nothing.
+     *
+     * @return The next animation, or std::nullopt
+     */
+    std::optional<Animation> popQueuedAnimation(universe_t universe, const std::string &chainId);
 
     /**
      * Check if a universe has queued animations waiting.
      */
     bool hasQueuedAnimation(universe_t universe) const;
-
-    /**
-     * Drop any queued animations for a universe.
-     *
-     * The queue is only drained by a finishing session's onFinish, so when a chained
-     * playback dies without ever running (e.g. an async audio load fails), the rest
-     * of the chain would sit here and fire whenever the *next* session on the
-     * universe finishes (issue #83).
-     */
-    void clearAnimationQueue(universe_t universe);
 
     void setPlaylistStatus(universe_t universe, const PlaylistStatus &status);
     std::optional<PlaylistStatus> getPlaylistStatus(universe_t universe) const;
@@ -309,9 +337,51 @@ class SessionManager {
         std::string playlistId;
         std::optional<PlaylistStatus> playlistStatus;
 
-        // Animation queue for chained playback (streaming ad-hoc speech)
-        std::queue<Animation> animationQueue;
+        // Owner of the playlist state above: the most recently adopted
+        // playlist-reason session (issue #100). abortLoadingSession clears the
+        // playlist only on an exact owner match, so a stale playlist session's
+        // late load failure can't wipe state a newer one owns. Session ids are
+        // unique, so the id comparison alone is exact.
+        std::string playlistOwnerSessionId;
+
+        // Who owns the resolution of an Interrupted playlist: the interrupting
+        // session's chain id (chained speech) or session id (issue #100).
+        // Meaningful only while Interrupted. Lets abortLoadingSession apply the
+        // stored resume decision when the interrupter dies without ever
+        // running, instead of stranding the playlist Interrupted forever.
+        std::string interruptOwnerToken;
+
+        // Animation queue for chained playback (streaming ad-hoc speech).
+        // Entries are owned by their chain (issue #100).
+        struct QueuedAnimation {
+            Animation animation;
+            std::string chainId;
+        };
+        std::deque<QueuedAnimation> animationQueue;
     };
+
+    /**
+     * Apply an Interrupted playlist's stored resume decision. Caller must hold
+     * mutex_ and have verified playlistState == Interrupted. Shared by the
+     * normal onFinish path (consumeInterruptResumeDecision) and the
+     * failed-interrupter path in abortLoadingSession (issue #100).
+     *
+     * @return true when the playlist returned to Active (should be rescheduled)
+     */
+    bool applyInterruptResumeDecisionLocked(universe_t universe, UniverseState &state);
+
+    /** Reset every playlist field of a universe. Caller must hold mutex_. */
+    static void clearPlaylistStateLocked(UniverseState &state);
+
+    /**
+     * Drop queued entries owned by a chain. Caller must hold mutex_. Used
+     * everywhere a chain dies — cancellation during adoption, load-failure
+     * aborts, and explicit drops — so dead chains can't strand entries that
+     * block the queue (issue #100).
+     *
+     * @return the number of entries dropped
+     */
+    static std::size_t eraseChainEntriesLocked(UniverseState &state, const std::string &chainId, universe_t universe);
 
     mutable std::mutex mutex_;
     std::map<universe_t, UniverseState> universeStates_;
