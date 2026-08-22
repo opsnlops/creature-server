@@ -50,7 +50,7 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/Creature.h` | `CreatureRuntimeErrorDto`, `CreatureRuntimeCountersDto`, `CreatureRuntimeActivityDto`, `CreatureRuntimeDto`, `GazeAxisDto`, `GazeConfigDto`, `CreatureDto` | REST creature responses; runtime-counter WebSocket payload; nested creature config | Database-owned `creatureFromJson`; no complete neutral serializer |
 | `src/model/DialogScript.h` | `DialogScriptTurnDto`, `AcceptedVoiceDto`, `DialogBackgroundMusicDto`, `DialogScriptDto` | Primarily REST and job response; input is already parsed from raw JSON | `dialogScriptToJson`; database-owned `dialogScriptFromJson` |
 | `src/model/DmxFixture.h` | `FixtureChannelDto`, `FixturePatternValueDto`, `FixturePatternDto`, `FixtureBindingDto`, `DmxFixtureDto` | REST responses; config input is already parsed from raw JSON | Database-owned `fixtureFromJson`; no complete neutral serializer |
-| `src/model/Input.h` | `InputDto` | Nested creature config | No neutral codec |
+| `src/server/ws/dto/InputDto.h` (moved from `src/model/Input.h`) | `InputDto` | Temporary oat++ adapter for nested creature config | Strict model-owned `inputToJson` / `inputFromJson` |
 | `src/model/LogItem.h` | `LogItemDto` | Outbound WebSocket log payload | No neutral codec |
 | `src/model/Notice.h` | `NoticeDto` | Inbound and outbound WebSocket notice payload | No neutral codec |
 | `src/model/Playlist.h` | `PlaylistDto` | REST list/detail/upsert response | Database-owned `playlistFromJson`; no neutral serializer |

@@ -12,6 +12,7 @@
 #include "Input.h"
 
 #include "server/namespace-stuffs.h"
+#include "server/ws/dto/InputDto.h"
 
 /**
  * Note to myself for later!

@@ -225,7 +225,7 @@ oat++ DTO and without hand-writing repetitive unsafe `json.get<T>()` calls.
 
 Migrate leaf models before aggregate models.
 
-- [ ] `Input`
+- [x] `Input`
 - [x] `Track`
 - [x] `AnimationMetadata` and render-choice types
 - [ ] `PlaylistItem`
@@ -246,6 +246,14 @@ Migrate leaf models before aggregate models.
 - [ ] `Storyboard`
 - [ ] Move remaining oat++ DTOs into temporary transport adapters or remove them.
 - [ ] Remove oat++ includes and code-generation macros from `src/model/`.
+
+The `Input` checkpoint is structural: it defines the strict neutral leaf
+contract, but the active Creature request parser still uses its legacy inline
+conversion. The Creature checkpoint must adopt `inputFromJson`, add a request
+body limit and input-count limit, and validate aggregate constraints that no
+single input can decide: occupied slot range, duplicate names, and overlapping
+slot ranges. Storage-width maxima in the leaf codec are not a substitute for
+those Creature-level physical constraints.
 
 For every model:
 

@@ -531,6 +531,8 @@ add_executable(creature-server
         src/server/fixture/FixturePatternTickEvent.cpp
         src/model/Input.h
         src/model/Input.cpp
+        src/server/ws/dto/InputDto.h
+        src/server/ws/dto/InputDto.cpp
         src/model/LogLevel.h
         src/model/LogItem.h
         src/model/LogItem.cpp
@@ -736,6 +738,7 @@ if (EXISTS ${CMAKE_SOURCE_DIR}/tests/server/TestGlobals.cpp)
 
 add_executable(creature-server-test
         tests/model/Creature_test.cpp
+        tests/model/Input_test.cpp
         tests/model/DmxFixture_test.cpp
         tests/model/LogItem_test.cpp
         tests/model/Animation_test.cpp
@@ -840,6 +843,7 @@ add_executable(creature-server-test
         src/model/DmxFixture.cpp
         src/model/DialogScript.cpp
         src/model/Input.cpp
+        src/server/ws/dto/InputDto.cpp
         src/model/StreamFrame.cpp
         src/model/VirtualStatusLights.cpp
         src/model/Stage.cpp

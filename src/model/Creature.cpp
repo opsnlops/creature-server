@@ -141,13 +141,7 @@ Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto) {
     // Make sure we're not about to read a null pointer
     if (creatureDto->inputs) {
         for (const auto &inputDto : *creatureDto->inputs) {
-            Input newInput;
-            newInput.name = inputDto->name;
-            newInput.slot = inputDto->slot;
-            newInput.width = inputDto->width;
-            newInput.joystick_axis = inputDto->joystick_axis;
-
-            creature.inputs.push_back(newInput);
+            creature.inputs.push_back(convertFromDto(inputDto));
         }
     }
 
@@ -166,15 +160,8 @@ oatpp::Object<CreatureDto> convertToDto(const Creature &creature) {
     }
     creatureDto->inputs = oatpp::List<oatpp::Object<InputDto>>::createShared();
 
-    for (const auto &[name, slot, width, joystick_axis] : creature.inputs) {
-        auto inputDto = InputDto::createShared();
-        inputDto->name = name;
-        inputDto->slot = slot;
-        inputDto->width = width;
-        inputDto->joystick_axis = joystick_axis;
-
-        creatureDto->inputs->push_back(inputDto);
-    }
+    for (const auto &input : creature.inputs)
+        creatureDto->inputs->push_back(convertToDto(input));
 
     if (!creature.speech_loop_animation_ids.empty()) {
         auto animations = oatpp::List<oatpp::String>::createShared();
