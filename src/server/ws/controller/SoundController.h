@@ -18,6 +18,7 @@
 #include <oatpp/web/protocol/http/outgoing/ResponseFactory.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "server/audio/SoundPathResolver.h"
 #include "server/ws/dto/AdHocSoundEntryDto.h"
 #include "server/ws/dto/GenerateLipSyncRequestDto.h"
 #include "server/ws/dto/GenerateLipSyncUploadResponseDto.h"
@@ -250,7 +251,8 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                                    return bailHttp(span, Status::CODE_400, "file_name is required");
                                }
                                if (span && requestBody && requestBody->file_name) {
-                                   span->setAttribute("audio.file.name", std::string(requestBody->file_name));
+                                   span->setAttribute("audio.file.name", creatures::audio::sanitizeForLogging(
+                                                                             std::string(requestBody->file_name)));
                                }
                                const auto result = m_soundService.playSound(std::string(requestBody->file_name), span);
                                if (span)

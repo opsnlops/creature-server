@@ -654,8 +654,9 @@ void JobWorker::handleLipSyncJob(JobState &jobState) {
             }
         }
 
-        // Schedule cache invalidation event for sound list
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
+        // Invalidate the sound list through the facade so the basename index
+        // is marked dirty too (issue #94).
+        creatures::storage::broadcastCacheInvalidation(CacheType::SoundList);
 
     } else {
         // Failure - mark the job as failed with the error message

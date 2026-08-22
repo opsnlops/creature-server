@@ -1,8 +1,14 @@
 #include "TestGlobals.h"
 
+#include "server/audio/SoundPathResolver.h"
 #include "server/ws/service/FixtureActivityHook.h"
 
 namespace creatures {
+
+// Null by default: Storage's invalidation pairing (issue #94) treats a missing
+// index as "nothing to mark dirty".
+std::shared_ptr<audio::SoundStoreIndex> permanentSoundIndex;
+std::shared_ptr<audio::SoundStoreIndex> adHocSoundIndex;
 
 std::shared_ptr<Database> db;
 std::shared_ptr<ObservabilityManager> observability;
