@@ -2,6 +2,17 @@
 
 namespace creatures {
 
+namespace {
+
+inline constexpr int MAX_API_JSON_DEPTH = 32;
+
+class JsonDepthError final : public std::runtime_error {
+  public:
+    JsonDepthError() : std::runtime_error("JSON nesting exceeds maximum depth 32") {}
+};
+
+} // namespace
+
 Result<nlohmann::json> JsonParser::bsonToJson(const bsoncxx::document::view &view, const std::string &context,
                                               std::shared_ptr<OperationSpan> span) {
     try {
@@ -68,6 +79,51 @@ Result<nlohmann::json> JsonParser::parseJsonString(const std::string &jsonString
     }
 }
 
+Result<nlohmann::json> JsonParser::parseApiJsonString(const std::string &jsonString, const std::string &context,
+                                                      std::shared_ptr<OperationSpan> span) {
+    try {
+        auto depthCallback = [](int depth, nlohmann::json::parse_event_t, nlohmann::json &) {
+            if (depth > MAX_API_JSON_DEPTH) {
+                throw JsonDepthError{};
+            }
+            return true;
+        };
+        auto result = nlohmann::json::parse(jsonString, depthCallback);
+        if (span) {
+            span->setAttribute("json.size_bytes", static_cast<int64_t>(jsonString.length()));
+            span->setSuccess();
+        }
+        return Result<nlohmann::json>{std::move(result)};
+    } catch (const nlohmann::json::parse_error &exception) {
+        auto message = fmt::format("JSON parse error for {}: {} at byte {}", context, exception.what(), exception.byte);
+        warn(message);
+        setSpanError(span, "JSONParseError", message, exception);
+        if (span) {
+            span->setError(message);
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        }
+        return Result<nlohmann::json>{ServerError(ServerError::InvalidData, message)};
+    } catch (const JsonDepthError &exception) {
+        auto message = fmt::format("JSON parse error for {}: {}", context, exception.what());
+        warn(message);
+        setSpanError(span, "JSONDepthError", message, exception);
+        if (span) {
+            span->setError(message);
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        }
+        return Result<nlohmann::json>{ServerError(ServerError::InvalidData, message)};
+    } catch (const std::exception &exception) {
+        auto message = fmt::format("Unexpected error during API JSON parsing for {}: {}", context, exception.what());
+        error(message);
+        setSpanError(span, "UnexpectedError", message, exception);
+        if (span) {
+            span->setError(message);
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+        }
+        return Result<nlohmann::json>{ServerError(ServerError::InternalError, message)};
+    }
+}
+
 Result<bsoncxx::document::value> JsonParser::jsonStringToBson(const std::string &jsonString, const std::string &context,
                                                               std::shared_ptr<OperationSpan> span) {
     try {
@@ -97,11 +153,11 @@ Result<bsoncxx::document::value> JsonParser::jsonStringToBson(const std::string 
 }
 
 void JsonParser::setSpanError(std::shared_ptr<OperationSpan> span, const std::string &errorType,
-                              const std::string & /*errorMessage*/, const std::exception &e) {
+                              const std::string &errorMessage, const std::exception &e) {
     if (span) {
         span->recordException(e);
         span->setAttribute("error.type", errorType);
-        span->setAttribute("error.message", e.what());
+        span->setAttribute("error.message", errorMessage);
 
         // Add byte position for JSON parse errors
         if (auto parseError = dynamic_cast<const nlohmann::json::parse_error *>(&e)) {

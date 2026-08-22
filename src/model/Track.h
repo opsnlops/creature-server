@@ -2,10 +2,12 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
+#include <nlohmann/json.hpp>
+
+#include "util/Result.h"
 
 namespace creatures {
 
@@ -17,45 +19,13 @@ struct Track {
     std::vector<std::string> frames; // The frame data will be base64 encoded strings
 };
 
-#include OATPP_CODEGEN_BEGIN(DTO)
+inline constexpr std::size_t MAX_ANIMATION_FRAMES_PER_TRACK = 250000;
+inline constexpr std::size_t MAX_ANIMATION_FRAME_DECODED_BYTES = 512;
+inline constexpr std::size_t MAX_ANIMATION_FRAME_ENCODED_BYTES = 684;
 
-/**
- * Data transfer object for FrameData
- */
-class TrackDto : public oatpp::DTO {
-
-    DTO_INIT(TrackDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(id) { info->description = "The ID of this track in the form of an UUID"; }
-    DTO_FIELD(String, id);
-
-    DTO_FIELD_INFO(creature_id) {
-        info->description = "The ID of the creature this track belongs to. Mutually exclusive with `fixture_id` "
-                            "(exactly one must be set per track).";
-        info->required = false;
-    }
-    DTO_FIELD(String, creature_id);
-
-    DTO_FIELD_INFO(fixture_id) {
-        info->description = "The ID of the DMX fixture this track belongs to. Mutually exclusive with `creature_id` "
-                            "(exactly one must be set per track).";
-        info->required = false;
-    }
-    DTO_FIELD(String, fixture_id);
-
-    DTO_FIELD_INFO(animation_id) { info->description = "The ID of the animation this track belongs to"; }
-    DTO_FIELD(String, animation_id);
-
-    DTO_FIELD_INFO(frames) {
-        info->description = "An array of base64 encoded strings that represent the frames of "
-                            "the animation. Each frame is a 2D array of motion data.";
-    }
-    DTO_FIELD(List<String>, frames);
-};
-
-#include OATPP_CODEGEN_END(DTO)
-
-oatpp::Object<TrackDto> convertToDto(const Track &track);
-Track convertFromDto(const std::shared_ptr<TrackDto> &trackDto);
+/// Framework-neutral wire/persistence representation. Populated targets are
+/// emitted and absent targets are omitted; input validation owns the XOR rule.
+nlohmann::json trackToJson(const Track &track);
+Result<Track> trackFromJson(const nlohmann::json &json, std::string_view path = "track");
 
 } // namespace creatures

@@ -179,16 +179,16 @@ Result<creatures::Animation> Database::getAnimation(const animationId_t &animati
         jsonSpan->setSuccess();
 
     auto fetchSpan = creatures::observability->createChildOperationSpan("getAnimation.animationFromJson", dbSpan);
-    auto result = animationFromJson(animationJson.getValue().value());
+    if (fetchSpan) {
+        fetchSpan->setAttribute("validation.phase", "contract");
+        fetchSpan->setAttribute("animation.json_source", "persistence");
+    }
+    auto result = creatures::animationFromJson(animationJson.getValue().value(), AnimationJsonSource::Persistence);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
         std::string errorMessage = fmt::format("unable to get an animation by ID: {}", err.getMessage());
         warn(errorMessage);
-        if (fetchSpan) {
-            fetchSpan->setError(errorMessage);
-            fetchSpan->setAttribute("error.type", "InvalidData");
-            fetchSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
-        }
+        recordSpanError(fetchSpan, errorMessage, "InvalidData", err.getCode());
         recordSpanError(dbSpan, errorMessage, "InvalidData", err.getCode());
         return Result<creatures::Animation>{err};
     }

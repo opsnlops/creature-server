@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 
+#include <nlohmann/json.hpp>
 #include <oatpp/core/Types.hpp>
 #include <oatpp/web/protocol/http/Http.hpp>
 #include <oatpp/web/protocol/http/outgoing/Response.hpp>
@@ -80,6 +81,7 @@ template <typename Self> class HttpResponseHelpers {
     template <typename SpanT>
     std::shared_ptr<HttpOutgoingResponse> bailFromServerError(const SpanT &span, const creatures::ServerError &error) {
         const int code = creatures::serverErrorToStatusCode(error.getCode());
+        recordSpanError(span, error.getMessage(), serverErrorType(error.getCode()), error.getCode());
         return bailHttp(span, HttpStatus(code, statusReasonForCode(code)), error.getMessage());
     }
 
@@ -95,7 +97,33 @@ template <typename Self> class HttpResponseHelpers {
         return static_cast<Self *>(this)->createDtoResponse(status, dto);
     }
 
+    // Serialize framework-neutral contracts without routing them back through
+    // oat++ DTO wrappers. This is the temporary transport adapter until the
+    // HTTP framework itself is replaced.
+    std::shared_ptr<HttpOutgoingResponse> jsonResponse(const HttpStatus &status, const nlohmann::json &body) {
+        auto response = static_cast<Self *>(this)->createResponse(status, body.dump().c_str());
+        response->putHeader("Content-Type", "application/json; charset=utf-8");
+        return response;
+    }
+
   private:
+    static const char *serverErrorType(creatures::ServerError::Code code) {
+        switch (code) {
+        case creatures::ServerError::NotFound:
+            return "NotFound";
+        case creatures::ServerError::Forbidden:
+            return "Forbidden";
+        case creatures::ServerError::InvalidData:
+            return "InvalidData";
+        case creatures::ServerError::DatabaseError:
+            return "DatabaseError";
+        case creatures::ServerError::Conflict:
+            return "Conflict";
+        default:
+            return "InternalError";
+        }
+    }
+
     // bailFromServerError builds a Status from a numeric code, but oatpp's
     // Status constructor needs a reason phrase too. This covers the codes
     // serverErrorToStatusCode actually returns; anything else gets "Unknown"

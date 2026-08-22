@@ -66,16 +66,16 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
 
         auto validateSpan =
             creatures::observability->createChildOperationSpan("upsertAnimation.animationFromJson", upsertSpan);
+        if (validateSpan) {
+            validateSpan->setAttribute("validation.phase", "contract");
+            validateSpan->setAttribute("animation.json_source", "api");
+        }
         auto animationResult = animationFromJson(jsonObject);
         if (!animationResult.isSuccess()) {
             auto err = animationResult.getError().value();
             std::string errorMessage = fmt::format("Error while creating an animation from JSON: {}", err.getMessage());
             warn(errorMessage);
-            if (validateSpan) {
-                validateSpan->setError(errorMessage);
-                validateSpan->setAttribute("error.type", "InvalidData");
-                validateSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
-            }
+            recordSpanError(validateSpan, errorMessage, "InvalidData", err.getCode());
             recordSpanError(upsertSpan, errorMessage, "InvalidData", err.getCode());
             return Result<creatures::Animation>{ServerError(ServerError::InvalidData, errorMessage)};
         }
@@ -92,11 +92,7 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
             auto err = collectionResult.getError().value();
             std::string errorMessage = fmt::format("database error while upserting an animation: {}", err.getMessage());
             warn(errorMessage);
-            if (collectionSpan) {
-                collectionSpan->setError(errorMessage);
-                collectionSpan->setAttribute("error.type", "DatabaseError");
-                collectionSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
-            }
+            recordSpanError(collectionSpan, errorMessage, "DatabaseError", err.getCode());
             recordSpanError(upsertSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<creatures::Animation>{err};
         }
@@ -104,7 +100,6 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
         if (collectionSpan)
             collectionSpan->setSuccess();
 
-        auto mongoSpan = creatures::observability->createChildOperationSpan("upsertAnimation.mongoQuery", upsertSpan);
         bsoncxx::builder::stream::document filter_builder;
         filter_builder << "id" << animation.id;
 
@@ -135,7 +130,16 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
             const bool anyMissing = std::any_of(provenanceKeys.begin(), provenanceKeys.end(),
                                                 [&](const char *key) { return !incomingMeta.contains(key); });
             if (anyMissing) {
-                if (auto existingDoc = collection.find_one(filter_builder.view())) {
+                auto lookupSpan =
+                    creatures::observability->createChildOperationSpan("upsertAnimation.lookup-existing", upsertSpan);
+                auto existingDoc = collection.find_one(filter_builder.view());
+                if (lookupSpan) {
+                    lookupSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
+                    lookupSpan->setAttribute("database.operation", "find_one");
+                    lookupSpan->setAttribute("animation.existing_document_found", existingDoc.has_value());
+                    lookupSpan->setSuccess();
+                }
+                if (existingDoc) {
                     // RELAXED, explicitly. bsoncxx::to_json defaults to LEGACY
                     // extended JSON, which renders an int64 as
                     // {"$numberLong": "123"} — that would turn render_seed and
@@ -165,6 +169,16 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
                 upsertSpan->setAttribute("animation.provenance_preserved_count",
                                          static_cast<int64_t>(preserved.size()));
             }
+        }
+
+        auto normalizationSpan =
+            creatures::observability->createChildOperationSpan("upsertAnimation.normalize-json", upsertSpan);
+        if (normalizationSpan) {
+            normalizationSpan->setAttribute("animation.input_size_bytes", static_cast<int64_t>(animationJson.size()));
+            normalizationSpan->setAttribute("animation.provenance_preserved_count",
+                                            static_cast<int64_t>(preserved.size()));
+        }
+        if (!preserved.empty()) {
             // Re-parse so the returned animation matches what we're about to
             // store. #134's real damage was an endpoint reporting a state it
             // had never written; carrying fields forward silently would be a
@@ -174,29 +188,55 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
             if (repaired.isSuccess()) {
                 animation = repaired.getValue().value();
             } else {
-                // The document was valid a moment ago and we only added fields
-                // read back out of the database, so this shouldn't happen.
-                // Store it anyway and say so — the write is still correct.
-                warn("upsertAnimation: could not re-parse animation {} after preserving provenance: {}", animation.id,
-                     repaired.getError().value().getMessage());
+                auto err = repaired.getError().value();
+                auto errorMessage = fmt::format("could not validate preserved provenance for animation {}: {}",
+                                                animation.id, err.getMessage());
+                warn(errorMessage);
+                recordSpanError(normalizationSpan, errorMessage, "InvalidData", err.getCode());
+                recordSpanError(upsertSpan, errorMessage, "InvalidData", err.getCode());
+                return Result<creatures::Animation>{ServerError(ServerError::InvalidData, errorMessage)};
             }
         }
 
+        // The validated model is the persistence boundary. Re-serializing it
+        // drops database internals and prevents ignored/unknown client fields
+        // from being smuggled into MongoDB for future code to interpret.
+        jsonObject = animationToJson(animation);
+
+        const auto normalizedJson = jsonObject.dump();
+        if (normalizedJson.size() > MAX_ANIMATION_PERSISTED_BYTES) {
+            const auto message = fmt::format("animation {} serializes to {} bytes; persistence maximum is {}",
+                                             animation.id, normalizedJson.size(), MAX_ANIMATION_PERSISTED_BYTES);
+            recordSpanError(normalizationSpan, message, "InvalidData", ServerError::InvalidData);
+            recordSpanError(upsertSpan, message, "InvalidData", ServerError::InvalidData);
+            return Result<creatures::Animation>{ServerError(ServerError::InvalidData, message)};
+        }
+        if (normalizationSpan) {
+            normalizationSpan->setAttribute("animation.output_size_bytes", static_cast<int64_t>(normalizedJson.size()));
+            normalizationSpan->setSuccess();
+        }
         auto bsonSpan = creatures::observability->createChildOperationSpan("upsertAnimation.json-to-bson", upsertSpan);
         auto bsonResult =
-            JsonParser::jsonStringToBson(jsonObject.dump(), fmt::format("animation {}", animation.id), bsonSpan);
+            JsonParser::jsonStringToBson(normalizedJson, fmt::format("animation {}", animation.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
             auto err = bsonResult.getError().value();
             recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
             return Result<creatures::Animation>{err};
         }
         auto bsonDoc = bsonResult.getValue().value();
+        if (bsonDoc.view().length() > MAX_ANIMATION_PERSISTED_BYTES) {
+            const auto message = fmt::format("animation {} encodes to {} BSON bytes; persistence maximum is {}",
+                                             animation.id, bsonDoc.view().length(), MAX_ANIMATION_PERSISTED_BYTES);
+            recordSpanError(upsertSpan, message, "InvalidData", ServerError::InvalidData);
+            return Result<creatures::Animation>{ServerError(ServerError::InvalidData, message)};
+        }
 
         // REPLACE, not $set (#135). See #134 for what a $set upsert costs: it
         // cannot remove a field, so a clear reports success and stores nothing.
         mongocxx::options::replace replace_options;
         replace_options.upsert(true);
 
+        auto mongoSpan = creatures::observability->createChildOperationSpan("upsertAnimation.mongoQuery", upsertSpan);
         collection.replace_one(filter_builder.view(), bsonDoc.view(), replace_options);
         if (mongoSpan)
             mongoSpan->setSuccess();
@@ -357,6 +397,18 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation &animatio
     try {
         auto animationJson = animationToJson(animation);
         auto jsonString = animationJson.dump();
+        auto validated = animationFromJson(animationJson);
+        if (!validated.isSuccess()) {
+            auto err = validated.getError().value();
+            recordSpanError(dbSpan, err.getMessage(), "InvalidData", err.getCode());
+            return Result<void>{err};
+        }
+        if (jsonString.size() > MAX_ANIMATION_PERSISTED_BYTES) {
+            const auto message = fmt::format("ad-hoc animation {} serializes to {} bytes; persistence maximum is {}",
+                                             animation.id, jsonString.size(), MAX_ANIMATION_PERSISTED_BYTES);
+            recordSpanError(dbSpan, message, "InvalidData", ServerError::InvalidData);
+            return Result<void>{ServerError(ServerError::InvalidData, message)};
+        }
 
         auto bsonSpan = creatures::observability->createChildOperationSpan("insertAdHocAnimation.json-to-bson", dbSpan);
         auto bsonResult =
@@ -367,6 +419,12 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation &animatio
             return Result<void>{err};
         }
         auto bsonDoc = bsonResult.getValue().value();
+        if (bsonDoc.view().length() > MAX_ANIMATION_PERSISTED_BYTES) {
+            const auto message = fmt::format("ad-hoc animation {} encodes to {} BSON bytes; persistence maximum is {}",
+                                             animation.id, bsonDoc.view().length(), MAX_ANIMATION_PERSISTED_BYTES);
+            recordSpanError(dbSpan, message, "InvalidData", ServerError::InvalidData);
+            return Result<void>{ServerError(ServerError::InvalidData, message)};
+        }
 
         auto collectionResult = getCollection(ADHOC_ANIMATIONS_COLLECTION);
         if (!collectionResult.isSuccess()) {
@@ -443,7 +501,8 @@ Result<std::vector<AdHocAnimationRecord>> Database::listAdHocAnimations(std::sha
                 return Result<std::vector<AdHocAnimationRecord>>{err};
             }
 
-            auto animationResult = animationFromJson(jsonResult.getValue().value());
+            auto animationResult =
+                creatures::animationFromJson(jsonResult.getValue().value(), AnimationJsonSource::Persistence);
             if (!animationResult.isSuccess()) {
                 auto err = animationResult.getError().value();
                 recordSpanError(dbSpan, err.getMessage(), "DataFormatException", err.getCode());
@@ -534,7 +593,8 @@ Result<creatures::Animation> Database::getAdHocAnimation(const animationId_t &an
             return Result<creatures::Animation>{err};
         }
 
-        auto animationResult = animationFromJson(jsonResult.getValue().value());
+        auto animationResult =
+            creatures::animationFromJson(jsonResult.getValue().value(), AnimationJsonSource::Persistence);
         if (!animationResult.isSuccess()) {
             auto err = animationResult.getError().value();
             recordSpanError(dbSpan, err.getMessage(), "InvalidData", err.getCode());

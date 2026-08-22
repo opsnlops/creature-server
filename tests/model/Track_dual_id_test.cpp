@@ -3,7 +3,6 @@
 #include <nlohmann/json.hpp>
 
 #include "model/Track.h"
-#include "server/database.h"
 
 namespace creatures {
 
@@ -11,8 +10,8 @@ namespace {
 
 nlohmann::json makeTrackJson() {
     return nlohmann::json{
-        {"id", "track-1"},
-        {"animation_id", "anim-1"},
+        {"id", "aaaaaaaa-1111-4222-8333-444455556666"},
+        {"animation_id", "eeeeeeee-1111-4222-8333-444455556666"},
         {"frames", nlohmann::json::array({"abc=", "def="})},
     };
 }
@@ -21,68 +20,58 @@ nlohmann::json makeTrackJson() {
 
 TEST(TrackDualIdTest, AcceptsCreatureIdOnly) {
     auto j = makeTrackJson();
-    j["creature_id"] = "creature-1";
-    auto result = Database::parseTrackJson(j);
+    j["creature_id"] = "bbbbbbbb-1111-4222-8333-444455556666";
+    auto result = trackFromJson(j);
     ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError()->getMessage() : "parse failed");
     const auto track = result.getValue().value();
-    EXPECT_EQ(track.creature_id, "creature-1");
+    EXPECT_EQ(track.creature_id, "bbbbbbbb-1111-4222-8333-444455556666");
     EXPECT_TRUE(track.fixture_id.empty());
 }
 
 TEST(TrackDualIdTest, AcceptsFixtureIdOnly) {
     auto j = makeTrackJson();
-    j["fixture_id"] = "fixture-1";
-    auto result = Database::parseTrackJson(j);
+    j["fixture_id"] = "cccccccc-1111-4222-8333-444455556666";
+    auto result = trackFromJson(j);
     ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError()->getMessage() : "parse failed");
     const auto track = result.getValue().value();
-    EXPECT_EQ(track.fixture_id, "fixture-1");
+    EXPECT_EQ(track.fixture_id, "cccccccc-1111-4222-8333-444455556666");
     EXPECT_TRUE(track.creature_id.empty());
 }
 
 TEST(TrackDualIdTest, RejectsNeitherSet) {
     auto j = makeTrackJson();
     // Neither creature_id nor fixture_id present.
-    auto result = Database::parseTrackJson(j);
+    auto result = trackFromJson(j);
     EXPECT_FALSE(result.isSuccess());
 }
 
 TEST(TrackDualIdTest, RejectsBothSet) {
     auto j = makeTrackJson();
-    j["creature_id"] = "creature-1";
-    j["fixture_id"] = "fixture-1";
-    auto result = Database::parseTrackJson(j);
+    j["creature_id"] = "bbbbbbbb-1111-4222-8333-444455556666";
+    j["fixture_id"] = "cccccccc-1111-4222-8333-444455556666";
+    auto result = trackFromJson(j);
     EXPECT_FALSE(result.isSuccess());
 }
 
-TEST(TrackDualIdTest, AcceptsCreatureIdWithNullFixtureId) {
-    // This is exactly what our own GET endpoint emits for a creature track: the
-    // unset field is serialized as an explicit null, not omitted (#117).
+TEST(TrackDualIdTest, RejectsCreatureIdWithNullFixtureId) {
     auto j = makeTrackJson();
-    j["creature_id"] = "creature-1";
+    j["creature_id"] = "bbbbbbbb-1111-4222-8333-444455556666";
     j["fixture_id"] = nullptr;
-    auto result = Database::parseTrackJson(j);
-    ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError()->getMessage() : "parse failed");
-    const auto track = result.getValue().value();
-    EXPECT_EQ(track.creature_id, "creature-1");
-    EXPECT_TRUE(track.fixture_id.empty());
+    EXPECT_FALSE(trackFromJson(j).isSuccess());
 }
 
-TEST(TrackDualIdTest, AcceptsFixtureIdWithNullCreatureId) {
+TEST(TrackDualIdTest, RejectsFixtureIdWithNullCreatureId) {
     auto j = makeTrackJson();
     j["creature_id"] = nullptr;
-    j["fixture_id"] = "fixture-1";
-    auto result = Database::parseTrackJson(j);
-    ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError()->getMessage() : "parse failed");
-    const auto track = result.getValue().value();
-    EXPECT_EQ(track.fixture_id, "fixture-1");
-    EXPECT_TRUE(track.creature_id.empty());
+    j["fixture_id"] = "cccccccc-1111-4222-8333-444455556666";
+    EXPECT_FALSE(trackFromJson(j).isSuccess());
 }
 
 TEST(TrackDualIdTest, RejectsBothNull) {
     auto j = makeTrackJson();
     j["creature_id"] = nullptr;
     j["fixture_id"] = nullptr;
-    auto result = Database::parseTrackJson(j);
+    auto result = trackFromJson(j);
     EXPECT_FALSE(result.isSuccess());
 }
 
@@ -91,7 +80,7 @@ TEST(TrackDualIdTest, RejectsBothPresentButEmpty) {
     auto j = makeTrackJson();
     j["creature_id"] = "";
     j["fixture_id"] = "";
-    auto result = Database::parseTrackJson(j);
+    auto result = trackFromJson(j);
     EXPECT_FALSE(result.isSuccess());
 }
 

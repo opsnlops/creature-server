@@ -5,11 +5,10 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
 
 #include "model/AnimationMetadata.h"
 #include "model/Track.h"
+#include "util/Result.h"
 
 namespace creatures {
 
@@ -19,26 +18,17 @@ struct Animation {
     std::vector<Track> tracks;
 };
 
-#include OATPP_CODEGEN_BEGIN(DTO)
+inline constexpr std::size_t MAX_ANIMATION_TRACKS = 64;
+// Bounds per-frame allocation and decode work independently of serialized byte size.
+inline constexpr std::size_t MAX_ANIMATION_TOTAL_FRAME_ENTRIES = 500000;
+inline constexpr std::size_t MAX_ANIMATION_TOTAL_ENCODED_FRAME_BYTES = 12ULL * 1024ULL * 1024ULL;
+inline constexpr std::size_t MAX_ANIMATION_REQUEST_BODY_BYTES = 16ULL * 1024ULL * 1024ULL;
+inline constexpr std::size_t MAX_ANIMATION_PERSISTED_BYTES = 15ULL * 1024ULL * 1024ULL;
+inline constexpr uint64_t MAX_ANIMATION_DURATION_MS = 24ULL * 60ULL * 60ULL * 1000ULL;
 
-class AnimationDto : public oatpp::DTO {
+enum class AnimationJsonSource { Api, Persistence };
 
-    DTO_INIT(AnimationDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(id) { info->description = "Animation ID in the form of a UUID"; }
-    DTO_FIELD(String, id);
-
-    DTO_FIELD_INFO(metadata) { info->description = "An AnimationMetadataDto with the data for this animation"; }
-    DTO_FIELD(Object<AnimationMetadataDto>, metadata);
-
-    DTO_FIELD_INFO(tracks) { info->description = "The tracks of motion data"; }
-    DTO_FIELD(Vector<oatpp::Object<TrackDto>>, tracks);
-};
-
-#include OATPP_CODEGEN_END(DTO)
-
-std::shared_ptr<AnimationDto> convertToDto(const Animation &creature);
-Animation convertFromDto(const std::shared_ptr<AnimationDto> &creatureDto);
 nlohmann::json animationToJson(const Animation &animation);
+Result<Animation> animationFromJson(const nlohmann::json &json, AnimationJsonSource source = AnimationJsonSource::Api);
 
 } // namespace creatures

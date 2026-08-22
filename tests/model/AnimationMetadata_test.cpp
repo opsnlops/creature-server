@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include "model/AnimationMetadata.h"
+#include "server/ws/dto/AnimationDto.h"
 
 namespace creatures {
 

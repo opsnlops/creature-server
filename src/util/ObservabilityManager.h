@@ -441,12 +441,14 @@ class SamplingSpan : public OperationSpan {
 /// Record an error on a span (message + error.type + error.code attributes) — the one
 /// shared implementation of the pattern previously copy-pasted as a `setSpanError`
 /// lambda in every database helper. Safe to call with a null span.
-inline void recordSpanError(const std::shared_ptr<OperationSpan> &span, const std::string &msg, const std::string &type,
+template <typename SpanT>
+inline void recordSpanError(const std::shared_ptr<SpanT> &span, const std::string &msg, const std::string &type,
                             ServerError::Code code) {
     if (span) {
         span->setError(msg);
         span->setAttribute("error.type", type);
         span->setAttribute("error.code", static_cast<int64_t>(code));
+        span->setAttribute("error.message", msg);
     }
 }
 

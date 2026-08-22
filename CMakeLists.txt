@@ -569,6 +569,8 @@ add_executable(creature-server
         src/server/ws/dto/AdHocSoundEntryDto.h
         src/server/ws/dto/AdHocDtoUtils.h
         src/server/ws/dto/AdHocDtoUtils.cpp
+        src/server/ws/dto/AnimationDto.h
+        src/server/ws/dto/AnimationDto.cpp
         src/server/ws/dto/ListDto.h
         src/server/ws/dto/PlayAnimationRequestDto.h
         src/server/ws/dto/PlaySoundRequestDTO.h
@@ -852,6 +854,7 @@ add_executable(creature-server-test
         src/server/stage/helpers.cpp
         src/server/storyboard/helpers.cpp
         src/server/ws/service/CreatureService.cpp
+        src/server/ws/dto/AnimationDto.cpp
         src/server/ws/dto/websocket/MessageTypes.cpp
         src/util/JsonParser.cpp
         src/util/AudioCache.cpp

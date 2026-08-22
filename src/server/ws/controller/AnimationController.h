@@ -45,6 +45,23 @@ extern std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMa
 
 namespace creatures ::ws {
 
+inline nlohmann::json animationMetadataListToJson(const std::vector<AnimationMetadata> &items) {
+    auto serializedItems = nlohmann::json::array();
+    for (const auto &item : items)
+        serializedItems.push_back(animationMetadataToJson(item));
+    return {{"count", items.size()}, {"items", std::move(serializedItems)}};
+}
+
+inline nlohmann::json adHocAnimationListToJson(const std::vector<AdHocAnimationSummary> &items) {
+    auto serializedItems = nlohmann::json::array();
+    for (const auto &item : items) {
+        serializedItems.push_back({{"animation_id", item.animationId},
+                                   {"metadata", animationMetadataToJson(item.metadata)},
+                                   {"created_at", item.createdAt}});
+    }
+    return {{"count", items.size()}, {"items", std::move(serializedItems)}};
+}
+
 class AnimationController : public oatpp::web::server::api::ApiController,
                             public HttpResponseHelpers<AnimationController> {
   public:
@@ -63,7 +80,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
     ENDPOINT_INFO(listAllAnimations) {
         info->summary = "List all of the animations";
         info->addTag("Animations");
-        info->addResponse<Object<AnimationsListDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -73,18 +90,21 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         return runEndpoint("GET /api/v1/animation", "GET", "api/v1/animation", "listAllAnimations",
                            "AnimationController", request, [&](const auto &span) {
                                auto result = m_animationService.listAllAnimations(span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
+                               const auto items = result.getValue().value();
                                if (span) {
-                                   span->setAttribute("animations.count", static_cast<int64_t>(result->count));
+                                   span->setAttribute("animations.count", static_cast<int64_t>(items.size()));
                                    span->setHttpStatus(200);
                                }
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(Status::CODE_200, animationMetadataListToJson(items));
                            });
     }
 
     ENDPOINT_INFO(listAdHocAnimations) {
         info->summary = "List ad-hoc animations stored in the TTL collection";
         info->addTag("Animations");
-        info->addResponse<Object<AdHocAnimationListDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc", listAdHocAnimations,
@@ -92,18 +112,21 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         return runEndpoint("GET /api/v1/animation/ad-hoc", "GET", "api/v1/animation/ad-hoc", "listAdHocAnimations",
                            "AnimationController", request, [&](const auto &span) {
                                auto result = m_animationService.listAdHocAnimations(span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
+                               const auto items = result.getValue().value();
                                if (span) {
-                                   span->setAttribute("adhoc.count", static_cast<int64_t>(result->count));
+                                   span->setAttribute("adhoc.count", static_cast<int64_t>(items.size()));
                                    span->setHttpStatus(200);
                                }
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(Status::CODE_200, adHocAnimationListToJson(items));
                            });
     }
 
     ENDPOINT_INFO(getAdHocAnimation) {
         info->summary = "Get an ad-hoc animation by id";
         info->addTag("Animations");
-        info->addResponse<Object<AnimationDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -114,39 +137,49 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         return runEndpoint("GET /api/v1/animation/ad-hoc/{animationId}", "GET",
                            "api/v1/animation/ad-hoc/" + std::string(animationId), "getAdHocAnimation",
                            "AnimationController", request, [&](const auto &span) {
+                               if (!animationId || !isUuidShape(std::string(animationId)))
+                                   return bailHttp(span, Status::CODE_400, "animationId must be a UUID");
                                if (span)
                                    span->setAttribute("animation.id", std::string(animationId));
                                auto result = m_animationService.getAdHocAnimation(animationId, span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
+                               const auto animation = result.getValue().value();
                                if (span) {
-                                   span->setAttribute("animation.title", std::string(result->metadata->title));
+                                   span->setAttribute("animation.title", animation.metadata.title);
                                    span->setHttpStatus(200);
                                }
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(Status::CODE_200, animationToJson(animation));
                            });
     }
 
     ENDPOINT_INFO(getAnimation) {
         info->summary = "Get an animation by id";
         info->addTag("Animations");
-        info->addResponse<Object<AnimationDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
-        info->pathParams["animationId"].description = "Animation ID in the form of a MongoDB OID";
+        info->pathParams["animationId"].description = "Animation ID in the form of a UUID";
     }
     ENDPOINT("GET", "api/v1/animation/{animationId}", getAnimation, PATH(String, animationId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        debug("get animation by ID via REST API: {}", std::string(animationId));
         return runEndpoint("GET /api/v1/animation/{animationId}", "GET", "api/v1/animation/" + std::string(animationId),
                            "getAnimation", "AnimationController", request, [&](const auto &span) {
+                               if (!animationId || !isUuidShape(std::string(animationId)))
+                                   return bailHttp(span, Status::CODE_400, "animationId must be a UUID");
+                               debug("get animation by ID via REST API: {}", std::string(animationId));
                                if (span)
                                    span->setAttribute("animation.id", std::string(animationId));
                                auto result = m_animationService.getAnimation(animationId, span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
+                               const auto animation = result.getValue().value();
                                if (span) {
-                                   span->setAttribute("animation.title", std::string(result->metadata->title));
+                                   span->setAttribute("animation.title", animation.metadata.title);
                                    span->setHttpStatus(200);
                                }
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(Status::CODE_200, animationToJson(animation));
                            });
     }
 
@@ -235,29 +268,29 @@ class AnimationController : public oatpp::web::server::api::ApiController,
     ENDPOINT_INFO(upsertAnimation) {
         info->summary = "Create or update an animation in the database";
         info->addTag("Animations");
-        info->addResponse<Object<AnimationDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_413, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation", upsertAnimation, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("new animation uploaded via REST API");
         return runEndpoint("POST /api/v1/animation", "POST", "api/v1/animation", "upsertAnimation",
                            "AnimationController", request, [&](const auto &span) {
-                               auto requestAsString = std::string(request->readBodyToString());
-                               trace("request was: {}", requestAsString);
-                               if (span) {
-                                   span->setAttribute("request.body_size",
-                                                      static_cast<int64_t>(requestAsString.length()));
-                               }
+                               auto requestAsString =
+                                   readRequestBodyLimited(request, MAX_ANIMATION_REQUEST_BODY_BYTES, span);
                                auto result = m_animationService.upsertAnimation(requestAsString, span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
+                               const auto animation = result.getValue().value();
                                if (span) {
-                                   span->setAttribute("animation.id", std::string(result->id));
-                                   span->setAttribute("animation.title", std::string(result->metadata->title));
+                                   span->setAttribute("animation.id", animation.id);
+                                   span->setAttribute("animation.title", animation.metadata.title);
                                    span->setHttpStatus(200);
                                }
                                // AnimationService.upsertAnimation goes through storage::publishAnimation,
                                // which fires Animation + SoundList invalidations on success (issue #11 PR #21).
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(Status::CODE_200, animationToJson(animation));
                            });
     }
 
@@ -272,13 +305,17 @@ class AnimationController : public oatpp::web::server::api::ApiController,
     }
     ENDPOINT("DELETE", "api/v1/animation/{animationId}", deleteAnimation, PATH(String, animationId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        debug("delete animation via REST API: {}", std::string(animationId));
         return runEndpoint("DELETE /api/v1/animation/{animationId}", "DELETE",
                            fmt::format("api/v1/animation/{}", std::string(animationId)), "deleteAnimation",
                            "AnimationController", request, [&](const auto &span) {
+                               if (!animationId || !isUuidShape(std::string(animationId)))
+                                   return bailHttp(span, Status::CODE_400, "animationId must be a UUID");
+                               debug("delete animation via REST API: {}", std::string(animationId));
                                if (span)
                                    span->setAttribute("animation.id", std::string(animationId));
                                auto result = m_animationService.deleteAnimation(animationId, span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
                                if (span)
                                    span->setHttpStatus(200);
                                // AnimationService.deleteAnimation goes through storage::deleteAnimation,
@@ -290,7 +327,8 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                    warn("Failed to broadcast animation cache invalidation: {}",
                                         broadcastResult.getError()->getMessage());
                                }
-                               return createDtoResponse(Status::CODE_200, result);
+                               return okStatus(span, Status::CODE_200,
+                                               fmt::format("Deleted animation {}", std::string(animationId)));
                            });
     }
 
@@ -298,6 +336,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->summary = "Play one animation out of the database on a given universe";
         info->addTag("Animations");
         info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
@@ -313,6 +352,13 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                    return bailHttp(span, Status::CODE_500,
                                                    "Animation play unavailable: server dependencies missing");
                                }
+                               if (!requestBody || !requestBody->animation_id ||
+                                   !isUuidShape(std::string(requestBody->animation_id))) {
+                                   return bailHttp(span, Status::CODE_400, "animation_id must be a UUID");
+                               }
+                               if (requestBody->universe < 1 || requestBody->universe > 63999) {
+                                   return bailHttp(span, Status::CODE_400, "universe must be in [1, 63999]");
+                               }
 
                                if (span) {
                                    span->setAttribute("animation.id", std::string(requestBody->animation_id));
@@ -321,14 +367,21 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                }
 
                                auto result = m_animationService.playStoredAnimation(
-                                   std::string(requestBody->animation_id), requestBody->universe, "play");
+                                   std::string(requestBody->animation_id), requestBody->universe, "play", span);
+
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
+                               const auto playback = result.getValue().value();
 
                                if (span) {
-                                   span->setAttribute("result.message", std::string(result->message));
+                                   span->setAttribute("result.message", playback.message);
                                    span->setHttpStatus(200);
                                }
 
-                               return createDtoResponse(Status::CODE_200, result);
+                               auto response = buildStatusDto(200, playback.message, STATUS_OK);
+                               if (playback.sessionId)
+                                   response->session_id = playback.sessionId->c_str();
+                               return createDtoResponse(Status::CODE_200, response);
                            });
     }
 
@@ -354,6 +407,13 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_500,
                                     "Animation interrupt unavailable: server dependencies missing");
                 }
+                if (!requestBody || !requestBody->animation_id ||
+                    !isUuidShape(std::string(requestBody->animation_id))) {
+                    return bailHttp(span, Status::CODE_400, "animation_id must be a UUID");
+                }
+                if (requestBody->universe < 1 || requestBody->universe > 63999) {
+                    return bailHttp(span, Status::CODE_400, "universe must be in [1, 63999]");
+                }
 
                 {
                     if (span) {
@@ -368,12 +428,11 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                          shouldResume);
 
                     // Get the animation from the database
-                    auto animationDto = m_animationService.getAnimation(requestBody->animation_id, span);
-
-                    // Convert from oatpp DTO to internal model
-                    std::shared_ptr<AnimationDto> animationDtoPtr(animationDto.get(),
-                                                                  [](AnimationDto *) {}); // Non-owning shared_ptr
-                    auto animation = convertFromDto(animationDtoPtr);
+                    auto animationResult =
+                        m_animationService.getAnimation(std::string(requestBody->animation_id), span);
+                    if (!animationResult.isSuccess())
+                        return bailFromServerError(span, animationResult.getError().value());
+                    auto animation = animationResult.getValue().value();
 
                     // Use SessionManager to interrupt
                     auto sessionResult =

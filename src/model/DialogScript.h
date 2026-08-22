@@ -10,6 +10,7 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
+#include "model/DialogScriptTypes.h"
 #include "server/namespace-stuffs.h"
 
 namespace creatures {
@@ -20,22 +21,6 @@ namespace creatures {
 /// inline-turns / Animation-snapshot validators all enforce the same caps.
 /// Caps are sized comfortably above any realistic show script and below any
 /// size that'd be miserable to render — see the original fixture pattern.
-inline constexpr std::size_t MAX_DIALOG_SCRIPT_TURNS = 200;
-inline constexpr std::size_t MAX_DIALOG_SCRIPT_TURN_TEXT = 4096;
-inline constexpr std::size_t MAX_DIALOG_SCRIPT_TITLE = 256;
-inline constexpr std::size_t MAX_DIALOG_SCRIPT_NOTES = 16384;
-inline constexpr std::size_t MAX_DIALOG_MUSIC_PROMPT = 4100;
-inline constexpr std::size_t MAX_DIALOG_MUSIC_SOUND_FILE = 1024;
-
-/// One line in a saved dialog script — same shape as a render-time turn but
-/// persisted so the script can be edited later and re-rendered. Mirrors
-/// `creatures::ws::DialogTurnDto`; we redefine it in this namespace to keep
-/// the model layer free of `ws::` types.
-struct DialogScriptTurn {
-    std::string creature_id;
-    std::string text;
-};
-
 /// The voice take an author explicitly chose for a script (#131).
 ///
 /// Mirrors DialogBackgroundMusic: an explicit, script-level choice the render

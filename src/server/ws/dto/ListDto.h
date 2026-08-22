@@ -10,6 +10,7 @@
 #include "model/AnimationMetadata.h"
 #include "model/Creature.h"
 #include "model/Sound.h"
+#include "server/ws/dto/AnimationDto.h"
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
