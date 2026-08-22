@@ -53,12 +53,15 @@ class CooperativeAnimationScheduler {
      * @param reason Activity reason broadcast for the involved creatures
      * @param cancelEntireUniverse Adopt with interrupt semantics: cancel every active
      *                             session on the universe, not just overlapping ones
+     * @param chainId Stable chain id for chained speech playback (issue #100) —
+     *                stamped on the session before publication so SessionManager can
+     *                scope queue pops and failure cleanup to the owning chain
      * @return Playback session handle for external control, or error
      */
     static Result<std::shared_ptr<PlaybackSession>>
     scheduleAnimation(framenum_t startingFrame, const Animation &animation, universe_t universe,
                       creatures::runtime::ActivityReason reason = creatures::runtime::ActivityReason::Play,
-                      bool cancelEntireUniverse = false);
+                      bool cancelEntireUniverse = false, const std::string &chainId = {});
 
   private:
     // No instances needed - all static methods
