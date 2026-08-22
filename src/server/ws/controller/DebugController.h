@@ -6,6 +6,7 @@
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "server/audio/SoundPathResolver.h"
 #include "server/config.h"
 #include "server/metrics/counters.h"
 #include "server/rtp/AudioStreamBuffer.h"
@@ -17,6 +18,11 @@
 #include "util/websocketUtils.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
+
+namespace creatures {
+extern std::shared_ptr<creatures::audio::SoundStoreIndex> permanentSoundIndex;
+extern std::shared_ptr<creatures::audio::SoundStoreIndex> adHocSoundIndex;
+} // namespace creatures
 
 namespace creatures ::ws {
 
@@ -193,7 +199,13 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
                 // replaced out-of-band with the same size AND mtime
                 // (issue #93).
                 creatures::rtp::AudioStreamBuffer::clearMemo();
+                // Broadcast first (it marks the index dirty), THEN rebuild —
+                // the reverse order threw the synchronous walk away and paid
+                // for a second one on the next lookup (issue #94 review).
                 creatures::storage::broadcastCacheInvalidation(CacheType::SoundList);
+                if (creatures::permanentSoundIndex) {
+                    creatures::permanentSoundIndex->rebuildNow();
+                }
                 auto statusMessage = fmt::format("Sound list cache invalidation scheduled for {} frames from now",
                                                  CACHE_INVALIDATION_DELAY_TIME);
                 debug(statusMessage);
@@ -235,6 +247,9 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
                            "api/v1/debug/cache-invalidate/ad-hoc-sound-list", "invalidate_adhoc_sound_list",
                            "DebugController", request, [&](const auto &span) {
                                creatures::storage::broadcastCacheInvalidation(CacheType::AdHocSoundList);
+                               if (creatures::adHocSoundIndex) {
+                                   creatures::adHocSoundIndex->rebuildNow();
+                               }
                                auto statusMessage =
                                    fmt::format("Ad-hoc sound list cache invalidation scheduled for {} frames from now",
                                                CACHE_INVALIDATION_DELAY_TIME);

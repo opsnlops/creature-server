@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "model/CacheInvalidation.h"
+#include "server/audio/SoundPathResolver.h"
 #include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/database.h"
@@ -16,6 +17,8 @@
 #include "util/websocketUtils.h"
 
 namespace creatures {
+extern std::shared_ptr<creatures::audio::SoundStoreIndex> permanentSoundIndex;
+extern std::shared_ptr<creatures::audio::SoundStoreIndex> adHocSoundIndex;
 extern std::shared_ptr<Configuration> config;
 extern std::shared_ptr<Database> db;
 } // namespace creatures
@@ -120,6 +123,19 @@ Result<void> atomicWrite(const std::filesystem::path &target, std::span<const st
 // successful publish/delete event," and clients refreshing on a failed call
 // would just re-fetch the unchanged data, which is wasteful but worse: it
 // could mask transient state.
+// Pair every cache-invalidation broadcast with the matching in-process sound
+// index's dirty mark (issue #94). Structural: publishers call this instead of
+// scheduleCacheInvalidationEvent directly, so a new publisher can't invalidate
+// the client caches while leaving the server's basename index stale.
+void scheduleInvalidation(CacheType type) {
+    if (type == CacheType::SoundList && creatures::permanentSoundIndex) {
+        creatures::permanentSoundIndex->markDirty();
+    } else if (type == CacheType::AdHocSoundList && creatures::adHocSoundIndex) {
+        creatures::adHocSoundIndex->markDirty();
+    }
+    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, type);
+}
+
 template <typename DbCall, typename... Caches> auto runPublisher(const char *opName, DbCall &&call, Caches... caches) {
     using ResultType = std::invoke_result_t<DbCall>;
     if (!creatures::db) {
@@ -127,7 +143,7 @@ template <typename DbCall, typename... Caches> auto runPublisher(const char *opN
     }
     auto result = call();
     if (result.isSuccess()) {
-        (scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, caches), ...);
+        (scheduleInvalidation(caches), ...);
     }
     return result;
 }
@@ -195,7 +211,7 @@ Result<StoragePath> writeSoundFile(Persistence persistence, std::string filename
     creatures::rtp::AudioStreamBuffer::invalidateMemo(sp.absolute.string());
 
     if (auto cache = soundInvalidationFor(persistence); cache.has_value()) {
-        scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, *cache);
+        scheduleInvalidation(*cache);
     }
     return Result<StoragePath>{sp};
 }
@@ -315,8 +331,9 @@ Result<void> deleteAnimation(const animationId_t &animationId, std::shared_ptr<O
 void broadcastCacheInvalidation(CacheType type) {
     // No DB call to pair with — explicit standalone broadcast. The name
     // signals "this is a deliberate manual case" so a reader can tell at a
-    // glance it's not a forgotten pairing.
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, type);
+    // glance it's not a forgotten pairing. Routes through the same helper as
+    // the publishers so the sound indexes are marked dirty too (issue #94).
+    scheduleInvalidation(type);
 }
 
 std::filesystem::path resolveSoundPath(const std::string &stored) {
@@ -394,7 +411,7 @@ Result<void> deleteSupersededDialogSound(const std::string &stored, std::shared_
     }
 
     info("deleted superseded dialog sound '{}' ({:.1f} MB)", stored, static_cast<double>(size) / 1e6);
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
+    scheduleInvalidation(CacheType::SoundList);
     return Result<void>{};
 }
 
@@ -478,8 +495,8 @@ Result<StoragePath> promoteVoiceTake(const std::string &generationId, std::strin
     }
 
     info("promoted voice take {} to '{}'", generationId, destination.forMetadata);
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
+    scheduleInvalidation(CacheType::SoundList);
+    scheduleInvalidation(CacheType::AdHocSoundList);
     return Result<StoragePath>{destination};
 }
 
@@ -542,8 +559,8 @@ Result<void> demoteVoiceTake(const std::string &stored, const std::string &gener
     }
 
     info("demoted voice take '{}' back to ad-hoc (TTL restarted)", stored);
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::SoundList);
-    scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, CacheType::AdHocSoundList);
+    scheduleInvalidation(CacheType::SoundList);
+    scheduleInvalidation(CacheType::AdHocSoundList);
     return Result<void>{};
 }
 
