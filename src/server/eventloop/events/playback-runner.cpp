@@ -124,6 +124,19 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
     if (auto audioTransport = session_->getAudioTransport();
         audioTransport && audioTransport->needsPerFrameDispatch()) {
         if (auto audioResult = audioTransport->dispatchNextChunk(this->frameNumber); !audioResult.isSuccess()) {
+            if (audioTransport->hasTerminalFailure()) {
+                // The RTP circuit breaker terminated this session's output
+                // generation; audio cannot resume. Fail exactly like a
+                // cancellation (the issue #79 unwind) so clients see Stopped
+                // instead of a successful Idle completion (issue #97).
+                error("Audio output failed terminally: {}", audioResult.getError()->getMessage());
+                if (runnerSpan) {
+                    runnerSpan->setError(audioResult.getError()->getMessage());
+                }
+                session_->cancel();
+                completeCancelledSession();
+                return audioResult;
+            }
             warn("Audio dispatch failed: {}", audioResult.getError()->getMessage());
             // Non-fatal - continue playback
         }
@@ -131,6 +144,20 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() {
 
     // Complete only after both motion and timestamped audio have finished.
     if (areAllTracksFinished()) {
+        // A transport can be "finished" because its output died (e.g. the
+        // breaker tripped before the first dispatch, in start()). Never report
+        // that as natural completion (issue #97).
+        if (const auto audioTransport = session_->getAudioTransport();
+            audioTransport && audioTransport->hasTerminalFailure()) {
+            const std::string errorMsg = "Playback ended because its audio output failed terminally";
+            error("{} (session {})", errorMsg, session_->getSessionId());
+            if (runnerSpan) {
+                runnerSpan->setError(errorMsg);
+            }
+            session_->cancel();
+            completeCancelledSession();
+            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+        }
         if (!session_->markFinished()) {
             // Another runner already completed this session (issue #85).
             if (runnerSpan) {

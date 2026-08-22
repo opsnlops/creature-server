@@ -165,6 +165,9 @@ class ObservabilityManager {
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> restRequestsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpEventsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpSendFailuresCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpSendFailuresSuppressedCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpSendRecoveriesCounter_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpCircuitBreakerTripsCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> rtpAudioLoadersActiveGauge_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> rtpAudioLoadsQueuedGauge_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> rtpAudioLoadsAcceptedCounter_;

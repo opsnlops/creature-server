@@ -66,6 +66,22 @@ class SystemCountersDto : public oatpp::DTO {
     DTO_FIELD_INFO(rtpSendFailures) { info->description = "Number of RTP output sends that have failed"; }
     DTO_FIELD(UInt64, rtpSendFailures);
 
+    DTO_FIELD_INFO(rtpSendFailuresSuppressed) {
+        info->description = "Number of RTP send failures whose detailed log/span was rate-limited away";
+    }
+    DTO_FIELD(UInt64, rtpSendFailuresSuppressed);
+
+    DTO_FIELD_INFO(rtpSendRecoveries) {
+        info->description = "Number of times RTP output sends recovered after a run of failures";
+    }
+    DTO_FIELD(UInt64, rtpSendRecoveries);
+
+    DTO_FIELD_INFO(rtpCircuitBreakerTrips) {
+        info->description =
+            "Number of times the RTP send-failure circuit breaker opened and terminated an output generation";
+    }
+    DTO_FIELD(UInt64, rtpCircuitBreakerTrips);
+
     DTO_FIELD_INFO(rtcpReportsSent) {
         info->description = "Number of RTCP Sender Report compound packets successfully sent";
     }
@@ -202,6 +218,9 @@ class SystemCounters {
     void incrementPlaylistStatusRequests();
     void incrementRtpEventsProcessed();
     void incrementRtpSendFailures();
+    void incrementRtpSendFailuresSuppressed();
+    void incrementRtpSendRecoveries();
+    void incrementRtpCircuitBreakerTrips();
     void incrementRtcpReportsSent();
     void incrementRtcpSendFailures();
     void incrementRtpEncoderResets();
@@ -231,6 +250,9 @@ class SystemCounters {
     uint64_t getRestRequestsProcessed();
     uint64_t getRtpEventsProcessed();
     uint64_t getRtpSendFailures();
+    uint64_t getRtpSendFailuresSuppressed();
+    uint64_t getRtpSendRecoveries();
+    uint64_t getRtpCircuitBreakerTrips();
     uint64_t getRtcpReportsSent();
     uint64_t getRtcpSendFailures();
     uint64_t getRtpEncoderResets();
@@ -275,6 +297,9 @@ class SystemCounters {
     std::atomic<uint64_t> soundFilesServed;
     std::atomic<uint64_t> rtpEventsProcessed;
     std::atomic<uint64_t> rtpSendFailures;
+    std::atomic<uint64_t> rtpSendFailuresSuppressed;
+    std::atomic<uint64_t> rtpSendRecoveries;
+    std::atomic<uint64_t> rtpCircuitBreakerTrips;
     std::atomic<uint64_t> rtcpReportsSent;
     std::atomic<uint64_t> rtcpSendFailures;
     std::atomic<uint64_t> rtpEncoderResets;

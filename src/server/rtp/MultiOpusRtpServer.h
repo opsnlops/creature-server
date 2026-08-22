@@ -23,6 +23,11 @@
 #include "server/rtp/RtcpSender.h"
 #include "server/rtp/RtpFrameClock.h"
 #include "server/rtp/RtpOutputCoordinator.h"
+#include "server/rtp/RtpOutputHealth.h"
+
+namespace creatures {
+class OperationSpan;
+}
 
 namespace creatures::rtp {
 
@@ -66,6 +71,29 @@ class MultiOpusRtpServer {
     [[nodiscard]] size_t getPendingCommandCount() const { return outputQueue_.size(); }
     [[nodiscard]] size_t getOutputQueueCapacity() const { return outputQueue_.capacity(); }
 
+    /**
+     * Did the send-failure circuit breaker terminate this generation?
+     *
+     * The breaker releases a tripped generation's lease, which is otherwise
+     * indistinguishable from a benign supersede by a newer owner. Callers on
+     * the 1 ms event loop use this (a few relaxed atomic loads, no lock) to
+     * tell the two apart — including after the lease is gone.
+     */
+    [[nodiscard]] bool isGenerationTripped(uint64_t generation) const noexcept {
+        return terminalFailures_.isTripped(generation);
+    }
+
+    /** Details of a breaker-terminated generation, if it tripped. */
+    [[nodiscard]] std::optional<TerminalFailure> terminalFailureFor(uint64_t generation) const {
+        return terminalFailures_.find(generation);
+    }
+
+    /**
+     * One-line human-readable description of a breaker-terminated generation,
+     * shared by every reporting site so the wording cannot drift.
+     */
+    [[nodiscard]] std::string terminalFailureMessage(uint64_t generation) const;
+
   private:
     enum class OutputCommandType {
         Reset,
@@ -93,8 +121,18 @@ class MultiOpusRtpServer {
 
     void runOutputWorker();
     void processOutputCommand(const OutputCommand &command);
-    void recordOutputFailure(const OutputCommand &command, const OutputResult &result) noexcept;
-    void recordOutputException(const OutputCommand &command, const std::exception &exception) noexcept;
+    void handleSendOutcome(const OutputCommand &command, const OutputResult *result,
+                           const std::exception *exception) noexcept;
+    void handleCommandException(const OutputCommand &command, const std::exception &exception) noexcept;
+    void recordOutputFailure(const OutputCommand &command, const OutputResult &result,
+                             const RtpSendFailureTracker::Action &action) noexcept;
+    void recordOutputException(const OutputCommand &command, const std::exception &exception,
+                               const RtpSendFailureTracker::Action &action) noexcept;
+    void tripCircuitBreaker(const OutputCommand &command, const OutputResult *result, const std::exception *exception,
+                            const RtpSendFailureTracker::Action &action, const char *reason) noexcept;
+    void releaseGeneration(const RtpOutputLease &lease) noexcept;
+    static void applyTraceContextAttributes(const std::shared_ptr<creatures::OperationSpan> &span,
+                                            const AsyncAudioTraceContext &traceContext);
     [[nodiscard]] static const char *commandTypeName(OutputCommandType type);
     void rotateSynchronizationSourceIdentifiers(uint64_t generation, const std::string &ownerId,
                                                 const AsyncAudioTraceContext &traceContext);
@@ -111,6 +149,8 @@ class MultiOpusRtpServer {
     std::atomic<uint64_t> readyGeneration_{0};
     RtpOutputCoordinator outputCoordinator_;
     BoundedCommandQueue<OutputCommand> outputQueue_{OUTPUT_QUEUE_CAPACITY};
+    RtpSendFailureTracker failureTracker_; // worker-thread only
+    RtpTerminalFailureRegistry terminalFailures_;
     std::thread outputThread_;
 
     uvgrtp::context rtpContext_;

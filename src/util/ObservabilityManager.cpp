@@ -167,6 +167,18 @@ void ObservabilityManager::initializeMetricInstruments() {
     rtpSendFailuresCounter_ = meter_->CreateUInt64Counter("creature_server_rtp_send_failures",
                                                           "Total number of failed RTP output sends", "{failures}");
 
+    rtpSendFailuresSuppressedCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_rtp_send_failures_suppressed",
+        "Total RTP send failures whose detailed log/span was rate-limited away", "{failures}");
+
+    rtpSendRecoveriesCounter_ =
+        meter_->CreateUInt64Counter("creature_server_rtp_send_recoveries",
+                                    "Total times RTP output sends recovered after a run of failures", "{recoveries}");
+
+    rtpCircuitBreakerTripsCounter_ = meter_->CreateUInt64Counter(
+        "creature_server_rtp_circuit_breaker_trips",
+        "Total times the RTP send-failure circuit breaker terminated an output generation", "{trips}");
+
     rtpAudioLoadersActiveGauge_ = meter_->CreateDoubleGauge(
         "creature_server_rtp_audio_loaders_active", "Cooperative RTP audio loader jobs currently running", "{jobs}");
 
@@ -293,6 +305,9 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
     static std::atomic<uint64_t> lastRestRequestsProcessed{0};
     static std::atomic<uint64_t> lastRtpEventsProcessed{0};
     static std::atomic<uint64_t> lastRtpSendFailures{0};
+    static std::atomic<uint64_t> lastRtpSendFailuresSuppressed{0};
+    static std::atomic<uint64_t> lastRtpSendRecoveries{0};
+    static std::atomic<uint64_t> lastRtpCircuitBreakerTrips{0};
     static std::atomic<uint64_t> lastRtpAudioLoadsAccepted{0};
     static std::atomic<uint64_t> lastRtpAudioLoadsCompleted{0};
     static std::atomic<uint64_t> lastRtpAudioLoadsRejected{0};
@@ -382,6 +397,24 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
     uint64_t deltaRtpSendFailures = currentRtpSendFailures - lastRtpSendFailures.exchange(currentRtpSendFailures);
     if (deltaRtpSendFailures > 0)
         rtpSendFailuresCounter_->Add(deltaRtpSendFailures);
+
+    uint64_t currentRtpSendFailuresSuppressed = metrics->getRtpSendFailuresSuppressed();
+    uint64_t deltaRtpSendFailuresSuppressed =
+        currentRtpSendFailuresSuppressed - lastRtpSendFailuresSuppressed.exchange(currentRtpSendFailuresSuppressed);
+    if (deltaRtpSendFailuresSuppressed > 0)
+        rtpSendFailuresSuppressedCounter_->Add(deltaRtpSendFailuresSuppressed);
+
+    uint64_t currentRtpSendRecoveries = metrics->getRtpSendRecoveries();
+    uint64_t deltaRtpSendRecoveries =
+        currentRtpSendRecoveries - lastRtpSendRecoveries.exchange(currentRtpSendRecoveries);
+    if (deltaRtpSendRecoveries > 0)
+        rtpSendRecoveriesCounter_->Add(deltaRtpSendRecoveries);
+
+    uint64_t currentRtpCircuitBreakerTrips = metrics->getRtpCircuitBreakerTrips();
+    uint64_t deltaRtpCircuitBreakerTrips =
+        currentRtpCircuitBreakerTrips - lastRtpCircuitBreakerTrips.exchange(currentRtpCircuitBreakerTrips);
+    if (deltaRtpCircuitBreakerTrips > 0)
+        rtpCircuitBreakerTripsCounter_->Add(deltaRtpCircuitBreakerTrips);
 
     // Gauges record the absolute reading every cycle — no delta tracking, and no
     // skip-if-unchanged, so a steady value keeps reporting instead of going stale.

@@ -83,6 +83,17 @@ class AudioTransport {
      * @return true if all audio has been dispatched/played
      */
     [[nodiscard]] virtual bool isFinished() const = 0;
+
+    /**
+     * Did the transport's output die terminally (issue #97)?
+     *
+     * A terminal failure means audio delivery stopped and cannot resume for
+     * this session — e.g. the RTP circuit breaker terminated the output
+     * generation. The runner must treat the session as failed, never as
+     * completed naturally. Distinct from isFinished(), which is also true for
+     * benign stops.
+     */
+    [[nodiscard]] virtual bool hasTerminalFailure() const { return false; }
 };
 
 } // namespace creatures
