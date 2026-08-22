@@ -1,6 +1,6 @@
 # Issue #93 — Bound and deduplicate in-memory Opus cache loads
 
-**Status:** Implemented
+**Status:** Implemented (including review fixes below)
 **Issue:** [#93](https://github.com/opsnlops/creature-server/issues/93)
 
 ## Problem
@@ -120,3 +120,66 @@ linked). New `tests/server/rtp/AudioStreamBuffer_test.cpp` +
 | `tests/util/AudioCache_test.cpp` | budget/TOCTOU/lock additions |
 | `CMakeLists.txt` | test wiring |
 | `VERSION.txt` | bump |
+
+## Post-review fixes (2026-08-22)
+
+An adversarial review (four finder angles, 20 findings — recorded on PR #164)
+produced these changes:
+
+**Correctness**
+- **Memo staleness** (flagged by three angles). The size+mtime fingerprint is
+  now a documented *contract* on `BufferMemo`, backed by real levers:
+  `invalidateMemo(path)` fires from `storage::writeSoundFile` after the bytes
+  land, and `clearMemo()` from the debug sound-list invalidate endpoint. An
+  ordinary write moves mtime and self-invalidates; the residual exposure is
+  out-of-band *timestamp-preserving* replacement, which the operator lever
+  covers.
+- **Advisory lock lived inside the directory a clear removes**, so
+  `clearCache` unlinked its own inode and a peer could enter concurrently. The
+  lock file is now a **sibling** of the cache directory.
+- **flock could block forever** while this process held the global encode
+  mutex, wedging every cache-miss load. Acquisition is now `LOCK_NB` with a
+  bounded retry (5 s), degrading to process-local exclusion with a warning.
+- **The release-before-clear trap** (eight copy-pasted `fileLock.reset()`
+  sites) is gone: `clearCacheLocked()` is the variant for callers that already
+  hold the lock, so the deadlock is now unwritable rather than comment-policed.
+- **Zero VBR headroom**: the aggregate budget carries 50% headroom over
+  nominal bitrate, and the *save* path enforces the same ceiling — anything
+  published is guaranteed loadable, so a dense near-ceiling encode can't
+  thrash re-encoding on every play.
+- **Orphaned temps**: unique temp names never self-cleaned, so a crash
+  mid-save leaked up to 17 files per incident. A save now sweeps abandoned
+  `*.tmp.*` for its key under the exclusive lock.
+- **Budget latch ordering**: the retention budget is injected explicitly at
+  startup (`setMemoRetainBytes`) instead of latching from `config` on first
+  use; until then the **smaller travel default** applies, so a load that beats
+  configuration can never pin the 64 GB budget on the 8 GB Pi.
+- **One-shot loads no longer pin the LRU**: cache prewarms and per-sentence
+  streaming speech pass `RetentionIntent::OneShot` — still shared weakly, but
+  never charged to the budget, so a long ad-hoc session can't evict warm show
+  audio.
+
+**Efficiency**
+- The pre-encode SHA-256 moved **outside** `encodingJobMutex` (it throttles
+  encoder CPU, not I/O; a show-length hash was serializing every other pending
+  miss).
+- The publish-time verification is a **stat compare**, not a second full hash
+  of the source.
+- LRU eviction returns evicted buffers to the caller, which destroys them
+  **after** releasing the memo lock (~1.5M deallocations no longer stall
+  concurrent memo hits).
+- Cache hits reuse the byte total the reader already accumulated instead of
+  re-walking every frame vector.
+- One canonicalization per load, shared by the load mutex and the memo (they
+  can no longer disagree about identity).
+
+**API**
+- The legacy `saveToCache(path, CachedAudioData)` overload is **deleted** —
+  fingerprint-at-save-time cannot detect a source replaced during the encode,
+  and leaving it available invited exactly the bug this issue closes.
+- `environmentToUnsignedLongLong` joins the shared env-helper family instead
+  of a hand-rolled `getenv`/`strtoull`.
+
+**Deferred to follow-ups** (not this PR): the deterministic `.tmp` idiom still
+present in `Storage::atomicWrite` and `DialogCache`, and hoisting one shared
+WAV test fixture (the tree now has three hand-rolled RIFF writers).

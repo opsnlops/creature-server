@@ -62,11 +62,12 @@ class AudioStreamBufferTest : public ::testing::Test {
                 ("audio-buffer-test-" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
         fs::create_directories(root_);
         // Fresh memo per test, generous budget.
-        AudioStreamBuffer::setMemoRetainBytesForTesting(64ULL * 1024ULL * 1024ULL);
+        AudioStreamBuffer::clearMemo();
+        AudioStreamBuffer::setMemoRetainBytes(64ULL * 1024ULL * 1024ULL);
     }
 
     void TearDown() override {
-        AudioStreamBuffer::setMemoRetainBytesForTesting(64ULL * 1024ULL * 1024ULL); // clears the memo
+        AudioStreamBuffer::clearMemo();
         std::error_code ec;
         fs::remove_all(root_, ec);
     }
@@ -131,7 +132,7 @@ TEST_F(AudioStreamBufferTest, MemoRetentionIsBoundedByTheByteBudget) {
     // A budget of one byte forces the LRU to hold only the newest buffer:
     // reloading an older file must produce a NEW buffer (its strong ref was
     // evicted and no playback held it).
-    AudioStreamBuffer::setMemoRetainBytesForTesting(1);
+    AudioStreamBuffer::setMemoRetainBytes(1);
 
     const auto pathA = wavPath("a.wav");
     const auto pathB = wavPath("b.wav");
@@ -150,7 +151,7 @@ TEST_F(AudioStreamBufferTest, MemoRetentionIsBoundedByTheByteBudget) {
 }
 
 TEST_F(AudioStreamBufferTest, HeldBuffersSurviveEvictionWhileInUse) {
-    AudioStreamBuffer::setMemoRetainBytesForTesting(1);
+    AudioStreamBuffer::setMemoRetainBytes(1);
 
     const auto pathA = wavPath("held.wav");
     const auto pathB = wavPath("other.wav");
@@ -166,6 +167,47 @@ TEST_F(AudioStreamBufferTest, HeldBuffersSurviveEvictionWhileInUse) {
     auto again = AudioStreamBuffer::loadFromWavFile(pathA.string());
     ASSERT_NE(again, nullptr);
     EXPECT_EQ(again.get(), held.get());
+}
+
+TEST_F(AudioStreamBufferTest, OneShotLoadsAreSharedButNotRetained) {
+    // Prewarms and per-sentence streaming speech must not spend the retention
+    // budget that keeps show audio warm (issue #93 review).
+    const auto path = wavPath("oneshot.wav");
+    write17ChannelWav(path, HALF_SECOND_FRAMES);
+
+    const auto before = AudioStreamBuffer::memoRetainedBytes();
+    auto oneShot =
+        AudioStreamBuffer::loadFromWavFile(path.string(), nullptr, AudioStreamBuffer::RetentionIntent::OneShot);
+    ASSERT_NE(oneShot, nullptr);
+    EXPECT_EQ(AudioStreamBuffer::memoRetainedBytes(), before) << "a one-shot load must not be charged to the budget";
+
+    // Still weakly memoized: a concurrent load shares the same buffer.
+    auto shared =
+        AudioStreamBuffer::loadFromWavFile(path.string(), nullptr, AudioStreamBuffer::RetentionIntent::OneShot);
+    EXPECT_EQ(shared.get(), oneShot.get());
+
+    // A real playback load of the same file DOES retain it.
+    auto retained = AudioStreamBuffer::loadFromWavFile(path.string());
+    ASSERT_NE(retained, nullptr);
+    EXPECT_GT(AudioStreamBuffer::memoRetainedBytes(), before);
+}
+
+TEST_F(AudioStreamBufferTest, InvalidateMemoForcesAReload) {
+    const auto path = wavPath("invalidated.wav");
+    write17ChannelWav(path, HALF_SECOND_FRAMES);
+
+    auto first = AudioStreamBuffer::loadFromWavFile(path.string());
+    ASSERT_NE(first, nullptr);
+    std::weak_ptr<AudioStreamBuffer> weakFirst = first;
+    first.reset();
+
+    // The operator/storage lever for content that changed without the
+    // fingerprint moving (issue #93).
+    AudioStreamBuffer::invalidateMemo(path.string());
+    EXPECT_TRUE(weakFirst.expired()) << "invalidate must release the retained buffer too";
+
+    auto second = AudioStreamBuffer::loadFromWavFile(path.string());
+    ASSERT_NE(second, nullptr);
 }
 
 TEST_F(AudioStreamBufferTest, RejectsWrongChannelCount) {

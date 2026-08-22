@@ -12,6 +12,7 @@
 #include "server/config/Configuration.h"
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
+#include "server/rtp/AudioStreamBuffer.h"
 #include "util/websocketUtils.h"
 
 namespace creatures {
@@ -186,6 +187,12 @@ Result<StoragePath> writeSoundFile(Persistence persistence, std::string filename
     if (!writeResult.isSuccess()) {
         return Result<StoragePath>{writeResult.getError().value()};
     }
+
+    // Drop any in-memory Opus buffer for this path AFTER the bytes land
+    // (issue #93). An ordinary write already changes mtime, which the memo's
+    // fingerprint catches on its own; this closes the ordering gap and makes
+    // the guarantee explicit for the facade's callers.
+    creatures::rtp::AudioStreamBuffer::invalidateMemo(sp.absolute.string());
 
     if (auto cache = soundInvalidationFor(persistence); cache.has_value()) {
         scheduleCacheInvalidationEvent(CACHE_INVALIDATION_DELAY_TIME, *cache);

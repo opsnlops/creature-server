@@ -8,7 +8,6 @@
  */
 //
 
-#include <cstdlib>
 #include <filesystem>
 #include <future>
 #include <list>
@@ -35,16 +34,20 @@ using namespace creatures::rtp;
 
 namespace {
 
-std::shared_ptr<std::mutex> getFileLoadMutex(const std::string &audioFilePath) {
+/// Canonical form of a path, used as the key for BOTH the per-path load mutex
+/// and the memo so the two can never disagree about identity (issue #93).
+std::string canonicalKeyFor(const std::string &audioFilePath) {
+    std::error_code error;
+    const auto canonicalPath = std::filesystem::weakly_canonical(audioFilePath, error);
+    return error ? audioFilePath : canonicalPath.string();
+}
+
+std::shared_ptr<std::mutex> getFileLoadMutex(const std::string &canonicalKey) {
     static std::mutex mutexMapMutex;
     static std::unordered_map<std::string, std::weak_ptr<std::mutex>> mutexes;
 
-    std::error_code error;
-    const auto canonicalPath = std::filesystem::weakly_canonical(audioFilePath, error);
-    const std::string key = error ? audioFilePath : canonicalPath.string();
-
     std::lock_guard lock(mutexMapMutex);
-    if (const auto existing = mutexes.find(key); existing != mutexes.end()) {
+    if (const auto existing = mutexes.find(canonicalKey); existing != mutexes.end()) {
         if (auto mutex = existing->second.lock()) {
             return mutex;
         }
@@ -52,7 +55,7 @@ std::shared_ptr<std::mutex> getFileLoadMutex(const std::string &audioFilePath) {
     }
 
     auto mutex = std::make_shared<std::mutex>();
-    mutexes.emplace(key, mutex);
+    mutexes.emplace(canonicalKey, mutex);
     return mutex;
 }
 
@@ -66,79 +69,155 @@ std::shared_ptr<std::mutex> getFileLoadMutex(const std::string &audioFilePath) {
  * strong-ref LRU on top keeps recently played shows warm across playbacks —
  * explicit, bounded retention rather than reloading 17 cache files per play.
  *
- * The per-path load mutex (below) is already held at every access point, so
- * it doubles as the single-flight: no futures plumbing needed.
+ * The per-path load mutex is already held at every access point, so it also
+ * serves as the single-flight: no futures plumbing needed.
+ *
+ * **Staleness contract.** The fingerprint is size + mtime, NOT content. The
+ * disk cache underneath validates by SHA-256, but hashing a show-length WAV
+ * costs seconds and cannot sit on playback start, so a memo hit deliberately
+ * skips it. A file replaced in place with BOTH the same byte length and a
+ * preserved mtime (`cp -p` / `rsync -a` of a same-duration re-render) would
+ * therefore serve the previous audio until the entry is evicted or
+ * invalidated. Every server-mediated write funnels through the storage
+ * facade, which calls invalidate() — the residual exposure is out-of-band
+ * timestamp-preserving replacement, for which the debug cache-invalidate
+ * endpoints are the operator's lever.
  */
-struct MemoEntry {
-    std::uintmax_t fileSize{0};
-    std::filesystem::file_time_type modTime{};
-    std::weak_ptr<creatures::rtp::AudioStreamBuffer> buffer;
-};
+class BufferMemo {
+  public:
+    /// Buffers whose strong references were dropped by this call. The caller
+    /// destroys them AFTER releasing the lock: freeing a show-sized buffer is
+    /// ~1.5M vector deallocations, which must not stall concurrent memo hits.
+    using Evicted = std::vector<std::shared_ptr<creatures::rtp::AudioStreamBuffer>>;
 
-std::mutex &memoMutex() {
-    static std::mutex mutex;
-    return mutex;
-}
-
-std::unordered_map<std::string, MemoEntry> &memoEntries() {
-    static std::unordered_map<std::string, MemoEntry> entries;
-    return entries;
-}
-
-std::size_t &memoRetainBudgetBytes() {
-    static std::size_t budget = [] {
-        if (const char *env = std::getenv(RTP_AUDIO_MEMO_BYTES_ENV)) {
-            char *end = nullptr;
-            const auto parsed = std::strtoull(env, &end, 10);
-            if (end != env && *end == '\0') {
-                return static_cast<std::size_t>(parsed);
+    [[nodiscard]] std::shared_ptr<creatures::rtp::AudioStreamBuffer>
+    lookup(const std::string &key, std::uintmax_t fileSize, std::filesystem::file_time_type modTime, Evicted &evicted) {
+        std::lock_guard lock(mutex_);
+        auto it = entries_.find(key);
+        if (it == entries_.end()) {
+            return nullptr;
+        }
+        if (it->second.fileSize == fileSize && it->second.modTime == modTime) {
+            if (auto existing = it->second.buffer.lock()) {
+                retainLocked(key, existing, evicted);
+                return existing;
             }
-            spdlog::warn("Ignoring unparseable {}='{}'", RTP_AUDIO_MEMO_BYTES_ENV, env);
         }
-        // The travel server is an 8 GB Pi; the main server has 64 GB. Retain
-        // accordingly (April's sizing, issue #93).
-        if (creatures::config && creatures::config->getTravelMode()) {
-            return static_cast<std::size_t>(DEFAULT_RTP_AUDIO_MEMO_BYTES_TRAVEL);
-        }
-        return static_cast<std::size_t>(DEFAULT_RTP_AUDIO_MEMO_BYTES);
-    }();
-    return budget;
-}
+        entries_.erase(it);
+        return nullptr;
+    }
 
-struct RetainedBuffer {
-    std::string key;
-    std::shared_ptr<creatures::rtp::AudioStreamBuffer> buffer;
+    /**
+     * Publish a freshly loaded buffer.
+     *
+     * @param retain false for one-shot loads (prewarms whose caller discards
+     *               the buffer): the weak entry still enables sharing with a
+     *               concurrent load, but the byte budget is reserved for audio
+     *               that actually plays again, so a long ad-hoc speech session
+     *               cannot evict warm show audio with dead sentences.
+     */
+    void store(const std::string &key, std::uintmax_t fileSize, std::filesystem::file_time_type modTime,
+               const std::shared_ptr<creatures::rtp::AudioStreamBuffer> &buffer, bool retain, Evicted &evicted) {
+        std::lock_guard lock(mutex_);
+        // One-shot files (each streaming sentence gets a unique path) would
+        // otherwise leave dead weak entries behind forever.
+        if (entries_.size() > MAX_WEAK_ENTRIES) {
+            std::erase_if(entries_, [](const auto &entry) { return entry.second.buffer.expired(); });
+        }
+        entries_[key] = MemoEntry{fileSize, modTime, buffer};
+        if (retain) {
+            retainLocked(key, buffer, evicted);
+        }
+    }
+
+    void invalidate(const std::string &key, Evicted &evicted) {
+        std::lock_guard lock(mutex_);
+        entries_.erase(key);
+        dropRetainedLocked(key, evicted);
+    }
+
+    void clear(Evicted &evicted) {
+        std::lock_guard lock(mutex_);
+        entries_.clear();
+        for (auto &retained : lru_) {
+            evicted.push_back(std::move(retained.buffer));
+        }
+        lru_.clear();
+        lruBytes_ = 0;
+    }
+
+    void setBudgetBytes(std::size_t bytes, Evicted &evicted) {
+        std::lock_guard lock(mutex_);
+        budgetBytes_ = bytes;
+        evictToBudgetLocked(evicted);
+    }
+
+    [[nodiscard]] std::size_t budgetBytes() {
+        std::lock_guard lock(mutex_);
+        return budgetBytes_;
+    }
+
+    [[nodiscard]] std::size_t retainedBytes() {
+        std::lock_guard lock(mutex_);
+        return lruBytes_;
+    }
+
+  private:
+    struct MemoEntry {
+        std::uintmax_t fileSize{0};
+        std::filesystem::file_time_type modTime{};
+        std::weak_ptr<creatures::rtp::AudioStreamBuffer> buffer;
+    };
+
+    struct RetainedBuffer {
+        std::string key;
+        std::shared_ptr<creatures::rtp::AudioStreamBuffer> buffer;
+    };
+
+    static constexpr std::size_t MAX_WEAK_ENTRIES = 1024;
+
+    void dropRetainedLocked(const std::string &key, Evicted &evicted) {
+        for (auto it = lru_.begin(); it != lru_.end(); ++it) {
+            if (it->key == key) {
+                lruBytes_ -= it->buffer->approximateBytes();
+                evicted.push_back(std::move(it->buffer));
+                lru_.erase(it);
+                return;
+            }
+        }
+    }
+
+    void retainLocked(const std::string &key, const std::shared_ptr<creatures::rtp::AudioStreamBuffer> &buffer,
+                      Evicted &evicted) {
+        dropRetainedLocked(key, evicted);
+        lru_.push_front(RetainedBuffer{key, buffer});
+        lruBytes_ += buffer->approximateBytes();
+        evictToBudgetLocked(evicted);
+    }
+
+    // The newest entry always stays, even if it alone exceeds the budget — the
+    // playback that just loaded it needs it regardless.
+    void evictToBudgetLocked(Evicted &evicted) {
+        while (lruBytes_ > budgetBytes_ && lru_.size() > 1) {
+            lruBytes_ -= lru_.back().buffer->approximateBytes();
+            evicted.push_back(std::move(lru_.back().buffer));
+            lru_.pop_back();
+        }
+    }
+
+    std::mutex mutex_;
+    std::unordered_map<std::string, MemoEntry> entries_;
+    std::list<RetainedBuffer> lru_;
+    std::size_t lruBytes_{0};
+    // Fail safe until main.cpp injects the resolved value: the SMALL default,
+    // so a load that happens before configuration (or in tests) can never latch
+    // the 64 GB server's budget onto the 8 GB travel Pi (issue #93 review).
+    std::size_t budgetBytes_{DEFAULT_RTP_AUDIO_MEMO_BYTES_TRAVEL};
 };
 
-std::list<RetainedBuffer> &memoLru() {
-    static std::list<RetainedBuffer> lru;
-    return lru;
-}
-
-std::size_t &memoLruBytes() {
-    static std::size_t bytes = 0;
-    return bytes;
-}
-
-// Caller must hold memoMutex(). Moves/creates key at the front and evicts from
-// the back until the budget holds (the newest entry always stays, even if it
-// alone exceeds the budget — the playback needs it regardless).
-void retainInLru(const std::string &key, const std::shared_ptr<creatures::rtp::AudioStreamBuffer> &buffer) {
-    auto &lru = memoLru();
-    auto &bytes = memoLruBytes();
-    for (auto it = lru.begin(); it != lru.end(); ++it) {
-        if (it->key == key) {
-            bytes -= it->buffer->approximateBytes();
-            lru.erase(it);
-            break;
-        }
-    }
-    lru.push_front(RetainedBuffer{key, buffer});
-    bytes += buffer->approximateBytes();
-    while (bytes > memoRetainBudgetBytes() && lru.size() > 1) {
-        bytes -= lru.back().buffer->approximateBytes();
-        lru.pop_back();
-    }
+BufferMemo &bufferMemo() {
+    static BufferMemo memo;
+    return memo;
 }
 
 std::mutex &encodingJobMutex() {
@@ -155,33 +234,32 @@ std::mutex &encodingJobMutex() {
 std::shared_ptr<util::AudioCache> AudioStreamBuffer::sharedAudioCacheInstance_ = nullptr;
 
 std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWavFile(const std::string &audioFilePath,
-                                                                      std::shared_ptr<OperationSpan> parentSpan) {
-    const auto fileLoadMutex = getFileLoadMutex(audioFilePath);
+                                                                      std::shared_ptr<OperationSpan> parentSpan,
+                                                                      RetentionIntent retention) {
+    // One canonicalization shared by the load mutex and the memo, so the two
+    // can never key the same file differently (issue #93 review).
+    const auto canonicalKey = canonicalKeyFor(audioFilePath);
+    const auto fileLoadMutex = getFileLoadMutex(canonicalKey);
     std::lock_guard fileLoadLock(*fileLoadMutex);
 
-    std::error_code statError;
-    const auto canonicalPath = std::filesystem::weakly_canonical(audioFilePath, statError);
-    const std::string memoKey = statError ? audioFilePath : canonicalPath.string();
-    const auto currentSize = std::filesystem::file_size(memoKey, statError);
-    const auto currentModTime =
-        statError ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(memoKey, statError);
+    // Evicted buffers destruct here, at end of scope — after every memo lock
+    // has been released (issue #93 review).
+    BufferMemo::Evicted evicted;
+
+    std::error_code sizeError;
+    std::error_code modTimeError;
+    const auto currentSize = std::filesystem::file_size(canonicalKey, sizeError);
+    const auto currentModTime = std::filesystem::last_write_time(canonicalKey, modTimeError);
+    const bool fingerprinted = !sizeError && !modTimeError;
 
     // Memo hit: same unchanged source → share the SAME immutable buffer with
     // every concurrent playback instead of loading another full copy
-    // (issue #93). Cheap validation only (size + mtime); a stat change is a
-    // plain miss and reloads.
-    if (!statError) {
-        std::lock_guard memoLock(memoMutex());
-        if (auto it = memoEntries().find(memoKey); it != memoEntries().end()) {
-            if (it->second.fileSize == currentSize && it->second.modTime == currentModTime) {
-                if (auto existing = it->second.buffer.lock()) {
-                    debug("Sharing in-memory audio buffer for {} ({} frames)", audioFilePath,
-                          existing->getFrameCount());
-                    retainInLru(memoKey, existing);
-                    return existing;
-                }
-            }
-            memoEntries().erase(it);
+    // (issue #93). See BufferMemo's staleness contract for what size+mtime
+    // does and does not catch.
+    if (fingerprinted) {
+        if (auto existing = bufferMemo().lookup(canonicalKey, currentSize, currentModTime, evicted)) {
+            debug("Sharing in-memory audio buffer for {} ({} frames)", audioFilePath, existing->getFrameCount());
+            return existing;
         }
     }
 
@@ -195,15 +273,9 @@ std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWavFile(const std:
 
     if (loadResult.isSuccess()) {
         debug("Successfully loaded audio buffer with {} frames", loadResult.getValue().value_or(0));
-        if (!statError) {
-            std::lock_guard memoLock(memoMutex());
-            // Opportunistic sweep: one-shot files (each streaming sentence has
-            // a unique path) would otherwise leave dead weak entries forever.
-            if (memoEntries().size() > 1024) {
-                std::erase_if(memoEntries(), [](const auto &entry) { return entry.second.buffer.expired(); });
-            }
-            memoEntries()[memoKey] = MemoEntry{currentSize, currentModTime, buf};
-            retainInLru(memoKey, buf);
+        if (fingerprinted) {
+            bufferMemo().store(canonicalKey, currentSize, currentModTime, buf, retention == RetentionIntent::Retain,
+                               evicted);
         }
         return buf;
     } else {
@@ -212,12 +284,24 @@ std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWavFile(const std:
     }
 }
 
-void AudioStreamBuffer::setMemoRetainBytesForTesting(std::size_t bytes) {
-    std::lock_guard memoLock(memoMutex());
-    memoRetainBudgetBytes() = bytes;
-    memoLru().clear();
-    memoLruBytes() = 0;
-    memoEntries().clear();
+void AudioStreamBuffer::setMemoRetainBytes(std::size_t bytes) {
+    BufferMemo::Evicted evicted;
+    bufferMemo().setBudgetBytes(bytes, evicted);
+    info("In-memory audio buffer retention budget set to {} bytes", bytes);
+}
+
+std::size_t AudioStreamBuffer::memoRetainBytes() { return bufferMemo().budgetBytes(); }
+
+std::size_t AudioStreamBuffer::memoRetainedBytes() { return bufferMemo().retainedBytes(); }
+
+void AudioStreamBuffer::invalidateMemo(const std::string &audioFilePath) {
+    BufferMemo::Evicted evicted;
+    bufferMemo().invalidate(canonicalKeyFor(audioFilePath), evicted);
+}
+
+void AudioStreamBuffer::clearMemo() {
+    BufferMemo::Evicted evicted;
+    bufferMemo().clear(evicted);
 }
 
 void AudioStreamBuffer::setAudioCacheInstance(std::shared_ptr<util::AudioCache> audioCacheInstance) {
@@ -542,13 +626,19 @@ Result<size_t> AudioStreamBuffer::loadWithCaching(const std::string &audioFilePa
         span->setAttribute("cache_result", "miss");
     }
 
-    std::lock_guard encodingJobLock(encodingJobMutex());
-
     // Fingerprint the source BEFORE the WAV is opened (issue #93): the
     // verifying save below refuses to publish if the file changed during the
     // encode, so old packets can never be labeled with a replacement file's
     // identity.
+    //
+    // Deliberately hashed OUTSIDE encodingJobMutex (issue #93 review): that
+    // mutex throttles encoder CPU, and a show-length source is a multi-second
+    // SHA-256 read that would otherwise serialize behind every other pending
+    // cache miss. The TOCTOU window is unchanged — what matters is that the
+    // fingerprint predates the WAV read, not which lock is held.
     auto expectedSourceInfo = sharedAudioCacheInstance_->getSourceFileInfo(audioFilePath);
+
+    std::lock_guard encodingJobLock(encodingJobMutex());
 
     auto loadResult = loadWaveFile(audioFilePath, span);
     if (!loadResult.isSuccess()) {
@@ -590,8 +680,12 @@ Result<size_t> AudioStreamBuffer::loadWithCaching(const std::string &audioFilePa
 
 void AudioStreamBuffer::loadFromCachedAudioData(util::AudioCache::CachedAudioData &&cachedAudioData) {
     numberOfFramesPerChannel_ = cachedAudioData.framesPerChannel;
+    approximateBytes_ = cachedAudioData.approximateBytes;
     encodedOpusFrames_ = std::move(cachedAudioData.encodedFrames);
-    computeApproximateBytes();
+    if (approximateBytes_ == 0) {
+        // Pre-#93 cache reader, or an empty load: fall back to walking.
+        computeApproximateBytes();
+    }
 
     debug("Loaded {} frames per channel from cached audio data", numberOfFramesPerChannel_);
 }

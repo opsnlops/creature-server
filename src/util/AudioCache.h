@@ -48,6 +48,10 @@ class AudioCache {
     struct CachedAudioData {
         std::size_t framesPerChannel;
         std::array<std::vector<std::vector<uint8_t>>, RTP_STREAMING_CHANNELS> encodedFrames;
+        // Payload + per-frame overhead, accumulated by the reader as it
+        // budgets the load. Carried out so the buffer doesn't re-walk ~1.5M
+        // frame vectors to recompute a number we already have (issue #93).
+        std::size_t approximateBytes{0};
     };
 
     AudioCache(const std::string &soundDirectory);
@@ -66,22 +70,12 @@ class AudioCache {
                                                       std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
-     * @brief Save encoded audio data to cache
-     *
-     * Stores the encoded frames as packet files (one per channel) with embedded
-     * metadata about the source file and encoder configuration.
-     *
-     * @param sourceFilePath Path to source WAV file
-     * @param audioData Encoded audio data to cache
-     * @param parentSpan Optional telemetry span
-     * @return Result indicating success/failure
-     */
-    Result<void> saveToCache(const std::string &sourceFilePath, const CachedAudioData &audioData,
-                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
-
-    /**
      * @brief Save encoded audio, verifying the source still matches a
      *        fingerprint captured BEFORE the WAV was read (issue #93).
+     *
+     * This is the ONLY save path: a variant that fingerprints at save time
+     * cannot detect a source replaced during the encode, so it was removed
+     * rather than left as a footgun for the next caller.
      *
      * Closes the encode-time TOCTOU: if an external writer replaced the WAV
      * between the caller's fingerprint capture and this publication, the save
@@ -142,6 +136,27 @@ class AudioCache {
      * @brief Generate cache directory path for a source file
      */
     std::string getCacheDirectoryPath(const std::string &sourceFilePath) const;
+
+    /**
+     * Advisory lock file for one cache key. Deliberately a SIBLING of the
+     * cache directory, not a file inside it: clearCache's remove_all would
+     * otherwise delete the very inode it holds the lock on, after which a peer
+     * process creates a fresh inode and both proceed (issue #93 review).
+     */
+    std::string getCacheLockPath(const std::string &sourceFilePath) const;
+
+    /**
+     * clearCache's body, for callers that ALREADY hold this key's advisory
+     * lock. flock is per-fd, so a holder that called the public clearCache
+     * would block forever waiting on itself; making that mistake unwritable is
+     * why this split exists (issue #93 review).
+     */
+    Result<void> clearCacheLocked(const std::string &sourceFilePath);
+
+    /// Remove abandoned `*.tmp.<pid>.<n>` files for this key. Caller holds the
+    /// exclusive lock. Unique temp names never self-clean the way the old
+    /// deterministic name did, so a crash mid-save would leak them (issue #93).
+    void sweepStaleTemporaries(const std::string &cacheDir) const;
 
     std::shared_ptr<CacheKeyMutex> getKeyMutex(const std::string &sourceFilePath) const;
 

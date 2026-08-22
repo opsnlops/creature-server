@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
@@ -11,6 +13,7 @@
 #include <optional>
 #include <sstream>
 #include <sys/file.h>
+#include <thread>
 #include <unistd.h>
 
 // For SHA-256 hashing - we'll use OpenSSL since it's likely already linked
@@ -43,18 +46,42 @@ constexpr uint32_t AUDIO_CACHE_FORMAT_VERSION = 3;
 constexpr const char *CACHE_COMPLETE_MARKER = ".complete";
 
 /**
- * Advisory cross-process lock on one cache key's directory (issue #93). The
- * process-local key mutex stays the OUTER lock — flock is per-fd, not
- * per-thread, so it cannot arbitrate threads within one process. Best-effort:
- * a failure to acquire degrades to today's process-local-only behavior.
+ * Advisory cross-process lock for one cache key (issue #93).
+ *
+ * The process-local key mutex stays the OUTER lock — flock is per-fd, not
+ * per-thread, so it cannot arbitrate threads within one process.
+ *
+ * Acquisition is NON-BLOCKING with a bounded retry (issue #93 review): a
+ * blocking flock would park a load thread indefinitely behind a hung peer
+ * process while this process holds the global encode mutex, wedging every
+ * cache-miss load server-wide with no cancellation path. On timeout we
+ * proceed unlocked — degraded to process-local exclusion, which is exactly
+ * the behavior before this feature existed — and say so in the log.
  */
 class ScopedFileLock {
   public:
+    static constexpr auto ACQUIRE_TIMEOUT = std::chrono::seconds(5);
+    static constexpr auto RETRY_INTERVAL = std::chrono::milliseconds(20);
+
     ScopedFileLock(const std::string &lockFilePath, bool exclusive) {
         fd_ = ::open(lockFilePath.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0644);
-        if (fd_ >= 0 && ::flock(fd_, exclusive ? LOCK_EX : LOCK_SH) != 0) {
-            ::close(fd_);
-            fd_ = -1;
+        if (fd_ < 0) {
+            return;
+        }
+        const int operation = (exclusive ? LOCK_EX : LOCK_SH) | LOCK_NB;
+        const auto deadline = std::chrono::steady_clock::now() + ACQUIRE_TIMEOUT;
+        while (true) {
+            if (::flock(fd_, operation) == 0) {
+                return; // held
+            }
+            if (errno != EWOULDBLOCK || std::chrono::steady_clock::now() >= deadline) {
+                spdlog::warn("Audio cache lock {} unavailable ({}); continuing without cross-process exclusion",
+                             lockFilePath, errno == EWOULDBLOCK ? "timed out" : std::strerror(errno));
+                ::close(fd_);
+                fd_ = -1;
+                return;
+            }
+            std::this_thread::sleep_for(RETRY_INTERVAL);
         }
     }
     ~ScopedFileLock() {
@@ -70,8 +97,6 @@ class ScopedFileLock {
   private:
     int fd_{-1};
 };
-
-constexpr const char *CACHE_LOCK_FILE = ".lock";
 
 /**
  * Process-unique temporary path (issue #93): deterministic ".tmp" names let
@@ -133,12 +158,12 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
         std::lock_guard lock(*keyMutex);
 
         // Shared advisory lock against a concurrent writer in ANOTHER process
-        // (issue #93). Taken only when the cache dir exists; a missing dir is
-        // a plain miss.
-        std::optional<ScopedFileLock> fileLock;
-        if (const auto cacheDir = getCacheDirectoryPath(sourceFilePath); std::filesystem::exists(cacheDir)) {
-            fileLock.emplace((std::filesystem::path(cacheDir) / CACHE_LOCK_FILE).string(), /*exclusive=*/false);
-        }
+        // (issue #93). The lock file is a sibling of the cache directory, so
+        // clearCacheLocked's remove_all cannot delete the inode we hold.
+        const auto lockPath = getCacheLockPath(sourceFilePath);
+        std::error_code lockDirError;
+        std::filesystem::create_directories(std::filesystem::path(lockPath).parent_path(), lockDirError);
+        ScopedFileLock fileLock(lockPath, /*exclusive=*/false);
 
         // Fast check: do all cache files exist?
         if (!allCacheFilesExist(sourceFilePath)) {
@@ -175,9 +200,7 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
                 span->setError(loadResult.getError()->getMessage());
             }
             debug("Cache miss: failed to load channel 0 cache file: {}", loadResult.getError()->getMessage());
-            // Our own flock must drop before clearCache re-acquires it exclusively.
-            fileLock.reset();
-            clearCache(sourceFilePath);
+            clearCacheLocked(sourceFilePath);
             return nullptr;
         }
 
@@ -190,9 +213,7 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
                 span->setAttribute("cache_result", "miss_file_changed");
             debug("Cache miss: source file has changed for {}", sourceFilePath);
             // Clear stale cache
-            // Our own flock must drop before clearCache re-acquires it exclusively.
-            fileLock.reset();
-            clearCache(sourceFilePath);
+            clearCacheLocked(sourceFilePath);
             return nullptr;
         }
 
@@ -214,9 +235,7 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
                 }
                 warn("Cache miss: failed to load channel {} for {}: {}", ch, sourceFilePath,
                      channelResult.getError()->getMessage());
-                // Our own flock must drop before clearCache re-acquires it exclusively.
-                fileLock.reset();
-                clearCache(sourceFilePath);
+                clearCacheLocked(sourceFilePath);
                 return nullptr;
             }
 
@@ -228,14 +247,14 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
                 if (span)
                     span->setAttribute("cache_result", "miss_inconsistent_channels");
                 warn("Cache miss: inconsistent channel data for {}", sourceFilePath);
-                // Our own flock must drop before clearCache re-acquires it exclusively.
-                fileLock.reset();
-                clearCache(sourceFilePath); // Clear corrupted cache
+                clearCacheLocked(sourceFilePath); // Clear corrupted cache
                 return nullptr;
             }
 
             cachedData->encodedFrames[ch] = std::move(channelFrames);
         }
+
+        cachedData->approximateBytes = aggregateBytes;
 
         cacheHits_++;
         if (span) {
@@ -256,18 +275,6 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
         error("Cache miss due to exception for {}: {}", sourceFilePath, e.what());
         return nullptr;
     }
-}
-
-Result<void> AudioCache::saveToCache(const std::string &sourceFilePath, const CachedAudioData &audioData,
-                                     std::shared_ptr<OperationSpan> parentSpan) {
-    // Legacy overload: fingerprints the source at save time. Prefer the
-    // verifying overload, which closes the encode-time TOCTOU (issue #93).
-    auto sourceInfoResult = getSourceFileInfo(sourceFilePath);
-    if (!sourceInfoResult.isSuccess()) {
-        return Result<void>(sourceInfoResult.getError().value());
-    }
-    return saveToCache(sourceFilePath, audioData.framesPerChannel, audioData.encodedFrames,
-                       sourceInfoResult.getValue().value(), std::move(parentSpan));
 }
 
 Result<void>
@@ -302,17 +309,46 @@ AudioCache::saveToCache(const std::string &sourceFilePath, std::size_t framesPer
             }
         }
 
+        // Refuse to publish more than the reader will accept, so a legitimate
+        // encode can never become a file that is rejected on every load
+        // (issue #93 review).
+        std::size_t publishedBytes = 0;
+        for (const auto &channel : encodedFrames) {
+            for (const auto &frame : channel) {
+                publishedBytes += frame.size() + RTP_ENCODED_FRAME_OVERHEAD_BYTES;
+            }
+        }
+        if (publishedBytes > RTP_MAX_ENCODED_TOTAL_BYTES) {
+            const auto errorMsg = fmt::format("Refusing to cache {}: encoded payload {} exceeds the {} byte ceiling",
+                                              sourceFilePath, publishedBytes, RTP_MAX_ENCODED_TOTAL_BYTES);
+            warn(errorMsg);
+            if (span)
+                span->setError(errorMsg);
+            return Result<void>{ServerError(ServerError::InvalidData, errorMsg)};
+        }
+
         // Verify the source STILL matches the fingerprint captured before the
         // WAV was read (issue #93): an external writer replacing the file
         // mid-encode must not get the old packets published under its
         // identity — that combination validates as a hit forever.
-        auto currentInfoResult = getSourceFileInfo(sourceFilePath);
-        if (!currentInfoResult.isSuccess()) {
+        //
+        // Compared by size + mtime only (issue #93 review): a full SHA-256
+        // re-read of a show-length source here would be a second multi-second
+        // hash inside both the key mutex and the caller's encode mutex, and a
+        // stat difference already proves the file changed. This matches the
+        // in-memory memo's staleness contract.
+        std::error_code sizeError;
+        std::error_code modTimeError;
+        const auto currentSize = std::filesystem::file_size(sourceFilePath, sizeError);
+        const auto currentModTime = std::filesystem::last_write_time(sourceFilePath, modTimeError);
+        if (sizeError || modTimeError) {
+            const auto errorMsg =
+                fmt::format("Cannot stat {} to verify it before publishing its cache", sourceFilePath);
             if (span)
-                span->setError(currentInfoResult.getError()->getMessage());
-            return Result<void>(currentInfoResult.getError().value());
+                span->setError(errorMsg);
+            return Result<void>{ServerError(ServerError::NotFound, errorMsg)};
         }
-        if (!(currentInfoResult.getValue().value() == expectedSource)) {
+        if (currentSize != expectedSource.fileSize || currentModTime != expectedSource.modTime) {
             const auto errorMsg =
                 fmt::format("Source file changed during encoding; refusing to publish cache for {}", sourceFilePath);
             warn(errorMsg);
@@ -329,10 +365,16 @@ AudioCache::saveToCache(const std::string &sourceFilePath, std::size_t framesPer
         std::filesystem::create_directories(cacheDir);
 
         // Exclusive advisory lock against readers/writers in OTHER processes
-        // sharing this hostname-scoped cache (issue #93). Optional so failure
-        // paths can drop it before clearCache re-acquires it exclusively.
-        std::optional<ScopedFileLock> fileLock;
-        fileLock.emplace((std::filesystem::path(cacheDir) / CACHE_LOCK_FILE).string(), /*exclusive=*/true);
+        // sharing this hostname-scoped cache (issue #93). Sibling of the cache
+        // directory so a later clear cannot unlink the inode we hold.
+        ScopedFileLock fileLock(getCacheLockPath(sourceFilePath), /*exclusive=*/true);
+
+        // Unique temp names never self-clean, so a crash mid-save would leak
+        // up to 17 channel temps per incident (issue #93 review). Only safe to
+        // sweep when we actually hold the exclusive lock.
+        if (fileLock.locked()) {
+            sweepStaleTemporaries(cacheDir);
+        }
 
         const auto completeMarker = std::filesystem::path(cacheDir) / CACHE_COMPLETE_MARKER;
         std::error_code filesystemError;
@@ -349,9 +391,7 @@ AudioCache::saveToCache(const std::string &sourceFilePath, std::size_t framesPer
                 if (span)
                     span->setError(saveResult.getError()->getMessage());
                 // Clean up partially written cache
-                // Our own flock must drop before clearCache re-acquires it exclusively.
-                fileLock.reset();
-                clearCache(sourceFilePath);
+                clearCacheLocked(sourceFilePath);
                 return saveResult;
             }
 
@@ -365,9 +405,7 @@ AudioCache::saveToCache(const std::string &sourceFilePath, std::size_t framesPer
                 std::filesystem::rename(temporaryPath, cachePath, filesystemError);
             }
             if (filesystemError) {
-                // Our own flock must drop before clearCache re-acquires it exclusively.
-                fileLock.reset();
-                clearCache(sourceFilePath);
+                clearCacheLocked(sourceFilePath);
                 return Result<void>{
                     ServerError(ServerError::InternalError,
                                 fmt::format("Failed to publish cache channel {}: {}", ch, filesystemError.message()))};
@@ -380,9 +418,7 @@ AudioCache::saveToCache(const std::string &sourceFilePath, std::size_t framesPer
             marker << AUDIO_CACHE_FORMAT_VERSION;
             marker.flush();
             if (!marker.good()) {
-                // Our own flock must drop before clearCache re-acquires it exclusively.
-                fileLock.reset();
-                clearCache(sourceFilePath);
+                clearCacheLocked(sourceFilePath);
                 return Result<void>{
                     ServerError(ServerError::InternalError, "Failed to write audio cache completion marker")};
             }
@@ -390,9 +426,7 @@ AudioCache::saveToCache(const std::string &sourceFilePath, std::size_t framesPer
         filesystemError.clear();
         std::filesystem::rename(temporaryMarker, completeMarker, filesystemError);
         if (filesystemError) {
-            // Our own flock must drop before clearCache re-acquires it exclusively.
-            fileLock.reset();
-            clearCache(sourceFilePath);
+            clearCacheLocked(sourceFilePath);
             return Result<void>{ServerError(
                 ServerError::InternalError,
                 fmt::format("Failed to publish audio cache completion marker: {}", filesystemError.message()))};
@@ -413,13 +447,23 @@ AudioCache::saveToCache(const std::string &sourceFilePath, std::size_t framesPer
 }
 
 Result<void> AudioCache::clearCache(const std::string &sourceFilePath) {
+    const auto keyMutex = getKeyMutex(sourceFilePath);
+    std::lock_guard lock(*keyMutex);
+
+    // Public entry point: acquire the advisory lock, then delegate. Callers
+    // that already hold it must use clearCacheLocked instead — flock is
+    // per-fd, so re-acquiring here would block on ourselves (issue #93).
+    ScopedFileLock fileLock(getCacheLockPath(sourceFilePath), /*exclusive=*/true);
+    return clearCacheLocked(sourceFilePath);
+}
+
+Result<void> AudioCache::clearCacheLocked(const std::string &sourceFilePath) {
     try {
         const auto keyMutex = getKeyMutex(sourceFilePath);
-        std::lock_guard lock(*keyMutex);
+        std::lock_guard lock(*keyMutex); // recursive: safe when clearCache already holds it
 
         auto cacheDir = getCacheDirectoryPath(sourceFilePath);
         if (std::filesystem::exists(cacheDir)) {
-            ScopedFileLock fileLock((std::filesystem::path(cacheDir) / CACHE_LOCK_FILE).string(), /*exclusive=*/true);
             std::filesystem::remove_all(cacheDir);
             debug("Cleared cache for {}", sourceFilePath);
         }
@@ -428,6 +472,34 @@ Result<void> AudioCache::clearCache(const std::string &sourceFilePath) {
         auto errorMsg = fmt::format("Failed to clear cache for {}: {}", sourceFilePath, e.what());
         error(errorMsg);
         return Result<void>(ServerError(ServerError::InternalError, errorMsg));
+    }
+}
+
+std::string AudioCache::getCacheLockPath(const std::string &sourceFilePath) const {
+    return getCacheDirectoryPath(sourceFilePath) + ".lock";
+}
+
+void AudioCache::sweepStaleTemporaries(const std::string &cacheDir) const {
+    std::error_code ec;
+    if (!std::filesystem::exists(cacheDir, ec) || ec) {
+        return;
+    }
+    std::size_t swept = 0;
+    for (const auto &entry : std::filesystem::directory_iterator(cacheDir, ec)) {
+        if (ec) {
+            break;
+        }
+        const auto name = entry.path().filename().string();
+        if (name.find(".tmp.") == std::string::npos) {
+            continue;
+        }
+        std::error_code removeError;
+        if (std::filesystem::remove(entry.path(), removeError)) {
+            ++swept;
+        }
+    }
+    if (swept > 0) {
+        warn("Swept {} abandoned audio cache temporary file(s) from {}", swept, cacheDir);
     }
 }
 

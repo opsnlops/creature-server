@@ -174,6 +174,11 @@ static constexpr int RTP_BITRATE = 256000;            // 256 kbps for Opus (supe
 // minutes comfortably covers real show content (DialogWav.h documents realistic
 // scenes as well under an hour; nothing to date approaches 15 minutes) while
 // bounding a cache load to a deterministic ~600 MB.
+// NOTE: this ceiling also governs the transient decode allocation. At 900 s a
+// cache miss holds ~1.47 GB of interleaved PCM while encoding (17 ch x 48 kHz
+// x 2 B), on top of the encoded output. That is comfortable on the 64 GB main
+// server; the 8 GB travel Pi runs local audio rather than RTP encodes today,
+// and lowering this constant is the lever if that ever changes.
 static constexpr uint32_t RTP_MAX_AUDIO_SECONDS = 900;
 static constexpr std::size_t RTP_MAX_FRAMES_PER_CHANNEL =
     static_cast<std::size_t>(RTP_MAX_AUDIO_SECONDS) * 1000 / RTP_FRAME_MS; // 90,000 ten-ms frames
@@ -183,13 +188,21 @@ static constexpr std::size_t RTP_MAX_FRAMES_PER_CHANNEL =
 // the budget needs determinism, not byte-exactness.
 static constexpr std::size_t RTP_ENCODED_FRAME_OVERHEAD_BYTES = 64;
 
+// Opus runs VBR with FEC, so a dense passage can average meaningfully above
+// the nominal bitrate. Budgeting at exactly nominal would let a legitimately
+// encoded near-ceiling file publish and then be refused by the reader on every
+// play — permanent re-encode thrash. 50% headroom covers realistic VBR spread
+// (issue #93 review); the save path enforces the same number, so anything
+// published is always loadable.
+static constexpr std::size_t RTP_ENCODED_VBR_HEADROOM_PERCENT = 150;
+
 // Aggregate encoded payload + overhead across all 17 channels at the duration
-// ceiling (~600 MB at 256 kbps). Checked BEFORE allocation on the cache-read
-// path, and used as the default retention budget reference for the in-memory
-// buffer memo.
+// ceiling (~900 MB with headroom). Checked BEFORE allocation on the cache-read
+// path AND before publication on the save path.
 static constexpr std::size_t RTP_MAX_ENCODED_TOTAL_BYTES =
     RTP_MAX_FRAMES_PER_CHANNEL * static_cast<std::size_t>(RTP_STREAMING_CHANNELS) *
-    (static_cast<std::size_t>(RTP_BITRATE) / 8 * RTP_FRAME_MS / 1000 + RTP_ENCODED_FRAME_OVERHEAD_BYTES);
+    (static_cast<std::size_t>(RTP_BITRATE) / 8 * RTP_FRAME_MS / 1000 + RTP_ENCODED_FRAME_OVERHEAD_BYTES) *
+    RTP_ENCODED_VBR_HEADROOM_PERCENT / 100;
 
 // In-memory retention budget for the AudioStreamBuffer memo (issue #93):
 // recently played shows stay warm across playbacks, bounded by bytes. The main
