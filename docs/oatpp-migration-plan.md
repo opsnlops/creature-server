@@ -236,7 +236,7 @@ Migrate leaf models before aggregate models.
 - [ ] `StreamFrame`
 - [ ] `PlaylistStatus`
 - [x] `Animation`
-- [ ] `Creature` and runtime state
+- [ ] `Creature` and runtime state (oat++ adapters extracted; neutral aggregate codec remains)
 - [ ] `Playlist`
 - [ ] `Sound` and nested timing/cue types
 - [ ] `DmxFixture` and nested channel/pattern/binding types

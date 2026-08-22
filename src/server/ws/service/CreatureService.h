@@ -12,6 +12,7 @@
 #include "model/Creature.h"
 #include "server/runtime/Activity.h"
 #include "server/ws/dto/CreatureConfigValidationDto.h"
+#include "server/ws/dto/CreatureDto.h"
 #include "server/ws/dto/ListDto.h"
 
 namespace creatures {
