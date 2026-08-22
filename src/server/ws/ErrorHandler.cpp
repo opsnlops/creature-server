@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-#include "server/ws/controller/HttpResponseHelpers.h"
+#include "api/JsonResponse.h"
 
 namespace creatures ::ws {
 
@@ -56,17 +56,14 @@ std::string withoutInternalPrefix(const std::string &message) {
 
 } // namespace
 
-ErrorHandler::ErrorHandler(const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &objectMapper)
-    : m_objectMapper(objectMapper) {}
+ErrorHandler::ErrorHandler(const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &objectMapper) {
+    // Kept in the constructor until AppComponent no longer owns an oat++
+    // object mapper. Error responses themselves are framework-neutral now.
+    static_cast<void>(objectMapper);
+}
 
 std::shared_ptr<ErrorHandler::OutgoingResponse>
 ErrorHandler::handleError(const Status &status, const oatpp::String &message, const Headers &headers) {
-
-    auto error = StatusDto::createShared();
-    // Lowercase "error" matches the controller-side bailHttp helper. Issue
-    // #16 standardized on lowercase vocabulary so OATPP_ASSERT_HTTP paths and
-    // explicit bailHttp returns produce byte-identical envelopes on the wire.
-    error->status = STATUS_ERROR;
 
     Status actualStatus = status;
     oatpp::String actualMessage = message;
@@ -79,10 +76,11 @@ ErrorHandler::handleError(const Status &status, const oatpp::String &message, co
         }
     }
 
-    error->code = actualStatus.code;
-    error->message = actualMessage;
-
-    auto response = ResponseFactory::createResponse(actualStatus, error, m_objectMapper);
+    const auto error =
+        api::makeStatusResponse(actualStatus.code, actualMessage ? std::string(actualMessage) : std::string{});
+    const auto serialized = api::jsonToString(api::statusResponseToJson(error));
+    auto response = ResponseFactory::createResponse(actualStatus, serialized.c_str());
+    response->putHeader("Content-Type", "application/json; charset=utf-8");
 
     for (const auto &pair : headers.getAll()) {
         response->putHeader(pair.first.toString(), pair.second.toString());

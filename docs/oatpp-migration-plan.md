@@ -210,13 +210,13 @@ changes cannot occur silently.
 - [x] Establish consistent field-path error messages.
 - [x] Add an API JSON parser that returns `InvalidData` without changing BSON
       error behavior.
-- [ ] Add neutral JSON response helpers for the canonical status envelope and
+- [x] Add neutral JSON response helpers for the canonical status envelope and
       list responses.
-- [ ] Document the codec conventions in code and tests.
+- [x] Document the codec conventions in code and tests.
 
-The checked-extraction foundation is now proven by the Track/Animation slice.
-The remaining Phase 1 work is response-side: neutral status/list helpers and a
-short codec guide once those shapes establish the final conventions.
+The checked-extraction foundation and neutral response helpers are proven by
+the Track/Animation slice. The conventions are recorded in
+`docs/json-codec-conventions.md` for subsequent resource families.
 
 **Exit criterion:** a new request or response can be implemented without an
 oat++ DTO and without hand-writing repetitive unsafe `json.get<T>()` calls.
@@ -226,9 +226,8 @@ oat++ DTO and without hand-writing repetitive unsafe `json.get<T>()` calls.
 Migrate leaf models before aggregate models.
 
 - [ ] `Input`
-- [ ] `Track` (neutral codec complete; oat++ declaration still awaiting move)
-- [ ] `AnimationMetadata` and render-choice types (neutral codec complete;
-      oat++ declarations still awaiting move)
+- [x] `Track`
+- [x] `AnimationMetadata` and render-choice types
 - [ ] `PlaylistItem`
 - [ ] `Notice`
 - [ ] `LogItem` and log-level serialization
@@ -236,7 +235,7 @@ Migrate leaf models before aggregate models.
 - [ ] `VirtualStatusLights`
 - [ ] `StreamFrame`
 - [ ] `PlaylistStatus`
-- [ ] `Animation` (neutral codec complete; oat++ declaration still awaiting move)
+- [x] `Animation`
 - [ ] `Creature` and runtime state
 - [ ] `Playlist`
 - [ ] `Sound` and nested timing/cue types
@@ -265,7 +264,7 @@ header, implementation, controller adaptation, and tests.
 
 - [ ] Fixtures
 - [ ] Creatures
-- [ ] Animations and ad-hoc animations
+- [x] Animations and ad-hoc animations
 - [ ] Playlists and playlist status
 - [ ] Sounds and renditions
 - [ ] Dialog scripts, preview, voice acceptance, and music
@@ -373,12 +372,12 @@ round-trip tests cover difficult behavior:
 
 The first implementation issue should:
 
-- [ ] add the codec conventions and checked-extraction foundation needed by the slice;
-- [ ] implement and test neutral Track and Animation codecs;
-- [ ] audit the existing hand-written `animationToJson` against the oat++ response;
-- [ ] move the corresponding oat++ DTOs to temporary legacy adapters;
-- [ ] make the affected model headers oat++-free;
-- [ ] keep all current endpoints and tests operational.
+- [x] add the codec conventions and checked-extraction foundation needed by the slice;
+- [x] implement and test neutral Track and Animation codecs;
+- [x] audit the existing hand-written `animationToJson` against the oat++ response;
+- [x] move the corresponding oat++ DTOs to temporary legacy adapters;
+- [x] make the affected model headers oat++-free;
+- [x] keep all current endpoints and tests operational.
 
 ## Testing strategy
 

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <nlohmann/json.hpp>
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
 #include "server/ws/ErrorHandler.h"
@@ -29,14 +30,19 @@ std::shared_ptr<creatures::ws::ErrorHandler> makeHandler() {
 /// Run a 500-with-message through the handler and report what came out.
 struct Handled {
     int code;
-    std::string message;
+    std::string body;
+    std::string contentType;
 };
 
 Handled handle(const std::string &message, int inboundCode = 500) {
     auto handler = makeHandler();
     const Status inbound = inboundCode == 500 ? Status::CODE_500 : Status::CODE_400;
     auto response = handler->handleError(inbound, oatpp::String(message.c_str()), {});
-    return {response->getStatus().code, message};
+    const auto body = response->getBody();
+    return {response->getStatus().code,
+            std::string(reinterpret_cast<const char *>(body->getKnownData()),
+                        static_cast<std::size_t>(body->getKnownSize())),
+            std::string(response->getHeader("Content-Type"))};
 }
 
 } // namespace
@@ -76,4 +82,13 @@ TEST(ErrorHandlerJsonFaultTest, DoesNotTouchStatusesThatAreAlreadyCorrect) {
     // A 400 that arrives as a 400 passes straight through — the remap only
     // ever rescues a misreported 500.
     EXPECT_EQ(handle("[oatpp::parser::json::Utils::preparseString()]: Error.", 400).code, 400);
+}
+
+TEST(ErrorHandlerJsonFaultTest, UsesCanonicalNeutralJsonEnvelope) {
+    const auto handled = handle("no such animation", 400);
+    const auto body = nlohmann::json::parse(handled.body);
+
+    EXPECT_EQ(body, nlohmann::json({{"status", "error"}, {"code", 400}, {"message", "no such animation"}}));
+    EXPECT_FALSE(body.contains("session_id"));
+    EXPECT_EQ(handled.contentType, "application/json; charset=utf-8");
 }

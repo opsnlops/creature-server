@@ -46,20 +46,15 @@ extern std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMa
 namespace creatures ::ws {
 
 inline nlohmann::json animationMetadataListToJson(const std::vector<AnimationMetadata> &items) {
-    auto serializedItems = nlohmann::json::array();
-    for (const auto &item : items)
-        serializedItems.push_back(animationMetadataToJson(item));
-    return {{"count", items.size()}, {"items", std::move(serializedItems)}};
+    return api::listResponseToJson(items, animationMetadataToJson);
 }
 
 inline nlohmann::json adHocAnimationListToJson(const std::vector<AdHocAnimationSummary> &items) {
-    auto serializedItems = nlohmann::json::array();
-    for (const auto &item : items) {
-        serializedItems.push_back({{"animation_id", item.animationId},
-                                   {"metadata", animationMetadataToJson(item.metadata)},
-                                   {"created_at", item.createdAt}});
-    }
-    return {{"count", items.size()}, {"items", std::move(serializedItems)}};
+    return api::listResponseToJson(items, [](const auto &item) {
+        return nlohmann::json{{"animation_id", item.animationId},
+                              {"metadata", animationMetadataToJson(item.metadata)},
+                              {"created_at", item.createdAt}};
+    });
 }
 
 class AnimationController : public oatpp::web::server::api::ApiController,
@@ -95,9 +90,10 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                const auto items = result.getValue().value();
                                if (span) {
                                    span->setAttribute("animations.count", static_cast<int64_t>(items.size()));
+                                   span->setAttribute("response.items.count", static_cast<int64_t>(items.size()));
                                    span->setHttpStatus(200);
                                }
-                               return jsonResponse(Status::CODE_200, animationMetadataListToJson(items));
+                               return jsonResponse(span, Status::CODE_200, animationMetadataListToJson(items));
                            });
     }
 
@@ -116,10 +112,10 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                    return bailFromServerError(span, result.getError().value());
                                const auto items = result.getValue().value();
                                if (span) {
-                                   span->setAttribute("adhoc.count", static_cast<int64_t>(items.size()));
+                                   span->setAttribute("response.items.count", static_cast<int64_t>(items.size()));
                                    span->setHttpStatus(200);
                                }
-                               return jsonResponse(Status::CODE_200, adHocAnimationListToJson(items));
+                               return jsonResponse(span, Status::CODE_200, adHocAnimationListToJson(items));
                            });
     }
 
@@ -149,7 +145,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                    span->setAttribute("animation.title", animation.metadata.title);
                                    span->setHttpStatus(200);
                                }
-                               return jsonResponse(Status::CODE_200, animationToJson(animation));
+                               return jsonResponse(span, Status::CODE_200, animationToJson(animation));
                            });
     }
 
@@ -179,7 +175,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                    span->setAttribute("animation.title", animation.metadata.title);
                                    span->setHttpStatus(200);
                                }
-                               return jsonResponse(Status::CODE_200, animationToJson(animation));
+                               return jsonResponse(span, Status::CODE_200, animationToJson(animation));
                            });
     }
 
@@ -290,7 +286,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                }
                                // AnimationService.upsertAnimation goes through storage::publishAnimation,
                                // which fires Animation + SoundList invalidations on success (issue #11 PR #21).
-                               return jsonResponse(Status::CODE_200, animationToJson(animation));
+                               return jsonResponse(span, Status::CODE_200, animationToJson(animation));
                            });
     }
 
@@ -343,46 +339,49 @@ class AnimationController : public oatpp::web::server::api::ApiController,
     ENDPOINT("POST", "api/v1/animation/play", playStoredAnimation,
              BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("POST /api/v1/animation/play", "POST", "api/v1/animation/play", "playStoredAnimation",
-                           "AnimationController", request, [&](const auto &span) {
-                               if (!creatures::config || !creatures::db) {
-                                   if (span) {
-                                       span->setAttribute("error.type", "missing_dependencies");
-                                   }
-                                   return bailHttp(span, Status::CODE_500,
-                                                   "Animation play unavailable: server dependencies missing");
-                               }
-                               if (!requestBody || !requestBody->animation_id ||
-                                   !isUuidShape(std::string(requestBody->animation_id))) {
-                                   return bailHttp(span, Status::CODE_400, "animation_id must be a UUID");
-                               }
-                               if (requestBody->universe < 1 || requestBody->universe > 63999) {
-                                   return bailHttp(span, Status::CODE_400, "universe must be in [1, 63999]");
-                               }
+        return runEndpoint(
+            "POST /api/v1/animation/play", "POST", "api/v1/animation/play", "playStoredAnimation",
+            "AnimationController", request, [&](const auto &span) {
+                if (!creatures::config || !creatures::db) {
+                    if (span) {
+                        span->setAttribute("error.type", "missing_dependencies");
+                    }
+                    return bailHttp(span, Status::CODE_500, "Animation play unavailable: server dependencies missing",
+                                    nullptr, "MissingDependencies");
+                }
+                if (!requestBody || !requestBody->animation_id ||
+                    !isUuidShape(std::string(requestBody->animation_id))) {
+                    return bailHttp(span, Status::CODE_400, "animation_id must be a UUID", nullptr,
+                                    "InvalidAnimationId");
+                }
+                if (requestBody->universe < 1 || requestBody->universe > 63999) {
+                    return bailHttp(span, Status::CODE_400, "universe must be in [1, 63999]", nullptr,
+                                    "InvalidUniverse");
+                }
 
-                               if (span) {
-                                   span->setAttribute("animation.id", std::string(requestBody->animation_id));
-                                   span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
-                                   span->setAttribute("reason", "play");
-                               }
+                if (span) {
+                    span->setAttribute("animation.id", std::string(requestBody->animation_id));
+                    span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
+                    span->setAttribute("reason", "play");
+                }
 
-                               auto result = m_animationService.playStoredAnimation(
-                                   std::string(requestBody->animation_id), requestBody->universe, "play", span);
+                auto result = m_animationService.playStoredAnimation(std::string(requestBody->animation_id),
+                                                                     requestBody->universe, "play", span);
 
-                               if (!result.isSuccess())
-                                   return bailFromServerError(span, result.getError().value());
-                               const auto playback = result.getValue().value();
+                if (!result.isSuccess())
+                    return bailFromServerError(span, result.getError().value());
+                const auto playback = result.getValue().value();
 
-                               if (span) {
-                                   span->setAttribute("result.message", playback.message);
-                                   span->setHttpStatus(200);
-                               }
+                if (span) {
+                    span->setAttribute("result.message", playback.message);
+                    if (playback.sessionId)
+                        span->setAttribute("session.id", *playback.sessionId);
+                    span->setHttpStatus(200);
+                }
 
-                               auto response = buildStatusDto(200, playback.message, STATUS_OK);
-                               if (playback.sessionId)
-                                   response->session_id = playback.sessionId->c_str();
-                               return createDtoResponse(Status::CODE_200, response);
-                           });
+                const auto response = api::makeStatusResponse(200, playback.message, STATUS_OK, playback.sessionId);
+                return jsonResponse(span, Status::CODE_200, api::statusResponseToJson(response));
+            });
     }
 
     ENDPOINT_INFO(interruptAnimation) {
@@ -454,13 +453,10 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                         span->setAttribute("session.id", sessionResult.getValue().value()->getSessionId());
                     }
 
-                    auto result = creatures::ws::StatusDto::createShared();
-                    result->status = STATUS_OK;
-                    result->code = 200;
-                    result->message = "Animation interrupt scheduled successfully";
-                    result->session_id = sessionResult.getValue().value()->getSessionId().c_str();
-
-                    return createDtoResponse(Status::CODE_200, result);
+                    const auto result =
+                        api::makeStatusResponse(200, "Animation interrupt scheduled successfully", STATUS_OK,
+                                                sessionResult.getValue().value()->getSessionId());
+                    return jsonResponse(span, Status::CODE_200, api::statusResponseToJson(result));
                 }
             });
     }
@@ -622,14 +618,11 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                     return bailFromServerError(span, sessionResult.getError().value());
                 }
 
-                // Success — custom DTO carries session_id alongside the standard envelope.
-                auto response = creatures::ws::StatusDto::createShared();
-                response->status = STATUS_OK;
-                response->code = 200;
-                response->message = fmt::format("Triggered ad-hoc animation {} for {} creature(s) on universe {}",
-                                                animationId, targetCreatures.size(), universe)
-                                        .c_str();
-                response->session_id = sessionResult.getValue().value()->getSessionId().c_str();
+                const auto response = api::makeStatusResponse(
+                    200,
+                    fmt::format("Triggered ad-hoc animation {} for {} creature(s) on universe {}", animationId,
+                                targetCreatures.size(), universe),
+                    STATUS_OK, sessionResult.getValue().value()->getSessionId());
 
                 if (span) {
                     span->setAttribute("creature.ids", creatures::joinStrings(targetCreatures, ","));
@@ -638,7 +631,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                     span->setHttpStatus(200);
                 }
 
-                return createDtoResponse(Status::CODE_200, response);
+                return jsonResponse(span, Status::CODE_200, api::statusResponseToJson(response));
             });
     }
 
