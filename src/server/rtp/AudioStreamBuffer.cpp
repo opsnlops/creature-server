@@ -10,6 +10,7 @@
 
 #include <filesystem>
 #include <future>
+#include <list>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -18,29 +19,35 @@
 
 #include "AudioStreamBuffer.h"
 #include "server/audio/MonoWavDownmixer.h"
+#include "server/config/Configuration.h"
 #include "server/rtp/opus/OpusPriming.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
 namespace creatures {
+extern std::shared_ptr<Configuration> config;
 extern std::shared_ptr<ObservabilityManager> observability;
-}
+} // namespace creatures
 
 using namespace creatures;
 using namespace creatures::rtp;
 
 namespace {
 
-std::shared_ptr<std::mutex> getFileLoadMutex(const std::string &audioFilePath) {
+/// Canonical form of a path, used as the key for BOTH the per-path load mutex
+/// and the memo so the two can never disagree about identity (issue #93).
+std::string canonicalKeyFor(const std::string &audioFilePath) {
+    std::error_code error;
+    const auto canonicalPath = std::filesystem::weakly_canonical(audioFilePath, error);
+    return error ? audioFilePath : canonicalPath.string();
+}
+
+std::shared_ptr<std::mutex> getFileLoadMutex(const std::string &canonicalKey) {
     static std::mutex mutexMapMutex;
     static std::unordered_map<std::string, std::weak_ptr<std::mutex>> mutexes;
 
-    std::error_code error;
-    const auto canonicalPath = std::filesystem::weakly_canonical(audioFilePath, error);
-    const std::string key = error ? audioFilePath : canonicalPath.string();
-
     std::lock_guard lock(mutexMapMutex);
-    if (const auto existing = mutexes.find(key); existing != mutexes.end()) {
+    if (const auto existing = mutexes.find(canonicalKey); existing != mutexes.end()) {
         if (auto mutex = existing->second.lock()) {
             return mutex;
         }
@@ -48,8 +55,169 @@ std::shared_ptr<std::mutex> getFileLoadMutex(const std::string &audioFilePath) {
     }
 
     auto mutex = std::make_shared<std::mutex>();
-    mutexes.emplace(key, mutex);
+    mutexes.emplace(canonicalKey, mutex);
     return mutex;
+}
+
+/**
+ * In-memory memo of immutable, fully-loaded buffers (issue #93).
+ *
+ * Keyed by canonical path with a cheap size+mtime fingerprint. The weak_ptr
+ * gives correct sharing for free: concurrent playbacks of one unchanged
+ * source get the SAME buffer (every caller already holds its shared_ptr for
+ * the whole playback), and an entry dies with its last user. A byte-budgeted
+ * strong-ref LRU on top keeps recently played shows warm across playbacks —
+ * explicit, bounded retention rather than reloading 17 cache files per play.
+ *
+ * The per-path load mutex is already held at every access point, so it also
+ * serves as the single-flight: no futures plumbing needed.
+ *
+ * **Staleness contract.** The fingerprint is size + mtime, NOT content. The
+ * disk cache underneath validates by SHA-256, but hashing a show-length WAV
+ * costs seconds and cannot sit on playback start, so a memo hit deliberately
+ * skips it. A file replaced in place with BOTH the same byte length and a
+ * preserved mtime (`cp -p` / `rsync -a` of a same-duration re-render) would
+ * therefore serve the previous audio until the entry is evicted or
+ * invalidated. Every server-mediated write funnels through the storage
+ * facade, which calls invalidate() — the residual exposure is out-of-band
+ * timestamp-preserving replacement, for which the debug cache-invalidate
+ * endpoints are the operator's lever.
+ */
+class BufferMemo {
+  public:
+    /// Buffers whose strong references were dropped by this call. The caller
+    /// destroys them AFTER releasing the lock: freeing a show-sized buffer is
+    /// ~1.5M vector deallocations, which must not stall concurrent memo hits.
+    using Evicted = std::vector<std::shared_ptr<creatures::rtp::AudioStreamBuffer>>;
+
+    [[nodiscard]] std::shared_ptr<creatures::rtp::AudioStreamBuffer>
+    lookup(const std::string &key, std::uintmax_t fileSize, std::filesystem::file_time_type modTime, Evicted &evicted) {
+        std::lock_guard lock(mutex_);
+        auto it = entries_.find(key);
+        if (it == entries_.end()) {
+            return nullptr;
+        }
+        if (it->second.fileSize == fileSize && it->second.modTime == modTime) {
+            if (auto existing = it->second.buffer.lock()) {
+                retainLocked(key, existing, evicted);
+                return existing;
+            }
+        }
+        entries_.erase(it);
+        return nullptr;
+    }
+
+    /**
+     * Publish a freshly loaded buffer.
+     *
+     * @param retain false for one-shot loads (prewarms whose caller discards
+     *               the buffer): the weak entry still enables sharing with a
+     *               concurrent load, but the byte budget is reserved for audio
+     *               that actually plays again, so a long ad-hoc speech session
+     *               cannot evict warm show audio with dead sentences.
+     */
+    void store(const std::string &key, std::uintmax_t fileSize, std::filesystem::file_time_type modTime,
+               const std::shared_ptr<creatures::rtp::AudioStreamBuffer> &buffer, bool retain, Evicted &evicted) {
+        std::lock_guard lock(mutex_);
+        // One-shot files (each streaming sentence gets a unique path) would
+        // otherwise leave dead weak entries behind forever.
+        if (entries_.size() > MAX_WEAK_ENTRIES) {
+            std::erase_if(entries_, [](const auto &entry) { return entry.second.buffer.expired(); });
+        }
+        entries_[key] = MemoEntry{fileSize, modTime, buffer};
+        if (retain) {
+            retainLocked(key, buffer, evicted);
+        }
+    }
+
+    void invalidate(const std::string &key, Evicted &evicted) {
+        std::lock_guard lock(mutex_);
+        entries_.erase(key);
+        dropRetainedLocked(key, evicted);
+    }
+
+    void clear(Evicted &evicted) {
+        std::lock_guard lock(mutex_);
+        entries_.clear();
+        for (auto &retained : lru_) {
+            evicted.push_back(std::move(retained.buffer));
+        }
+        lru_.clear();
+        lruBytes_ = 0;
+    }
+
+    void setBudgetBytes(std::size_t bytes, Evicted &evicted) {
+        std::lock_guard lock(mutex_);
+        budgetBytes_ = bytes;
+        evictToBudgetLocked(evicted);
+    }
+
+    [[nodiscard]] std::size_t budgetBytes() {
+        std::lock_guard lock(mutex_);
+        return budgetBytes_;
+    }
+
+    [[nodiscard]] std::size_t retainedBytes() {
+        std::lock_guard lock(mutex_);
+        return lruBytes_;
+    }
+
+  private:
+    struct MemoEntry {
+        std::uintmax_t fileSize{0};
+        std::filesystem::file_time_type modTime{};
+        std::weak_ptr<creatures::rtp::AudioStreamBuffer> buffer;
+    };
+
+    struct RetainedBuffer {
+        std::string key;
+        std::shared_ptr<creatures::rtp::AudioStreamBuffer> buffer;
+    };
+
+    static constexpr std::size_t MAX_WEAK_ENTRIES = 1024;
+
+    void dropRetainedLocked(const std::string &key, Evicted &evicted) {
+        for (auto it = lru_.begin(); it != lru_.end(); ++it) {
+            if (it->key == key) {
+                lruBytes_ -= it->buffer->approximateBytes();
+                evicted.push_back(std::move(it->buffer));
+                lru_.erase(it);
+                return;
+            }
+        }
+    }
+
+    void retainLocked(const std::string &key, const std::shared_ptr<creatures::rtp::AudioStreamBuffer> &buffer,
+                      Evicted &evicted) {
+        dropRetainedLocked(key, evicted);
+        lru_.push_front(RetainedBuffer{key, buffer});
+        lruBytes_ += buffer->approximateBytes();
+        evictToBudgetLocked(evicted);
+    }
+
+    // The newest entry always stays, even if it alone exceeds the budget — the
+    // playback that just loaded it needs it regardless.
+    void evictToBudgetLocked(Evicted &evicted) {
+        while (lruBytes_ > budgetBytes_ && lru_.size() > 1) {
+            lruBytes_ -= lru_.back().buffer->approximateBytes();
+            evicted.push_back(std::move(lru_.back().buffer));
+            lru_.pop_back();
+        }
+    }
+
+    std::mutex mutex_;
+    std::unordered_map<std::string, MemoEntry> entries_;
+    std::list<RetainedBuffer> lru_;
+    std::size_t lruBytes_{0};
+    // Fail safe until main.cpp injects the resolved value: the SMALL default,
+    // so a load that happens before configuration (or in tests) can never latch
+    // the 64 GB server's budget onto the 8 GB travel Pi (issue #93 review).
+    std::size_t budgetBytes_{DEFAULT_RTP_AUDIO_MEMO_BYTES_TRAVEL};
+};
+
+BufferMemo &bufferMemo() {
+    static BufferMemo memo;
+    return memo;
 }
 
 std::mutex &encodingJobMutex() {
@@ -66,9 +234,34 @@ std::mutex &encodingJobMutex() {
 std::shared_ptr<util::AudioCache> AudioStreamBuffer::sharedAudioCacheInstance_ = nullptr;
 
 std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWavFile(const std::string &audioFilePath,
-                                                                      std::shared_ptr<OperationSpan> parentSpan) {
-    const auto fileLoadMutex = getFileLoadMutex(audioFilePath);
+                                                                      std::shared_ptr<OperationSpan> parentSpan,
+                                                                      RetentionIntent retention) {
+    // One canonicalization shared by the load mutex and the memo, so the two
+    // can never key the same file differently (issue #93 review).
+    const auto canonicalKey = canonicalKeyFor(audioFilePath);
+    const auto fileLoadMutex = getFileLoadMutex(canonicalKey);
     std::lock_guard fileLoadLock(*fileLoadMutex);
+
+    // Evicted buffers destruct here, at end of scope — after every memo lock
+    // has been released (issue #93 review).
+    BufferMemo::Evicted evicted;
+
+    std::error_code sizeError;
+    std::error_code modTimeError;
+    const auto currentSize = std::filesystem::file_size(canonicalKey, sizeError);
+    const auto currentModTime = std::filesystem::last_write_time(canonicalKey, modTimeError);
+    const bool fingerprinted = !sizeError && !modTimeError;
+
+    // Memo hit: same unchanged source → share the SAME immutable buffer with
+    // every concurrent playback instead of loading another full copy
+    // (issue #93). See BufferMemo's staleness contract for what size+mtime
+    // does and does not catch.
+    if (fingerprinted) {
+        if (auto existing = bufferMemo().lookup(canonicalKey, currentSize, currentModTime, evicted)) {
+            debug("Sharing in-memory audio buffer for {} ({} frames)", audioFilePath, existing->getFrameCount());
+            return existing;
+        }
+    }
 
     auto buf = std::shared_ptr<AudioStreamBuffer>(new AudioStreamBuffer());
 
@@ -80,11 +273,35 @@ std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWavFile(const std:
 
     if (loadResult.isSuccess()) {
         debug("Successfully loaded audio buffer with {} frames", loadResult.getValue().value_or(0));
+        if (fingerprinted) {
+            bufferMemo().store(canonicalKey, currentSize, currentModTime, buf, retention == RetentionIntent::Retain,
+                               evicted);
+        }
         return buf;
     } else {
         error("Failed to load WAV file '{}': {}", audioFilePath, loadResult.getError()->getMessage());
         return nullptr;
     }
+}
+
+void AudioStreamBuffer::setMemoRetainBytes(std::size_t bytes) {
+    BufferMemo::Evicted evicted;
+    bufferMemo().setBudgetBytes(bytes, evicted);
+    info("In-memory audio buffer retention budget set to {} bytes", bytes);
+}
+
+std::size_t AudioStreamBuffer::memoRetainBytes() { return bufferMemo().budgetBytes(); }
+
+std::size_t AudioStreamBuffer::memoRetainedBytes() { return bufferMemo().retainedBytes(); }
+
+void AudioStreamBuffer::invalidateMemo(const std::string &audioFilePath) {
+    BufferMemo::Evicted evicted;
+    bufferMemo().invalidate(canonicalKeyFor(audioFilePath), evicted);
+}
+
+void AudioStreamBuffer::clearMemo() {
+    BufferMemo::Evicted evicted;
+    bufferMemo().clear(evicted);
 }
 
 void AudioStreamBuffer::setAudioCacheInstance(std::shared_ptr<util::AudioCache> audioCacheInstance) {
@@ -176,10 +393,13 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
     const auto totalSamples = static_cast<size_t>(wav->totalFrames()) * RTP_STREAMING_CHANNELS;
-    constexpr size_t MAX_RTP_PCM_BYTES = 512ULL * 1024ULL * 1024ULL;
-    if (totalSamples > MAX_RTP_PCM_BYTES / sizeof(int16_t)) {
+    // The same duration ceiling the cache reader enforces (issue #93) — the
+    // two paths used to disagree by a factor of ~60.
+    constexpr size_t MAX_RTP_PCM_SAMPLES =
+        RTP_MAX_FRAMES_PER_CHANNEL * static_cast<size_t>(RTP_SAMPLES) * RTP_STREAMING_CHANNELS;
+    if (totalSamples > MAX_RTP_PCM_SAMPLES) {
         const auto errorMsg =
-            fmt::format("WAV file decoded PCM exceeds {} byte RTP load limit: {}", MAX_RTP_PCM_BYTES, audioFilePath);
+            fmt::format("WAV file exceeds the {} second RTP audio ceiling: {}", RTP_MAX_AUDIO_SECONDS, audioFilePath);
         if (span) {
             span->setError(errorMsg);
         }
@@ -220,11 +440,10 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
-    // Additional safety check for maximum supported frames
-    constexpr size_t MAX_FRAMES_PER_CHANNEL = 1000000; // ~5.5 hours at 48kHz/20ms frames
-    if (numberOfFramesPerChannel_ > MAX_FRAMES_PER_CHANNEL) {
+    // Same frame ceiling as the cache-read path (issue #93).
+    if (numberOfFramesPerChannel_ > RTP_MAX_FRAMES_PER_CHANNEL) {
         const auto errorMsg = fmt::format("WAV file too long: {} frames per channel (maximum supported: {})",
-                                          numberOfFramesPerChannel_, MAX_FRAMES_PER_CHANNEL);
+                                          numberOfFramesPerChannel_, RTP_MAX_FRAMES_PER_CHANNEL);
         error(errorMsg);
         if (span) {
             span->setError(errorMsg);
@@ -349,6 +568,8 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         return Result<size_t>{ServerError(ServerError::InternalError, errorMsg)};
     }
 
+    computeApproximateBytes();
+
     info("Successfully loaded and encoded {} frames per channel from WAV file: {}", numberOfFramesPerChannel_,
          audioFilePath);
 
@@ -381,9 +602,10 @@ Result<size_t> AudioStreamBuffer::loadWithCaching(const std::string &audioFilePa
     auto cachedAudioData = sharedAudioCacheInstance_->tryLoadFromCache(audioFilePath, cacheSpan);
 
     if (cachedAudioData) {
-        // Cache hit! Load the data directly
+        // Cache hit! Take ownership of the packets — the old copy here doubled
+        // peak memory on every hit (issue #93).
         debug("Cache hit for {}, loading {} frames from cache", audioFilePath, cachedAudioData->framesPerChannel);
-        loadFromCachedAudioData(*cachedAudioData);
+        loadFromCachedAudioData(std::move(*cachedAudioData));
 
         if (span) {
             span->setAttribute("cache_result", "hit");
@@ -404,6 +626,18 @@ Result<size_t> AudioStreamBuffer::loadWithCaching(const std::string &audioFilePa
         span->setAttribute("cache_result", "miss");
     }
 
+    // Fingerprint the source BEFORE the WAV is opened (issue #93): the
+    // verifying save below refuses to publish if the file changed during the
+    // encode, so old packets can never be labeled with a replacement file's
+    // identity.
+    //
+    // Deliberately hashed OUTSIDE encodingJobMutex (issue #93 review): that
+    // mutex throttles encoder CPU, and a show-length source is a multi-second
+    // SHA-256 read that would otherwise serialize behind every other pending
+    // cache miss. The TOCTOU window is unchanged — what matters is that the
+    // fingerprint predates the WAV read, not which lock is held.
+    auto expectedSourceInfo = sharedAudioCacheInstance_->getSourceFileInfo(audioFilePath);
+
     std::lock_guard encodingJobLock(encodingJobMutex());
 
     auto loadResult = loadWaveFile(audioFilePath, span);
@@ -414,12 +648,20 @@ Result<size_t> AudioStreamBuffer::loadWithCaching(const std::string &audioFilePa
         return loadResult;
     }
 
-    // Save to cache for next time
-    util::AudioCache::CachedAudioData audioDataToCache;
-    audioDataToCache.framesPerChannel = numberOfFramesPerChannel_;
-    audioDataToCache.encodedFrames = encodedOpusFrames_;
+    if (!expectedSourceInfo.isSuccess()) {
+        // Couldn't fingerprint before the read: play the audio, skip caching.
+        warn("Skipping audio cache save for {}: {}", audioFilePath, expectedSourceInfo.getError()->getMessage());
+        if (span) {
+            span->setAttribute("cache_result", "miss_uncached");
+            span->setSuccess();
+        }
+        return loadResult;
+    }
 
-    auto cacheResult = sharedAudioCacheInstance_->saveToCache(audioFilePath, audioDataToCache, span);
+    // Save to cache for next time — frames passed by reference (the old copy
+    // into a temporary struct tripled peak memory on a miss, issue #93).
+    auto cacheResult = sharedAudioCacheInstance_->saveToCache(
+        audioFilePath, numberOfFramesPerChannel_, encodedOpusFrames_, expectedSourceInfo.getValue().value(), span);
     if (cacheResult.isSuccess()) {
         debug("Successfully cached {} frames for {}", numberOfFramesPerChannel_, audioFilePath);
         if (span) {
@@ -436,9 +678,24 @@ Result<size_t> AudioStreamBuffer::loadWithCaching(const std::string &audioFilePa
     return loadResult;
 }
 
-void AudioStreamBuffer::loadFromCachedAudioData(const util::AudioCache::CachedAudioData &cachedAudioData) {
+void AudioStreamBuffer::loadFromCachedAudioData(util::AudioCache::CachedAudioData &&cachedAudioData) {
     numberOfFramesPerChannel_ = cachedAudioData.framesPerChannel;
-    encodedOpusFrames_ = cachedAudioData.encodedFrames;
+    approximateBytes_ = cachedAudioData.approximateBytes;
+    encodedOpusFrames_ = std::move(cachedAudioData.encodedFrames);
+    if (approximateBytes_ == 0) {
+        // Pre-#93 cache reader, or an empty load: fall back to walking.
+        computeApproximateBytes();
+    }
 
     debug("Loaded {} frames per channel from cached audio data", numberOfFramesPerChannel_);
+}
+
+void AudioStreamBuffer::computeApproximateBytes() {
+    std::size_t bytes = 0;
+    for (const auto &channel : encodedOpusFrames_) {
+        for (const auto &frame : channel) {
+            bytes += frame.size() + RTP_ENCODED_FRAME_OVERHEAD_BYTES;
+        }
+    }
+    approximateBytes_ = bytes;
 }

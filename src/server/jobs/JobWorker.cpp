@@ -137,7 +137,11 @@ Result<void> prewarmAudioCache(const std::filesystem::path &wavPath, std::shared
         return Result<void>{};
     }
 
-    auto buffer = creatures::rtp::AudioStreamBuffer::loadFromWavFile(wavPath.string(), span);
+    // Prewarm: this exists to populate the DISK cache, and the buffer is
+    // discarded immediately — don't charge it against the in-memory retention
+    // budget (issue #93).
+    auto buffer = creatures::rtp::AudioStreamBuffer::loadFromWavFile(
+        wavPath.string(), span, creatures::rtp::AudioStreamBuffer::RetentionIntent::OneShot);
     if (!buffer) {
         auto message = fmt::format("AudioStreamBuffer failed while prewarming {}", wavPath.string());
         warn(message);

@@ -9,6 +9,7 @@
 #include "server/audio/SoundPathResolver.h"
 #include "server/config.h"
 #include "server/metrics/counters.h"
+#include "server/rtp/AudioStreamBuffer.h"
 #include "server/storage/Storage.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
@@ -193,6 +194,11 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
         return runEndpoint(
             "GET /api/v1/debug/cache-invalidate/sound-list", "GET", "api/v1/debug/cache-invalidate/sound-list",
             "invalidate_sound_list", "DebugController", request, [&](const auto &span) {
+                // Also the operator's lever for the one staleness case the
+                // in-memory audio memo cannot detect on its own: a sound file
+                // replaced out-of-band with the same size AND mtime
+                // (issue #93).
+                creatures::rtp::AudioStreamBuffer::clearMemo();
                 // Broadcast first (it marks the index dirty), THEN rebuild —
                 // the reverse order threw the synchronous walk away and paid
                 // for a second one on the next lookup (issue #94 review).

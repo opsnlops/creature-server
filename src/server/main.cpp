@@ -56,6 +56,7 @@
 #include "util/AudioCache.h"
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
+#include "util/environment.h"
 #include "util/loggingUtils.h"
 #include "util/threadName.h"
 #include "util/websocketUtils.h"
@@ -454,6 +455,18 @@ int main(const int argc, char **argv) {
             });
         info("RTP animation audio loader started with {} workers and {} queued-job capacity",
              creatures::config->getRtpAudioLoadWorkers(), creatures::config->getRtpAudioLoadQueueCapacity());
+    }
+
+    // Resolve the in-memory audio retention budget ONCE, explicitly, before
+    // anything can load audio — latching it lazily on first use could freeze
+    // the wrong machine's default if a load beat configuration (issue #93).
+    {
+        const auto memoBytes = static_cast<std::size_t>(creatures::environmentToUnsignedLongLong(
+            RTP_AUDIO_MEMO_BYTES_ENV,
+            creatures::config->getTravelMode() ? DEFAULT_RTP_AUDIO_MEMO_BYTES_TRAVEL : DEFAULT_RTP_AUDIO_MEMO_BYTES));
+        creatures::rtp::AudioStreamBuffer::setMemoRetainBytes(memoBytes);
+        info("Audio buffer retention budget: {} MB ({} mode)", memoBytes / (1024 * 1024),
+             creatures::config->getTravelMode() ? "travel" : "main");
     }
 
     // Basename indexes for the sound stores (issue #94). Built lazily: the

@@ -273,7 +273,11 @@ Result<void> StreamingAdHocSession::addText(const std::string &text) {
         }
 
         // 3. Opus encoding (parallel across channels)
-        creatures::rtp::AudioStreamBuffer::loadFromWavFile(wavPath.string(), sentenceSpan);
+        // Prewarm only — the buffer is discarded here and this sentence's temp
+        // path is never loaded again, so it must not consume the retention
+        // budget that keeps show audio warm (issue #93).
+        creatures::rtp::AudioStreamBuffer::loadFromWavFile(wavPath.string(), sentenceSpan,
+                                                           creatures::rtp::AudioStreamBuffer::RetentionIntent::OneShot);
 
         // 4. Lip sync from alignment
         std::vector<RhubarbMouthCue> mouthCues;
