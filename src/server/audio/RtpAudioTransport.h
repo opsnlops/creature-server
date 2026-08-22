@@ -43,6 +43,8 @@ class RtpAudioTransport : public AudioTransport {
 
     [[nodiscard]] bool isFinished() const override;
 
+    [[nodiscard]] bool hasTerminalFailure() const override { return terminalFailure_; }
+
   private:
     struct OutputState {
         rtp::RtpOutputLease lease;
@@ -51,19 +53,31 @@ class RtpAudioTransport : public AudioTransport {
 
     [[nodiscard]] OutputState getOutputState() const;
 
+    /** Record a breaker-terminated generation and stop the transport. */
+    Result<framenum_t> markTerminalFailure(const OutputState &outputState);
+
     std::shared_ptr<rtp::MultiOpusRtpServer> rtpServer_;
     std::shared_ptr<PlaybackSession> session_;
     mutable std::mutex outputStateMutex_;
     rtp::RtpOutputLease outputLease_;
     rtp::AsyncAudioTraceContext traceContext_;
 
+    // After the final frame set is enqueued, the runner keeps ticking until
+    // the worker acknowledges delivery by releasing the lease. The output
+    // queue holds at most 64 commands draining at 100/s (~640 ms); give a
+    // stuck worker 2 s of those ~1 ms ticks before failing the session rather
+    // than waiting forever.
+    static constexpr size_t MAX_FINAL_DRAIN_TICKS = 2000;
+
     // Playback state
     size_t currentFrameIndex_{0};
     size_t totalFrames_{0};
     framenum_t nextDispatchFrame_{0};
+    size_t finalDrainTicks_{0};
     bool started_{false};
     bool stopped_{false};
     bool finalFrameQueued_{false};
+    bool terminalFailure_{false};
 };
 
 } // namespace creatures

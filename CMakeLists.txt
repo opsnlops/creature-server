@@ -799,6 +799,7 @@ add_executable(creature-server-test
         tests/server/rtp/RtpClockMapping_test.cpp
         tests/server/rtp/RtpFrameClock_test.cpp
         tests/server/rtp/RtpOutputCoordinator_test.cpp
+        tests/server/rtp/RtpOutputHealth_test.cpp
         tests/server/rtp/StandaloneRtpAdmission_test.cpp
         tests/server/voice/DialogPreviewAssembly_test.cpp
         src/server/audio/MonoWavDownmixer.cpp

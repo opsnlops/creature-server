@@ -47,11 +47,27 @@ Result<void> RtpAudioTransport::start(std::shared_ptr<PlaybackSession> session) 
         return Result<void>{ServerError(ServerError::InternalError, errorMsg)};
     }
 
+    const auto outputState = getOutputState();
+
+    // The circuit breaker releases a tripped generation's lease, so this must
+    // be checked before the benign supersede case below (issue #97).
+    if (rtpServer_->isGenerationTripped(outputState.lease.generation)) {
+        started_ = true;
+        const auto failureResult = markTerminalFailure(outputState);
+        return Result<void>{failureResult.getError().value()};
+    }
+
     // Last-owner-wins is deliberate. A newer animation can supersede this
     // session after its audio has loaded but before its first runner executes.
-    const auto outputState = getOutputState();
     if (!rtpServer_->isCurrentOutput(outputState.lease)) {
         started_ = true;
+        // Re-check the registry after observing the release: the worker
+        // publishes a trip's terminal record before releasing, so this closes
+        // the trip-lands-between-the-two-loads race (issue #97 review).
+        if (rtpServer_->isGenerationTripped(outputState.lease.generation)) {
+            const auto failureResult = markTerminalFailure(outputState);
+            return Result<void>{failureResult.getError().value()};
+        }
         warn("RTP output lease was superseded before session {} started", session_->getSessionId());
         if (auto span = session_->getSpan()) {
             span->setAttribute("rtp.generation", static_cast<int64_t>(outputState.lease.generation));
@@ -101,8 +117,26 @@ Result<framenum_t> RtpAudioTransport::dispatchNextChunk(framenum_t currentFrame)
         return Result<framenum_t>{ServerError(ServerError::InternalError, "RTP server unavailable")};
     }
     auto outputState = getOutputState();
+
+    // Breaker-terminated generations look identical to a benign supersede once
+    // the lease is released, so check the terminal registry first (issue #97).
+    if (rtpServer_->isGenerationTripped(outputState.lease.generation)) {
+        return markTerminalFailure(outputState);
+    }
+
     if (!rtpServer_->isCurrentOutput(outputState.lease)) {
+        // Re-check the registry after observing the release: the worker
+        // publishes a trip's terminal record before releasing, so this closes
+        // the trip-lands-between-the-two-loads race (issue #97 review).
+        if (rtpServer_->isGenerationTripped(outputState.lease.generation)) {
+            return markTerminalFailure(outputState);
+        }
         stopped_ = true;
+        if (finalFrameQueued_) {
+            // Natural completion: the worker released the lease after sending
+            // the final frame set (releaseAfterSend acknowledgment).
+            return Result<framenum_t>{currentFrame};
+        }
         debug("RTP session {} stopped because output generation {} was superseded", session_->getSessionId(),
               outputState.lease.generation);
         if (auto span = session_->getSpan()) {
@@ -119,6 +153,27 @@ Result<framenum_t> RtpAudioTransport::dispatchNextChunk(framenum_t currentFrame)
 
     // Check if finished or stopped
     if (stopped_ || currentFrameIndex_ >= totalFrames_) {
+        // Waiting on the worker's final-frame acknowledgment. A worker that
+        // hangs (rather than fails) would otherwise leave the runner ticking
+        // forever, so bound the drain wait (issue #97 review).
+        if (!stopped_ && finalFrameQueued_) {
+            ++finalDrainTicks_;
+            if (finalDrainTicks_ > MAX_FINAL_DRAIN_TICKS) {
+                stopped_ = true;
+                terminalFailure_ = true;
+                rtpServer_->releaseOutput(outputState.lease);
+                const auto errorMsg =
+                    fmt::format("RTP output worker did not acknowledge the final frame set within {} ticks for "
+                                "session {}; treating playback as failed",
+                                MAX_FINAL_DRAIN_TICKS, session_->getSessionId());
+                error(errorMsg);
+                if (auto span = session_->getSpan()) {
+                    span->setAttribute("rtp.work.outcome", "drain_timeout");
+                    span->setError(errorMsg);
+                }
+                return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+            }
+        }
         return Result<framenum_t>{currentFrame};
     }
 
@@ -197,6 +252,38 @@ std::optional<framenum_t> RtpAudioTransport::getNextDispatchFrame() const {
     return nextDispatchFrame_;
 }
 
-bool RtpAudioTransport::isFinished() const { return stopped_ || (started_ && currentFrameIndex_ >= totalFrames_); }
+bool RtpAudioTransport::isFinished() const {
+    if (stopped_) {
+        return true;
+    }
+    if (!started_ || currentFrameIndex_ < totalFrames_) {
+        return false;
+    }
+    // Every frame is enqueued, but "enqueued" is not "delivered": when the
+    // last frame set carried releaseAfterSend, the drain handshake in
+    // dispatchNextChunk flips stopped_ once the worker acknowledges (releases
+    // the lease), trips, or times out — so the runner keeps ticking until one
+    // of those happens (issue #97).
+    return !finalFrameQueued_;
+}
+
+Result<framenum_t> RtpAudioTransport::markTerminalFailure(const OutputState &outputState) {
+    stopped_ = true;
+    terminalFailure_ = true;
+
+    const std::string errorMsg = fmt::format(
+        "RTP playback failed for session {}: {}", session_ ? session_->getSessionId() : "unknown",
+        rtpServer_ ? rtpServer_->terminalFailureMessage(outputState.lease.generation) : "RTP server unavailable");
+    error(errorMsg);
+
+    if (session_) {
+        if (auto span = session_->getSpan()) {
+            span->setAttribute("rtp.work.outcome", "circuit_open");
+            span->setAttribute("rtp.generation", static_cast<int64_t>(outputState.lease.generation));
+            span->setError(errorMsg);
+        }
+    }
+    return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
+}
 
 } // namespace creatures

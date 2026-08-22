@@ -40,6 +40,101 @@ extern std::shared_ptr<audio::LocalAudioPlaybackCoordinator> localAudioPlaybackC
 
 namespace {
 
+/**
+ * Reports the outcome of a standalone RTP playback after its final frame was
+ * enqueued (issue #97).
+ *
+ * The output worker releases the lease after actually sending the final frame
+ * set, so "lease no longer current" is the delivery acknowledgment — unless
+ * the send-failure circuit breaker terminated the generation, which the
+ * terminal-failure registry distinguishes. Success (the soundsPlayed counter
+ * and span outcome) is only recorded here, never at enqueue time.
+ */
+class StandaloneRtpCompletionCheckEvent : public EventBase<StandaloneRtpCompletionCheckEvent> {
+  public:
+    // The output queue holds at most 64 commands draining at 100/s (~640 ms);
+    // give the worker 2 s before declaring it stuck.
+    static constexpr uint32_t MAX_ATTEMPTS = 200;
+
+    StandaloneRtpCompletionCheckEvent(framenum_t frameNumber, rtp::RtpOutputLease outputLease,
+                                      std::shared_ptr<OperationSpan> span, size_t skippedFramesTotal,
+                                      uint32_t attempts = 0)
+        : EventBase(frameNumber), outputLease_(std::move(outputLease)), span_(std::move(span)),
+          skippedFramesTotal_(skippedFramesTotal), attempts_(attempts) {}
+
+    Result<framenum_t> executeImpl() {
+        if (!rtpServer) {
+            return fail("RTP server unavailable during standalone completion check");
+        }
+
+        if (rtpServer->isCurrentOutput(outputLease_)) {
+            // A trip publishes its record before releasing, so a tripped-but-
+            // still-current read means the release simply isn't visible yet.
+            if (rtpServer->isGenerationTripped(outputLease_.generation)) {
+                return failTerminal();
+            }
+            // The worker hasn't processed the final frame set yet.
+            if (attempts_ + 1 >= MAX_ATTEMPTS) {
+                return fail(fmt::format("Standalone RTP completion check gave up after {} attempts for generation {}",
+                                        MAX_ATTEMPTS, outputLease_.generation));
+            }
+            if (!eventLoop) {
+                return fail("Event loop unavailable during standalone completion check");
+            }
+            constexpr framenum_t checkStep = RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
+            eventLoop->scheduleEvent(std::make_shared<StandaloneRtpCompletionCheckEvent>(
+                this->frameNumber + checkStep, outputLease_, span_, skippedFramesTotal_, attempts_ + 1));
+            return Result<framenum_t>{this->frameNumber};
+        }
+
+        // The lease is released. Check the registry AFTER observing that (the
+        // worker publishes a trip's terminal record before releasing) so a
+        // breaker termination can't be misread as delivery (issue #97 review).
+        if (rtpServer->isGenerationTripped(outputLease_.generation)) {
+            return failTerminal();
+        }
+
+        // Released without a terminal record: the final frame set was sent (or
+        // a newer owner superseded us, which has always counted as a benign
+        // outcome for standalone playback).
+        if (metrics) {
+            metrics->incrementSoundsPlayed();
+        }
+        if (span_) {
+            span_->setAttribute("frames_skipped", static_cast<int64_t>(skippedFramesTotal_));
+            span_->setAttribute("rtp.completion.checks", static_cast<int64_t>(attempts_ + 1));
+            span_->setSuccess();
+        }
+        return Result<framenum_t>{this->frameNumber};
+    }
+
+  private:
+    Result<framenum_t> failTerminal() {
+        if (span_) {
+            span_->setAttribute("rtp.work.outcome", "circuit_open");
+        }
+        return fail(fmt::format("Standalone RTP playback failed: {}",
+                                rtpServer->terminalFailureMessage(outputLease_.generation)));
+    }
+
+    Result<framenum_t> fail(const std::string &message) {
+        if (rtpServer) {
+            // No-op if the worker or breaker already released this generation.
+            rtpServer->releaseOutput(outputLease_);
+        }
+        error("{}", message);
+        if (span_) {
+            span_->setError(message);
+        }
+        return Result<framenum_t>{ServerError(ServerError::InternalError, message)};
+    }
+
+    rtp::RtpOutputLease outputLease_;
+    std::shared_ptr<OperationSpan> span_;
+    size_t skippedFramesTotal_;
+    uint32_t attempts_;
+};
+
 class StandaloneRtpFrameEvent : public EventBase<StandaloneRtpFrameEvent> {
   public:
     StandaloneRtpFrameEvent(framenum_t frameNumber, std::shared_ptr<rtp::AudioStreamBuffer> buffer, size_t frameIndex,
@@ -55,7 +150,18 @@ class StandaloneRtpFrameEvent : public EventBase<StandaloneRtpFrameEvent> {
             return fail("Standalone RTP dispatch dependencies are unavailable");
         }
 
+        // A breaker-terminated generation must not be mistaken for the benign
+        // "superseded by a newer owner" case below (issue #97). The registry is
+        // re-checked after observing a released lease because the worker
+        // publishes the terminal record before releasing.
+        if (rtpServer->isGenerationTripped(outputLease_.generation)) {
+            return failTerminal();
+        }
+
         if (!rtpServer->isCurrentOutput(outputLease_)) {
+            if (rtpServer->isGenerationTripped(outputLease_.generation)) {
+                return failTerminal();
+            }
             if (span_) {
                 span_->setAttribute("rtp.work.outcome", "stale");
                 span_->setSuccess();
@@ -74,14 +180,12 @@ class StandaloneRtpFrameEvent : public EventBase<StandaloneRtpFrameEvent> {
         const size_t dispatchIndex = frameIndex_ + framesToSkip;
         skippedFramesTotal_ += framesToSkip;
         if (dispatchIndex >= buffer_->getFrameCount()) {
+            // The tail was skipped for lateness, but earlier frame sets may
+            // still be in flight — let the completion check decide the outcome
+            // instead of declaring success at enqueue time (issue #97 review).
             rtpServer->releaseOutput(outputLease_);
-            if (metrics) {
-                metrics->incrementSoundsPlayed();
-            }
-            if (span_) {
-                span_->setAttribute("frames_skipped", static_cast<int64_t>(skippedFramesTotal_));
-                span_->setSuccess();
-            }
+            eventLoop->scheduleEvent(std::make_shared<StandaloneRtpCompletionCheckEvent>(
+                this->frameNumber + dispatchStep, outputLease_, span_, skippedFramesTotal_));
             return Result<framenum_t>{this->frameNumber};
         }
 
@@ -107,13 +211,11 @@ class StandaloneRtpFrameEvent : public EventBase<StandaloneRtpFrameEvent> {
         }
 
         if (isFinalFrame) {
-            if (metrics) {
-                metrics->incrementSoundsPlayed();
-            }
-            if (span_) {
-                span_->setAttribute("frames_skipped", static_cast<int64_t>(skippedFramesTotal_));
-                span_->setSuccess();
-            }
+            // "Enqueued" is not "delivered". Success is reported by a
+            // completion check that waits for the worker to release the lease
+            // after actually sending the final frame set (issue #97).
+            eventLoop->scheduleEvent(std::make_shared<StandaloneRtpCompletionCheckEvent>(
+                this->frameNumber + dispatchStep, outputLease_, span_, skippedFramesTotal_));
             return Result<framenum_t>{this->frameNumber};
         }
 
@@ -125,6 +227,14 @@ class StandaloneRtpFrameEvent : public EventBase<StandaloneRtpFrameEvent> {
     }
 
   private:
+    Result<framenum_t> failTerminal() {
+        if (span_) {
+            span_->setAttribute("rtp.work.outcome", "circuit_open");
+        }
+        return fail(fmt::format("Standalone RTP playback failed: {}",
+                                rtpServer->terminalFailureMessage(outputLease_.generation)));
+    }
+
     Result<framenum_t> fail(const std::string &message) {
         if (rtpServer) {
             rtpServer->releaseOutput(outputLease_);

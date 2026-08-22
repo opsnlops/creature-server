@@ -17,6 +17,9 @@ SystemCounters::SystemCounters() {
     restRequestsProcessed = 0;
     rtpEventsProcessed = 0;
     rtpSendFailures = 0;
+    rtpSendFailuresSuppressed = 0;
+    rtpSendRecoveries = 0;
+    rtpCircuitBreakerTrips = 0;
     rtcpReportsSent = 0;
     rtcpSendFailures = 0;
     rtpEncoderResets = 0;
@@ -69,6 +72,12 @@ void SystemCounters::incrementRestRequestsProcessed() { restRequestsProcessed++;
 void SystemCounters::incrementRtpEventsProcessed() { rtpEventsProcessed++; }
 
 void SystemCounters::incrementRtpSendFailures() { rtpSendFailures++; }
+
+void SystemCounters::incrementRtpSendFailuresSuppressed() { rtpSendFailuresSuppressed++; }
+
+void SystemCounters::incrementRtpSendRecoveries() { rtpSendRecoveries++; }
+
+void SystemCounters::incrementRtpCircuitBreakerTrips() { rtpCircuitBreakerTrips++; }
 
 void SystemCounters::incrementRtcpReportsSent() { rtcpReportsSent++; }
 
@@ -138,6 +147,12 @@ uint64_t SystemCounters::getRestRequestsProcessed() { return restRequestsProcess
 uint64_t SystemCounters::getRtpEventsProcessed() { return rtpEventsProcessed.load(); }
 
 uint64_t SystemCounters::getRtpSendFailures() { return rtpSendFailures.load(); }
+
+uint64_t SystemCounters::getRtpSendFailuresSuppressed() { return rtpSendFailuresSuppressed.load(); }
+
+uint64_t SystemCounters::getRtpSendRecoveries() { return rtpSendRecoveries.load(); }
+
+uint64_t SystemCounters::getRtpCircuitBreakerTrips() { return rtpCircuitBreakerTrips.load(); }
 
 uint64_t SystemCounters::getRtcpReportsSent() { return rtcpReportsSent.load(); }
 
@@ -211,6 +226,9 @@ oatpp::Object<SystemCountersDto> SystemCounters::convertToDto() {
     dto->restRequestsProcessed = restRequestsProcessed.load();
     dto->rtpEventsProcessed = rtpEventsProcessed.load();
     dto->rtpSendFailures = rtpSendFailures.load();
+    dto->rtpSendFailuresSuppressed = rtpSendFailuresSuppressed.load();
+    dto->rtpSendRecoveries = rtpSendRecoveries.load();
+    dto->rtpCircuitBreakerTrips = rtpCircuitBreakerTrips.load();
     dto->rtcpReportsSent = rtcpReportsSent.load();
     dto->rtcpSendFailures = rtcpSendFailures.load();
     dto->rtpEncoderResets = rtpEncoderResets.load();
