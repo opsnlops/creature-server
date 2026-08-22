@@ -80,6 +80,29 @@ class AudioCache {
                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
+     * @brief Save encoded audio, verifying the source still matches a
+     *        fingerprint captured BEFORE the WAV was read (issue #93).
+     *
+     * Closes the encode-time TOCTOU: if an external writer replaced the WAV
+     * between the caller's fingerprint capture and this publication, the save
+     * is refused (InvalidData, no completion marker) instead of labeling the
+     * old packets with the new file's identity — which would then validate as
+     * a cache hit forever. Takes the frames by reference so the caller doesn't
+     * copy ~hundreds of MB into a temporary struct.
+     */
+    Result<void> saveToCache(const std::string &sourceFilePath, std::size_t framesPerChannel,
+                             const std::array<std::vector<std::vector<uint8_t>>, RTP_STREAMING_CHANNELS> &encodedFrames,
+                             const SourceFileInfo &expectedSource, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * @brief Fingerprint a source file (stat + SHA-256).
+     *
+     * Public so encode callers can capture the fingerprint BEFORE opening the
+     * WAV and hand it to the verifying saveToCache overload (issue #93).
+     */
+    Result<SourceFileInfo> getSourceFileInfo(const std::string &filePath) const;
+
+    /**
      * @brief Clear all cached files for a source file
      *
      * @param sourceFilePath Path to source WAV file
@@ -123,20 +146,20 @@ class AudioCache {
     std::shared_ptr<CacheKeyMutex> getKeyMutex(const std::string &sourceFilePath) const;
 
     /**
-     * @brief Extract source file information for cache validation
-     */
-    Result<SourceFileInfo> getSourceFileInfo(const std::string &filePath) const;
-
-    /**
      * @brief Calculate SHA-256 checksum of a file (fast, streaming)
      */
     Result<std::string> calculateFileChecksum(const std::string &filePath) const;
 
     /**
-     * @brief Load OGG Opus file and extract embedded metadata
+     * @brief Load a cached channel file and extract embedded metadata.
+     *
+     * `aggregateBytes` accumulates payload + per-frame overhead across the
+     * channels of one cache load; the budget is checked against
+     * RTP_MAX_ENCODED_TOTAL_BYTES BEFORE each allocation (issue #93) so a
+     * corrupt or hostile cache can't balloon to 17 × the per-file limit.
      */
     Result<std::pair<std::vector<std::vector<uint8_t>>, SourceFileInfo>>
-    loadOggOpusWithMetadata(const std::string &oggFilePath) const;
+    loadOggOpusWithMetadata(const std::string &oggFilePath, std::size_t &aggregateBytes) const;
 
     /**
      * @brief Save audio frames as OGG Opus with embedded metadata

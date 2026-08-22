@@ -167,6 +167,39 @@ static constexpr int RTP_STANDARD_MTU_PAYLOAD = 1452; // Standard ethernet MTU m
 static constexpr int RTP_OPUS_PAYLOAD_PT = 96;        // dynamic PT we’ll advertise
 static constexpr int RTP_BITRATE = 256000;            // 256 kbps for Opus (super quality)
 
+// Aggregate audio-content ceilings (issue #93). One duration constant drives
+// BOTH the encode path and the cache-read path, which used to disagree wildly:
+// encoding capped at ~5.5 minutes while the cache reader accepted 512 MiB per
+// channel — 8.5 GiB across 17 channels — before any aggregate check. 15
+// minutes comfortably covers real show content (DialogWav.h documents realistic
+// scenes as well under an hour; nothing to date approaches 15 minutes) while
+// bounding a cache load to a deterministic ~600 MB.
+static constexpr uint32_t RTP_MAX_AUDIO_SECONDS = 900;
+static constexpr std::size_t RTP_MAX_FRAMES_PER_CHANNEL =
+    static_cast<std::size_t>(RTP_MAX_AUDIO_SECONDS) * 1000 / RTP_FRAME_MS; // 90,000 ten-ms frames
+
+// Accounting overhead applied per encoded frame when budgeting memory: the
+// std::vector object plus a typical allocator header. Approximate on purpose —
+// the budget needs determinism, not byte-exactness.
+static constexpr std::size_t RTP_ENCODED_FRAME_OVERHEAD_BYTES = 64;
+
+// Aggregate encoded payload + overhead across all 17 channels at the duration
+// ceiling (~600 MB at 256 kbps). Checked BEFORE allocation on the cache-read
+// path, and used as the default retention budget reference for the in-memory
+// buffer memo.
+static constexpr std::size_t RTP_MAX_ENCODED_TOTAL_BYTES =
+    RTP_MAX_FRAMES_PER_CHANNEL * static_cast<std::size_t>(RTP_STREAMING_CHANNELS) *
+    (static_cast<std::size_t>(RTP_BITRATE) / 8 * RTP_FRAME_MS / 1000 + RTP_ENCODED_FRAME_OVERHEAD_BYTES);
+
+// In-memory retention budget for the AudioStreamBuffer memo (issue #93):
+// recently played shows stay warm across playbacks, bounded by bytes. The main
+// server has 64 GB (1 GiB of warm Opus covers a full evening of material); the
+// travel server is an 8 GB Pi, so travel mode defaults far smaller. The env
+// var overrides both.
+#define RTP_AUDIO_MEMO_BYTES_ENV "RTP_AUDIO_MEMO_BYTES"
+#define DEFAULT_RTP_AUDIO_MEMO_BYTES (1024ULL * 1024ULL * 1024ULL)
+#define DEFAULT_RTP_AUDIO_MEMO_BYTES_TRAVEL (128ULL * 1024ULL * 1024ULL)
+
 // One multicast group per channel: 239.19.63.[1-17]
 inline constexpr std::array<const char *, RTP_STREAMING_CHANNELS> RTP_GROUPS = {
     "239.19.63.1",  "239.19.63.2",  "239.19.63.3",  "239.19.63.4",  "239.19.63.5",  "239.19.63.6",

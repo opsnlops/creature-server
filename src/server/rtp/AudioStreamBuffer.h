@@ -30,6 +30,14 @@ class AudioStreamBuffer {
     /// Set the audio cache instance to use for caching encoded files
     static void setAudioCacheInstance(std::shared_ptr<util::AudioCache> audioCacheInstance);
 
+    /// Override the in-memory memo's byte budget (tests only). Clears the
+    /// retained set so the new budget applies immediately.
+    static void setMemoRetainBytesForTesting(std::size_t bytes);
+
+    /// Approximate memory footprint of the encoded payload (packet bytes plus
+    /// per-frame vector overhead), computed once at load (issue #93).
+    [[nodiscard]] std::size_t approximateBytes() const { return approximateBytes_; }
+
     /// Number of 10ms frames available (same for every channel)
     [[nodiscard]] std::size_t getFrameCount() const { return numberOfFramesPerChannel_; }
 
@@ -45,10 +53,14 @@ class AudioStreamBuffer {
     /// Load from cache if available, otherwise encode and cache
     Result<size_t> loadWithCaching(const std::string &audioFilePath, std::shared_ptr<OperationSpan> parentSpan);
 
-    /// Load cached data into this buffer
-    void loadFromCachedAudioData(const util::AudioCache::CachedAudioData &cachedAudioData);
+    /// Load cached data into this buffer (takes ownership — no payload copy)
+    void loadFromCachedAudioData(util::AudioCache::CachedAudioData &&cachedAudioData);
+
+    /// Sum packet bytes + per-frame overhead across all channels
+    void computeApproximateBytes();
 
     std::size_t numberOfFramesPerChannel_{0};
+    std::size_t approximateBytes_{0};
 
     // Layout: encodedOpusFrames_[channel][frame] -> bytes
     std::array<std::vector<std::vector<uint8_t>>, RTP_STREAMING_CHANNELS> encodedOpusFrames_;

@@ -793,6 +793,8 @@ add_executable(creature-server-test
         tests/server/audio/SoundPathResolver_test.cpp
         tests/server/audio/LocalAudioPlaybackCoordinator_test.cpp
         tests/server/rtp/AudioLoadExecutor_test.cpp
+        tests/server/rtp/AudioStreamBuffer_test.cpp
+        src/server/rtp/AudioStreamBuffer.cpp
         tests/server/rtp/BoundedCommandQueue_test.cpp
         tests/server/rtp/OpusPriming_test.cpp
         tests/server/rtp/RtcpPacket_test.cpp

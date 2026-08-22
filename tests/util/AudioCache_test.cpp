@@ -120,5 +120,96 @@ TEST_F(AudioCacheTest, ConcurrentReadersHaveRaceFreeStatistics) {
     EXPECT_EQ(cache.getStats().cacheHits, readerCount);
 }
 
+// --- issue #93: aggregate budget, TOCTOU, cross-process safety ---
+
+TEST_F(AudioCacheTest, RefusesToPublishWhenSourceChangedDuringEncoding) {
+    const auto source = writeSource("changing.wav", "original-contents");
+    AudioCache cache(root_.string());
+
+    // Fingerprint captured "before the encode"...
+    auto beforeResult = cache.getSourceFileInfo(source.string());
+    ASSERT_TRUE(beforeResult.isSuccess());
+    const auto before = beforeResult.getValue().value();
+
+    // ...then an external writer replaces the WAV mid-encode.
+    writeSource("changing.wav", "replacement-contents-of-a-different-length");
+
+    const auto data = makeAudioData(0x55);
+    const auto saveResult = cache.saveToCache(source.string(), data.framesPerChannel, data.encodedFrames, before);
+
+    ASSERT_FALSE(saveResult.isSuccess()) << "old packets must not be published under the new file's identity";
+    EXPECT_EQ(saveResult.getError()->getCode(), ServerError::InvalidData);
+    EXPECT_EQ(cache.tryLoadFromCache(source.string()), nullptr) << "no completion marker may exist";
+}
+
+TEST_F(AudioCacheTest, VerifyingSavePublishesWhenSourceIsUnchanged) {
+    const auto source = writeSource("stable.wav", "stable-contents");
+    AudioCache cache(root_.string());
+
+    auto beforeResult = cache.getSourceFileInfo(source.string());
+    ASSERT_TRUE(beforeResult.isSuccess());
+
+    const auto data = makeAudioData(0x66);
+    ASSERT_TRUE(
+        cache.saveToCache(source.string(), data.framesPerChannel, data.encodedFrames, beforeResult.getValue().value())
+            .isSuccess());
+    ASSERT_NE(cache.tryLoadFromCache(source.string()), nullptr);
+}
+
+TEST_F(AudioCacheTest, RejectsCacheFileDeclaringMoreFramesThanTheCeiling) {
+    const auto source = writeSource("huge.wav", "huge-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(cache.saveToCache(source.string(), makeAudioData(0x77)).isSuccess());
+    ASSERT_NE(cache.tryLoadFromCache(source.string()), nullptr);
+
+    // Binary-patch channel 0's frame-count field (right after the metadata
+    // block) to a value beyond the duration-derived ceiling. The load must be
+    // rejected before any frame allocation happens.
+    fs::path channel0;
+    for (const auto &entry : fs::recursive_directory_iterator(root_ / ".opus_cache")) {
+        if (entry.is_regular_file() && entry.path().filename() == "ch00.opus") {
+            channel0 = entry.path();
+            break;
+        }
+    }
+    ASSERT_FALSE(channel0.empty());
+
+    std::fstream patch(channel0, std::ios::binary | std::ios::in | std::ios::out);
+    uint32_t metadataSize = 0;
+    patch.read(reinterpret_cast<char *>(&metadataSize), sizeof(metadataSize));
+    ASSERT_TRUE(patch.good());
+    patch.seekp(static_cast<std::streamoff>(sizeof(metadataSize) + metadataSize));
+    const uint32_t inflated = static_cast<uint32_t>(RTP_MAX_FRAMES_PER_CHANNEL) + 1;
+    patch.write(reinterpret_cast<const char *>(&inflated), sizeof(inflated));
+    patch.flush();
+    ASSERT_TRUE(patch.good());
+    patch.close();
+
+    EXPECT_EQ(cache.tryLoadFromCache(source.string()), nullptr);
+}
+
+TEST_F(AudioCacheTest, SaveCreatesCrossProcessLockFileAndPidScopedTemps) {
+    const auto source = writeSource("locked.wav", "locked-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(cache.saveToCache(source.string(), makeAudioData(0x88)).isSuccess());
+
+    // The per-key advisory lock file exists next to the channel files, and no
+    // bare deterministic ".tmp" leftovers do (temps are pid-scoped and
+    // renamed away).
+    fs::path lockFile;
+    bool sawBareTmp = false;
+    for (const auto &entry : fs::recursive_directory_iterator(root_ / ".opus_cache")) {
+        const auto name = entry.path().filename().string();
+        if (name == ".lock") {
+            lockFile = entry.path();
+        }
+        if (name.size() > 4 && name.substr(name.size() - 4) == ".tmp") {
+            sawBareTmp = true;
+        }
+    }
+    EXPECT_FALSE(lockFile.empty());
+    EXPECT_FALSE(sawBareTmp);
+}
+
 } // namespace
 } // namespace creatures::util
