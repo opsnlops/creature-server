@@ -36,6 +36,8 @@
 
 namespace creatures {
 extern std::shared_ptr<creatures::Configuration> config;
+extern std::shared_ptr<creatures::audio::SoundStoreIndex> permanentSoundIndex;
+extern std::shared_ptr<creatures::audio::SoundStoreIndex> adHocSoundIndex;
 extern std::shared_ptr<EventLoop> eventLoop;
 extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<Database> db;
@@ -50,30 +52,43 @@ using oatpp::web::protocol::http::Status;
 namespace {
 std::filesystem::path adHocRoot() { return std::filesystem::temp_directory_path() / "creature-adhoc"; }
 
-bool isSafeFilename(const std::string &filename) {
-    constexpr std::size_t MAX_FILENAME_LENGTH = 255;
-    if (filename.empty() || filename.size() > MAX_FILENAME_LENGTH) {
-        return false;
-    }
-    if (std::any_of(filename.begin(), filename.end(),
-                    [](unsigned char character) { return character < 0x20 || character == 0x7f; })) {
-        return false;
-    }
+// The full validation lives beside the resolver so it is unit-testable
+// (issue #94): 255-byte cap, well-formed UTF-8, C0/DEL/C1 rejection, no path
+// components.
+bool isSafeFilename(const std::string &filename) { return creatures::audio::isSafeSoundFilename(filename); }
 
-    fs::path candidate(filename);
-
-    // Reject absolute paths, root references, or anything with parent components
-    if (candidate.is_absolute() || candidate.has_root_path() || candidate != candidate.filename()) {
-        return false;
+/**
+ * Look up a basename in an indexed store (issue #94). Ambiguous basenames are
+ * a deterministic 409 naming every candidate, instead of the old
+ * iteration-order pick. Falls back to the walking resolver only when the
+ * index global isn't constructed (early startup, tests).
+ */
+std::optional<std::string> lookupSoundInStore(const std::shared_ptr<creatures::audio::SoundStoreIndex> &index,
+                                              const fs::path &root, const std::string &filename,
+                                              const char *storeName) {
+    if (!index) {
+        return creatures::audio::resolveSoundInRoot(root, filename);
     }
-
-    for (const auto &part : candidate) {
-        if (part == ".." || part == "." || part.native().find('\0') != std::string::npos) {
-            return false;
+    auto lookup = index->find(filename);
+    using IndexStatus = creatures::audio::SoundStoreIndex::Status;
+    if (lookup.status == IndexStatus::Ambiguous) {
+        std::string candidateList;
+        for (const auto &candidate : lookup.candidates) {
+            if (!candidateList.empty()) {
+                candidateList += ", ";
+            }
+            candidateList += candidate;
         }
+        OATPP_ASSERT_HTTP(false, Status::CODE_409,
+                          fmt::format("Sound '{}' is ambiguous in the {} store ({} matches: {})",
+                                      creatures::audio::sanitizeForLogging(filename), storeName,
+                                      lookup.candidates.size(), candidateList)
+                              .c_str());
     }
-
-    return true;
+    if (lookup.status == IndexStatus::Found) {
+        return lookup.entry->canonicalPath;
+    }
+    return std::nullopt;
 }
 
 // Populate a Sound's embedded-metadata fields from a WAV's iXML document. Always
@@ -304,7 +319,7 @@ std::string SoundService::resolveAdHocSoundPath(const std::string &filename, std
         OATPP_ASSERT_HTTP(false, Status::CODE_404, "No ad-hoc sounds available");
     }
 
-    if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
+    if (auto found = lookupSoundInStore(adHocSoundIndex, root, filename, "ad-hoc")) {
         if (span) {
             span->setAttribute("audio.file.hash", util::sha256Hex(filename));
             span->setAttribute("audio.file.extension", fs::path(filename).extension().string());
@@ -314,8 +329,9 @@ std::string SoundService::resolveAdHocSoundPath(const std::string &filename, std
         return *found;
     }
 
-    OATPP_ASSERT_HTTP(false, Status::CODE_404,
-                      fmt::format("Ad-hoc sound '{}' not found in {}", filename, root.string()).c_str());
+    OATPP_ASSERT_HTTP(
+        false, Status::CODE_404,
+        fmt::format("Ad-hoc sound '{}' not found", creatures::audio::sanitizeForLogging(filename)).c_str());
 }
 
 std::string SoundService::resolvePermanentSoundPath(const std::string &filename,
@@ -334,9 +350,9 @@ std::string SoundService::resolvePermanentSoundPath(const std::string &filename,
 
     const fs::path root = config->getSoundFileLocation();
 
-    // Top-level first, then a recursive basename search so dialog/ renders and any
-    // other subdir'd sound resolve too (issue #46).
-    if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
+    // Indexed basename lookup — no tree walk on the request thread (issue #94);
+    // dialog/ renders and other subdir'd sounds still resolve (issue #46).
+    if (auto found = lookupSoundInStore(permanentSoundIndex, root, filename, "permanent")) {
         if (span) {
             span->setAttribute("audio.file.hash", util::sha256Hex(filename));
             span->setAttribute("audio.file.extension", fs::path(filename).extension().string());
@@ -347,22 +363,28 @@ std::string SoundService::resolvePermanentSoundPath(const std::string &filename,
     }
 
     OATPP_ASSERT_HTTP(false, Status::CODE_404,
-                      fmt::format("Sound '{}' not found in {}", filename, root.string()).c_str());
+                      fmt::format("Sound '{}' not found", creatures::audio::sanitizeForLogging(filename)).c_str());
 }
 
 std::optional<SoundService::ResolvedSound> SoundService::resolveSoundPath(const std::string &filename,
                                                                           std::shared_ptr<RequestSpan> parentSpan) {
     // Permanent store first (content-addressed, immutable), then the ad-hoc bucket.
-    // The single-store resolvers throw HttpError when they miss; catch that here so
-    // callers get a plain optional and the store-precedence policy lives in one place.
+    // The single-store resolvers throw HttpError when they miss; only a 404 falls
+    // through — a 400 or an ambiguity 409 must surface, not silently degrade into
+    // an ad-hoc lookup and then a 404 (issue #94).
     try {
         return ResolvedSound{resolvePermanentSoundPath(filename, parentSpan), true};
-    } catch (oatpp::web::protocol::http::HttpError &) {
-        // fall through to ad-hoc
+    } catch (oatpp::web::protocol::http::HttpError &httpError) {
+        if (httpError.getInfo().status.code != Status::CODE_404.code) {
+            throw;
+        }
     }
     try {
         return ResolvedSound{resolveAdHocSoundPath(filename, parentSpan), false};
-    } catch (oatpp::web::protocol::http::HttpError &) {
+    } catch (oatpp::web::protocol::http::HttpError &httpError) {
+        if (httpError.getInfo().status.code != Status::CODE_404.code) {
+            throw;
+        }
         return std::nullopt;
     }
 }
@@ -378,7 +400,7 @@ std::string SoundService::resolveAdHocSoundPath(const std::string &filename,
         const auto root = adHocRoot();
         OATPP_ASSERT_HTTP(fs::exists(root), Status::CODE_404, "No ad-hoc sounds available");
 
-        if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
+        if (auto found = lookupSoundInStore(adHocSoundIndex, root, filename, "ad-hoc")) {
             if (span) {
                 span->setAttribute("audio.file.hash", util::sha256Hex(filename));
                 span->setAttribute("audio.file.extension", fs::path(filename).extension().string());
@@ -387,7 +409,9 @@ std::string SoundService::resolveAdHocSoundPath(const std::string &filename,
             }
             return *found;
         }
-        OATPP_ASSERT_HTTP(false, Status::CODE_404, fmt::format("Ad-hoc sound '{}' not found", filename).c_str());
+        OATPP_ASSERT_HTTP(
+            false, Status::CODE_404,
+            fmt::format("Ad-hoc sound '{}' not found", creatures::audio::sanitizeForLogging(filename)).c_str());
     } catch (const std::exception &exception) {
         if (span) {
             span->setAttribute("error.type", typeid(exception).name());
@@ -411,7 +435,7 @@ std::string SoundService::resolvePermanentSoundPath(const std::string &filename,
         OATPP_ASSERT_HTTP(config, Status::CODE_500, "Sound configuration unavailable");
 
         const fs::path root = config->getSoundFileLocation();
-        if (auto found = creatures::audio::resolveSoundInRoot(root, filename)) {
+        if (auto found = lookupSoundInStore(permanentSoundIndex, root, filename, "permanent")) {
             if (span) {
                 span->setAttribute("audio.file.hash", util::sha256Hex(filename));
                 span->setAttribute("audio.file.extension", fs::path(filename).extension().string());
@@ -420,7 +444,8 @@ std::string SoundService::resolvePermanentSoundPath(const std::string &filename,
             }
             return *found;
         }
-        OATPP_ASSERT_HTTP(false, Status::CODE_404, fmt::format("Sound '{}' not found", filename).c_str());
+        OATPP_ASSERT_HTTP(false, Status::CODE_404,
+                          fmt::format("Sound '{}' not found", creatures::audio::sanitizeForLogging(filename)).c_str());
     } catch (const std::exception &exception) {
         if (span) {
             span->setAttribute("error.type", typeid(exception).name());
@@ -437,13 +462,20 @@ std::optional<SoundService::ResolvedSound> SoundService::resolveSoundPath(const 
                                                                           std::shared_ptr<OperationSpan> parentSpan) {
     try {
         return ResolvedSound{resolvePermanentSoundPath(filename, parentSpan), true};
-    } catch (oatpp::web::protocol::http::HttpError &) {
-        // Fall through to the ad-hoc store. Each attempted lookup retains its
-        // own child span so store precedence remains visible.
+    } catch (oatpp::web::protocol::http::HttpError &httpError) {
+        // Fall through to the ad-hoc store only on a miss. Each attempted lookup
+        // retains its own child span so store precedence remains visible; a 400
+        // or ambiguity 409 surfaces instead of degrading to a 404 (issue #94).
+        if (httpError.getInfo().status.code != Status::CODE_404.code) {
+            throw;
+        }
     }
     try {
         return ResolvedSound{resolveAdHocSoundPath(filename, parentSpan), false};
-    } catch (oatpp::web::protocol::http::HttpError &) {
+    } catch (oatpp::web::protocol::http::HttpError &httpError) {
+        if (httpError.getInfo().status.code != Status::CODE_404.code) {
+            throw;
+        }
         return std::nullopt;
     }
 }
@@ -481,9 +513,13 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
         OATPP_ASSERT_HTTP(isSafeFilename(soundFile), Status::CODE_400, "Invalid filename");
         OATPP_ASSERT_HTTP(config, Status::CODE_500, "Sound configuration unavailable");
 
-        logger->debug("Request to play sound file: {}", soundFile);
+        // isSafeFilename passed, but keep log/span rendering bounded and
+        // printable anyway — defense in depth for anything that logs earlier
+        // on a rejection path (issue #94).
+        const std::string loggedName = creatures::audio::sanitizeForLogging(soundFile);
+        logger->debug("Request to play sound file: {}", loggedName);
         if (serviceSpan) {
-            serviceSpan->setAttribute("audio.file.name", soundFile);
+            serviceSpan->setAttribute("audio.file.name", loggedName);
         }
 
         // Resolve only through the configured permanent/ad-hoc stores. The
@@ -491,10 +527,10 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
         // service operation.
         const auto resolvedSound = resolveSoundPath(soundFile, serviceSpan);
         OATPP_ASSERT_HTTP(resolvedSound.has_value(), Status::CODE_404,
-                          fmt::format("Sound file not found: {}", soundFile).c_str());
+                          fmt::format("Sound file not found: {}", loggedName).c_str());
         const std::string &fullFilePath = resolvedSound->path;
         OATPP_ASSERT_HTTP(fileIsReadable(fullFilePath), Status::CODE_404,
-                          fmt::format("Sound file not found: {}", soundFile).c_str());
+                          fmt::format("Sound file not found: {}", loggedName).c_str());
 
         constexpr uintmax_t MAX_PLAYBACK_FILE_SIZE = 1024ULL * 1024ULL * 1024ULL;
         std::error_code fileError;
@@ -502,14 +538,26 @@ oatpp::Object<creatures::ws::StatusDto> SoundService::playSound(const oatpp::Str
         OATPP_ASSERT_HTTP(!fileError && fileSize <= MAX_PLAYBACK_FILE_SIZE, Status::CODE_400,
                           "Sound file is too large or cannot be inspected");
 
+        const bool rtpMode = config->getAudioMode() == Configuration::AudioMode::RTP;
+        const bool travelMode = config->getTravelMode();
+
+        // Only accept extensions the SELECTED playback mode can actually play
+        // (issue #94): RTP streams through the 17-channel WAV loader only,
+        // while the local decoder also handles .wave/.mp3/.flac. The old
+        // mode-independent check let an .mp3 into RTP mode, where it failed
+        // deep inside a worker thread instead of here as a 400.
         std::string extension = fs::path(soundFile).extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(),
                        [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
-        const bool supportedFormat = extension == ".wav" || extension == ".mp3" || extension == ".flac";
-        OATPP_ASSERT_HTTP(supportedFormat, Status::CODE_400, "Unsupported sound file format");
-
-        const bool rtpMode = config->getAudioMode() == Configuration::AudioMode::RTP;
-        const bool travelMode = config->getTravelMode();
+        // The stores' convention is .wav (never .wave), matching the historical
+        // validation. RTP streams only the 17-channel WAV contract; the local
+        // decoder additionally handles mp3/flac.
+        const bool supportedFormat =
+            rtpMode ? (extension == ".wav") : (extension == ".wav" || extension == ".mp3" || extension == ".flac");
+        OATPP_ASSERT_HTTP(supportedFormat, Status::CODE_400,
+                          fmt::format("Unsupported sound file format for {} playback: {}",
+                                      rtpMode ? "RTP" : (travelMode ? "travel" : "local"), extension)
+                              .c_str());
         if (serviceSpan) {
             serviceSpan->setAttribute("audio.store", resolvedSound->fromPermanentStore ? "permanent" : "ad_hoc");
             serviceSpan->setAttribute("audio.file.size", static_cast<int64_t>(fileSize));
