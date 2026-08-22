@@ -32,6 +32,7 @@
 #include "server/animation/SessionManager.h"
 #include "server/audio/LocalAudioPlaybackCoordinator.h"
 #include "server/audio/NativeAudioPlaybackService.h"
+#include "server/audio/SoundPathResolver.h"
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
@@ -49,6 +50,7 @@
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/rtp/MultiOpusRtpServer.h"
 #include "server/sensors/SensorDataCache.h"
+#include "server/storage/Storage.h"
 #include "server/ws/service/DmxFixtureService.h"
 #include "server/ws/service/FixtureActivityHook.h"
 #include "util/AudioCache.h"
@@ -141,6 +143,12 @@ std::shared_ptr<audio::NativeAudioPlaybackService> nativeAudioPlaybackService;
 
 // Audio cache for pre-encoded Opus files
 std::shared_ptr<util::AudioCache> audioCache;
+
+// Basename → canonical-path indexes over the two sound stores (issue #94).
+// Request threads look up here instead of walking the tree; Storage marks
+// them dirty whenever a publisher invalidates the matching sound list.
+std::shared_ptr<audio::SoundStoreIndex> permanentSoundIndex;
+std::shared_ptr<audio::SoundStoreIndex> adHocSoundIndex;
 
 // Sensor data cache for storing current sensor readings from creatures
 std::shared_ptr<SensorDataCache> sensorDataCache;
@@ -446,6 +454,19 @@ int main(const int argc, char **argv) {
             });
         info("RTP animation audio loader started with {} workers and {} queued-job capacity",
              creatures::config->getRtpAudioLoadWorkers(), creatures::config->getRtpAudioLoadQueueCapacity());
+    }
+
+    // Basename indexes for the sound stores (issue #94). Built lazily: the
+    // first lookup after startup (or after an invalidation) pays for one
+    // bounded walk; misses never walk the tree.
+    creatures::permanentSoundIndex =
+        std::make_shared<creatures::audio::SoundStoreIndex>(creatures::config->getSoundFileLocation());
+    if (auto adHocRootResult = creatures::storage::root(creatures::storage::Persistence::AdHoc);
+        adHocRootResult.isSuccess()) {
+        creatures::adHocSoundIndex =
+            std::make_shared<creatures::audio::SoundStoreIndex>(adHocRootResult.getValue().value());
+    } else {
+        warn("Ad-hoc sound index disabled: {}", adHocRootResult.getError()->getMessage());
     }
 
     // Initialize audio cache for faster Opus encoding
