@@ -560,6 +560,8 @@ add_executable(creature-server
         src/server/ws/dto/StreamFrameDto.h
         src/model/Sound.h
         src/model/Sound.cpp
+        src/server/ws/dto/SoundDto.h
+        src/server/ws/dto/SoundDto.cpp
         src/model/SortBy.h
         src/model/Track.cpp
         src/model/Track.h
@@ -863,6 +865,7 @@ add_executable(creature-server-test
         src/model/StreamFrame.cpp
         src/model/VirtualStatusLights.cpp
         src/server/ws/dto/LeafPayloadDto.cpp
+        src/server/ws/dto/SoundDto.cpp
         src/model/PlaylistStatus.cpp
         src/model/Notice.cpp
         src/model/CacheInvalidation.cpp

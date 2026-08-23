@@ -11,6 +11,7 @@
 #include "model/Sound.h"
 #include "server/ws/dto/AnimationDto.h"
 #include "server/ws/dto/CreatureDto.h"
+#include "server/ws/dto/SoundDto.h"
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 

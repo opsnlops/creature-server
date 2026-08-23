@@ -4,6 +4,7 @@
 #include <oatpp/core/macro/codegen.hpp>
 
 #include "model/Sound.h"
+#include "server/ws/dto/SoundDto.h"
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
