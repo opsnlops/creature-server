@@ -503,6 +503,265 @@ void AudioCache::sweepStaleTemporaries(const std::string &cacheDir) const {
     }
 }
 
+Result<std::string> AudioCache::peekCachedSourcePath(const std::string &cacheChannelPath) const {
+    try {
+        std::ifstream file(cacheChannelPath, std::ios::binary);
+        if (!file.is_open()) {
+            return Result<std::string>{
+                ServerError(ServerError::NotFound, fmt::format("Cache file not readable: {}", cacheChannelPath))};
+        }
+
+        // Format: [metadata_size:4][metadata_json][frame_count:4]...
+        // Only the first two fields are read — pruning must never touch packets.
+        uint32_t metadataSize = 0;
+        file.read(reinterpret_cast<char *>(&metadataSize), sizeof(metadataSize));
+        if (!file.good() || metadataSize == 0 || metadataSize > 64 * 1024) {
+            return Result<std::string>{
+                ServerError(ServerError::InvalidData, fmt::format("Bad metadata header in {}", cacheChannelPath))};
+        }
+
+        std::string metadataJson;
+        metadataJson.resize(metadataSize);
+        file.read(metadataJson.data(), metadataSize);
+        if (!file.good() || static_cast<uint32_t>(file.gcount()) != metadataSize) {
+            return Result<std::string>{
+                ServerError(ServerError::InvalidData, fmt::format("Truncated metadata in {}", cacheChannelPath))};
+        }
+
+        auto jsonResult = JsonParser::parseJsonString(metadataJson, "audio cache metadata");
+        if (!jsonResult.isSuccess()) {
+            return Result<std::string>{jsonResult.getError().value()};
+        }
+        auto jsonData = jsonResult.getValue().value();
+        if (!jsonData.contains("path")) {
+            return Result<std::string>{ServerError(
+                ServerError::InvalidData, fmt::format("Cache metadata has no source path: {}", cacheChannelPath))};
+        }
+        return Result<std::string>{jsonData.at("path").get<std::string>()};
+    } catch (const std::exception &e) {
+        return Result<std::string>{
+            ServerError(ServerError::InternalError, fmt::format("Failed to peek cache metadata: {}", e.what()))};
+    }
+}
+
+Result<AudioCache::PruneReport> AudioCache::pruneOrphanedEntries(bool dryRun,
+                                                                 std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = observability ? observability->createChildOperationSpan("AudioCache.pruneOrphanedEntries", parentSpan)
+                              : nullptr;
+    if (span) {
+        span->setAttribute("cache.prune.dry_run", dryRun);
+    }
+
+    PruneReport report;
+    report.dryRun = dryRun;
+    constexpr std::size_t MAX_REPORTED = 100;
+
+    auto note = [&report](const std::string &path) {
+        if (report.removed.size() < MAX_REPORTED) {
+            report.removed.push_back(path);
+        }
+    };
+
+    // Best-effort size accounting: a directory's size is the sum of its files.
+    auto directorySize = [](const std::filesystem::path &dir) -> std::uintmax_t {
+        std::uintmax_t bytes = 0;
+        std::error_code ec;
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(dir, ec)) {
+            if (ec) {
+                break;
+            }
+            std::error_code sizeError;
+            if (entry.is_regular_file(sizeError) && !sizeError) {
+                bytes += entry.file_size(sizeError);
+            }
+        }
+        return bytes;
+    };
+
+    try {
+        std::error_code ec;
+        if (!std::filesystem::exists(cacheDirectory_, ec) || ec) {
+            if (span) {
+                span->setSuccess();
+            }
+            return Result<PruneReport>{report};
+        }
+
+        // The cache holds per-key directories (plus an optional `_external`
+        // subtree for sources outside the sound directory), sibling `.lock`
+        // files, and nothing else.
+        std::vector<std::filesystem::path> searchRoots{cacheDirectory_};
+        const auto externalRoot = std::filesystem::path(cacheDirectory_) / "_external";
+        if (std::filesystem::exists(externalRoot, ec) && !ec) {
+            searchRoots.push_back(externalRoot);
+        }
+
+        for (const auto &searchRoot : searchRoots) {
+            std::vector<std::filesystem::path> entries;
+            for (const auto &entry : std::filesystem::directory_iterator(searchRoot, ec)) {
+                if (ec) {
+                    break;
+                }
+                entries.push_back(entry.path());
+            }
+
+            for (const auto &path : entries) {
+                const auto name = path.filename().string();
+
+                // Abandoned temporaries anywhere under the cache root.
+                if (name.find(".tmp.") != std::string::npos) {
+                    std::error_code sizeError;
+                    const auto bytes = std::filesystem::file_size(path, sizeError);
+                    ++report.temporaryFiles;
+                    report.bytesReclaimed += sizeError ? 0 : bytes;
+                    note(path.string());
+                    if (!dryRun) {
+                        std::error_code removeError;
+                        std::filesystem::remove(path, removeError);
+                    }
+                    continue;
+                }
+
+                // A `.lock` file whose cache directory no longer exists. The
+                // lock is deliberately a sibling so a clear cannot unlink the
+                // inode it holds (issue #93), which means clears leave these
+                // behind by design.
+                if (name.size() > 5 && name.compare(name.size() - 5, 5, ".lock") == 0) {
+                    auto owningDir = path;
+                    owningDir.replace_extension();
+                    if (!std::filesystem::exists(owningDir, ec) || ec) {
+                        ++report.orphanedLockFiles;
+                        note(path.string());
+                        if (!dryRun) {
+                            std::error_code removeError;
+                            std::filesystem::remove(path, removeError);
+                        }
+                    }
+                    continue;
+                }
+
+                if (!std::filesystem::is_directory(path, ec) || ec) {
+                    continue;
+                }
+                if (name == "_external") {
+                    continue; // handled as its own search root
+                }
+
+                ++report.entriesScanned;
+
+                const auto keyMutex = getKeyMutexForCacheDir(path.string());
+                std::lock_guard lock(*keyMutex);
+                // Exclusive against other processes sharing this cache, same
+                // as clearCache. The lock file is a sibling, so removing the
+                // directory cannot unlink the inode we hold (issue #93).
+                ScopedFileLock entryLock(path.string() + ".lock", /*exclusive=*/true);
+
+                // Abandoned temporaries live inside the key's directory
+                // (<dir>/chNN.opus.tmp.<pid>.<n>). Safe to remove here because
+                // we hold this key's exclusive lock, so no other process can
+                // be mid-save on it.
+                if (entryLock.locked()) {
+                    for (const auto &inner : std::filesystem::directory_iterator(path, ec)) {
+                        if (ec) {
+                            break;
+                        }
+                        if (inner.path().filename().string().find(".tmp.") == std::string::npos) {
+                            continue;
+                        }
+                        std::error_code sizeError;
+                        const auto bytes = inner.file_size(sizeError);
+                        ++report.temporaryFiles;
+                        report.bytesReclaimed += sizeError ? 0 : bytes;
+                        note(inner.path().string());
+                        if (!dryRun) {
+                            std::error_code removeError;
+                            std::filesystem::remove(inner.path(), removeError);
+                        }
+                    }
+                }
+
+                // No completion marker: a crashed or partial save. Nothing can
+                // ever read it (allCacheFilesExist checks the marker first).
+                const auto marker = path / CACHE_COMPLETE_MARKER;
+                if (!std::filesystem::is_regular_file(marker, ec) || ec) {
+                    ++report.incompleteEntries;
+                    report.bytesReclaimed += directorySize(path);
+                    note(path.string());
+                    if (!dryRun) {
+                        std::error_code removeError;
+                        std::filesystem::remove_all(path, removeError);
+                    }
+                    continue;
+                }
+
+                // Recover the source this entry was built from and check it
+                // still exists. A moved or deleted sound orphans its entry
+                // permanently, because the key is a hash of the old path.
+                const auto channel0 = path / fmt::format("ch{:02d}.opus", 0);
+                auto sourceResult = peekCachedSourcePath(channel0.string());
+                if (!sourceResult.isSuccess()) {
+                    // Unreadable metadata is itself unusable cache.
+                    ++report.incompleteEntries;
+                    report.bytesReclaimed += directorySize(path);
+                    note(path.string());
+                    if (!dryRun) {
+                        std::error_code removeError;
+                        std::filesystem::remove_all(path, removeError);
+                    }
+                    continue;
+                }
+
+                const auto sourcePath = sourceResult.getValue().value();
+                std::error_code existsError;
+                const bool sourceExists = std::filesystem::exists(sourcePath, existsError);
+                if (existsError) {
+                    // Could not determine whether the source is there — a
+                    // network mount hiccup, a permissions problem. Deleting on
+                    // an inconclusive answer would wipe a healthy cache, so
+                    // skip this entry and say why.
+                    warn("Audio cache prune skipping {}: cannot stat source {} ({})", path.string(), sourcePath,
+                         existsError.message());
+                    continue;
+                }
+                if (!sourceExists) {
+                    ++report.orphanedEntries;
+                    report.bytesReclaimed += directorySize(path);
+                    note(fmt::format("{} (source gone: {})", path.string(), sourcePath));
+                    if (!dryRun) {
+                        std::error_code removeError;
+                        std::filesystem::remove_all(path, removeError);
+                        // The sibling lock file goes with it.
+                        std::filesystem::remove(path.string() + ".lock", removeError);
+                    }
+                }
+            }
+        }
+
+        if (span) {
+            span->setAttribute("cache.prune.entries_scanned", static_cast<int64_t>(report.entriesScanned));
+            span->setAttribute("cache.prune.orphaned", static_cast<int64_t>(report.orphanedEntries));
+            span->setAttribute("cache.prune.incomplete", static_cast<int64_t>(report.incompleteEntries));
+            span->setAttribute("cache.prune.temporaries", static_cast<int64_t>(report.temporaryFiles));
+            span->setAttribute("cache.prune.orphaned_locks", static_cast<int64_t>(report.orphanedLockFiles));
+            span->setAttribute("cache.prune.bytes_reclaimed", static_cast<int64_t>(report.bytesReclaimed));
+            span->setSuccess();
+        }
+        info("Audio cache prune ({}): scanned {} entr(ies), {} orphaned, {} incomplete, {} temp file(s), {} stale "
+             "lock(s), {} bytes",
+             dryRun ? "dry run" : "applied", report.entriesScanned, report.orphanedEntries, report.incompleteEntries,
+             report.temporaryFiles, report.orphanedLockFiles, report.bytesReclaimed);
+        return Result<PruneReport>{report};
+
+    } catch (const std::exception &e) {
+        const auto errorMsg = fmt::format("Audio cache prune failed: {}", e.what());
+        error(errorMsg);
+        if (span) {
+            span->setError(errorMsg);
+        }
+        return Result<PruneReport>{ServerError(ServerError::InternalError, errorMsg)};
+    }
+}
+
 AudioCache::CacheStats AudioCache::getStats() const {
     CacheStats stats{};
     stats.cacheHits = cacheHits_.load();
@@ -558,7 +817,10 @@ std::string sanitizeComponent(const std::string &component) {
 } // namespace
 
 std::shared_ptr<AudioCache::CacheKeyMutex> AudioCache::getKeyMutex(const std::string &sourceFilePath) const {
-    const auto cacheKey = getCacheDirectoryPath(sourceFilePath);
+    return getKeyMutexForCacheDir(getCacheDirectoryPath(sourceFilePath));
+}
+
+std::shared_ptr<AudioCache::CacheKeyMutex> AudioCache::getKeyMutexForCacheDir(const std::string &cacheKey) const {
     std::lock_guard lock(keyMutexMapMutex_);
 
     if (const auto existing = keyMutexes_.find(cacheKey); existing != keyMutexes_.end()) {

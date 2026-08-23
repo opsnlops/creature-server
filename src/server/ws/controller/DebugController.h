@@ -13,7 +13,10 @@
 #include "server/storage/Storage.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
+#include "server/ws/dto/AudioCachePruneDto.h"
 #include "server/ws/dto/StatusDto.h"
+#include "util/AudioCache.h"
+#include "util/ObservabilityManager.h"
 
 #include "util/websocketUtils.h"
 
@@ -22,6 +25,8 @@
 namespace creatures {
 extern std::shared_ptr<creatures::audio::SoundStoreIndex> permanentSoundIndex;
 extern std::shared_ptr<creatures::audio::SoundStoreIndex> adHocSoundIndex;
+extern std::shared_ptr<creatures::util::AudioCache> audioCache;
+extern std::shared_ptr<ObservabilityManager> observability;
 } // namespace creatures
 
 namespace creatures ::ws {
@@ -180,6 +185,70 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
                 debug(statusMessage);
                 return okStatus(span, Status::CODE_200, statusMessage);
             });
+    }
+
+    ENDPOINT_INFO(prune_audio_cache) {
+        info->summary = "Reclaim Opus cache entries that can never be used again";
+        info->description =
+            "The on-disk Opus cache is keyed by a hash of each sound's canonical path, so MOVING or deleting a "
+            "sound orphans its cache entry permanently — no other operation reclaims it. This removes orphaned "
+            "entries, entries left incomplete by a crashed save, abandoned temporary files, and lock files whose "
+            "directory is gone.\n\n"
+            "Defaults to a DRY RUN: pass dry_run=false to actually delete. Intended as a creature-cli maintenance "
+            "command. Distinct from /cache-invalidate/*, which never deletes anything (issue #166).";
+        info->addTag("Debug");
+        info->queryParams.add<oatpp::Boolean>("dry_run").required = false;
+        info->queryParams["dry_run"].description = "When true (default), report what would be removed without "
+                                                   "deleting.";
+
+        info->addResponse<Object<AudioCachePruneDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/debug/cache/audio/prune", prune_audio_cache,
+             QUERY(oatpp::Boolean, dryRun, "dry_run", "true"), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("POST /api/v1/debug/cache/audio/prune", "POST", "api/v1/debug/cache/audio/prune",
+                           "prune_audio_cache", "DebugController", request, [&](const auto &span) {
+                               OATPP_ASSERT_HTTP(creatures::audioCache, Status::CODE_500, "Audio cache unavailable");
+                               const bool isDryRun = dryRun == nullptr || *dryRun;
+
+                               auto pruneSpan = creatures::observability
+                                                    ? creatures::observability->createOperationSpan(
+                                                          "DebugController.pruneAudioCache", span)
+                                                    : nullptr;
+                               auto pruneResult = creatures::audioCache->pruneOrphanedEntries(isDryRun, pruneSpan);
+                               if (!pruneResult.isSuccess()) {
+                                   return bailHttp(span, Status::CODE_500, pruneResult.getError()->getMessage());
+                               }
+                               const auto report = pruneResult.getValue().value();
+
+                               // Anything we removed may also be memoized in RAM; drop those
+                               // buffers so a later play cannot serve a buffer whose disk
+                               // cache we just deleted.
+                               if (!isDryRun && (report.orphanedEntries > 0 || report.incompleteEntries > 0)) {
+                                   creatures::rtp::AudioStreamBuffer::clearMemo();
+                               }
+
+                               auto dto = AudioCachePruneDto::createShared();
+                               dto->dry_run = report.dryRun;
+                               dto->entries_scanned = report.entriesScanned;
+                               dto->orphaned_entries = report.orphanedEntries;
+                               dto->incomplete_entries = report.incompleteEntries;
+                               dto->temporary_files = report.temporaryFiles;
+                               dto->orphaned_lock_files = report.orphanedLockFiles;
+                               dto->bytes_reclaimed = report.bytesReclaimed;
+                               dto->removed = oatpp::List<oatpp::String>::createShared();
+                               for (const auto &path : report.removed) {
+                                   dto->removed->push_back(path);
+                               }
+
+                               info("Audio cache prune via API ({}): {} orphaned, {} incomplete, {} bytes",
+                                    isDryRun ? "dry run" : "applied", report.orphanedEntries, report.incompleteEntries,
+                                    report.bytesReclaimed);
+                               if (pruneSpan) {
+                                   pruneSpan->setSuccess();
+                               }
+                               return createDtoResponse(Status::CODE_200, dto);
+                           });
     }
 
     ENDPOINT_INFO(invalidate_sound_list) {

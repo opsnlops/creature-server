@@ -105,6 +105,40 @@ class AudioCache {
     Result<void> clearCache(const std::string &sourceFilePath);
 
     /**
+     * @brief What a prune pass found and (unless dry-run) removed.
+     */
+    struct PruneReport {
+        std::size_t entriesScanned{0};
+        std::size_t orphanedEntries{0};   // source file no longer exists
+        std::size_t incompleteEntries{0}; // no completion marker (crashed save)
+        std::size_t temporaryFiles{0};    // abandoned *.tmp.<pid>.<n>
+        std::size_t orphanedLockFiles{0}; // .lock whose cache directory is gone
+        std::uintmax_t bytesReclaimed{0};
+        bool dryRun{true};
+        // Bounded sample of what was (or would be) removed, for the operator.
+        std::vector<std::string> removed;
+    };
+
+    /**
+     * @brief Remove cache entries that can never be used again (issue #166).
+     *
+     * The cache is keyed by a hash of the source file's canonical path, so
+     * MOVING or deleting a sound orphans its entry permanently — nothing else
+     * in the system reclaims it. This walks the hostname-scoped cache
+     * directory, recovers each entry's recorded source path from the small
+     * metadata header of its channel-0 file, and drops entries whose source is
+     * gone, entries with no completion marker, abandoned temporaries, and lock
+     * files left without a directory.
+     *
+     * Deliberately separate from cache invalidation: deleting files as a side
+     * effect of "invalidate caches" would be surprising.
+     *
+     * @param dryRun when true (the default) nothing is deleted; the report
+     *               describes what would have been.
+     */
+    Result<PruneReport> pruneOrphanedEntries(bool dryRun = true, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
      * @brief Get cache statistics
      */
     struct CacheStats {
@@ -153,12 +187,21 @@ class AudioCache {
      */
     Result<void> clearCacheLocked(const std::string &sourceFilePath);
 
+    /// Read ONLY the metadata header of a cache channel file to recover the
+    /// source path it was built from. Cheap: the header is a few hundred bytes
+    /// at the front, so pruning never reads packet payloads (issue #166).
+    Result<std::string> peekCachedSourcePath(const std::string &cacheChannelPath) const;
+
     /// Remove abandoned `*.tmp.<pid>.<n>` files for this key. Caller holds the
     /// exclusive lock. Unique temp names never self-clean the way the old
     /// deterministic name did, so a crash mid-save would leak them (issue #93).
     void sweepStaleTemporaries(const std::string &cacheDir) const;
 
     std::shared_ptr<CacheKeyMutex> getKeyMutex(const std::string &sourceFilePath) const;
+
+    /// Same per-key mutex, addressed by the cache directory directly. Pruning
+    /// works from the cache side and has no source path to derive it from.
+    std::shared_ptr<CacheKeyMutex> getKeyMutexForCacheDir(const std::string &cacheDirectory) const;
 
     /**
      * @brief Calculate SHA-256 checksum of a file (fast, streaming)
