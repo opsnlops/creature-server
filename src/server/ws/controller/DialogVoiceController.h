@@ -23,6 +23,7 @@
 #include "server/voice/ScriptCacheKey.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
+#include "server/ws/dto/DialogScriptDto.h"
 #include "server/ws/dto/DialogVoiceDto.h"
 #include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/StatusDto.h"

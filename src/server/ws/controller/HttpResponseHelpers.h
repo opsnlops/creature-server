@@ -3,10 +3,12 @@
 #include <memory>
 #include <string>
 
+#include <nlohmann/json.hpp>
 #include <oatpp/core/Types.hpp>
 #include <oatpp/web/protocol/http/Http.hpp>
 #include <oatpp/web/protocol/http/outgoing/Response.hpp>
 
+#include "api/JsonResponse.h"
 #include "server/ws/dto/StatusDto.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
@@ -19,28 +21,23 @@ namespace creatures::ws {
 // "not_found" — 404 specifically; clients use this as a cheap discriminator so
 // they don't have to parse the numeric code to distinguish a missing resource
 // from a malformed request.
-inline constexpr const char *STATUS_OK = "ok";
-inline constexpr const char *STATUS_ERROR = "error";
-inline constexpr const char *STATUS_NOT_FOUND = "not_found";
+inline constexpr const char *STATUS_OK = api::STATUS_OK;
+inline constexpr const char *STATUS_ERROR = api::STATUS_ERROR;
+inline constexpr const char *STATUS_NOT_FOUND = api::STATUS_NOT_FOUND;
 
 // Pick the canonical status string for an HTTP code when the caller hasn't
 // overridden it. 404 → "not_found", 2xx → "ok", everything else → "error".
-inline const char *defaultStatusForCode(int code) {
-    if (code == 404)
-        return STATUS_NOT_FOUND;
-    if (code >= 200 && code < 300)
-        return STATUS_OK;
-    return STATUS_ERROR;
-}
+inline const char *defaultStatusForCode(int code) { return api::defaultStatusForCode(code); }
 
 // Build the canonical StatusDto envelope. Doesn't touch any oatpp response
 // machinery so it's trivially unit-testable.
 inline oatpp::Object<StatusDto> buildStatusDto(int code, const std::string &message,
                                                const char *statusStringOverride = nullptr) {
+    const auto response = api::makeStatusResponse(code, message, statusStringOverride);
     auto dto = StatusDto::createShared();
-    dto->status = statusStringOverride ? statusStringOverride : defaultStatusForCode(code);
-    dto->code = static_cast<v_uint16>(code);
-    dto->message = message.c_str();
+    dto->status = response.status.c_str();
+    dto->code = response.code;
+    dto->message = response.message.c_str();
     return dto;
 }
 
@@ -51,11 +48,9 @@ inline oatpp::Object<StatusDto> buildStatusDto(int code, const std::string &mess
 //     class FooController : public oatpp::web::server::api::ApiController,
 //                           public HttpResponseHelpers<FooController> { ... };
 //
-// Every helper (1) stamps http.status_code on the request span if one is
-// passed, (2) builds a StatusDto with the canonical envelope, and (3) returns
-// the OutgoingResponse via the derived controller's createDtoResponse — which
-// is the only reason this needs CRTP in the first place (createDtoResponse is
-// a protected member of ApiController, so a free function can't reach it).
+// Every helper stamps http.status_code on the request span, builds the neutral
+// canonical envelope, and adapts its serialized bytes to an oat++ response.
+// CRTP is needed only to reach ApiController's protected createResponse.
 template <typename Self> class HttpResponseHelpers {
   protected:
     using HttpStatus = oatpp::web::protocol::http::Status;
@@ -64,13 +59,20 @@ template <typename Self> class HttpResponseHelpers {
     // Generic error-envelope helper. `statusStringOverride` is rarely needed
     // — defaultStatusForCode covers 404 → "not_found" and everything else.
     template <typename SpanT>
-    std::shared_ptr<HttpOutgoingResponse> bailHttp(const SpanT &span, const HttpStatus &status,
-                                                   const std::string &message,
-                                                   const char *statusStringOverride = nullptr) {
-        auto dto = buildStatusDto(status.code, message, statusStringOverride);
-        if (span)
+    std::shared_ptr<HttpOutgoingResponse>
+    bailHttp(const SpanT &span, const HttpStatus &status, const std::string &message,
+             const char *statusStringOverride = nullptr, const char *errorType = nullptr) {
+        const auto body =
+            api::statusResponseToJson(api::makeStatusResponse(status.code, message, statusStringOverride));
+        if (span) {
+            span->setError(message);
+            span->setAttribute("error.code", static_cast<int64_t>(status.code));
+            span->setAttribute("error.message", message);
+            if (errorType)
+                span->setAttribute("error.type", errorType);
             span->setHttpStatus(status.code);
-        return static_cast<Self *>(this)->createDtoResponse(status, dto);
+        }
+        return jsonResponse(span, status, body);
     }
 
     // One-liner for the very common service-layer Result<T> failure pattern.
@@ -80,7 +82,11 @@ template <typename Self> class HttpResponseHelpers {
     template <typename SpanT>
     std::shared_ptr<HttpOutgoingResponse> bailFromServerError(const SpanT &span, const creatures::ServerError &error) {
         const int code = creatures::serverErrorToStatusCode(error.getCode());
-        return bailHttp(span, HttpStatus(code, statusReasonForCode(code)), error.getMessage());
+        recordSpanError(span, error.getMessage(), serverErrorType(error.getCode()), error.getCode());
+        if (span)
+            span->setHttpStatus(code);
+        const auto body = api::statusResponseToJson(api::makeStatusResponse(code, error.getMessage()));
+        return jsonResponse(span, HttpStatus(code, statusReasonForCode(code)), body);
     }
 
     // Success-shaped StatusDto response — for endpoints whose only return
@@ -89,13 +95,57 @@ template <typename Self> class HttpResponseHelpers {
     template <typename SpanT>
     std::shared_ptr<HttpOutgoingResponse> okStatus(const SpanT &span, const HttpStatus &status,
                                                    const std::string &message) {
-        auto dto = buildStatusDto(status.code, message, STATUS_OK);
+        const auto body = api::statusResponseToJson(api::makeStatusResponse(status.code, message, STATUS_OK));
         if (span)
             span->setHttpStatus(status.code);
-        return static_cast<Self *>(this)->createDtoResponse(status, dto);
+        return jsonResponse(span, status, body);
+    }
+
+    // Serialize framework-neutral contracts without routing them back through
+    // oat++ DTO wrappers. This is the temporary transport adapter until the
+    // HTTP framework itself is replaced.
+    std::shared_ptr<HttpOutgoingResponse> jsonResponse(const HttpStatus &status, const nlohmann::json &body) {
+        return serializedJsonResponse(status, api::serializeJson(body).bytes);
+    }
+
+    template <typename SpanT>
+    std::shared_ptr<HttpOutgoingResponse> jsonResponse(const SpanT &span, const HttpStatus &status,
+                                                       const nlohmann::json &body) {
+        const auto serialization = api::serializeJson(body);
+        if (span) {
+            span->setAttribute("http.response.body.size", static_cast<int64_t>(serialization.bytes.size()));
+            span->setAttribute("http.response.content_type", "application/json");
+            span->setAttribute("response.codec", "nlohmann_json");
+            span->setAttribute("response.utf8.replaced", serialization.invalidUtf8Replaced);
+        }
+        return serializedJsonResponse(status, serialization.bytes);
     }
 
   private:
+    std::shared_ptr<HttpOutgoingResponse> serializedJsonResponse(const HttpStatus &status,
+                                                                 const std::string &serialized) {
+        auto response = static_cast<Self *>(this)->createResponse(status, serialized.c_str());
+        response->putHeader("Content-Type", "application/json; charset=utf-8");
+        return response;
+    }
+
+    static const char *serverErrorType(creatures::ServerError::Code code) {
+        switch (code) {
+        case creatures::ServerError::NotFound:
+            return "NotFound";
+        case creatures::ServerError::Forbidden:
+            return "Forbidden";
+        case creatures::ServerError::InvalidData:
+            return "InvalidData";
+        case creatures::ServerError::DatabaseError:
+            return "DatabaseError";
+        case creatures::ServerError::Conflict:
+            return "Conflict";
+        default:
+            return "InternalError";
+        }
+    }
+
     // bailFromServerError builds a Status from a numeric code, but oatpp's
     // Status constructor needs a reason phrase too. This covers the codes
     // serverErrorToStatusCode actually returns; anything else gets "Unknown"

@@ -82,16 +82,15 @@ Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(const std::sh
             }
             nlohmann::json json_doc = jsonResult.getValue().value();
 
-            auto playlistResult = playlistFromJson(json_doc, playlistSpan);
+            auto playlistResult = playlistFromStoredJson(json_doc, playlistSpan);
             if (!playlistResult.isSuccess()) {
                 auto err = playlistResult.getError().value();
                 std::string errorMessage = fmt::format("Unable to parse playlist JSON: {}", err.getMessage());
                 warn(errorMessage);
                 if (playlistSpan) {
-                    playlistSpan->setError(errorMessage);
-                    playlistSpan->setAttribute("error.type", "DataFormatException");
-                    playlistSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+                    recordSpanError(playlistSpan, errorMessage, "DataFormatException", err.getCode());
                 }
+                recordSpanError(mongoSpan, errorMessage, "DataFormatException", err.getCode());
                 recordSpanError(dbSpan, errorMessage, "DataFormatException", err.getCode());
                 return Result<std::vector<creatures::Playlist>>{ServerError(ServerError::InvalidData, errorMessage)};
             }

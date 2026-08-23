@@ -6,8 +6,6 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
 
 #include "server/namespace-stuffs.h"
 
@@ -78,7 +76,7 @@ struct StagePlacement {
 /// Two blobs are carried as opaque `nlohmann::json` rather than typed fields,
 /// for the same reason Storyboard carries `tiles` that way — the console owns
 /// settings the server has no opinion about, and routing them through an
-/// oatpp DTO would silently strip any key this struct doesn't know:
+/// transport DTO would silently strip any key this struct doesn't know:
 ///
 ///   * `placements` — the server reads creature_id/x/y/z/yaw and validates
 ///     them, but preserves per-placement extras (gain, muted, audio_channel,
@@ -111,64 +109,6 @@ struct Stage {
 /// gaze layer so "which way is shorter round the circle" is answered the same
 /// way in both.
 [[nodiscard]] float normalizeDegrees(float degrees);
-
-#include OATPP_CODEGEN_BEGIN(DTO)
-
-// Swagger-only DTO. The controller does NOT serialize through this — it
-// returns raw JSON via ResponseFactory::createResponse to preserve the opaque
-// placement extras and the console-owned `audio` block, exactly as
-// StoryboardController does for `tiles`.
-class StageDto : public oatpp::DTO {
-
-    DTO_INIT(StageDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(id) { info->description = "Stage UUID. Server-generated on create."; }
-    DTO_FIELD(String, id);
-
-    DTO_FIELD_INFO(title) { info->description = "Human-readable stage title, e.g. 'Mainstage' or 'Travel'."; }
-    DTO_FIELD(String, title);
-
-    DTO_FIELD_INFO(notes) {
-        info->description = "Free-form notes attached to the stage.";
-        info->required = false;
-    }
-    DTO_FIELD(String, notes);
-
-    DTO_FIELD_INFO(version) {
-        info->description = "Coordinate-frame version. 1 = listener at the origin facing -Z, metres, Y-up.";
-    }
-    DTO_FIELD(Int32, version);
-
-    DTO_FIELD_INFO(placements) {
-        info->description = "Array of creature placements. Each has creature_id plus x/y/z in metres relative to the "
-                            "listener (who is at the origin, facing -Z) and yaw in degrees measured counterclockwise "
-                            "from +Z viewed from above (0 = facing +Z, +90 = facing -X). Coordinates are clamped to "
-                            "+/-5 m. Extra per-placement keys are preserved verbatim.";
-    }
-    DTO_FIELD(Any, placements);
-
-    DTO_FIELD_INFO(audio) {
-        info->description = "Console-owned spatial-audio mix settings. Stored and returned verbatim; the server "
-                            "never interprets this object.";
-        info->required = false;
-    }
-    DTO_FIELD(Any, audio);
-
-    DTO_FIELD_INFO(created_at) {
-        info->description = "Wall-clock milliseconds since Unix epoch when the stage was first persisted. "
-                            "Server-managed; ignored on PUT.";
-    }
-    DTO_FIELD(Int64, created_at);
-
-    DTO_FIELD_INFO(updated_at) {
-        info->description = "Wall-clock milliseconds since Unix epoch of the most recent edit. Server-managed; "
-                            "ignored on PUT. Animations compare their source_stage_updated_at against this to "
-                            "decide whether they are stale.";
-    }
-    DTO_FIELD(Int64, updated_at);
-};
-
-#include OATPP_CODEGEN_END(DTO)
 
 /// Serialize a Stage back to its canonical JSON shape — the same shape the
 /// client sent on POST/PUT and the same shape returned from GET.

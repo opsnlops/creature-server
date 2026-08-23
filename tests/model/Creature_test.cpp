@@ -55,18 +55,99 @@ class CreatureTest : public ::testing::Test {
 // }
 
 TEST(CreatureValidationTest, AcceptsIdleAndSpeechLoopLists) {
-    nlohmann::json creatureJson = {{"id", "creature-1"},
-                                   {"name", "Test Creature"},
-                                   {"channel_offset", 10},
-                                   {"audio_channel", 1},
-                                   {"mouth_slot", 2},
-                                   {"inputs", {{{"name", "head"}, {"slot", 0}, {"width", 1}, {"joystick_axis", 0}}}},
-                                   {"speech_loop_animation_ids", {"a", "b"}},
-                                   {"idle_animation_ids", {"c", "d"}}};
+    nlohmann::json creatureJson = {
+        {"id", "4754fc0e-1706-11ef-931d-bbb95a696e2e"},
+        {"name", "Test Creature"},
+        {"channel_offset", 10},
+        {"audio_channel", 1},
+        {"mouth_slot", 2},
+        {"inputs", {{{"name", "head"}, {"slot", 0}, {"width", 1}, {"joystick_axis", 0}}}},
+        {"speech_loop_animation_ids", {"87450ac7-4947-4078-a049-13dd767708df", "4ee4ea7a-029e-4015-ae8f-84247c92dee6"}},
+        {"idle_animation_ids", {"0282df2c-ec7f-4869-8a09-43216e3bd715", "ea849c1f-e81e-4877-ad4f-b3af827aedc6"}}};
 
     auto result = Database::validateCreatureJson(creatureJson);
     ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError()->getMessage() : "validation failed");
     EXPECT_TRUE(result.getValue().value());
+}
+
+TEST(CreatureJson, BeakyShapeRoundTripsThroughTheNeutralCodec) {
+    const nlohmann::json beaky = {
+        {"id", "4754fc0e-1706-11ef-931d-bbb95a696e2e"},
+        {"name", "Beaky"},
+        {"channel_offset", 1},
+        {"audio_channel", 1},
+        {"mouth_slot", 4},
+        {"inputs",
+         {{{"name", "neck_rotate"}, {"slot", 0}, {"width", 1}, {"joystick_axis", 0}},
+          {{"name", "stand_rotate"}, {"slot", 1}, {"width", 1}, {"joystick_axis", 1}},
+          {{"name", "head_tilt"}, {"slot", 2}, {"width", 1}, {"joystick_axis", 2}},
+          {{"name", "head_height"}, {"slot", 3}, {"width", 1}, {"joystick_axis", 3}},
+          {{"name", "beak"}, {"slot", 4}, {"width", 1}, {"joystick_axis", 4}},
+          {{"name", "body_lean"}, {"slot", 5}, {"width", 1}, {"joystick_axis", 5}},
+          {{"name", "chest"}, {"slot", 7}, {"width", 1}, {"joystick_axis", 7}}}},
+        {"speech_loop_animation_ids", {"87450ac7-4947-4078-a049-13dd767708df"}},
+        {"controller_hardware", {{"firmware_revision", "beaky-2026"}}},
+        {"gaze",
+         {{"pan",
+           {{"input", "neck_rotate"}, {"degrees_at_min", -55}, {"degrees_at_max", 55}, {"listening_amount", 0.4}}},
+          {"elevation",
+           {{"input", "head_height"}, {"degrees_at_min", -25}, {"degrees_at_max", 25}, {"listening_amount", 0.4}}},
+          {"cock",
+           {{"input", "head_tilt"}, {"degrees_at_min", -20}, {"degrees_at_max", 20}, {"listening_amount", 0.4}}}}},
+    };
+
+    const auto parsed = creatureFromJson(beaky);
+    ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
+    const auto canonical = creatureToJson(parsed.getValue().value());
+    EXPECT_EQ(canonical["id"], beaky["id"]);
+    EXPECT_EQ(canonical["name"], beaky["name"]);
+    EXPECT_EQ(canonical["inputs"], beaky["inputs"]);
+    EXPECT_EQ(canonical["speech_loop_animation_ids"], beaky["speech_loop_animation_ids"]);
+    const auto roundTrip = creatureFromJson(canonical);
+    ASSERT_TRUE(roundTrip.isSuccess()) << roundTrip.getError()->getMessage();
+    EXPECT_EQ(roundTrip.getValue()->gaze->pan->input, "neck_rotate");
+    EXPECT_FLOAT_EQ(roundTrip.getValue()->gaze->pan->degrees_at_min, -55.0f);
+    EXPECT_FALSE(canonical.contains("runtime"));
+    EXPECT_FALSE(canonical.contains("controller_hardware"));
+}
+
+TEST(CreatureJson, RejectsInvalidAggregateConstraints) {
+    const nlohmann::json base = {{"id", "4754fc0e-1706-11ef-931d-bbb95a696e2e"},
+                                 {"name", "Beaky"},
+                                 {"channel_offset", 1},
+                                 {"audio_channel", 1},
+                                 {"mouth_slot", 4},
+                                 {"inputs", {{{"name", "beak"}, {"slot", 4}, {"width", 1}, {"joystick_axis", 4}}}}};
+
+    auto invalidId = base;
+    invalidId["id"] = "beaky";
+    EXPECT_FALSE(creatureFromJson(invalidId).isSuccess());
+
+    auto reservedDatabaseId = base;
+    reservedDatabaseId["_id"] = "controller-must-not-set-this";
+    EXPECT_FALSE(creatureFromJson(reservedDatabaseId).isSuccess());
+
+    auto duplicateName = base;
+    duplicateName["inputs"].push_back({{"name", "beak"}, {"slot", 5}, {"width", 1}, {"joystick_axis", 5}});
+    EXPECT_FALSE(creatureFromJson(duplicateName).isSuccess());
+
+    auto overlapping = base;
+    overlapping["inputs"].push_back({{"name", "head"}, {"slot", 4}, {"width", 1}, {"joystick_axis", 5}});
+    EXPECT_FALSE(creatureFromJson(overlapping).isSuccess());
+
+    auto missingMouthInput = base;
+    missingMouthInput["mouth_input"] = "head";
+    EXPECT_FALSE(creatureFromJson(missingMouthInput).isSuccess());
+
+    auto invalidAudioChannel = base;
+    invalidAudioChannel["audio_channel"] = 17;
+    EXPECT_FALSE(creatureFromJson(invalidAudioChannel).isSuccess());
+
+    auto overflowingUniverse = base;
+    overflowingUniverse["channel_offset"] = 511;
+    overflowingUniverse["inputs"][0]["slot"] = 0;
+    overflowingUniverse["inputs"][0]["width"] = 2;
+    EXPECT_FALSE(creatureFromJson(overflowingUniverse).isSuccess());
 }
 
 } // namespace creatures

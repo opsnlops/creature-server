@@ -10,10 +10,11 @@
 
 #include "server/database.h"
 
-#include "model/PlaylistStatus.h"
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
+#include "server/ws/dto/PlaylistDto.h"
+#include "server/ws/dto/PlaylistStatusDto.h"
 #include "server/ws/dto/StartPlaylistRequestDto.h"
 #include "server/ws/dto/StopPlaylistRequestDto.h"
 #include "server/ws/service/PlaylistService.h"
@@ -99,17 +100,15 @@ class PlaylistController : public oatpp::web::server::api::ApiController,
 
         info->addResponse<Object<PlaylistDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_413, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/playlist", upsertPlaylist, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("new playlist uploaded via REST API");
         return runEndpoint("POST /api/v1/playlist", "POST", "api/v1/playlist", "upsertPlaylist", "PlaylistController",
                            request, [&](const auto &span) {
-                               auto requestAsString = std::string(request->readBodyToString());
-                               trace("request was: {}", requestAsString);
-                               if (span)
-                                   span->setAttribute("request.body_size",
-                                                      static_cast<int64_t>(requestAsString.size()));
+                               const auto requestAsString =
+                                   readRequestBodyLimited(request, MAX_PLAYLIST_REQUEST_BODY_BYTES, span);
 
                                // PlaylistService.upsertPlaylist goes through storage::publishPlaylist,
                                // which fires the Playlist invalidation on success (issue #11 PR #21).

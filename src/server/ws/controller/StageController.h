@@ -53,7 +53,7 @@ namespace creatures::ws {
 /// muted, and the whole console-owned `audio` block, are stored and returned
 /// verbatim. Responses therefore bypass oatpp's DTO serializer
 /// (ResponseFactory::createResponse + manual JSON), since routing through it
-/// would silently strip any key StageDto doesn't model.
+/// would silently strip console-owned keys the model intentionally preserves.
 class StageController : public oatpp::web::server::api::ApiController, public HttpResponseHelpers<StageController> {
   public:
     StageController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper)) : ApiController(objectMapper) {}
@@ -89,7 +89,7 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
     }
 
     /// Send a Stage back as raw JSON with application/json content type.
-    /// We bypass createDtoResponse + StageDto because routing through the
+    /// We bypass createDtoResponse because routing through the
     /// oatpp serializer would strip the console-owned keys we promised to
     /// preserve.
     std::shared_ptr<OutgoingResponse> jsonResponse(const Status &status, const nlohmann::json &body) {

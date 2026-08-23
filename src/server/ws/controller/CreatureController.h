@@ -10,10 +10,14 @@
 #include "oatpp/web/protocol/http/outgoing/ResponseFactory.hpp"
 #include "oatpp/web/server/AsyncHttpConnectionHandler.hpp"
 
+#include <cstdint>
+#include <limits>
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
 #include "server/database.h"
+
+#include "util/JsonParser.h"
 
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
@@ -153,18 +157,15 @@ class CreatureController : public oatpp::web::server::api::ApiController,
 
         info->addResponse<Object<creatures::CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_413, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/creature", upsertCreature, BODY_STRING(String, body),
-             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+    ENDPOINT("POST", "api/v1/creature", upsertCreature, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("Upserting creature via POST /api/v1/creature");
         return runEndpoint("POST /api/v1/creature", "POST", "api/v1/creature", "upsertCreature", "CreatureController",
                            request, [&](const auto &span) {
-                               const auto creatureConfig = std::string(body);
-                               if (span) {
-                                   span->setAttribute("request.body_size",
-                                                      static_cast<int64_t>(creatureConfig.length()));
-                               }
+                               const auto creatureConfig =
+                                   readRequestBodyLimited(request, MAX_CREATURE_REQUEST_BODY_BYTES, span);
                                const auto result = m_creatureService.upsertCreature(creatureConfig, span);
                                if (span) {
                                    span->setAttribute("creature.id", std::string(result->id));
@@ -182,16 +183,15 @@ class CreatureController : public oatpp::web::server::api::ApiController,
         info->addTag("Creatures");
         info->addResponse<Object<CreatureConfigValidationDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_413, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/creature/validate", validateCreatureConfig, BODY_STRING(String, body),
+    ENDPOINT("POST", "api/v1/creature/validate", validateCreatureConfig,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("POST /api/v1/creature/validate", "POST", "api/v1/creature/validate",
                            "validateCreatureConfig", "CreatureController", request, [&](const auto &span) {
-                               if (span) {
-                                   span->setAttribute("request.body_size",
-                                                      static_cast<int64_t>(body ? body->size() : 0));
-                               }
-                               const auto result = m_creatureService.validateCreatureConfig(std::string(body), span);
+                               const auto creatureConfig =
+                                   readRequestBodyLimited(request, MAX_CREATURE_REQUEST_BODY_BYTES, span);
+                               const auto result = m_creatureService.validateCreatureConfig(creatureConfig, span);
                                if (span)
                                    span->setHttpStatus(200);
                                return createDtoResponse(Status::CODE_200, result);
@@ -236,6 +236,7 @@ class CreatureController : public oatpp::web::server::api::ApiController,
 
         info->addResponse<Object<creatures::CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_413, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/creature/register", registerCreature, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -243,36 +244,66 @@ class CreatureController : public oatpp::web::server::api::ApiController,
         return runEndpoint(
             "POST /api/v1/creature/register", "POST", "api/v1/creature/register", "registerCreature",
             "CreatureController", request, [&](const auto &span) {
-                // Read body manually instead of using BODY_STRING macro
-                const oatpp::String body = request->readBodyToString();
+                const auto body = readRequestBodyLimited(request, MAX_CREATURE_REQUEST_BODY_BYTES, span);
 
-                debug("Raw request body size: {} bytes", body ? body->size() : 0);
-                if (body && body->size() > 0) {
-                    debug("First 200 chars of body: {}",
-                          std::string(body->data(), std::min(200UL, static_cast<size_t>(body->size()))));
-                }
+                debug("Raw request body size: {} bytes", body.size());
 
-                // Parse the JSON manually for now
                 Object<RegisterCreatureRequestDto> dto;
-                try {
-                    const auto json = nlohmann::json::parse(std::string(body));
-                    dto = RegisterCreatureRequestDto::createShared();
-                    dto->creature_config = json.value("creature_config", "");
-                    dto->universe = json.value("universe", 0);
-                } catch (const std::exception &e) {
-                    const std::string errorMessage = fmt::format("Failed to parse request body: {}", e.what());
-                    error(errorMessage);
-                    if (span) {
-                        span->setAttribute("error.message", errorMessage);
-                    }
-                    return bailHttp(span, Status::CODE_400, errorMessage);
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "CreatureController.parseRegistrationRequest", span)
+                                           : nullptr;
+                const auto jsonResult =
+                    JsonParser::parseApiJsonString(body, "creature registration request", parseSpan);
+                if (!jsonResult.isSuccess())
+                    return bailFromServerError(span, jsonResult.getError().value());
+                const auto requestJson = jsonResult.getValue().value();
+                if (!requestJson.is_object() || !requestJson.contains("creature_config") ||
+                    !requestJson["creature_config"].is_string() || !requestJson.contains("universe") ||
+                    (!requestJson["universe"].is_number_unsigned() && !requestJson["universe"].is_number_integer())) {
+                    recordSpanError(parseSpan,
+                                    "Registration requires string creature_config and unsigned integer universe",
+                                    "InvalidRegistrationEnvelope", ServerError::InvalidData);
+                    return bailHttp(span, Status::CODE_400,
+                                    "Registration requires string creature_config and unsigned integer universe",
+                                    nullptr, "InvalidRegistrationEnvelope");
                 }
+                uint64_t universe = 0;
+                if (requestJson["universe"].is_number_unsigned()) {
+                    universe = requestJson["universe"].template get<uint64_t>();
+                } else {
+                    const auto signedUniverse = requestJson["universe"].template get<int64_t>();
+                    if (signedUniverse < 0) {
+                        recordSpanError(parseSpan, "Registration universe must be non-negative", "InvalidUniverse",
+                                        ServerError::InvalidData);
+                        return bailHttp(span, Status::CODE_400, "Registration universe must be non-negative", nullptr,
+                                        "InvalidUniverse");
+                    }
+                    universe = static_cast<uint64_t>(signedUniverse);
+                }
+                if (universe > std::numeric_limits<uint32_t>::max()) {
+                    recordSpanError(parseSpan, "Registration universe must fit in UInt32", "InvalidUniverse",
+                                    ServerError::InvalidData);
+                    return bailHttp(span, Status::CODE_400, "Registration universe must fit in UInt32", nullptr,
+                                    "InvalidUniverse");
+                }
+                if (universe < 1 || universe > 63999) {
+                    recordSpanError(parseSpan, "Registration universe must be in [1, 63999]", "InvalidUniverse",
+                                    ServerError::InvalidData);
+                    return bailHttp(span, Status::CODE_400, "Registration universe must be in [1, 63999]", nullptr,
+                                    "InvalidUniverse");
+                }
+                dto = RegisterCreatureRequestDto::createShared();
+                dto->creature_config = requestJson["creature_config"].template get<std::string>();
+                dto->universe = static_cast<uint32_t>(universe);
+                if (parseSpan)
+                    parseSpan->setSuccess();
 
                 const std::string creatureConfig = std::string(dto->creature_config);
 
                 if (span) {
                     span->setAttribute("universe", static_cast<int64_t>(dto->universe));
-                    span->setAttribute("request.body_size", static_cast<int64_t>(creatureConfig.length()));
+                    span->setAttribute("creature.config.size", static_cast<int64_t>(creatureConfig.length()));
                 }
 
                 const auto result = m_creatureService.registerCreature(creatureConfig, dto->universe, span);

@@ -2,8 +2,6 @@
 
 #include <fmt/format.h>
 
-#include "util/helpers.h"
-
 namespace creatures {
 
 nlohmann::json adHocExchangeToJson(const AdHocExchange &exchange) {
@@ -53,34 +51,6 @@ Result<AdHocExchange> adHocExchangeFromJson(const nlohmann::json &json) {
         return Result<AdHocExchange>{
             ServerError(ServerError::InvalidData, fmt::format("Invalid ad-hoc exchange JSON: {}", e.what()))};
     }
-}
-
-oatpp::Object<AdHocExchangeDto> convertToDto(const AdHocExchange &exchange,
-                                             const std::chrono::system_clock::time_point &createdAt) {
-    auto dto = AdHocExchangeDto::createShared();
-    dto->session_id = exchange.session_id.c_str();
-    dto->creature_id = exchange.creature_id.c_str();
-    dto->creature_name = exchange.creature_name.c_str();
-    dto->status = exchange.status.c_str();
-    dto->title = exchange.title.c_str();
-    dto->transcript = exchange.transcript.c_str();
-    dto->duration_ms = exchange.duration_ms;
-    dto->created_at = formatTimeISO8601(createdAt).c_str();
-    if (exchange.finished_at_ms > 0) {
-        dto->finished_at =
-            formatTimeISO8601(std::chrono::system_clock::time_point(std::chrono::milliseconds(exchange.finished_at_ms)))
-                .c_str();
-    }
-    dto->parts = oatpp::Vector<oatpp::Object<AdHocExchangePartDto>>::createShared();
-    for (const auto &part : exchange.parts) {
-        auto partDto = AdHocExchangePartDto::createShared();
-        partDto->index = part.index;
-        partDto->animation_id = part.animation_id.c_str();
-        partDto->text = part.text.c_str();
-        partDto->duration_ms = part.duration_ms;
-        dto->parts->push_back(partDto);
-    }
-    return dto;
 }
 
 } // namespace creatures

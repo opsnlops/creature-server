@@ -1,17 +1,15 @@
 
 #pragma once
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
-
 #include <string>
-#include <unordered_map>
+#include <string_view>
+#include <stdexcept>
 
 namespace creatures {
 
 enum class LogLevel { trace = 0, debug = 1, info = 2, warn = 3, error = 4, critical = 5, off = 6, unknown = 7 };
 
-constexpr std::string toString(LogLevel type) {
+constexpr std::string_view toString(LogLevel type) {
     switch (type) {
     case LogLevel::trace:
         return "trace";
@@ -33,7 +31,7 @@ constexpr std::string toString(LogLevel type) {
     }
 }
 
-constexpr LogLevel fromString(const std::string &str) {
+constexpr LogLevel fromString(const std::string_view str) {
     if (str == "trace")
         return LogLevel::trace;
     else if (str == "debug")
@@ -49,7 +47,7 @@ constexpr LogLevel fromString(const std::string &str) {
     else if (str == "off")
         return LogLevel::off;
     else
-        throw std::invalid_argument("Invalid LogLevel string: " + str);
+        throw std::invalid_argument("Invalid LogLevel string: " + std::string(str));
 }
 
 } // namespace creatures

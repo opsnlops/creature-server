@@ -9,6 +9,7 @@
 #include <oatpp/web/protocol/http/outgoing/Response.hpp>
 
 #include "server/ws/RequestBodyDrain.h"
+#include "server/ws/controller/ControllerUtils.h"
 
 // Regression tests for issue #142: an endpoint with no BODY_* macro never reads the
 // request body, and oatpp 1.3 leaves those bytes in the connection's buffered stream —
@@ -117,6 +118,29 @@ TEST(RequestBodyDrain, drainsUnreadChunkedBody) {
     runInterceptors(makeRequest(headers, stream), false);
 
     EXPECT_EQ(readRemaining(stream), kNextRequest);
+}
+
+TEST(LimitedStringWriteCallback, ReturnsBodiesWithinTheLimit) {
+    LimitedStringWriteCallback callback(4);
+    oatpp::async::Action action;
+
+    EXPECT_EQ(callback.write("test", 4, action), 4);
+    EXPECT_EQ(callback.takeBody(), "test");
+}
+
+TEST(LimitedStringWriteCallback, RejectsAChunkThatCrossesTheLimit) {
+    LimitedStringWriteCallback callback(4);
+    oatpp::async::Action action;
+    ASSERT_EQ(callback.write("abc", 3, action), 3);
+
+    try {
+        callback.write("de", 2, action);
+        FAIL() << "expected an HTTP 413";
+    } catch (oatpp::web::protocol::http::HttpError &error) {
+        EXPECT_EQ(error.getInfo().status.code, 413);
+        EXPECT_EQ(callback.acceptedBytes(), 3u);
+        EXPECT_EQ(callback.attemptedBytes(), 5u);
+    }
 }
 
 } // namespace

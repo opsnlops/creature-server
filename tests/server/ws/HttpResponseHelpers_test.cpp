@@ -1,7 +1,9 @@
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
+#include "api/JsonResponse.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/StatusDto.h"
 #include "util/Result.h"
@@ -50,6 +52,51 @@ TEST(HttpResponseHelpers, BuildStatusDtoHonorsOverride) {
     auto soft = buildStatusDto(200, "validation surfaced missing ids", STATUS_NOT_FOUND);
     EXPECT_EQ(std::string(*soft->status), "not_found");
     EXPECT_EQ(*soft->code, 200u);
+}
+
+TEST(JsonResponse, StatusResponseHasExactCanonicalShape) {
+    const auto json = api::statusResponseToJson(api::makeStatusResponse(404, "no such creature"));
+
+    EXPECT_EQ(json, nlohmann::json({{"status", "not_found"}, {"code", 404}, {"message", "no such creature"}}));
+    EXPECT_FALSE(json.contains("session_id"));
+}
+
+TEST(JsonResponse, StatusResponseIncludesPresentSessionId) {
+    const auto json = api::statusResponseToJson(
+        api::makeStatusResponse(200, "scheduled", api::STATUS_OK, "c9628a84-dcad-4ba9-a2d7-35b495fc08c3"));
+
+    EXPECT_EQ(json, nlohmann::json({{"status", "ok"},
+                                    {"code", 200},
+                                    {"message", "scheduled"},
+                                    {"session_id", "c9628a84-dcad-4ba9-a2d7-35b495fc08c3"}}));
+}
+
+TEST(JsonResponse, InvalidUtf8IsReplacedInsteadOfThrowing) {
+    const std::string invalidMessage = std::string("bad byte: ") + static_cast<char>(0xff);
+    const auto serialization =
+        api::serializeJson(api::statusResponseToJson(api::makeStatusResponse(500, invalidMessage, api::STATUS_ERROR)));
+    const auto parsed = nlohmann::json::parse(serialization.bytes);
+
+    EXPECT_EQ(parsed["message"], "bad byte: �");
+    EXPECT_TRUE(serialization.invalidUtf8Replaced);
+}
+
+TEST(JsonResponse, ValidUtf8NeedsNoRepair) {
+    const auto serialization =
+        api::serializeJson(api::statusResponseToJson(api::makeStatusResponse(200, "Good creature 🥭", api::STATUS_OK)));
+
+    EXPECT_FALSE(serialization.invalidUtf8Replaced);
+    EXPECT_EQ(nlohmann::json::parse(serialization.bytes)["message"], "Good creature 🥭");
+}
+
+TEST(JsonResponse, ListResponseSerializesEmptyAndPopulatedRanges) {
+    const std::vector<int> empty;
+    EXPECT_EQ(api::listResponseToJson(empty, [](int item) { return nlohmann::json(item); }),
+              nlohmann::json({{"count", 0}, {"items", nlohmann::json::array()}}));
+
+    const std::vector<int> items{2, 4, 8};
+    EXPECT_EQ(api::listResponseToJson(items, [](int item) { return nlohmann::json{{"value", item}}; }),
+              nlohmann::json({{"count", 3}, {"items", {{{"value", 2}}, {{"value", 4}}, {{"value", 8}}}}}));
 }
 
 TEST(HttpResponseHelpers, ServerErrorToHttpStatusCodeIsExhaustive) {

@@ -494,8 +494,9 @@ oatpp::Object<creatures::CreatureDto> CreatureService::getCreature(const oatpp::
     return dto;
 }
 
-oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std::string &jsonCreature,
-                                                                      std::shared_ptr<RequestSpan> parentSpan) {
+oatpp::Object<creatures::CreatureDto>
+CreatureService::upsertCreature(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan,
+                                std::shared_ptr<OperationSpan> parentOperationSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
     auto logger = appLogger ? appLogger : spdlog::default_logger();
 
@@ -507,9 +508,13 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
         OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature database unavailable");
     }
 
-    auto serviceSpan = creatures::observability
-                           ? creatures::observability->createOperationSpan("CreatureService.upsertCreature", parentSpan)
-                           : nullptr;
+    auto serviceSpan =
+        creatures::observability
+            ? (parentOperationSpan
+                   ? creatures::observability->createChildOperationSpan("CreatureService.upsertCreature",
+                                                                        parentOperationSpan)
+                   : creatures::observability->createOperationSpan("CreatureService.upsertCreature", parentSpan))
+            : nullptr;
 
     if (logger) {
         logger->info("attempting to upsert a creature");
@@ -520,7 +525,6 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
         serviceSpan->setAttribute("operation", "upsertCreature");
         serviceSpan->setAttribute("json.size", static_cast<int64_t>(jsonCreature.length()));
     }
-    logger->trace("JSON: {}", jsonCreature);
 
     bool error = false;
     oatpp::String errorMessage;
@@ -539,14 +543,15 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
          * This is because we need to validate the JSON before we pass it off to the database. If we don't,
          * we'll get a cryptic error from the database that doesn't tell us what's wrong with the JSON.
          *
-         * We have to do this twice because the database stores whatever the client gives us. This means
-         * that we need to pass in the raw JSON, but we also need to validate it here.
+         * The database persists the normalized result of its second parse, so both validation and storage use the
+         * same JSON semantics (including duplicate-key handling).
          */
-        auto jsonResult = JsonParser::parseJsonString(jsonCreature, "creature upsert validation");
+        auto jsonResult = JsonParser::parseApiJsonString(jsonCreature, "creature upsert validation", validationSpan);
         if (!jsonResult.isSuccess()) {
             auto parseError = jsonResult.getError().value();
             errorMessage = parseError.getMessage();
             logger->warn(std::string(errorMessage));
+            recordSpanError(serviceSpan, std::string(errorMessage), "JSONParseError", parseError.getCode());
             status = Status::CODE_400;
             error = true;
         }
@@ -560,10 +565,8 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
             errorMessage = result.getError()->getMessage();
             logger->warn(std::string(result.getError()->getMessage()));
             status = Status::CODE_400;
-            if (validationSpan)
-                validationSpan->setError(std::string(errorMessage));
-            if (serviceSpan)
-                serviceSpan->setError(std::string(errorMessage));
+            recordSpanError(validationSpan, std::string(errorMessage), "InvalidData", result.getError()->getCode());
+            recordSpanError(serviceSpan, std::string(errorMessage), "InvalidData", result.getError()->getCode());
             error = true;
         }
     } catch (const nlohmann::json::parse_error &e) {
@@ -590,8 +593,7 @@ oatpp::Object<creatures::CreatureDto> CreatureService::upsertCreature(const std:
         errorMessage = result.getError()->getMessage();
         logger->warn(std::string(result.getError()->getMessage()));
         status = Status::CODE_500;
-        if (serviceSpan)
-            serviceSpan->setError(std::string(errorMessage));
+        recordSpanError(serviceSpan, std::string(errorMessage), "DatabaseError", result.getError()->getCode());
         error = true;
     }
     OATPP_ASSERT_HTTP(!error, status, errorMessage)
@@ -653,8 +655,22 @@ oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const st
         serviceSpan->setAttribute("json.size", static_cast<int64_t>(jsonCreature.length()));
     }
 
+    if (universe < 1 || universe > 63999) {
+        constexpr auto message = "universe must be in [1, 63999]";
+        recordSpanError(serviceSpan, message, "InvalidUniverse", ServerError::InvalidData);
+        OATPP_ASSERT_HTTP(false, Status::CODE_400, message);
+    }
+
     // First, upsert the creature to the database (this handles validation)
-    auto creatureDto = upsertCreature(jsonCreature, parentSpan);
+    oatpp::Object<creatures::CreatureDto> creatureDto;
+    try {
+        creatureDto = upsertCreature(jsonCreature, nullptr, serviceSpan);
+    } catch (const std::exception &exception) {
+        recordSpanError(serviceSpan, exception.what(), "CreatureUpsertFailed", ServerError::InvalidData);
+        if (serviceSpan)
+            serviceSpan->recordException(exception);
+        throw;
+    }
 
     // Defensive check: ensure we got a valid creature DTO back
     if (!creatureDto) {
@@ -1103,26 +1119,22 @@ CreatureService::validateCreatureConfig(const std::string &jsonCreature, std::sh
         return resultDto;
     }
 
-    nlohmann::json parsed;
-    try {
-        parsed = nlohmann::json::parse(jsonCreature);
-    } catch (const std::exception &ex) {
+    const auto parsedResult = JsonParser::parseApiJsonString(jsonCreature, "creature validation", span);
+    if (!parsedResult.isSuccess()) {
         resultDto->valid = false;
-        auto message = fmt::format("Invalid JSON: {}", ex.what());
+        const auto message = parsedResult.getError()->getMessage();
         resultDto->error_messages->push_back(message.c_str());
-        if (span) {
-            span->setError("Invalid JSON");
-        }
+        recordSpanError(span, message, "JSONParseError", parsedResult.getError()->getCode());
         return resultDto;
     }
+    const auto parsed = parsedResult.getValue().value();
 
     auto creatureResult = creatures::db->parseCreatureJson(parsed, span);
     if (!creatureResult.isSuccess()) {
         resultDto->valid = false;
         resultDto->error_messages->push_back(creatureResult.getError()->getMessage().c_str());
-        if (span) {
-            span->setError(creatureResult.getError()->getMessage());
-        }
+        recordSpanError(span, creatureResult.getError()->getMessage(), "InvalidData",
+                        creatureResult.getError()->getCode());
         return resultDto;
     }
     if (!creatureResult.getValue().has_value()) {

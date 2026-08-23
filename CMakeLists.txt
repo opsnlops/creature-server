@@ -512,6 +512,8 @@ add_executable(creature-server
 
         src/model/LogLevel.h
         src/model/LogItem.h
+        src/model/LogItem.cpp
+        src/server/ws/dto/LogItemDto.h
 
         src/model/AnimationMetadata.cpp
         src/model/AnimationMetadata.h
@@ -519,10 +521,16 @@ add_executable(creature-server
         src/model/Animation.h
         src/model/CacheInvalidation.h
         src/model/CacheInvalidation.cpp
+        src/server/ws/dto/CacheInvalidationDto.h
+        src/server/ws/dto/DialogScriptDto.h
+        src/server/ws/dto/DialogScriptDto.cpp
         src/model/Creature.h
         src/model/Creature.cpp
+        src/server/ws/dto/CreatureDto.cpp
         src/model/DmxFixture.h
         src/model/DmxFixture.cpp
+        src/server/ws/dto/DmxFixtureDto.h
+        src/server/ws/dto/DmxFixtureDto.cpp
         src/server/fixture/FixtureBindingDispatcher.h
         src/server/fixture/FixtureBindingDispatcher.cpp
         src/server/fixture/FixturePatternRunner.h
@@ -531,26 +539,35 @@ add_executable(creature-server
         src/server/fixture/FixturePatternTickEvent.cpp
         src/model/Input.h
         src/model/Input.cpp
+        src/server/ws/dto/InputDto.h
+        src/server/ws/dto/InputDto.cpp
         src/model/LogLevel.h
         src/model/LogItem.h
-        src/model/LogItem.cpp
         src/model/Notice.h
         src/model/Notice.cpp
+        src/server/ws/dto/NoticeDto.h
         src/model/Playlist.h
         src/model/Playlist.cpp
         src/model/PlaylistItem.h
         src/model/PlaylistItem.cpp
+        src/server/ws/dto/PlaylistItemDto.h
+        src/server/ws/dto/PlaylistItemDto.cpp
         src/model/PlaylistStatus.h
         src/model/PlaylistStatus.cpp
+        src/server/ws/dto/PlaylistStatusDto.h
         src/model/StreamFrame.cpp
         src/model/StreamFrame.h
+        src/server/ws/dto/StreamFrameDto.h
         src/model/Sound.h
         src/model/Sound.cpp
+        src/server/ws/dto/SoundDto.h
+        src/server/ws/dto/SoundDto.cpp
         src/model/SortBy.h
         src/model/Track.cpp
         src/model/Track.h
         src/model/VirtualStatusLights.cpp
         src/model/VirtualStatusLights.h
+        src/server/ws/dto/VirtualStatusLightsDto.h
 
         src/util/loggingUtils.cpp
         src/util/loggingUtils.h
@@ -566,9 +583,15 @@ add_executable(creature-server
         src/server/ws/App.cpp
 
         src/server/ws/dto/AdHocAnimationDto.h
+        src/server/ws/dto/AdHocExchangeDto.h
+        src/server/ws/dto/AdHocExchangeDto.cpp
         src/server/ws/dto/AdHocSoundEntryDto.h
         src/server/ws/dto/AdHocDtoUtils.h
         src/server/ws/dto/AdHocDtoUtils.cpp
+        src/server/ws/dto/AnimationDto.h
+        src/server/ws/dto/AnimationDto.cpp
+        src/server/ws/dto/LeafPayloadDto.cpp
+        src/server/ws/dto/OutboundPayloadDto.cpp
         src/server/ws/dto/ListDto.h
         src/server/ws/dto/PlayAnimationRequestDto.h
         src/server/ws/dto/PlaySoundRequestDTO.h
@@ -734,6 +757,11 @@ if (EXISTS ${CMAKE_SOURCE_DIR}/tests/server/TestGlobals.cpp)
 
 add_executable(creature-server-test
         tests/model/Creature_test.cpp
+        tests/model/LeafPayload_test.cpp
+        tests/model/OutboundPayload_test.cpp
+        tests/model/Input_test.cpp
+        tests/model/PlaylistItem_test.cpp
+        tests/model/Playlist_test.cpp
         tests/model/DmxFixture_test.cpp
         tests/model/LogItem_test.cpp
         tests/model/Animation_test.cpp
@@ -832,12 +860,26 @@ add_executable(creature-server-test
         src/model/AnimationMetadata.cpp
         src/model/Playlist.cpp
         src/model/PlaylistItem.cpp
+        src/server/ws/dto/PlaylistItemDto.cpp
+        src/model/LogItem.cpp
+        src/model/StreamFrame.cpp
+        src/model/VirtualStatusLights.cpp
+        src/server/ws/dto/LeafPayloadDto.cpp
+        src/server/ws/dto/SoundDto.cpp
+        src/model/PlaylistStatus.cpp
+        src/model/Notice.cpp
+        src/model/CacheInvalidation.cpp
+        src/server/ws/dto/OutboundPayloadDto.cpp
         src/model/SortBy.h
         src/model/Track.cpp
         src/model/Creature.cpp
+        src/server/ws/dto/CreatureDto.cpp
         src/model/DmxFixture.cpp
+        src/server/ws/dto/DmxFixtureDto.cpp
         src/model/DialogScript.cpp
+        src/server/ws/dto/DialogScriptDto.cpp
         src/model/Input.cpp
+        src/server/ws/dto/InputDto.cpp
         src/model/StreamFrame.cpp
         src/model/VirtualStatusLights.cpp
         src/model/Stage.cpp
@@ -852,6 +894,7 @@ add_executable(creature-server-test
         src/server/stage/helpers.cpp
         src/server/storyboard/helpers.cpp
         src/server/ws/service/CreatureService.cpp
+        src/server/ws/dto/AnimationDto.cpp
         src/server/ws/dto/websocket/MessageTypes.cpp
         src/util/JsonParser.cpp
         src/util/AudioCache.cpp

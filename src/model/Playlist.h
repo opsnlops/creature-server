@@ -1,15 +1,16 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
-
-#include "server/namespace-stuffs.h"
+#include <nlohmann/json.hpp>
 
 #include "model/PlaylistItem.h"
+#include "server/namespace-stuffs.h"
+#include "util/Result.h"
 
 namespace creatures {
 
@@ -20,33 +21,13 @@ struct Playlist {
     uint32_t number_of_items;
 };
 
-#include OATPP_CODEGEN_BEGIN(DTO)
+inline constexpr std::size_t MAX_PLAYLIST_REQUEST_BODY_BYTES = 1024ULL * 1024ULL;
+inline constexpr std::size_t MAX_PLAYLIST_NAME_BYTES = 128;
+inline constexpr std::size_t MAX_PLAYLIST_ITEMS = 256;
 
-class PlaylistDto : public oatpp::DTO {
-
-    DTO_INIT(PlaylistDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(id) { info->description = "The ID of this playlist in the form of an UUID"; }
-
-    DTO_FIELD(String, id);
-
-    DTO_FIELD_INFO(name) { info->description = "The name of this playlist in the UI"; }
-
-    DTO_FIELD(String, name);
-
-    DTO_FIELD_INFO(items) { info->description = "The items in the playlist"; }
-
-    DTO_FIELD(List<Object<PlaylistItemDto>>, items);
-
-    DTO_FIELD_INFO(number_of_items) { info->description = "The number of items in this playlist"; }
-
-    DTO_FIELD(UInt32, number_of_items);
-};
-
-#include OATPP_CODEGEN_END(DTO)
-
-oatpp::Object<PlaylistDto> convertToDto(const Playlist &playlist);
-
-Playlist convertFromDto(const std::shared_ptr<PlaylistDto> &playlistDto);
+Result<uint64_t> playlistTotalWeight(const Playlist &playlist);
+Result<animationId_t> playlistAnimationAtWeight(const Playlist &playlist, uint64_t selectedWeight);
+nlohmann::json playlistToJson(const Playlist &playlist);
+Result<Playlist> playlistFromJson(const nlohmann::json &json, std::string_view path = "playlist");
 
 } // namespace creatures

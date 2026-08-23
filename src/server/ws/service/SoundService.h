@@ -11,6 +11,7 @@
 #include <oatpp/web/protocol/http/Http.hpp>
 
 #include "model/Sound.h"
+#include "server/ws/dto/SoundDto.h"
 
 #include "server/ws/dto/AdHocSoundEntryDto.h"
 #include "server/ws/dto/ListDto.h"

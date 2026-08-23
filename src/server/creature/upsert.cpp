@@ -38,9 +38,8 @@ namespace document = bsoncxx::document;
 /**
  * Upsert a creature in the database
  *
- * @param creatureJson The full JSON string of the creature. It's stored in the database (as long as all of the
- *                     needed fields are there) so that the controller and console get get a full view of what
- *                     the creature actually is.
+ * @param creatureJson The full JSON string of the creature. Its normalized parsed form is stored in the database so
+ *                     validation and persistence always agree on the document shape.
  *
  * @return a `Result<creatures::Creature>` the creature that we can return to the client
  */
@@ -64,7 +63,7 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
     try {
         auto parseJsonSpan =
             creatures::observability->createChildOperationSpan("upsertCreature.parse-json", upsertSpan);
-        auto jsonResult = JsonParser::parseJsonString(creatureJson, "creature upsert", parseJsonSpan);
+        auto jsonResult = JsonParser::parseApiJsonString(creatureJson, "creature upsert", parseJsonSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
             recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
@@ -113,7 +112,9 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
             validateSpan->setSuccess();
 
         auto bsonSpan = creatures::observability->createChildOperationSpan("upsertCreature.json-to-bson", upsertSpan);
-        auto bsonResult = JsonParser::jsonStringToBson(creatureJson, fmt::format("creature {}", creature.id), bsonSpan);
+        const auto normalizedJson = jsonObject.dump();
+        auto bsonResult =
+            JsonParser::jsonStringToBson(normalizedJson, fmt::format("creature {}", creature.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
             auto err = bsonResult.getError().value();
             recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());

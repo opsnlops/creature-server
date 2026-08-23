@@ -273,16 +273,10 @@ class Database {
     static Result<creatures::Storyboard> parseStoryboardJson(json storyboardJson,
                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
-    /**
-     * Public wrapper around the private `trackFromJson` — exposed for testing the dual-id
-     * (creature_id XOR fixture_id) validation.
-     */
+    /// Transitional wrapper around the framework-neutral Track codec.
     static Result<creatures::Track> parseTrackJson(json trackJson);
 
-    /**
-     * Public wrapper around the private `animationFromJson` — exposed for testing that an
-     * animation serialized by our own DTOs parses back in (#117).
-     */
+    /// Transitional wrapper around the framework-neutral Animation API codec.
     static Result<creatures::Animation> parseAnimationJson(json animationJson);
 
     /**
@@ -355,6 +349,10 @@ class Database {
 
     static Result<creatures::Creature> creatureFromJson(json creatureJson,
                                                         std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    /// Adapter for MongoDB documents. `_id` is database-owned metadata, not
+    /// controller configuration, so it is removed before strict config parsing.
+    static Result<creatures::Creature> creatureFromStoredJson(json creatureJson,
+                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     static Result<creatures::DmxFixture> fixtureFromJson(json fixtureJson,
                                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);
@@ -367,15 +365,13 @@ class Database {
     static Result<creatures::Storyboard> storyboardFromJson(json storyboardJson,
                                                             std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
-    static Result<creatures::Animation> animationFromJson(json animationJson);
-    static Result<creatures::AnimationMetadata> animationMetadataFromJson(json animationMetadataJson);
-    static Result<creatures::Track> trackFromJson(json trackJson);
-
     /*
      * Playlists
      */
     static Result<creatures::Playlist> playlistFromJson(json playlistJson,
                                                         std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    static Result<creatures::Playlist> playlistFromStoredJson(json playlistJson,
+                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
     static Result<creatures::PlaylistItem> playlistItemFromJson(json playlistItemJson,
                                                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
 

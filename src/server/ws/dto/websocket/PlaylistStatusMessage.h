@@ -4,7 +4,7 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
-#include "model/PlaylistStatus.h"
+#include "server/ws/dto/PlaylistStatusDto.h"
 #include "server/ws/dto/websocket/WebSocketMessageDto.h"
 
 namespace creatures::ws {

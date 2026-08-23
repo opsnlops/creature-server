@@ -183,8 +183,6 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
 
     logger->info("attempting to upsert a playlist");
 
-    logger->debug("JSON: {}", playlistJson);
-
     if (!db) {
         OATPP_ASSERT_HTTP(false, Status::CODE_500, "Playlist database unavailable");
     }
@@ -205,7 +203,11 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
          * this one is based on). I want to be able to store the raw JSON in the database, but I also want
          * to validate it to make sure it has what data the front end needs.
          */
-        auto jsonResult = JsonParser::parseJsonString(playlistJson, "playlist upsert validation");
+        auto validationSpan =
+            creatures::observability
+                ? creatures::observability->createChildOperationSpan("PlaylistService.validateJson", span)
+                : nullptr;
+        auto jsonResult = JsonParser::parseApiJsonString(playlistJson, "playlist upsert validation", validationSpan);
         if (!jsonResult.isSuccess()) {
             auto parseError = jsonResult.getError().value();
             errorMessage = parseError.getMessage();
@@ -215,6 +217,7 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
             if (span) {
                 span->setError(std::string(errorMessage));
             }
+            recordSpanError(validationSpan, std::string(errorMessage), "InvalidData", parseError.getCode());
             status = Status::CODE_400;
             error = true;
         }
@@ -227,9 +230,12 @@ oatpp::Object<creatures::PlaylistDto> PlaylistService::upsertPlaylist(const std:
             if (span) {
                 span->setError(std::string(errorMessage));
             }
+            recordSpanError(validationSpan, std::string(errorMessage), "InvalidData", result.getError()->getCode());
             status = Status::CODE_400;
             error = true;
         }
+        if (!error && validationSpan)
+            validationSpan->setSuccess();
     } catch (const nlohmann::json::parse_error &e) {
         errorMessage = e.what();
         logger->warn(std::string(e.what()));

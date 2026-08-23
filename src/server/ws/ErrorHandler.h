@@ -1,10 +1,9 @@
 
 #pragma once
 
+#include <oatpp/core/data/mapping/ObjectMapper.hpp>
 #include <oatpp/web/protocol/http/outgoing/ResponseFactory.hpp>
 #include <oatpp/web/server/handler/ErrorHandler.hpp>
-
-#include "dto/StatusDto.h"
 
 namespace creatures ::ws {
 
@@ -13,9 +12,6 @@ class ErrorHandler : public oatpp::web::server::handler::ErrorHandler {
     typedef oatpp::web::protocol::http::outgoing::Response OutgoingResponse;
     typedef oatpp::web::protocol::http::Status Status;
     typedef oatpp::web::protocol::http::outgoing::ResponseFactory ResponseFactory;
-
-  private:
-    std::shared_ptr<oatpp::data::mapping::ObjectMapper> m_objectMapper;
 
   public:
     ErrorHandler(const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &objectMapper);

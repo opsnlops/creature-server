@@ -39,6 +39,11 @@ class JsonParser {
     static Result<nlohmann::json> parseJsonString(const std::string &jsonString, const std::string &context,
                                                   std::shared_ptr<OperationSpan> span = nullptr);
 
+    /// Parse untrusted API JSON. Syntax failures are InvalidData rather than
+    /// DatabaseError; persistence callers should continue using parseJsonString.
+    static Result<nlohmann::json> parseApiJsonString(const std::string &jsonString, const std::string &context,
+                                                     std::shared_ptr<OperationSpan> span = nullptr);
+
     /**
      * Safely convert JSON string to BSON document with comprehensive error handling
      *

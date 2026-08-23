@@ -1,13 +1,11 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string_view>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
+#include <nlohmann/json.hpp>
 
-#include "server/namespace-stuffs.h"
+#include "util/Result.h"
 
 namespace creatures {
 
@@ -23,31 +21,8 @@ struct VirtualStatusLights {
     bool animation_playing;
 };
 
-#include OATPP_CODEGEN_BEGIN(DTO)
-
-/**
- * Data transfer object for the VirtualStatusLights
- */
-class VirtualStatusLightsDto : public oatpp::DTO {
-
-    DTO_INIT(VirtualStatusLightsDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(running) { info->description = "Is the event loop running?"; }
-    DTO_FIELD(Boolean, running);
-
-    DTO_FIELD_INFO(dmx) { info->description = "Are we actively sending frames?"; }
-    DTO_FIELD(Boolean, dmx);
-
-    DTO_FIELD_INFO(streaming) { info->description = "Is a client streaming to us?"; }
-    DTO_FIELD(Boolean, streaming);
-
-    DTO_FIELD_INFO(animation_playing) { info->description = "Is an animation playing?"; }
-    DTO_FIELD(Boolean, animation_playing);
-};
-
-#include OATPP_CODEGEN_END(DTO)
-
-oatpp::Object<VirtualStatusLightsDto> convertToDto(const VirtualStatusLights &virtualStatusLights);
-VirtualStatusLights convertFromDto(const std::shared_ptr<VirtualStatusLightsDto> &virtualStatusLightsDto);
+nlohmann::json virtualStatusLightsToJson(const VirtualStatusLights &virtualStatusLights);
+Result<VirtualStatusLights> virtualStatusLightsFromJson(const nlohmann::json &json,
+                                                         std::string_view path = "virtual_status_lights");
 
 } // namespace creatures

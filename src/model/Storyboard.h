@@ -5,8 +5,6 @@
 #include <string>
 
 #include <nlohmann/json.hpp>
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
 
 #include "server/namespace-stuffs.h"
 
@@ -39,52 +37,6 @@ struct Storyboard {
     int64_t created_at{0};
     int64_t updated_at{0};
 };
-
-#include OATPP_CODEGEN_BEGIN(DTO)
-
-// Swagger-only DTO. The controller does NOT serialize through this — it
-// returns raw JSON via ResponseFactory::createResponse to preserve opaque
-// `action` keys. Going through oatpp's strict serializer would strip any tile
-// field the DTO doesn't know about, which is exactly what we're trying to
-// avoid. This DTO exists so the OpenAPI spec can name the response type;
-// `tiles` is left as `Any` in the spec since its action shape is open.
-class StoryboardDto : public oatpp::DTO {
-
-    DTO_INIT(StoryboardDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(id) { info->description = "Storyboard UUID. Server-generated on create."; }
-    DTO_FIELD(String, id);
-
-    DTO_FIELD_INFO(title) { info->description = "Human-readable storyboard title."; }
-    DTO_FIELD(String, title);
-
-    DTO_FIELD_INFO(notes) {
-        info->description = "Free-form notes attached to the storyboard.";
-        info->required = false;
-    }
-    DTO_FIELD(String, notes);
-
-    DTO_FIELD_INFO(tiles) {
-        info->description = "Array of storyboard tiles. Each tile has an opaque `action` object — see "
-                            "creature-console/docs/storyboard-server-contract.md for the client-defined "
-                            "action types and shapes. Server stores + returns the action verbatim.";
-    }
-    DTO_FIELD(Any, tiles);
-
-    DTO_FIELD_INFO(created_at) {
-        info->description = "Wall-clock milliseconds since Unix epoch when the storyboard was first persisted. "
-                            "Server-managed; ignored on PUT.";
-    }
-    DTO_FIELD(Int64, created_at);
-
-    DTO_FIELD_INFO(updated_at) {
-        info->description = "Wall-clock milliseconds since Unix epoch of the most recent edit. Server-managed; "
-                            "ignored on PUT.";
-    }
-    DTO_FIELD(Int64, updated_at);
-};
-
-#include OATPP_CODEGEN_END(DTO)
 
 // Serialize a Storyboard back to its canonical JSON shape — the same shape the
 // client sent on POST/PUT and the same shape returned from GET. Tiles are

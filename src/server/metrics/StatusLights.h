@@ -6,6 +6,7 @@
 #include "server/config.h"
 #include "server/gpio/gpio.h"
 #include "server/metrics/counters.h"
+#include "server/namespace-stuffs.h"
 #include "util/StoppableThread.h"
 
 namespace creatures {

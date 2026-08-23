@@ -121,7 +121,7 @@ class PlaylistEvent : public EventBase<PlaylistEvent> {
     std::optional<Result<framenum_t>> loadActivePlaylistStatus(PlaylistStatus &playlistStatus,
                                                                std::shared_ptr<OperationSpan> span);
     Result<Playlist> fetchPlaylist(const PlaylistStatus &playlistStatus, std::shared_ptr<OperationSpan> span);
-    Result<std::string> chooseWeightedAnimation(const Playlist &playlist);
+    Result<std::string> chooseWeightedAnimation(const Playlist &playlist, std::shared_ptr<OperationSpan> span);
     Result<Animation> fetchAnimation(const std::string &animationId, std::shared_ptr<OperationSpan> span);
     std::unordered_set<creatureId_t> collectInvolvedCreatures(const Animation &animation);
     Result<framenum_t> scheduleChosenAnimation(const Animation &animation);

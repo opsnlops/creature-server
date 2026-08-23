@@ -12,6 +12,7 @@
 #include "model/Creature.h"
 #include "server/runtime/Activity.h"
 #include "server/ws/dto/CreatureConfigValidationDto.h"
+#include "server/ws/dto/CreatureDto.h"
 #include "server/ws/dto/ListDto.h"
 
 namespace creatures {
@@ -40,8 +41,9 @@ class CreatureService {
      *                     required fields must me present.
      * @return the creature that was created or updated in the standard form
      */
-    static oatpp::Object<creatures::CreatureDto> upsertCreature(const std::string &jsonCreature,
-                                                                std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static oatpp::Object<creatures::CreatureDto>
+    upsertCreature(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan = nullptr,
+                   std::shared_ptr<OperationSpan> parentOperationSpan = nullptr);
 
     /**
      * Register a creature with its universe assignment

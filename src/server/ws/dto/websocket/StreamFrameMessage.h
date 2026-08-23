@@ -4,7 +4,7 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
-#include "model/StreamFrame.h"
+#include "server/ws/dto/StreamFrameDto.h"
 #include "server/ws/dto/websocket/WebSocketMessageDto.h"
 
 namespace creatures::ws {

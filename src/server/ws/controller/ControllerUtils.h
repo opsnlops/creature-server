@@ -25,6 +25,61 @@ extern std::shared_ptr<SystemCounters> metrics;
 
 namespace creatures::ws {
 
+/// Accumulates an HTTP body while enforcing a hard byte limit during transfer.
+/// This bounds memory before JSON parsing, including chunked requests with no
+/// trustworthy Content-Length header.
+class LimitedStringWriteCallback : public oatpp::data::stream::WriteCallback {
+  public:
+    explicit LimitedStringWriteCallback(std::size_t maximumBytes) : maximumBytes_(maximumBytes) {}
+
+    oatpp::v_io_size write(const void *data, v_buff_size count, oatpp::async::Action &action) override {
+        static_cast<void>(action);
+        const auto byteCount = static_cast<std::size_t>(count);
+        attemptedBytes_ = body_.size() + byteCount;
+        if (byteCount > maximumBytes_ - body_.size()) {
+            throw oatpp::web::protocol::http::HttpError(
+                oatpp::web::protocol::http::Status::CODE_413,
+                oatpp::String("Request body exceeds the endpoint's maximum size"));
+        }
+        body_.append(static_cast<const char *>(data), byteCount);
+        return count;
+    }
+
+    [[nodiscard]] std::string takeBody() { return std::move(body_); }
+    [[nodiscard]] std::size_t acceptedBytes() const { return body_.size(); }
+    [[nodiscard]] std::size_t attemptedBytes() const { return attemptedBytes_; }
+
+  private:
+    std::size_t maximumBytes_;
+    std::string body_;
+    std::size_t attemptedBytes_{0};
+};
+
+inline std::string readRequestBodyLimited(const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request,
+                                          std::size_t maximumBytes,
+                                          const std::shared_ptr<creatures::RequestSpan> &span = nullptr) {
+    if (!request) {
+        throw oatpp::web::protocol::http::HttpError(oatpp::web::protocol::http::Status::CODE_400,
+                                                    oatpp::String("Request is missing"));
+    }
+    auto sink = std::make_shared<LimitedStringWriteCallback>(maximumBytes);
+    if (span) {
+        span->setAttribute("http.request.body.limit", static_cast<int64_t>(maximumBytes));
+    }
+    try {
+        request->transferBody(sink);
+        if (span) {
+            span->setAttribute("http.request.body.size", static_cast<int64_t>(sink->acceptedBytes()));
+        }
+        return sink->takeBody();
+    } catch (...) {
+        if (span) {
+            span->setAttribute("http.request.body.size", static_cast<int64_t>(sink->attemptedBytes()));
+        }
+        throw;
+    }
+}
+
 /// Extract the W3C traceparent header from an incoming oatpp request.
 /// Returns an empty string when the header is absent.
 inline std::string extractTraceparent(const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request) {
@@ -71,13 +126,24 @@ auto withSpanStatus(const std::shared_ptr<creatures::RequestSpan> &span, F &&wor
         return work();
     } catch (oatpp::web::protocol::http::HttpError &e) {
         if (span) {
-            span->setHttpStatus(e.getInfo().status.code);
+            const auto status = e.getInfo().status.code;
+            const auto message = std::string(e.what());
+            span->setHttpStatus(status);
+            span->setError(message);
+            span->setAttribute("error.type", status == 413 ? "RequestBodyTooLarge" : "HttpError");
+            span->setAttribute("error.code", static_cast<int64_t>(status));
+            span->setAttribute("error.message", message);
             span->recordException(e);
         }
         throw;
     } catch (const std::exception &e) {
         if (span) {
+            const auto message = std::string(e.what());
             span->setHttpStatus(500);
+            span->setError(message);
+            span->setAttribute("error.type", "std::exception");
+            span->setAttribute("error.code", static_cast<int64_t>(500));
+            span->setAttribute("error.message", message);
             span->recordException(e);
         }
         throw;

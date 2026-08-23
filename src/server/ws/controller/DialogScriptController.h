@@ -25,6 +25,7 @@
 #include "server/storage/Storage.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
+#include "server/ws/dto/DialogScriptDto.h"
 #include "server/ws/dto/DialogScriptValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"

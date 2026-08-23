@@ -1,52 +1,29 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
-#include <vector>
+#include <string_view>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
+#include <nlohmann/json.hpp>
+
+#include "util/Result.h"
 
 namespace creatures {
 
 struct Input {
     std::string name;
-    uint16_t slot;
-    uint8_t width;
-    uint8_t joystick_axis;
+    uint16_t slot{0};
+    uint8_t width{0};
+    uint8_t joystick_axis{0};
+
+    bool operator==(const Input &) const = default;
 };
 
-#include OATPP_CODEGEN_BEGIN(DTO)
+inline constexpr std::size_t MAX_INPUT_NAME_BYTES = 128;
 
-class InputDto : public oatpp::DTO {
-
-    DTO_INIT(InputDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(name) { info->description = "The name of the input"; }
-    DTO_FIELD(String, name);
-
-    DTO_FIELD_INFO(slot) {
-        info->description = "Which slot this input maps to in the e1.31 packet "
-                            "for this creature";
-    }
-    DTO_FIELD(UInt16, slot);
-
-    DTO_FIELD_INFO(width) {
-        info->description = "How many consecutive slots this input uses in the "
-                            "e1.31 packet for this creature";
-    }
-    DTO_FIELD(UInt8, width);
-
-    DTO_FIELD_INFO(joystick_axis) {
-        info->description = "When recording or streaming, which axis on the "
-                            "joystick should this input be mapped to";
-    }
-    DTO_FIELD(UInt8, joystick_axis);
-};
-
-#include OATPP_CODEGEN_END(DTO)
-
-std::shared_ptr<InputDto> convertToDto(const InputDto &input);
-InputDto convertFromDto(const std::shared_ptr<InputDto> &inputDto);
+nlohmann::json inputToJson(const Input &input);
+Result<Input> inputFromJson(const nlohmann::json &json, std::string_view path = "input");
 
 } // namespace creatures

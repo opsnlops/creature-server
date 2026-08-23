@@ -79,7 +79,7 @@ class StoryboardController : public oatpp::web::server::api::ApiController,
     }
 
     /// Send a Storyboard back as raw JSON with application/json content type.
-    /// We bypass createDtoResponse + StoryboardDto because routing through the
+    /// We bypass createDtoResponse because routing through the
     /// oatpp serializer would silently strip unknown keys inside tile.action,
     /// breaking the forward-compat contract.
     std::shared_ptr<OutgoingResponse> jsonResponse(const Status &status, const nlohmann::json &body) {

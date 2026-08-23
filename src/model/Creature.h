@@ -4,14 +4,15 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
+#include <nlohmann/json.hpp>
 
 #include "Input.h"
 
 #include "server/namespace-stuffs.h"
+#include "util/Result.h"
 
 /**
  * Note to myself for later!
@@ -162,204 +163,24 @@ struct Creature {
     struct RuntimeState {};
 };
 
-#include OATPP_CODEGEN_BEGIN(DTO)
+inline constexpr std::size_t MAX_CREATURE_REQUEST_BODY_BYTES = 1024ULL * 1024ULL;
+inline constexpr std::size_t MAX_CREATURE_NAME_BYTES = 128;
+inline constexpr std::size_t MAX_CREATURE_INPUTS = 64;
+inline constexpr std::size_t MAX_CREATURE_ANIMATION_IDS_PER_LIST = 256;
+inline constexpr std::size_t MAX_CREATURE_INPUT_SLOT_END = 512;
+inline constexpr uint16_t MAX_CREATURE_AUDIO_CHANNEL = 16;
 
-class CreatureRuntimeErrorDto : public oatpp::DTO {
+/// Canonical framework-neutral configuration representation. Runtime state is
+/// intentionally absent: the controller configuration is the source of truth,
+/// while runtime state belongs to the server process.
+nlohmann::json creatureToJson(const Creature &creature);
 
-    DTO_INIT(CreatureRuntimeErrorDto, DTO)
-
-    DTO_FIELD_INFO(message) { info->description = "Last runtime error message for this creature"; }
-    DTO_FIELD(String, message);
-
-    DTO_FIELD_INFO(timestamp) { info->description = "When the error occurred (ISO8601)"; }
-    DTO_FIELD(String, timestamp);
-};
-
-class CreatureRuntimeCountersDto : public oatpp::DTO {
-
-    DTO_INIT(CreatureRuntimeCountersDto, DTO)
-
-    DTO_FIELD_INFO(sessions_started_total) { info->description = "Total sessions started for this creature"; }
-    DTO_FIELD(UInt64, sessions_started_total);
-
-    DTO_FIELD_INFO(sessions_cancelled_total) { info->description = "Total sessions cancelled for this creature"; }
-    DTO_FIELD(UInt64, sessions_cancelled_total);
-
-    DTO_FIELD_INFO(idle_started_total) { info->description = "Total idle sessions started"; }
-    DTO_FIELD(UInt64, idle_started_total);
-
-    DTO_FIELD_INFO(idle_stopped_total) { info->description = "Total idle sessions stopped"; }
-    DTO_FIELD(UInt64, idle_stopped_total);
-
-    DTO_FIELD_INFO(idle_toggles_total) { info->description = "Total idle enable/disable toggles"; }
-    DTO_FIELD(UInt64, idle_toggles_total);
-
-    DTO_FIELD_INFO(skips_missing_creature_total) {
-        info->description = "Total times this creature was skipped due to missing runtime availability";
-    }
-    DTO_FIELD(UInt64, skips_missing_creature_total);
-
-    DTO_FIELD_INFO(bgm_takeovers_total) { info->description = "Total times BGM ownership changed to this creature"; }
-    DTO_FIELD(UInt64, bgm_takeovers_total);
-
-    DTO_FIELD_INFO(audio_resets_total) { info->description = "Total audio encoder resets for this creature"; }
-    DTO_FIELD(UInt64, audio_resets_total);
-};
-
-class CreatureRuntimeActivityDto : public oatpp::DTO {
-
-    DTO_INIT(CreatureRuntimeActivityDto, DTO)
-
-    DTO_FIELD_INFO(state) { info->description = "Current activity state for this creature"; }
-    DTO_FIELD(String, state); // running|idle|disabled|stopped
-
-    DTO_FIELD_INFO(animation_id) { info->description = "Current animation ID if applicable"; }
-    DTO_FIELD(String, animation_id); // nullable
-
-    DTO_FIELD_INFO(session_id) { info->description = "Session UUID for the current activity"; }
-    DTO_FIELD(String, session_id); // nullable UUIDv4
-
-    DTO_FIELD_INFO(reason) { info->description = "Reason for this activity (play|ad_hoc|playlist|idle|disabled)"; }
-    DTO_FIELD(String, reason); // nullable
-
-    DTO_FIELD_INFO(started_at) { info->description = "Activity start time (ISO8601)"; }
-    DTO_FIELD(String, started_at); // nullable
-
-    DTO_FIELD_INFO(updated_at) { info->description = "Last update time (ISO8601)"; }
-    DTO_FIELD(String, updated_at); // nullable
-};
-
-class CreatureRuntimeDto : public oatpp::DTO {
-
-    DTO_INIT(CreatureRuntimeDto, DTO)
-
-    DTO_FIELD_INFO(idle_enabled) { info->description = "Whether idle loop is enabled for this creature"; }
-    DTO_FIELD(Boolean, idle_enabled);
-
-    DTO_FIELD_INFO(activity) { info->description = "Current runtime activity for this creature"; }
-    DTO_FIELD(Object<CreatureRuntimeActivityDto>, activity);
-
-    DTO_FIELD_INFO(counters) { info->description = "Runtime counters for this creature"; }
-    DTO_FIELD(Object<CreatureRuntimeCountersDto>, counters);
-
-    DTO_FIELD_INFO(bgm_owner) { info->description = "Creature ID that currently owns BGM, if any"; }
-    DTO_FIELD(String, bgm_owner);
-
-    DTO_FIELD_INFO(last_error) { info->description = "Last runtime error for this creature, if any"; }
-    DTO_FIELD(Object<CreatureRuntimeErrorDto>, last_error);
-};
-
-class GazeAxisDto : public oatpp::DTO {
-
-    DTO_INIT(GazeAxisDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(input) {
-        info->description = "Name of the entry in `inputs` this axis drives, e.g. 'neck_rotate' or 'head_height'. "
-                            "The slot is resolved from this name, since input layouts differ between creatures.";
-    }
-    DTO_FIELD(String, input);
-
-    DTO_FIELD_INFO(degrees_at_min) { info->description = "Angle in degrees when the input byte is 0"; }
-    DTO_FIELD(Float32, degrees_at_min);
-
-    DTO_FIELD_INFO(degrees_at_max) {
-        info->description = "Angle in degrees when the input byte is 255. Set this LOWER than degrees_at_min to "
-                            "express a reversed axis.";
-    }
-    DTO_FIELD(Float32, degrees_at_max);
-
-    DTO_FIELD_INFO(listening_amount) {
-        info->description = "Cock axis only: fraction of the available range a listening creature may tilt its head "
-                            "by. 0 disables the head-cock.";
-        info->required = false;
-    }
-    DTO_FIELD(Float32, listening_amount);
-};
-
-class GazeConfigDto : public oatpp::DTO {
-
-    DTO_INIT(GazeConfigDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(pan) { info->description = "Left/right head turn. Normally the 'neck_rotate' input."; }
-    DTO_FIELD(Object<GazeAxisDto>, pan);
-
-    DTO_FIELD_INFO(elevation) {
-        info->description = "Up/down head aim, for looking at a taller or shorter creature. Normally the "
-                            "'head_height' input — NOT 'head_tilt', which cocks the head sideways instead.";
-    }
-    DTO_FIELD(Object<GazeAxisDto>, elevation);
-
-    DTO_FIELD_INFO(cock) {
-        info->description = "Expressive sideways head tilt while listening. Normally the 'head_tilt' input. Aims at "
-                            "nothing; it just makes a listening creature look attentive.";
-    }
-    DTO_FIELD(Object<GazeAxisDto>, cock);
-};
-
-class CreatureDto : public oatpp::DTO {
-
-    DTO_INIT(CreatureDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(id) { info->description = "Creature ID in the form of a MongoDB OID"; }
-    DTO_FIELD(String, id);
-
-    DTO_FIELD_INFO(name) { info->description = "The creature's name"; }
-    DTO_FIELD(String, name);
-
-    DTO_FIELD_INFO(channel_offset) {
-        info->description = "The offset of the channel for this creature in the universe";
-    }
-    DTO_FIELD(UInt16, channel_offset);
-
-    DTO_FIELD_INFO(audio_channel) { info->description = "The audio channel for this creature"; }
-    DTO_FIELD(UInt16, audio_channel);
-
-    DTO_FIELD_INFO(mouth_slot) {
-        info->description = "The slot in the motion array that corresponds to the creature's mouth";
-        info->required = true;
-    }
-    DTO_FIELD(UInt8, mouth_slot);
-
-    DTO_FIELD_INFO(mouth_input) {
-        info->description = "Name of the input that drives the mouth, normally 'beak'. Preferred over mouth_slot: "
-                            "the slot is resolved per creature, since input layouts differ between creatures.";
-        info->required = false;
-    }
-    DTO_FIELD(String, mouth_input);
-
-    DTO_FIELD_INFO(inputs) { info->description = "The input map for this creature"; }
-    DTO_FIELD(List<Object<InputDto>>, inputs);
-
-    DTO_FIELD_INFO(speech_loop_animation_ids) {
-        info->description = "Animations that can be used as base speech loops for ad-hoc speech";
-        info->required = false;
-    }
-    DTO_FIELD(List<String>, speech_loop_animation_ids);
-
-    DTO_FIELD_INFO(idle_animation_ids) {
-        info->description = "Animations that can be used as idle loops for this creature";
-        info->required = false;
-    }
-    DTO_FIELD(List<String>, idle_animation_ids);
-
-    DTO_FIELD_INFO(gaze) {
-        info->description = "Which inputs the gaze layer may drive, and their angular ranges. Absent means this "
-                            "creature never turns to look at anything.";
-        info->required = false;
-    }
-    DTO_FIELD(Object<GazeConfigDto>, gaze);
-
-    DTO_FIELD_INFO(runtime) {
-        info->description = "Runtime state (present only at runtime; absent in config documents)";
-        info->required = false;
-    }
-    DTO_FIELD(Object<CreatureRuntimeDto>, runtime);
-};
-
-#include OATPP_CODEGEN_END(DTO)
-
-oatpp::Object<CreatureDto> convertToDto(const Creature &creature);
-creatures::Creature convertFromDto(const std::shared_ptr<CreatureDto> &creatureDto);
+/// Parse and validate the modeled portion of a controller-owned config.
+/// Unknown top-level fields are deliberately tolerated so newer controller
+/// firmware can preserve hardware-specific settings that this server does not
+/// yet model. Database-owned `_id` is reserved and rejected. Nested modeled
+/// objects are strict.
+Result<Creature> creatureFromJson(const nlohmann::json &json, std::string_view path = "creature");
 
 /**
  * Slot of the input with the given name, or nullopt if this creature has no

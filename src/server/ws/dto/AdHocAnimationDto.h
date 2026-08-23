@@ -3,7 +3,7 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
-#include "model/AnimationMetadata.h"
+#include "server/ws/dto/AnimationDto.h"
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 

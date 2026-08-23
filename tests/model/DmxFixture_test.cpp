@@ -4,6 +4,7 @@
 
 #include "model/DmxFixture.h"
 #include "server/database.h"
+#include "server/ws/dto/DmxFixtureDto.h"
 
 namespace creatures {
 

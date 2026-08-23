@@ -4,8 +4,8 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
-#include "model/Creature.h"
 #include "server/metrics/counters.h"
+#include "server/ws/dto/CreatureDto.h"
 #include "server/ws/dto/websocket/WebSocketMessageDto.h"
 
 namespace creatures::ws {

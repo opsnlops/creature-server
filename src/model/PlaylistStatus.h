@@ -1,12 +1,14 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
+#include <string_view>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
+#include <nlohmann/json.hpp>
 
 #include "server/namespace-stuffs.h"
+#include "util/Result.h"
 
 namespace creatures {
 
@@ -33,28 +35,9 @@ struct PlaylistStatus {
     animationId_t current_animation;
 };
 
-#include OATPP_CODEGEN_BEGIN(DTO)
+inline constexpr std::size_t MAX_PLAYLIST_STATUS_ID_BYTES = 36;
 
-class PlaylistStatusDto : public oatpp::DTO {
-
-    DTO_INIT(PlaylistStatusDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(universe) { info->description = "Universe ID"; }
-    DTO_FIELD(UInt32, universe);
-
-    DTO_FIELD_INFO(playlist) { info->description = "Currently active playlist"; }
-    DTO_FIELD(String, playlist);
-
-    DTO_FIELD_INFO(playing) { info->description = "Is a playlist currently running?"; }
-    DTO_FIELD(Boolean, playing);
-
-    DTO_FIELD_INFO(current_animation) { info->description = "Currently playing animation"; }
-    DTO_FIELD(String, current_animation);
-};
-
-#include OATPP_CODEGEN_END(DTO)
-
-oatpp::Object<PlaylistStatusDto> convertToDto(const PlaylistStatus &playlistStatus);
-creatures::PlaylistStatus convertFromDto(const std::shared_ptr<PlaylistStatusDto> &playlistStatusDto);
+nlohmann::json playlistStatusToJson(const PlaylistStatus &playlistStatus);
+Result<PlaylistStatus> playlistStatusFromJson(const nlohmann::json &json, std::string_view path = "playlist_status");
 
 } // namespace creatures
