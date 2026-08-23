@@ -57,16 +57,16 @@ live beside otherwise framework-neutral domain structs.
 | `src/server/ws/dto/PlaylistItemDto.h` (moved from `src/model/PlaylistItem.h`) | `PlaylistItemDto` | Temporary oat++ adapter for nested playlist input/response | Strict model-owned `playlistItemToJson` / `playlistItemFromJson` |
 | `src/server/ws/dto/PlaylistStatusDto.h` (moved from `src/model/PlaylistStatus.h`) | `PlaylistStatusDto` | Temporary oat++ adapter for REST and outbound WebSocket status payloads | Strict model-owned `playlistStatusToJson` / `playlistStatusFromJson` |
 | `src/model/Sound.h` | `DialogTurnDto`, `SoundTrackDto`, `MouthCueDto`, `TrackMouthCuesDto`, `WordTimingDto`, `TrackWordsDto`, `SoundDto` | Sound lists and heavy metadata response; dialog-generation support | No complete neutral codec |
-| `src/model/Stage.h` | `StageDto` | Swagger documentation only; runtime serialization bypasses it | `stageToJson`; database-owned `stageFromJson` |
-| `src/model/Storyboard.h` | `StoryboardDto` | Swagger documentation only; runtime serialization bypasses it | `storyboardToJson`; database-owned `storyboardFromJson` |
+| `src/model/Stage.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned placement and audio keys | `stageToJson`; database-owned `stageFromJson` |
+| `src/model/Storyboard.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned tile action keys | `storyboardToJson`; database-owned `storyboardFromJson` |
 | `src/server/ws/dto/StreamFrameDto.h` (moved from `src/model/StreamFrame.h`) | `StreamFrameDto` | Inbound stream command and outbound WebSocket frame | Strict model-owned `streamFrameToJson` / `streamFrameFromJson`; valid UUID, E1.31 universe, and capped 512-byte decoded DMX payload |
 | `src/model/Track.h` | `TrackDto` | Nested animation input/response | Strict model-owned `trackToJson` / `trackFromJson` |
 | `src/server/ws/dto/VirtualStatusLightsDto.h` (moved from `src/model/VirtualStatusLights.h`) | `VirtualStatusLightsDto` | Outbound WebSocket payload | Strict model-owned `virtualStatusLightsToJson` / `virtualStatusLightsFromJson` |
 
 ### Model observations
 
-- `StageDto` and `StoryboardDto` can be deleted rather than adapted once Swagger
-  annotations are removed; their actual endpoints already use neutral JSON.
+- Stage and Storyboard no longer define transport DTOs; their endpoints have
+  always used neutral JSON so opaque client-owned fields round-trip unchanged.
 - The existing domain-to-DTO and hand-written JSON paths are not guaranteed to
   match. `Animation` is the first characterized slice: its canonical neutral
   path omits absent optionals, while one legacy test keeps oat++'s explicit-null

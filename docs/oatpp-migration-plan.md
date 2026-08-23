@@ -242,8 +242,8 @@ Migrate leaf models before aggregate models.
 - [ ] `DmxFixture` and nested channel/pattern/binding types
 - [ ] `DialogScript` and nested accepted-voice/music types
 - [ ] `AdHocExchange`
-- [ ] `Stage`
-- [ ] `Storyboard`
+- [x] `Stage`
+- [x] `Storyboard`
 - [ ] Move remaining oat++ DTOs into temporary transport adapters or remove them.
 - [ ] Remove oat++ includes and code-generation macros from `src/model/`.
 
