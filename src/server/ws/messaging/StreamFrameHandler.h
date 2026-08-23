@@ -3,7 +3,6 @@
 
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/component.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
 #include "model/StreamFrame.h"
 #include "util/ObservabilityManager.h"
@@ -26,7 +25,6 @@ class StreamFrameHandler : public IMessageHandler {
     void stream(StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan);
 
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-    OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
 
     framenum_t framesStreamed = 0;
 };

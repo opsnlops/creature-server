@@ -230,10 +230,10 @@ Migrate leaf models before aggregate models.
 - [x] `AnimationMetadata` and render-choice types
 - [x] `PlaylistItem`
 - [x] `Notice`
-- [ ] `LogItem` and log-level serialization
+- [x] `LogItem` and log-level serialization
 - [x] `CacheInvalidation`
-- [ ] `VirtualStatusLights`
-- [ ] `StreamFrame`
+- [x] `VirtualStatusLights`
+- [x] `StreamFrame`
 - [x] `PlaylistStatus`
 - [x] `Animation`
 - [x] `Creature` configuration (runtime state remains a separate snapshot-concurrency checkpoint)

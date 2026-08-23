@@ -4,7 +4,7 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
-#include "model/LogItem.h"
+#include "server/ws/dto/LogItemDto.h"
 #include "server/ws/dto/websocket/WebSocketMessageDto.h"
 
 namespace creatures::ws {

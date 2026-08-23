@@ -51,7 +51,7 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/DialogScript.h` | `DialogScriptTurnDto`, `AcceptedVoiceDto`, `DialogBackgroundMusicDto`, `DialogScriptDto` | Primarily REST and job response; input is already parsed from raw JSON | `dialogScriptToJson`; database-owned `dialogScriptFromJson` |
 | `src/model/DmxFixture.h` | `FixtureChannelDto`, `FixturePatternValueDto`, `FixturePatternDto`, `FixtureBindingDto`, `DmxFixtureDto` | REST responses; config input is already parsed from raw JSON | Database-owned `fixtureFromJson`; no complete neutral serializer |
 | `src/server/ws/dto/InputDto.h` (moved from `src/model/Input.h`) | `InputDto` | Temporary oat++ adapter for nested creature config | Strict model-owned `inputToJson` / `inputFromJson` |
-| `src/model/LogItem.h` | `LogItemDto` | Outbound WebSocket log payload | No neutral codec |
+| `src/server/ws/dto/LogItemDto.h` (moved from `src/model/LogItem.h`) | `LogItemDto` | Outbound WebSocket log payload | Strict model-owned `logItemToJson` / `logItemFromJson` |
 | `src/server/ws/dto/NoticeDto.h` (moved from `src/model/Notice.h`) | `NoticeDto` | Temporary oat++ adapter for inbound and outbound WebSocket notices | Strict model-owned `noticeToJson` / `noticeFromJson` |
 | `src/server/ws/dto/PlaylistDto.h` (moved from `src/model/Playlist.h`) | `PlaylistDto` | Temporary oat++ adapter for REST list/detail/upsert responses | Strict model-owned `playlistToJson` / `playlistFromJson`; trusted database storage strips MongoDB and previously ignored unmodeled fields before parsing |
 | `src/server/ws/dto/PlaylistItemDto.h` (moved from `src/model/PlaylistItem.h`) | `PlaylistItemDto` | Temporary oat++ adapter for nested playlist input/response | Strict model-owned `playlistItemToJson` / `playlistItemFromJson` |
@@ -59,9 +59,9 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/Sound.h` | `DialogTurnDto`, `SoundTrackDto`, `MouthCueDto`, `TrackMouthCuesDto`, `WordTimingDto`, `TrackWordsDto`, `SoundDto` | Sound lists and heavy metadata response; dialog-generation support | No complete neutral codec |
 | `src/model/Stage.h` | `StageDto` | Swagger documentation only; runtime serialization bypasses it | `stageToJson`; database-owned `stageFromJson` |
 | `src/model/Storyboard.h` | `StoryboardDto` | Swagger documentation only; runtime serialization bypasses it | `storyboardToJson`; database-owned `storyboardFromJson` |
-| `src/model/StreamFrame.h` | `StreamFrameDto` | Inbound stream command and outbound WebSocket frame | No neutral codec |
+| `src/server/ws/dto/StreamFrameDto.h` (moved from `src/model/StreamFrame.h`) | `StreamFrameDto` | Inbound stream command and outbound WebSocket frame | Strict model-owned `streamFrameToJson` / `streamFrameFromJson`; valid UUID, E1.31 universe, and capped 512-byte decoded DMX payload |
 | `src/model/Track.h` | `TrackDto` | Nested animation input/response | Strict model-owned `trackToJson` / `trackFromJson` |
-| `src/model/VirtualStatusLights.h` | `VirtualStatusLightsDto` | Outbound WebSocket payload | No neutral codec |
+| `src/server/ws/dto/VirtualStatusLightsDto.h` (moved from `src/model/VirtualStatusLights.h`) | `VirtualStatusLightsDto` | Outbound WebSocket payload | Strict model-owned `virtualStatusLightsToJson` / `virtualStatusLightsFromJson` |
 
 ### Model observations
 
