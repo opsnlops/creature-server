@@ -17,28 +17,31 @@ void NoticeMessageHandler::processMessage(const oatpp::String &message) {
     try {
 
         auto objectMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-        // Print out the DTO for debugging
-        appLogger->info("Decoding into a notice: {}", std::string(message));
+        objectMapper->getDeserializer()->getConfig()->allowUnknownFields = false;
+        appLogger->debug("Decoding inbound Notice ({} bytes)", message->size());
 
         auto dto = objectMapper->readFromString<oatpp::Object<creatures::ws::NoticeMessageCommandDTO>>(message);
-        if (dto) {
-            Notice notice = convertFromDto(dto->payload.getPtr());
+        if (dto && dto->payload) {
+            const auto parsedNotice = noticeFromJson(noticeToJson(convertFromDto(dto->payload)));
+            if (!parsedNotice.isSuccess()) {
+                appLogger->warn("Rejected invalid inbound Notice: {}", parsedNotice.getError()->getMessage());
+                return;
+            }
+            const auto notice = parsedNotice.getValue().value();
 
             // Just toss this to the logger, these are mostly for testing
-            appLogger->info("A client would really like for us to know: {} at {}", notice.message, notice.timestamp);
+            appLogger->info("Accepted inbound Notice ({} message bytes)", notice.message.size());
 
         } else {
-            appLogger->warn("unable to cast an incoming message to 'Notice'");
+            appLogger->warn("unable to decode an incoming Notice payload");
         }
 
     } catch (const std::bad_cast &e) {
-        appLogger->warn("Error (std::bad_cast) while processing '{}' into a Notice message: {} ", std::string(message),
-                        e.what());
+        appLogger->warn("std::bad_cast while processing inbound Notice: {}", e.what());
     } catch (const std::exception &e) {
-        appLogger->warn("Error (std::exception) while processing '{}' into a Notice message: {}", std::string(message),
-                        e.what());
+        appLogger->warn("Exception while processing inbound Notice: {}", e.what());
     } catch (...) {
-        appLogger->warn("An unknown error happened while processing '{}' into a Notice message", std::string(message));
+        appLogger->warn("Unknown exception while processing inbound Notice");
     }
 }
 

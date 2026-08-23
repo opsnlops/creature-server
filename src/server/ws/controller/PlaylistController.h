@@ -10,11 +10,11 @@
 
 #include "server/database.h"
 
-#include "model/PlaylistStatus.h"
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/PlaylistDto.h"
+#include "server/ws/dto/PlaylistStatusDto.h"
 #include "server/ws/dto/StartPlaylistRequestDto.h"
 #include "server/ws/dto/StopPlaylistRequestDto.h"
 #include "server/ws/service/PlaylistService.h"

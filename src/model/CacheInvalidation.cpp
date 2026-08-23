@@ -1,9 +1,8 @@
 
 #include <string>
 
-#include <oatpp/core/Types.hpp>
-
 #include "model/CacheInvalidation.h"
+#include "model/JsonCodec.h"
 
 namespace creatures {
 
@@ -77,18 +76,19 @@ CacheType cacheTypeFromString(const std::string &cacheTypeString) {
     return CacheType::Unknown;
 }
 
-oatpp::Object<CacheInvalidationDto> convertToDto(const CacheInvalidation &cacheInvalidation) {
-    auto cacheInvalidationDto = CacheInvalidationDto::createShared();
-    cacheInvalidationDto->cache_type = toString(cacheInvalidation.cache_type);
-
-    return cacheInvalidationDto;
+nlohmann::json cacheInvalidationToJson(const CacheInvalidation &cacheInvalidation) {
+    return {{"cache_type", toString(cacheInvalidation.cache_type)}};
 }
 
-CacheInvalidation convertFromDto(const std::shared_ptr<CacheInvalidationDto> &cacheInvalidationDto) {
-    CacheInvalidation cacheInvalidation{};
-    cacheInvalidation.cache_type = cacheTypeFromString(cacheInvalidationDto->cache_type);
+Result<CacheInvalidation> cacheInvalidationFromJson(const nlohmann::json &json, std::string_view path) {
+    auto fields = json_codec::rejectUnknownFields(json, path, {"cache_type"});
+    if (!fields.isSuccess())
+        return Result<CacheInvalidation>{fields.getError().value()};
+    auto cacheType = json_codec::requiredString(json, path, "cache_type", 64);
+    if (!cacheType.isSuccess())
+        return Result<CacheInvalidation>{cacheType.getError().value()};
 
-    return cacheInvalidation;
+    return Result<CacheInvalidation>{CacheInvalidation{cacheTypeFromString(cacheType.getValue().value())}};
 }
 
 } // namespace creatures

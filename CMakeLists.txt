@@ -519,6 +519,7 @@ add_executable(creature-server
         src/model/Animation.h
         src/model/CacheInvalidation.h
         src/model/CacheInvalidation.cpp
+        src/server/ws/dto/CacheInvalidationDto.h
         src/model/Creature.h
         src/model/Creature.cpp
         src/server/ws/dto/CreatureDto.cpp
@@ -539,6 +540,7 @@ add_executable(creature-server
         src/model/LogItem.cpp
         src/model/Notice.h
         src/model/Notice.cpp
+        src/server/ws/dto/NoticeDto.h
         src/model/Playlist.h
         src/model/Playlist.cpp
         src/model/PlaylistItem.h
@@ -547,6 +549,7 @@ add_executable(creature-server
         src/server/ws/dto/PlaylistItemDto.cpp
         src/model/PlaylistStatus.h
         src/model/PlaylistStatus.cpp
+        src/server/ws/dto/PlaylistStatusDto.h
         src/model/StreamFrame.cpp
         src/model/StreamFrame.h
         src/model/Sound.h
@@ -576,6 +579,7 @@ add_executable(creature-server
         src/server/ws/dto/AdHocDtoUtils.cpp
         src/server/ws/dto/AnimationDto.h
         src/server/ws/dto/AnimationDto.cpp
+        src/server/ws/dto/OutboundPayloadDto.cpp
         src/server/ws/dto/ListDto.h
         src/server/ws/dto/PlayAnimationRequestDto.h
         src/server/ws/dto/PlaySoundRequestDTO.h
@@ -741,6 +745,7 @@ if (EXISTS ${CMAKE_SOURCE_DIR}/tests/server/TestGlobals.cpp)
 
 add_executable(creature-server-test
         tests/model/Creature_test.cpp
+        tests/model/OutboundPayload_test.cpp
         tests/model/Input_test.cpp
         tests/model/PlaylistItem_test.cpp
         tests/model/Playlist_test.cpp
@@ -843,6 +848,10 @@ add_executable(creature-server-test
         src/model/Playlist.cpp
         src/model/PlaylistItem.cpp
         src/server/ws/dto/PlaylistItemDto.cpp
+        src/model/PlaylistStatus.cpp
+        src/model/Notice.cpp
+        src/model/CacheInvalidation.cpp
+        src/server/ws/dto/OutboundPayloadDto.cpp
         src/model/SortBy.h
         src/model/Track.cpp
         src/model/Creature.cpp

@@ -2,11 +2,12 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
+#include <nlohmann/json.hpp>
 
 #include "server/namespace-stuffs.h"
+#include "util/Result.h"
 
 namespace creatures {
 
@@ -57,20 +58,8 @@ struct CacheInvalidation {
     CacheType cache_type;
 };
 
-#include OATPP_CODEGEN_BEGIN(DTO)
-class CacheInvalidationDto : public oatpp::DTO {
-
-    DTO_INIT(CacheInvalidationDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(cache_type) {
-        info->description = "A string representation of the type of cache that "
-                            "should be invalidated";
-    }
-    DTO_FIELD(String, cache_type);
-};
-#include OATPP_CODEGEN_END(DTO)
-
-oatpp::Object<CacheInvalidationDto> convertToDto(const CacheInvalidation &cacheInvalidation);
-creatures::CacheInvalidation convertFromDto(const std::shared_ptr<CacheInvalidationDto> &cacheInvalidationDto);
+nlohmann::json cacheInvalidationToJson(const CacheInvalidation &cacheInvalidation);
+Result<CacheInvalidation> cacheInvalidationFromJson(const nlohmann::json &json,
+                                                    std::string_view path = "cache_invalidation");
 
 } // namespace creatures

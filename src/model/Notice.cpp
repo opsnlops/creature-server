@@ -1,27 +1,34 @@
 
 
-#include <string>
-
-#include <oatpp/core/Types.hpp>
-
-#include "Notice.h"
+#include "model/Notice.h"
+#include "model/JsonCodec.h"
 
 namespace creatures {
 
-Notice convertFromDto(const std::shared_ptr<NoticeDto> &noticeDto) {
-    Notice notice;
-    notice.timestamp = noticeDto->timestamp;
-    notice.message = noticeDto->message;
+namespace {
 
-    return notice;
+template <typename T> Result<Notice> forwardNoticeError(const Result<T> &result) {
+    return Result<Notice>{result.getError().value()};
 }
 
-oatpp::Object<NoticeDto> convertToDto(const Notice &notice) {
-    auto noticeDto = NoticeDto::createShared();
-    noticeDto->timestamp = notice.timestamp;
-    noticeDto->message = notice.message;
+} // namespace
 
-    return noticeDto;
+nlohmann::json noticeToJson(const Notice &notice) {
+    return {{"timestamp", notice.timestamp}, {"message", notice.message}};
+}
+
+Result<Notice> noticeFromJson(const nlohmann::json &json, std::string_view path) {
+    auto fields = json_codec::rejectUnknownFields(json, path, {"timestamp", "message"});
+    if (!fields.isSuccess())
+        return forwardNoticeError(fields);
+    auto timestamp = json_codec::requiredString(json, path, "timestamp", MAX_NOTICE_TIMESTAMP_BYTES);
+    auto message = json_codec::requiredString(json, path, "message", MAX_NOTICE_MESSAGE_BYTES);
+    if (!timestamp.isSuccess())
+        return forwardNoticeError(timestamp);
+    if (!message.isSuccess())
+        return forwardNoticeError(message);
+
+    return Result<Notice>{Notice{timestamp.getValue().value(), message.getValue().value()}};
 }
 
 } // namespace creatures
