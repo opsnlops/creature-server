@@ -651,32 +651,43 @@ Result<AudioCache::PruneReport> AudioCache::pruneOrphanedEntries(bool dryRun,
 
                 const auto keyMutex = getKeyMutexForCacheDir(path.string());
                 std::lock_guard lock(*keyMutex);
+
                 // Exclusive against other processes sharing this cache, same
                 // as clearCache. The lock file is a sibling, so removing the
                 // directory cannot unlink the inode we hold (issue #93).
-                ScopedFileLock entryLock(path.string() + ".lock", /*exclusive=*/true);
+                //
+                // Taken ONLY when actually deleting: ScopedFileLock opens with
+                // O_CREAT, so acquiring it during a preview created one empty
+                // .lock per entry — a dry run that writes 5,000 files is not a
+                // dry run (issue #168). There is nothing to protect when we
+                // are not modifying anything; the worst case is that a preview
+                // races a concurrent save and misreports, which the apply pass
+                // then re-evaluates under the lock.
+                std::optional<ScopedFileLock> entryLock;
+                if (!dryRun) {
+                    entryLock.emplace(path.string() + ".lock", /*exclusive=*/true);
+                }
+                const bool mayDelete = !dryRun && entryLock.has_value() && entryLock->locked();
 
                 // Abandoned temporaries live inside the key's directory
                 // (<dir>/chNN.opus.tmp.<pid>.<n>). Safe to remove here because
                 // we hold this key's exclusive lock, so no other process can
                 // be mid-save on it.
-                if (entryLock.locked()) {
-                    for (const auto &inner : std::filesystem::directory_iterator(path, ec)) {
-                        if (ec) {
-                            break;
-                        }
-                        if (inner.path().filename().string().find(".tmp.") == std::string::npos) {
-                            continue;
-                        }
-                        std::error_code sizeError;
-                        const auto bytes = inner.file_size(sizeError);
-                        ++report.temporaryFiles;
-                        report.bytesReclaimed += sizeError ? 0 : bytes;
-                        note(inner.path().string());
-                        if (!dryRun) {
-                            std::error_code removeError;
-                            std::filesystem::remove(inner.path(), removeError);
-                        }
+                for (const auto &inner : std::filesystem::directory_iterator(path, ec)) {
+                    if (ec) {
+                        break;
+                    }
+                    if (inner.path().filename().string().find(".tmp.") == std::string::npos) {
+                        continue;
+                    }
+                    std::error_code sizeError;
+                    const auto bytes = inner.file_size(sizeError);
+                    ++report.temporaryFiles;
+                    report.bytesReclaimed += sizeError ? 0 : bytes;
+                    note(inner.path().string());
+                    if (mayDelete) {
+                        std::error_code removeError;
+                        std::filesystem::remove(inner.path(), removeError);
                     }
                 }
 
