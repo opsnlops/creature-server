@@ -168,6 +168,7 @@ inline constexpr std::size_t MAX_CREATURE_NAME_BYTES = 128;
 inline constexpr std::size_t MAX_CREATURE_INPUTS = 64;
 inline constexpr std::size_t MAX_CREATURE_ANIMATION_IDS_PER_LIST = 256;
 inline constexpr std::size_t MAX_CREATURE_INPUT_SLOT_END = 512;
+inline constexpr uint16_t MAX_CREATURE_AUDIO_CHANNEL = 16;
 
 /// Canonical framework-neutral configuration representation. Runtime state is
 /// intentionally absent: the controller configuration is the source of truth,

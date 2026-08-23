@@ -28,6 +28,20 @@ TEST_F(CreatureServiceValidateTest, RejectsInvalidJson) {
     EXPECT_GT(result->error_messages->size(), 0);
 }
 
+TEST_F(CreatureServiceValidateTest, RejectsJsonBeyondTheApiNestingLimit) {
+    std::string nested = "null";
+    for (int index = 0; index < 33; ++index)
+        nested = "[" + nested + "]";
+    const std::string payload =
+        R"json({"id":"4754fc0e-1706-11ef-931d-bbb95a696e2e","name":"Test Creature","channel_offset":0,"audio_channel":1,"mouth_slot":2,"controller_extension":)json" +
+        nested + "}";
+
+    auto result = creatures::ws::CreatureService::validateCreatureConfig(payload, nullptr);
+    ASSERT_TRUE(result);
+    EXPECT_FALSE(*result->valid);
+    ASSERT_EQ(result->error_messages->size(), 1);
+}
+
 TEST_F(CreatureServiceValidateTest, AcceptsValidCreatureConfig) {
     const std::string payload = R"json(
 {

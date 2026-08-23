@@ -157,27 +157,25 @@ class CreatureController : public oatpp::web::server::api::ApiController,
 
         info->addResponse<Object<creatures::CreatureDto>>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<Object<StatusDto>>(Status::CODE_413, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/creature", upsertCreature, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("Upserting creature via POST /api/v1/creature");
-        return runEndpoint(
-            "POST /api/v1/creature", "POST", "api/v1/creature", "upsertCreature", "CreatureController", request,
-            [&](const auto &span) {
-                const auto creatureConfig = readRequestBodyLimited(request, MAX_CREATURE_REQUEST_BODY_BYTES, span);
-                if (span) {
-                    span->setAttribute("request.body_size", static_cast<int64_t>(creatureConfig.length()));
-                }
-                const auto result = m_creatureService.upsertCreature(creatureConfig, span);
-                if (span) {
-                    span->setAttribute("creature.id", std::string(result->id));
-                    span->setAttribute("creature.name", std::string(result->name));
-                    span->setHttpStatus(200);
-                }
-                // CreatureService.upsertCreature goes through storage::publishCreature,
-                // which fires the Creature invalidation on success (issue #11 PR #21).
-                return createDtoResponse(Status::CODE_200, result);
-            });
+        return runEndpoint("POST /api/v1/creature", "POST", "api/v1/creature", "upsertCreature", "CreatureController",
+                           request, [&](const auto &span) {
+                               const auto creatureConfig =
+                                   readRequestBodyLimited(request, MAX_CREATURE_REQUEST_BODY_BYTES, span);
+                               const auto result = m_creatureService.upsertCreature(creatureConfig, span);
+                               if (span) {
+                                   span->setAttribute("creature.id", std::string(result->id));
+                                   span->setAttribute("creature.name", std::string(result->name));
+                                   span->setHttpStatus(200);
+                               }
+                               // CreatureService.upsertCreature goes through storage::publishCreature,
+                               // which fires the Creature invalidation on success (issue #11 PR #21).
+                               return createDtoResponse(Status::CODE_200, result);
+                           });
     }
 
     ENDPOINT_INFO(validateCreatureConfig) {
@@ -251,37 +249,61 @@ class CreatureController : public oatpp::web::server::api::ApiController,
                 debug("Raw request body size: {} bytes", body.size());
 
                 Object<RegisterCreatureRequestDto> dto;
-                const auto jsonResult = JsonParser::parseApiJsonString(body, "creature registration request");
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "CreatureController.parseRegistrationRequest", span)
+                                           : nullptr;
+                const auto jsonResult =
+                    JsonParser::parseApiJsonString(body, "creature registration request", parseSpan);
                 if (!jsonResult.isSuccess())
                     return bailFromServerError(span, jsonResult.getError().value());
                 const auto requestJson = jsonResult.getValue().value();
                 if (!requestJson.is_object() || !requestJson.contains("creature_config") ||
                     !requestJson["creature_config"].is_string() || !requestJson.contains("universe") ||
                     (!requestJson["universe"].is_number_unsigned() && !requestJson["universe"].is_number_integer())) {
+                    recordSpanError(parseSpan,
+                                    "Registration requires string creature_config and unsigned integer universe",
+                                    "InvalidRegistrationEnvelope", ServerError::InvalidData);
                     return bailHttp(span, Status::CODE_400,
-                                    "Registration requires string creature_config and unsigned integer universe");
+                                    "Registration requires string creature_config and unsigned integer universe",
+                                    nullptr, "InvalidRegistrationEnvelope");
                 }
                 uint64_t universe = 0;
                 if (requestJson["universe"].is_number_unsigned()) {
                     universe = requestJson["universe"].template get<uint64_t>();
                 } else {
                     const auto signedUniverse = requestJson["universe"].template get<int64_t>();
-                    if (signedUniverse < 0)
-                        return bailHttp(span, Status::CODE_400, "Registration universe must be non-negative");
+                    if (signedUniverse < 0) {
+                        recordSpanError(parseSpan, "Registration universe must be non-negative", "InvalidUniverse",
+                                        ServerError::InvalidData);
+                        return bailHttp(span, Status::CODE_400, "Registration universe must be non-negative", nullptr,
+                                        "InvalidUniverse");
+                    }
                     universe = static_cast<uint64_t>(signedUniverse);
                 }
                 if (universe > std::numeric_limits<uint32_t>::max()) {
-                    return bailHttp(span, Status::CODE_400, "Registration universe must fit in UInt32");
+                    recordSpanError(parseSpan, "Registration universe must fit in UInt32", "InvalidUniverse",
+                                    ServerError::InvalidData);
+                    return bailHttp(span, Status::CODE_400, "Registration universe must fit in UInt32", nullptr,
+                                    "InvalidUniverse");
+                }
+                if (universe < 1 || universe > 63999) {
+                    recordSpanError(parseSpan, "Registration universe must be in [1, 63999]", "InvalidUniverse",
+                                    ServerError::InvalidData);
+                    return bailHttp(span, Status::CODE_400, "Registration universe must be in [1, 63999]", nullptr,
+                                    "InvalidUniverse");
                 }
                 dto = RegisterCreatureRequestDto::createShared();
                 dto->creature_config = requestJson["creature_config"].template get<std::string>();
                 dto->universe = static_cast<uint32_t>(universe);
+                if (parseSpan)
+                    parseSpan->setSuccess();
 
                 const std::string creatureConfig = std::string(dto->creature_config);
 
                 if (span) {
                     span->setAttribute("universe", static_cast<int64_t>(dto->universe));
-                    span->setAttribute("request.body_size", static_cast<int64_t>(creatureConfig.length()));
+                    span->setAttribute("creature.config.size", static_cast<int64_t>(creatureConfig.length()));
                 }
 
                 const auto result = m_creatureService.registerCreature(creatureConfig, dto->universe, span);

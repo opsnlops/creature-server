@@ -134,6 +134,16 @@ TEST(CreatureJson, RejectsInvalidAggregateConstraints) {
     auto missingMouthInput = base;
     missingMouthInput["mouth_input"] = "head";
     EXPECT_FALSE(creatureFromJson(missingMouthInput).isSuccess());
+
+    auto invalidAudioChannel = base;
+    invalidAudioChannel["audio_channel"] = 17;
+    EXPECT_FALSE(creatureFromJson(invalidAudioChannel).isSuccess());
+
+    auto overflowingUniverse = base;
+    overflowingUniverse["channel_offset"] = 511;
+    overflowingUniverse["inputs"][0]["slot"] = 0;
+    overflowingUniverse["inputs"][0]["width"] = 2;
+    EXPECT_FALSE(creatureFromJson(overflowingUniverse).isSuccess());
 }
 
 } // namespace creatures

@@ -139,7 +139,7 @@ Result<Creature> creatureFromJson(const nlohmann::json &json, std::string_view p
         auto name = json_codec::requiredString(json, path, "name", MAX_CREATURE_NAME_BYTES);
         auto channelOffset = json_codec::requiredUnsigned<uint16_t>(json, path, "channel_offset", 511);
         auto audioChannel =
-            json_codec::requiredUnsigned<uint16_t>(json, path, "audio_channel", std::numeric_limits<uint16_t>::max());
+            json_codec::requiredUnsigned<uint16_t>(json, path, "audio_channel", MAX_CREATURE_AUDIO_CHANNEL);
         auto mouthSlot = json_codec::requiredUnsigned<uint8_t>(json, path, "mouth_slot", 255);
         if (!id.isSuccess())
             return forwardCreatureError(id);
@@ -153,6 +153,10 @@ Result<Creature> creatureFromJson(const nlohmann::json &json, std::string_view p
             return forwardCreatureError(mouthSlot);
         if (!isUuidShape(id.getValue().value()))
             return json_codec::invalid<Creature>(fmt::format("{}.id must be a UUID", path));
+        if (audioChannel.getValue().value() == 0) {
+            return json_codec::invalid<Creature>(
+                fmt::format("{}.audio_channel must be in [1, {}]", path, MAX_CREATURE_AUDIO_CHANNEL));
+        }
 
         const auto inputs = json.find("inputs");
         if (inputs != json.end() && !inputs->is_array())
@@ -185,6 +189,12 @@ Result<Creature> creatureFromJson(const nlohmann::json &json, std::string_view p
             if (end > MAX_CREATURE_INPUT_SLOT_END) {
                 return json_codec::invalid<Creature>(fmt::format("{} occupies slots through {}; maximum end is {}",
                                                                  inputPath, end - 1, MAX_CREATURE_INPUT_SLOT_END - 1));
+            }
+            const uint32_t universeEnd = static_cast<uint32_t>(creature.channel_offset) + end;
+            if (universeEnd > MAX_CREATURE_INPUT_SLOT_END) {
+                return json_codec::invalid<Creature>(
+                    fmt::format("{} exceeds the DMX universe after channel_offset {}; maximum end is {}", inputPath,
+                                creature.channel_offset, MAX_CREATURE_INPUT_SLOT_END - 1));
             }
             for (const auto &[otherStart, otherEnd] : occupiedRanges) {
                 if (start < otherEnd && otherStart < end) {
