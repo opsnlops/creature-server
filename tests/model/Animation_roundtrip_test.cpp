@@ -370,20 +370,34 @@ TEST(AnimationRoundTripTest, RejectsDuplicateProvenanceCreatures) {
 TEST(AnimationRoundTripTest, AllowsTracksShorterThanAnimationDuration) {
     auto json = makeValidAnimationJson();
     json["metadata"]["number_of_frames"] = 3;
+    auto fixtureTrack = makeFixtureTrack(json["id"].get<std::string>());
+    fixtureTrack.frames.push_back("ZnJhbWUz");
+    json["tracks"].push_back(trackToJson(fixtureTrack));
 
     auto result = animationFromJson(json);
 
     ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError()->getMessage() : "parse failed");
     const auto animation = result.getValue().value();
     EXPECT_EQ(animation.metadata.number_of_frames, 3);
-    ASSERT_EQ(animation.tracks.size(), 1);
+    ASSERT_EQ(animation.tracks.size(), 2);
     EXPECT_EQ(animation.tracks[0].frames.size(), 2);
+    EXPECT_EQ(animation.tracks[1].frames.size(), 3);
 }
 
 TEST(AnimationRoundTripTest, RejectsTracksLongerThanAnimationDuration) {
     auto json = makeValidAnimationJson();
     json["metadata"]["number_of_frames"] = 1;
     expectInvalid(json, "frames has 2 entries, more than metadata.number_of_frames (1)");
+}
+
+TEST(AnimationRoundTripTest, RejectsEmptyTracksAndDeclaredDurationWithoutAMatchingTrack) {
+    auto emptyTrack = makeValidAnimationJson();
+    emptyTrack["tracks"][0]["frames"] = nlohmann::json::array();
+    expectInvalid(emptyTrack, "frames must not be empty");
+
+    auto noTrackAtDeclaredDuration = makeValidAnimationJson();
+    noTrackAtDeclaredDuration["metadata"]["number_of_frames"] = 3;
+    expectInvalid(noTrackAtDeclaredDuration, "must equal the longest track's frame count");
 }
 
 TEST(AnimationRoundTripTest, RejectsUnsafePlaybackDuration) {

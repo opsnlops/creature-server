@@ -72,6 +72,7 @@ Result<Animation> animationFromJson(const nlohmann::json &json, AnimationJsonSou
         std::size_t totalEncodedFrameBytes = 0;
         std::unordered_set<std::string> trackIds;
         std::unordered_set<std::string> targets;
+        bool hasTrackAtDeclaredDuration = false;
         for (std::size_t index = 0; index < tracksIterator->size(); ++index) {
             auto trackResult = trackFromJson((*tracksIterator)[index], fmt::format("animation.tracks[{}]", index),
                                              allowLegacyPersistenceFields);
@@ -93,6 +94,11 @@ Result<Animation> animationFromJson(const nlohmann::json &json, AnimationJsonSou
                 return json_codec::invalid<Animation>(
                     fmt::format("animation.tracks[{}].frames has {} entries, more than metadata.number_of_frames ({})",
                                 index, track.frames.size(), animation.metadata.number_of_frames));
+            if (track.frames.empty())
+                return json_codec::invalid<Animation>(
+                    fmt::format("animation.tracks[{}].frames must not be empty", index));
+            hasTrackAtDeclaredDuration =
+                hasTrackAtDeclaredDuration || track.frames.size() == animation.metadata.number_of_frames;
             for (const auto &frame : track.frames) {
                 if (frame.size() > MAX_ANIMATION_TOTAL_ENCODED_FRAME_BYTES - totalEncodedFrameBytes)
                     return json_codec::invalid<Animation>(
@@ -102,6 +108,9 @@ Result<Animation> animationFromJson(const nlohmann::json &json, AnimationJsonSou
             }
             animation.tracks.push_back(track);
         }
+        if (!hasTrackAtDeclaredDuration)
+            return json_codec::invalid<Animation>(
+                "animation.metadata.number_of_frames must equal the longest track's frame count");
         return Result<Animation>{animation};
     } catch (const nlohmann::json::exception &error) {
         return json_codec::invalid<Animation>(fmt::format("animation is invalid JSON: {}", error.what()));
