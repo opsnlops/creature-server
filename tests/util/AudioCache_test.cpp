@@ -276,5 +276,152 @@ TEST_F(AudioCacheTest, SaveSweepsAbandonedTemporariesFromAnEarlierCrash) {
     EXPECT_FALSE(fs::exists(orphan)) << "a later save must sweep abandoned temps";
 }
 
+// --- issue #166: pruning entries that can never be used again ---
+
+TEST_F(AudioCacheTest, PruneReclaimsEntriesWhoseSourceIsGone) {
+    const auto keep = writeSource("keep.wav", "keep-source");
+    const auto doomed = writeSource("doomed.wav", "doomed-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, keep, makeAudioData(0x01)).isSuccess());
+    ASSERT_TRUE(save(cache, doomed, makeAudioData(0x02)).isSuccess());
+
+    // Simulate the operator moving/deleting a sound: the cache key is a hash
+    // of the old canonical path, so its entry can never be reached again.
+    fs::remove(doomed);
+
+    // Dry run first: reports but changes nothing.
+    auto preview = cache.pruneOrphanedEntries(/*dryRun=*/true);
+    ASSERT_TRUE(preview.isSuccess());
+    EXPECT_TRUE(preview.getValue().value().dryRun);
+    EXPECT_EQ(preview.getValue().value().orphanedEntries, 1U);
+    EXPECT_GT(preview.getValue().value().bytesReclaimed, 0U);
+    EXPECT_NE(cache.tryLoadFromCache(keep.string()), nullptr) << "dry run must not delete anything";
+
+    auto applied = cache.pruneOrphanedEntries(/*dryRun=*/false);
+    ASSERT_TRUE(applied.isSuccess());
+    const auto report = applied.getValue().value();
+    EXPECT_FALSE(report.dryRun);
+    EXPECT_EQ(report.orphanedEntries, 1U);
+
+    // The surviving entry is untouched and still a cache hit.
+    EXPECT_NE(cache.tryLoadFromCache(keep.string()), nullptr);
+}
+
+TEST_F(AudioCacheTest, PruneRemovesEntriesLeftIncompleteByACrashedSave) {
+    const auto source = writeSource("crashed.wav", "crashed-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x03)).isSuccess());
+
+    fs::path cacheDir;
+    for (const auto &entry : fs::recursive_directory_iterator(root_ / ".opus_cache")) {
+        if (entry.is_directory() && entry.path().filename().string().find("crashed") != std::string::npos) {
+            cacheDir = entry.path();
+        }
+    }
+    ASSERT_FALSE(cacheDir.empty());
+
+    // A save that died before writing the completion marker: unreadable by
+    // design (allCacheFilesExist checks the marker first), so it is pure waste.
+    fs::remove(cacheDir / ".complete");
+
+    auto applied = cache.pruneOrphanedEntries(/*dryRun=*/false);
+    ASSERT_TRUE(applied.isSuccess());
+    EXPECT_EQ(applied.getValue().value().incompleteEntries, 1U);
+    EXPECT_FALSE(fs::exists(cacheDir));
+}
+
+TEST_F(AudioCacheTest, PruneSweepsAbandonedTemporariesAndStaleLocks) {
+    const auto source = writeSource("tidy.wav", "tidy-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x04)).isSuccess());
+
+    const auto hostRoot = [&] {
+        for (const auto &entry : fs::directory_iterator(root_ / ".opus_cache")) {
+            if (entry.is_directory()) {
+                return entry.path();
+            }
+        }
+        return fs::path{};
+    }();
+    ASSERT_FALSE(hostRoot.empty());
+
+    // A real abandoned temp lives INSIDE the key's directory — that is where
+    // saveToCache writes them (<dir>/chNN.opus.tmp.<pid>.<n>). A lock file
+    // whose directory was cleared sits beside it at the host root, since locks
+    // are siblings of the directory by design (issue #93).
+    fs::path liveEntryDir;
+    for (const auto &entry : fs::directory_iterator(hostRoot)) {
+        if (entry.is_directory() && entry.path().filename().string().find("tidy") != std::string::npos) {
+            liveEntryDir = entry.path();
+        }
+    }
+    ASSERT_FALSE(liveEntryDir.empty());
+
+    const auto orphanTemp = liveEntryDir / "ch03.opus.tmp.4242.7";
+    const auto orphanLock = hostRoot / "long-gone-entry_deadbeefdeadbeef.lock";
+    {
+        std::ofstream(orphanTemp, std::ios::binary) << "junk";
+    }
+    {
+        std::ofstream(orphanLock, std::ios::binary) << "";
+    }
+    ASSERT_TRUE(fs::exists(orphanTemp));
+    ASSERT_TRUE(fs::exists(orphanLock));
+
+    auto applied = cache.pruneOrphanedEntries(/*dryRun=*/false);
+    ASSERT_TRUE(applied.isSuccess());
+    const auto report = applied.getValue().value();
+    EXPECT_EQ(report.temporaryFiles, 1U);
+    EXPECT_EQ(report.orphanedLockFiles, 1U);
+    EXPECT_FALSE(fs::exists(orphanTemp));
+    EXPECT_FALSE(fs::exists(orphanLock));
+
+    // The live entry — and the lock file it still needs — survive.
+    EXPECT_NE(cache.tryLoadFromCache(source.string()), nullptr);
+}
+
+TEST_F(AudioCacheTest, PruneLeavesAHealthyCacheCompletelyAlone) {
+    const auto first = writeSource("healthy-one.wav", "one");
+    const auto second = writeSource("healthy-two.wav", "two");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, first, makeAudioData(0x05)).isSuccess());
+    ASSERT_TRUE(save(cache, second, makeAudioData(0x06)).isSuccess());
+
+    auto applied = cache.pruneOrphanedEntries(/*dryRun=*/false);
+    ASSERT_TRUE(applied.isSuccess());
+    const auto report = applied.getValue().value();
+    EXPECT_EQ(report.entriesScanned, 2U);
+    EXPECT_EQ(report.orphanedEntries, 0U);
+    EXPECT_EQ(report.incompleteEntries, 0U);
+    EXPECT_EQ(report.bytesReclaimed, 0U);
+    EXPECT_TRUE(report.removed.empty());
+
+    EXPECT_NE(cache.tryLoadFromCache(first.string()), nullptr);
+    EXPECT_NE(cache.tryLoadFromCache(second.string()), nullptr);
+}
+
+TEST_F(AudioCacheTest, PruneKeepsEntriesWhoseSourceCannotBeStatted) {
+    // A source on a briefly-unavailable mount makes exists() FAIL rather than
+    // cleanly report "not there". Deleting on an inconclusive answer would
+    // wipe a healthy cache, so the entry must be left alone (issue #166).
+    const auto unreachableDir = root_ / "mounted";
+    fs::create_directories(unreachableDir);
+    const auto source = writeSource("mounted/on-a-mount.wav", "mounted-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x07)).isSuccess());
+    ASSERT_NE(cache.tryLoadFromCache(source.string()), nullptr);
+
+    // Drop search permission so stat on the child errors with EACCES.
+    fs::permissions(unreachableDir, fs::perms::none, fs::perm_options::replace);
+    auto applied = cache.pruneOrphanedEntries(/*dryRun=*/false);
+    // Restore before asserting, so a failure cannot leave an unremovable tree.
+    fs::permissions(unreachableDir, fs::perms::owner_all, fs::perm_options::replace);
+
+    ASSERT_TRUE(applied.isSuccess());
+    EXPECT_EQ(applied.getValue().value().orphanedEntries, 0U)
+        << "an inconclusive stat must never be treated as a missing source";
+    EXPECT_NE(cache.tryLoadFromCache(source.string()), nullptr) << "the healthy entry must survive";
+}
+
 } // namespace
 } // namespace creatures::util
