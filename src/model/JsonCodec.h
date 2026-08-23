@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <functional>
 #include <initializer_list>
 #include <limits>
 #include <optional>
@@ -195,6 +196,28 @@ inline Result<bool> requiredBool(const nlohmann::json &json, std::string_view pa
         return invalid<bool>(fmt::format("{} must be a boolean", fieldPath));
     }
     return Result<bool>{iterator->get<bool>()};
+}
+
+inline Result<std::reference_wrapper<const nlohmann::json>> requiredArray(const nlohmann::json &json,
+                                                                          std::string_view path, std::string_view key,
+                                                                          std::size_t maximumEntries,
+                                                                          std::size_t minimumEntries = 0) {
+    const auto iterator = json.find(key);
+    const auto fieldPath = fmt::format("{}.{}", path, key);
+    if (iterator == json.end()) {
+        return invalid<std::reference_wrapper<const nlohmann::json>>(fmt::format("{} is required", fieldPath));
+    }
+    if (!iterator->is_array()) {
+        return invalid<std::reference_wrapper<const nlohmann::json>>(fmt::format("{} must be an array", fieldPath));
+    }
+    if (iterator->size() < minimumEntries) {
+        return invalid<std::reference_wrapper<const nlohmann::json>>(fmt::format("{} must not be empty", fieldPath));
+    }
+    if (iterator->size() > maximumEntries) {
+        return invalid<std::reference_wrapper<const nlohmann::json>>(
+            fmt::format("{} has {} entries; maximum is {}", fieldPath, iterator->size(), maximumEntries));
+    }
+    return Result<std::reference_wrapper<const nlohmann::json>>{std::cref(*iterator)};
 }
 
 } // namespace creatures::json_codec

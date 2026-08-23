@@ -48,15 +48,11 @@ Result<Playlist> playlistFromJson(const nlohmann::json &json, std::string_view p
         if (!isUuidShape(id.getValue().value()))
             return json_codec::invalid<Playlist>(fmt::format("{}.id must be a UUID", path));
 
-        const auto items = json.find("items");
-        if (items == json.end() || !items->is_array())
-            return json_codec::invalid<Playlist>(fmt::format("{}.items must be an array", path));
-        if (items->empty())
-            return json_codec::invalid<Playlist>(fmt::format("{}.items must not be empty", path));
-        if (items->size() > MAX_PLAYLIST_ITEMS)
-            return json_codec::invalid<Playlist>(
-                fmt::format("{}.items has {} entries; maximum is {}", path, items->size(), MAX_PLAYLIST_ITEMS));
-        if (numberOfItems.getValue().value() != items->size()) {
+        auto itemsResult = json_codec::requiredArray(json, path, "items", MAX_PLAYLIST_ITEMS, 1);
+        if (!itemsResult.isSuccess())
+            return forwardPlaylistError(itemsResult);
+        const auto &items = itemsResult.getValue()->get();
+        if (numberOfItems.getValue().value() != items.size()) {
             return json_codec::invalid<Playlist>(fmt::format("{}.number_of_items must equal items.size()", path));
         }
 
@@ -64,10 +60,10 @@ Result<Playlist> playlistFromJson(const nlohmann::json &json, std::string_view p
         playlist.id = id.getValue().value();
         playlist.name = name.getValue().value();
         playlist.number_of_items = numberOfItems.getValue().value();
-        playlist.items.reserve(items->size());
+        playlist.items.reserve(items.size());
         std::unordered_set<animationId_t> animationIds;
-        for (std::size_t index = 0; index < items->size(); ++index) {
-            auto item = playlistItemFromJson((*items)[index], fmt::format("{}.items[{}]", path, index));
+        for (std::size_t index = 0; index < items.size(); ++index) {
+            auto item = playlistItemFromJson(items[index], fmt::format("{}.items[{}]", path, index));
             if (!item.isSuccess())
                 return forwardPlaylistError(item);
             if (!animationIds.emplace(item.getValue()->animation_id).second) {

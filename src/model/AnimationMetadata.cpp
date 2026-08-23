@@ -55,6 +55,144 @@ Result<void> validatePlacementExtension(const nlohmann::json &value, std::string
     return Result<void>{};
 }
 
+Result<std::vector<DialogScriptTurn>> parseScriptTurns(const nlohmann::json &json, std::string_view path) {
+    auto turnsResult = json_codec::requiredArray(json, path, "source_script_turns", MAX_DIALOG_SCRIPT_TURNS);
+    if (!turnsResult.isSuccess()) {
+        return Result<std::vector<DialogScriptTurn>>{turnsResult.getError().value()};
+    }
+    const auto &turns = turnsResult.getValue()->get();
+
+    std::vector<DialogScriptTurn> parsedTurns;
+    parsedTurns.reserve(turns.size());
+    for (std::size_t index = 0; index < turns.size(); ++index) {
+        const auto itemPath = fmt::format("{}.source_script_turns[{}]", path, index);
+        auto itemFields = json_codec::rejectUnknownFields(turns[index], itemPath, {"creature_id", "text"});
+        if (!itemFields.isSuccess()) {
+            return Result<std::vector<DialogScriptTurn>>{itemFields.getError().value()};
+        }
+        auto creatureId = json_codec::requiredString(turns[index], itemPath, "creature_id", 36);
+        auto text = json_codec::requiredString(turns[index], itemPath, "text", MAX_DIALOG_SCRIPT_TURN_TEXT, true);
+        if (!creatureId.isSuccess()) {
+            return Result<std::vector<DialogScriptTurn>>{creatureId.getError().value()};
+        }
+        if (!text.isSuccess()) {
+            return Result<std::vector<DialogScriptTurn>>{text.getError().value()};
+        }
+        if (!isUuidShape(creatureId.getValue().value())) {
+            return json_codec::invalid<std::vector<DialogScriptTurn>>(
+                fmt::format("{}.creature_id must be a UUID", itemPath));
+        }
+        parsedTurns.push_back({creatureId.getValue().value(), text.getValue().value()});
+    }
+    return Result<std::vector<DialogScriptTurn>>{std::move(parsedTurns)};
+}
+
+Result<std::vector<CreatureRenderChoice>> parseRenderChoices(const nlohmann::json &json, std::string_view path) {
+    auto choicesResult = json_codec::requiredArray(json, path, "source_render_choices", MAX_ANIMATION_RENDER_CHOICES);
+    if (!choicesResult.isSuccess()) {
+        return Result<std::vector<CreatureRenderChoice>>{choicesResult.getError().value()};
+    }
+    const auto &choices = choicesResult.getValue()->get();
+
+    std::vector<CreatureRenderChoice> parsedChoices;
+    parsedChoices.reserve(choices.size());
+    std::unordered_set<std::string> seenCreatureIds;
+    for (std::size_t index = 0; index < choices.size(); ++index) {
+        const auto itemPath = fmt::format("{}.source_render_choices[{}]", path, index);
+        auto itemFields = json_codec::rejectUnknownFields(
+            choices[index], itemPath,
+            {"creature_id", "speech_loop_animation_id", "idle_animation_id", "idle_start_offset"});
+        if (!itemFields.isSuccess()) {
+            return Result<std::vector<CreatureRenderChoice>>{itemFields.getError().value()};
+        }
+        auto creatureId = json_codec::requiredString(choices[index], itemPath, "creature_id", 36);
+        auto speechId = json_codec::requiredString(choices[index], itemPath, "speech_loop_animation_id", 36);
+        auto idleId = json_codec::optionalString(choices[index], itemPath, "idle_animation_id", 36);
+        auto idleOffset = json_codec::optionalUnsigned<uint32_t>(choices[index], itemPath, "idle_start_offset");
+        if (!creatureId.isSuccess()) {
+            return Result<std::vector<CreatureRenderChoice>>{creatureId.getError().value()};
+        }
+        if (!speechId.isSuccess()) {
+            return Result<std::vector<CreatureRenderChoice>>{speechId.getError().value()};
+        }
+        if (!idleId.isSuccess()) {
+            return Result<std::vector<CreatureRenderChoice>>{idleId.getError().value()};
+        }
+        if (!idleOffset.isSuccess()) {
+            return Result<std::vector<CreatureRenderChoice>>{idleOffset.getError().value()};
+        }
+        CreatureRenderChoice choice{creatureId.getValue().value(), speechId.getValue().value(),
+                                    idleId.getValue().value().value_or(std::string{}),
+                                    idleOffset.getValue().value().value_or(0)};
+        if (!isUuidShape(choice.creature_id) || !isUuidShape(choice.speech_loop_animation_id) ||
+            (!choice.idle_animation_id.empty() && !isUuidShape(choice.idle_animation_id))) {
+            return json_codec::invalid<std::vector<CreatureRenderChoice>>(
+                fmt::format("{} contains a non-UUID creature or animation id", itemPath));
+        }
+        if (!seenCreatureIds.insert(choice.creature_id).second) {
+            return json_codec::invalid<std::vector<CreatureRenderChoice>>(
+                fmt::format("{}.creature_id duplicates an earlier render choice", itemPath));
+        }
+        parsedChoices.push_back(std::move(choice));
+    }
+    return Result<std::vector<CreatureRenderChoice>>{std::move(parsedChoices)};
+}
+
+Result<nlohmann::json> parseStagePlacements(const nlohmann::json &json, std::string_view path) {
+    auto placementsResult = json_codec::requiredArray(json, path, "source_stage_placements", MAX_STAGE_PLACEMENTS);
+    if (!placementsResult.isSuccess()) {
+        return Result<nlohmann::json>{placementsResult.getError().value()};
+    }
+    const auto &placements = placementsResult.getValue()->get();
+    const auto serializedSize = placements.dump().size();
+    if (serializedSize > MAX_ANIMATION_STAGE_PLACEMENTS_BYTES) {
+        return json_codec::invalid<nlohmann::json>(fmt::format("{}.source_stage_placements is {} bytes; maximum is {}",
+                                                               path, serializedSize,
+                                                               MAX_ANIMATION_STAGE_PLACEMENTS_BYTES));
+    }
+    auto extensionResult = validatePlacementExtension(placements, fmt::format("{}.source_stage_placements", path));
+    if (!extensionResult.isSuccess()) {
+        return Result<nlohmann::json>{extensionResult.getError().value()};
+    }
+
+    std::unordered_set<std::string> seenCreatureIds;
+    for (std::size_t index = 0; index < placements.size(); ++index) {
+        const auto itemPath = fmt::format("{}.source_stage_placements[{}]", path, index);
+        const auto &placement = placements[index];
+        if (!placement.is_object()) {
+            return json_codec::invalid<nlohmann::json>(fmt::format("{} must be an object", itemPath));
+        }
+        auto creatureId = json_codec::requiredString(placement, itemPath, "creature_id", 36);
+        if (!creatureId.isSuccess()) {
+            return Result<nlohmann::json>{creatureId.getError().value()};
+        }
+        if (!isUuidShape(creatureId.getValue().value())) {
+            return json_codec::invalid<nlohmann::json>(fmt::format("{}.creature_id must be a UUID", itemPath));
+        }
+        if (!seenCreatureIds.insert(creatureId.getValue().value()).second) {
+            return json_codec::invalid<nlohmann::json>(
+                fmt::format("{}.creature_id duplicates an earlier stage placement", itemPath));
+        }
+        for (const std::string_view coordinate : {"x", "y", "z"}) {
+            auto iterator = placement.find(coordinate);
+            if (iterator == placement.end() || !iterator->is_number()) {
+                return json_codec::invalid<nlohmann::json>(fmt::format("{}.{} must be a number", itemPath, coordinate));
+            }
+            const auto value = iterator->get<double>();
+            if (!std::isfinite(value) || std::abs(value) > STAGE_COORD_LIMIT) {
+                return json_codec::invalid<nlohmann::json>(fmt::format("{}.{} must be finite and between -{} and {}",
+                                                                       itemPath, coordinate, STAGE_COORD_LIMIT,
+                                                                       STAGE_COORD_LIMIT));
+            }
+        }
+        auto yaw = placement.find("yaw");
+        if (yaw == placement.end() || !yaw->is_number() || !std::isfinite(yaw->get<double>())) {
+            return json_codec::invalid<nlohmann::json>(fmt::format("{}.yaw must be a finite number", itemPath));
+        }
+    }
+    return Result<nlohmann::json>{placements};
+}
+
 } // namespace
 
 nlohmann::json animationMetadataToJson(const AnimationMetadata &metadata) {
@@ -191,128 +329,24 @@ Result<AnimationMetadata> animationMetadataFromJson(const nlohmann::json &json, 
                 "{}.source_stage_id and source_stage_updated_at must both be present or both be absent", path));
 
         if (json.contains("source_script_turns")) {
-            const auto &turns = json["source_script_turns"];
-            if (!turns.is_array())
-                return json_codec::invalid<AnimationMetadata>(
-                    fmt::format("{}.source_script_turns must be an array", path));
-            if (turns.size() > MAX_DIALOG_SCRIPT_TURNS)
-                return json_codec::invalid<AnimationMetadata>(
-                    fmt::format("{}.source_script_turns has {} entries; maximum is {}", path, turns.size(),
-                                MAX_DIALOG_SCRIPT_TURNS));
-            metadata.source_script_turns.reserve(turns.size());
-            for (std::size_t index = 0; index < turns.size(); ++index) {
-                const auto itemPath = fmt::format("{}.source_script_turns[{}]", path, index);
-                auto itemFields = json_codec::rejectUnknownFields(turns[index], itemPath, {"creature_id", "text"});
-                if (!itemFields.isSuccess())
-                    return Result<AnimationMetadata>{itemFields.getError().value()};
-                auto creatureId = json_codec::requiredString(turns[index], itemPath, "creature_id", 36);
-                auto text =
-                    json_codec::requiredString(turns[index], itemPath, "text", MAX_DIALOG_SCRIPT_TURN_TEXT, true);
-                if (!creatureId.isSuccess())
-                    return Result<AnimationMetadata>{creatureId.getError().value()};
-                if (!text.isSuccess())
-                    return Result<AnimationMetadata>{text.getError().value()};
-                if (!isUuidShape(creatureId.getValue().value()))
-                    return json_codec::invalid<AnimationMetadata>(
-                        fmt::format("{}.creature_id must be a UUID", itemPath));
-                metadata.source_script_turns.push_back({creatureId.getValue().value(), text.getValue().value()});
-            }
+            auto turns = parseScriptTurns(json, path);
+            if (!turns.isSuccess())
+                return Result<AnimationMetadata>{turns.getError().value()};
+            metadata.source_script_turns = std::move(turns.getValue().value());
         }
 
         if (json.contains("source_render_choices")) {
-            const auto &choices = json["source_render_choices"];
-            if (!choices.is_array())
-                return json_codec::invalid<AnimationMetadata>(
-                    fmt::format("{}.source_render_choices must be an array", path));
-            if (choices.size() > MAX_ANIMATION_RENDER_CHOICES)
-                return json_codec::invalid<AnimationMetadata>(
-                    fmt::format("{}.source_render_choices has {} entries; maximum is {}", path, choices.size(),
-                                MAX_ANIMATION_RENDER_CHOICES));
-            metadata.source_render_choices.reserve(choices.size());
-            std::unordered_set<std::string> seenCreatureIds;
-            for (std::size_t index = 0; index < choices.size(); ++index) {
-                const auto itemPath = fmt::format("{}.source_render_choices[{}]", path, index);
-                auto itemFields = json_codec::rejectUnknownFields(
-                    choices[index], itemPath,
-                    {"creature_id", "speech_loop_animation_id", "idle_animation_id", "idle_start_offset"});
-                if (!itemFields.isSuccess())
-                    return Result<AnimationMetadata>{itemFields.getError().value()};
-                auto creatureId = json_codec::requiredString(choices[index], itemPath, "creature_id", 36);
-                auto speechId = json_codec::requiredString(choices[index], itemPath, "speech_loop_animation_id", 36);
-                auto idleId = json_codec::optionalString(choices[index], itemPath, "idle_animation_id", 36);
-                auto idleOffset = json_codec::optionalUnsigned<uint32_t>(choices[index], itemPath, "idle_start_offset");
-                if (!creatureId.isSuccess())
-                    return Result<AnimationMetadata>{creatureId.getError().value()};
-                if (!speechId.isSuccess())
-                    return Result<AnimationMetadata>{speechId.getError().value()};
-                if (!idleId.isSuccess())
-                    return Result<AnimationMetadata>{idleId.getError().value()};
-                if (!idleOffset.isSuccess())
-                    return Result<AnimationMetadata>{idleOffset.getError().value()};
-                CreatureRenderChoice choice{creatureId.getValue().value(), speechId.getValue().value(),
-                                            idleId.getValue().value().value_or(std::string{}),
-                                            idleOffset.getValue().value().value_or(0)};
-                if (!isUuidShape(choice.creature_id) || !isUuidShape(choice.speech_loop_animation_id) ||
-                    (!choice.idle_animation_id.empty() && !isUuidShape(choice.idle_animation_id)))
-                    return json_codec::invalid<AnimationMetadata>(
-                        fmt::format("{} contains a non-UUID creature or animation id", itemPath));
-                if (!seenCreatureIds.insert(choice.creature_id).second)
-                    return json_codec::invalid<AnimationMetadata>(
-                        fmt::format("{}.creature_id duplicates an earlier render choice", itemPath));
-                metadata.source_render_choices.push_back(std::move(choice));
-            }
+            auto choices = parseRenderChoices(json, path);
+            if (!choices.isSuccess())
+                return Result<AnimationMetadata>{choices.getError().value()};
+            metadata.source_render_choices = std::move(choices.getValue().value());
         }
 
         if (json.contains("source_stage_placements")) {
-            const auto &placements = json["source_stage_placements"];
-            if (!placements.is_array())
-                return json_codec::invalid<AnimationMetadata>(
-                    fmt::format("{}.source_stage_placements must be an array", path));
-            if (placements.size() > MAX_STAGE_PLACEMENTS)
-                return json_codec::invalid<AnimationMetadata>(
-                    fmt::format("{}.source_stage_placements has {} entries; maximum is {}", path, placements.size(),
-                                MAX_STAGE_PLACEMENTS));
-            const auto serializedSize = placements.dump().size();
-            if (serializedSize > MAX_ANIMATION_STAGE_PLACEMENTS_BYTES)
-                return json_codec::invalid<AnimationMetadata>(
-                    fmt::format("{}.source_stage_placements is {} bytes; maximum is {}", path, serializedSize,
-                                MAX_ANIMATION_STAGE_PLACEMENTS_BYTES));
-            auto extensionResult =
-                validatePlacementExtension(placements, fmt::format("{}.source_stage_placements", path));
-            if (!extensionResult.isSuccess())
-                return Result<AnimationMetadata>{extensionResult.getError().value()};
-            std::unordered_set<std::string> seenCreatureIds;
-            for (std::size_t index = 0; index < placements.size(); ++index) {
-                const auto itemPath = fmt::format("{}.source_stage_placements[{}]", path, index);
-                const auto &placement = placements[index];
-                if (!placement.is_object())
-                    return json_codec::invalid<AnimationMetadata>(fmt::format("{} must be an object", itemPath));
-                auto creatureId = json_codec::requiredString(placement, itemPath, "creature_id", 36);
-                if (!creatureId.isSuccess())
-                    return Result<AnimationMetadata>{creatureId.getError().value()};
-                if (!isUuidShape(creatureId.getValue().value()))
-                    return json_codec::invalid<AnimationMetadata>(
-                        fmt::format("{}.creature_id must be a UUID", itemPath));
-                if (!seenCreatureIds.insert(creatureId.getValue().value()).second)
-                    return json_codec::invalid<AnimationMetadata>(
-                        fmt::format("{}.creature_id duplicates an earlier stage placement", itemPath));
-                for (const std::string_view coordinate : {"x", "y", "z"}) {
-                    auto iterator = placement.find(coordinate);
-                    if (iterator == placement.end() || !iterator->is_number())
-                        return json_codec::invalid<AnimationMetadata>(
-                            fmt::format("{}.{} must be a number", itemPath, coordinate));
-                    const auto value = iterator->get<double>();
-                    if (!std::isfinite(value) || std::abs(value) > STAGE_COORD_LIMIT)
-                        return json_codec::invalid<AnimationMetadata>(
-                            fmt::format("{}.{} must be finite and between -{} and {}", itemPath, coordinate,
-                                        STAGE_COORD_LIMIT, STAGE_COORD_LIMIT));
-                }
-                auto yaw = placement.find("yaw");
-                if (yaw == placement.end() || !yaw->is_number() || !std::isfinite(yaw->get<double>()))
-                    return json_codec::invalid<AnimationMetadata>(
-                        fmt::format("{}.yaw must be a finite number", itemPath));
-            }
-            metadata.source_stage_placements = placements;
+            auto placements = parseStagePlacements(json, path);
+            if (!placements.isSuccess())
+                return Result<AnimationMetadata>{placements.getError().value()};
+            metadata.source_stage_placements = std::move(placements.getValue().value());
         }
 
         return Result<AnimationMetadata>{metadata};

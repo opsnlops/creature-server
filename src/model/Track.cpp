@@ -69,20 +69,13 @@ Result<Track> trackFromJson(const nlohmann::json &json, std::string_view path) {
                 fmt::format("{} must contain exactly one of creature_id or fixture_id", path));
         }
 
-        const auto framesIterator = json.find("frames");
-        if (framesIterator == json.end()) {
-            return json_codec::invalid<Track>(fmt::format("{}.frames is required", path));
-        }
-        if (!framesIterator->is_array()) {
-            return json_codec::invalid<Track>(fmt::format("{}.frames must be an array", path));
-        }
-        if (framesIterator->size() > MAX_ANIMATION_FRAMES_PER_TRACK) {
-            return json_codec::invalid<Track>(fmt::format("{}.frames has {} entries; maximum is {}", path,
-                                                          framesIterator->size(), MAX_ANIMATION_FRAMES_PER_TRACK));
-        }
-        track.frames.reserve(framesIterator->size());
-        for (std::size_t index = 0; index < framesIterator->size(); ++index) {
-            const auto &frame = (*framesIterator)[index];
+        auto framesResult = json_codec::requiredArray(json, path, "frames", MAX_ANIMATION_FRAMES_PER_TRACK);
+        if (!framesResult.isSuccess())
+            return Result<Track>{framesResult.getError().value()};
+        const auto &frames = framesResult.getValue()->get();
+        track.frames.reserve(frames.size());
+        for (std::size_t index = 0; index < frames.size(); ++index) {
+            const auto &frame = frames[index];
             if (!frame.is_string()) {
                 return json_codec::invalid<Track>(fmt::format("{}.frames[{}] must be a string", path, index));
             }
