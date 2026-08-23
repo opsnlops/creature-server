@@ -6,12 +6,9 @@
 #include <string>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
-
 #include "model/DialogScriptTypes.h"
 #include "server/namespace-stuffs.h"
+#include <nlohmann/json.hpp>
 
 namespace creatures {
 
@@ -90,133 +87,6 @@ struct DialogScript {
     int64_t created_at{0};
     int64_t updated_at{0};
 };
-
-#include OATPP_CODEGEN_BEGIN(DTO)
-
-class DialogScriptTurnDto : public oatpp::DTO {
-
-    DTO_INIT(DialogScriptTurnDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(creature_id) { info->description = "UUID of the creature who speaks this turn."; }
-    DTO_FIELD(String, creature_id);
-
-    DTO_FIELD_INFO(text) {
-        info->description = "What the creature says. May contain inline ElevenLabs audio tags like [whispering] for "
-                            "expressive delivery; tags are removed from the spoken text but kept in the model input.";
-    }
-    DTO_FIELD(String, text);
-};
-
-class AcceptedVoiceDto : public oatpp::DTO {
-
-    DTO_INIT(AcceptedVoiceDto, DTO)
-
-    DTO_FIELD_INFO(generation_id) { info->description = "UUID of the accepted dialog generation."; }
-    DTO_FIELD(String, generation_id);
-
-    DTO_FIELD_INFO(dialog_cache_key) {
-        info->description = "sha256 of the turns this take was accepted against. When it no longer matches the "
-                            "script's current turns the acceptance is stale — reported, never auto-cleared.";
-    }
-    DTO_FIELD(String, dialog_cache_key);
-
-    DTO_FIELD_INFO(sound_file) {
-        info->description = "Promoted permanent WAV for the accepted take, relative to the sound root. Outlives the "
-                            "24h preview TTL, so the Console can always play it back.";
-    }
-    DTO_FIELD(String, sound_file);
-
-    DTO_FIELD_INFO(accepted_at) { info->description = "Wall-clock milliseconds since epoch when it was accepted."; }
-    DTO_FIELD(Int64, accepted_at);
-};
-
-class DialogBackgroundMusicDto : public oatpp::DTO {
-
-    DTO_INIT(DialogBackgroundMusicDto, DTO)
-
-    DTO_FIELD(String, sound_file);
-    DTO_FIELD(String, generation_id);
-    DTO_FIELD(String, prompt);
-    DTO_FIELD(Int64, accepted_at);
-
-    DTO_FIELD_INFO(source_dialog_generation_id) {
-        info->description = "The voice take this music was composed against. Compare with "
-                            "accepted_voice.generation_id to tell whether the music still matches the performance "
-                            "it was fitted to. Absent on music accepted before this was recorded — show no "
-                            "verdict rather than a passing one.";
-        info->required = false;
-    }
-    DTO_FIELD(String, source_dialog_generation_id);
-
-    DTO_FIELD_INFO(source_dialog_cache_key) {
-        info->description = "sha256 of the script's turns at the time the music was composed.";
-        info->required = false;
-    }
-    DTO_FIELD(String, source_dialog_cache_key);
-};
-
-class DialogScriptDto : public oatpp::DTO {
-
-    DTO_INIT(DialogScriptDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(stage_id) {
-        info->description = "Optional Stage UUID this script is normally rendered against, so re-renders stay "
-                            "consistent. A render request may override it.";
-        info->required = false;
-    }
-    DTO_FIELD(String, stage_id);
-
-    DTO_FIELD_INFO(id) { info->description = "Script UUID. Server-generated on create."; }
-    DTO_FIELD(String, id);
-
-    DTO_FIELD_INFO(title) { info->description = "Human-readable scene title."; }
-    DTO_FIELD(String, title);
-
-    DTO_FIELD_INFO(notes) {
-        info->description = "Free-form notes attached to the script. Not shown to the audience — author's own.";
-        info->required = false;
-    }
-    DTO_FIELD(String, notes);
-
-    DTO_FIELD_INFO(turns) {
-        info->description = "Ordered list of turns. Order matters — speaking order + ElevenLabs cross-speaker "
-                            "reactivity order.";
-    }
-    DTO_FIELD(List<Object<DialogScriptTurnDto>>, turns);
-
-    DTO_FIELD_INFO(background_music) {
-        info->description = "Accepted instrumental background music. sound_file always names the permanent WAV used "
-                            "on dialog channel 17; MP3 is only an on-demand client rendition. Read-only: ordinary "
-                            "script create/update requests cannot set or replace it; use music promotion or the "
-                            "explicit clear-background-music endpoint.";
-        info->required = false;
-    }
-    DTO_FIELD(Object<DialogBackgroundMusicDto>, background_music);
-
-    DTO_FIELD_INFO(accepted_voice) {
-        info->description = "The explicitly accepted voice take, if one has been chosen. Absent means no take has "
-                            "been accepted — renders from this script are blocked until one is.";
-        info->required = false;
-    }
-    DTO_FIELD(Object<AcceptedVoiceDto>, accepted_voice);
-
-    DTO_FIELD_INFO(created_at) {
-        info->description = "Wall-clock milliseconds since Unix epoch when the script was first persisted. "
-                            "Server-managed; ignored on PUT.";
-    }
-    DTO_FIELD(Int64, created_at);
-
-    DTO_FIELD_INFO(updated_at) {
-        info->description = "Wall-clock milliseconds since Unix epoch of the most recent edit. Server-managed; "
-                            "ignored on PUT.";
-    }
-    DTO_FIELD(Int64, updated_at);
-};
-
-#include OATPP_CODEGEN_END(DTO)
-
-oatpp::Object<DialogScriptDto> convertToDto(const DialogScript &script);
-DialogScript convertFromDto(const std::shared_ptr<DialogScriptDto> &scriptDto);
 
 /// Serialize a DialogScript to the JSON shape stored in MongoDB and returned
 /// by the controller. Used by upsert + tests.

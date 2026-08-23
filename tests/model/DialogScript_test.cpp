@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "model/DialogScript.h"
+#include "server/ws/dto/DialogScriptDto.h"
 
 TEST(DialogScript, BackgroundMusicRoundTripsThroughJsonAndDto) {
     creatures::DialogScript script;

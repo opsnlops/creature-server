@@ -522,11 +522,15 @@ add_executable(creature-server
         src/model/CacheInvalidation.h
         src/model/CacheInvalidation.cpp
         src/server/ws/dto/CacheInvalidationDto.h
+        src/server/ws/dto/DialogScriptDto.h
+        src/server/ws/dto/DialogScriptDto.cpp
         src/model/Creature.h
         src/model/Creature.cpp
         src/server/ws/dto/CreatureDto.cpp
         src/model/DmxFixture.h
         src/model/DmxFixture.cpp
+        src/server/ws/dto/DmxFixtureDto.h
+        src/server/ws/dto/DmxFixtureDto.cpp
         src/server/fixture/FixtureBindingDispatcher.h
         src/server/fixture/FixtureBindingDispatcher.cpp
         src/server/fixture/FixturePatternRunner.h
@@ -868,7 +872,9 @@ add_executable(creature-server-test
         src/model/Creature.cpp
         src/server/ws/dto/CreatureDto.cpp
         src/model/DmxFixture.cpp
+        src/server/ws/dto/DmxFixtureDto.cpp
         src/model/DialogScript.cpp
+        src/server/ws/dto/DialogScriptDto.cpp
         src/model/Input.cpp
         src/server/ws/dto/InputDto.cpp
         src/model/StreamFrame.cpp

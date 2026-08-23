@@ -6,7 +6,7 @@
 #include <oatpp/core/macro/codegen.hpp>
 
 #include "model/Animation.h"
-#include "model/DialogScript.h"
+#include "server/ws/dto/DialogScriptDto.h"
 
 namespace creatures {
 

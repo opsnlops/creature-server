@@ -8,6 +8,7 @@
 #include <oatpp/web/protocol/http/Http.hpp>
 
 #include "model/DmxFixture.h"
+#include "server/ws/dto/DmxFixtureDto.h"
 #include "server/ws/dto/FixtureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 
