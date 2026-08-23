@@ -89,10 +89,10 @@ Result<Animation> animationFromJson(const nlohmann::json &json, AnimationJsonSou
             if (!targets.insert(target).second)
                 return json_codec::invalid<Animation>(
                     fmt::format("animation.tracks[{}] duplicates an earlier target", index));
-            if (track.frames.size() != animation.metadata.number_of_frames)
+            if (track.frames.size() > animation.metadata.number_of_frames)
                 return json_codec::invalid<Animation>(
-                    fmt::format("animation.tracks[{}].frames has {} entries but metadata.number_of_frames is {}", index,
-                                track.frames.size(), animation.metadata.number_of_frames));
+                    fmt::format("animation.tracks[{}].frames has {} entries, more than metadata.number_of_frames ({})",
+                                index, track.frames.size(), animation.metadata.number_of_frames));
             for (const auto &frame : track.frames) {
                 if (frame.size() > MAX_ANIMATION_TOTAL_ENCODED_FRAME_BYTES - totalEncodedFrameBytes)
                     return json_codec::invalid<Animation>(
