@@ -38,8 +38,10 @@ Result<Animation> animationFromJson(const nlohmann::json &json, AnimationJsonSou
         const auto metadataIterator = json.find("metadata");
         if (metadataIterator == json.end())
             return json_codec::invalid<Animation>("animation.metadata is required");
-        auto metadata = animationMetadataFromJson(*metadataIterator, "animation.metadata",
-                                                  source == AnimationJsonSource::Persistence);
+        const bool allowLegacyPersistenceFields = source == AnimationJsonSource::Persistence;
+        auto metadata =
+            animationMetadataFromJson(*metadataIterator, "animation.metadata",
+                                      source == AnimationJsonSource::Persistence, allowLegacyPersistenceFields);
         if (!metadata.isSuccess())
             return Result<Animation>{metadata.getError().value()};
         if (metadata.getValue()->animation_id != id.getValue().value())
@@ -71,32 +73,34 @@ Result<Animation> animationFromJson(const nlohmann::json &json, AnimationJsonSou
         std::unordered_set<std::string> trackIds;
         std::unordered_set<std::string> targets;
         for (std::size_t index = 0; index < tracksIterator->size(); ++index) {
-            auto track = trackFromJson((*tracksIterator)[index], fmt::format("animation.tracks[{}]", index));
-            if (!track.isSuccess())
-                return Result<Animation>{track.getError().value()};
-            if (track.getValue()->animation_id != animation.id)
+            auto trackResult = trackFromJson((*tracksIterator)[index], fmt::format("animation.tracks[{}]", index),
+                                             allowLegacyPersistenceFields);
+            if (!trackResult.isSuccess())
+                return Result<Animation>{trackResult.getError().value()};
+            const auto track = trackResult.getValue().value();
+            if (track.animation_id != animation.id)
                 return json_codec::invalid<Animation>(
                     fmt::format("animation.tracks[{}].animation_id must equal animation.id", index));
-            if (!trackIds.insert(track.getValue()->id).second)
+            if (!trackIds.insert(track.id).second)
                 return json_codec::invalid<Animation>(
                     fmt::format("animation.tracks[{}].id duplicates an earlier track", index));
-            const auto target = !track.getValue()->creature_id.empty()
-                                    ? fmt::format("creature:{}", track.getValue()->creature_id)
-                                    : fmt::format("fixture:{}", track.getValue()->fixture_id);
+            const auto target = !track.creature_id.empty() ? fmt::format("creature:{}", track.creature_id)
+                                                           : fmt::format("fixture:{}", track.fixture_id);
             if (!targets.insert(target).second)
                 return json_codec::invalid<Animation>(
                     fmt::format("animation.tracks[{}] duplicates an earlier target", index));
-            if (track.getValue()->frames.size() != animation.metadata.number_of_frames)
+            if (track.frames.size() != animation.metadata.number_of_frames)
                 return json_codec::invalid<Animation>(
                     fmt::format("animation.tracks[{}].frames has {} entries but metadata.number_of_frames is {}", index,
-                                track.getValue()->frames.size(), animation.metadata.number_of_frames));
-            for (const auto &frame : track.getValue()->frames) {
+                                track.frames.size(), animation.metadata.number_of_frames));
+            for (const auto &frame : track.frames) {
                 if (frame.size() > MAX_ANIMATION_TOTAL_ENCODED_FRAME_BYTES - totalEncodedFrameBytes)
-                    return json_codec::invalid<Animation>(fmt::format("animation encoded frame data exceeds {} bytes",
-                                                                      MAX_ANIMATION_TOTAL_ENCODED_FRAME_BYTES));
+                    return json_codec::invalid<Animation>(
+                        fmt::format("animation encoded frame data would reach {} bytes; maximum is {}",
+                                    totalEncodedFrameBytes + frame.size(), MAX_ANIMATION_TOTAL_ENCODED_FRAME_BYTES));
                 totalEncodedFrameBytes += frame.size();
             }
-            animation.tracks.push_back(track.getValue().value());
+            animation.tracks.push_back(track);
         }
         return Result<Animation>{animation};
     } catch (const nlohmann::json::exception &error) {

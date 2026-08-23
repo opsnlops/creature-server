@@ -80,5 +80,6 @@ inline constexpr uint32_t MAX_ANIMATION_MILLISECONDS_PER_FRAME = 1000;
 nlohmann::json animationMetadataToJson(const AnimationMetadata &animationMetadata);
 Result<AnimationMetadata> animationMetadataFromJson(const nlohmann::json &json,
                                                     std::string_view path = "animation.metadata",
-                                                    bool allowTrustedAbsoluteSoundFile = false);
+                                                    bool allowTrustedAbsoluteSoundFile = false,
+                                                    bool allowLegacyPersistenceFields = false);
 } // namespace creatures

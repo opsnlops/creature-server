@@ -26,6 +26,7 @@ inline constexpr std::size_t MAX_ANIMATION_FRAME_ENCODED_BYTES = 684;
 /// Framework-neutral wire/persistence representation. Populated targets are
 /// emitted and absent targets are omitted; input validation owns the XOR rule.
 nlohmann::json trackToJson(const Track &track);
-Result<Track> trackFromJson(const nlohmann::json &json, std::string_view path = "track");
+Result<Track> trackFromJson(const nlohmann::json &json, std::string_view path = "track",
+                            bool allowLegacyNullOptionals = false);
 
 } // namespace creatures

@@ -96,9 +96,9 @@ inline Result<std::string> requiredString(const nlohmann::json &json, std::strin
 
 inline Result<std::optional<std::string>> optionalString(const nlohmann::json &json, std::string_view path,
                                                          std::string_view key, std::size_t maxBytes,
-                                                         bool allowEmpty = false) {
+                                                         bool allowEmpty = false, bool allowNull = false) {
     const auto iterator = json.find(key);
-    if (iterator == json.end()) {
+    if (iterator == json.end() || (allowNull && iterator->is_null())) {
         return Result<std::optional<std::string>>{std::optional<std::string>{}};
     }
     auto valueResult = requiredString(json, path, key, maxBytes, allowEmpty);
@@ -136,8 +136,9 @@ Result<T> requiredUnsigned(const nlohmann::json &json, std::string_view path, st
 
 template <typename T>
 Result<std::optional<T>> optionalUnsigned(const nlohmann::json &json, std::string_view path, std::string_view key,
-                                          T maximum = std::numeric_limits<T>::max()) {
-    if (!json.contains(key)) {
+                                          T maximum = std::numeric_limits<T>::max(), bool allowNull = false) {
+    const auto iterator = json.find(key);
+    if (iterator == json.end() || (allowNull && iterator->is_null())) {
         return Result<std::optional<T>>{std::optional<T>{}};
     }
     auto valueResult = requiredUnsigned<T>(json, path, key, maximum);
@@ -175,8 +176,10 @@ inline Result<int64_t> requiredInt64(const nlohmann::json &json, std::string_vie
 
 inline Result<std::optional<int64_t>> optionalInt64(const nlohmann::json &json, std::string_view path,
                                                     std::string_view key, int64_t minimum = 0,
-                                                    int64_t maximum = std::numeric_limits<int64_t>::max()) {
-    if (!json.contains(key)) {
+                                                    int64_t maximum = std::numeric_limits<int64_t>::max(),
+                                                    bool allowNull = false) {
+    const auto iterator = json.find(key);
+    if (iterator == json.end() || (allowNull && iterator->is_null())) {
         return Result<std::optional<int64_t>>{std::optional<int64_t>{}};
     }
     auto valueResult = requiredInt64(json, path, key, minimum, maximum);

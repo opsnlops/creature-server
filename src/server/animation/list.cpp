@@ -75,21 +75,23 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
         for (auto &&doc : cursor) {
             auto docSpan =
                 creatures::observability->createChildOperationSpan("listAnimations.create-metadata", mongoSpan);
+            if (docSpan) {
+                docSpan->setAttribute("validation.phase", "contract");
+                docSpan->setAttribute("animation.json_source", "persistence");
+            }
             try {
                 auto jsonResult = JsonParser::bsonToJson(doc, "animation document", docSpan);
                 if (!jsonResult.isSuccess()) {
                     auto err = jsonResult.getError().value();
                     if (docSpan) {
-                        docSpan->setError(err.getMessage());
-                        docSpan->setAttribute("error.type", "JsonParsingException");
-                        docSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+                        recordSpanError(docSpan, err.getMessage(), "JsonParsingException", err.getCode());
                     }
                     documentsFailed++;
                     continue;
                 }
                 nlohmann::json json_doc = jsonResult.getValue().value();
 
-                auto metaResult = animationMetadataFromJson(json_doc["metadata"]);
+                auto metaResult = animationMetadataFromJson(json_doc["metadata"], "animation.metadata", true, true);
                 if (!metaResult.isSuccess()) {
                     auto err = metaResult.getError().value();
                     documentsFailed++;
@@ -97,9 +99,7 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
                         fmt::format("Unable to parse JSON to AnimationMetadata: {}", err.getMessage());
                     warn(errorMessage);
                     if (docSpan) {
-                        docSpan->setError(errorMessage);
-                        docSpan->setAttribute("error.type", "DataFormatException");
-                        docSpan->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
+                        recordSpanError(docSpan, errorMessage, "DataFormatException", err.getCode());
                     }
                     continue;
                 }
@@ -118,9 +118,7 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
                 warn(errorMessage);
                 if (docSpan) {
                     docSpan->recordException(e);
-                    docSpan->setError(errorMessage);
-                    docSpan->setAttribute("error.type", "JsonParsingException");
-                    docSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+                    recordSpanError(docSpan, errorMessage, "JsonParsingException", ServerError::InvalidData);
                 }
             }
         }
@@ -128,6 +126,15 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
             mongoSpan->setAttribute("animations.count", static_cast<int64_t>(animations.size()));
             mongoSpan->setAttribute("animations.failed", documentsFailed);
             mongoSpan->setSuccess();
+        }
+        if (dbSpan) {
+            dbSpan->setAttribute("animations.failed", documentsFailed);
+        }
+        if (documentsFailed > 0) {
+            const auto errorMessage = fmt::format("{} stored animation documents could not be parsed", documentsFailed);
+            recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
+            return Result<std::vector<creatures::AnimationMetadata>>{
+                ServerError(ServerError::InvalidData, errorMessage)};
         }
     } catch (const DataFormatException &e) {
         std::string errorMessage = fmt::format("Failed to get all animations: {}", e.what());

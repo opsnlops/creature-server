@@ -171,6 +171,52 @@ TEST(AnimationRoundTripTest, RejectsExplicitNullOptionalNote) {
     EXPECT_FALSE(result.isSuccess());
 }
 
+TEST(AnimationRoundTripTest, PersistenceAcceptsLegacyNullOptionals) {
+    auto animation = makeAnimation();
+    animation.tracks.push_back(makeCreatureTrack(animation.id));
+
+    auto json = serializeLikeTheLegacyApi(animation);
+    json["metadata"]["note"] = nullptr;
+    json["metadata"]["source_stage_id"] = nullptr;
+    json["metadata"]["source_stage_updated_at"] = nullptr;
+    json["metadata"]["source_stage_placements"] = nullptr;
+    json["metadata"]["render_seed"] = nullptr;
+    json["metadata"]["last_updated"] = 1714176000;
+    json["metadata"]["source_render_choices"] =
+        nlohmann::json::array({{{"creature_id", "bbbbbbbb-1111-4222-8333-444455556666"},
+                                {"speech_loop_animation_id", "eeeeeeee-1111-4222-8333-444455556666"},
+                                {"idle_animation_id", ""},
+                                {"idle_start_offset", nullptr}}});
+
+    const auto result = animationFromJson(json, AnimationJsonSource::Persistence);
+    ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError()->getMessage() : "parse failed");
+    EXPECT_TRUE(result.getValue()->tracks[0].fixture_id.empty());
+    EXPECT_TRUE(result.getValue()->metadata.source_script_id.empty());
+    EXPECT_TRUE(result.getValue()->metadata.source_script_turns.empty());
+    EXPECT_TRUE(result.getValue()->metadata.source_stage_id.empty());
+    ASSERT_EQ(result.getValue()->metadata.source_render_choices.size(), 1u);
+    EXPECT_TRUE(result.getValue()->metadata.source_render_choices[0].idle_animation_id.empty());
+    EXPECT_EQ(result.getValue()->metadata.source_render_choices[0].idle_start_offset, 0u);
+}
+
+TEST(AnimationRoundTripTest, ApiRejectsLegacyNullOptionals) {
+    auto animation = makeAnimation();
+    animation.tracks.push_back(makeCreatureTrack(animation.id));
+
+    const auto json = serializeLikeTheLegacyApi(animation);
+    const auto result = animationFromJson(json, AnimationJsonSource::Api);
+    EXPECT_FALSE(result.isSuccess());
+}
+
+TEST(AnimationRoundTripTest, ParsesFrameDataWithoutReferencingATemporaryTrack) {
+    const auto json = makeValidAnimationJson();
+
+    const auto result = animationFromJson(json);
+    ASSERT_TRUE(result.isSuccess()) << (result.getError() ? result.getError()->getMessage() : "parse failed");
+    ASSERT_EQ(result.getValue()->tracks.size(), 1u);
+    EXPECT_EQ(result.getValue()->tracks[0].frames, json["tracks"][0]["frames"].get<std::vector<std::string>>());
+}
+
 TEST(AnimationRoundTripTest, ApiRejectsSoundFilesOutsideTheSoundLibrary) {
     for (const auto *unsafePath : {"/private/secret.wav", "../../secret.wav", "dialog/../secret.wav"}) {
         auto json = makeValidAnimationJson();

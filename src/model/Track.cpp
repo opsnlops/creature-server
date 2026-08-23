@@ -25,7 +25,7 @@ nlohmann::json trackToJson(const Track &track) {
     return json;
 }
 
-Result<Track> trackFromJson(const nlohmann::json &json, std::string_view path) {
+Result<Track> trackFromJson(const nlohmann::json &json, std::string_view path, bool allowLegacyNullOptionals) {
     try {
         auto fieldsResult =
             json_codec::rejectUnknownFields(json, path, {"id", "creature_id", "fixture_id", "animation_id", "frames"});
@@ -36,8 +36,10 @@ Result<Track> trackFromJson(const nlohmann::json &json, std::string_view path) {
         Track track;
         auto idResult = json_codec::requiredString(json, path, "id", 36);
         auto animationIdResult = json_codec::requiredString(json, path, "animation_id", 36);
-        auto creatureIdResult = json_codec::optionalString(json, path, "creature_id", 36);
-        auto fixtureIdResult = json_codec::optionalString(json, path, "fixture_id", 36);
+        auto creatureIdResult =
+            json_codec::optionalString(json, path, "creature_id", 36, false, allowLegacyNullOptionals);
+        auto fixtureIdResult =
+            json_codec::optionalString(json, path, "fixture_id", 36, false, allowLegacyNullOptionals);
         if (!idResult.isSuccess())
             return Result<Track>{idResult.getError().value()};
         if (!animationIdResult.isSuccess())

@@ -87,7 +87,8 @@ Result<std::vector<DialogScriptTurn>> parseScriptTurns(const nlohmann::json &jso
     return Result<std::vector<DialogScriptTurn>>{std::move(parsedTurns)};
 }
 
-Result<std::vector<CreatureRenderChoice>> parseRenderChoices(const nlohmann::json &json, std::string_view path) {
+Result<std::vector<CreatureRenderChoice>> parseRenderChoices(const nlohmann::json &json, std::string_view path,
+                                                             bool allowLegacyEmptyOptionals) {
     auto choicesResult = json_codec::requiredArray(json, path, "source_render_choices", MAX_ANIMATION_RENDER_CHOICES);
     if (!choicesResult.isSuccess()) {
         return Result<std::vector<CreatureRenderChoice>>{choicesResult.getError().value()};
@@ -107,8 +108,11 @@ Result<std::vector<CreatureRenderChoice>> parseRenderChoices(const nlohmann::jso
         }
         auto creatureId = json_codec::requiredString(choices[index], itemPath, "creature_id", 36);
         auto speechId = json_codec::requiredString(choices[index], itemPath, "speech_loop_animation_id", 36);
-        auto idleId = json_codec::optionalString(choices[index], itemPath, "idle_animation_id", 36);
-        auto idleOffset = json_codec::optionalUnsigned<uint32_t>(choices[index], itemPath, "idle_start_offset");
+        auto idleId = json_codec::optionalString(choices[index], itemPath, "idle_animation_id", 36,
+                                                 allowLegacyEmptyOptionals, allowLegacyEmptyOptionals);
+        auto idleOffset =
+            json_codec::optionalUnsigned<uint32_t>(choices[index], itemPath, "idle_start_offset",
+                                                   std::numeric_limits<uint32_t>::max(), allowLegacyEmptyOptionals);
         if (!creatureId.isSuccess()) {
             return Result<std::vector<CreatureRenderChoice>>{creatureId.getError().value()};
         }
@@ -246,13 +250,22 @@ nlohmann::json animationMetadataToJson(const AnimationMetadata &metadata) {
 }
 
 Result<AnimationMetadata> animationMetadataFromJson(const nlohmann::json &json, std::string_view path,
-                                                    bool allowTrustedAbsoluteSoundFile) {
+                                                    bool allowTrustedAbsoluteSoundFile,
+                                                    bool allowLegacyPersistenceFields) {
     try {
-        auto fields = json_codec::rejectUnknownFields(
-            json, path,
-            {"animation_id", "title", "milliseconds_per_frame", "note", "sound_file", "number_of_frames",
-             "multitrack_audio", "source_script_id", "source_script_turns", "source_stage_id",
-             "source_stage_updated_at", "source_stage_placements", "render_seed", "source_render_choices"});
+        auto fields =
+            allowLegacyPersistenceFields
+                ? json_codec::rejectUnknownFields(json, path,
+                                                  {"animation_id", "title", "milliseconds_per_frame", "note",
+                                                   "sound_file", "number_of_frames", "multitrack_audio",
+                                                   "source_script_id", "source_script_turns", "source_stage_id",
+                                                   "source_stage_updated_at", "source_stage_placements", "render_seed",
+                                                   "source_render_choices", "last_updated"})
+                : json_codec::rejectUnknownFields(
+                      json, path,
+                      {"animation_id", "title", "milliseconds_per_frame", "note", "sound_file", "number_of_frames",
+                       "multitrack_audio", "source_script_id", "source_script_turns", "source_stage_id",
+                       "source_stage_updated_at", "source_stage_placements", "render_seed", "source_render_choices"});
         if (!fields.isSuccess())
             return Result<AnimationMetadata>{fields.getError().value()};
 
@@ -260,7 +273,8 @@ Result<AnimationMetadata> animationMetadataFromJson(const nlohmann::json &json, 
         auto title = json_codec::requiredString(json, path, "title", MAX_ANIMATION_TITLE_BYTES);
         auto frameMillis = json_codec::requiredUnsigned<uint32_t>(json, path, "milliseconds_per_frame",
                                                                   MAX_ANIMATION_MILLISECONDS_PER_FRAME);
-        auto note = json_codec::optionalString(json, path, "note", MAX_ANIMATION_NOTE_BYTES, true);
+        auto note = json_codec::optionalString(json, path, "note", MAX_ANIMATION_NOTE_BYTES, true,
+                                               allowLegacyPersistenceFields);
         auto soundFile = json_codec::requiredString(json, path, "sound_file", MAX_ANIMATION_SOUND_FILE_BYTES, true);
         auto frameCount =
             json_codec::requiredUnsigned<uint32_t>(json, path, "number_of_frames", MAX_ANIMATION_FRAMES_PER_TRACK);
@@ -304,10 +318,15 @@ Result<AnimationMetadata> animationMetadataFromJson(const nlohmann::json &json, 
             return json_codec::invalid<AnimationMetadata>(
                 fmt::format("{}.milliseconds_per_frame must be greater than zero", path));
 
-        auto scriptId = json_codec::optionalString(json, path, "source_script_id", 36);
-        auto stageId = json_codec::optionalString(json, path, "source_stage_id", 36);
-        auto stageUpdatedAt = json_codec::optionalInt64(json, path, "source_stage_updated_at");
-        auto renderSeed = json_codec::optionalUnsigned<uint64_t>(json, path, "render_seed");
+        auto scriptId =
+            json_codec::optionalString(json, path, "source_script_id", 36, false, allowLegacyPersistenceFields);
+        auto stageId =
+            json_codec::optionalString(json, path, "source_stage_id", 36, false, allowLegacyPersistenceFields);
+        auto stageUpdatedAt =
+            json_codec::optionalInt64(json, path, "source_stage_updated_at", 0, std::numeric_limits<int64_t>::max(),
+                                      allowLegacyPersistenceFields);
+        auto renderSeed = json_codec::optionalUnsigned<uint64_t>(
+            json, path, "render_seed", std::numeric_limits<uint64_t>::max(), allowLegacyPersistenceFields);
         if (!scriptId.isSuccess())
             return Result<AnimationMetadata>{scriptId.getError().value()};
         if (!stageId.isSuccess())
@@ -328,21 +347,24 @@ Result<AnimationMetadata> animationMetadataFromJson(const nlohmann::json &json, 
             return json_codec::invalid<AnimationMetadata>(fmt::format(
                 "{}.source_stage_id and source_stage_updated_at must both be present or both be absent", path));
 
-        if (json.contains("source_script_turns")) {
+        if (json.contains("source_script_turns") &&
+            !(allowLegacyPersistenceFields && json["source_script_turns"].is_null())) {
             auto turns = parseScriptTurns(json, path);
             if (!turns.isSuccess())
                 return Result<AnimationMetadata>{turns.getError().value()};
             metadata.source_script_turns = std::move(turns.getValue().value());
         }
 
-        if (json.contains("source_render_choices")) {
-            auto choices = parseRenderChoices(json, path);
+        if (json.contains("source_render_choices") &&
+            !(allowLegacyPersistenceFields && json["source_render_choices"].is_null())) {
+            auto choices = parseRenderChoices(json, path, allowLegacyPersistenceFields);
             if (!choices.isSuccess())
                 return Result<AnimationMetadata>{choices.getError().value()};
             metadata.source_render_choices = std::move(choices.getValue().value());
         }
 
-        if (json.contains("source_stage_placements")) {
+        if (json.contains("source_stage_placements") &&
+            !(allowLegacyPersistenceFields && json["source_stage_placements"].is_null())) {
             auto placements = parseStagePlacements(json, path);
             if (!placements.isSuccess())
                 return Result<AnimationMetadata>{placements.getError().value()};
