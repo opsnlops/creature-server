@@ -349,6 +349,10 @@ class Database {
 
     static Result<creatures::Creature> creatureFromJson(json creatureJson,
                                                         std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    /// Adapter for MongoDB documents. `_id` is database-owned metadata, not
+    /// controller configuration, so it is removed before strict config parsing.
+    static Result<creatures::Creature> creatureFromStoredJson(json creatureJson,
+                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     static Result<creatures::DmxFixture> fixtureFromJson(json fixtureJson,
                                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);

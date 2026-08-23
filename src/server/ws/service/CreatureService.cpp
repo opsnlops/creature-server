@@ -1133,9 +1133,8 @@ CreatureService::validateCreatureConfig(const std::string &jsonCreature, std::sh
     if (!creatureResult.isSuccess()) {
         resultDto->valid = false;
         resultDto->error_messages->push_back(creatureResult.getError()->getMessage().c_str());
-        if (span) {
-            span->setError(creatureResult.getError()->getMessage());
-        }
+        recordSpanError(span, creatureResult.getError()->getMessage(), "InvalidData",
+                        creatureResult.getError()->getCode());
         return resultDto;
     }
     if (!creatureResult.getValue().has_value()) {

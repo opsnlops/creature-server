@@ -49,6 +49,12 @@ Result<Creature> Database::parseCreatureJson(json creatureJson, std::shared_ptr<
     return creatureFromJson(std::move(creatureJson), std::move(parentSpan));
 }
 
+Result<Creature> Database::creatureFromStoredJson(json creatureJson, std::shared_ptr<OperationSpan> parentSpan) {
+    if (creatureJson.is_object())
+        creatureJson.erase("_id");
+    return creatureFromJson(std::move(creatureJson), std::move(parentSpan));
+}
+
 Result<bool> Database::has_required_fields(const nlohmann::json &json, const std::vector<std::string> &requiredFields) {
     if (!json.is_object())
         return Result<bool>{ServerError(ServerError::InvalidData, "Expected a JSON object")};

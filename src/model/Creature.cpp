@@ -134,6 +134,9 @@ Result<Creature> creatureFromJson(const nlohmann::json &json, std::string_view p
         auto object = json_codec::requireObject(json, path);
         if (!object.isSuccess())
             return forwardCreatureError(object);
+        if (json.contains("_id")) {
+            return json_codec::invalid<Creature>(fmt::format("{} must not contain reserved database field _id", path));
+        }
 
         auto id = json_codec::requiredString(json, path, "id", 36);
         auto name = json_codec::requiredString(json, path, "name", MAX_CREATURE_NAME_BYTES);

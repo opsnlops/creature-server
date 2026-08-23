@@ -119,7 +119,7 @@ Result<std::vector<creatures::Creature>> Database::getAllCreatures(creatures::So
             }
             json j = jsonResult.getValue().value();
 
-            auto result = creatureFromJson(j, creatureSpan);
+            auto result = creatureFromStoredJson(j, creatureSpan);
             if (!result.isSuccess()) {
                 auto error = result.getError().value();
                 std::string errorMessage =

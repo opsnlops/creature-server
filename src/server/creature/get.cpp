@@ -194,7 +194,7 @@ Result<creatures::Creature> Database::getCreature(const creatureId_t &creatureId
         jsonSpan->setSuccess();
 
     auto fetchSpan = creatures::observability->createChildOperationSpan("getCreature.creatureFromJson", dbSpan);
-    auto result = creatureFromJson(creatureJson.getValue().value(), fetchSpan);
+    auto result = creatureFromStoredJson(creatureJson.getValue().value(), fetchSpan);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
         std::string errorMessage = fmt::format("unable to get a creature by ID: {}", err.getMessage());

@@ -178,7 +178,8 @@ nlohmann::json creatureToJson(const Creature &creature);
 /// Parse and validate the modeled portion of a controller-owned config.
 /// Unknown top-level fields are deliberately tolerated so newer controller
 /// firmware can preserve hardware-specific settings that this server does not
-/// yet model. Nested modeled objects are strict.
+/// yet model. Database-owned `_id` is reserved and rejected. Nested modeled
+/// objects are strict.
 Result<Creature> creatureFromJson(const nlohmann::json &json, std::string_view path = "creature");
 
 /**

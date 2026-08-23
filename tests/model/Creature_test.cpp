@@ -123,6 +123,10 @@ TEST(CreatureJson, RejectsInvalidAggregateConstraints) {
     invalidId["id"] = "beaky";
     EXPECT_FALSE(creatureFromJson(invalidId).isSuccess());
 
+    auto reservedDatabaseId = base;
+    reservedDatabaseId["_id"] = "controller-must-not-set-this";
+    EXPECT_FALSE(creatureFromJson(reservedDatabaseId).isSuccess());
+
     auto duplicateName = base;
     duplicateName["inputs"].push_back({{"name", "beak"}, {"slot", 5}, {"width", 1}, {"joystick_axis", 5}});
     EXPECT_FALSE(creatureFromJson(duplicateName).isSuccess());
