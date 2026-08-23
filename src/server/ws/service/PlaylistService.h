@@ -9,6 +9,7 @@
 #include "model/Playlist.h"
 #include "model/PlaylistStatus.h"
 #include "server/ws/dto/ListDto.h"
+#include "server/ws/dto/PlaylistDto.h"
 #include "server/ws/dto/StatusDto.h"
 
 namespace creatures ::ws {

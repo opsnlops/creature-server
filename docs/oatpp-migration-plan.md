@@ -237,7 +237,7 @@ Migrate leaf models before aggregate models.
 - [ ] `PlaylistStatus`
 - [x] `Animation`
 - [x] `Creature` configuration (runtime state remains a separate snapshot-concurrency checkpoint)
-- [ ] `Playlist`
+- [x] `Playlist`
 - [ ] `Sound` and nested timing/cue types
 - [ ] `DmxFixture` and nested channel/pattern/binding types
 - [ ] `DialogScript` and nested accepted-voice/music types

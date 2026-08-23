@@ -53,7 +53,7 @@ live beside otherwise framework-neutral domain structs.
 | `src/server/ws/dto/InputDto.h` (moved from `src/model/Input.h`) | `InputDto` | Temporary oat++ adapter for nested creature config | Strict model-owned `inputToJson` / `inputFromJson` |
 | `src/model/LogItem.h` | `LogItemDto` | Outbound WebSocket log payload | No neutral codec |
 | `src/model/Notice.h` | `NoticeDto` | Inbound and outbound WebSocket notice payload | No neutral codec |
-| `src/model/Playlist.h` | `PlaylistDto` | REST list/detail/upsert response | Database-owned `playlistFromJson`; no neutral serializer |
+| `src/server/ws/dto/PlaylistDto.h` (moved from `src/model/Playlist.h`) | `PlaylistDto` | Temporary oat++ adapter for REST list/detail/upsert responses | Strict model-owned `playlistToJson` / `playlistFromJson`; trusted database storage strips MongoDB and previously ignored unmodeled fields before parsing |
 | `src/server/ws/dto/PlaylistItemDto.h` (moved from `src/model/PlaylistItem.h`) | `PlaylistItemDto` | Temporary oat++ adapter for nested playlist input/response | Strict model-owned `playlistItemToJson` / `playlistItemFromJson` |
 | `src/model/PlaylistStatus.h` | `PlaylistStatusDto` | REST and outbound WebSocket status payload | No neutral codec |
 | `src/model/Sound.h` | `DialogTurnDto`, `SoundTrackDto`, `MouthCueDto`, `TrackMouthCuesDto`, `WordTimingDto`, `TrackWordsDto`, `SoundDto` | Sound lists and heavy metadata response; dialog-generation support | No complete neutral codec |

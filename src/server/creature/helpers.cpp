@@ -9,8 +9,6 @@
 
 namespace creatures {
 
-extern std::vector<std::string> playlist_required_fields;
-extern std::vector<std::string> playlistitems_required_fields;
 extern std::shared_ptr<ObservabilityManager> observability;
 
 Result<Creature> Database::creatureFromJson(json creatureJson, std::shared_ptr<OperationSpan> parentSpan) {
@@ -82,16 +80,9 @@ Result<bool> Database::validateAnimationJson(const nlohmann::json &json) {
 }
 
 Result<bool> Database::validatePlaylistJson(const nlohmann::json &json) {
-    const auto topLevelOkay = has_required_fields(json, playlist_required_fields);
-    if (!topLevelOkay.isSuccess())
-        return topLevelOkay;
-    if (!json["items"].is_array())
-        return Result<bool>{ServerError(ServerError::InvalidData, "Playlist items must be an array")};
-    for (const auto &item : json["items"]) {
-        const auto itemOkay = has_required_fields(item, playlistitems_required_fields);
-        if (!itemOkay.isSuccess())
-            return itemOkay;
-    }
+    const auto result = creatures::playlistFromJson(json);
+    if (!result.isSuccess())
+        return Result<bool>{result.getError().value()};
     return Result<bool>{true};
 }
 

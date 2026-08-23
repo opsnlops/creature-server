@@ -370,6 +370,8 @@ class Database {
      */
     static Result<creatures::Playlist> playlistFromJson(json playlistJson,
                                                         std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    static Result<creatures::Playlist> playlistFromStoredJson(json playlistJson,
+                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
     static Result<creatures::PlaylistItem> playlistItemFromJson(json playlistItemJson,
                                                                 std::shared_ptr<OperationSpan> parentSpan = nullptr);
 

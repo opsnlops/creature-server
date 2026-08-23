@@ -52,4 +52,35 @@ TEST(PlaylistSelection, RejectsEmptyAndOutOfRangeSelections) {
     EXPECT_FALSE(outOfRange.isSuccess());
 }
 
+TEST(PlaylistJson, RoundTripsStrictNeutralCodec) {
+    const Playlist playlist{"11111111-1111-4111-8111-111111111111",
+                            "Weighted",
+                            {{"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", 2}, {"cccccccc-cccc-4ccc-8ccc-cccccccccccc", 3}},
+                            2};
+    const auto json = playlistToJson(playlist);
+    const auto parsed = playlistFromJson(json);
+    ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
+    EXPECT_EQ(parsed.getValue()->id, playlist.id);
+    EXPECT_EQ(parsed.getValue()->name, playlist.name);
+    EXPECT_EQ(parsed.getValue()->items, playlist.items);
+    EXPECT_EQ(parsed.getValue()->number_of_items, playlist.number_of_items);
+}
+
+TEST(PlaylistJson, RejectsInvalidAggregateConstraints) {
+    nlohmann::json playlist = {{"id", "11111111-1111-4111-8111-111111111111"},
+                               {"name", "Weighted"},
+                               {"number_of_items", 1},
+                               {"items", {{{"animation_id", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}, {"weight", 1}}}}};
+    auto mismatchedCount = playlist;
+    mismatchedCount["number_of_items"] = 2;
+    EXPECT_FALSE(playlistFromJson(mismatchedCount).isSuccess());
+    auto unknownField = playlist;
+    unknownField["_id"] = "not-client-owned";
+    EXPECT_FALSE(playlistFromJson(unknownField).isSuccess());
+    auto duplicateAnimation = playlist;
+    duplicateAnimation["number_of_items"] = 2;
+    duplicateAnimation["items"].push_back(duplicateAnimation["items"][0]);
+    EXPECT_FALSE(playlistFromJson(duplicateAnimation).isSuccess());
+}
+
 } // namespace creatures

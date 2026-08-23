@@ -48,7 +48,7 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
 
     try {
         auto jsonSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.parse-json", upsertSpan);
-        auto jsonResult = JsonParser::parseJsonString(playlistJson, "playlist upsert", jsonSpan);
+        auto jsonResult = JsonParser::parseApiJsonString(playlistJson, "playlist upsert", jsonSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
             recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());
@@ -70,7 +70,9 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         }
 
         auto bsonSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.json-to-bson", upsertSpan);
-        auto bsonResult = JsonParser::jsonStringToBson(playlistJson, fmt::format("playlist {}", playlist.id), bsonSpan);
+        const auto normalizedJson = jsonObject.dump();
+        auto bsonResult =
+            JsonParser::jsonStringToBson(normalizedJson, fmt::format("playlist {}", playlist.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
             auto err = bsonResult.getError().value();
             recordSpanError(upsertSpan, err.getMessage(), "InvalidData", err.getCode());

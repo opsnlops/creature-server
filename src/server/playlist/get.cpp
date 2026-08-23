@@ -165,7 +165,7 @@ Result<creatures::Playlist> Database::getPlaylist(const playlistId_t &playlistId
         jsonSpan->setSuccess();
 
     auto fetchSpan = creatures::observability->createChildOperationSpan("getPlaylist.playlistFromJson", dbSpan);
-    auto result = playlistFromJson(playlistJson.getValue().value(), fetchSpan);
+    auto result = playlistFromStoredJson(playlistJson.getValue().value(), fetchSpan);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
         std::string errorMessage = fmt::format("unable to get a playlist by ID: {}", err.getMessage());
