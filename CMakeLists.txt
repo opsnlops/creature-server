@@ -577,6 +577,8 @@ add_executable(creature-server
         src/server/ws/App.cpp
 
         src/server/ws/dto/AdHocAnimationDto.h
+        src/server/ws/dto/AdHocExchangeDto.h
+        src/server/ws/dto/AdHocExchangeDto.cpp
         src/server/ws/dto/AdHocSoundEntryDto.h
         src/server/ws/dto/AdHocDtoUtils.h
         src/server/ws/dto/AdHocDtoUtils.cpp

@@ -1,15 +1,11 @@
 #pragma once
 
-#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
-
 #include "util/Result.h"
+#include <nlohmann/json.hpp>
 
 namespace creatures {
 
@@ -52,74 +48,5 @@ struct AdHocExchange {
 
 nlohmann::json adHocExchangeToJson(const AdHocExchange &exchange);
 Result<AdHocExchange> adHocExchangeFromJson(const nlohmann::json &json);
-
-#include OATPP_CODEGEN_BEGIN(DTO)
-
-class AdHocExchangePartDto : public oatpp::DTO {
-    DTO_INIT(AdHocExchangePartDto, DTO)
-
-    DTO_FIELD_INFO(index) { info->description = "1-based sentence index, in playback order"; }
-    DTO_FIELD(UInt32, index);
-
-    DTO_FIELD_INFO(animation_id) { info->description = "The ad-hoc animation this sentence played as"; }
-    DTO_FIELD(String, animation_id);
-
-    DTO_FIELD_INFO(text) { info->description = "The sentence's text"; }
-    DTO_FIELD(String, text);
-
-    DTO_FIELD_INFO(duration_ms) { info->description = "Sentence audio duration in milliseconds"; }
-    DTO_FIELD(UInt64, duration_ms);
-};
-
-class AdHocExchangeDto : public oatpp::DTO {
-    DTO_INIT(AdHocExchangeDto, DTO)
-
-    DTO_FIELD_INFO(session_id) { info->description = "The streaming session this exchange records"; }
-    DTO_FIELD(String, session_id);
-
-    DTO_FIELD_INFO(creature_id) { info->description = "The creature that spoke"; }
-    DTO_FIELD(String, creature_id);
-
-    DTO_FIELD_INFO(creature_name) { info->description = "The creature's display name"; }
-    DTO_FIELD(String, creature_name);
-
-    DTO_FIELD_INFO(status) { info->description = "streaming | ready | partial | failed"; }
-    DTO_FIELD(String, status);
-
-    DTO_FIELD_INFO(title) { info->description = "Display title; empty until the session finishes"; }
-    DTO_FIELD(String, title);
-
-    DTO_FIELD_INFO(transcript) { info->description = "Full transcript; empty until the session finishes"; }
-    DTO_FIELD(String, transcript);
-
-    DTO_FIELD_INFO(duration_ms) { info->description = "Stitched audio duration in milliseconds"; }
-    DTO_FIELD(UInt64, duration_ms);
-
-    DTO_FIELD_INFO(created_at) { info->description = "Session start timestamp in ISO8601 format"; }
-    DTO_FIELD(String, created_at);
-
-    DTO_FIELD_INFO(finished_at) {
-        info->description = "Session finish timestamp in ISO8601 format; absent while streaming";
-    }
-    DTO_FIELD(String, finished_at);
-
-    DTO_FIELD_INFO(parts) { info->description = "The sentences of the exchange, in playback order"; }
-    DTO_FIELD(Vector<Object<AdHocExchangePartDto>>, parts);
-};
-
-class AdHocExchangeListDto : public oatpp::DTO {
-    DTO_INIT(AdHocExchangeListDto, DTO)
-
-    DTO_FIELD_INFO(count) { info->description = "Number of exchanges returned"; }
-    DTO_FIELD(UInt32, count);
-
-    DTO_FIELD_INFO(items) { info->description = "Exchanges, newest first"; }
-    DTO_FIELD(Vector<Object<AdHocExchangeDto>>, items);
-};
-
-#include OATPP_CODEGEN_END(DTO)
-
-oatpp::Object<AdHocExchangeDto> convertToDto(const AdHocExchange &exchange,
-                                             const std::chrono::system_clock::time_point &createdAt);
 
 } // namespace creatures

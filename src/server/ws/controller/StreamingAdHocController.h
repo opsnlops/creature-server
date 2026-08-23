@@ -15,6 +15,7 @@
 #include "server/voice/StreamingAdHocSession.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
+#include "server/ws/dto/AdHocExchangeDto.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/dto/StreamingAdHocDto.h"
 #include "server/ws/service/SoundRenditionService.h"
