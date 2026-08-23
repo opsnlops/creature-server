@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -421,6 +422,79 @@ TEST_F(AudioCacheTest, PruneKeepsEntriesWhoseSourceCannotBeStatted) {
     EXPECT_EQ(applied.getValue().value().orphanedEntries, 0U)
         << "an inconclusive stat must never be treated as a missing source";
     EXPECT_NE(cache.tryLoadFromCache(source.string()), nullptr) << "the healthy entry must survive";
+}
+
+TEST_F(AudioCacheTest, DryRunCreatesNoFilesAtAll) {
+    // A dry run must be strictly read-only. The advisory lock is opened with
+    // O_CREAT, so taking it during a preview silently littered one empty .lock
+    // file per cache entry — observed in production, where a dry run reported
+    // zero stale locks and the following apply removed one per entry it
+    // deleted (issue #168).
+    const auto source = writeSource("preview.wav", "preview-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x0A)).isSuccess());
+
+    // A legacy-layout entry: a cache directory that predates advisory locking,
+    // so it has NO sibling .lock. This is what production was full of, and the
+    // only shape that exposes the bug — an entry saved by current code already
+    // has its lock file, leaving nothing for a dry run to create.
+    fs::path hostRoot;
+    for (const auto &entry : fs::directory_iterator(root_ / ".opus_cache")) {
+        if (entry.is_directory()) {
+            hostRoot = entry.path();
+        }
+    }
+    ASSERT_FALSE(hostRoot.empty());
+    const auto legacyEntry = hostRoot / "ancient-entry-no-hash";
+    fs::create_directories(legacyEntry);
+    {
+        std::ofstream stub(legacyEntry / "ch00.opus", std::ios::binary);
+        stub << "legacy";
+    }
+    ASSERT_FALSE(fs::exists(legacyEntry.string() + ".lock"));
+
+    auto snapshot = [&] {
+        std::vector<std::string> paths;
+        for (const auto &entry : fs::recursive_directory_iterator(root_ / ".opus_cache")) {
+            paths.push_back(entry.path().string());
+        }
+        std::sort(paths.begin(), paths.end());
+        return paths;
+    };
+
+    const auto before = snapshot();
+    ASSERT_TRUE(cache.pruneOrphanedEntries(/*dryRun=*/true).isSuccess());
+    const auto after = snapshot();
+
+    EXPECT_EQ(before, after) << "a dry run must not create, remove, or touch any file";
+    EXPECT_FALSE(fs::exists(legacyEntry.string() + ".lock"))
+        << "previewing an entry must not leave an advisory lock file behind";
+}
+
+TEST_F(AudioCacheTest, DryRunStillReportsAbandonedTemporaries) {
+    // The temp sweep must be counted during a preview even though nothing is
+    // deleted — otherwise the dry run under-reports what an apply would do.
+    const auto source = writeSource("previewtemp.wav", "preview-temp-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x0B)).isSuccess());
+
+    fs::path entryDir;
+    for (const auto &entry : fs::recursive_directory_iterator(root_ / ".opus_cache")) {
+        if (entry.is_directory() && entry.path().filename().string().find("previewtemp") != std::string::npos) {
+            entryDir = entry.path();
+        }
+    }
+    ASSERT_FALSE(entryDir.empty());
+    const auto orphanTemp = entryDir / "ch05.opus.tmp.1234.9";
+    {
+        std::ofstream temp(orphanTemp, std::ios::binary);
+        temp << "junk";
+    }
+
+    auto preview = cache.pruneOrphanedEntries(/*dryRun=*/true);
+    ASSERT_TRUE(preview.isSuccess());
+    EXPECT_EQ(preview.getValue().value().temporaryFiles, 1U) << "preview must report temps it would remove";
+    EXPECT_TRUE(fs::exists(orphanTemp)) << "but must not actually remove them";
 }
 
 } // namespace
