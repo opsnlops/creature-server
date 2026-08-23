@@ -11,6 +11,7 @@
 
 #include "model/Creature.h"
 #include "server/runtime/Activity.h"
+#include "server/runtime/RuntimeSnapshot.h"
 #include "server/ws/dto/CreatureConfigValidationDto.h"
 #include "server/ws/dto/CreatureDto.h"
 #include "server/ws/dto/ListDto.h"
@@ -159,7 +160,7 @@ class CreatureService {
     /**
      * Snapshot of all creature runtime states currently held in memory.
      */
-    static std::vector<std::pair<std::string, oatpp::Object<creatures::CreatureRuntimeDto>>> getRuntimeStates();
+    static std::vector<std::pair<std::string, runtime::CreatureRuntimeSnapshot>> getRuntimeStates();
 };
 
 } // namespace creatures::ws

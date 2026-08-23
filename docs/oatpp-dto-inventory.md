@@ -46,12 +46,10 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/AdHocExchange.h` | `AdHocExchangePartDto`, `AdHocExchangeDto`, `AdHocExchangeListDto` | REST response/list; exchange persistence uses the domain type | `adHocExchangeToJson` and `adHocExchangeFromJson` |
 | `src/model/Animation.h` | `AnimationDto` | REST response and accepted POST/ad-hoc input | Strict model-owned `animationToJson` / `animationFromJson`; API and persistence envelopes are distinct |
 | `src/model/AnimationMetadata.h` | `CreatureRenderChoiceDto`, `AnimationMetadataDto` | Animation list/detail response and nested input | Strict model-owned `animationMetadataToJson` / `animationMetadataFromJson` |
-| `src/server/ws/dto/CacheInvalidationDto.h` (moved from `src/model/CacheInvalidation.h`) | `CacheInvalidationDto` | Temporary oat++ adapter for outbound WebSocket invalidations | Strict model-owned `cacheInvalidationToJson` / `cacheInvalidationFromJson` |
 | `src/server/ws/dto/CreatureDto.h` (moved from `src/model/Creature.h`) | `CreatureRuntimeErrorDto`, `CreatureRuntimeCountersDto`, `CreatureRuntimeActivityDto`, `CreatureRuntimeDto`, `GazeAxisDto`, `GazeConfigDto`, `CreatureDto` | Temporary oat++ adapter for REST creature responses, runtime-counter WebSocket payload, and nested config | Strict model-owned `creatureToJson` / `creatureFromJson`; controller-owned unknown top-level config fields are preserved |
 | `src/model/DialogScript.h` | `DialogScriptTurnDto`, `AcceptedVoiceDto`, `DialogBackgroundMusicDto`, `DialogScriptDto` | Primarily REST and job response; input is already parsed from raw JSON | `dialogScriptToJson`; database-owned `dialogScriptFromJson` |
 | `src/model/DmxFixture.h` | `FixtureChannelDto`, `FixturePatternValueDto`, `FixturePatternDto`, `FixtureBindingDto`, `DmxFixtureDto` | REST responses; config input is already parsed from raw JSON | Database-owned `fixtureFromJson`; no complete neutral serializer |
 | `src/server/ws/dto/InputDto.h` (moved from `src/model/Input.h`) | `InputDto` | Temporary oat++ adapter for nested creature config | Strict model-owned `inputToJson` / `inputFromJson` |
-| `src/server/ws/dto/LogItemDto.h` (moved from `src/model/LogItem.h`) | `LogItemDto` | Outbound WebSocket log payload | Strict model-owned `logItemToJson` / `logItemFromJson` |
 | `src/server/ws/dto/NoticeDto.h` (moved from `src/model/Notice.h`) | `NoticeDto` | Temporary oat++ adapter for inbound and outbound WebSocket notices | Strict model-owned `noticeToJson` / `noticeFromJson` |
 | `src/server/ws/dto/PlaylistDto.h` (moved from `src/model/Playlist.h`) | `PlaylistDto` | Temporary oat++ adapter for REST list/detail/upsert responses | Strict model-owned `playlistToJson` / `playlistFromJson`; trusted database storage strips MongoDB and previously ignored unmodeled fields before parsing |
 | `src/server/ws/dto/PlaylistItemDto.h` (moved from `src/model/PlaylistItem.h`) | `PlaylistItemDto` | Temporary oat++ adapter for nested playlist input/response | Strict model-owned `playlistItemToJson` / `playlistItemFromJson` |
@@ -59,9 +57,8 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/Sound.h` | `DialogTurnDto`, `SoundTrackDto`, `MouthCueDto`, `TrackMouthCuesDto`, `WordTimingDto`, `TrackWordsDto`, `SoundDto` | Sound lists and heavy metadata response; dialog-generation support | No complete neutral codec |
 | `src/model/Stage.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned placement and audio keys | `stageToJson`; database-owned `stageFromJson` |
 | `src/model/Storyboard.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned tile action keys | `storyboardToJson`; database-owned `storyboardFromJson` |
-| `src/server/ws/dto/StreamFrameDto.h` (moved from `src/model/StreamFrame.h`) | `StreamFrameDto` | Inbound stream command and outbound WebSocket frame | Strict model-owned `streamFrameToJson` / `streamFrameFromJson`; valid UUID, E1.31 universe, and capped 512-byte decoded DMX payload |
+| `src/model/StreamFrame.h` | — | Framework-neutral inbound stream command | Strict model-owned `streamFrameToJson` / `streamFrameFromJson`; valid UUID, E1.31 universe, and capped 512-byte decoded DMX payload |
 | `src/model/Track.h` | `TrackDto` | Nested animation input/response | Strict model-owned `trackToJson` / `trackFromJson` |
-| `src/server/ws/dto/VirtualStatusLightsDto.h` (moved from `src/model/VirtualStatusLights.h`) | `VirtualStatusLightsDto` | Outbound WebSocket payload | Strict model-owned `virtualStatusLightsToJson` / `virtualStatusLightsFromJson` |
 
 ### Model observations
 
@@ -78,16 +75,16 @@ live beside otherwise framework-neutral domain structs.
   already arrive as raw JSON. Usage, not the existence of a reverse converter,
   should decide whether a temporary legacy adapter is needed.
 
-## Metrics DTO outside normal DTO directories
+## Metrics response DTO
 
 | File | DTO | Role | Coupling |
 |---|---|---|---|
-| `src/server/metrics/counters.h` | `SystemCountersDto` | REST metrics response and nested outbound WebSocket counter message | `SystemCounters::convertToDto()` constructs the 41-field DTO; the 1 ms counter-send event serializes it through oat++ |
+| `src/server/ws/dto/SystemCountersDto.h` | `SystemCountersDto` | Temporary REST metrics response adapter | `SystemCounters::snapshot()` provides the framework-neutral 41-field value snapshot; only the REST adapter constructs the DTO |
 
-This DTO is a migration hotspot despite being only one class: it has 41 fields,
-is used by both REST and WebSockets, and is constructed from high-frequency
-runtime state. Its replacement should snapshot ordinary counter values first
-and serialize outside any sensitive lock or event-loop critical section.
+The 1 ms counter-send event now uses `SystemCountersSnapshot` and a deep
+`CreatureRuntimeSnapshot`, then renders neutral JSON through
+`WebSocketEnvelope`. The 41-field oat++ DTO remains only for the REST metrics
+endpoint.
 
 ## REST and shared API DTOs
 
@@ -165,8 +162,6 @@ job detail/result serialization together.
 | `FixtureConfigValidationDto.h` | `FixtureConfigValidationDto` | Response |
 | `GenerateLipSyncUploadResponseDto.h` | `RhubarbMetadataDto`, `RhubarbMouthCueDto`, `GenerateLipSyncUploadResponseDto` | Response |
 | `JobCreatedDto.h` | `JobCreatedDto` | Response |
-| `JobProgressDto.h` | `JobProgressDto` | REST/WebSocket shared response payload |
-| `JobCompleteDto.h` | `JobCompleteDto` | REST/WebSocket shared response payload |
 | `JobStateDto.h` | `JobStateDto` | REST response |
 | `SimpleResponseDto.h` | `SimpleResponseDto` | Response |
 | `SpeechToTextDto.h` | `SpeechToTextResponseDto` | Response |
@@ -181,32 +176,22 @@ every controller helper. It needs exact golden tests before replacement.
 
 | File | DTO classes | Payload/use |
 |---|---|---|
-| `WebSocketMessageDto.h` | `WebSocketMessageDto<T>` | Generic `{command, payload}` envelope |
-| `CacheInvalidationMessage.h` | `CacheInvalidationMessage` | Cache invalidation |
-| `CreatureActivityMessage.h` | `IdleStateChangedDto`, `IdleStateChangedMessage`, `CreatureActivityDto`, `CreatureActivityMessage` | Creature runtime/activity state |
-| `JobCompleteMessage.h` | `JobCompleteMessage` | Job completion |
-| `JobProgressMessage.h` | `JobProgressMessage` | Job progress |
-| `LogMessage.h` | `LogMessage` | Server logs |
-| `NoticeMessage.h` | `NoticeMessage` | Notices; matching inbound command also exists |
-| `PlaylistStatusMessage.h` | `PlaylistStatusMessage` | Playlist status |
-| `ServerCountersMessage.h` | `ServerCountersCreatureRuntimeDto`, `ServerCountersPayloadDto`, `ServerCountersMessage` | Metrics plus per-creature runtime snapshot |
-| `StreamFrameMessage.h` | `StreamFrameMessage` | Outbound stream frame |
-| `VirtualStatusLightsMessage.h` | `VirtualStatusLightsMessage` | Virtual status-light state |
+| `WebSocketMessageDto.h` | `WebSocketMessageDto<T>` | Legacy generic `{command, payload}` envelope for remaining oat++ messages |
+
+`src/api/WebSocketEnvelope.h` now renders the framework-neutral outbound
+`{command, payload}` envelope. Cache invalidation, notice, playlist status,
+server log, virtual-status-light, creature-activity, idle-state, counter/runtime,
+and job broadcasts use it; all unused outbound oat++ wrappers have been removed.
 
 ### Inbound command DTOs
 
 | File | DTO classes | Handler |
 |---|---|---|
-| `BasicCommandDto.h` | `BasicCommandDto` | `ClientConnection` first-pass command extraction |
-| `DynamixelSensorReportCommandDTO.h` | `DynamixelSensorReadingDTO`, `DynamixelSensorReportPayloadDTO`, `DynamixelSensorReportCommandDTO` | `DynamixelSensorReportHandler` |
-| `NoticeMessageCommandDTO.h` | `NoticeMessageCommandDTO` | `NoticeMessageHandler` |
-| `SensorReportCommandDTO.h` | `PowerSensorReadingDTO`, `BoardSensorReportPayloadDTO`, `BoardSensorReportCommandDTO` | `SensorReportHandler` |
-| `StreamFrameCommandDTO.h` | `StreamFrameCommandDTO` | `StreamFrameHandler` |
+| `src/server/sensors/SensorReport.{h,cpp}` | `BoardSensorReport`, `DynamixelSensorReport` | Framework-neutral inbound telemetry codecs for both sensor handlers |
 
-The current inbound path first creates a permissive oat++ mapper to extract
-`command`, then each handler reparses the complete message into its own DTO.
-The neutral replacement should parse the JSON document once, validate the
-envelope, and pass the retained `payload` JSON value to the typed handler parser.
+`ClientConnection` now parses each inbound frame once through the capped,
+framework-neutral envelope codec, validates its `command` and object `payload`,
+and dispatches the retained payload JSON value to every typed handler parser.
 
 ## CreatureVoicesLib public DTOs
 
@@ -249,7 +234,7 @@ these throws to `Result<T>`; a signature-only inventory is insufficient.
 | Consumer | DTO/object-mapper use | Migration implication |
 |---|---|---|
 | `src/server/jobs/JobWorker.cpp` | Parses dialog, preview, music, and voice job details; serializes multiple job result DTOs | Migrate with the matching dialog/voice API slice, not as controller cleanup |
-| `src/server/eventloop/events/counter-send.cpp` | Builds `SystemCountersDto`, creature runtime DTOs, and `ServerCountersMessage` every counter-send event | Provide a bounded neutral snapshot and serialization path; preserve 1 ms loop guarantees |
+| `src/server/eventloop/events/counter-send.cpp` | Builds a neutral counter/runtime JSON snapshot and enqueues it through `WebSocketEnvelope` | Preserve the 1 ms loop guarantees while retaining the existing wire shape |
 | `src/server/metrics/StatusLights.cpp` | Builds and serializes `VirtualStatusLightsMessage` | Convert with outbound WebSocket messages |
 | `src/server/metrics/counters.{h,cpp}` | Defines and constructs `SystemCountersDto` | Separate snapshot model from serialization |
 | `src/server/logging/CreatureLogSink.h` | Converts `LogItem` and serializes `LogMessage` | Logging cannot depend on the future transport; emit neutral JSON through the existing broadcast seam |

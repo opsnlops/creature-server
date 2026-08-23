@@ -1,53 +1,70 @@
 #include "gtest/gtest.h"
 
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
+#include <nlohmann/json.hpp>
 
+#include "api/WebSocketEnvelope.h"
 #include "server/runtime/Activity.h"
-#include "server/ws/dto/websocket/CreatureActivityMessage.h"
+#include "server/runtime/RuntimeSnapshot.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
 
-using namespace creatures::ws;
+using namespace creatures;
 
 TEST(CreatureActivityMessageTest, IdleStateSerialization) {
-    auto mapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-
-    auto msg = IdleStateChangedMessage::createShared();
-    msg->command = toString(MessageType::IdleStateChanged).c_str();
-    auto payload = IdleStateChangedDto::createShared();
-    payload->creature_id = "creature-1";
-    payload->idle_enabled = true;
-    payload->timestamp = "2025-01-01T00:00:00Z";
-    msg->payload = payload;
-
-    auto json = mapper->writeToString(msg);
+    const auto json = api::serializeWebSocketEnvelope(
+        ws::toString(ws::MessageType::IdleStateChanged),
+        {{"creature_id", "creature-1"}, {"idle_enabled", true}, {"timestamp", "2025-01-01T00:00:00Z"}});
     EXPECT_EQ(
         json,
         R"({"command":"idle-state-changed","payload":{"creature_id":"creature-1","idle_enabled":true,"timestamp":"2025-01-01T00:00:00Z"}})");
 }
 
 TEST(CreatureActivityMessageTest, ActivitySerialization) {
-    auto mapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+    const auto json = api::webSocketEnvelopeToJson(ws::toString(ws::MessageType::CreatureActivity),
+                                                   {{"creature_id", "beaky"},
+                                                    {"creature_name", "Beaky"},
+                                                    {"state", runtime::toString(runtime::ActivityState::Running)},
+                                                    {"animation_id", "anim-123"},
+                                                    {"session_id", "uuid-1234"},
+                                                    {"reason", runtime::toString(runtime::ActivityReason::AdHoc)},
+                                                    {"timestamp", "2025-02-02T00:00:00Z"}});
 
-    auto msg = CreatureActivityMessage::createShared();
-    msg->command = toString(MessageType::CreatureActivity).c_str();
-    auto payload = CreatureActivityDto::createShared();
-    payload->creature_id = "beaky";
-    payload->state = creatures::runtime::toString(creatures::runtime::ActivityState::Running);
-    payload->animation_id = "anim-123";
-    payload->session_id = "uuid-1234";
-    payload->reason = creatures::runtime::toString(creatures::runtime::ActivityReason::AdHoc);
-    payload->timestamp = "2025-02-02T00:00:00Z";
-    msg->payload = payload;
+    EXPECT_EQ(json, (nlohmann::json{{"command", "creature-activity"},
+                                    {"payload",
+                                     {{"creature_id", "beaky"},
+                                      {"creature_name", "Beaky"},
+                                      {"state", "running"},
+                                      {"animation_id", "anim-123"},
+                                      {"session_id", "uuid-1234"},
+                                      {"reason", "ad_hoc"},
+                                      {"timestamp", "2025-02-02T00:00:00Z"}}}}));
+}
 
-    auto json = mapper->writeToString(msg);
-    auto parsed = mapper->readFromString<oatpp::Object<CreatureActivityMessage>>(json);
-    ASSERT_TRUE(parsed);
-    ASSERT_TRUE(parsed->payload);
-    EXPECT_EQ(parsed->command, toString(MessageType::CreatureActivity));
-    EXPECT_EQ(parsed->payload->creature_id, "beaky");
-    EXPECT_EQ(parsed->payload->state, creatures::runtime::toString(creatures::runtime::ActivityState::Running));
-    EXPECT_EQ(parsed->payload->animation_id, "anim-123");
-    EXPECT_EQ(parsed->payload->session_id, "uuid-1234");
-    EXPECT_EQ(parsed->payload->reason, creatures::runtime::toString(creatures::runtime::ActivityReason::AdHoc));
-    EXPECT_EQ(parsed->payload->timestamp, "2025-02-02T00:00:00Z");
+TEST(CreatureActivityMessageTest, RuntimeSnapshotPreservesNullableFields) {
+    const runtime::CreatureRuntimeSnapshot snapshot{
+        false,
+        {"disabled", std::nullopt, std::nullopt, "disabled", "2025-02-02T00:00:00Z", "2025-02-02T00:00:00Z"},
+        {1, 2, 3, 4, 5, 6, 7, 8},
+        std::nullopt,
+        std::nullopt};
+
+    EXPECT_EQ(runtime::creatureRuntimeSnapshotToJson(snapshot),
+              (nlohmann::json{{"idle_enabled", false},
+                              {"activity",
+                               {{"state", "disabled"},
+                                {"animation_id", nullptr},
+                                {"session_id", nullptr},
+                                {"reason", "disabled"},
+                                {"started_at", "2025-02-02T00:00:00Z"},
+                                {"updated_at", "2025-02-02T00:00:00Z"}}},
+                              {"counters",
+                               {{"sessions_started_total", 1},
+                                {"sessions_cancelled_total", 2},
+                                {"idle_started_total", 3},
+                                {"idle_stopped_total", 4},
+                                {"idle_toggles_total", 5},
+                                {"skips_missing_creature_total", 6},
+                                {"bgm_takeovers_total", 7},
+                                {"audio_resets_total", 8}}},
+                              {"bgm_owner", nullptr},
+                              {"last_error", nullptr}}));
 }

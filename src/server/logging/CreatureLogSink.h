@@ -10,11 +10,8 @@
 #include "spdlog/details/log_msg.h"
 #include "spdlog/sinks/base_sink.h"
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
-
+#include "api/WebSocketEnvelope.h"
 #include "model/LogItem.h"
-#include "server/ws/dto/websocket/LogMessage.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
 
 namespace spdlog::sinks {
@@ -29,9 +26,8 @@ namespace spdlog::sinks {
  */
 template <typename Mutex> class CreatureLogSink final : public base_sink<Mutex> {
   public:
-    explicit CreatureLogSink(std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> &queue) : queue_(queue) {
-        jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    }
+    explicit CreatureLogSink(std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> &queue)
+        : queue_(queue) {}
 
   protected:
     void sink_it_(const details::log_msg &msg) override {
@@ -44,13 +40,8 @@ template <typename Mutex> class CreatureLogSink final : public base_sink<Mutex> 
          */
 
         const auto logItem = convertSpdlogToLogItem(msg);
-        const auto logItemDto = creatures::convertToDto(logItem);
-
-        const auto message = oatpp::Object<creatures::ws::LogMessage>::createShared();
-        message->command = toString(creatures::ws::MessageType::LogMessage);
-        message->payload = logItemDto;
-
-        std::string messageAsString = jsonMapper->writeToString(message);
+        std::string messageAsString = creatures::api::serializeWebSocketEnvelope(
+            toString(creatures::ws::MessageType::LogMessage), creatures::logItemToJson(logItem));
 
         // Off to the queue with you!
         queue_->enqueue(std::move(messageAsString));
@@ -110,6 +101,5 @@ template <typename Mutex> class CreatureLogSink final : public base_sink<Mutex> 
 
   private:
     std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> &queue_;
-    std::shared_ptr<oatpp::parser::json::mapping::ObjectMapper> jsonMapper;
 };
 } // namespace spdlog::sinks

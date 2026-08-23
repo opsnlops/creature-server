@@ -15,6 +15,7 @@
 
 #include "blockingconcurrentqueue.h"
 
+#include "api/WebSocketEnvelope.h"
 #include "exception/exception.h"
 #include "model/Creature.h"
 #include "server/animation/SessionManager.h"
@@ -22,6 +23,7 @@
 #include "server/config.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
+#include "server/runtime/RuntimeSnapshot.h"
 #include "server/storage/Storage.h"
 #include "server/ws/service/FixtureActivityHook.h"
 #include "util/Result.h"
@@ -30,7 +32,6 @@
 #include "server/runtime/Activity.h"
 #include "server/ws/dto/CreatureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
-#include "server/ws/dto/websocket/CreatureActivityMessage.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h" // Include ObservabilityManager
@@ -130,23 +131,59 @@ void setLastIdleAnimationId(const std::string &creatureId, const std::string &an
     lastIdleAnimationByCreature[creatureId] = animationId;
 }
 
+std::optional<std::string> snapshotString(const oatpp::String &value) {
+    if (!value) {
+        return std::nullopt;
+    }
+    return std::string(value);
+}
+
+uint64_t snapshotCounter(const oatpp::UInt64 &value) { return value ? *value : 0; }
+
+runtime::CreatureRuntimeSnapshot snapshotRuntime(const oatpp::Object<creatures::CreatureRuntimeDto> &runtime) {
+    runtime::CreatureRuntimeSnapshot snapshot;
+    if (!runtime) {
+        return snapshot;
+    }
+
+    snapshot.idleEnabled = runtime->idle_enabled ? *runtime->idle_enabled : true;
+    if (runtime->activity) {
+        snapshot.activity = {runtime->activity->state ? std::string(runtime->activity->state) : "stopped",
+                             snapshotString(runtime->activity->animation_id),
+                             snapshotString(runtime->activity->session_id),
+                             runtime->activity->reason ? std::string(runtime->activity->reason) : "disabled",
+                             runtime->activity->started_at ? std::string(runtime->activity->started_at) : "",
+                             runtime->activity->updated_at ? std::string(runtime->activity->updated_at) : ""};
+    }
+    if (runtime->counters) {
+        snapshot.counters = {snapshotCounter(runtime->counters->sessions_started_total),
+                             snapshotCounter(runtime->counters->sessions_cancelled_total),
+                             snapshotCounter(runtime->counters->idle_started_total),
+                             snapshotCounter(runtime->counters->idle_stopped_total),
+                             snapshotCounter(runtime->counters->idle_toggles_total),
+                             snapshotCounter(runtime->counters->skips_missing_creature_total),
+                             snapshotCounter(runtime->counters->bgm_takeovers_total),
+                             snapshotCounter(runtime->counters->audio_resets_total)};
+    }
+    snapshot.bgmOwner = snapshotString(runtime->bgm_owner);
+    if (runtime->last_error) {
+        snapshot.lastError =
+            runtime::ErrorSnapshot{runtime->last_error->message ? std::string(runtime->last_error->message) : "",
+                                   runtime->last_error->timestamp ? std::string(runtime->last_error->timestamp) : ""};
+    }
+    return snapshot;
+}
+
 void broadcastIdleStateChanged(const std::string &creatureId, bool enabled) {
     if (!creatures::websocketOutgoingMessages) {
         warn("CreatureService: websocket queue unavailable, skipping idle state broadcast for {}", creatureId);
         return;
     }
 
-    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    auto msg = creatures::ws::IdleStateChangedMessage::createShared();
-    msg->command = toString(creatures::ws::MessageType::IdleStateChanged).c_str();
-
-    auto payload = creatures::ws::IdleStateChangedDto::createShared();
-    payload->creature_id = creatureId.c_str();
-    payload->idle_enabled = enabled;
-    payload->timestamp = getCurrentTimeISO8601();
-    msg->payload = payload;
-
-    creatures::websocketOutgoingMessages->enqueue(jsonMapper->writeToString(msg));
+    const nlohmann::json payload = {
+        {"creature_id", creatureId}, {"idle_enabled", enabled}, {"timestamp", getCurrentTimeISO8601()}};
+    creatures::websocketOutgoingMessages->enqueue(
+        creatures::api::serializeWebSocketEnvelope(toString(creatures::ws::MessageType::IdleStateChanged), payload));
 }
 
 /**
@@ -154,41 +191,28 @@ void broadcastIdleStateChanged(const std::string &creatureId, bool enabled) {
  * held so the broadcast itself can run outside the lock (resolveCreatureName takes
  * runtimeMutex, so broadcasting under it would self-deadlock) — issue #81.
  */
-struct ActivitySnapshot {
-    oatpp::String state;
-    oatpp::String animation_id;
-    oatpp::String session_id;
-    oatpp::String reason;
-};
-
-void broadcastCreatureActivitySnapshot(const std::string &creatureId, const ActivitySnapshot &snapshot) {
+void broadcastCreatureActivitySnapshot(const std::string &creatureId, const runtime::ActivitySnapshot &snapshot) {
     if (!creatures::websocketOutgoingMessages) {
         warn("CreatureService: websocket queue unavailable, skipping activity broadcast for {}", creatureId);
         return;
     }
-    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    auto msg = creatures::ws::CreatureActivityMessage::createShared();
-    msg->command = toString(creatures::ws::MessageType::CreatureActivity).c_str();
-
-    auto payload = creatures::ws::CreatureActivityDto::createShared();
-    payload->creature_id = creatureId.c_str();
-    payload->creature_name = CreatureService::resolveCreatureName(creatureId).c_str();
-    payload->state = snapshot.state;
-    payload->animation_id = snapshot.animation_id;
-    payload->session_id = snapshot.session_id;
-    payload->reason = snapshot.reason;
-    payload->timestamp = getCurrentTimeISO8601();
-
-    msg->payload = payload;
-    creatures::websocketOutgoingMessages->enqueue(jsonMapper->writeToString(msg));
+    const nlohmann::json payload = {
+        {"creature_id", creatureId},
+        {"creature_name", CreatureService::resolveCreatureName(creatureId)},
+        {"state", snapshot.state},
+        {"animation_id", snapshot.animationId ? nlohmann::json(*snapshot.animationId) : nlohmann::json(nullptr)},
+        {"session_id", snapshot.sessionId ? nlohmann::json(*snapshot.sessionId) : nlohmann::json(nullptr)},
+        {"reason", snapshot.reason},
+        {"timestamp", getCurrentTimeISO8601()}};
+    creatures::websocketOutgoingMessages->enqueue(
+        creatures::api::serializeWebSocketEnvelope(toString(creatures::ws::MessageType::CreatureActivity), payload));
 }
 
 void broadcastCreatureActivity(const std::string &creatureId, const oatpp::Object<creatures::CreatureRuntimeDto> &rt) {
     if (!rt || !rt->activity) {
         return;
     }
-    broadcastCreatureActivitySnapshot(creatureId, ActivitySnapshot{rt->activity->state, rt->activity->animation_id,
-                                                                   rt->activity->session_id, rt->activity->reason});
+    broadcastCreatureActivitySnapshot(creatureId, snapshotRuntime(rt).activity);
 }
 
 bool animationTargetsSingleCreature(const Animation &animation, const creatureId_t &creatureId) {
@@ -291,12 +315,12 @@ bool CreatureService::isCreatureStreaming(const creatureId_t &creatureId) {
            stateStr == creatures::runtime::toString(creatures::runtime::ActivityState::Running);
 }
 
-std::vector<std::pair<std::string, oatpp::Object<creatures::CreatureRuntimeDto>>> CreatureService::getRuntimeStates() {
+std::vector<std::pair<std::string, runtime::CreatureRuntimeSnapshot>> CreatureService::getRuntimeStates() {
     std::lock_guard<std::mutex> lock(runtimeMutex);
-    std::vector<std::pair<std::string, oatpp::Object<creatures::CreatureRuntimeDto>>> snapshot;
+    std::vector<std::pair<std::string, runtime::CreatureRuntimeSnapshot>> snapshot;
     snapshot.reserve(runtimeState.size());
     for (const auto &entry : runtimeState) {
-        snapshot.emplace_back(entry.first, entry.second);
+        snapshot.emplace_back(entry.first, snapshotRuntime(entry.second));
     }
     return snapshot;
 }
@@ -855,7 +879,7 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
         std::string ownerSession;
         auto resolvedState = state;
         auto resolvedReason = reason;
-        ActivitySnapshot snapshot;
+        runtime::ActivitySnapshot snapshot;
 
         {
             // Hold runtimeMutex across the read-check-mutate: the event-loop runner,
@@ -922,8 +946,10 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
                     lastGeneration = activityGeneration;
                 }
 
-                snapshot = ActivitySnapshot{runtime->activity->state, runtime->activity->animation_id,
-                                            runtime->activity->session_id, runtime->activity->reason};
+                snapshot = {
+                    std::string(runtime->activity->state),         snapshotString(runtime->activity->animation_id),
+                    snapshotString(runtime->activity->session_id), std::string(runtime->activity->reason),
+                    std::string(runtime->activity->started_at),    std::string(runtime->activity->updated_at)};
             }
         }
 

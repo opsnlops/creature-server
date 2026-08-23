@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
@@ -187,6 +188,41 @@ inline Result<std::optional<int64_t>> optionalInt64(const nlohmann::json &json, 
         return Result<std::optional<int64_t>>{valueResult.getError().value()};
     }
     return Result<std::optional<int64_t>>{std::optional<int64_t>{valueResult.getValue().value()}};
+}
+
+inline Result<double> requiredFiniteDouble(const nlohmann::json &json, std::string_view path, std::string_view key,
+                                           double minimum = -std::numeric_limits<double>::max(),
+                                           double maximum = std::numeric_limits<double>::max()) {
+    const auto iterator = json.find(key);
+    const auto fieldPath = fmt::format("{}.{}", path, key);
+    if (iterator == json.end()) {
+        return invalid<double>(fmt::format("{} is required", fieldPath));
+    }
+    if (!iterator->is_number()) {
+        return invalid<double>(fmt::format("{} must be a number", fieldPath));
+    }
+    const auto value = iterator->get<double>();
+    if (!std::isfinite(value) || value < minimum || value > maximum) {
+        return invalid<double>(
+            fmt::format("{} must be a finite number between {} and {}", fieldPath, minimum, maximum));
+    }
+    return Result<double>{value};
+}
+
+inline Result<std::optional<double>> optionalFiniteDouble(const nlohmann::json &json, std::string_view path,
+                                                          std::string_view key,
+                                                          double minimum = -std::numeric_limits<double>::max(),
+                                                          double maximum = std::numeric_limits<double>::max(),
+                                                          bool allowNull = false) {
+    const auto iterator = json.find(key);
+    if (iterator == json.end() || (allowNull && iterator->is_null())) {
+        return Result<std::optional<double>>{std::optional<double>{}};
+    }
+    auto valueResult = requiredFiniteDouble(json, path, key, minimum, maximum);
+    if (!valueResult.isSuccess()) {
+        return Result<std::optional<double>>{valueResult.getError().value()};
+    }
+    return Result<std::optional<double>>{std::optional<double>{valueResult.getValue().value()}};
 }
 
 inline Result<bool> requiredBool(const nlohmann::json &json, std::string_view path, std::string_view key) {

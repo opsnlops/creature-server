@@ -41,7 +41,7 @@ oatpp::Object<creatures::SystemCountersDto> MetricsService::getCounters() {
     OATPP_ASSERT_HTTP(!error, Status::CODE_500, errorMessage)
 
     // Return a copy of the system metrics as a DTO
-    return creatures::metrics->convertToDto();
+    return creatures::systemCountersToDto(*creatures::metrics);
 }
 
 } // namespace creatures::ws

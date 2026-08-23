@@ -310,12 +310,16 @@ by the neutral JSON layer; oat++ is only routing and transporting bytes.
 
 ### Phase 5 — Replace WebSocket DTOs
 
-- [ ] Define a neutral `{command, payload}` envelope.
-- [ ] Parse the envelope once and dispatch by command.
+- [x] Define a neutral `{command, payload}` envelope.
+- [x] Parse the envelope once and dispatch by command.
 - [ ] Parse each inbound payload into a command-specific plain struct.
-- [ ] Convert stream-frame, notice, sensor-report, and Dynamixel commands.
+      Notice, stream-frame, board/motor sensor-report, and Dynamixel are complete.
+- [x] Convert stream-frame, notice, sensor-report, and Dynamixel commands.
 - [ ] Convert cache invalidation, activity, jobs, logs, counters, playlist
       status, stream frames, notices, and status-light outbound messages.
+      Cache invalidation, activity, jobs, logs, counters, playlist status,
+      notices, and status lights are complete. Stream frames have no active
+      outbound path; their unused oat++ wrapper has been removed.
 - [ ] Preserve message and aggregate-array size caps.
 - [ ] Preserve fragmented-message handling and malformed-message isolation.
 - [ ] Change message handler interfaces from `oatpp::String` to `std::string_view`

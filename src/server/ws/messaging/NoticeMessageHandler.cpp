@@ -1,48 +1,58 @@
 
 #include "spdlog/spdlog.h"
 #include <oatpp/core/macro/component.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
 #include "model/Notice.h"
+#include "util/ObservabilityManager.h"
 
-#include "NoticeMessageCommandDTO.h"
 #include "NoticeMessageHandler.h"
 
 namespace creatures ::ws {
 
-void NoticeMessageHandler::processMessage(const oatpp::String &message) {
+bool NoticeMessageHandler::processMessage(const nlohmann::json &payload, const oatpp::String &message,
+                                          std::string_view command, std::shared_ptr<SamplingSpan> messageSpan) {
 
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
+    static_cast<void>(message);
+    static_cast<void>(command);
 
     try {
-
-        auto objectMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-        objectMapper->getDeserializer()->getConfig()->allowUnknownFields = false;
-        appLogger->debug("Decoding inbound Notice ({} bytes)", message->size());
-
-        auto dto = objectMapper->readFromString<oatpp::Object<creatures::ws::NoticeMessageCommandDTO>>(message);
-        if (dto && dto->payload) {
-            const auto parsedNotice = noticeFromJson(noticeToJson(convertFromDto(dto->payload)));
-            if (!parsedNotice.isSuccess()) {
-                appLogger->warn("Rejected invalid inbound Notice: {}", parsedNotice.getError()->getMessage());
-                return;
+        const auto parsedNotice = noticeFromJson(payload);
+        if (!parsedNotice.isSuccess()) {
+            const auto errorMessage = parsedNotice.getError()->getMessage();
+            appLogger->warn("Rejected invalid inbound Notice: {}", errorMessage);
+            if (messageSpan) {
+                messageSpan->setError(errorMessage);
+                messageSpan->setAttribute("websocket.rejection.stage", "payload");
+                messageSpan->setAttribute("error.type", "InvalidNotice");
+                messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
             }
-            const auto notice = parsedNotice.getValue().value();
-
-            // Just toss this to the logger, these are mostly for testing
-            appLogger->info("Accepted inbound Notice ({} message bytes)", notice.message.size());
-
-        } else {
-            appLogger->warn("unable to decode an incoming Notice payload");
+            return false;
         }
+        const auto notice = parsedNotice.getValue().value();
 
-    } catch (const std::bad_cast &e) {
-        appLogger->warn("std::bad_cast while processing inbound Notice: {}", e.what());
+        // Just toss this to the logger, these are mostly for testing.
+        appLogger->info("Accepted inbound Notice ({} message bytes)", notice.message.size());
+        return true;
+
     } catch (const std::exception &e) {
-        appLogger->warn("Exception while processing inbound Notice: {}", e.what());
+        const auto errorMessage = fmt::format("Exception while processing inbound Notice: {}", e.what());
+        appLogger->warn(errorMessage);
+        if (messageSpan) {
+            messageSpan->recordException(e);
+            messageSpan->setError(errorMessage);
+            messageSpan->setAttribute("error.type", "std::exception");
+            messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+        }
     } catch (...) {
         appLogger->warn("Unknown exception while processing inbound Notice");
+        if (messageSpan) {
+            messageSpan->setError("Unknown error while processing inbound Notice");
+            messageSpan->setAttribute("error.type", "unknown");
+            messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+        }
     }
+    return false;
 }
 
 } // namespace creatures::ws

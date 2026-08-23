@@ -9,6 +9,7 @@
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/dto/StatusDto.h"
+#include "server/ws/dto/SystemCountersDto.h"
 #include "server/ws/service/MetricsService.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen

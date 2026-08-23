@@ -5,7 +5,6 @@
 #include <optional>
 #include <unordered_set>
 
-#include "model/JsonCodec.h"
 #include "model/StreamFrame.h"
 #include "server/animation/SessionManager.h"
 #include "server/config/Configuration.h"
@@ -14,7 +13,6 @@
 #include "server/eventloop/events/types.h"
 #include "server/metrics/counters.h"
 #include "server/ws/service/CreatureService.h"
-#include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
 #include "util/helpers.h"
@@ -45,7 +43,6 @@ extern std::shared_ptr<SessionManager> sessionManager;
 namespace creatures ::ws {
 
 namespace {
-constexpr double STREAM_FRAME_TRACE_SAMPLING = 0.0005;
 constexpr std::size_t MAX_STREAM_FRAME_MESSAGE_BYTES = 2048;
 
 std::mutex streamingMutex;
@@ -184,16 +181,12 @@ class StreamingTimeoutEvent : public EventBase<StreamingTimeoutEvent> {
 };
 } // namespace
 
-void StreamFrameHandler::processMessage(const oatpp::String &message) {
-
-    // Create a sampling span for this high-frequency operation. createSamplingSpan
-    // returns nullptr when ObservabilityManager is uninitialized, so all subsequent
-    // dereferences need to be guarded.
-    auto messageSpan = creatures::observability ? creatures::observability->createSamplingSpan(
-                                                      "StreamFrameHandler.processMessage", STREAM_FRAME_TRACE_SAMPLING)
-                                                : nullptr;
+bool StreamFrameHandler::processMessage(const nlohmann::json &payload, const oatpp::String &message,
+                                        std::string_view command, std::shared_ptr<SamplingSpan> messageSpan) {
+    static_cast<void>(command);
     if (messageSpan) {
         messageSpan->setAttribute("websocket.message.size", static_cast<int64_t>(message ? message->size() : 0));
+        messageSpan->setAttribute("websocket.handler", "stream-frame");
     }
 
     if (!message || message->size() > MAX_STREAM_FRAME_MESSAGE_BYTES) {
@@ -204,79 +197,44 @@ void StreamFrameHandler::processMessage(const oatpp::String &message) {
             messageSpan->setAttribute("error.type", "InvalidStreamFrameEnvelope");
             messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
         }
-        return;
+        return false;
     }
 
     try {
 
-#ifdef STREAM_FRAME_DEBUG
-        appLogger->debug("Decoding into a streamed frame: {}", std::string(message));
-#endif
-
-        const auto parsedEnvelope = JsonParser::parseApiJsonString(std::string(message), "stream frame message");
-        if (!parsedEnvelope.isSuccess()) {
-            const auto error = parsedEnvelope.getError().value();
-            appLogger->warn("Rejected streamed frame envelope: {}", error.getMessage());
+        if (messageSpan) {
+            messageSpan->setAttribute("stream.frame.phase", "processing");
+        }
+        const auto frameResult = streamFrameFromJson(payload);
+        if (!frameResult.isSuccess()) {
+            const auto error = frameResult.getError().value();
+            appLogger->warn("Rejected streamed frame: {}", error.getMessage());
             if (messageSpan) {
                 messageSpan->setError(error.getMessage());
-                messageSpan->setAttribute("error.type", "InvalidStreamFrameEnvelope");
+                messageSpan->setAttribute("websocket.rejection.stage", "payload");
+                messageSpan->setAttribute("error.type", "InvalidData");
+                messageSpan->setAttribute("error.message", error.getMessage());
                 messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
             }
-            return;
+            return false;
         }
-        const auto envelope = parsedEnvelope.getValue().value();
-        const auto envelopeFields =
-            json_codec::rejectUnknownFields(envelope, "stream_frame_message", {"command", "payload"});
-        if (!envelopeFields.isSuccess()) {
-            const auto error = envelopeFields.getError().value();
-            appLogger->warn("Rejected streamed frame envelope: {}", error.getMessage());
-            if (messageSpan) {
-                messageSpan->setError(error.getMessage());
-                messageSpan->setAttribute("error.type", "InvalidStreamFrameEnvelope");
-                messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-            }
-            return;
+        StreamFrame frame = frameResult.getValue().value();
+        if (messageSpan) {
+            messageSpan->setAttribute("stream.frame.phase", "streaming");
+            messageSpan->setAttribute("message.type", "stream_frame");
+            messageSpan->setAttribute("creature.id", frame.creature_id);
+            messageSpan->setAttribute("streaming.universe", static_cast<int64_t>(frame.universe));
+            messageSpan->setAttribute("stream.frame.encoded_bytes", static_cast<int64_t>(frame.data.size()));
         }
-        const auto payload = envelope.find("payload");
-        if (payload != envelope.end()) {
-            if (messageSpan) {
-                messageSpan->setAttribute("phase", "processing");
-            }
-            const auto frameResult = streamFrameFromJson(*payload);
-            if (!frameResult.isSuccess()) {
-                const auto error = frameResult.getError().value();
-                appLogger->warn("Rejected streamed frame: {}", error.getMessage());
-                if (messageSpan) {
-                    messageSpan->setError(error.getMessage());
-                    messageSpan->setAttribute("error.type", "InvalidData");
-                    messageSpan->setAttribute("error.message", error.getMessage());
-                    messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-                }
-                return;
-            }
-            StreamFrame frame = frameResult.getValue().value();
-            if (messageSpan) {
-                messageSpan->setAttribute("phase", "streaming");
-                messageSpan->setAttribute("message.type", "stream_frame");
-                messageSpan->setAttribute("creature.id", frame.creature_id);
-                messageSpan->setAttribute("streaming.universe", static_cast<int64_t>(frame.universe));
-                messageSpan->setAttribute("stream.frame.encoded_bytes", static_cast<int64_t>(frame.data.size()));
-            }
-            stream(frame, messageSpan);
-        } else {
-            appLogger->warn("unable to cast an incoming message to 'StreamFrame'");
-            if (messageSpan) {
-                messageSpan->setError("StreamFrame message must contain a payload");
-                messageSpan->setAttribute("error.type", "InvalidStreamFrameEnvelope");
-                messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
-            }
-        }
+        stream(frame, messageSpan);
+        return true;
 
     } catch (const std::bad_cast &e) {
         auto errorMessage = fmt::format("Error (std::bad_cast) while processing a StreamFrame message: {}", e.what());
         appLogger->warn(errorMessage);
         if (messageSpan) {
             messageSpan->recordException(e);
+            messageSpan->setError(errorMessage);
             messageSpan->setAttribute("error.type", "std::bad_cast");
             messageSpan->setAttribute("error.message", errorMessage);
             messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
@@ -286,6 +244,7 @@ void StreamFrameHandler::processMessage(const oatpp::String &message) {
         appLogger->warn(errorMessage);
         if (messageSpan) {
             messageSpan->recordException(e);
+            messageSpan->setError(errorMessage);
             messageSpan->setAttribute("error.type", "std::exception");
             messageSpan->setAttribute("error.message", errorMessage);
             messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
@@ -300,6 +259,7 @@ void StreamFrameHandler::processMessage(const oatpp::String &message) {
             messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
         }
     }
+    return false;
 }
 
 void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan) {

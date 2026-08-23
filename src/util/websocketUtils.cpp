@@ -1,23 +1,16 @@
 
 #include <spdlog/spdlog.h>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
-
 #include "blockingconcurrentqueue.h"
 
+#include "api/WebSocketEnvelope.h"
 #include "model/CacheInvalidation.h"
+#include "model/Notice.h"
 #include "server/config.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
-#include "server/ws/dto/JobCompleteDto.h"
-#include "server/ws/dto/JobProgressDto.h"
-#include "server/ws/dto/websocket/CacheInvalidationMessage.h"
-#include "server/ws/dto/websocket/JobCompleteMessage.h"
-#include "server/ws/dto/websocket/JobProgressMessage.h"
+#include "server/jobs/JobPayload.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
-#include "server/ws/dto/websocket/NoticeMessage.h"
-#include "server/ws/dto/websocket/PlaylistStatusMessage.h"
 #include "util/Result.h"
 #include "util/helpers.h"
 #include "util/websocketUtils.h"
@@ -49,15 +42,8 @@ Result<bool> broadcastNoticeToAllClients(const std::string &message) {
         notice.timestamp = getCurrentTimeISO8601();
         notice.message = message;
 
-        // Create the message to send with the command and payload
-        auto noticeMessage = oatpp::Object<ws::NoticeMessage>::createShared();
-        noticeMessage->command = toString(ws::MessageType::Notice);
-        noticeMessage->payload = creatures::convertToDto(notice);
-
-        // Make a JSON mapper
-        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-
-        std::string outgoingMessage = jsonMapper->writeToString(noticeMessage);
+        const std::string outgoingMessage =
+            api::serializeWebSocketEnvelope(toString(ws::MessageType::Notice), noticeToJson(notice));
         debug("Outgoing notice to clients: {}", outgoingMessage);
 
         websocketOutgoingMessages->enqueue(outgoingMessage);
@@ -100,15 +86,8 @@ Result<bool> broadcastCacheInvalidationToAllClients(const CacheType &type) {
         CacheInvalidation cacheInvalidation{};
         cacheInvalidation.cache_type = type;
 
-        // Create the message to send with the command and payload
-        auto invalidateMessage = oatpp::Object<ws::CacheInvalidationMessage>::createShared();
-        invalidateMessage->command = toString(ws::MessageType::CacheInvalidation);
-        invalidateMessage->payload = creatures::convertToDto(cacheInvalidation);
-
-        // Make a JSON mapper
-        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-
-        std::string outgoingMessage = jsonMapper->writeToString(invalidateMessage);
+        const std::string outgoingMessage = api::serializeWebSocketEnvelope(
+            toString(ws::MessageType::CacheInvalidation), cacheInvalidationToJson(cacheInvalidation));
         debug("Outgoing cache invalidation to clients: {}", outgoingMessage);
 
         websocketOutgoingMessages->enqueue(outgoingMessage);
@@ -145,15 +124,8 @@ Result<bool> broadcastPlaylistStatusToAllClients(const PlaylistStatus &playlistS
 
     try {
 
-        // Create the message to send with the command and payload
-        auto playlistStatusMessage = oatpp::Object<ws::PlaylistStatusMessage>::createShared();
-        playlistStatusMessage->command = toString(ws::MessageType::PlaylistStatus);
-        playlistStatusMessage->payload = creatures::convertToDto(playlistStatus);
-
-        // Make a JSON mapper
-        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-
-        std::string outgoingMessage = jsonMapper->writeToString(playlistStatusMessage);
+        const std::string outgoingMessage = api::serializeWebSocketEnvelope(toString(ws::MessageType::PlaylistStatus),
+                                                                            playlistStatusToJson(playlistStatus));
         debug("Outgoing playlist update for clients: {}", outgoingMessage);
 
         websocketOutgoingMessages->enqueue(outgoingMessage);
@@ -176,23 +148,8 @@ Result<bool> broadcastJobProgressToAllClients(const jobs::JobState &jobState) {
     }
 
     try {
-        // Create the DTO
-        auto progressDto = oatpp::Object<ws::JobProgressDto>::createShared();
-        progressDto->job_id = jobState.jobId;
-        progressDto->job_type = jobs::toString(jobState.jobType);
-        progressDto->status = jobs::toString(jobState.status);
-        progressDto->progress = jobState.progress;
-        progressDto->details = jobState.details;
-
-        // Create the message to send with the command and payload
-        auto progressMessage = oatpp::Object<ws::JobProgressMessage>::createShared();
-        progressMessage->command = toString(ws::MessageType::JobProgress);
-        progressMessage->payload = progressDto;
-
-        // Make a JSON mapper
-        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-
-        std::string outgoingMessage = jsonMapper->writeToString(progressMessage);
+        const std::string outgoingMessage =
+            api::serializeWebSocketEnvelope(toString(ws::MessageType::JobProgress), jobs::jobProgressToJson(jobState));
         debug("Outgoing job progress for clients: {}", outgoingMessage);
 
         websocketOutgoingMessages->enqueue(outgoingMessage);
@@ -215,23 +172,8 @@ Result<bool> broadcastJobCompleteToAllClients(const jobs::JobState &jobState) {
     }
 
     try {
-        // Create the DTO
-        auto completeDto = oatpp::Object<ws::JobCompleteDto>::createShared();
-        completeDto->job_id = jobState.jobId;
-        completeDto->job_type = jobs::toString(jobState.jobType);
-        completeDto->status = jobs::toString(jobState.status);
-        completeDto->result = jobState.result;
-        completeDto->details = jobState.details;
-
-        // Create the message to send with the command and payload
-        auto completeMessage = oatpp::Object<ws::JobCompleteMessage>::createShared();
-        completeMessage->command = toString(ws::MessageType::JobComplete);
-        completeMessage->payload = completeDto;
-
-        // Make a JSON mapper
-        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-
-        std::string outgoingMessage = jsonMapper->writeToString(completeMessage);
+        const std::string outgoingMessage =
+            api::serializeWebSocketEnvelope(toString(ws::MessageType::JobComplete), jobs::jobCompleteToJson(jobState));
         debug("Outgoing job completion for clients: {}", outgoingMessage);
 
         websocketOutgoingMessages->enqueue(outgoingMessage);

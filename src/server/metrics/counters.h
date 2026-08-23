@@ -1,207 +1,59 @@
-
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/codegen.hpp>
+#include <nlohmann/json.hpp>
 
-/**
- * A helper class to keep track of some counters for system usage
- */
 namespace creatures {
 
-/*
- * This one is weird. The object is UNDER the DTO.
- */
-
-#include OATPP_CODEGEN_BEGIN(DTO)
-
-class SystemCountersDto : public oatpp::DTO {
-
-    DTO_INIT(SystemCountersDto, DTO /* extends */)
-
-    DTO_FIELD_INFO(totalFrames) { info->description = "Number of frames that have been processed"; }
-    DTO_FIELD(UInt64, totalFrames);
-
-    DTO_FIELD_INFO(eventsProcessed) {
-        info->description = "Number of events that have been processed by the event loop";
-    }
-    DTO_FIELD(UInt64, eventsProcessed);
-
-    DTO_FIELD_INFO(framesStreamed) {
-        info->description = "Number of streaming frames that have been received from clients";
-    }
-    DTO_FIELD(UInt64, framesStreamed);
-
-    DTO_FIELD_INFO(dmxEventsProcessed) { info->description = "Number of DMX events that have been processed"; }
-    DTO_FIELD(UInt64, dmxEventsProcessed);
-
-    DTO_FIELD_INFO(animationsPlayed) { info->description = "Number of animations that have been played"; }
-    DTO_FIELD(UInt64, animationsPlayed);
-
-    DTO_FIELD_INFO(soundsPlayed) { info->description = "Number of sounds that have been played"; }
-    DTO_FIELD(UInt64, soundsPlayed);
-
-    DTO_FIELD_INFO(playlistsStarted) { info->description = "Number of playlists that have been started"; }
-    DTO_FIELD(UInt64, playlistsStarted);
-
-    DTO_FIELD_INFO(playlistsStopped) { info->description = "Number of playlists that have been stopped"; }
-    DTO_FIELD(UInt64, playlistsStopped);
-
-    DTO_FIELD_INFO(playlistsEventsProcessed) {
-        info->description = "Number of events that have been processed by the playlist system";
-    }
-    DTO_FIELD(UInt64, playlistsEventsProcessed);
-
-    DTO_FIELD_INFO(playlistStatusRequests) { info->description = "Number of requests for playlist status"; }
-    DTO_FIELD(UInt64, playlistStatusRequests);
-
-    DTO_FIELD_INFO(restRequestsProcessed) { info->description = "Number of RESTful requests that have been processed"; }
-    DTO_FIELD(UInt64, restRequestsProcessed);
-
-    DTO_FIELD_INFO(rtpEventsProcessed) { info->description = "Number of RTP events that have been processed"; }
-    DTO_FIELD(UInt64, rtpEventsProcessed);
-
-    DTO_FIELD_INFO(rtpSendFailures) { info->description = "Number of RTP output sends that have failed"; }
-    DTO_FIELD(UInt64, rtpSendFailures);
-
-    DTO_FIELD_INFO(rtpSendFailuresSuppressed) {
-        info->description = "Number of RTP send failures whose detailed log/span was rate-limited away";
-    }
-    DTO_FIELD(UInt64, rtpSendFailuresSuppressed);
-
-    DTO_FIELD_INFO(rtpSendRecoveries) {
-        info->description = "Number of times RTP output sends recovered after a run of failures";
-    }
-    DTO_FIELD(UInt64, rtpSendRecoveries);
-
-    DTO_FIELD_INFO(rtpCircuitBreakerTrips) {
-        info->description =
-            "Number of times the RTP send-failure circuit breaker opened and terminated an output generation";
-    }
-    DTO_FIELD(UInt64, rtpCircuitBreakerTrips);
-
-    DTO_FIELD_INFO(rtcpReportsSent) {
-        info->description = "Number of RTCP Sender Report compound packets successfully sent";
-    }
-    DTO_FIELD(UInt64, rtcpReportsSent);
-
-    DTO_FIELD_INFO(rtcpSendFailures) { info->description = "Number of RTCP Sender Report sends that have failed"; }
-    DTO_FIELD(UInt64, rtcpSendFailures);
-
-    DTO_FIELD_INFO(rtpAudioLoadersActive) {
-        info->description = "Number of cooperative RTP audio loader jobs currently running";
-    }
-    DTO_FIELD(UInt64, rtpAudioLoadersActive);
-
-    DTO_FIELD_INFO(rtpAudioLoadsQueued) {
-        info->description = "Number of cooperative RTP audio loader jobs waiting for a worker";
-    }
-    DTO_FIELD(UInt64, rtpAudioLoadsQueued);
-
-    DTO_FIELD_INFO(rtpAudioLoadsAccepted) {
-        info->description = "Number of cooperative RTP audio loader jobs admitted";
-    }
-    DTO_FIELD(UInt64, rtpAudioLoadsAccepted);
-
-    DTO_FIELD_INFO(rtpAudioLoadsCompleted) {
-        info->description = "Number of cooperative RTP audio loader jobs completed";
-    }
-    DTO_FIELD(UInt64, rtpAudioLoadsCompleted);
-
-    DTO_FIELD_INFO(rtpAudioLoadsRejected) {
-        info->description = "Number of cooperative RTP audio loader submissions rejected at admission";
-    }
-    DTO_FIELD(UInt64, rtpAudioLoadsRejected);
-
-    DTO_FIELD_INFO(rtpAudioLoadsCancelled) {
-        info->description = "Number of queued cooperative RTP audio loader jobs abandoned before running";
-    }
-    DTO_FIELD(UInt64, rtpAudioLoadsCancelled);
-
-    DTO_FIELD_INFO(rtpAudioLoadsFailed) {
-        info->description = "Number of cooperative RTP audio loader jobs that threw an exception";
-    }
-    DTO_FIELD(UInt64, rtpAudioLoadsFailed);
-
-    DTO_FIELD_INFO(localAudioPlaybacksActive) {
-        info->description = "Number of local audio device jobs currently running";
-    }
-    DTO_FIELD(UInt64, localAudioPlaybacksActive);
-
-    DTO_FIELD_INFO(localAudioPlaybacksQueued) {
-        info->description = "Number of local audio device jobs waiting in the last-request-wins slot";
-    }
-    DTO_FIELD(UInt64, localAudioPlaybacksQueued);
-
-    DTO_FIELD_INFO(localAudioPlaybacksAccepted) { info->description = "Number of local audio playback jobs admitted"; }
-    DTO_FIELD(UInt64, localAudioPlaybacksAccepted);
-
-    DTO_FIELD_INFO(localAudioPlaybacksCompleted) {
-        info->description = "Number of local audio playback jobs completed";
-    }
-    DTO_FIELD(UInt64, localAudioPlaybacksCompleted);
-
-    DTO_FIELD_INFO(localAudioPlaybacksReplaced) {
-        info->description = "Number of local audio playback jobs replaced by a newer request";
-    }
-    DTO_FIELD(UInt64, localAudioPlaybacksReplaced);
-
-    DTO_FIELD_INFO(localAudioPlaybacksRejected) {
-        info->description = "Number of local audio playback jobs rejected during admission";
-    }
-    DTO_FIELD(UInt64, localAudioPlaybacksRejected);
-
-    DTO_FIELD_INFO(localAudioPlaybacksStopped) {
-        info->description = "Number of local audio playback jobs explicitly stopped or stopped at shutdown";
-    }
-    DTO_FIELD(UInt64, localAudioPlaybacksStopped);
-
-    DTO_FIELD_INFO(localAudioPlaybacksFailed) { info->description = "Number of local audio playback jobs that failed"; }
-    DTO_FIELD(UInt64, localAudioPlaybacksFailed);
-
-    DTO_FIELD_INFO(localAudioPlaybacksTimedOut) {
-        info->description = "Number of local audio playback jobs that timed out";
-    }
-    DTO_FIELD(UInt64, localAudioPlaybacksTimedOut);
-
-    DTO_FIELD_INFO(soundFilesServed) { info->description = "Number of sound files that have been served"; }
-    DTO_FIELD(UInt64, soundFilesServed);
-
-    DTO_FIELD_INFO(websocketConnectionsProcessed) {
-        info->description = "Number of websocket connections that have been processed";
-    }
-    DTO_FIELD(UInt64, websocketConnectionsProcessed);
-
-    DTO_FIELD_INFO(websocketMessagesReceived) {
-        info->description = "Number of messages that have been received by the web socket";
-    }
-    DTO_FIELD(UInt64, websocketMessagesReceived);
-
-    DTO_FIELD_INFO(websocketMessagesSent) {
-        info->description = "Number of messages that have been sent by the web socket";
-    }
-    DTO_FIELD(UInt64, websocketMessagesSent);
-
-    DTO_FIELD_INFO(websocketPingsSent) { info->description = "Number of pings that have been sent by the web socket"; }
-    DTO_FIELD(UInt64, websocketPingsSent);
-
-    DTO_FIELD_INFO(websocketPongsReceived) {
-        info->description = "Number of pongs that have been received by the web socket";
-    }
-    DTO_FIELD(UInt64, websocketPongsReceived);
-
-    DTO_FIELD_INFO(rtpEncoderResets) {
-        info->description = "Number of RTP encoder resets (SSRC rotations) that have been performed";
-    }
-    DTO_FIELD(UInt64, rtpEncoderResets);
+struct SystemCountersSnapshot {
+    uint64_t totalFrames = 0;
+    uint64_t eventsProcessed = 0;
+    uint64_t framesStreamed = 0;
+    uint64_t dmxEventsProcessed = 0;
+    uint64_t animationsPlayed = 0;
+    uint64_t soundsPlayed = 0;
+    uint64_t playlistsStarted = 0;
+    uint64_t playlistsStopped = 0;
+    uint64_t playlistsEventsProcessed = 0;
+    uint64_t playlistStatusRequests = 0;
+    uint64_t restRequestsProcessed = 0;
+    uint64_t rtpEventsProcessed = 0;
+    uint64_t rtpSendFailures = 0;
+    uint64_t rtpSendFailuresSuppressed = 0;
+    uint64_t rtpSendRecoveries = 0;
+    uint64_t rtpCircuitBreakerTrips = 0;
+    uint64_t rtcpReportsSent = 0;
+    uint64_t rtcpSendFailures = 0;
+    uint64_t rtpAudioLoadersActive = 0;
+    uint64_t rtpAudioLoadsQueued = 0;
+    uint64_t rtpAudioLoadsAccepted = 0;
+    uint64_t rtpAudioLoadsCompleted = 0;
+    uint64_t rtpAudioLoadsRejected = 0;
+    uint64_t rtpAudioLoadsCancelled = 0;
+    uint64_t rtpAudioLoadsFailed = 0;
+    uint64_t localAudioPlaybacksActive = 0;
+    uint64_t localAudioPlaybacksQueued = 0;
+    uint64_t localAudioPlaybacksAccepted = 0;
+    uint64_t localAudioPlaybacksCompleted = 0;
+    uint64_t localAudioPlaybacksReplaced = 0;
+    uint64_t localAudioPlaybacksRejected = 0;
+    uint64_t localAudioPlaybacksStopped = 0;
+    uint64_t localAudioPlaybacksFailed = 0;
+    uint64_t localAudioPlaybacksTimedOut = 0;
+    uint64_t soundFilesServed = 0;
+    uint64_t websocketConnectionsProcessed = 0;
+    uint64_t websocketMessagesReceived = 0;
+    uint64_t websocketMessagesSent = 0;
+    uint64_t websocketPingsSent = 0;
+    uint64_t websocketPongsReceived = 0;
+    uint64_t rtpEncoderResets = 0;
 };
 
-#include OATPP_CODEGEN_END(DTO)
+nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapshot);
 
 class SystemCounters {
-
   public:
     SystemCounters();
     ~SystemCounters() = default;
@@ -279,8 +131,7 @@ class SystemCounters {
     uint64_t getWebsocketPingsSent();
     uint64_t getWebsocketPongsReceived();
 
-    // This one is different for how it gets to a DTO since it's not a normal type of object
-    oatpp::Object<SystemCountersDto> convertToDto();
+    SystemCountersSnapshot snapshot() const;
 
   private:
     std::atomic<uint64_t> totalFrames;

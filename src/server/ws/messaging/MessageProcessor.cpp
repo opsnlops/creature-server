@@ -5,13 +5,19 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/component.hpp>
 
+#include "api/WebSocketEnvelope.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
+#include "util/ObservabilityManager.h"
 
 #include "DynamixelSensorReportHandler.h"
 #include "MessageProcessor.h"
 #include "NoticeMessageHandler.h"
 #include "SensorReportHandler.h"
 #include "StreamFrameHandler.h"
+
+namespace creatures {
+extern std::shared_ptr<ObservabilityManager> observability;
+}
 
 namespace creatures::ws {
 
@@ -41,14 +47,54 @@ MessageProcessor::MessageProcessor() {
     appLogger->info("{} message handler{} registered", handlers.size(), handlers.size() != 1 ? "s" : "");
 }
 
-void MessageProcessor::processIncomingMessage(const std::string &command, const oatpp::String &message) {
+void MessageProcessor::processIncomingMessage(const nlohmann::json &envelope, const oatpp::String &message) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
+    auto span = observability ? observability->createSamplingSpan("WebSocket.inbound", 0.0005) : nullptr;
+    if (span) {
+        span->setAttribute("websocket.message.size", static_cast<int64_t>(message ? message->size() : 0));
+    }
+
+    const auto parsedEnvelope = api::webSocketEnvelopeFromJson(envelope);
+    if (!parsedEnvelope.isSuccess()) {
+        const auto errorMessage = parsedEnvelope.getError()->getMessage();
+        appLogger->warn("Rejected inbound WebSocket envelope: {}", errorMessage);
+        if (span) {
+            span->setError(errorMessage);
+            span->setAttribute("websocket.message.size", static_cast<int64_t>(message ? message->size() : 0));
+            span->setAttribute("websocket.envelope.valid", false);
+            span->setAttribute("websocket.rejection.stage", "envelope");
+            span->setAttribute("websocket.error.type", "InvalidEnvelope");
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        }
+        return;
+    }
+    const auto parsedValue = parsedEnvelope.getValue();
+    const auto &parsed = parsedValue.value();
+    if (span) {
+        span->setAttribute("websocket.command", parsed.command);
+        span->setAttribute("websocket.envelope.valid", true);
+    }
+
     // Find the right handler
-    if (handlers.find(command) != handlers.end()) {
-        handlers[command]->processMessage(message);
+    if (const auto handler = handlers.find(parsed.command); handler != handlers.end()) {
+        if (span) {
+            span->setAttribute("websocket.handler", parsed.command);
+        }
+        const bool accepted = handler->second->processMessage(parsed.payload.get(), message, parsed.command, span);
+        if (span && accepted) {
+            span->setSuccess();
+        }
     } else {
-        appLogger->warn("unable to find a handler for message type: {}", command);
+        appLogger->warn("unable to find a handler for message type: {}", parsed.command);
+        if (span) {
+            span->setError("No handler registered for WebSocket command");
+            span->setAttribute("websocket.message.size", static_cast<int64_t>(message ? message->size() : 0));
+            span->setAttribute("websocket.command", parsed.command);
+            span->setAttribute("websocket.rejection.stage", "dispatch");
+            span->setAttribute("websocket.error.type", "UnknownCommand");
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        }
     }
 }
 

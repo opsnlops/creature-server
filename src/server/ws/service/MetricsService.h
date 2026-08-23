@@ -8,6 +8,7 @@
 
 #include "server/metrics/counters.h"
 #include "server/ws/dto/StatusDto.h"
+#include "server/ws/dto/SystemCountersDto.h"
 
 namespace creatures ::ws {
 

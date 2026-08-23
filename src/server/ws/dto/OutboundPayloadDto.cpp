@@ -1,4 +1,3 @@
-#include "server/ws/dto/CacheInvalidationDto.h"
 #include "server/ws/dto/NoticeDto.h"
 #include "server/ws/dto/PlaylistStatusDto.h"
 
@@ -25,15 +24,5 @@ oatpp::Object<NoticeDto> convertToDto(const Notice &notice) {
 }
 
 Notice convertFromDto(const oatpp::Object<NoticeDto> &dto) { return Notice{dto->timestamp, dto->message}; }
-
-oatpp::Object<CacheInvalidationDto> convertToDto(const CacheInvalidation &cacheInvalidation) {
-    auto dto = CacheInvalidationDto::createShared();
-    dto->cache_type = toString(cacheInvalidation.cache_type);
-    return dto;
-}
-
-CacheInvalidation convertFromDto(const oatpp::Object<CacheInvalidationDto> &dto) {
-    return CacheInvalidation{cacheTypeFromString(dto->cache_type)};
-}
 
 } // namespace creatures
