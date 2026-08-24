@@ -130,16 +130,10 @@ Result<std::vector<DmxFixture>> DmxFixtureService::getAllFixtures(std::shared_pt
     return Result<std::vector<DmxFixture>>{fixtures};
 }
 
-oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::getFixture(const oatpp::String &inFixtureId,
-                                                                      std::shared_ptr<RequestSpan> parentSpan) {
-
-    if (!creatures::db) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
-    }
-
-    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
+Result<DmxFixture> DmxFixtureService::getFixture(const fixtureId_t &fixtureId,
+                                                 std::shared_ptr<RequestSpan> parentSpan) {
     if (fixtureId.empty()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
+        return Result<DmxFixture>{ServerError(ServerError::InvalidData, "fixtureId is required")};
     }
 
     auto span = creatures::observability
@@ -149,28 +143,25 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::getFixture(const oatp
         span->setAttribute("fixture.id", fixtureId);
     }
 
+    if (!creatures::db)
+        return Result<DmxFixture>{ServerError(ServerError::InternalError, "Database unavailable")};
     auto result = creatures::db->getFixture(fixtureId, span);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
-        Status status = Status::CODE_500;
-        if (err.getCode() == ServerError::NotFound)
-            status = Status::CODE_404;
-        else if (err.getCode() == ServerError::InvalidData)
-            status = Status::CODE_400;
         if (span) {
             span->setError(err.getMessage());
             span->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        OATPP_ASSERT_HTTP(false, status, err.getMessage().c_str())
+        return Result<DmxFixture>{err};
     }
     if (!result.getValue().has_value()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database returned no fixture value");
+        return Result<DmxFixture>{ServerError(ServerError::InternalError, "Database returned no fixture value")};
     }
 
     auto fixture = result.getValue().value();
     if (span)
         span->setSuccess();
-    return creatures::convertToDto(fixture);
+    return Result<DmxFixture>{fixture};
 }
 
 oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::upsertFixture(const std::string &jsonFixture,

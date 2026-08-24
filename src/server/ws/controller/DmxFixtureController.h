@@ -67,7 +67,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
     ENDPOINT_INFO(getFixture) {
         info->summary = "Get one DMX fixture by id";
         info->addTag("Fixtures");
-        info->addResponse<Object<creatures::DmxFixtureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
@@ -81,10 +81,12 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                                if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
                                    return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
                                }
-                               const auto result = m_service.getFixture(fixtureId, span);
+                               const auto result = m_service.getFixture(std::string(fixtureId), span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
                                if (span)
                                    span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(span, Status::CODE_200, dmxFixtureToJson(result.getValue().value()));
                            });
     }
 
