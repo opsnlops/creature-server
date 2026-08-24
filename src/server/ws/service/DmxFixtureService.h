@@ -8,7 +8,6 @@
 #include "api/FixtureResponses.h"
 #include "model/DmxFixture.h"
 #include "server/ws/dto/DmxFixtureDto.h"
-#include "server/ws/dto/ListDto.h"
 
 namespace creatures {
 class RequestSpan;
@@ -20,8 +19,7 @@ namespace creatures ::ws {
 class DmxFixtureService {
 
   public:
-    static oatpp::Object<ListDto<oatpp::Object<creatures::DmxFixtureDto>>>
-    getAllFixtures(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<std::vector<DmxFixture>> getAllFixtures(std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     static oatpp::Object<creatures::DmxFixtureDto> getFixture(const oatpp::String &inFixtureId,
                                                               std::shared_ptr<RequestSpan> parentSpan = nullptr);

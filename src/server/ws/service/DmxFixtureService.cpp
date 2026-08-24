@@ -99,49 +99,35 @@ namespace creatures ::ws {
 
 using oatpp::web::protocol::http::Status;
 
-oatpp::Object<ListDto<oatpp::Object<creatures::DmxFixtureDto>>>
-DmxFixtureService::getAllFixtures(std::shared_ptr<RequestSpan> parentSpan) {
-
-    if (!creatures::db) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
-    }
-
+Result<std::vector<DmxFixture>> DmxFixtureService::getAllFixtures(std::shared_ptr<RequestSpan> parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.getAllFixtures", parentSpan)
                     : nullptr;
 
+    if (!creatures::db) {
+        const ServerError error{ServerError::InternalError, "Database unavailable"};
+        if (span)
+            span->setError(error.getMessage());
+        return Result<std::vector<DmxFixture>>{error};
+    }
     auto result = creatures::db->getAllFixtures(span);
 
     if (!result.isSuccess()) {
         auto err = result.getError().value();
-        Status status = Status::CODE_500;
-        if (err.getCode() == ServerError::NotFound)
-            status = Status::CODE_404;
-        else if (err.getCode() == ServerError::InvalidData)
-            status = Status::CODE_400;
         if (span) {
             span->setError(err.getMessage());
             span->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        OATPP_ASSERT_HTTP(false, status, err.getMessage().c_str())
+        return Result<std::vector<DmxFixture>>{err};
     }
-
-    auto fixtures = result.getValue().value();
-    auto items = oatpp::Vector<oatpp::Object<creatures::DmxFixtureDto>>::createShared();
-    for (const auto &fixture : fixtures) {
-        items->emplace_back(creatures::convertToDto(fixture));
-    }
-
-    auto page = ListDto<oatpp::Object<creatures::DmxFixtureDto>>::createShared();
-    page->count = items->size();
-    page->items = items;
+    const auto fixtures = result.getValue().value();
 
     if (span) {
-        span->setAttribute("fixtures.count", static_cast<int64_t>(page->count));
+        span->setAttribute("fixtures.count", static_cast<int64_t>(fixtures.size()));
         span->setSuccess();
     }
 
-    return page;
+    return Result<std::vector<DmxFixture>>{fixtures};
 }
 
 oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::getFixture(const oatpp::String &inFixtureId,

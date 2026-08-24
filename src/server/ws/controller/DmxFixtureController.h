@@ -17,7 +17,6 @@
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/PreviewFixturePatternRequestDto.h"
 #include "server/ws/dto/SetFixtureLiveRequestDto.h"
 #include "server/ws/dto/SetFixtureUniverseRequestDto.h"
@@ -47,8 +46,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
     ENDPOINT_INFO(getAllFixtures) {
         info->summary = "List all DMX fixtures";
         info->addTag("Fixtures");
-        info->addResponse<Object<ListDto<Object<creatures::DmxFixtureDto>>>>(Status::CODE_200,
-                                                                             "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/fixture", getAllFixtures,
@@ -56,9 +54,13 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
         return runEndpoint("GET /api/v1/fixture", "GET", "api/v1/fixture", "getAllFixtures", "DmxFixtureController",
                            request, [&](const auto &span) {
                                const auto result = m_service.getAllFixtures(span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
                                if (span)
                                    span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(
+                                   span, Status::CODE_200,
+                                   api::listResponseToJson(result.getValue().value(), dmxFixtureToJson));
                            });
     }
 
