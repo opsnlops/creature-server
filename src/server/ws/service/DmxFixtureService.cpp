@@ -246,15 +246,9 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::upsertFixture(const s
     return creatures::convertToDto(fixture);
 }
 
-void DmxFixtureService::deleteFixture(const oatpp::String &inFixtureId, std::shared_ptr<RequestSpan> parentSpan) {
-
-    if (!creatures::db) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
-    }
-
-    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
+Result<void> DmxFixtureService::deleteFixture(const fixtureId_t &fixtureId, std::shared_ptr<RequestSpan> parentSpan) {
     if (fixtureId.empty()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
+        return Result<void>{ServerError(ServerError::InvalidData, "fixtureId is required")};
     }
 
     auto span = creatures::observability
@@ -264,24 +258,22 @@ void DmxFixtureService::deleteFixture(const oatpp::String &inFixtureId, std::sha
         span->setAttribute("fixture.id", fixtureId);
     }
 
+    if (!creatures::db)
+        return Result<void>{ServerError(ServerError::InternalError, "Database unavailable")};
     auto result = creatures::storage::deleteFixture(fixtureId, span);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
-        Status status = Status::CODE_500;
-        if (err.getCode() == ServerError::NotFound)
-            status = Status::CODE_404;
-        else if (err.getCode() == ServerError::InvalidData)
-            status = Status::CODE_400;
         if (span) {
             span->setError(err.getMessage());
         }
-        OATPP_ASSERT_HTTP(false, status, err.getMessage().c_str())
+        return Result<void>{err};
     }
 
     creatures::fixtureUniverseMap->remove(fixtureId);
 
     if (span)
         span->setSuccess();
+    return Result<void>{};
 }
 
 oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::setFixtureUniverse(const oatpp::String &inFixtureId,

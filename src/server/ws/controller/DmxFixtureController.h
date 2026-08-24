@@ -133,7 +133,9 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                                if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
                                    return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
                                }
-                               m_service.deleteFixture(fixtureId, span);
+                               const auto result = m_service.deleteFixture(std::string(fixtureId), span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
                                if (span)
                                    span->setHttpStatus(200);
                                return okStatus(span, Status::CODE_200, "Fixture deleted");

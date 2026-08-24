@@ -27,7 +27,7 @@ class DmxFixtureService {
     static oatpp::Object<creatures::DmxFixtureDto> upsertFixture(const std::string &jsonFixture,
                                                                  std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
-    static void deleteFixture(const oatpp::String &inFixtureId, std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<void> deleteFixture(const fixtureId_t &fixtureId, std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Persist a universe assignment for a fixture and update the runtime map.
