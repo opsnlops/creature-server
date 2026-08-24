@@ -176,6 +176,22 @@ TEST(DmxFixtureJsonTest, NeutralSerializerPreservesTheCanonicalFixtureShape) {
     EXPECT_EQ(dmxFixtureToJson(fixture), makeValidFixtureJson());
 }
 
+TEST(DmxFixtureJsonTest, NeutralCodecRoundTripsTheCanonicalFixtureShape) {
+    const auto result = dmxFixtureFromJson(makeValidFixtureJson());
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+    EXPECT_EQ(dmxFixtureToJson(result.getValue().value()), makeValidFixtureJson());
+}
+
+TEST(DmxFixtureJsonTest, NeutralCodecRejectsUnknownAndInvalidIdFields) {
+    auto unknown = makeValidFixtureJson();
+    unknown["unexpected"] = true;
+    EXPECT_FALSE(dmxFixtureFromJson(unknown).isSuccess());
+
+    auto invalidId = makeValidFixtureJson();
+    invalidId["id"] = "not-a-uuid";
+    EXPECT_FALSE(dmxFixtureFromJson(invalidId).isSuccess());
+}
+
 TEST(DmxFixtureJsonTest, NeutralSerializerOmitsAbsentOptionalFields) {
     auto fixture = Database::parseFixtureJson(makeValidFixtureJson()).getValue().value();
     fixture.assigned_universe.reset();
