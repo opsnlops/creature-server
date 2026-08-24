@@ -248,7 +248,8 @@ struct AsyncAudioLoadContext {
 Result<std::shared_ptr<PlaybackSession>>
 CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const Animation &animation,
                                                  universe_t universe, creatures::runtime::ActivityReason reason,
-                                                 bool cancelEntireUniverse, const std::string &chainId) {
+                                                 bool cancelEntireUniverse, const std::string &chainId,
+                                                 std::optional<uint64_t> expectedPlaylistGeneration) {
     // Create observability span
     auto scheduleSpan =
         observability ? observability->createOperationSpan("CooperativeAnimationScheduler.scheduleAnimation") : nullptr;
@@ -422,7 +423,15 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
     // (reason, running) — the ordering the fixture binding dispatcher needs — and (b) the
     // idle-restart check in the playback runner can never observe the universe as free
     // while we're still loading audio (issues #62/#63).
-    sessionManager->registerSession(universe, session, false, scheduleSpan, cancelEntireUniverse);
+    if (!sessionManager->registerSession(universe, session, false, scheduleSpan, cancelEntireUniverse,
+                                         expectedPlaylistGeneration)) {
+        const std::string errorMsg = "Playlist generation changed before animation adoption";
+        if (scheduleSpan) {
+            scheduleSpan->setAttribute("playlist.stale_event", true);
+            scheduleSpan->setSuccess();
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::Conflict, errorMsg)};
+    }
 
     // Broadcast initial activity state for involved creatures using the session UUID.
     // The generation was minted by adoption just above, so a delayed run of this

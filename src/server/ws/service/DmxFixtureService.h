@@ -7,7 +7,6 @@
 
 #include "api/FixtureResponses.h"
 #include "model/DmxFixture.h"
-#include "server/ws/dto/DmxFixtureDto.h"
 
 namespace creatures {
 class RequestSpan;
@@ -32,12 +31,9 @@ class DmxFixtureService {
     /**
      * Persist a universe assignment for a fixture and update the runtime map.
      * @param universe nullopt clears the assignment.
-     * The id parameter stays `oatpp::String` because that's what the controller hands us; we convert
-     * to `fixtureId_t` internally before talking to the database.
      */
-    static oatpp::Object<creatures::DmxFixtureDto>
-    setFixtureUniverse(const oatpp::String &inFixtureId, std::optional<universe_t> universe,
-                       std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<DmxFixture> setFixtureUniverse(const fixtureId_t &fixtureId, std::optional<universe_t> universe,
+                                                 std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Validate a fixture config payload without persisting it.
@@ -52,10 +48,9 @@ class DmxFixtureService {
      * @param stopAfterMs nullopt = pattern holds until externally stopped; otherwise the pattern
      *                    is told to stop after `*stopAfterMs` milliseconds (fade-out then starts).
      */
-    static oatpp::Object<creatures::DmxFixtureDto> triggerPattern(const oatpp::String &inFixtureId,
-                                                                  const oatpp::String &inPatternId,
-                                                                  std::optional<uint32_t> stopAfterMs,
-                                                                  std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<DmxFixture> triggerPattern(const fixtureId_t &fixtureId, const std::string &patternId,
+                                             std::optional<uint32_t> stopAfterMs,
+                                             std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Fire a one-shot pattern that is NOT persisted. The pattern is built from the call
@@ -72,10 +67,11 @@ class DmxFixtureService {
      * @param holdMs        hold duration after fade-in (0 = hold until externally stopped)
      * @param stopAfterMs   nullopt = hold; otherwise schedule auto-stop. Validated in (0, 600000].
      */
-    static oatpp::Object<creatures::DmxFixtureDto>
-    previewPattern(const oatpp::String &inFixtureId, const std::vector<std::pair<std::string, uint8_t>> &values,
-                   uint32_t fadeInMs, uint32_t fadeOutMs, uint32_t holdMs, std::optional<uint32_t> stopAfterMs,
-                   std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<DmxFixture> previewPattern(const fixtureId_t &fixtureId,
+                                             const std::vector<std::pair<std::string, uint8_t>> &values,
+                                             uint32_t fadeInMs, uint32_t fadeOutMs, uint32_t holdMs,
+                                             std::optional<uint32_t> stopAfterMs,
+                                             std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Drive a fixture's channels directly with raw DMX values. Used by slider UIs; the
@@ -87,9 +83,9 @@ class DmxFixtureService {
      *                     fail the whole call with 400.
      * @param timeoutMs    auto-blackout deadline in ms from now. Validated to (0, 600000].
      */
-    static oatpp::Object<creatures::DmxFixtureDto>
-    setFixtureLive(const oatpp::String &inFixtureId, const std::vector<std::pair<std::string, uint8_t>> &channelValues,
-                   uint32_t timeoutMs, std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<DmxFixture> setFixtureLive(const fixtureId_t &fixtureId,
+                                             const std::vector<std::pair<std::string, uint8_t>> &channelValues,
+                                             uint32_t timeoutMs, std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Load all persisted fixtures into the cache and rebuild `fixtureUniverseMap` from each fixture's

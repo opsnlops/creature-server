@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "server/voice/IxmlWriter.h"
 
 namespace creatures {
@@ -24,5 +26,7 @@ struct Sound {
     std::vector<voice::DialogLipsyncTrack> lipsyncTracks;
     std::vector<voice::DialogWordTrack> wordTracks;
 };
+
+nlohmann::json soundToJson(const Sound &sound);
 
 } // namespace creatures

@@ -132,6 +132,7 @@ TEST(CreatureApiContract, IdleToggleRequiresOneBooleanField) {
 }
 
 TEST(CreatureApiContract, RegistrationParsesAndBoundsUniverse) {
+    EXPECT_GT(creatures::api::MAX_REGISTER_CREATURE_REQUEST_BODY_BYTES, creatures::MAX_CREATURE_REQUEST_BODY_BYTES);
     const auto valid =
         creatures::api::registerCreatureRequestFromJson({{"creature_config", "{}"}, {"universe", 63999}});
     ASSERT_TRUE(valid.isSuccess());

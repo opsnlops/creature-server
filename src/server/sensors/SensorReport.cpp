@@ -18,7 +18,7 @@ template <typename Output, typename Input> Result<Output> forwardError(const Res
 
 Result<std::optional<std::reference_wrapper<const nlohmann::json>>>
 optionalArray(const nlohmann::json &json, std::string_view path, std::string_view key, std::size_t maximumEntries) {
-    if (!json.contains(key)) {
+    if (!json.contains(key) || json.at(key).is_null()) {
         return Result<std::optional<std::reference_wrapper<const nlohmann::json>>>{std::nullopt};
     }
     const auto values = json_codec::requiredArray(json, path, key, maximumEntries);

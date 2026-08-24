@@ -36,6 +36,19 @@ extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<SessionManager> sessionManager;
 extern std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMap;
 
+namespace {
+void recordPlaylistEventError(const std::shared_ptr<OperationSpan> &span, const ServerError &eventError,
+                              const char *errorType) {
+    if (!span) {
+        return;
+    }
+    span->setError(eventError.getMessage());
+    span->setAttribute("error.type", errorType);
+    span->setAttribute("error.code", static_cast<int64_t>(eventError.getCode()));
+    span->setAttribute("error.message", eventError.getMessage());
+}
+} // namespace
+
 PlaylistEvent::PlaylistEvent(framenum_t frameNumber_, universe_t universe_, uint64_t generation,
                              std::string triggerTraceId_, std::string triggerSpanId_)
     : EventBase(frameNumber_), activeUniverse(universe_), playlistGeneration(generation),
@@ -78,7 +91,9 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
     debug("hello from a playlist event for universe {}", activeUniverse);
 
     if (auto dependencyResult = ensureDependencies(span); !dependencyResult.isSuccess()) {
-        return Result<framenum_t>{dependencyResult.getError().value()};
+        const auto eventError = dependencyResult.getError().value();
+        recordPlaylistEventError(span, eventError, "MissingDependency");
+        return Result<framenum_t>{eventError};
     }
 
     metrics->incrementPlaylistsEventsProcessed();
@@ -108,7 +123,9 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
 
     auto playlistResult = fetchPlaylist(activePlaylistStatus, span);
     if (!playlistResult.isSuccess()) {
-        return Result<framenum_t>{playlistResult.getError().value()};
+        const auto eventError = playlistResult.getError().value();
+        recordPlaylistEventError(span, eventError, "PlaylistLookupFailed");
+        return Result<framenum_t>{eventError};
     }
     auto playlist = playlistResult.getValue().value();
     if (span) {
@@ -119,7 +136,9 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
 
     auto chosenResult = chooseWeightedAnimation(playlist, span);
     if (!chosenResult.isSuccess()) {
-        return Result<framenum_t>{chosenResult.getError().value()};
+        const auto eventError = chosenResult.getError().value();
+        recordPlaylistEventError(span, eventError, "PlaylistSelectionFailed");
+        return Result<framenum_t>{eventError};
     }
     auto chosenAnimation = chosenResult.getValue().value();
     debug("...and the chosen one is {}", chosenAnimation);
@@ -129,7 +148,9 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
 
     auto animationResult = fetchAnimation(chosenAnimation, span);
     if (!animationResult.isSuccess()) {
-        return Result<framenum_t>{animationResult.getError().value()};
+        const auto eventError = animationResult.getError().value();
+        recordPlaylistEventError(span, eventError, "AnimationLookupFailed");
+        return Result<framenum_t>{eventError};
     }
     auto animation = animationResult.getValue().value();
 
@@ -140,19 +161,35 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
 
     auto scheduleResult = scheduleChosenAnimation(animation);
     if (!scheduleResult.isSuccess()) {
-        return Result<framenum_t>{scheduleResult.getError().value()};
+        const auto eventError = scheduleResult.getError().value();
+        if (!sessionManager->isPlaylistGenerationCurrent(activeUniverse, playlistGeneration)) {
+            if (span) {
+                span->setAttribute("playlist.stale_event", true);
+                span->setSuccess();
+            }
+            return Result<framenum_t>{this->frameNumber};
+        }
+        recordPlaylistEventError(span, eventError, "AnimationScheduleFailed");
+        return Result<framenum_t>{eventError};
     }
     auto lastFrame = scheduleResult.getValue().value();
 
     debug("scheduled animation {} on universe {}. Last frame: {}", animation.metadata.title, activeUniverse, lastFrame);
 
-    scheduleNextPlaylistEvent(lastFrame);
-
-    updatePlaylistStatus(activePlaylistStatus, chosenAnimation);
+    if (!commitPlaylistEvent(lastFrame, activePlaylistStatus, chosenAnimation)) {
+        if (span) {
+            span->setAttribute("playlist.stale_event", true);
+            span->setSuccess();
+        }
+        return Result<framenum_t>{lastFrame};
+    }
 
     startIdleLoopsForUniverse(involvedCreatures, span);
 
     debug("scheduled next event for frame {}. later!", lastFrame + 1);
+    if (span) {
+        span->setSuccess();
+    }
     return Result<framenum_t>{lastFrame};
 }
 
@@ -201,8 +238,9 @@ std::optional<Result<framenum_t>> PlaylistEvent::handlePlaylistState(PlaylistSta
         std::string errorMessage =
             fmt::format("Playlist on universe {} is stopped or doesn't exist. Cleaning up.", activeUniverse);
         info(errorMessage);
-        sessionManager->clearPlaylist(activeUniverse);
-        sendEmptyPlaylistUpdate(activeUniverse);
+        if (sessionManager->clearPlaylistIfGeneration(activeUniverse, playlistGeneration)) {
+            sendEmptyPlaylistUpdate(activeUniverse);
+        }
         if (span) {
             span->setAttribute("reason", "stopped_or_none");
             span->setSuccess();
@@ -245,8 +283,9 @@ std::optional<Result<framenum_t>> PlaylistEvent::loadActivePlaylistStatus(Playli
         std::string errorMessage = fmt::format(
             "Playlist state is Active but no playlist snapshot exists for universe {}. Cleaning up.", activeUniverse);
         warn(errorMessage);
-        sessionManager->clearPlaylist(activeUniverse);
-        sendEmptyPlaylistUpdate(activeUniverse);
+        if (sessionManager->clearPlaylistIfGeneration(activeUniverse, playlistGeneration)) {
+            sendEmptyPlaylistUpdate(activeUniverse);
+        }
         if (span) {
             span->setAttribute("reason", "cache_missing");
             span->setSuccess();
@@ -270,8 +309,9 @@ Result<Playlist> PlaylistEvent::fetchPlaylist(const PlaylistStatus &playlistStat
         std::string errorMessage = fmt::format("Playlist ID {} not found while in a playlist event. halting playback.",
                                                playlistStatus.playlist);
         warn(errorMessage);
-        sessionManager->clearPlaylist(activeUniverse);
-        sendEmptyPlaylistUpdate(activeUniverse);
+        if (sessionManager->clearPlaylistIfGeneration(activeUniverse, playlistGeneration)) {
+            sendEmptyPlaylistUpdate(activeUniverse);
+        }
         if (dbSpan) {
             dbSpan->setError(errorMessage);
         }
@@ -314,8 +354,9 @@ Result<std::string> PlaylistEvent::chooseWeightedAnimation(const Playlist &playl
             errorType = "InvalidPlaylistWeights";
         }
         warn(errorMessage);
-        sessionManager->clearPlaylist(activeUniverse);
-        sendEmptyPlaylistUpdate(activeUniverse);
+        if (sessionManager->clearPlaylistIfGeneration(activeUniverse, playlistGeneration)) {
+            sendEmptyPlaylistUpdate(activeUniverse);
+        }
         if (span) {
             if (totalWeightResult.isSuccess()) {
                 span->setAttribute("playlist.weight.total", static_cast<int64_t>(0));
@@ -338,8 +379,9 @@ Result<std::string> PlaylistEvent::chooseWeightedAnimation(const Playlist &playl
         const auto errorMessage =
             fmt::format("Playlist {} selection failed: {}", playlist.id, selectionResult.getError()->getMessage());
         error(errorMessage);
-        sessionManager->clearPlaylist(activeUniverse);
-        sendEmptyPlaylistUpdate(activeUniverse);
+        if (sessionManager->clearPlaylistIfGeneration(activeUniverse, playlistGeneration)) {
+            sendEmptyPlaylistUpdate(activeUniverse);
+        }
         recordSelectionError(errorMessage, "PlaylistSelectionInvariant");
         return Result<std::string>{ServerError(ServerError::InternalError, errorMessage)};
     }
@@ -362,8 +404,9 @@ Result<Animation> PlaylistEvent::fetchAnimation(const std::string &animationId, 
         if (animationSpan) {
             animationSpan->setError(errorMessage);
         }
-        sessionManager->clearPlaylist(activeUniverse);
-        sendEmptyPlaylistUpdate(activeUniverse);
+        if (sessionManager->clearPlaylistIfGeneration(activeUniverse, playlistGeneration)) {
+            sendEmptyPlaylistUpdate(activeUniverse);
+        }
         return Result<Animation>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
@@ -390,7 +433,7 @@ std::unordered_set<creatureId_t> PlaylistEvent::collectInvolvedCreatures(const A
 
 Result<framenum_t> PlaylistEvent::scheduleChosenAnimation(const Animation &animation) {
     auto scheduleResult = scheduleAnimation(eventLoop->getNextFrameNumber(), animation, activeUniverse,
-                                            creatures::runtime::ActivityReason::Playlist);
+                                            creatures::runtime::ActivityReason::Playlist, playlistGeneration);
     if (!scheduleResult.isSuccess()) {
         auto schedulingError = scheduleResult.getError().value();
 
@@ -403,7 +446,7 @@ Result<framenum_t> PlaylistEvent::scheduleChosenAnimation(const Animation &anima
             framenum_t retryFrame = eventLoop->getNextFrameNumber() + retryDelay;
             info("Playlist on universe {} deferring: {} — retrying at frame {}", activeUniverse,
                  schedulingError.getMessage(), retryFrame);
-            if (const auto eventContext = sessionManager->claimPlaylistEvent(activeUniverse)) {
+            if (const auto eventContext = sessionManager->claimPlaylistEvent(activeUniverse, playlistGeneration)) {
                 auto retryEvent =
                     std::make_shared<PlaylistEvent>(retryFrame, activeUniverse, eventContext->generation,
                                                     eventContext->triggerTraceId, eventContext->triggerSpanId);
@@ -415,26 +458,27 @@ Result<framenum_t> PlaylistEvent::scheduleChosenAnimation(const Animation &anima
         std::string errorMessage =
             fmt::format("Unable to schedule animation: {}. Halting playlist playback.", schedulingError.getMessage());
         warn(errorMessage);
-        sessionManager->clearPlaylist(activeUniverse);
-        sendEmptyPlaylistUpdate(activeUniverse);
+        if (sessionManager->clearPlaylistIfGeneration(activeUniverse, playlistGeneration)) {
+            sendEmptyPlaylistUpdate(activeUniverse);
+        }
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
     return Result<framenum_t>{scheduleResult.getValue().value()};
 }
 
-void PlaylistEvent::scheduleNextPlaylistEvent(framenum_t lastFrame) {
-    if (const auto eventContext = sessionManager->claimPlaylistEvent(activeUniverse)) {
-        auto nextEvent = std::make_shared<PlaylistEvent>(lastFrame + 1, activeUniverse, eventContext->generation,
-                                                         eventContext->triggerTraceId, eventContext->triggerSpanId);
-        eventLoop->scheduleEvent(nextEvent);
-    }
-}
-
-void PlaylistEvent::updatePlaylistStatus(PlaylistStatus playlistStatus, const std::string &chosenAnimation) {
+bool PlaylistEvent::commitPlaylistEvent(framenum_t lastFrame, PlaylistStatus playlistStatus,
+                                        const std::string &chosenAnimation) {
     playlistStatus.current_animation = chosenAnimation;
-    sessionManager->setPlaylistStatus(activeUniverse, playlistStatus);
+    const auto eventContext = sessionManager->commitPlaylistEvent(activeUniverse, playlistGeneration, playlistStatus);
+    if (!eventContext) {
+        return false;
+    }
+    auto nextEvent = std::make_shared<PlaylistEvent>(lastFrame + 1, activeUniverse, eventContext->generation,
+                                                     eventContext->triggerTraceId, eventContext->triggerSpanId);
+    eventLoop->scheduleEvent(nextEvent);
     sendPlaylistUpdate(playlistStatus);
+    return true;
 }
 
 void PlaylistEvent::startIdleLoopsForUniverse(const std::unordered_set<creatureId_t> &involvedCreatures,

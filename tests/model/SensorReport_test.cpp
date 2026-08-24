@@ -66,10 +66,17 @@ TEST(SensorReportJson, PreservesPartialLegacyTelemetryDefaults) {
     ASSERT_EQ(dynamixel.getValue()->readings.size(), 1);
     EXPECT_DOUBLE_EQ(dynamixel.getValue()->readings.front().voltageV, 0.0);
 
-    const auto nulls = boardSensorReportFromJson(
-        {{"creature_id", CREATURE_ID}, {"creatureName", nullptr}, {"board_temperature", nullptr}});
+    const auto nulls = boardSensorReportFromJson({{"creature_id", CREATURE_ID},
+                                                  {"creatureName", nullptr},
+                                                  {"board_temperature", nullptr},
+                                                  {"power_reports", nullptr}});
     ASSERT_TRUE(nulls.isSuccess()) << nulls.getError()->getMessage();
     EXPECT_EQ(nulls.getValue()->creatureName, "");
+
+    const auto dynamixelNull =
+        dynamixelSensorReportFromJson({{"creature_id", CREATURE_ID}, {"dynamixel_motors", nullptr}});
+    ASSERT_TRUE(dynamixelNull.isSuccess()) << dynamixelNull.getError()->getMessage();
+    EXPECT_TRUE(dynamixelNull.getValue()->readings.empty());
 }
 
 TEST(SensorReportJson, ParsesDynamixelOptionalPosition) {

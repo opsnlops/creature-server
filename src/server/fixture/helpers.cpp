@@ -38,6 +38,7 @@ template <typename T> Result<T> invalidData(const std::shared_ptr<OperationSpan>
         span->setError(message);
         span->setAttribute("error.type", "InvalidData");
         span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+        span->setAttribute("error.message", message);
     }
     return Result<T>{ServerError(ServerError::InvalidData, message)};
 }
@@ -316,14 +317,16 @@ Result<creatures::DmxFixture> Database::parseFixtureJson(json fixtureJson, std::
     auto result = dmxFixtureFromJson(fixtureJson);
     if (!result.isSuccess()) {
         if (span) {
-            const auto &error = result.getError().value();
+            const auto error = result.getError().value();
             span->setError(error.getMessage());
+            span->setAttribute("error.type", "InvalidFixtureJson");
             span->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
+            span->setAttribute("error.message", error.getMessage());
         }
         return result;
     }
     if (span) {
-        const auto &fixture = result.getValue().value();
+        const auto fixture = result.getValue().value();
         span->setAttribute("fixture.id", fixture.id);
         span->setAttribute("fixture.channels_count", static_cast<int64_t>(fixture.channels.size()));
         span->setSuccess();

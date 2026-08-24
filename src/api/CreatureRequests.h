@@ -13,6 +13,10 @@
 namespace creatures::api {
 
 inline constexpr std::size_t MAX_IDLE_TOGGLE_REQUEST_BODY_BYTES = 4096;
+// The creature config is JSON encoded inside the registration envelope. In the
+// worst case every byte needs one additional JSON escaping byte, plus a small
+// fixed allowance for the envelope fields.
+inline constexpr std::size_t MAX_REGISTER_CREATURE_REQUEST_BODY_BYTES = MAX_CREATURE_REQUEST_BODY_BYTES * 2 + 256;
 
 struct IdleToggleRequest {
     bool enabled;

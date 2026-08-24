@@ -238,8 +238,8 @@ Migrate leaf models before aggregate models.
 - [x] `Animation`
 - [x] `Creature` configuration (runtime state remains a separate snapshot-concurrency checkpoint)
 - [x] `Playlist`
-- [ ] `Sound` and nested timing/cue types
-- [~] `DmxFixture` and nested channel/pattern/binding types — strict neutral codec is complete; legacy DTO adapter remains for runtime controls
+- [x] `Sound` and nested timing/cue types
+- [x] `DmxFixture` and nested channel/pattern/binding types
 - [ ] `DialogScript` and nested accepted-voice/music types
 - [ ] `AdHocExchange`
 - [x] `Stage`
@@ -278,11 +278,11 @@ For every model:
 Convert one vertical resource family at a time. Each slice includes the service
 header, implementation, controller adaptation, and tests.
 
-- [~] Fixtures — list/get/upsert/delete and validation responses are neutral; universe/pattern/live controls remain
+- [x] Fixtures
 - [x] Creatures
 - [x] Animations and ad-hoc animations
 - [x] Playlists and playlist status
-- [ ] Sounds and renditions
+- [x] Sounds and renditions
 - [ ] Dialog scripts, preview, voice acceptance, and music
 - [ ] Voice generation and subscription state
 - [ ] Metrics, jobs, and runtime status

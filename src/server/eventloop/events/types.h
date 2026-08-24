@@ -130,8 +130,7 @@ class PlaylistEvent : public EventBase<PlaylistEvent> {
     Result<Animation> fetchAnimation(const std::string &animationId, std::shared_ptr<OperationSpan> span);
     std::unordered_set<creatureId_t> collectInvolvedCreatures(const Animation &animation);
     Result<framenum_t> scheduleChosenAnimation(const Animation &animation);
-    void scheduleNextPlaylistEvent(framenum_t lastFrame);
-    void updatePlaylistStatus(PlaylistStatus playlistStatus, const std::string &chosenAnimation);
+    bool commitPlaylistEvent(framenum_t lastFrame, PlaylistStatus playlistStatus, const std::string &chosenAnimation);
     void startIdleLoopsForUniverse(const std::unordered_set<creatureId_t> &involvedCreatures,
                                    std::shared_ptr<OperationSpan> span);
     static void sendEmptyPlaylistUpdate(universe_t universe);

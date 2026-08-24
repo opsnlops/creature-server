@@ -255,7 +255,7 @@ class CreatureController : public oatpp::web::server::api::ApiController,
         return runEndpoint(
             "POST /api/v1/creature/register", "POST", "api/v1/creature/register", "registerCreature",
             "CreatureController", request, [&](const auto &span) {
-                const auto body = readRequestBodyLimited(request, MAX_CREATURE_REQUEST_BODY_BYTES, span);
+                const auto body = readRequestBodyLimited(request, api::MAX_REGISTER_CREATURE_REQUEST_BODY_BYTES, span);
 
                 debug("Raw request body size: {} bytes", body.size());
 

@@ -45,7 +45,8 @@ extern std::shared_ptr<ObservabilityManager> observability;
  * @return the frame number of last frame of the animation
  */
 Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::Animation &animation,
-                                     universe_t universe, creatures::runtime::ActivityReason reason) {
+                                     universe_t universe, creatures::runtime::ActivityReason reason,
+                                     std::optional<uint64_t> expectedPlaylistGeneration) {
 
     if (animation.metadata.milliseconds_per_frame == 0 || animation.metadata.number_of_frames == 0) {
         std::string errorMessage =
@@ -67,7 +68,8 @@ Result<framenum_t> scheduleAnimation(framenum_t startingFrame, const creatures::
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
     }
 
-    auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(startingFrame, animation, universe, reason);
+    auto sessionResult = CooperativeAnimationScheduler::scheduleAnimation(startingFrame, animation, universe, reason,
+                                                                          false, {}, expectedPlaylistGeneration);
     if (!sessionResult.isSuccess()) {
         return Result<framenum_t>{sessionResult.getError().value()};
     }

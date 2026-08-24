@@ -1,6 +1,5 @@
 
-#include <oatpp/core/Types.hpp>
-
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -10,7 +9,6 @@
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
-#include <oatpp/web/protocol/http/Http.hpp>
 #include <spdlog/spdlog.h>
 
 #include "exception/exception.h"
@@ -21,7 +19,6 @@
 #include "server/fixture/FixturePatternRunner.h"
 #include "server/fixture/FixturePatternTickEvent.h"
 #include "server/storage/Storage.h"
-#include "server/ws/dto/ListDto.h"
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
@@ -47,14 +44,40 @@ namespace {
 // on which universe to send to. The mutex map ensures (DB write + cache update)
 // is one critical section per fixture.
 std::mutex fixtureUniverseOpMapMutex;
-std::unordered_map<fixtureId_t, std::shared_ptr<std::mutex>> fixtureUniverseOpMutexes;
+std::unordered_map<fixtureId_t, std::weak_ptr<std::mutex>> fixtureUniverseOpMutexes;
+
+const char *fixtureErrorType(creatures::ServerError::Code code) {
+    switch (code) {
+    case creatures::ServerError::NotFound:
+        return "NotFound";
+    case creatures::ServerError::Forbidden:
+        return "Forbidden";
+    case creatures::ServerError::InvalidData:
+        return "InvalidData";
+    case creatures::ServerError::DatabaseError:
+        return "DatabaseError";
+    case creatures::ServerError::Conflict:
+        return "Conflict";
+    default:
+        return "InternalError";
+    }
+}
+
+template <typename T, typename SpanT>
+creatures::Result<T> fixtureServiceError(const std::shared_ptr<SpanT> &span, const creatures::ServerError &error) {
+    creatures::recordSpanError(span, error.getMessage(), fixtureErrorType(error.getCode()), error.getCode());
+    return creatures::Result<T>{error};
+}
 
 std::shared_ptr<std::mutex> getUniverseOpMutex(const fixtureId_t &fixtureId) {
     std::lock_guard<std::mutex> lock(fixtureUniverseOpMapMutex);
-    auto &slot = fixtureUniverseOpMutexes[fixtureId];
-    if (!slot)
-        slot = std::make_shared<std::mutex>();
-    return slot;
+    std::erase_if(fixtureUniverseOpMutexes, [](const auto &entry) { return entry.second.expired(); });
+    if (const auto existing = fixtureUniverseOpMutexes[fixtureId].lock()) {
+        return existing;
+    }
+    auto mutex = std::make_shared<std::mutex>();
+    fixtureUniverseOpMutexes[fixtureId] = mutex;
+    return mutex;
 }
 
 // One-shot event that fires `stop_after_ms` after a pattern is triggered, transitioning the
@@ -66,13 +89,14 @@ std::shared_ptr<std::mutex> getUniverseOpMutex(const fixtureId_t &fixtureId) {
 // can correlate trigger → auto-stop.
 struct AutoStopEvent : creatures::EventBase<AutoStopEvent> {
     fixtureId_t fid;
+    uint64_t generation;
     std::shared_ptr<creatures::FixturePatternRunner> runner;
     std::string triggerTraceId;
     std::string triggerSpanId;
-    AutoStopEvent(framenum_t f, fixtureId_t id, std::shared_ptr<creatures::FixturePatternRunner> r, std::string traceId,
-                  std::string spanId)
-        : EventBase(f), fid(std::move(id)), runner(std::move(r)), triggerTraceId(std::move(traceId)),
-          triggerSpanId(std::move(spanId)) {}
+    AutoStopEvent(framenum_t f, fixtureId_t id, uint64_t patternGeneration,
+                  std::shared_ptr<creatures::FixturePatternRunner> r, std::string traceId, std::string spanId)
+        : EventBase(f), fid(std::move(id)), generation(patternGeneration), runner(std::move(r)),
+          triggerTraceId(std::move(traceId)), triggerSpanId(std::move(spanId)) {}
     creatures::Result<framenum_t> executeImpl() {
         auto autoStopSpan = creatures::observability
                                 ? creatures::observability->createChildOperationSpan(
@@ -86,7 +110,7 @@ struct AutoStopEvent : creatures::EventBase<AutoStopEvent> {
             }
         }
         if (runner)
-            runner->stop(fid, this->frameNumber, autoStopSpan);
+            runner->stopIfGeneration(fid, generation, this->frameNumber, autoStopSpan);
         if (autoStopSpan)
             autoStopSpan->setSuccess();
         return creatures::Result<framenum_t>{this->frameNumber};
@@ -96,8 +120,6 @@ struct AutoStopEvent : creatures::EventBase<AutoStopEvent> {
 } // namespace
 
 namespace creatures ::ws {
-
-using oatpp::web::protocol::http::Status;
 
 Result<std::vector<DmxFixture>> DmxFixtureService::getAllFixtures(std::shared_ptr<RequestSpan> parentSpan) {
     auto span = creatures::observability
@@ -132,10 +154,6 @@ Result<std::vector<DmxFixture>> DmxFixtureService::getAllFixtures(std::shared_pt
 
 Result<DmxFixture> DmxFixtureService::getFixture(const fixtureId_t &fixtureId,
                                                  std::shared_ptr<RequestSpan> parentSpan) {
-    if (fixtureId.empty()) {
-        return Result<DmxFixture>{ServerError(ServerError::InvalidData, "fixtureId is required")};
-    }
-
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.getFixture", parentSpan)
                     : nullptr;
@@ -143,8 +161,11 @@ Result<DmxFixture> DmxFixtureService::getFixture(const fixtureId_t &fixtureId,
         span->setAttribute("fixture.id", fixtureId);
     }
 
+    if (fixtureId.empty())
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InvalidData, "fixtureId is required"));
+
     if (!creatures::db)
-        return Result<DmxFixture>{ServerError(ServerError::InternalError, "Database unavailable")};
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InternalError, "Database unavailable"));
     auto result = creatures::db->getFixture(fixtureId, span);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
@@ -167,27 +188,29 @@ Result<DmxFixture> DmxFixtureService::getFixture(const fixtureId_t &fixtureId,
 Result<DmxFixture> DmxFixtureService::upsertFixture(const std::string &jsonFixture,
                                                     std::shared_ptr<RequestSpan> parentSpan) {
 
-    if (!creatures::db) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
-    }
-
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.upsertFixture", parentSpan)
                     : nullptr;
-    if (span) {
+    if (span)
         span->setAttribute("json.size", static_cast<int64_t>(jsonFixture.length()));
-    }
+
+    if (!creatures::db)
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InternalError, "Database unavailable"));
+    if (!creatures::fixtureUniverseMap)
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InternalError, "Fixture universe map unavailable"));
 
     // Validate before we touch the DB so the user gets a clean 400 instead of cryptic internal errors.
     auto validateSpan =
         creatures::observability ? creatures::observability->createChildOperationSpan("validateJson", span) : nullptr;
+    fixtureId_t validatedFixtureId;
     try {
-        auto jsonResult = JsonParser::parseJsonString(jsonFixture, "fixture upsert validation", validateSpan);
+        auto jsonResult = JsonParser::parseApiJsonString(jsonFixture, "fixture upsert validation", validateSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
             if (validateSpan)
                 validateSpan->setError(err.getMessage());
-            OATPP_ASSERT_HTTP(false, Status::CODE_400, err.getMessage().c_str());
+            return Result<DmxFixture>{err};
         }
         auto jsonObject = jsonResult.getValue().value();
         auto validation = creatures::db->validateFixtureJson(jsonObject);
@@ -195,33 +218,34 @@ Result<DmxFixture> DmxFixtureService::upsertFixture(const std::string &jsonFixtu
             auto err = validation.getError().value();
             if (validateSpan)
                 validateSpan->setError(err.getMessage());
-            OATPP_ASSERT_HTTP(false, Status::CODE_400, err.getMessage().c_str());
+            return Result<DmxFixture>{err};
         }
+        validatedFixtureId = jsonObject.at("id").get<std::string>();
     } catch (const nlohmann::json::parse_error &e) {
         if (validateSpan)
             validateSpan->recordException(e);
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, e.what());
+        return Result<DmxFixture>{ServerError(ServerError::InvalidData, e.what())};
     }
     if (validateSpan)
         validateSpan->setSuccess();
+
+    auto opMutex = getUniverseOpMutex(validatedFixtureId);
+    std::lock_guard<std::mutex> opLock(*opMutex);
 
     // Storage facade pairs the upsert + Fixture cache invalidation so the
     // controller can't fire the DB call without the broadcast (issue #11).
     auto result = creatures::storage::publishFixture(jsonFixture, span);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
-        Status status = Status::CODE_500;
-        if (err.getCode() == ServerError::InvalidData)
-            status = Status::CODE_400;
         if (span) {
             span->setError(err.getMessage());
             span->setAttribute("error.code", static_cast<int64_t>(err.getCode()));
         }
-        OATPP_ASSERT_HTTP(false, status, err.getMessage().c_str())
+        return Result<DmxFixture>{err};
     }
 
     if (!result.getValue().has_value()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database returned no fixture value");
+        return Result<DmxFixture>{ServerError(ServerError::InternalError, "Database returned no fixture value")};
     }
 
     auto fixture = result.getValue().value();
@@ -247,10 +271,6 @@ Result<DmxFixture> DmxFixtureService::upsertFixture(const std::string &jsonFixtu
 }
 
 Result<void> DmxFixtureService::deleteFixture(const fixtureId_t &fixtureId, std::shared_ptr<RequestSpan> parentSpan) {
-    if (fixtureId.empty()) {
-        return Result<void>{ServerError(ServerError::InvalidData, "fixtureId is required")};
-    }
-
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.deleteFixture", parentSpan)
                     : nullptr;
@@ -258,8 +278,13 @@ Result<void> DmxFixtureService::deleteFixture(const fixtureId_t &fixtureId, std:
         span->setAttribute("fixture.id", fixtureId);
     }
 
+    if (fixtureId.empty())
+        return fixtureServiceError<void>(span, ServerError(ServerError::InvalidData, "fixtureId is required"));
+
     if (!creatures::db)
-        return Result<void>{ServerError(ServerError::InternalError, "Database unavailable")};
+        return fixtureServiceError<void>(span, ServerError(ServerError::InternalError, "Database unavailable"));
+    auto opMutex = getUniverseOpMutex(fixtureId);
+    std::lock_guard<std::mutex> opLock(*opMutex);
     auto result = creatures::storage::deleteFixture(fixtureId, span);
     if (!result.isSuccess()) {
         auto err = result.getError().value();
@@ -269,26 +294,17 @@ Result<void> DmxFixtureService::deleteFixture(const fixtureId_t &fixtureId, std:
         return Result<void>{err};
     }
 
-    creatures::fixtureUniverseMap->remove(fixtureId);
+    if (creatures::fixtureUniverseMap)
+        creatures::fixtureUniverseMap->remove(fixtureId);
 
     if (span)
         span->setSuccess();
     return Result<void>{};
 }
 
-oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::setFixtureUniverse(const oatpp::String &inFixtureId,
-                                                                              std::optional<universe_t> universe,
-                                                                              std::shared_ptr<RequestSpan> parentSpan) {
-
-    if (!creatures::db) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
-    }
-
-    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
-    if (fixtureId.empty()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
-    }
-
+Result<DmxFixture> DmxFixtureService::setFixtureUniverse(const fixtureId_t &fixtureId,
+                                                         std::optional<universe_t> universe,
+                                                         std::shared_ptr<RequestSpan> parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.setFixtureUniverse", parentSpan)
                     : nullptr;
@@ -300,6 +316,14 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::setFixtureUniverse(co
         }
     }
 
+    if (!creatures::db)
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InternalError, "Database unavailable"));
+    if (fixtureId.empty())
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InvalidData, "fixtureId is required"));
+    if (!creatures::fixtureUniverseMap)
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InternalError, "Fixture universe map unavailable"));
+
     // Serialize concurrent (DB write + cache update + re-fetch) ops for this fixture
     // so two racing PUTs can't leave the DB and runtime map disagreeing.
     auto opMutex = getUniverseOpMutex(fixtureId);
@@ -308,15 +332,10 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::setFixtureUniverse(co
     auto setResult = creatures::storage::setFixtureUniverse(fixtureId, universe, span);
     if (!setResult.isSuccess()) {
         auto err = setResult.getError().value();
-        Status status = Status::CODE_500;
-        if (err.getCode() == ServerError::NotFound)
-            status = Status::CODE_404;
-        else if (err.getCode() == ServerError::InvalidData)
-            status = Status::CODE_400;
         if (span) {
             span->setError(err.getMessage());
         }
-        OATPP_ASSERT_HTTP(false, status, err.getMessage().c_str())
+        return Result<DmxFixture>{err};
     }
 
     if (universe.has_value()) {
@@ -332,14 +351,16 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::setFixtureUniverse(co
         if (span) {
             span->setError(err.getMessage());
         }
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, err.getMessage().c_str())
+        return Result<DmxFixture>{err};
     }
+    if (!fetched.getValue().has_value())
+        return Result<DmxFixture>{ServerError(ServerError::InternalError, "Database returned no fixture value")};
 
     if (span) {
         span->setAttribute("fixture.name", fetched.getValue().value().name);
         span->setSuccess();
     }
-    return creatures::convertToDto(fetched.getValue().value());
+    return Result<DmxFixture>{fetched.getValue().value()};
 }
 
 api::FixtureConfigValidationResponse DmxFixtureService::validateFixtureConfig(const std::string &jsonFixture,
@@ -419,30 +440,9 @@ api::FixtureConfigValidationResponse DmxFixtureService::validateFixtureConfig(co
     return response;
 }
 
-oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const oatpp::String &inFixtureId,
-                                                                          const oatpp::String &inPatternId,
-                                                                          std::optional<uint32_t> stopAfterMs,
-                                                                          std::shared_ptr<RequestSpan> parentSpan) {
-
-    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
-    const std::string patternId = inPatternId ? std::string(inPatternId) : "";
-
-    if (fixtureId.empty()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
-    }
-    if (patternId.empty()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, "patternId is required");
-    }
-    if (!creatures::fixturePatternRunner) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture pattern runner unavailable");
-    }
-    if (!creatures::fixtureCache) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture cache unavailable");
-    }
-    if (!creatures::fixtureUniverseMap) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture universe map unavailable");
-    }
-
+Result<DmxFixture> DmxFixtureService::triggerPattern(const fixtureId_t &fixtureId, const std::string &patternId,
+                                                     std::optional<uint32_t> stopAfterMs,
+                                                     std::shared_ptr<RequestSpan> parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.triggerPattern", parentSpan)
                     : nullptr;
@@ -454,6 +454,22 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const 
         }
     }
 
+    if (fixtureId.empty())
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InvalidData, "fixtureId is required"));
+    if (patternId.empty())
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InvalidData, "patternId is required"));
+    if (!creatures::fixturePatternRunner)
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InternalError, "Fixture pattern runner unavailable"));
+    if (!creatures::fixtureCache)
+        return fixtureServiceError<DmxFixture>(span,
+                                               ServerError(ServerError::InternalError, "Fixture cache unavailable"));
+    if (!creatures::fixtureUniverseMap)
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InternalError, "Fixture universe map unavailable"));
+    if (!creatures::db)
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InternalError, "Database unavailable"));
+
     // Pull the fixture from cache (falling back to DB).
     std::shared_ptr<DmxFixture> fixture;
     try {
@@ -463,8 +479,10 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const 
         if (!dbResult.isSuccess()) {
             if (span)
                 span->setError(dbResult.getError()->getMessage());
-            OATPP_ASSERT_HTTP(false, Status::CODE_404, dbResult.getError()->getMessage().c_str());
+            return Result<DmxFixture>{dbResult.getError().value()};
         }
+        if (!dbResult.getValue().has_value())
+            return Result<DmxFixture>{ServerError(ServerError::NotFound, "Fixture not found")};
         fixture = std::make_shared<DmxFixture>(dbResult.getValue().value());
         creatures::fixtureCache->put(fixtureId, fixture);
     }
@@ -474,7 +492,7 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const 
         const auto message = fmt::format("Fixture {} has no pattern with id '{}'", fixtureId, patternId);
         if (span)
             span->setError(message);
-        OATPP_ASSERT_HTTP(false, Status::CODE_404, message.c_str());
+        return Result<DmxFixture>{ServerError(ServerError::NotFound, message)};
     }
 
     // Resolve universe via a single locked lookup. The previous contains/get pattern had
@@ -486,16 +504,18 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const 
             fmt::format("Fixture {} has no assigned_universe; assign one before triggering", fixtureId);
         if (span)
             span->setError(message);
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+        return Result<DmxFixture>{ServerError(ServerError::InvalidData, message)};
     }
     const universe_t universe = *universePtr;
     const framenum_t currentFrame = creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0;
 
-    if (!creatures::fixturePatternRunner->start(*fixture, *pattern, universe, /*creatureId=*/"", currentFrame, span)) {
+    uint64_t patternGeneration = 0;
+    if (!creatures::fixturePatternRunner->start(*fixture, *pattern, universe, /*creatureId=*/"", currentFrame, span,
+                                                &patternGeneration)) {
         const auto message = fmt::format("Failed to start pattern {} on fixture {}", patternId, fixtureId);
         if (span)
             span->setError(message);
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, message.c_str());
+        return Result<DmxFixture>{ServerError(ServerError::InternalError, message)};
     }
 
     // Arm a tick if there isn't already one pending.
@@ -511,39 +531,22 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const 
         // Capture trigger trace context at schedule time — the request span is still live here.
         const std::string traceId = span ? span->getTraceIdHex() : std::string{};
         const std::string spanId = span ? span->getSpanIdHex() : std::string{};
-        auto stopEvent =
-            std::make_shared<AutoStopEvent>(stopFrame, fixtureId, creatures::fixturePatternRunner, traceId, spanId);
+        auto stopEvent = std::make_shared<AutoStopEvent>(stopFrame, fixtureId, patternGeneration,
+                                                         creatures::fixturePatternRunner, traceId, spanId);
         creatures::eventLoop->scheduleEvent(stopEvent);
     }
 
     if (span)
         span->setSuccess();
 
-    return creatures::convertToDto(*fixture);
+    return Result<DmxFixture>{*fixture};
 }
 
-oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::previewPattern(
-    const oatpp::String &inFixtureId, const std::vector<std::pair<std::string, uint8_t>> &values, uint32_t fadeInMs,
-    uint32_t fadeOutMs, uint32_t holdMs, std::optional<uint32_t> stopAfterMs, std::shared_ptr<RequestSpan> parentSpan) {
-
-    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
-
-    if (fixtureId.empty()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
-    }
-    if (values.empty()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, "values must contain at least one channel");
-    }
-    if (!creatures::fixturePatternRunner) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture pattern runner unavailable");
-    }
-    if (!creatures::fixtureCache) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture cache unavailable");
-    }
-    if (!creatures::fixtureUniverseMap) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture universe map unavailable");
-    }
-
+Result<DmxFixture> DmxFixtureService::previewPattern(const fixtureId_t &fixtureId,
+                                                     const std::vector<std::pair<std::string, uint8_t>> &values,
+                                                     uint32_t fadeInMs, uint32_t fadeOutMs, uint32_t holdMs,
+                                                     std::optional<uint32_t> stopAfterMs,
+                                                     std::shared_ptr<RequestSpan> parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.previewPattern", parentSpan)
                     : nullptr;
@@ -558,6 +561,23 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::previewPattern(
         }
     }
 
+    if (fixtureId.empty())
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InvalidData, "fixtureId is required"));
+    if (values.empty())
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InvalidData, "values must contain at least one channel"));
+    if (!creatures::fixturePatternRunner)
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InternalError, "Fixture pattern runner unavailable"));
+    if (!creatures::fixtureCache)
+        return fixtureServiceError<DmxFixture>(span,
+                                               ServerError(ServerError::InternalError, "Fixture cache unavailable"));
+    if (!creatures::fixtureUniverseMap)
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InternalError, "Fixture universe map unavailable"));
+    if (!creatures::db)
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InternalError, "Database unavailable"));
+
     // Resolve the fixture from cache, falling back to DB. Same idiom as triggerPattern.
     std::shared_ptr<DmxFixture> fixture;
     try {
@@ -567,8 +587,10 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::previewPattern(
         if (!dbResult.isSuccess()) {
             if (span)
                 span->setError(dbResult.getError()->getMessage());
-            OATPP_ASSERT_HTTP(false, Status::CODE_404, dbResult.getError()->getMessage().c_str());
+            return Result<DmxFixture>{dbResult.getError().value()};
         }
+        if (!dbResult.getValue().has_value())
+            return Result<DmxFixture>{ServerError(ServerError::NotFound, "Fixture not found")};
         fixture = std::make_shared<DmxFixture>(dbResult.getValue().value());
         creatures::fixtureCache->put(fixtureId, fixture);
     }
@@ -583,7 +605,7 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::previewPattern(
                 span->setAttribute("error.channel_name", v.first);
                 span->setError(message);
             }
-            OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+            return Result<DmxFixture>{ServerError(ServerError::InvalidData, message)};
         }
     }
 
@@ -594,7 +616,7 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::previewPattern(
             fmt::format("Fixture {} has no assigned_universe; assign one before previewing", fixtureId);
         if (span)
             span->setError(message);
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+        return Result<DmxFixture>{ServerError(ServerError::InvalidData, message)};
     }
     const universe_t universe = *universePtr;
 
@@ -621,11 +643,13 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::previewPattern(
 
     const framenum_t currentFrame = creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0;
 
-    if (!creatures::fixturePatternRunner->start(*fixture, ephemeral, universe, /*creatureId=*/"", currentFrame, span)) {
+    uint64_t patternGeneration = 0;
+    if (!creatures::fixturePatternRunner->start(*fixture, ephemeral, universe, /*creatureId=*/"", currentFrame, span,
+                                                &patternGeneration)) {
         const auto message = fmt::format("Failed to start preview pattern on fixture {}", fixtureId);
         if (span)
             span->setError(message);
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+        return Result<DmxFixture>{ServerError(ServerError::InvalidData, message)};
     }
 
     // Arm a tick if there isn't already one pending.
@@ -640,61 +664,56 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::previewPattern(
         const auto stopFrame = currentFrame + static_cast<framenum_t>(*stopAfterMs);
         const std::string traceId = span ? span->getTraceIdHex() : std::string{};
         const std::string spanId = span ? span->getSpanIdHex() : std::string{};
-        auto stopEvent =
-            std::make_shared<AutoStopEvent>(stopFrame, fixtureId, creatures::fixturePatternRunner, traceId, spanId);
+        auto stopEvent = std::make_shared<AutoStopEvent>(stopFrame, fixtureId, patternGeneration,
+                                                         creatures::fixturePatternRunner, traceId, spanId);
         creatures::eventLoop->scheduleEvent(stopEvent);
     }
 
     if (span)
         span->setSuccess();
 
-    return creatures::convertToDto(*fixture);
+    return Result<DmxFixture>{*fixture};
 }
 
-oatpp::Object<creatures::DmxFixtureDto>
-DmxFixtureService::setFixtureLive(const oatpp::String &inFixtureId,
-                                  const std::vector<std::pair<std::string, uint8_t>> &channelValues, uint32_t timeoutMs,
-                                  std::shared_ptr<RequestSpan> parentSpan) {
-
-    const std::string fixtureId = inFixtureId ? std::string(inFixtureId) : "";
-
-    if (fixtureId.empty()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, "fixtureId is required");
-    }
-    if (channelValues.empty()) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, "values must contain at least one channel");
-    }
-    if (timeoutMs == 0) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, "timeout_ms is required and must be > 0");
-    }
-    // Hard cap on the deadline: 10 minutes. Prevents a buggy client from leaving a
-    // light driven for hours if the user closes the slider window.
-    constexpr uint32_t MAX_LIVE_TIMEOUT_MS = 600'000;
-    if (timeoutMs > MAX_LIVE_TIMEOUT_MS) {
-        const auto message = fmt::format("timeout_ms exceeds maximum of {}ms", MAX_LIVE_TIMEOUT_MS);
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
-    }
-
-    if (!creatures::fixturePatternRunner) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture pattern runner unavailable");
-    }
-    if (!creatures::fixtureCache) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture cache unavailable");
-    }
-    if (!creatures::fixtureUniverseMap) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Fixture universe map unavailable");
-    }
-
+Result<DmxFixture> DmxFixtureService::setFixtureLive(const fixtureId_t &fixtureId,
+                                                     const std::vector<std::pair<std::string, uint8_t>> &channelValues,
+                                                     uint32_t timeoutMs, std::shared_ptr<RequestSpan> parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.setFixtureLive", parentSpan)
                     : nullptr;
     if (span) {
         span->setAttribute("fixture.id", fixtureId);
-        // Match the runner-span name so "fixture.live.channel_value_count" is one attribute
-        // searchable across both layers, not two with the same meaning under different keys.
         span->setAttribute("fixture.live.channel_value_count", static_cast<int64_t>(channelValues.size()));
         span->setAttribute("fixture.live.timeout_ms", static_cast<int64_t>(timeoutMs));
     }
+
+    if (fixtureId.empty())
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InvalidData, "fixtureId is required"));
+    if (channelValues.empty())
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InvalidData, "values must contain at least one channel"));
+    if (timeoutMs == 0)
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InvalidData, "timeout_ms is required and must be > 0"));
+    // Hard cap on the deadline: 10 minutes. Prevents a buggy client from leaving a
+    // light driven for hours if the user closes the slider window.
+    constexpr uint32_t MAX_LIVE_TIMEOUT_MS = 600'000;
+    if (timeoutMs > MAX_LIVE_TIMEOUT_MS) {
+        const auto message = fmt::format("timeout_ms exceeds maximum of {}ms", MAX_LIVE_TIMEOUT_MS);
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InvalidData, message));
+    }
+
+    if (!creatures::fixturePatternRunner)
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InternalError, "Fixture pattern runner unavailable"));
+    if (!creatures::fixtureCache)
+        return fixtureServiceError<DmxFixture>(span,
+                                               ServerError(ServerError::InternalError, "Fixture cache unavailable"));
+    if (!creatures::fixtureUniverseMap)
+        return fixtureServiceError<DmxFixture>(
+            span, ServerError(ServerError::InternalError, "Fixture universe map unavailable"));
+    if (!creatures::db)
+        return fixtureServiceError<DmxFixture>(span, ServerError(ServerError::InternalError, "Database unavailable"));
 
     // Resolve the fixture (cache → DB fallback).
     std::shared_ptr<DmxFixture> fixture;
@@ -705,8 +724,10 @@ DmxFixtureService::setFixtureLive(const oatpp::String &inFixtureId,
         if (!dbResult.isSuccess()) {
             if (span)
                 span->setError(dbResult.getError()->getMessage());
-            OATPP_ASSERT_HTTP(false, Status::CODE_404, dbResult.getError()->getMessage().c_str());
+            return Result<DmxFixture>{dbResult.getError().value()};
         }
+        if (!dbResult.getValue().has_value())
+            return Result<DmxFixture>{ServerError(ServerError::NotFound, "Fixture not found")};
         fixture = std::make_shared<DmxFixture>(dbResult.getValue().value());
         creatures::fixtureCache->put(fixtureId, fixture);
     }
@@ -718,7 +739,7 @@ DmxFixtureService::setFixtureLive(const oatpp::String &inFixtureId,
             fmt::format("Fixture {} has no assigned_universe; assign one before live control", fixtureId);
         if (span)
             span->setError(message);
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+        return Result<DmxFixture>{ServerError(ServerError::InvalidData, message)};
     }
     const universe_t universe = *universePtr;
     const framenum_t currentFrame = creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0;
@@ -735,7 +756,7 @@ DmxFixtureService::setFixtureLive(const oatpp::String &inFixtureId,
         const auto message = fmt::format("Failed to apply live control to fixture {} (see server logs)", fixtureId);
         if (span)
             span->setError(message);
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, message.c_str());
+        return Result<DmxFixture>{ServerError(ServerError::InvalidData, message)};
     }
 
     // Arm a tick if there isn't already one pending — same pattern as triggerPattern.
@@ -747,7 +768,7 @@ DmxFixtureService::setFixtureLive(const oatpp::String &inFixtureId,
     if (span)
         span->setSuccess();
 
-    return creatures::convertToDto(*fixture);
+    return Result<DmxFixture>{*fixture};
 }
 
 void DmxFixtureService::hydrateFromDatabase(std::shared_ptr<OperationSpan> parentSpan) {
@@ -774,7 +795,7 @@ void DmxFixtureService::hydrateFromDatabase(std::shared_ptr<OperationSpan> paren
     int64_t withUniverse = 0;
     for (const auto &fixture : fixtures) {
         // getAllFixtures already populates fixtureCache. We just need to mirror the universe.
-        if (fixture.assigned_universe.has_value()) {
+        if (fixture.assigned_universe.has_value() && creatures::fixtureUniverseMap) {
             creatures::fixtureUniverseMap->put(fixture.id, *fixture.assigned_universe);
             ++withUniverse;
         }

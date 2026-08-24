@@ -23,7 +23,7 @@ class StreamFrameHandler : public IMessageHandler {
      *
      * @param frame the frame to stream
      */
-    void stream(StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan);
+    bool stream(StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan);
 
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 

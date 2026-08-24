@@ -78,7 +78,7 @@ Use the REST endpoints below to audit what the server has created recently. All 
 
 - `GET /api/v1/animation/ad-hoc` returns the TTL-backed animation records pulled straight from MongoDB (metadata plus embedded frames). Use this to confirm that an ad-hoc animation was persisted and learn its UUID.
 - `GET /api/v1/animation/ad-hoc/{animation_id}` returns the fully hydrated animation (metadata + tracks) just like the primary `/api/v1/animation/{id}` endpoint, but scoped to the TTL collection.
-- `GET /api/v1/sound/ad-hoc` walks those same records and surfaces any on-disk WAV artifacts. Each item wraps the familiar `SoundDto` plus extra metadata so existing clients can reuse their parsers:
+- `GET /api/v1/sound/ad-hoc` walks those same records and surfaces any on-disk WAV artifacts. Each item wraps the familiar sound JSON shape plus extra metadata so existing clients can reuse their parsers:
 
 ```json
 {

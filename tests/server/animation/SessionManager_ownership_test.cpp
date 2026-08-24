@@ -83,6 +83,74 @@ TEST(SessionManagerOwnership, RecreatedPlaylistDoesNotDuplicateItsAlreadyClaimed
     EXPECT_EQ(current->generation, second.generation);
 }
 
+TEST(SessionManagerOwnership, StaleGenerationCannotAdoptClearOrCommitReplacementPlaylist) {
+    SessionManager manager;
+
+    const auto first = manager.startPlaylist(UNIVERSE, "playlist-1");
+    ASSERT_TRUE(manager.claimPlaylistEvent(UNIVERSE));
+    ASSERT_TRUE(manager.beginPlaylistEvent(UNIVERSE, first.generation));
+
+    const auto second = manager.startPlaylist(UNIVERSE, "playlist-2");
+    auto staleSession = makePlaylistSession("animation-old", "creature-a");
+    EXPECT_FALSE(manager.registerSession(UNIVERSE, staleSession, true, nullptr, false, first.generation));
+    EXPECT_TRUE(manager.getActiveSessions(UNIVERSE).empty());
+    EXPECT_FALSE(manager.clearPlaylistIfGeneration(UNIVERSE, first.generation));
+
+    PlaylistStatus staleStatus{};
+    staleStatus.playlist = "playlist-1";
+    staleStatus.playing = true;
+    EXPECT_FALSE(manager.commitPlaylistEvent(UNIVERSE, first.generation, staleStatus));
+
+    const auto status = manager.getPlaylistStatus(UNIVERSE);
+    ASSERT_TRUE(status);
+    EXPECT_EQ(status->playlist, "playlist-2");
+    EXPECT_TRUE(manager.isPlaylistGenerationCurrent(UNIVERSE, second.generation));
+}
+
+TEST(SessionManagerOwnership, CurrentGenerationCommitsStatusAndClaimsExactlyOneSuccessor) {
+    SessionManager manager;
+
+    const auto context = manager.startPlaylist(UNIVERSE, "playlist-1");
+    ASSERT_TRUE(manager.claimPlaylistEvent(UNIVERSE));
+    ASSERT_TRUE(manager.beginPlaylistEvent(UNIVERSE, context.generation));
+
+    PlaylistStatus status{};
+    status.playlist = "playlist-1";
+    status.current_animation = "animation-1";
+    status.playing = true;
+    const auto successor = manager.commitPlaylistEvent(UNIVERSE, context.generation, status);
+    ASSERT_TRUE(successor);
+    EXPECT_EQ(successor->generation, context.generation);
+    EXPECT_FALSE(manager.commitPlaylistEvent(UNIVERSE, context.generation, status));
+
+    const auto stored = manager.getPlaylistStatus(UNIVERSE);
+    ASSERT_TRUE(stored);
+    EXPECT_EQ(stored->current_animation, "animation-1");
+}
+
+TEST(SessionManagerOwnership, StaleGenerationCannotClaimReplacementEventSlot) {
+    SessionManager manager;
+    const auto first = manager.startPlaylist(UNIVERSE, "playlist-1");
+    const auto second = manager.startPlaylist(UNIVERSE, "playlist-2");
+
+    EXPECT_FALSE(manager.claimPlaylistEvent(UNIVERSE, first.generation));
+    const auto current = manager.claimPlaylistEvent(UNIVERSE, second.generation);
+    ASSERT_TRUE(current);
+    EXPECT_EQ(current->generation, second.generation);
+}
+
+TEST(SessionManagerOwnership, StartingReplacementCancelsPlaylistSessionAtomically) {
+    SessionManager manager;
+    manager.startPlaylist(UNIVERSE, "playlist-1");
+    auto oldSession = makePlaylistSession("animation-old", "creature-a");
+    ASSERT_TRUE(manager.registerSession(UNIVERSE, oldSession, true));
+
+    manager.startPlaylist(UNIVERSE, "playlist-2");
+
+    EXPECT_TRUE(oldSession->isCancelled());
+    EXPECT_TRUE(manager.getActiveSessions(UNIVERSE).empty());
+}
+
 TEST(SessionManagerOwnership, NonConflictingSessionsCoexistWithAscendingGenerations) {
     SessionManager manager;
     auto sessionA = makeSession("anim-a", "creature-a");

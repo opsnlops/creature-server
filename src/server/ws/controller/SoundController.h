@@ -18,13 +18,8 @@
 #include <oatpp/web/protocol/http/outgoing/ResponseFactory.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/SoundRequests.h"
 #include "server/audio/SoundPathResolver.h"
-#include "server/ws/dto/AdHocSoundEntryDto.h"
-#include "server/ws/dto/GenerateLipSyncRequestDto.h"
-#include "server/ws/dto/GenerateLipSyncUploadResponseDto.h"
-#include "server/ws/dto/JobCreatedDto.h"
-#include "server/ws/dto/ListDto.h"
-#include "server/ws/dto/PlaySoundRequestDTO.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/SoundRenditionService.h"
 #include "server/ws/service/SoundService.h"
@@ -38,6 +33,7 @@
 #include "server/voice/RhubarbData.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
+#include "util/JsonParser.h"
 #include "util/Result.h"
 #include "util/Sha256.h"
 #include "util/uuidUtils.h"
@@ -104,7 +100,10 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
 
                 // The source can only be a WAV (loadWavAsMono), so it's exactly '{stem}.wav'.
                 const std::string sourceWav = stem + ".wav";
-                const auto resolved = m_soundService.resolveSoundPath(sourceWav, span);
+                const auto resolvedResult = m_soundService.resolveSoundPath(sourceWav, span);
+                if (!resolvedResult.isSuccess())
+                    return bailFromServerError(span, resolvedResult.getError().value());
+                const auto resolved = resolvedResult.getValue().value();
                 if (!resolved) {
                     return bailHttp(
                         span, Status::CODE_404,
@@ -203,33 +202,40 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->summary = "Lists all of the sound files";
         info->addTag("Sounds");
 
-        info->addResponse<Object<SoundsListDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound", getAllSounds, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/sound", "GET", "api/v1/sound", "getAllSounds", "SoundController", request,
                            [&](const auto &span) {
-                               const auto result = m_soundService.getAllSounds();
+                               const auto result = m_soundService.getAllSounds(span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
                                if (span)
                                    span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(span, Status::CODE_200,
+                                                   api::listResponseToJson(result.getValue().value(), soundToJson));
                            });
     }
 
     ENDPOINT_INFO(getAdHocSounds) {
         info->summary = "List ad-hoc/generated sound files";
         info->addTag("Sounds");
-        info->addResponse<Object<AdHocSoundListDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound/ad-hoc", getAdHocSounds, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/sound/ad-hoc", "GET", "api/v1/sound/ad-hoc", "getAdHocSounds",
                            "SoundController", request, [&](const auto &span) {
-                               const auto result = m_soundService.getAdHocSounds();
+                               const auto result = m_soundService.getAdHocSounds(span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
                                if (span)
                                    span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(
+                                   span, Status::CODE_200,
+                                   api::listResponseToJson(result.getValue().value(), api::adHocSoundEntryToJson));
                            });
     }
 
@@ -243,22 +249,35 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/sound/play", playSound, BODY_DTO(Object<creatures::ws::PlaySoundRequestDTO>, requestBody),
-             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("POST /api/v1/sound/play", "POST", "api/v1/sound/play", "playSound", "SoundController",
-                           request, [&](const auto &span) {
-                               if (!requestBody || !requestBody->file_name || requestBody->file_name->empty()) {
-                                   return bailHttp(span, Status::CODE_400, "file_name is required");
-                               }
-                               if (span && requestBody && requestBody->file_name) {
-                                   span->setAttribute("audio.file.name", creatures::audio::sanitizeForLogging(
-                                                                             std::string(requestBody->file_name)));
-                               }
-                               const auto result = m_soundService.playSound(std::string(requestBody->file_name), span);
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, result);
-                           });
+    ENDPOINT("POST", "api/v1/sound/play", playSound, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "POST /api/v1/sound/play", "POST", "api/v1/sound/play", "playSound", "SoundController", request,
+            [&](const auto &span) {
+                const auto body = readRequestBodyLimited(request, api::MAX_SOUND_CONTROL_REQUEST_BODY_BYTES, span);
+                const auto parseSpan =
+                    observability ? observability->createChildOperationSpan("SoundController.parsePlayRequest", span)
+                                  : nullptr;
+                const auto json = JsonParser::parseApiJsonString(body, "sound play request", parseSpan);
+                if (!json.isSuccess())
+                    return bailFromServerError(span, json.getError().value());
+                const auto parsed = api::playSoundRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidSoundPlayRequest", error.getCode());
+                    return bailFromServerError(span, error);
+                }
+                if (parseSpan)
+                    parseSpan->setSuccess();
+                const auto &fileName = parsed.getValue()->fileName;
+                if (span)
+                    span->setAttribute("audio.file.name", audio::sanitizeForLogging(fileName));
+                const auto result = m_soundService.playSound(fileName, span);
+                if (!result.isSuccess())
+                    return bailFromServerError(span, result.getError().value());
+                if (span)
+                    span->setHttpStatus(200);
+                return jsonResponse(span, Status::CODE_200, api::statusResponseToJson(result.getValue().value()));
+            });
     }
 
     ENDPOINT_INFO(generateLipSyncFromUpload) {
@@ -270,7 +289,7 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/sound/generate-lipsync/upload", generateLipSyncFromUpload, BODY_STRING(String, body),
+    ENDPOINT("POST", "api/v1/sound/generate-lipsync/upload", generateLipSyncFromUpload,
              QUERY(String, filename, "filename"), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         info("REST call to generateLipSyncFromUpload");
         return runEndpoint(
@@ -280,11 +299,7 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     return bailHttp(span, Status::CODE_400, "Query parameter 'filename' is required.");
                 }
 
-                if (!body) {
-                    return bailHttp(span, Status::CODE_400, "Request body must contain WAV data.");
-                }
-
-                std::string wavData = body;
+                std::string wavData = readRequestBodyLimited(request, api::MAX_SOUND_UPLOAD_BODY_BYTES, span);
                 if (wavData.empty()) {
                     return bailHttp(span, Status::CODE_400, "Uploaded WAV data is empty.");
                 }
@@ -371,22 +386,14 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                                     fmt::format("Failed to parse Rhubarb JSON output: {}", e.what()));
                 }
 
-                auto metadataDto = creatures::ws::RhubarbMetadataDto::createShared();
-                metadataDto->soundFile = lipSyncData.metadata.soundFile;
-                metadataDto->duration = lipSyncData.metadata.duration;
-
-                auto mouthCuesDto = oatpp::List<oatpp::Object<creatures::ws::RhubarbMouthCueDto>>::createShared();
+                auto mouthCues = nlohmann::json::array();
                 for (const auto &cue : lipSyncData.mouthCues) {
-                    auto cueDto = creatures::ws::RhubarbMouthCueDto::createShared();
-                    cueDto->start = cue.start;
-                    cueDto->end = cue.end;
-                    cueDto->value = cue.value;
-                    mouthCuesDto->push_back(cueDto);
+                    mouthCues.push_back({{"start", cue.start}, {"end", cue.end}, {"value", cue.value}});
                 }
-
-                auto responseDto = GenerateLipSyncUploadResponseDto::createShared();
-                responseDto->metadata = metadataDto;
-                responseDto->mouthCues = mouthCuesDto;
+                const nlohmann::json responseBody = {
+                    {"metadata",
+                     {{"soundFile", lipSyncData.metadata.soundFile}, {"duration", lipSyncData.metadata.duration}}},
+                    {"mouthCues", std::move(mouthCues)}};
 
                 auto jsonFilename = fmt::format("{}.json", sanitizedFilename.substr(0, sanitizedFilename.size() - 4));
 
@@ -397,8 +404,7 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     span->setAttribute("json.mouth_cues", static_cast<int64_t>(lipSyncData.mouthCues.size()));
                 }
 
-                auto response = createDtoResponse(Status::CODE_200, responseDto);
-                response->putHeader("Content-Type", "application/json; charset=utf-8");
+                auto response = jsonResponse(span, Status::CODE_200, responseBody);
                 response->putHeader("Content-Disposition", fmt::format("attachment; filename=\"{}\"", jsonFilename));
                 return response;
             });
@@ -465,7 +471,10 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                                // Resolve via the service: top-level first, then a recursive
                                // basename search so dialog/ renders resolve too (#46). Throws
                                // an HTTP error (404/400) that withSpanStatus stamps.
-                               std::string canonicalPath = m_soundService.resolvePermanentSoundPath(safeFilename);
+                               const auto resolved = m_soundService.resolvePermanentSoundPath(safeFilename, span);
+                               if (!resolved.isSuccess())
+                                   return bailFromServerError(span, resolved.getError().value());
+                               const std::string canonicalPath = resolved.getValue().value();
 
                                std::error_code sizeError;
                                const auto fileSize =
@@ -520,13 +529,10 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     return bailHttp(span, Status::CODE_403, e.what());
                 }
 
-                std::string filePath;
-                try {
-                    filePath = m_soundService.resolveAdHocSoundPath(safeFilename);
-                } catch (oatpp::web::protocol::http::HttpError &err) {
-                    // withSpanStatus catches HttpError and stamps the right code; rethrow.
-                    throw;
-                }
+                const auto resolved = m_soundService.resolveAdHocSoundPath(safeFilename, span);
+                if (!resolved.isSuccess())
+                    return bailFromServerError(span, resolved.getError().value());
+                const std::string filePath = resolved.getValue().value();
 
                 std::error_code sizeError;
                 const auto fileSize = static_cast<std::int64_t>(std::filesystem::file_size(filePath, sizeError));
@@ -625,7 +631,10 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
 
                 // Permanent store first (dialog/ renders are where provenance lives),
                 // then ad-hoc — the shared store-precedence policy.
-                const auto resolved = m_soundService.resolveSoundPath(safeFilename);
+                const auto resolvedResult = m_soundService.resolveSoundPath(safeFilename, span);
+                if (!resolvedResult.isSuccess())
+                    return bailFromServerError(span, resolvedResult.getError().value());
+                const auto resolved = resolvedResult.getValue().value();
                 if (!resolved) {
                     return bailHttp(
                         span, Status::CODE_404,
@@ -651,12 +660,12 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
 
     ENDPOINT_INFO(getSoundMetadata) {
         info->summary = "Structured dialog metadata for one stored sound (issue #56)";
-        info->description = "Returns the full SoundDto for a single sound, including the heavy per-track mouth cues "
+        info->description = "Returns full sound metadata, including the heavy per-track mouth cues "
                             "and word timings parsed from the embedded iXML. The sound LIST (GET /api/v1/sound) omits "
                             "those arrays to stay light; the console fetches this per-sound for the animation it's "
                             "editing. Empty structured fields for plain sounds and pre-dialog-pipeline renders.";
         info->addTag("Sounds");
-        info->addResponse<Object<SoundDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
     }
@@ -672,7 +681,10 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     return bailHttp(span, Status::CODE_403, e.what());
                 }
 
-                const auto resolved = m_soundService.resolveSoundPath(safeFilename);
+                const auto resolvedResult = m_soundService.resolveSoundPath(safeFilename, span);
+                if (!resolvedResult.isSuccess())
+                    return bailFromServerError(span, resolvedResult.getError().value());
+                const auto resolved = resolvedResult.getValue().value();
                 if (!resolved) {
                     return bailHttp(
                         span, Status::CODE_404,
@@ -682,8 +694,10 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                     span->setAttribute("sound.source_path", resolved->path);
                     span->setHttpStatus(200);
                 }
-                return createDtoResponse(Status::CODE_200,
-                                         m_soundService.buildSoundMetadata(resolved->path, safeFilename));
+                const auto metadata = m_soundService.buildSoundMetadata(resolved->path, safeFilename, span);
+                if (!metadata.isSuccess())
+                    return bailFromServerError(span, metadata.getError().value());
+                return jsonResponse(span, Status::CODE_200, soundToJson(metadata.getValue().value()));
             });
     }
 
@@ -691,24 +705,48 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->summary = "Generate lip sync data for a sound file using Rhubarb Lip Sync (async job)";
         info->addTag("Sounds");
 
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/sound/generate-lipsync", generateLipSync,
-             BODY_DTO(Object<creatures::ws::GenerateLipSyncRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         info("REST call to generateLipSync (async)");
         return runEndpoint(
             "POST /api/v1/sound/generate-lipsync", "POST", "api/v1/sound/generate-lipsync", "generateLipSync",
             "SoundController", request, [&](const auto &span) {
-                if (span) {
-                    span->setAttribute("sound.file", std::string(requestBody->sound_file));
+                const auto body = readRequestBodyLimited(request, api::MAX_SOUND_CONTROL_REQUEST_BODY_BYTES, span);
+                const auto parseSpan =
+                    observability
+                        ? observability->createChildOperationSpan("SoundController.parseGenerateLipSyncRequest", span)
+                        : nullptr;
+                const auto json = JsonParser::parseApiJsonString(body, "lip sync request", parseSpan);
+                if (!json.isSuccess())
+                    return bailFromServerError(span, json.getError().value());
+                const auto parsed = api::generateLipSyncRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidLipSyncRequest", error.getCode());
+                    return bailFromServerError(span, error);
                 }
-
-                auto soundFile = std::string(requestBody->sound_file);
-                bool allowOverwrite =
-                    requestBody->allow_overwrite ? static_cast<bool>(requestBody->allow_overwrite) : false;
+                if (parseSpan)
+                    parseSpan->setSuccess();
+                const auto soundFile = parsed.getValue()->soundFile;
+                const bool allowOverwrite = parsed.getValue()->allowOverwrite;
+                if (!audio::isSafeSoundFilename(soundFile))
+                    return bailHttp(span, Status::CODE_400,
+                                    "sound_file must be a safe filename without path components");
+                std::string extension = fs::path(soundFile).extension().string();
+                std::transform(extension.begin(), extension.end(), extension.begin(),
+                               [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+                if (extension != ".wav")
+                    return bailHttp(span, Status::CODE_422, "sound_file must name a WAV file");
+                if (!jobManager || !jobWorker)
+                    return bailHttp(span, Status::CODE_500, "Job processing is unavailable");
+                if (span) {
+                    span->setAttribute("sound.file", audio::sanitizeForLogging(soundFile));
+                    span->setAttribute("allow_overwrite", allowOverwrite);
+                }
 
                 // Encode details as JSON to include both filename and allow_overwrite flag
                 nlohmann::json jobDetails;
@@ -729,19 +767,19 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                 creatures::jobWorker->queueJob(jobId);
                 info("Job {} queued successfully", jobId);
 
-                const auto response = JobCreatedDto::createShared();
-                response->job_id = jobId;
-                response->job_type = "lip-sync";
-                response->message = fmt::format("Lip sync job created for '{}'. Listen for job-progress and "
-                                                "job-complete WebSocket messages.",
-                                                soundFile);
+                const nlohmann::json response = {
+                    {"job_id", jobId},
+                    {"job_type", "lip-sync"},
+                    {"message", fmt::format("Lip sync job created for '{}'. Listen for job-progress and "
+                                            "job-complete WebSocket messages.",
+                                            soundFile)}};
 
                 if (span) {
                     span->setHttpStatus(202);
                 }
 
                 debug("Returning 202 Accepted with job ID: {}", jobId);
-                return createDtoResponse(Status::CODE_202, response);
+                return jsonResponse(span, Status::CODE_202, response);
             });
     }
 };

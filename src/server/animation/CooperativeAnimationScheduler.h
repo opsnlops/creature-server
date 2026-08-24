@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "PlaybackSession.h"
 #include "model/Animation.h"
 #include "server/namespace-stuffs.h"
@@ -61,7 +63,8 @@ class CooperativeAnimationScheduler {
     static Result<std::shared_ptr<PlaybackSession>>
     scheduleAnimation(framenum_t startingFrame, const Animation &animation, universe_t universe,
                       creatures::runtime::ActivityReason reason = creatures::runtime::ActivityReason::Play,
-                      bool cancelEntireUniverse = false, const std::string &chainId = {});
+                      bool cancelEntireUniverse = false, const std::string &chainId = {},
+                      std::optional<uint64_t> expectedPlaylistGeneration = std::nullopt);
 
   private:
     // No instances needed - all static methods

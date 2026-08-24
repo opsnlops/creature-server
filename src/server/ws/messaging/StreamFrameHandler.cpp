@@ -226,8 +226,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
             messageSpan->setAttribute("streaming.universe", static_cast<int64_t>(frame.universe));
             messageSpan->setAttribute("stream.frame.encoded_bytes", static_cast<int64_t>(frame.data.size()));
         }
-        stream(frame, messageSpan);
-        return true;
+        return stream(frame, messageSpan);
 
     } catch (const std::bad_cast &e) {
         auto errorMessage = fmt::format("Error (std::bad_cast) while processing a StreamFrame message: {}", e.what());
@@ -262,26 +261,13 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
     return false;
 }
 
-void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan) {
+bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan) {
 
     // Use the parent sampling span instead of creating a child span for this high-frequency operation.
     // `span` may be nullptr if observability is uninitialized — guard every dereference.
     auto span = parentSpan;
 
     appLogger->trace("Entered StreamFrameHandler::stream()");
-
-    // Cancel any active playback on this universe for the targeted creature (live streaming takes priority)
-    creatures::sessionManager->cancelSessionsForCreatures(frame.universe, {frame.creature_id});
-    if (span) {
-        span->setAttribute("streaming.preempted_session", true);
-    }
-
-    // Also stop any playlist state
-    auto playlistState = creatures::sessionManager->getPlaylistState(frame.universe);
-    if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
-        appLogger->info("Stopping playlist on universe {} for live streaming", frame.universe);
-        creatures::sessionManager->stopPlaylist(frame.universe);
-    }
 
     // Make sure this creature is in the cache
     std::shared_ptr<Creature> creature;
@@ -321,7 +307,7 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
                 span->setAttribute("error.type", "NotFound");
                 span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
             }
-            return;
+            return false;
         }
         creature = std::make_shared<Creature>(result.getValue().value());
         appLogger->debug("creature is now: name: {}, channel_offset: {}", creature->name, creature->channel_offset);
@@ -344,7 +330,19 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
             span->setAttribute("error.type", "NotFound");
             span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
         }
-        return;
+        return false;
+    }
+
+    // Only a valid, resolvable creature may preempt playback. Doing this before the
+    // lookup let a bogus creature id stop an unrelated playlist on the same universe.
+    creatures::sessionManager->cancelSessionsForCreatures(frame.universe, {frame.creature_id});
+    if (span)
+        span->setAttribute("streaming.preempted_session", true);
+
+    const auto playlistState = creatures::sessionManager->getPlaylistState(frame.universe);
+    if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
+        appLogger->info("Stopping playlist on universe {} for live streaming", frame.universe);
+        creatures::sessionManager->stopPlaylist(frame.universe);
     }
 
     // Mark runtime activity as streaming (only once per creature). Session start is a
@@ -421,6 +419,7 @@ void StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     if (span) {
         span->setSuccess();
     }
+    return true;
 }
 
 } // namespace creatures::ws

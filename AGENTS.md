@@ -263,7 +263,7 @@ POST   /api/v1/fixture/{fixtureId}/live                      body: {values: [{ch
 
 - **Model**: `src/model/DmxFixture.{h,cpp}`, `src/model/Track.{h,cpp}` (with `fixture_id`)
 - **DB**: `src/server/fixture/{helpers,upsert,get,getall}.cpp`
-- **REST**: `src/server/ws/controller/DmxFixtureController.h`, `src/server/ws/service/DmxFixtureService.{h,cpp}`, `src/server/ws/dto/{FixtureConfigValidationDto,SetFixtureUniverseRequestDto,TriggerFixturePatternRequestDto,PreviewFixturePatternRequestDto,SetFixtureLiveRequestDto}.h`
+- **REST**: `src/server/ws/controller/DmxFixtureController.h`, `src/server/ws/service/DmxFixtureService.{h,cpp}`, `src/api/{FixtureRequests,FixtureResponses}.h`
 - **Runtime**: `src/server/fixture/{FixturePatternRunner,FixturePatternTickEvent,FixtureBindingDispatcher}.{h,cpp}`
 - **Hook**: `src/server/ws/service/FixtureActivityHook.h`
 - **Globals**: `src/server/main.cpp` (`fixtureCache`, `fixtureUniverseMap`, `fixturePatternRunner`, `fixtureBindingDispatcher`, `fixtureActivityHook`)
@@ -485,7 +485,7 @@ blocking — each is its own design or scoping decision.
 The `mouth_slot` field is prepared for integration with Rhubarb Lip Sync. When that feature is implemented:
 - The server can automatically generate mouth movement data from audio files
 - The generated mouth positions will be applied to the `mouth_slot` index in the animation frames
-- API endpoint exists at `/api/v1/sound/generate-lip-sync` (see `GenerateLipSyncRequestDto.h`)
+- API endpoint exists at `/api/v1/sound/generate-lipsync` (see `src/api/SoundRequests.h`)
 - Implementation files: `src/server/voice/RhubarbData.h`, `src/server/voice/RhubarbData.cpp`
 
 ---

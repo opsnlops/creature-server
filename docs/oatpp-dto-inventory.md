@@ -47,12 +47,12 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/Animation.h` | `AnimationDto` | REST response and accepted POST/ad-hoc input | Strict model-owned `animationToJson` / `animationFromJson`; API and persistence envelopes are distinct |
 | `src/model/AnimationMetadata.h` | `CreatureRenderChoiceDto`, `AnimationMetadataDto` | Animation list/detail response and nested input | Strict model-owned `animationMetadataToJson` / `animationMetadataFromJson` |
 | `src/model/DialogScript.h` | `DialogScriptTurnDto`, `AcceptedVoiceDto`, `DialogBackgroundMusicDto`, `DialogScriptDto` | Primarily REST and job response; input is already parsed from raw JSON | `dialogScriptToJson`; database-owned `dialogScriptFromJson` |
-| `src/model/DmxFixture.h` | `FixtureChannelDto`, `FixturePatternValueDto`, `FixturePatternDto`, `FixtureBindingDto`, `DmxFixtureDto` | REST responses; config input is already parsed from raw JSON | Strict model-owned `dmxFixtureToJson` / `dmxFixtureFromJson`; persistence still uses its legacy parser |
+| `src/model/DmxFixture.h` | — | REST responses; config input is parsed from raw JSON | Strict model-owned `dmxFixtureToJson` / `dmxFixtureFromJson`; persistence still uses its legacy parser |
 | `src/server/ws/dto/InputDto.h` (moved from `src/model/Input.h`) | `InputDto` | Temporary oat++ adapter for remaining non-Creature nested uses | Strict model-owned `inputToJson` / `inputFromJson` |
 | `src/server/ws/dto/NoticeDto.h` (moved from `src/model/Notice.h`) | `NoticeDto` | Temporary oat++ adapter for inbound and outbound WebSocket notices | Strict model-owned `noticeToJson` / `noticeFromJson` |
 | `src/server/ws/dto/PlaylistItemDto.h` (moved from `src/model/PlaylistItem.h`) | `PlaylistItemDto` | Temporary oat++ adapter for nested playlist input/response | Strict model-owned `playlistItemToJson` / `playlistItemFromJson` |
 | `src/model/PlaylistStatus.h` | — | REST and outbound status payloads | Strict model-owned `playlistStatusToJson` / `playlistStatusFromJson` |
-| `src/model/Sound.h` | `DialogTurnDto`, `SoundTrackDto`, `MouthCueDto`, `TrackMouthCuesDto`, `WordTimingDto`, `TrackWordsDto`, `SoundDto` | Sound lists and heavy metadata response; dialog-generation support | No complete neutral codec |
+| `src/model/Sound.h` | — | Sound lists, ad-hoc summaries, and heavy metadata response | Model-owned `soundToJson`; nested timing/cue serializers preserve the wire shape and omit empty heavy arrays |
 | `src/model/Stage.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned placement and audio keys | `stageToJson`; database-owned `stageFromJson` |
 | `src/model/Storyboard.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned tile action keys | `storyboardToJson`; database-owned `storyboardFromJson` |
 | `src/model/StreamFrame.h` | — | Framework-neutral inbound stream command | Strict model-owned `streamFrameToJson` / `streamFrameFromJson`; valid UUID, E1.31 universe, and capped 512-byte decoded DMX payload |
@@ -90,8 +90,8 @@ The 1 ms counter-send event uses `SystemCountersSnapshot` and a deep
 | File | DTO classes | Direction |
 |---|---|---|
 | `AdHocAnimationDto.h` | `AdHocAnimationDto`, `AdHocAnimationListDto` | Response |
-| `AdHocSoundEntryDto.h` | `AdHocSoundEntryDto`, `AdHocSoundListDto` | Response |
-| `ListDto.h` | `ListDto<T>`, `AnimationsListDto`, `SoundsListDto`, `VoiceListDto` | Response |
+| `api/SoundResponses.h` | `AdHocSoundEntry` | Neutral response |
+| `ListDto.h` | `ListDto<T>`, `AnimationsListDto`, `VoiceListDto` | Response |
 
 The generic list DTO stores both `count` and `items`. The neutral replacement
 should derive `count` from the final item vector when serializing.
@@ -102,24 +102,24 @@ should derive `count` from the final item vector when serializing.
 |---|---|---|
 | `CreateAdHocAnimationRequestDto.h` | `CreateAdHocAnimationRequestDto` | Ad-hoc animation creation |
 | `DialogVoiceDto.h` | `AcceptVoiceRequestDto` | Dialog take acceptance |
-| `GenerateLipSyncRequestDto.h` | `GenerateLipSyncRequestDto` | Lip-sync generation |
+| `api/SoundRequests.h` | `GenerateLipSyncRequest`, `PlaySoundRequest` | Strict bounded lip-sync and playback requests |
 | `MakeSoundFileRequestDto.h` | `MakeSoundFileRequestDto` | Voice generation/job input |
 | `PlayAnimationRequestDto.h` | `PlayAnimationRequestDto` | Stored animation playback |
-| `PlaySoundRequestDTO.h` | `PlaySoundRequestDTO` | Sound playback |
 | `RegenerateLipSyncRequestDto.h` | `RegenerateLipSyncRequestDto` | Lip-sync regeneration |
-| `SetFixtureUniverseRequestDto.h` | `SetFixtureUniverseRequestDto` | Fixture universe assignment |
+| `api/FixtureRequests.h` | `SetFixtureUniverseRequest`, `TriggerFixturePatternRequest` | Strict fixture universe/pattern-trigger requests |
 | `TriggerAdHocAnimationRequestDto.h` | `TriggerAdHocAnimationRequestDto` | Prepared ad-hoc animation playback |
-| `TriggerFixturePatternRequestDto.h` | `TriggerFixturePatternRequestDto` | Fixture pattern trigger |
 
-### Structured fixture request DTOs
+### Structured fixture requests
 
 | File | DTO classes | Direction |
 |---|---|---|
-| `PreviewFixturePatternRequestDto.h` | `PreviewFixturePatternRequestDto` | Request |
-| `SetFixtureLiveRequestDto.h` | `FixtureLiveValueDto`, `SetFixtureLiveRequestDto` | Request |
+| `api/FixtureRequests.h` | `PreviewFixturePatternRequest`, `SetFixtureLiveRequest`, `FixtureChannelValue` | Strict fixture preview/live-control requests |
 
-These request parsers need explicit array bounds, channel-name length limits,
-byte-range checks, timeout caps, and duplicate-channel policy.
+These request parsers enforce array bounds, channel-name length limits,
+byte-range checks, timeout caps, and strict unknown-field rejection.
+Sound control requests use the same strict unknown-field/type policy, cap JSON
+bodies at 4 KiB, and cap filenames at 255 bytes. Raw WAV uploads use the shared
+bounded-body reader with a 1 GiB ceiling.
 
 ### Streaming ad-hoc DTOs
 
@@ -152,7 +152,6 @@ job detail/result serialization together.
 |---|---|---|
 | `DialogScriptValidationDto.h` | `DialogScriptValidationDto` | Response |
 | `FixtureConfigValidationDto.h` | `FixtureConfigValidationDto` | Response |
-| `GenerateLipSyncUploadResponseDto.h` | `RhubarbMetadataDto`, `RhubarbMouthCueDto`, `GenerateLipSyncUploadResponseDto` | Response |
 | `JobCreatedDto.h` | `JobCreatedDto` | Response |
 | `JobStateDto.h` | `JobStateDto` | REST response |
 | `SimpleResponseDto.h` | `SimpleResponseDto` | Response |
@@ -162,9 +161,8 @@ job detail/result serialization together.
 The controller-level canonical status contract is now framework-neutral:
 `api::StatusResponse`, `makeStatusResponse`, and `statusResponseToJson` live in
 `src/api/JsonResponse.h`. `HttpResponseHelpers` emits that JSON directly and no
-longer constructs `StatusDto`. The remaining `StatusDto` uses are legacy service
-return types in the Sound and Playlist slices, so they retire with those vertical
-migrations rather than through the generic helper layer.
+longer constructs `StatusDto`. Remaining `StatusDto` references describe legacy
+Swagger error responses or belong to resource slices that have not yet migrated.
 
 ## WebSocket DTOs
 
@@ -210,9 +208,9 @@ Nine service headers expose oat++ directly.
 |---|---|---|---|
 | `AnimationService` | `listAllAnimations`, `getAnimation`, `getAdHocAnimation`, `upsertAnimation`, `listAdHocAnimations`, `deleteAnimation`, `playStoredAnimation` | DTO/list/status returns, `oatpp::String` IDs, HTTP assertions/status | `Result<T>`, vectors, `Result<void>`, standard/strong IDs |
 | `CreatureService` | — | Fully neutral: `Result<T>`, request/response structs, and synchronized runtime snapshots | Completed |
-| `DmxFixtureService` | `setFixtureUniverse`, `triggerPattern`, `previewPattern`, `setFixtureLive` | CRUD and validation are neutral; remaining runtime controls still use DTO returns, oat++ IDs, and HTTP assertions | Finish `Result<DmxFixture>` / `Result<void>` conversion for runtime controls |
+| `DmxFixtureService` | — | Fully neutral: domain values, standard IDs, and checked plain request contracts | Completed |
 | `PlaylistService` | — | Fully neutral: domain/list/status values and checked plain request contracts | Completed |
-| `SoundService` | `buildSoundMetadata`, `playSound`, `getAllSounds`, `getAdHocSounds`, `generateLipSync` | DTO/list/status returns and oat++ filename | Domain/response values and `Result<void>` |
+| `SoundService` | — | Fully neutral: domain/response values, standard strings, optionals, and `Result<T>` errors | Completed |
 | `MetricsService` | `getCounters` | Neutral `Result<SystemCountersSnapshot>` return | Ordinary immutable counter snapshot |
 | `VoiceService` | `getAllVoices`, `getSubscriptionStatus`, `generateCreatureSpeech` | Library DTO returns and DTO request | Library domain structs and neutral API request |
 | `DialogMusicService` | `generate`, `promote`, private `backfillMusicSourceFromPromotedFile` | DTO request/results inside `Result` | Plain request and result structs |
@@ -220,10 +218,10 @@ Nine service headers expose oat++ directly.
 
 ### Hidden service coupling
 
-Several service methods with standard-looking signatures still throw
-`oatpp::HttpError` via `OATPP_ASSERT_HTTP`, especially sound path resolution.
-The service phase must search implementations as well as headers and convert
-these throws to `Result<T>`; a signature-only inventory is insufficient.
+Several service methods with standard-looking signatures can still hide
+framework coupling in their implementations. The completed Sound slice converted
+path-resolution and playback failures to `Result<T>`; future slices must continue
+to search implementations as well as headers.
 
 ## Runtime consumers outside controllers and services
 

@@ -12,16 +12,15 @@
 
 #include <nlohmann/json.hpp>
 
+#include "api/FixtureRequests.h"
 #include "server/config.h"
 #include "server/database.h"
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/PreviewFixturePatternRequestDto.h"
-#include "server/ws/dto/SetFixtureLiveRequestDto.h"
-#include "server/ws/dto/SetFixtureUniverseRequestDto.h"
-#include "server/ws/dto/TriggerFixturePatternRequestDto.h"
 #include "server/ws/service/DmxFixtureService.h"
+#include "util/JsonParser.h"
+#include "util/ObservabilityManager.h"
 #include "util/websocketUtils.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
@@ -95,15 +94,16 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
         info->description = "Accepts raw fixture JSON and upserts it to the database. Required fields: id, name, "
                             "type, channel_offset, channels.";
         info->addTag("Fixtures");
-        info->addResponse<Object<creatures::DmxFixtureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/fixture", upsertFixture, BODY_STRING(String, body),
+    ENDPOINT("POST", "api/v1/fixture", upsertFixture,
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         return runEndpoint("POST /api/v1/fixture", "POST", "api/v1/fixture", "upsertFixture", "DmxFixtureController",
                            request, [&](const auto &span) {
-                               const auto fixtureConfig = std::string(body);
+                               const auto fixtureConfig =
+                                   readRequestBodyLimited(request, api::MAX_FIXTURE_CONFIG_REQUEST_BODY_BYTES, span);
                                if (span) {
                                    span->setAttribute("request.body_size",
                                                       static_cast<int64_t>(fixtureConfig.length()));
@@ -149,14 +149,13 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
         info->addTag("Fixtures");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/fixture/validate", validateFixtureConfig, BODY_STRING(String, body),
+    ENDPOINT("POST", "api/v1/fixture/validate", validateFixtureConfig,
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         return runEndpoint(
             "POST /api/v1/fixture/validate", "POST", "api/v1/fixture/validate", "validateFixtureConfig",
             "DmxFixtureController", request, [&](const auto &span) {
-                if (span)
-                    span->setAttribute("request.body_size", static_cast<int64_t>(body ? body->size() : 0));
-                const auto result = m_service.validateFixtureConfig(std::string(body), span);
+                const auto body = readRequestBodyLimited(request, api::MAX_FIXTURE_CONFIG_REQUEST_BODY_BYTES, span);
+                const auto result = m_service.validateFixtureConfig(body, span);
                 if (span)
                     span->setHttpStatus(200);
                 return jsonResponse(span, Status::CODE_200, api::fixtureConfigValidationResponseToJson(result));
@@ -168,13 +167,12 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
         info->description = "Sets the fixture's `assigned_universe` field in MongoDB and mirrors it to the runtime "
                             "lookup map. Survives server restart.";
         info->addTag("Fixtures");
-        info->addResponse<Object<creatures::DmxFixtureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
     }
     ENDPOINT("PUT", "api/v1/fixture/{fixtureId}/universe", setFixtureUniverse, PATH(String, fixtureId),
-             BODY_DTO(Object<SetFixtureUniverseRequestDto>, body),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         return runEndpoint(
             "PUT /api/v1/fixture/{fixtureId}/universe", "PUT", "api/v1/fixture/" + std::string(fixtureId) + "/universe",
@@ -184,20 +182,31 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                 if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
                     return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
                 }
-                if (!body || body->universe == nullptr) {
-                    return bailHttp(span, Status::CODE_400, "Request body must include 'universe'");
+                const auto body = readRequestBodyLimited(request, api::MAX_FIXTURE_CONTROL_REQUEST_BODY_BYTES, span);
+                const auto parseSpan =
+                    observability
+                        ? observability->createChildOperationSpan("DmxFixtureController.parseSetUniverseRequest", span)
+                        : nullptr;
+                const auto jsonResult = JsonParser::parseApiJsonString(body, "fixture universe request", parseSpan);
+                if (!jsonResult.isSuccess())
+                    return bailFromServerError(span, jsonResult.getError().value());
+                const auto requestResult = api::setFixtureUniverseRequestFromJson(jsonResult.getValue().value());
+                if (!requestResult.isSuccess()) {
+                    const auto error = requestResult.getError().value();
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidFixtureUniverseRequest", error.getCode());
+                    return bailFromServerError(span, error);
                 }
-                const universe_t universe = static_cast<universe_t>(*body->universe);
-                // E1.31 universes are valid in [1, 63999]. Reject 0 (reserved) and >63999.
-                if (universe < 1 || universe > 63999) {
-                    return bailHttp(span, Status::CODE_400, "universe must be in [1, 63999]");
-                }
+                if (parseSpan)
+                    parseSpan->setSuccess();
+                const auto universe = requestResult.getValue()->universe;
                 if (span)
                     span->setAttribute("fixture.universe", static_cast<int64_t>(universe));
-                const auto result = m_service.setFixtureUniverse(fixtureId, std::optional<universe_t>{universe}, span);
+                const auto result = m_service.setFixtureUniverse(std::string(fixtureId), universe, span);
+                if (!result.isSuccess())
+                    return bailFromServerError(span, result.getError().value());
                 if (span)
                     span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, result);
+                return jsonResponse(span, Status::CODE_200, dmxFixtureToJson(result.getValue().value()));
             });
     }
 
@@ -206,7 +215,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
         info->description = "Fires the pattern directly. Useful for ad-hoc UI control and testing. The fixture must "
                             "have an assigned universe (`PUT /api/v1/fixture/{id}/universe`).";
         info->addTag("Fixtures");
-        info->addResponse<Object<creatures::DmxFixtureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
@@ -230,39 +239,34 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, "patternId must be a UUID");
                 }
 
-                // Body is optional. If present, it must parse cleanly.
-                std::optional<uint32_t> stopAfterMs;
-                const oatpp::String body = request->readBodyToString();
-                if (body && body->size() > 0) {
-                    nlohmann::json parsed;
-                    try {
-                        parsed = nlohmann::json::parse(std::string(body));
-                    } catch (const nlohmann::json::exception &e) {
-                        return bailHttp(span, Status::CODE_400, fmt::format("Invalid trigger body: {}", e.what()));
-                    }
-                    if (parsed.contains("stop_after_ms") && !parsed["stop_after_ms"].is_null()) {
-                        const auto raw = parsed["stop_after_ms"].get<uint32_t>();
-                        // Cap at 10 minutes. UInt32 max would schedule ~50 days of stuck DMX
-                        // and a far-future AutoStopEvent pinned in the event-loop priority
-                        // queue. Reject 0 explicitly — "stop immediately" is a footgun.
-                        constexpr uint32_t MAX_STOP_AFTER_MS = 10 * 60 * 1000;
-                        if (raw == 0) {
-                            return bailHttp(span, Status::CODE_400,
-                                            "stop_after_ms must be > 0 (omit it to disable auto-stop)");
-                        }
-                        if (raw > MAX_STOP_AFTER_MS) {
-                            return bailHttp(
-                                span, Status::CODE_400,
-                                fmt::format("stop_after_ms must be <= {} ms (10 min); got {}", MAX_STOP_AFTER_MS, raw));
-                        }
-                        stopAfterMs = raw;
-                    }
+                const auto body = readRequestBodyLimited(request, api::MAX_FIXTURE_CONTROL_REQUEST_BODY_BYTES, span);
+                nlohmann::json rawBody = nlohmann::json::object();
+                const auto parseSpan = observability ? observability->createChildOperationSpan(
+                                                           "DmxFixtureController.parseTriggerPatternRequest", span)
+                                                     : nullptr;
+                if (!body.empty()) {
+                    const auto jsonResult =
+                        JsonParser::parseApiJsonString(body, "fixture pattern trigger request", parseSpan);
+                    if (!jsonResult.isSuccess())
+                        return bailFromServerError(span, jsonResult.getError().value());
+                    rawBody = jsonResult.getValue().value();
                 }
-
-                const auto result = m_service.triggerPattern(fixtureId, patternId, stopAfterMs, span);
+                const auto requestResult = api::triggerFixturePatternRequestFromJson(rawBody);
+                if (!requestResult.isSuccess()) {
+                    const auto error = requestResult.getError().value();
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidFixturePatternTriggerRequest",
+                                    error.getCode());
+                    return bailFromServerError(span, error);
+                }
+                if (parseSpan)
+                    parseSpan->setSuccess();
+                const auto result = m_service.triggerPattern(std::string(fixtureId), std::string(patternId),
+                                                             requestResult.getValue()->stopAfterMs, span);
+                if (!result.isSuccess())
+                    return bailFromServerError(span, result.getError().value());
                 if (span)
                     span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, result);
+                return jsonResponse(span, Status::CODE_200, dmxFixtureToJson(result.getValue().value()));
             });
     }
 
@@ -274,14 +278,12 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
             "previewed without an upsert round-trip. The fixture must have an assigned universe. Live control "
             "preempts: if a live session is active for this fixture, the preview is refused with a 400.";
         info->addTag("Fixtures");
-        info->addConsumes<Object<PreviewFixturePatternRequestDto>>("application/json");
-        info->addResponse<Object<creatures::DmxFixtureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
     }
     ENDPOINT("POST", "api/v1/fixture/{fixtureId}/pattern/preview", previewFixturePattern, PATH(String, fixtureId),
-             BODY_DTO(Object<PreviewFixturePatternRequestDto>, body),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         return runEndpoint(
             "POST /api/v1/fixture/{fixtureId}/pattern/preview", "POST",
@@ -292,66 +294,43 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                 if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
                     return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
                 }
-                if (!body) {
-                    return bailHttp(span, Status::CODE_400, "Request body is required");
+                const auto body = readRequestBodyLimited(request, api::MAX_FIXTURE_CONTROL_REQUEST_BODY_BYTES, span);
+                const auto parseSpan = observability ? observability->createChildOperationSpan(
+                                                           "DmxFixtureController.parsePreviewPatternRequest", span)
+                                                     : nullptr;
+                const auto jsonResult =
+                    JsonParser::parseApiJsonString(body, "fixture pattern preview request", parseSpan);
+                if (!jsonResult.isSuccess())
+                    return bailFromServerError(span, jsonResult.getError().value());
+                const auto requestResult = api::previewFixturePatternRequestFromJson(jsonResult.getValue().value());
+                if (!requestResult.isSuccess()) {
+                    const auto error = requestResult.getError().value();
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidFixturePatternPreviewRequest",
+                                    error.getCode());
+                    return bailFromServerError(span, error);
                 }
-                if (!body->values) {
-                    return bailHttp(span, Status::CODE_400, "values array is required");
-                }
-                if (body->values->size() == 0) {
-                    return bailHttp(span, Status::CODE_400, "values must contain at least one channel");
-                }
-
-                // Unpack DTO to a flat vector for the service.
+                if (parseSpan)
+                    parseSpan->setSuccess();
+                const auto parsed = requestResult.getValue().value();
                 std::vector<std::pair<std::string, uint8_t>> channelValues;
-                channelValues.reserve(body->values->size());
-                for (const auto &v : *body->values) {
-                    if (!v) {
-                        return bailHttp(span, Status::CODE_400, "values entries must be objects, not null");
-                    }
-                    if (!v->channel) {
-                        return bailHttp(span, Status::CODE_400, "values[].channel is required");
-                    }
-                    if (!v->value) {
-                        return bailHttp(span, Status::CODE_400, "values[].value is required");
-                    }
-                    channelValues.emplace_back(std::string(v->channel), static_cast<uint8_t>(*v->value));
-                }
-
-                // Optional timing fields default to 0 (snap / hold-forever). stop_after_ms gets the
-                // same cap as triggerFixturePattern — UInt32 max would pin a far-future event on the
-                // event loop's priority queue.
-                const uint32_t fadeInMs = body->fade_in_ms ? static_cast<uint32_t>(*body->fade_in_ms) : 0;
-                const uint32_t fadeOutMs = body->fade_out_ms ? static_cast<uint32_t>(*body->fade_out_ms) : 0;
-                const uint32_t holdMs = body->hold_ms ? static_cast<uint32_t>(*body->hold_ms) : 0;
-                std::optional<uint32_t> stopAfterMs;
-                if (body->stop_after_ms) {
-                    const uint32_t raw = static_cast<uint32_t>(*body->stop_after_ms);
-                    constexpr uint32_t MAX_STOP_AFTER_MS = 10 * 60 * 1000;
-                    if (raw == 0) {
-                        return bailHttp(span, Status::CODE_400,
-                                        "stop_after_ms must be > 0 (omit it to disable auto-stop)");
-                    }
-                    if (raw > MAX_STOP_AFTER_MS) {
-                        return bailHttp(
-                            span, Status::CODE_400,
-                            fmt::format("stop_after_ms must be <= {} ms (10 min); got {}", MAX_STOP_AFTER_MS, raw));
-                    }
-                    stopAfterMs = raw;
-                }
+                channelValues.reserve(parsed.values.size());
+                for (const auto &value : parsed.values)
+                    channelValues.emplace_back(value.channel, value.value);
 
                 if (span) {
                     span->setAttribute("pattern.preview.value_count", static_cast<int64_t>(channelValues.size()));
-                    span->setAttribute("pattern.fade_in_ms", static_cast<int64_t>(fadeInMs));
-                    span->setAttribute("pattern.fade_out_ms", static_cast<int64_t>(fadeOutMs));
-                    span->setAttribute("pattern.hold_ms", static_cast<int64_t>(holdMs));
+                    span->setAttribute("pattern.fade_in_ms", static_cast<int64_t>(parsed.fadeInMs));
+                    span->setAttribute("pattern.fade_out_ms", static_cast<int64_t>(parsed.fadeOutMs));
+                    span->setAttribute("pattern.hold_ms", static_cast<int64_t>(parsed.holdMs));
                 }
 
-                const auto result =
-                    m_service.previewPattern(fixtureId, channelValues, fadeInMs, fadeOutMs, holdMs, stopAfterMs, span);
+                const auto result = m_service.previewPattern(std::string(fixtureId), channelValues, parsed.fadeInMs,
+                                                             parsed.fadeOutMs, parsed.holdMs, parsed.stopAfterMs, span);
+                if (!result.isSuccess())
+                    return bailFromServerError(span, result.getError().value());
                 if (span)
                     span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, result);
+                return jsonResponse(span, Status::CODE_200, dmxFixtureToJson(result.getValue().value()));
             });
     }
 
@@ -364,14 +343,12 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
             "patterns cannot start on this fixture until the live session expires. Channels not named in `values` "
             "hold their previous live value (or default to 0 on the first call).";
         info->addTag("Fixtures");
-        info->addConsumes<Object<SetFixtureLiveRequestDto>>("application/json");
-        info->addResponse<Object<creatures::DmxFixtureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
     }
     ENDPOINT("POST", "api/v1/fixture/{fixtureId}/live", setFixtureLive, PATH(String, fixtureId),
-             BODY_DTO(Object<SetFixtureLiveRequestDto>, body),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         return runEndpoint(
             "POST /api/v1/fixture/{fixtureId}/live", "POST", "api/v1/fixture/" + std::string(fixtureId) + "/live",
@@ -381,52 +358,45 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                 if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
                     return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
                 }
-                if (!body) {
-                    return bailHttp(span, Status::CODE_400, "Request body is required");
+                const auto body = readRequestBodyLimited(request, api::MAX_FIXTURE_CONTROL_REQUEST_BODY_BYTES, span);
+                const auto parseSpan =
+                    observability
+                        ? observability->createChildOperationSpan("DmxFixtureController.parseLiveRequest", span)
+                        : nullptr;
+                const auto jsonResult = JsonParser::parseApiJsonString(body, "fixture live request", parseSpan);
+                if (!jsonResult.isSuccess())
+                    return bailFromServerError(span, jsonResult.getError().value());
+                const auto requestResult = api::setFixtureLiveRequestFromJson(jsonResult.getValue().value());
+                if (!requestResult.isSuccess()) {
+                    const auto error = requestResult.getError().value();
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidFixtureLiveRequest", error.getCode());
+                    return bailFromServerError(span, error);
                 }
-                if (!body->values) {
-                    return bailHttp(span, Status::CODE_400, "values array is required");
-                }
-                if (body->values->size() == 0) {
-                    return bailHttp(span, Status::CODE_400, "values must contain at least one channel");
-                }
-                if (!body->timeout_ms) {
-                    return bailHttp(span, Status::CODE_400, "timeout_ms is required");
-                }
-
-                // Unpack DTO to a flat vector for the service. We surface a clean 400 here for
-                // malformed entries (missing channel name, missing value) so the service doesn't
-                // have to handle DTO-level shape errors.
+                if (parseSpan)
+                    parseSpan->setSuccess();
+                const auto parsed = requestResult.getValue().value();
                 std::vector<std::pair<std::string, uint8_t>> channelValues;
-                channelValues.reserve(body->values->size());
-                for (const auto &v : *body->values) {
-                    if (!v) {
-                        return bailHttp(span, Status::CODE_400, "values entries must be objects, not null");
-                    }
-                    if (!v->channel) {
-                        return bailHttp(span, Status::CODE_400, "values[].channel is required");
-                    }
-                    if (!v->value) {
-                        return bailHttp(span, Status::CODE_400, "values[].value is required");
-                    }
-                    channelValues.emplace_back(std::string(v->channel), static_cast<uint8_t>(*v->value));
-                }
-                const uint32_t timeoutMs = *body->timeout_ms;
+                channelValues.reserve(parsed.values.size());
+                for (const auto &value : parsed.values)
+                    channelValues.emplace_back(value.channel, value.value);
 
                 if (span)
                     span->setAttribute("fixture.live.value_count", static_cast<int64_t>(channelValues.size()));
 
-                const auto result = m_service.setFixtureLive(fixtureId, channelValues, timeoutMs, span);
+                const auto result =
+                    m_service.setFixtureLive(std::string(fixtureId), channelValues, parsed.timeoutMs, span);
+                if (!result.isSuccess())
+                    return bailFromServerError(span, result.getError().value());
                 if (span)
                     span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, result);
+                return jsonResponse(span, Status::CODE_200, dmxFixtureToJson(result.getValue().value()));
             });
     }
 
     ENDPOINT_INFO(clearFixtureUniverse) {
         info->summary = "Clear a fixture's DMX universe assignment";
         info->addTag("Fixtures");
-        info->addResponse<Object<creatures::DmxFixtureDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
     }
@@ -440,10 +410,13 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                                if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
                                    return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
                                }
-                               const auto result = m_service.setFixtureUniverse(fixtureId, std::nullopt, span);
+                               const auto result =
+                                   m_service.setFixtureUniverse(std::string(fixtureId), std::nullopt, span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
                                if (span)
                                    span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(span, Status::CODE_200, dmxFixtureToJson(result.getValue().value()));
                            });
     }
 };

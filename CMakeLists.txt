@@ -526,8 +526,6 @@ add_executable(creature-server
         src/model/Creature.cpp
         src/model/DmxFixture.h
         src/model/DmxFixture.cpp
-        src/server/ws/dto/DmxFixtureDto.h
-        src/server/ws/dto/DmxFixtureDto.cpp
         src/server/fixture/FixtureBindingDispatcher.h
         src/server/fixture/FixtureBindingDispatcher.cpp
         src/server/fixture/FixturePatternRunner.h
@@ -555,8 +553,8 @@ add_executable(creature-server
         src/model/StreamFrame.h
         src/model/Sound.h
         src/model/Sound.cpp
-        src/server/ws/dto/SoundDto.h
-        src/server/ws/dto/SoundDto.cpp
+        src/api/SoundRequests.h
+        src/api/SoundResponses.h
         src/model/SortBy.h
         src/model/Track.cpp
         src/model/Track.h
@@ -579,7 +577,6 @@ add_executable(creature-server
         src/server/ws/dto/AdHocAnimationDto.h
         src/server/ws/dto/AdHocExchangeDto.h
         src/server/ws/dto/AdHocExchangeDto.cpp
-        src/server/ws/dto/AdHocSoundEntryDto.h
         src/server/ws/dto/AdHocDtoUtils.h
         src/server/ws/dto/AdHocDtoUtils.cpp
         src/server/ws/dto/AnimationDto.h
@@ -587,7 +584,6 @@ add_executable(creature-server
         src/server/ws/dto/OutboundPayloadDto.cpp
         src/server/ws/dto/ListDto.h
         src/server/ws/dto/PlayAnimationRequestDto.h
-        src/server/ws/dto/PlaySoundRequestDTO.h
         src/server/ws/dto/SimpleResponseDto.h
         src/server/ws/dto/StatusDto.h
 
@@ -750,6 +746,7 @@ add_executable(creature-server-test
         tests/model/PlaylistItem_test.cpp
         tests/model/Playlist_test.cpp
         tests/model/DmxFixture_test.cpp
+        tests/model/Sound_test.cpp
         tests/model/LogItem_test.cpp
         tests/model/Animation_test.cpp
         tests/model/AnimationMetadata_test.cpp
@@ -758,6 +755,7 @@ add_executable(creature-server-test
         tests/model/Animation_roundtrip_test.cpp
         tests/model/AdHocExchange_test.cpp
         src/model/AdHocExchange.cpp
+        src/model/Sound.cpp
         tests/runtime/Activity_test.cpp
         tests/server/animation/SessionManager_ownership_test.cpp
         src/server/animation/SessionManager.cpp
@@ -852,7 +850,7 @@ add_executable(creature-server-test
         src/model/StreamFrame.cpp
         src/server/sensors/SensorReport.cpp
         src/model/VirtualStatusLights.cpp
-        src/server/ws/dto/SoundDto.cpp
+        tests/api/SoundRequests_test.cpp
         src/model/PlaylistStatus.cpp
         src/model/Notice.cpp
         src/model/CacheInvalidation.cpp
@@ -861,7 +859,6 @@ add_executable(creature-server-test
         src/model/Track.cpp
         src/model/Creature.cpp
         src/model/DmxFixture.cpp
-        src/server/ws/dto/DmxFixtureDto.cpp
         src/model/DialogScript.cpp
         src/server/ws/dto/DialogScriptDto.cpp
         src/model/Input.cpp
