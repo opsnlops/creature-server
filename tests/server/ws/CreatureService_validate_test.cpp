@@ -112,10 +112,10 @@ TEST(CreatureApiContract, CreatureResponseIncludesNeutralRuntime) {
 
     EXPECT_EQ(json.at("id"), creature.id);
     EXPECT_EQ(json.at("inputs"), nlohmann::json::array());
-    EXPECT_TRUE(json.at("mouth_input").is_null());
-    EXPECT_TRUE(json.at("speech_loop_animation_ids").is_null());
-    EXPECT_TRUE(json.at("idle_animation_ids").is_null());
-    EXPECT_TRUE(json.at("gaze").is_null());
+    EXPECT_FALSE(json.contains("mouth_input"));
+    EXPECT_FALSE(json.contains("speech_loop_animation_ids"));
+    EXPECT_FALSE(json.contains("idle_animation_ids"));
+    EXPECT_FALSE(json.contains("gaze"));
     EXPECT_FALSE(json.at("runtime").at("idle_enabled"));
     EXPECT_TRUE(json.at("runtime").at("activity").at("animation_id").is_null());
     EXPECT_TRUE(json.at("runtime").at("bgm_owner").is_null());

@@ -21,17 +21,6 @@ struct CreatureResponse {
 
 inline nlohmann::json creatureResponseToJson(const CreatureResponse &response) {
     auto json = creatureToJson(response.creature);
-    // oat++ serialized unset optional DTO fields as explicit nulls. Preserve
-    // that established REST contract even though the configuration codec
-    // intentionally omits absent optional fields.
-    if (response.creature.mouth_input.empty())
-        json["mouth_input"] = nullptr;
-    if (response.creature.speech_loop_animation_ids.empty())
-        json["speech_loop_animation_ids"] = nullptr;
-    if (response.creature.idle_animation_ids.empty())
-        json["idle_animation_ids"] = nullptr;
-    if (!response.creature.gaze)
-        json["gaze"] = nullptr;
     json["runtime"] = runtime::creatureRuntimeSnapshotToJson(response.runtime);
     return json;
 }
