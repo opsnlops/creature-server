@@ -65,6 +65,8 @@ class PlaylistController : public oatpp::web::server::api::ApiController,
                            request, [&](const auto &span) {
                                if (!playlistId || !isUuidShape(std::string(playlistId)))
                                    return bailHttp(span, Status::CODE_400, "playlistId must be a UUID");
+                               if (span)
+                                   span->setAttribute("playlist.id", std::string(playlistId));
                                const auto result = PlaylistService::getPlaylist(std::string(playlistId), span);
                                if (!result.isSuccess())
                                    return bailFromServerError(span, result.getError().value());
@@ -89,9 +91,14 @@ class PlaylistController : public oatpp::web::server::api::ApiController,
                                const auto result = PlaylistService::upsertPlaylist(body, span);
                                if (!result.isSuccess())
                                    return bailFromServerError(span, result.getError().value());
-                               if (span)
+                               const auto playlist = result.getValue().value();
+                               if (span) {
+                                   span->setAttribute("playlist.id", playlist.id);
+                                   span->setAttribute("playlist.name", playlist.name);
+                                   span->setAttribute("playlist.items", static_cast<int64_t>(playlist.number_of_items));
                                    span->setHttpStatus(200);
-                               return jsonResponse(span, Status::CODE_200, playlistToJson(result.getValue().value()));
+                               }
+                               return jsonResponse(span, Status::CODE_200, playlistToJson(playlist));
                            });
     }
 

@@ -161,11 +161,14 @@ Result<api::StatusResponse> PlaylistService::startPlaylist(universe_t universe, 
     if (auto existingSession = sessionManager->getCurrentSession(universe);
         existingSession && !existingSession->isCancelled())
         existingSession->cancel();
-    const auto generation = sessionManager->startPlaylist(universe, playlistId);
     const std::string triggerTraceId = span ? span->getTraceIdHex() : std::string{};
     const std::string triggerSpanId = span ? span->getSpanIdHex() : std::string{};
-    eventLoop->scheduleEvent(std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe, generation,
-                                                             triggerTraceId, triggerSpanId));
+    sessionManager->startPlaylist(universe, playlistId, triggerTraceId, triggerSpanId);
+    if (const auto eventContext = sessionManager->claimPlaylistEvent(universe)) {
+        eventLoop->scheduleEvent(std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe,
+                                                                 eventContext->generation, eventContext->triggerTraceId,
+                                                                 eventContext->triggerSpanId));
+    }
     if (metrics)
         metrics->incrementPlaylistsStarted();
 

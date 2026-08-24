@@ -41,6 +41,11 @@ enum class PlaylistState {
  */
 class SessionManager {
   public:
+    struct PlaylistEventContext {
+        uint64_t generation{0};
+        std::string triggerTraceId;
+        std::string triggerSpanId;
+    };
     SessionManager() = default;
     ~SessionManager() = default;
 
@@ -233,10 +238,15 @@ class SessionManager {
      * @param universe The universe the playlist is on
      * @param playlistId The ID of the playlist
      */
-    uint64_t startPlaylist(universe_t universe, const std::string &playlistId);
+    PlaylistEventContext startPlaylist(universe_t universe, const std::string &playlistId,
+                                       std::string triggerTraceId = {}, std::string triggerSpanId = {});
 
-    /// True only for the most recently started playlist generation on a universe.
-    bool isPlaylistGenerationCurrent(universe_t universe, uint64_t generation) const;
+    /// Claims the one queued PlaylistEvent slot for an active playlist, if available.
+    std::optional<PlaylistEventContext> claimPlaylistEvent(universe_t universe);
+
+    /// Marks a claimed event as executing. A replacement context means a newer start
+    /// coalesced into this event while it waited in the event-loop queue.
+    std::optional<PlaylistEventContext> beginPlaylistEvent(universe_t universe, uint64_t generation);
 
     /**
      * Clear the current session pointer (called when session finishes)
@@ -339,6 +349,9 @@ class SessionManager {
         // Playlist identity + status snapshot for resumption and broadcasts
         std::string playlistId;
         std::optional<PlaylistStatus> playlistStatus;
+        PlaylistEventContext playlistEventContext;
+        bool playlistEventPending{false};
+        uint64_t pendingPlaylistEventGeneration{0};
 
         // Owner of the playlist state above: the most recently adopted
         // playlist-reason session (issue #100). abortLoadingSession clears the

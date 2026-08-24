@@ -54,16 +54,33 @@ constexpr universe_t UNIVERSE = 1;
 TEST(SessionManagerOwnership, PlaylistGenerationsInvalidateSupersededAndStoppedEvents) {
     SessionManager manager;
 
-    const auto firstGeneration = manager.startPlaylist(UNIVERSE, "playlist-1");
-    EXPECT_TRUE(manager.isPlaylistGenerationCurrent(UNIVERSE, firstGeneration));
+    const auto first = manager.startPlaylist(UNIVERSE, "playlist-1");
+    ASSERT_TRUE(manager.claimPlaylistEvent(UNIVERSE));
 
-    const auto secondGeneration = manager.startPlaylist(UNIVERSE, "playlist-2");
-    EXPECT_GT(secondGeneration, firstGeneration);
-    EXPECT_FALSE(manager.isPlaylistGenerationCurrent(UNIVERSE, firstGeneration));
-    EXPECT_TRUE(manager.isPlaylistGenerationCurrent(UNIVERSE, secondGeneration));
+    const auto second = manager.startPlaylist(UNIVERSE, "playlist-2");
+    EXPECT_GT(second.generation, first.generation);
+    const auto replacement = manager.beginPlaylistEvent(UNIVERSE, first.generation);
+    ASSERT_TRUE(replacement);
+    EXPECT_EQ(replacement->generation, second.generation);
 
     manager.stopPlaylist(UNIVERSE);
-    EXPECT_FALSE(manager.isPlaylistGenerationCurrent(UNIVERSE, secondGeneration));
+    EXPECT_FALSE(manager.beginPlaylistEvent(UNIVERSE, second.generation));
+}
+
+TEST(SessionManagerOwnership, RecreatedPlaylistDoesNotDuplicateItsAlreadyClaimedEvent) {
+    SessionManager manager;
+
+    const auto first = manager.startPlaylist(UNIVERSE, "playlist-1");
+    ASSERT_TRUE(manager.claimPlaylistEvent(UNIVERSE));
+    manager.clearPlaylist(UNIVERSE);
+
+    const auto second = manager.startPlaylist(UNIVERSE, "playlist-2");
+    ASSERT_TRUE(manager.claimPlaylistEvent(UNIVERSE));
+
+    EXPECT_FALSE(manager.beginPlaylistEvent(UNIVERSE, first.generation));
+    const auto current = manager.beginPlaylistEvent(UNIVERSE, second.generation);
+    ASSERT_TRUE(current);
+    EXPECT_EQ(current->generation, second.generation);
 }
 
 TEST(SessionManagerOwnership, NonConflictingSessionsCoexistWithAscendingGenerations) {

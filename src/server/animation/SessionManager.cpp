@@ -694,6 +694,9 @@ void SessionManager::stopPlaylist(universe_t universe) {
             return;
         }
 
+        it->second.playlistEventPending = false;
+        it->second.pendingPlaylistEventGeneration = 0;
+
         info("SessionManager: stopping playlist on universe {}", universe);
         it->second.playlistState = PlaylistState::Stopped;
         it->second.shouldResumePlaylist = false;
@@ -723,7 +726,9 @@ void SessionManager::stopPlaylist(universe_t universe) {
     }
 }
 
-uint64_t SessionManager::startPlaylist(universe_t universe, const std::string &playlistId) {
+SessionManager::PlaylistEventContext SessionManager::startPlaylist(universe_t universe, const std::string &playlistId,
+                                                                   std::string triggerTraceId,
+                                                                   std::string triggerSpanId) {
     std::lock_guard<std::mutex> lock(mutex_);
     const uint64_t generation = ++playlistGenerations_[universe];
 
@@ -743,13 +748,46 @@ uint64_t SessionManager::startPlaylist(universe_t universe, const std::string &p
     }
     state.playlistStatus->playlist = playlistId;
     state.playlistStatus->playing = true;
-    return generation;
+    state.playlistEventContext = {generation, std::move(triggerTraceId), std::move(triggerSpanId)};
+    return state.playlistEventContext;
 }
 
-bool SessionManager::isPlaylistGenerationCurrent(universe_t universe, uint64_t generation) const {
+std::optional<SessionManager::PlaylistEventContext> SessionManager::claimPlaylistEvent(universe_t universe) {
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto it = playlistGenerations_.find(universe);
-    return it != playlistGenerations_.end() && it->second == generation;
+    const auto it = universeStates_.find(universe);
+    if (it == universeStates_.end() || it->second.playlistState != PlaylistState::Active ||
+        it->second.playlistEventContext.generation == 0 || it->second.playlistEventPending) {
+        return std::nullopt;
+    }
+    it->second.playlistEventPending = true;
+    it->second.pendingPlaylistEventGeneration = it->second.playlistEventContext.generation;
+    return it->second.playlistEventContext;
+}
+
+std::optional<SessionManager::PlaylistEventContext> SessionManager::beginPlaylistEvent(universe_t universe,
+                                                                                       uint64_t generation) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = universeStates_.find(universe);
+    if (it == universeStates_.end() || it->second.playlistState != PlaylistState::Active ||
+        it->second.playlistEventContext.generation == 0) {
+        if (it != universeStates_.end()) {
+            it->second.playlistEventPending = false;
+            it->second.pendingPlaylistEventGeneration = 0;
+        }
+        return std::nullopt;
+    }
+    if (it->second.playlistEventContext.generation != generation) {
+        // A newer event is already queued for the current generation (for
+        // example after clear + start), so this old event has nothing to hand off.
+        if (it->second.pendingPlaylistEventGeneration != generation) {
+            return std::nullopt;
+        }
+        it->second.pendingPlaylistEventGeneration = it->second.playlistEventContext.generation;
+        return it->second.playlistEventContext;
+    }
+    it->second.playlistEventPending = false;
+    it->second.pendingPlaylistEventGeneration = 0;
+    return it->second.playlistEventContext;
 }
 
 void SessionManager::clearSession(universe_t universe, const std::string &sessionId) {

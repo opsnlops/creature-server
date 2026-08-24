@@ -189,8 +189,11 @@ void unwindAdoptedAudioSession(const std::shared_ptr<PlaybackSession> &session, 
                 // playlist whose snapshot actually names one.
                 if (snapshot && !snapshot->playlist.empty()) {
                     if (eventLoop) {
-                        eventLoop->scheduleEvent(
-                            std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe));
+                        if (const auto eventContext = capturedSessionManager->claimPlaylistEvent(universe)) {
+                            eventLoop->scheduleEvent(std::make_shared<PlaylistEvent>(
+                                eventLoop->getNextFrameNumber(), universe, eventContext->generation,
+                                eventContext->triggerTraceId, eventContext->triggerSpanId));
+                        }
                     } else {
                         warn("Interrupted playlist resume after failed interrupt skipped: event loop unavailable");
                     }
@@ -999,10 +1002,13 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
                     if (!eventLoop) {
                         warn("Interrupted playlist resume skipped: event loop unavailable");
                     } else {
-                        auto nextPlaylistEvent =
-                            std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
-                        eventLoop->scheduleEvent(nextPlaylistEvent);
-                        info("Scheduled PlaylistEvent to resume playlist on universe {}", universe);
+                        if (const auto eventContext = sessionManager->claimPlaylistEvent(universe)) {
+                            auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(
+                                eventLoop->getNextFrameNumber(), universe, eventContext->generation,
+                                eventContext->triggerTraceId, eventContext->triggerSpanId);
+                            eventLoop->scheduleEvent(nextPlaylistEvent);
+                            info("Scheduled PlaylistEvent to resume playlist on universe {}", universe);
+                        }
                     }
                 } else {
                     warn("Interrupted playlist state inconsistent - playlist snapshot missing for universe {}",
@@ -1027,10 +1033,14 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
         if (auto finishedSession = weakSession.lock()) {
             if (finishedSession->getActivityReason() == creatures::runtime::ActivityReason::Playlist &&
                 sessionManager->getPlaylistState(universe) == PlaylistState::Active && eventLoop) {
-                auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
-                eventLoop->scheduleEvent(nextPlaylistEvent);
-                debug("Playlist chain: scheduled next PlaylistEvent on universe {} after session {} finished", universe,
-                      finishedSession->getSessionId());
+                if (const auto eventContext = sessionManager->claimPlaylistEvent(universe)) {
+                    auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(
+                        eventLoop->getNextFrameNumber(), universe, eventContext->generation,
+                        eventContext->triggerTraceId, eventContext->triggerSpanId);
+                    eventLoop->scheduleEvent(nextPlaylistEvent);
+                    debug("Playlist chain: scheduled next PlaylistEvent on universe {} after session {} finished",
+                          universe, finishedSession->getSessionId());
+                }
             }
         }
     });

@@ -52,11 +52,25 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
         }
     }
 
-    if (playlistGeneration != 0 &&
-        (!sessionManager || !sessionManager->isPlaylistGenerationCurrent(activeUniverse, playlistGeneration))) {
+    const auto eventContext =
+        sessionManager ? sessionManager->beginPlaylistEvent(activeUniverse, playlistGeneration) : std::nullopt;
+    if (!eventContext) {
         if (span) {
             span->setAttribute("playlist.stale_event", true);
             span->setSuccess();
+        }
+        return Result<framenum_t>{this->frameNumber};
+    }
+    if (eventContext->generation != playlistGeneration) {
+        if (span) {
+            span->setAttribute("playlist.stale_event", true);
+            span->setAttribute("playlist.replacement_generation", static_cast<int64_t>(eventContext->generation));
+            span->setSuccess();
+        }
+        if (eventLoop) {
+            eventLoop->scheduleEvent(std::make_shared<PlaylistEvent>(
+                eventLoop->getNextFrameNumber(), activeUniverse, eventContext->generation, eventContext->triggerTraceId,
+                eventContext->triggerSpanId));
         }
         return Result<framenum_t>{this->frameNumber};
     }
@@ -86,6 +100,9 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
     if (auto statusResult = loadActivePlaylistStatus(activePlaylistStatus, span)) {
         return *statusResult;
     }
+    if (span) {
+        span->setAttribute("playlist.id", activePlaylistStatus.playlist);
+    }
 
     debug("the active playlistStatus snapshot is {}", activePlaylistStatus.playlist);
 
@@ -94,6 +111,10 @@ Result<framenum_t> PlaylistEvent::executeImpl() {
         return Result<framenum_t>{playlistResult.getError().value()};
     }
     auto playlist = playlistResult.getValue().value();
+    if (span) {
+        span->setAttribute("playlist.name", playlist.name);
+        span->setAttribute("playlist.items", static_cast<int64_t>(playlist.number_of_items));
+    }
     debug("playlist found. name: {}", playlist.name);
 
     auto chosenResult = chooseWeightedAnimation(playlist, span);
@@ -382,9 +403,12 @@ Result<framenum_t> PlaylistEvent::scheduleChosenAnimation(const Animation &anima
             framenum_t retryFrame = eventLoop->getNextFrameNumber() + retryDelay;
             info("Playlist on universe {} deferring: {} — retrying at frame {}", activeUniverse,
                  schedulingError.getMessage(), retryFrame);
-            auto retryEvent = std::make_shared<PlaylistEvent>(retryFrame, activeUniverse, playlistGeneration,
-                                                              triggerTraceId, triggerSpanId);
-            eventLoop->scheduleEvent(retryEvent);
+            if (const auto eventContext = sessionManager->claimPlaylistEvent(activeUniverse)) {
+                auto retryEvent =
+                    std::make_shared<PlaylistEvent>(retryFrame, activeUniverse, eventContext->generation,
+                                                    eventContext->triggerTraceId, eventContext->triggerSpanId);
+                eventLoop->scheduleEvent(retryEvent);
+            }
             return Result<framenum_t>{ServerError(ServerError::Conflict, schedulingError.getMessage())};
         }
 
@@ -400,9 +424,11 @@ Result<framenum_t> PlaylistEvent::scheduleChosenAnimation(const Animation &anima
 }
 
 void PlaylistEvent::scheduleNextPlaylistEvent(framenum_t lastFrame) {
-    auto nextEvent = std::make_shared<PlaylistEvent>(lastFrame + 1, activeUniverse, playlistGeneration, triggerTraceId,
-                                                     triggerSpanId);
-    eventLoop->scheduleEvent(nextEvent);
+    if (const auto eventContext = sessionManager->claimPlaylistEvent(activeUniverse)) {
+        auto nextEvent = std::make_shared<PlaylistEvent>(lastFrame + 1, activeUniverse, eventContext->generation,
+                                                         eventContext->triggerTraceId, eventContext->triggerSpanId);
+        eventLoop->scheduleEvent(nextEvent);
+    }
 }
 
 void PlaylistEvent::updatePlaylistStatus(PlaylistStatus playlistStatus, const std::string &chosenAnimation) {
