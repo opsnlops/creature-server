@@ -1,7 +1,3 @@
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/component.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
-
 #include <algorithm>
 #include <mutex>
 #include <optional>
@@ -30,8 +26,6 @@
 #include "util/cache.h"
 
 #include "server/runtime/Activity.h"
-#include "server/ws/dto/CreatureConfigValidationDto.h"
-#include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h" // Include ObservabilityManager
@@ -53,12 +47,10 @@ extern FixtureActivityHook fixtureActivityHook;
 
 namespace creatures ::ws {
 
-using oatpp::web::protocol::http::Status;
-
 namespace {
 
 std::mutex runtimeMutex;
-std::unordered_map<std::string, oatpp::Object<creatures::CreatureRuntimeDto>> runtimeState;
+std::unordered_map<std::string, runtime::CreatureRuntimeSnapshot> runtimeState;
 std::unordered_map<std::string, std::string> creatureNameCache;
 // Highest adoption generation whose activity write was applied, per creature. Guarded by
 // runtimeMutex. Versioned writes older than this are dropped — the total-order guard
@@ -67,50 +59,27 @@ std::unordered_map<std::string, uint64_t> lastActivityGenerationByCreature;
 // Track last idle animation per creature to avoid immediate repeats.
 std::unordered_map<std::string, std::string> lastIdleAnimationByCreature;
 
-oatpp::Object<creatures::CreatureRuntimeCountersDto> makeDefaultCounters() {
-    auto counters = creatures::CreatureRuntimeCountersDto::createShared();
-    counters->sessions_started_total = static_cast<v_uint64>(0);
-    counters->sessions_cancelled_total = static_cast<v_uint64>(0);
-    counters->idle_started_total = static_cast<v_uint64>(0);
-    counters->idle_stopped_total = static_cast<v_uint64>(0);
-    counters->idle_toggles_total = static_cast<v_uint64>(0);
-    counters->skips_missing_creature_total = static_cast<v_uint64>(0);
-    counters->bgm_takeovers_total = static_cast<v_uint64>(0);
-    counters->audio_resets_total = static_cast<v_uint64>(0);
-    return counters;
-}
-
-oatpp::Object<creatures::CreatureRuntimeActivityDto> makeDefaultActivity() {
-    auto activity = creatures::CreatureRuntimeActivityDto::createShared();
-    activity->state = "stopped";
-    activity->animation_id = nullptr;
-    activity->session_id = nullptr;
-    activity->reason = "disabled";
+runtime::ActivitySnapshot makeDefaultActivity() {
     auto now = getCurrentTimeISO8601();
-    activity->started_at = now;
-    activity->updated_at = now;
-    return activity;
+    return {"stopped", std::nullopt, std::nullopt, "disabled", now, now};
 }
 
-oatpp::Object<creatures::CreatureRuntimeDto> makeDefaultRuntime() {
-    auto runtime = creatures::CreatureRuntimeDto::createShared();
-    runtime->idle_enabled = true;
-    runtime->activity = makeDefaultActivity();
-    runtime->counters = makeDefaultCounters();
-    runtime->bgm_owner = nullptr;
-    runtime->last_error = nullptr;
-    return runtime;
+runtime::CreatureRuntimeSnapshot makeDefaultRuntime() {
+    runtime::CreatureRuntimeSnapshot snapshot;
+    snapshot.activity = makeDefaultActivity();
+    return snapshot;
 }
 
-oatpp::Object<creatures::CreatureRuntimeDto> getOrCreateRuntime(const std::string &creatureId) {
+runtime::CreatureRuntimeSnapshot &getOrCreateRuntimeLocked(const std::string &creatureId) {
+    auto [it, inserted] = runtimeState.try_emplace(creatureId);
+    if (inserted)
+        it->second = makeDefaultRuntime();
+    return it->second;
+}
+
+runtime::CreatureRuntimeSnapshot getRuntimeSnapshot(const std::string &creatureId) {
     std::lock_guard<std::mutex> lock(runtimeMutex);
-    auto it = runtimeState.find(creatureId);
-    if (it != runtimeState.end()) {
-        return it->second;
-    }
-    auto runtime = makeDefaultRuntime();
-    runtimeState.emplace(creatureId, runtime);
-    return runtime;
+    return getOrCreateRuntimeLocked(creatureId);
 }
 
 std::optional<std::string> getLastIdleAnimationId(const std::string &creatureId) {
@@ -129,49 +98,6 @@ void setLastIdleAnimationId(const std::string &creatureId, const std::string &an
         return;
     }
     lastIdleAnimationByCreature[creatureId] = animationId;
-}
-
-std::optional<std::string> snapshotString(const oatpp::String &value) {
-    if (!value) {
-        return std::nullopt;
-    }
-    return std::string(value);
-}
-
-uint64_t snapshotCounter(const oatpp::UInt64 &value) { return value ? *value : 0; }
-
-runtime::CreatureRuntimeSnapshot snapshotRuntime(const oatpp::Object<creatures::CreatureRuntimeDto> &runtime) {
-    runtime::CreatureRuntimeSnapshot snapshot;
-    if (!runtime) {
-        return snapshot;
-    }
-
-    snapshot.idleEnabled = runtime->idle_enabled ? *runtime->idle_enabled : true;
-    if (runtime->activity) {
-        snapshot.activity = {runtime->activity->state ? std::string(runtime->activity->state) : "stopped",
-                             snapshotString(runtime->activity->animation_id),
-                             snapshotString(runtime->activity->session_id),
-                             runtime->activity->reason ? std::string(runtime->activity->reason) : "disabled",
-                             runtime->activity->started_at ? std::string(runtime->activity->started_at) : "",
-                             runtime->activity->updated_at ? std::string(runtime->activity->updated_at) : ""};
-    }
-    if (runtime->counters) {
-        snapshot.counters = {snapshotCounter(runtime->counters->sessions_started_total),
-                             snapshotCounter(runtime->counters->sessions_cancelled_total),
-                             snapshotCounter(runtime->counters->idle_started_total),
-                             snapshotCounter(runtime->counters->idle_stopped_total),
-                             snapshotCounter(runtime->counters->idle_toggles_total),
-                             snapshotCounter(runtime->counters->skips_missing_creature_total),
-                             snapshotCounter(runtime->counters->bgm_takeovers_total),
-                             snapshotCounter(runtime->counters->audio_resets_total)};
-    }
-    snapshot.bgmOwner = snapshotString(runtime->bgm_owner);
-    if (runtime->last_error) {
-        snapshot.lastError =
-            runtime::ErrorSnapshot{runtime->last_error->message ? std::string(runtime->last_error->message) : "",
-                                   runtime->last_error->timestamp ? std::string(runtime->last_error->timestamp) : ""};
-    }
-    return snapshot;
 }
 
 void broadcastIdleStateChanged(const std::string &creatureId, bool enabled) {
@@ -208,11 +134,8 @@ void broadcastCreatureActivitySnapshot(const std::string &creatureId, const runt
         creatures::api::serializeWebSocketEnvelope(toString(creatures::ws::MessageType::CreatureActivity), payload));
 }
 
-void broadcastCreatureActivity(const std::string &creatureId, const oatpp::Object<creatures::CreatureRuntimeDto> &rt) {
-    if (!rt || !rt->activity) {
-        return;
-    }
-    broadcastCreatureActivitySnapshot(creatureId, snapshotRuntime(rt).activity);
+void broadcastCreatureActivity(const std::string &creatureId, const runtime::CreatureRuntimeSnapshot &snapshot) {
+    broadcastCreatureActivitySnapshot(creatureId, snapshot.activity);
 }
 
 bool animationTargetsSingleCreature(const Animation &animation, const creatureId_t &creatureId) {
@@ -302,17 +225,9 @@ bool CreatureService::isCreatureStreaming(const creatureId_t &creatureId) {
     // Second signal: the runtime activity state. Kept so anything that marks a creature
     // streaming via setActivityState alone still counts — the registry above protects
     // the windows where the two disagree.
-    auto runtime = getOrCreateRuntime(creatureId);
-    if (!runtime || !runtime->activity) {
-        return false;
-    }
-    auto reasonStr = runtime->activity->reason;
-    auto stateStr = runtime->activity->state;
-    if (!reasonStr || !stateStr) {
-        return false;
-    }
-    return reasonStr == creatures::runtime::toString(creatures::runtime::ActivityReason::Streaming) &&
-           stateStr == creatures::runtime::toString(creatures::runtime::ActivityState::Running);
+    const auto snapshot = getRuntimeSnapshot(creatureId);
+    return snapshot.activity.reason == creatures::runtime::toString(creatures::runtime::ActivityReason::Streaming) &&
+           snapshot.activity.state == creatures::runtime::toString(creatures::runtime::ActivityState::Running);
 }
 
 std::vector<std::pair<std::string, runtime::CreatureRuntimeSnapshot>> CreatureService::getRuntimeStates() {
@@ -320,218 +235,95 @@ std::vector<std::pair<std::string, runtime::CreatureRuntimeSnapshot>> CreatureSe
     std::vector<std::pair<std::string, runtime::CreatureRuntimeSnapshot>> snapshot;
     snapshot.reserve(runtimeState.size());
     for (const auto &entry : runtimeState) {
-        snapshot.emplace_back(entry.first, snapshotRuntime(entry.second));
+        snapshot.emplace_back(entry.first, entry.second);
     }
     return snapshot;
 }
 
-oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>>
-CreatureService::getAllCreatures(std::shared_ptr<RequestSpan> parentSpan) {
-    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-    auto logger = appLogger ? appLogger : spdlog::default_logger();
-
-    if (!logger) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
-    }
-
+Result<std::vector<api::CreatureResponse>> CreatureService::getAllCreatures(std::shared_ptr<RequestSpan> parentSpan) {
+    auto logger = spdlog::default_logger();
     if (!parentSpan) {
         warn("no parent span provided for CreatureService.getAllCreatures, creating a root span");
     }
-
-    if (!db) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature database unavailable");
-    }
-
-    // 🐰 Create a trace span for this request
     auto span =
         creatures::observability
             ? creatures::observability->createOperationSpan("CreatureService.getAllCreatures", std::move(parentSpan))
             : nullptr;
-
-    if (logger) {
+    if (span) {
+        span->setAttribute("service", "CreatureService");
+        span->setAttribute("operation", "getAllCreatures");
+    }
+    if (!db) {
+        const ServerError error{ServerError::InternalError, "Creature database unavailable"};
+        recordSpanError(span, error.getMessage(), "InternalError", error.getCode());
+        return Result<std::vector<api::CreatureResponse>>{error};
+    }
+    if (logger)
         logger->debug("CreatureService::getAllCreatures()");
-    }
 
-    if (span) {
-        trace("adding attributes to the span for CreatureService.getAllCreatures");
-        span->setAttribute("endpoint", "getAllCreatures");
-        span->setAttribute("ws_service", "CreatureService");
-    }
-
-    bool error = false;
-    oatpp::String errorMessage;
-    Status status = Status::CODE_200;
-
-    auto result = db->getAllCreatures(creatures::SortBy::name, true, span); // Pass the span to the database call
+    auto result = db->getAllCreatures(creatures::SortBy::name, true, span);
     if (!result.isSuccess()) {
-
-        // If we get an error, let's set it up right
-        auto errorCode = result.getError().value().getCode();
-        switch (errorCode) {
-        case ServerError::NotFound:
-            status = Status::CODE_404;
-            break;
-        case ServerError::InvalidData:
-            status = Status::CODE_400;
-            break;
-        default:
-            status = Status::CODE_500;
-            break;
-        }
-        errorMessage = result.getError()->getMessage();
-        logger->warn(std::string(result.getError()->getMessage()));
-
-        // Update the span with the error
-        if (span) {
-            span->setError(std::string(errorMessage));
-            span->setAttribute("error.type", [errorCode]() {
-                switch (errorCode) {
-                case ServerError::NotFound:
-                    return "NotFound";
-                case ServerError::InvalidData:
-                    return "InvalidData";
-                case ServerError::DatabaseError:
-                    return "DatabaseError";
-                default:
-                    return "InternalError";
-                }
-            }());
-            span->setAttribute("error.code", static_cast<int64_t>(errorCode));
-        }
-
-        error = true;
+        const auto error = result.getError().value();
+        if (logger)
+            logger->warn("{}", error.getMessage());
+        recordSpanError(span, error.getMessage(), "CreatureLookupFailed", error.getCode());
+        return Result<std::vector<api::CreatureResponse>>{error};
     }
-    OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-    auto items = oatpp::Vector<oatpp::Object<creatures::CreatureDto>>::createShared();
-
-    auto creatures = result.getValue().value();
+    std::vector<api::CreatureResponse> responses;
+    const auto creatures = result.getValue().value();
+    responses.reserve(creatures.size());
     for (const auto &creature : creatures) {
-        logger->debug("Adding creature: {}", creature.id);
-        auto dto = creatures::convertToDto(creature);
-        dto->runtime = getOrCreateRuntime(creature.id);
-        items->emplace_back(dto);
+        if (logger)
+            logger->debug("Adding creature: {}", creature.id);
+        responses.push_back({creature, getRuntimeSnapshot(creature.id)});
     }
-
-    auto page = ListDto<oatpp::Object<creatures::CreatureDto>>::createShared();
-    page->count = items->size();
-    page->items = items;
-
-    // Record success metrics in the span
     if (span) {
-        span->setAttribute("creatures.count", static_cast<int64_t>(page->count));
+        span->setAttribute("creatures.count", static_cast<int64_t>(responses.size()));
         span->setSuccess();
     }
-
-    return page;
+    return Result<std::vector<api::CreatureResponse>>{responses};
 }
 
-oatpp::Object<creatures::CreatureDto> CreatureService::getCreature(const oatpp::String &inCreatureId,
-                                                                   std::shared_ptr<RequestSpan> parentSpan) {
-    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-    auto logger = appLogger ? appLogger : spdlog::default_logger();
-
-    if (!logger) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
-    }
-
-    // Convert the oatpp string to a std::string
-    creatureId_t creatureId = std::string(inCreatureId);
-
-    if (!db) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature database unavailable");
-    }
-
-    if (logger) {
-        logger->debug("CreatureService::getCreature({})", creatureId);
-    }
-
+Result<api::CreatureResponse> CreatureService::getCreature(const creatureId_t &creatureId,
+                                                           std::shared_ptr<RequestSpan> parentSpan) {
+    auto logger = spdlog::default_logger();
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("CreatureService.getCreature", parentSpan)
                     : nullptr;
-
     if (span) {
         span->setAttribute("service", "CreatureService");
         span->setAttribute("operation", "getCreature");
-        span->setAttribute("creature.id", std::string(creatureId));
+        span->setAttribute("creature.id", creatureId);
     }
-
-    debug("get creature by ID via REST API: {}", std::string(creatureId));
-
-    if (span) {
-        span->setAttribute("creature.id", std::string(creatureId));
+    if (!db) {
+        const ServerError error{ServerError::InternalError, "Creature database unavailable"};
+        recordSpanError(span, error.getMessage(), "InternalError", error.getCode());
+        return Result<api::CreatureResponse>{error};
     }
+    if (logger)
+        logger->debug("CreatureService::getCreature({})", creatureId);
 
-    bool error = false;
-    oatpp::String errorMessage;
-    Status status = Status::CODE_200;
-
-    auto result = db->getCreature(creatureId, span); // Pass the span to the database call
+    auto result = db->getCreature(creatureId, span);
     if (!result.isSuccess()) {
-
-        // If we get an error, let's set it up right
-        auto errorCode = result.getError().value().getCode();
-        switch (errorCode) {
-        case ServerError::NotFound:
-            status = Status::CODE_404;
-            break;
-        case ServerError::InvalidData:
-            status = Status::CODE_400;
-            break;
-        default:
-            status = Status::CODE_500;
-            break;
-        }
-        errorMessage = result.getError()->getMessage();
-        logger->warn(std::string(result.getError()->getMessage()));
-
-        if (span) {
-            span->setError(std::string(errorMessage));
-            span->setAttribute("error.type", [errorCode]() {
-                switch (errorCode) {
-                case ServerError::NotFound:
-                    return "NotFound";
-                case ServerError::InvalidData:
-                    return "InvalidData";
-                case ServerError::DatabaseError:
-                    return "DatabaseError";
-                default:
-                    return "InternalError";
-                }
-            }());
-            span->setAttribute("error.code", static_cast<int64_t>(errorCode));
-        }
-
-        error = true;
+        const auto error = result.getError().value();
+        if (logger)
+            logger->warn("{}", error.getMessage());
+        recordSpanError(span, error.getMessage(), "CreatureLookupFailed", error.getCode());
+        return Result<api::CreatureResponse>{error};
     }
-    OATPP_ASSERT_HTTP(!error, status, errorMessage)
-
-    auto creature = result.getValue().value();
-
+    const auto creature = result.getValue().value();
     if (span) {
         span->setAttribute("creature.name", creature.name);
         span->setSuccess();
     }
-
-    auto dto = creatures::convertToDto(creature);
-    dto->runtime = getOrCreateRuntime(creature.id);
-    return dto;
+    return Result<api::CreatureResponse>{{creature, getRuntimeSnapshot(creature.id)}};
 }
 
-oatpp::Object<creatures::CreatureDto>
-CreatureService::upsertCreature(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan,
-                                std::shared_ptr<OperationSpan> parentOperationSpan) {
-    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-    auto logger = appLogger ? appLogger : spdlog::default_logger();
-
-    if (!logger) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
-    }
-
-    if (!db) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature database unavailable");
-    }
-
+Result<api::CreatureResponse> CreatureService::upsertCreature(const std::string &jsonCreature,
+                                                              std::shared_ptr<RequestSpan> parentSpan,
+                                                              std::shared_ptr<OperationSpan> parentOperationSpan) {
+    auto logger = spdlog::default_logger();
     auto serviceSpan =
         creatures::observability
             ? (parentOperationSpan
@@ -539,139 +331,106 @@ CreatureService::upsertCreature(const std::string &jsonCreature, std::shared_ptr
                                                                         parentOperationSpan)
                    : creatures::observability->createOperationSpan("CreatureService.upsertCreature", parentSpan))
             : nullptr;
-
-    if (logger) {
+    if (logger)
         logger->info("attempting to upsert a creature");
-    }
-
     if (serviceSpan) {
         serviceSpan->setAttribute("service", "CreatureService");
         serviceSpan->setAttribute("operation", "upsertCreature");
         serviceSpan->setAttribute("json.size", static_cast<int64_t>(jsonCreature.length()));
     }
 
-    bool error = false;
-    oatpp::String errorMessage;
-    Status status = Status::CODE_200;
+    if (!db) {
+        const ServerError error{ServerError::InternalError, "Creature database unavailable"};
+        recordSpanError(serviceSpan, error.getMessage(), "InternalError", error.getCode());
+        return Result<api::CreatureResponse>{error};
+    }
 
     // ✨ Create a span for the validation step in the service
     auto validationSpan =
         creatures::observability
             ? creatures::observability->createChildOperationSpan("CreatureService.validateJson", serviceSpan)
             : nullptr;
-    // Validate the JSON
     try {
-
-        /*
-         * This is a bit weird. Yes we're parsing the JSON twice. Once here, and once in upsertCreature().
-         * This is because we need to validate the JSON before we pass it off to the database. If we don't,
-         * we'll get a cryptic error from the database that doesn't tell us what's wrong with the JSON.
-         *
-         * The database persists the normalized result of its second parse, so both validation and storage use the
-         * same JSON semantics (including duplicate-key handling).
-         */
         auto jsonResult = JsonParser::parseApiJsonString(jsonCreature, "creature upsert validation", validationSpan);
         if (!jsonResult.isSuccess()) {
-            auto parseError = jsonResult.getError().value();
-            errorMessage = parseError.getMessage();
-            logger->warn(std::string(errorMessage));
-            recordSpanError(serviceSpan, std::string(errorMessage), "JSONParseError", parseError.getCode());
-            status = Status::CODE_400;
-            error = true;
+            const auto parseError = jsonResult.getError().value();
+            if (logger)
+                logger->warn("{}", parseError.getMessage());
+            recordSpanError(serviceSpan, parseError.getMessage(), "JSONParseError", parseError.getCode());
+            return Result<api::CreatureResponse>{parseError};
         }
-        OATPP_ASSERT_HTTP(!error, status, errorMessage)
         auto jsonObject = jsonResult.getValue().value();
         auto result = db->validateCreatureJson(jsonObject);
         if (validationSpan)
             validationSpan->setAttribute("validator", "validateCreatureJson");
 
         if (!result.isSuccess()) {
-            errorMessage = result.getError()->getMessage();
-            logger->warn(std::string(result.getError()->getMessage()));
-            status = Status::CODE_400;
-            recordSpanError(validationSpan, std::string(errorMessage), "InvalidData", result.getError()->getCode());
-            recordSpanError(serviceSpan, std::string(errorMessage), "InvalidData", result.getError()->getCode());
-            error = true;
+            const auto error = result.getError().value();
+            if (logger)
+                logger->warn("{}", error.getMessage());
+            recordSpanError(validationSpan, error.getMessage(), "InvalidData", error.getCode());
+            recordSpanError(serviceSpan, error.getMessage(), "InvalidData", error.getCode());
+            return Result<api::CreatureResponse>{ServerError{ServerError::InvalidData, error.getMessage()}};
         }
+        if (validationSpan)
+            validationSpan->setSuccess();
     } catch (const nlohmann::json::parse_error &e) {
-        errorMessage = e.what();
-        logger->warn(std::string(e.what()));
-        status = Status::CODE_400;
+        if (logger)
+            logger->warn("{}", e.what());
         if (validationSpan)
             validationSpan->recordException(e);
         if (serviceSpan)
             serviceSpan->recordException(e);
-        error = true;
+        recordSpanError(serviceSpan, e.what(), "JSONParseError", ServerError::InvalidData);
+        return Result<api::CreatureResponse>{ServerError{ServerError::InvalidData, e.what()}};
     }
-    if (validationSpan && !error)
-        validationSpan->setSuccess();
-    OATPP_ASSERT_HTTP(!error, status, errorMessage)
 
-    logger->debug("passing the upsert request off to the storage facade");
-    // Facade pairs the upsert + Creature cache invalidation atomically.
+    if (logger)
+        logger->debug("passing the upsert request off to the storage facade");
+    // Creature configs are hand-authored controller documents. Pass the
+    // original JSON to storage so unmodeled hardware fields survive; never
+    // rebuild the persisted document from the parsed Creature model.
+    // The facade also pairs the upsert + Creature cache invalidation atomically.
     auto result = creatures::storage::publishCreature(jsonCreature, serviceSpan);
-
-    // If there's an error, let the client know
     if (!result.isSuccess()) {
-
-        errorMessage = result.getError()->getMessage();
-        logger->warn(std::string(result.getError()->getMessage()));
-        status = Status::CODE_500;
-        recordSpanError(serviceSpan, std::string(errorMessage), "DatabaseError", result.getError()->getCode());
-        error = true;
+        const auto error = result.getError().value();
+        if (logger)
+            logger->warn("{}", error.getMessage());
+        recordSpanError(serviceSpan, error.getMessage(), "DatabaseError", error.getCode());
+        return Result<api::CreatureResponse>{error};
     }
-    OATPP_ASSERT_HTTP(!error, status, errorMessage)
-
-    // This should never happen and is a bad bug if it does 😱
     if (!result.getValue().has_value()) {
-        errorMessage = "DB didn't return a value after upserting the creature. This is a bug. Please report it.";
-        logger->error(std::string(errorMessage));
-        if (serviceSpan)
-            serviceSpan->setError(std::string(errorMessage));
-        OATPP_ASSERT_HTTP(true, Status::CODE_500, errorMessage);
+        const ServerError error{ServerError::InternalError,
+                                "DB didn't return a value after upserting the creature. This is a bug. Please report "
+                                "it."};
+        if (logger)
+            logger->error("{}", error.getMessage());
+        recordSpanError(serviceSpan, error.getMessage(), "MissingDatabaseResult", error.getCode());
+        return Result<api::CreatureResponse>{error};
     }
 
-    // Yay! All good! Send it along
-    auto creature = result.getValue().value();
+    const auto creature = result.getValue().value();
     info("Updated {} in the database", creature.name);
     if (serviceSpan) {
         serviceSpan->setAttribute("creature.id", creature.id);
         serviceSpan->setAttribute("creature.name", creature.name);
         serviceSpan->setSuccess();
     }
-
-    auto dto = convertToDto(creature);
-    dto->runtime = getOrCreateRuntime(creature.id);
-    return dto;
+    return Result<api::CreatureResponse>{api::CreatureResponse{creature, getRuntimeSnapshot(creature.id)}};
 }
 
-oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const std::string &jsonCreature,
-                                                                        universe_t universe,
-                                                                        std::shared_ptr<RequestSpan> parentSpan) {
-    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-    auto logger = appLogger ? appLogger : spdlog::default_logger();
-
-    if (!logger) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
-    }
-
+Result<api::CreatureResponse> CreatureService::registerCreature(const std::string &jsonCreature, universe_t universe,
+                                                                std::shared_ptr<RequestSpan> parentSpan) {
+    auto logger = spdlog::default_logger();
     if (!parentSpan) {
         warn("no parent span provided for CreatureService.registerCreature, creating a root span");
     }
-
-    if (!creatureUniverseMap) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature universe map unavailable");
-    }
-
     auto serviceSpan =
         creatures::observability
             ? creatures::observability->createOperationSpan("CreatureService.registerCreature", parentSpan)
             : nullptr;
-
-    if (logger) {
+    if (logger)
         logger->info("Controller registering creature with universe {}", universe);
-    }
-
     if (serviceSpan) {
         serviceSpan->setAttribute("service", "CreatureService");
         serviceSpan->setAttribute("operation", "registerCreature");
@@ -679,80 +438,60 @@ oatpp::Object<creatures::CreatureDto> CreatureService::registerCreature(const st
         serviceSpan->setAttribute("json.size", static_cast<int64_t>(jsonCreature.length()));
     }
 
+    if (!creatureUniverseMap) {
+        const ServerError error{ServerError::InternalError, "Creature universe map unavailable"};
+        recordSpanError(serviceSpan, error.getMessage(), "InternalError", error.getCode());
+        return Result<api::CreatureResponse>{error};
+    }
+
     if (universe < 1 || universe > 63999) {
         constexpr auto message = "universe must be in [1, 63999]";
         recordSpanError(serviceSpan, message, "InvalidUniverse", ServerError::InvalidData);
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, message);
+        return Result<api::CreatureResponse>{ServerError{ServerError::InvalidData, message}};
     }
 
-    // First, upsert the creature to the database (this handles validation)
-    oatpp::Object<creatures::CreatureDto> creatureDto;
-    try {
-        creatureDto = upsertCreature(jsonCreature, nullptr, serviceSpan);
-    } catch (const std::exception &exception) {
-        recordSpanError(serviceSpan, exception.what(), "CreatureUpsertFailed", ServerError::InvalidData);
-        if (serviceSpan)
-            serviceSpan->recordException(exception);
-        throw;
+    auto creatureResult = upsertCreature(jsonCreature, nullptr, serviceSpan);
+    if (!creatureResult.isSuccess()) {
+        const auto error = creatureResult.getError().value();
+        recordSpanError(serviceSpan, error.getMessage(), "CreatureUpsertFailed", error.getCode());
+        return Result<api::CreatureResponse>{error};
     }
+    auto response = creatureResult.getValue().value();
 
-    // Defensive check: ensure we got a valid creature DTO back
-    if (!creatureDto) {
-        std::string errorMessage = "Invalid creature configuration provided";
-        warn(errorMessage);
-        if (serviceSpan) {
-            serviceSpan->setError(errorMessage);
-        }
-        OATPP_ASSERT_HTTP(false, Status::CODE_400, errorMessage.c_str());
-    }
-
-    // Now store the creature-to-universe mapping in runtime memory
-    std::string creatureId = std::string(creatureDto->id);
+    const std::string creatureId = response.creature.id;
     creatures::creatureUniverseMap->put(creatureId, universe);
-
-    logger->info("Registered creature '{}' (id: {}) on universe {}", std::string(creatureDto->name), creatureId,
-                 universe);
+    if (logger)
+        logger->info("Registered creature '{}' (id: {}) on universe {}", response.creature.name, creatureId, universe);
 
     // Default to idle disabled on registration; clients must explicitly enable it.
-    auto runtime = getOrCreateRuntime(creatureId);
-    runtime->idle_enabled = false;
-    if (!runtime->activity) {
-        runtime->activity = makeDefaultActivity();
+    {
+        std::lock_guard<std::mutex> lock(runtimeMutex);
+        auto &runtime = getOrCreateRuntimeLocked(creatureId);
+        runtime.idleEnabled = false;
+        runtime.activity.animationId.reset();
+        runtime.activity.sessionId.reset();
+        runtime.activity.reason = creatures::runtime::toString(creatures::runtime::ActivityReason::Disabled);
+        runtime.activity.state = creatures::runtime::toString(creatures::runtime::ActivityState::Disabled);
+        const auto now = getCurrentTimeISO8601();
+        runtime.activity.startedAt = now;
+        runtime.activity.updatedAt = now;
+        response.runtime = runtime;
     }
-    runtime->activity->animation_id = nullptr;
-    runtime->activity->session_id = nullptr;
-    runtime->activity->reason = creatures::runtime::toString(creatures::runtime::ActivityReason::Disabled);
-    runtime->activity->state = creatures::runtime::toString(creatures::runtime::ActivityState::Disabled);
-    auto now = getCurrentTimeISO8601();
-    runtime->activity->started_at = now;
-    runtime->activity->updated_at = now;
-    broadcastCreatureActivity(creatureId, runtime);
+    broadcastCreatureActivity(creatureId, response.runtime);
 
     if (serviceSpan) {
         serviceSpan->setAttribute("creature.id", creatureId);
-        serviceSpan->setAttribute("creature.name", std::string(creatureDto->name));
+        serviceSpan->setAttribute("creature.name", response.creature.name);
         serviceSpan->setSuccess();
     }
-
-    return creatureDto;
+    return Result<api::CreatureResponse>{response};
 }
 
-oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatpp::String &inCreatureId, bool enabled,
-                                                                      std::shared_ptr<RequestSpan> parentSpan) {
-    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-    auto logger = appLogger ? appLogger : spdlog::default_logger();
-
-    if (!logger) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Logger unavailable");
-    }
-
-    creatureId_t creatureId = std::string(inCreatureId);
-    logger->info("Setting idle {} for creature {}", enabled ? "enabled" : "disabled", creatureId);
-
-    if (!db) {
-        OATPP_ASSERT_HTTP(false, Status::CODE_500, "Creature database unavailable");
-    }
-
+Result<api::CreatureResponse> CreatureService::setIdleEnabled(const creatureId_t &creatureId, bool enabled,
+                                                              std::shared_ptr<RequestSpan> parentSpan) {
+    auto logger = spdlog::default_logger();
+    if (logger)
+        logger->info("Setting idle {} for creature {}", enabled ? "enabled" : "disabled", creatureId);
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("CreatureService.setIdleEnabled", parentSpan)
                     : nullptr;
@@ -761,13 +500,25 @@ oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatp
         span->setAttribute("idle.enabled", enabled);
     }
 
+    if (!db) {
+        const ServerError error{ServerError::InternalError, "Creature database unavailable"};
+        recordSpanError(span, error.getMessage(), "InternalError", error.getCode());
+        return Result<api::CreatureResponse>{error};
+    }
+
     // Ensure creature exists
     auto creatureResult = db->getCreature(creatureId, span);
-    OATPP_ASSERT_HTTP(creatureResult.isSuccess(), Status::CODE_404, creatureResult.getError()->getMessage().c_str());
+    if (!creatureResult.isSuccess()) {
+        const auto error = creatureResult.getError().value();
+        recordSpanError(span, error.getMessage(), "CreatureLookupFailed", error.getCode());
+        return Result<api::CreatureResponse>{error};
+    }
 
     // Update runtime state early so cancellations won't restart idle.
-    auto runtime = getOrCreateRuntime(creatureId);
-    runtime->idle_enabled = enabled;
+    {
+        std::lock_guard<std::mutex> lock(runtimeMutex);
+        getOrCreateRuntimeLocked(creatureId).idleEnabled = enabled;
+    }
 
     bool cancelledIdleSession = false;
     if (!enabled && creatures::creatureUniverseMap && creatures::creatureUniverseMap->contains(creatureId) &&
@@ -778,55 +529,46 @@ oatpp::Object<creatures::CreatureDto> CreatureService::setIdleEnabled(const oatp
         }
     }
 
-    // Update runtime state
-    if (!runtime->activity) {
-        runtime->activity = makeDefaultActivity();
-    }
-    runtime->activity->animation_id = nullptr;
-    runtime->activity->session_id = nullptr;
-    runtime->activity->reason = creatures::runtime::toString(enabled ? creatures::runtime::ActivityReason::Idle
-                                                                     : creatures::runtime::ActivityReason::Disabled);
-    runtime->activity->state = creatures::runtime::toString(enabled ? creatures::runtime::ActivityState::Idle
-                                                                    : creatures::runtime::ActivityState::Disabled);
-    auto now = getCurrentTimeISO8601();
-    runtime->activity->started_at = now;
-    runtime->activity->updated_at = now;
-    if (runtime->counters) {
-        v_uint64 current = runtime->counters->idle_toggles_total ? *runtime->counters->idle_toggles_total : 0;
-        runtime->counters->idle_toggles_total = static_cast<v_uint64>(current + 1);
+    runtime::CreatureRuntimeSnapshot runtimeSnapshot;
+    {
+        std::lock_guard<std::mutex> lock(runtimeMutex);
+        auto &runtime = getOrCreateRuntimeLocked(creatureId);
+        runtime.activity.animationId.reset();
+        runtime.activity.sessionId.reset();
+        runtime.activity.reason = creatures::runtime::toString(enabled ? creatures::runtime::ActivityReason::Idle
+                                                                       : creatures::runtime::ActivityReason::Disabled);
+        runtime.activity.state = creatures::runtime::toString(enabled ? creatures::runtime::ActivityState::Idle
+                                                                      : creatures::runtime::ActivityState::Disabled);
+        const auto now = getCurrentTimeISO8601();
+        runtime.activity.startedAt = now;
+        runtime.activity.updatedAt = now;
+        ++runtime.counters.idleTogglesTotal;
         if (!enabled && !cancelledIdleSession) {
-            // Treat disabling idle as a stop event
-            v_uint64 stopped = runtime->counters->idle_stopped_total ? *runtime->counters->idle_stopped_total : 0;
-            runtime->counters->idle_stopped_total = static_cast<v_uint64>(stopped + 1);
+            ++runtime.counters.idleStoppedTotal;
         }
+        runtimeSnapshot = runtime;
     }
-
-    // Build DTO response
-    auto dto = creatures::convertToDto(creatureResult.getValue().value());
-    dto->runtime = runtime;
 
     broadcastIdleStateChanged(creatureId, enabled);
-    broadcastCreatureActivity(creatureId, runtime);
+    broadcastCreatureActivity(creatureId, runtimeSnapshot);
 
     if (enabled) {
         startIdleIfNeeded(creatureId, span);
+        runtimeSnapshot = getRuntimeSnapshot(creatureId);
     }
 
     if (span) {
+        span->setAttribute("creature.name", creatureResult.getValue()->name);
         span->setSuccess();
     }
-
-    return dto;
+    return Result<api::CreatureResponse>{
+        api::CreatureResponse{creatureResult.getValue().value(), std::move(runtimeSnapshot)}};
 }
 
 // Helper to decide idle vs disabled state when attempting to mark idle
-static creatures::runtime::ActivityState resolveIdleState(const oatpp::Object<creatures::CreatureRuntimeDto> &runtime,
+static creatures::runtime::ActivityState resolveIdleState(const runtime::CreatureRuntimeSnapshot &runtime,
                                                           creatures::runtime::ActivityState requested) {
-    bool idleEnabled = true;
-    if (runtime->idle_enabled != nullptr) {
-        idleEnabled = *runtime->idle_enabled;
-    }
-    if (requested == creatures::runtime::ActivityState::Idle && !idleEnabled) {
+    if (requested == creatures::runtime::ActivityState::Idle && !runtime.idleEnabled) {
         return creatures::runtime::ActivityState::Disabled;
     }
     return requested;
@@ -872,8 +614,6 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
         if (creatureId.empty()) {
             continue;
         }
-        auto runtime = getOrCreateRuntime(creatureId);
-
         bool stale = false;
         std::string staleReason;
         std::string ownerSession;
@@ -888,16 +628,11 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
             // from the snapshot after the lock is released — resolveCreatureName takes
             // runtimeMutex itself, so it can't be called from in here.
             std::lock_guard<std::mutex> lock(runtimeMutex);
-            if (!runtime->activity) {
-                runtime->activity = makeDefaultActivity();
-            }
+            auto &runtime = getOrCreateRuntimeLocked(creatureId);
 
             // Ownership guard: a dying session's stop/cancel must not clobber the state
             // of a newer session that already took this creature over (issue #62).
-            std::optional<std::string> currentSession;
-            if (runtime->activity->session_id) {
-                currentSession = std::string(runtime->activity->session_id);
-            }
+            const auto currentSession = runtime.activity.sessionId;
             uint64_t &lastGeneration = lastActivityGenerationByCreature[creatureId];
             if (activityGeneration != 0 && activityGeneration < lastGeneration) {
                 // Generation guard: a versioned write from an older adoption — even a
@@ -916,40 +651,28 @@ std::string CreatureService::setActivityState(const std::vector<creatureId_t> &c
                     resolvedReason = creatures::runtime::ActivityReason::Disabled;
                 }
 
-                runtime->activity->state = creatures::runtime::toString(resolvedState);
+                runtime.activity.state = creatures::runtime::toString(resolvedState);
                 if (resolvedState == creatures::runtime::ActivityState::Running) {
-                    runtime->activity->animation_id = animationId.c_str();
-                    runtime->activity->session_id = sid.c_str();
+                    runtime.activity.animationId = animationId;
+                    runtime.activity.sessionId = sid;
                 } else {
-                    runtime->activity->animation_id = nullptr;
-                    runtime->activity->session_id = nullptr;
+                    runtime.activity.animationId.reset();
+                    runtime.activity.sessionId.reset();
                 }
-                runtime->activity->reason = creatures::runtime::toString(resolvedReason);
-                runtime->activity->started_at = now;
-                runtime->activity->updated_at = now;
+                runtime.activity.reason = creatures::runtime::toString(resolvedReason);
+                runtime.activity.startedAt = now;
+                runtime.activity.updatedAt = now;
 
-                if (runtime->counters) {
-                    if (resolvedState == creatures::runtime::ActivityState::Running) {
-                        v_uint64 current =
-                            runtime->counters->sessions_started_total ? *runtime->counters->sessions_started_total : 0;
-                        runtime->counters->sessions_started_total = static_cast<v_uint64>(current + 1);
-                    }
-                    if (resolvedReason == creatures::runtime::ActivityReason::Cancelled) {
-                        v_uint64 cancelled = runtime->counters->sessions_cancelled_total
-                                                 ? *runtime->counters->sessions_cancelled_total
-                                                 : 0;
-                        runtime->counters->sessions_cancelled_total = static_cast<v_uint64>(cancelled + 1);
-                    }
-                }
+                if (resolvedState == creatures::runtime::ActivityState::Running)
+                    ++runtime.counters.sessionsStartedTotal;
+                if (resolvedReason == creatures::runtime::ActivityReason::Cancelled)
+                    ++runtime.counters.sessionsCancelledTotal;
 
                 if (activityGeneration > lastGeneration) {
                     lastGeneration = activityGeneration;
                 }
 
-                snapshot = {
-                    std::string(runtime->activity->state),         snapshotString(runtime->activity->animation_id),
-                    snapshotString(runtime->activity->session_id), std::string(runtime->activity->reason),
-                    std::string(runtime->activity->started_at),    std::string(runtime->activity->updated_at)};
+                snapshot = runtime.activity;
             }
         }
 
@@ -1001,12 +724,8 @@ void CreatureService::incrementIdleStopped(const std::vector<creatureId_t> &crea
         if (creatureId.empty()) {
             continue;
         }
-        auto runtime = getOrCreateRuntime(creatureId);
-        if (!runtime || !runtime->counters) {
-            continue;
-        }
-        v_uint64 stopped = runtime->counters->idle_stopped_total ? *runtime->counters->idle_stopped_total : 0;
-        runtime->counters->idle_stopped_total = static_cast<v_uint64>(stopped + 1);
+        std::lock_guard<std::mutex> lock(runtimeMutex);
+        ++getOrCreateRuntimeLocked(creatureId).counters.idleStoppedTotal;
     }
 }
 
@@ -1020,12 +739,7 @@ bool CreatureService::startIdleIfNeeded(const creatureId_t &creatureId, std::sha
         return false;
     }
 
-    auto runtime = getOrCreateRuntime(creatureId);
-    bool idleEnabled = true;
-    if (runtime->idle_enabled != nullptr) {
-        idleEnabled = *runtime->idle_enabled;
-    }
-    if (!idleEnabled) {
+    if (!getRuntimeSnapshot(creatureId).idleEnabled) {
         return false;
     }
 
@@ -1113,9 +827,9 @@ bool CreatureService::startIdleIfNeeded(const creatureId_t &creatureId, std::sha
 
         setLastIdleAnimationId(creatureId, animationId);
 
-        if (runtime && runtime->counters) {
-            v_uint64 started = runtime->counters->idle_started_total ? *runtime->counters->idle_started_total : 0;
-            runtime->counters->idle_started_total = static_cast<v_uint64>(started + 1);
+        {
+            std::lock_guard<std::mutex> lock(runtimeMutex);
+            ++getOrCreateRuntimeLocked(creatureId).counters.idleStartedTotal;
         }
 
         return true;
@@ -1124,56 +838,52 @@ bool CreatureService::startIdleIfNeeded(const creatureId_t &creatureId, std::sha
     return false;
 }
 
-oatpp::Object<CreatureConfigValidationDto>
-CreatureService::validateCreatureConfig(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan) {
+api::CreatureConfigValidationResponse CreatureService::validateCreatureConfig(const std::string &jsonCreature,
+                                                                              std::shared_ptr<RequestSpan> parentSpan) {
     auto span =
         creatures::observability
             ? creatures::observability->createOperationSpan("CreatureService.validateCreatureConfig", parentSpan)
             : nullptr;
-    auto resultDto = CreatureConfigValidationDto::createShared();
-    resultDto->valid = true;
-    resultDto->missing_animation_ids = oatpp::List<oatpp::String>::createShared();
-    resultDto->mismatched_animation_ids = oatpp::List<oatpp::String>::createShared();
-    resultDto->error_messages = oatpp::List<oatpp::String>::createShared();
+    api::CreatureConfigValidationResponse response;
 
     if (!creatures::db) {
-        resultDto->valid = false;
-        resultDto->error_messages->push_back("Database unavailable");
+        response.valid = false;
+        response.errorMessages.emplace_back("Database unavailable");
         if (span) {
             span->setError("Database unavailable");
         }
-        return resultDto;
+        return response;
     }
 
     const auto parsedResult = JsonParser::parseApiJsonString(jsonCreature, "creature validation", span);
     if (!parsedResult.isSuccess()) {
-        resultDto->valid = false;
+        response.valid = false;
         const auto message = parsedResult.getError()->getMessage();
-        resultDto->error_messages->push_back(message.c_str());
+        response.errorMessages.push_back(message);
         recordSpanError(span, message, "JSONParseError", parsedResult.getError()->getCode());
-        return resultDto;
+        return response;
     }
     const auto parsed = parsedResult.getValue().value();
 
     auto creatureResult = creatures::db->parseCreatureJson(parsed, span);
     if (!creatureResult.isSuccess()) {
-        resultDto->valid = false;
-        resultDto->error_messages->push_back(creatureResult.getError()->getMessage().c_str());
+        response.valid = false;
+        response.errorMessages.push_back(creatureResult.getError()->getMessage());
         recordSpanError(span, creatureResult.getError()->getMessage(), "InvalidData",
                         creatureResult.getError()->getCode());
-        return resultDto;
+        return response;
     }
     if (!creatureResult.getValue().has_value()) {
-        resultDto->valid = false;
-        resultDto->error_messages->push_back("Creature validation returned no value");
+        response.valid = false;
+        response.errorMessages.emplace_back("Creature validation returned no value");
         if (span) {
             span->setError("Creature validation returned no value");
         }
-        return resultDto;
+        return response;
     }
 
     auto creature = creatureResult.getValue().value();
-    resultDto->creature_id = creature.id.c_str();
+    response.creatureId = creature.id;
 
     // Degree-of-freedom sanity: the mouth reference has to actually point at
     // the beak (issue #120). The slot NUMBER is meaningless on its own and
@@ -1196,8 +906,8 @@ CreatureService::validateCreatureConfig(const std::string &jsonCreature, std::sh
             "instead of the beak. Set \"mouth_input\": \"beak\", or correct mouth_slot to {}.",
             effectiveSlot, atThatSlot, *beakSlot, atThatSlot, *beakSlot);
         warn("Creature '{}': {}", creature.name, message);
-        resultDto->valid = false;
-        resultDto->error_messages->push_back(message.c_str());
+        response.valid = false;
+        response.errorMessages.push_back(message);
         if (span) {
             span->setAttribute("creature.mouth_slot_matches_beak", false);
         }
@@ -1206,20 +916,20 @@ CreatureService::validateCreatureConfig(const std::string &jsonCreature, std::sh
     auto checkAnimations = [&](const std::vector<std::string> &ids) {
         for (const auto &animationId : ids) {
             if (animationId.empty()) {
-                resultDto->valid = false;
-                resultDto->error_messages->push_back("Animation ID cannot be empty");
+                response.valid = false;
+                response.errorMessages.emplace_back("Animation ID cannot be empty");
                 continue;
             }
             auto animationResult = creatures::db->getAnimation(animationId, span);
             if (!animationResult.isSuccess() || !animationResult.getValue().has_value()) {
-                resultDto->valid = false;
-                resultDto->missing_animation_ids->push_back(animationId.c_str());
+                response.valid = false;
+                response.missingAnimationIds.push_back(animationId);
                 continue;
             }
             auto animation = animationResult.getValue().value();
             if (!animationTargetsSingleCreature(animation, creature.id)) {
-                resultDto->valid = false;
-                resultDto->mismatched_animation_ids->push_back(animationId.c_str());
+                response.valid = false;
+                response.mismatchedAnimationIds.push_back(animationId);
             }
         }
     };
@@ -1228,14 +938,19 @@ CreatureService::validateCreatureConfig(const std::string &jsonCreature, std::sh
     checkAnimations(creature.speech_loop_animation_ids);
 
     if (span) {
-        if (resultDto->valid) {
+        span->setAttribute("creature.validation.missing_animation_count",
+                           static_cast<int64_t>(response.missingAnimationIds.size()));
+        span->setAttribute("creature.validation.mismatched_animation_count",
+                           static_cast<int64_t>(response.mismatchedAnimationIds.size()));
+        span->setAttribute("creature.validation.error_count", static_cast<int64_t>(response.errorMessages.size()));
+        if (response.valid) {
             span->setSuccess();
         } else {
             span->setError("Creature config validation failed");
         }
     }
 
-    return resultDto;
+    return response;
 }
 
 } // namespace creatures::ws

@@ -47,12 +47,12 @@ MessageProcessor::MessageProcessor() {
     appLogger->info("{} message handler{} registered", handlers.size(), handlers.size() != 1 ? "s" : "");
 }
 
-void MessageProcessor::processIncomingMessage(const nlohmann::json &envelope, const oatpp::String &message) {
+void MessageProcessor::processIncomingMessage(const nlohmann::json &envelope, std::string_view message) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
     auto span = observability ? observability->createSamplingSpan("WebSocket.inbound", 0.0005) : nullptr;
     if (span) {
-        span->setAttribute("websocket.message.size", static_cast<int64_t>(message ? message->size() : 0));
+        span->setAttribute("websocket.message.size", static_cast<int64_t>(message.size()));
     }
 
     const auto parsedEnvelope = api::webSocketEnvelopeFromJson(envelope);
@@ -61,7 +61,7 @@ void MessageProcessor::processIncomingMessage(const nlohmann::json &envelope, co
         appLogger->warn("Rejected inbound WebSocket envelope: {}", errorMessage);
         if (span) {
             span->setError(errorMessage);
-            span->setAttribute("websocket.message.size", static_cast<int64_t>(message ? message->size() : 0));
+            span->setAttribute("websocket.message.size", static_cast<int64_t>(message.size()));
             span->setAttribute("websocket.envelope.valid", false);
             span->setAttribute("websocket.rejection.stage", "envelope");
             span->setAttribute("websocket.error.type", "InvalidEnvelope");
@@ -89,7 +89,7 @@ void MessageProcessor::processIncomingMessage(const nlohmann::json &envelope, co
         appLogger->warn("unable to find a handler for message type: {}", parsed.command);
         if (span) {
             span->setError("No handler registered for WebSocket command");
-            span->setAttribute("websocket.message.size", static_cast<int64_t>(message ? message->size() : 0));
+            span->setAttribute("websocket.message.size", static_cast<int64_t>(message.size()));
             span->setAttribute("websocket.command", parsed.command);
             span->setAttribute("websocket.rejection.stage", "dispatch");
             span->setAttribute("websocket.error.type", "UnknownCommand");

@@ -524,7 +524,6 @@ add_executable(creature-server
         src/server/ws/dto/DialogScriptDto.cpp
         src/model/Creature.h
         src/model/Creature.cpp
-        src/server/ws/dto/CreatureDto.cpp
         src/model/DmxFixture.h
         src/model/DmxFixture.cpp
         src/server/ws/dto/DmxFixtureDto.h
@@ -862,7 +861,6 @@ add_executable(creature-server-test
         src/model/SortBy.h
         src/model/Track.cpp
         src/model/Creature.cpp
-        src/server/ws/dto/CreatureDto.cpp
         src/model/DmxFixture.cpp
         src/server/ws/dto/DmxFixtureDto.cpp
         src/model/DialogScript.cpp

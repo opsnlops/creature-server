@@ -14,7 +14,7 @@ namespace creatures::ws {
 class StreamFrameHandler : public IMessageHandler {
 
   public:
-    bool processMessage(const nlohmann::json &payload, const oatpp::String &message, std::string_view command,
+    bool processMessage(const nlohmann::json &payload, std::string_view message, std::string_view command,
                         std::shared_ptr<SamplingSpan> messageSpan) override;
 
   private:

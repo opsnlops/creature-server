@@ -99,13 +99,14 @@ void ClientConnection::readMessage(const WebSocket &socket, v_uint8 opcode, p_ch
 
         auto wholeMessage = m_messageBuffer.toString();
         m_messageBuffer.setCurrentPosition(0);
+        const std::string message(wholeMessage);
 
-        appLogger->debug("received a {} byte message from client {}", wholeMessage->size(), clientId);
+        appLogger->debug("received a {} byte message from client {}", message.size(), clientId);
 
         try {
-            const auto parsedMessage = JsonParser::parseApiJsonString(std::string(wholeMessage), "WebSocket message");
+            const auto parsedMessage = JsonParser::parseApiJsonString(message, "WebSocket message");
             if (parsedMessage.isSuccess()) {
-                messageProcessor->processIncomingMessage(parsedMessage.getValue().value(), wholeMessage);
+                messageProcessor->processIncomingMessage(parsedMessage.getValue().value(), message);
             } else {
                 appLogger->warn("Rejected inbound WebSocket message: {}", parsedMessage.getError()->getMessage());
                 const Notice notice{getCurrentTimeISO8601(), "Dropped malformed WebSocket message."};

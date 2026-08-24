@@ -279,7 +279,7 @@ Convert one vertical resource family at a time. Each slice includes the service
 header, implementation, controller adaptation, and tests.
 
 - [ ] Fixtures
-- [ ] Creatures
+- [x] Creatures
 - [x] Animations and ad-hoc animations
 - [ ] Playlists and playlist status
 - [ ] Sounds and renditions
@@ -308,6 +308,25 @@ header, implementation, controller adaptation, and tests.
 **Exit criterion:** all REST request and response bodies are parsed and rendered
 by the neutral JSON layer; oat++ is only routing and transporting bytes.
 
+#### Creature slice template and exception
+
+The Creature migration establishes the reusable REST slice pattern:
+
+1. bound the raw request body before parsing;
+2. parse into a checked neutral request struct;
+3. keep the service interface on `Result<T>`, domain values, and snapshots;
+4. serialize a neutral response through `HttpResponseHelpers::jsonResponse`;
+5. preserve request/service/database span hierarchy and error attributes; and
+6. characterize the exact legacy wire shape, including explicit null fields.
+
+Creature persistence is intentionally *not* the template for other resources.
+Creature JSON files are hand-authored on controllers and the submitted object
+is the source of truth. `CreatureService::upsertCreature` and registration must
+therefore pass the original JSON document to `storage::publishCreature`; they
+must never serialize the parsed `Creature` model back into a replacement
+document, because doing so would discard unmodeled controller fields. The
+database validates a modeled view but stores the complete parsed object.
+
 ### Phase 5 — Replace WebSocket DTOs
 
 - [x] Define a neutral `{command, payload}` envelope.
@@ -322,9 +341,9 @@ by the neutral JSON layer; oat++ is only routing and transporting bytes.
       outbound path; their unused oat++ wrapper has been removed.
 - [ ] Preserve message and aggregate-array size caps.
 - [ ] Preserve fragmented-message handling and malformed-message isolation.
-- [ ] Change message handler interfaces from `oatpp::String` to `std::string_view`
+- [x] Change message handler interfaces from `oatpp::String` to `std::string_view`
       or another lifetime-safe standard type.
-- [ ] Remove the oat++ object mapper from WebSocket handling.
+- [x] Remove the oat++ object mapper from WebSocket handling.
 
 **Exit criterion:** WebSocket business code only sends and receives standard C++
 types and serialized JSON strings.

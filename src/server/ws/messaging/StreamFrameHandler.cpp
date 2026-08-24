@@ -181,15 +181,15 @@ class StreamingTimeoutEvent : public EventBase<StreamingTimeoutEvent> {
 };
 } // namespace
 
-bool StreamFrameHandler::processMessage(const nlohmann::json &payload, const oatpp::String &message,
+bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::string_view message,
                                         std::string_view command, std::shared_ptr<SamplingSpan> messageSpan) {
     static_cast<void>(command);
     if (messageSpan) {
-        messageSpan->setAttribute("websocket.message.size", static_cast<int64_t>(message ? message->size() : 0));
+        messageSpan->setAttribute("websocket.message.size", static_cast<int64_t>(message.size()));
         messageSpan->setAttribute("websocket.handler", "stream-frame");
     }
 
-    if (!message || message->size() > MAX_STREAM_FRAME_MESSAGE_BYTES) {
+    if (message.size() > MAX_STREAM_FRAME_MESSAGE_BYTES) {
         const auto errorMessage = fmt::format("StreamFrame message exceeds {} bytes", MAX_STREAM_FRAME_MESSAGE_BYTES);
         appLogger->warn(errorMessage);
         if (messageSpan) {

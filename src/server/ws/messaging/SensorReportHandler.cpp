@@ -19,14 +19,14 @@ extern std::shared_ptr<Database> db;
 
 namespace creatures::ws {
 
-bool SensorReportHandler::processMessage(const nlohmann::json &payload, const oatpp::String &message,
+bool SensorReportHandler::processMessage(const nlohmann::json &payload, std::string_view message,
                                          std::string_view command, std::shared_ptr<SamplingSpan> messageSpan) {
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
     if (messageSpan) {
         messageSpan->setAttribute("websocket.command", std::string(command));
         messageSpan->setAttribute("websocket.handler", "sensor-report");
-        messageSpan->setAttribute("websocket.message.size", static_cast<int64_t>(message ? message->size() : 0));
+        messageSpan->setAttribute("websocket.message.size", static_cast<int64_t>(message.size()));
     }
 
     try {
@@ -95,7 +95,7 @@ bool SensorReportHandler::processMessage(const nlohmann::json &payload, const oa
             if (messageSpan) {
                 messageSpan->setAttribute("websocket.broadcast.enqueued", true);
             }
-            websocketOutgoingMessages->enqueue(message);
+            websocketOutgoingMessages->enqueue(std::string(message));
             return true;
         }
     } catch (const std::exception &error) {
@@ -124,7 +124,7 @@ bool SensorReportHandler::processMessage(const nlohmann::json &payload, const oa
         messageSpan->setAttribute("sensor.report.phase", "forwarding");
         messageSpan->setAttribute("websocket.broadcast.enqueued", true);
     }
-    websocketOutgoingMessages->enqueue(message);
+    websocketOutgoingMessages->enqueue(std::string(message));
     return false;
 }
 

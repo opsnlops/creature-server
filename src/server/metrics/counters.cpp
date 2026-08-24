@@ -3,8 +3,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include "server/ws/dto/SystemCountersDto.h"
-
 namespace creatures {
 
 SystemCounters::SystemCounters() {
@@ -296,50 +294,4 @@ nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapsh
             {"rtpEncoderResets", snapshot.rtpEncoderResets}};
 }
 
-oatpp::Object<SystemCountersDto> systemCountersToDto(const SystemCounters &counters) {
-    const auto snapshot = counters.snapshot();
-    auto dto = SystemCountersDto::createShared();
-    dto->totalFrames = snapshot.totalFrames;
-    dto->eventsProcessed = snapshot.eventsProcessed;
-    dto->framesStreamed = snapshot.framesStreamed;
-    dto->dmxEventsProcessed = snapshot.dmxEventsProcessed;
-    dto->animationsPlayed = snapshot.animationsPlayed;
-    dto->soundsPlayed = snapshot.soundsPlayed;
-    dto->playlistsStarted = snapshot.playlistsStarted;
-    dto->playlistsStopped = snapshot.playlistsStopped;
-    dto->playlistsEventsProcessed = snapshot.playlistsEventsProcessed;
-    dto->playlistStatusRequests = snapshot.playlistStatusRequests;
-    dto->restRequestsProcessed = snapshot.restRequestsProcessed;
-    dto->rtpEventsProcessed = snapshot.rtpEventsProcessed;
-    dto->rtpSendFailures = snapshot.rtpSendFailures;
-    dto->rtpSendFailuresSuppressed = snapshot.rtpSendFailuresSuppressed;
-    dto->rtpSendRecoveries = snapshot.rtpSendRecoveries;
-    dto->rtpCircuitBreakerTrips = snapshot.rtpCircuitBreakerTrips;
-    dto->rtcpReportsSent = snapshot.rtcpReportsSent;
-    dto->rtcpSendFailures = snapshot.rtcpSendFailures;
-    dto->rtpEncoderResets = snapshot.rtpEncoderResets;
-    dto->rtpAudioLoadersActive = snapshot.rtpAudioLoadersActive;
-    dto->rtpAudioLoadsQueued = snapshot.rtpAudioLoadsQueued;
-    dto->rtpAudioLoadsAccepted = snapshot.rtpAudioLoadsAccepted;
-    dto->rtpAudioLoadsCompleted = snapshot.rtpAudioLoadsCompleted;
-    dto->rtpAudioLoadsRejected = snapshot.rtpAudioLoadsRejected;
-    dto->rtpAudioLoadsCancelled = snapshot.rtpAudioLoadsCancelled;
-    dto->rtpAudioLoadsFailed = snapshot.rtpAudioLoadsFailed;
-    dto->localAudioPlaybacksActive = snapshot.localAudioPlaybacksActive;
-    dto->localAudioPlaybacksQueued = snapshot.localAudioPlaybacksQueued;
-    dto->localAudioPlaybacksAccepted = snapshot.localAudioPlaybacksAccepted;
-    dto->localAudioPlaybacksCompleted = snapshot.localAudioPlaybacksCompleted;
-    dto->localAudioPlaybacksReplaced = snapshot.localAudioPlaybacksReplaced;
-    dto->localAudioPlaybacksRejected = snapshot.localAudioPlaybacksRejected;
-    dto->localAudioPlaybacksStopped = snapshot.localAudioPlaybacksStopped;
-    dto->localAudioPlaybacksFailed = snapshot.localAudioPlaybacksFailed;
-    dto->localAudioPlaybacksTimedOut = snapshot.localAudioPlaybacksTimedOut;
-    dto->soundFilesServed = snapshot.soundFilesServed;
-    dto->websocketConnectionsProcessed = snapshot.websocketConnectionsProcessed;
-    dto->websocketMessagesReceived = snapshot.websocketMessagesReceived;
-    dto->websocketMessagesSent = snapshot.websocketMessagesSent;
-    dto->websocketPingsSent = snapshot.websocketPingsSent;
-    dto->websocketPongsReceived = snapshot.websocketPongsReceived;
-    return dto;
-}
 } // namespace creatures

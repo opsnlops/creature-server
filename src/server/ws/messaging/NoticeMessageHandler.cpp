@@ -9,7 +9,7 @@
 
 namespace creatures ::ws {
 
-bool NoticeMessageHandler::processMessage(const nlohmann::json &payload, const oatpp::String &message,
+bool NoticeMessageHandler::processMessage(const nlohmann::json &payload, std::string_view message,
                                           std::string_view command, std::shared_ptr<SamplingSpan> messageSpan) {
 
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);

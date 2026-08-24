@@ -2,7 +2,6 @@
 #pragma once
 
 #include <memory>
-#include <oatpp/core/Types.hpp>
 
 #include "IMessageHandler.h"
 
@@ -22,7 +21,7 @@ namespace creatures::ws {
 class SensorReportHandler : public IMessageHandler {
 
   public:
-    bool processMessage(const nlohmann::json &payload, const oatpp::String &message, std::string_view command,
+    bool processMessage(const nlohmann::json &payload, std::string_view message, std::string_view command,
                         std::shared_ptr<SamplingSpan> messageSpan) override;
 };
 
