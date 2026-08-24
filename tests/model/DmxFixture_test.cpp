@@ -171,6 +171,23 @@ TEST(DmxFixtureJsonTest, RoundTripsThroughDto) {
     EXPECT_EQ(roundTripped.bindings[0].on_reason, fixture.bindings[0].on_reason);
 }
 
+TEST(DmxFixtureJsonTest, NeutralSerializerPreservesTheCanonicalFixtureShape) {
+    const auto fixture = Database::parseFixtureJson(makeValidFixtureJson()).getValue().value();
+    EXPECT_EQ(dmxFixtureToJson(fixture), makeValidFixtureJson());
+}
+
+TEST(DmxFixtureJsonTest, NeutralSerializerOmitsAbsentOptionalFields) {
+    auto fixture = Database::parseFixtureJson(makeValidFixtureJson()).getValue().value();
+    fixture.assigned_universe.reset();
+    fixture.bindings.front().on_reason.reset();
+    fixture.bindings.front().on_state.reset();
+
+    const auto json = dmxFixtureToJson(fixture);
+    EXPECT_FALSE(json.contains("assigned_universe"));
+    EXPECT_FALSE(json.at("bindings").at(0).contains("on_reason"));
+    EXPECT_FALSE(json.at("bindings").at(0).contains("on_state"));
+}
+
 TEST(DmxFixtureJsonTest, ValidateFixtureJsonCatchesMissingTopLevelField) {
     auto j = makeValidFixtureJson();
     j.erase("type");

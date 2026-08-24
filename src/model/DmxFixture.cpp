@@ -50,4 +50,49 @@ const FixturePattern *DmxFixture::findPatternById(const std::string &patternId) 
     return nullptr;
 }
 
+nlohmann::json dmxFixtureToJson(const DmxFixture &fixture) {
+    nlohmann::json channels = nlohmann::json::array();
+    for (const auto &channel : fixture.channels) {
+        channels.push_back({{"offset", channel.offset}, {"name", channel.name}, {"kind", channel.kind}});
+    }
+
+    nlohmann::json patterns = nlohmann::json::array();
+    for (const auto &pattern : fixture.patterns) {
+        nlohmann::json values = nlohmann::json::array();
+        for (const auto &value : pattern.values) {
+            values.push_back({{"channel", value.channel}, {"value", value.value}});
+        }
+        patterns.push_back({{"id", pattern.id},
+                            {"name", pattern.name},
+                            {"values", std::move(values)},
+                            {"fade_in_ms", pattern.fade_in_ms},
+                            {"fade_out_ms", pattern.fade_out_ms},
+                            {"hold_ms", pattern.hold_ms}});
+    }
+
+    nlohmann::json bindings = nlohmann::json::array();
+    for (const auto &binding : fixture.bindings) {
+        nlohmann::json value = {{"creature_id", binding.creature_id}, {"pattern_id", binding.pattern_id}};
+        if (binding.on_reason) {
+            value["on_reason"] = *binding.on_reason;
+        }
+        if (binding.on_state) {
+            value["on_state"] = *binding.on_state;
+        }
+        bindings.push_back(std::move(value));
+    }
+
+    nlohmann::json result = {{"id", fixture.id},
+                             {"name", fixture.name},
+                             {"type", fixtureTypeToString(fixture.type)},
+                             {"channel_offset", fixture.channel_offset},
+                             {"channels", std::move(channels)},
+                             {"patterns", std::move(patterns)},
+                             {"bindings", std::move(bindings)}};
+    if (fixture.assigned_universe) {
+        result["assigned_universe"] = *fixture.assigned_universe;
+    }
+    return result;
+}
+
 } // namespace creatures

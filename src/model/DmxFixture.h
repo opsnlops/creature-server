@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "server/namespace-stuffs.h"
 
 namespace creatures {
@@ -46,4 +48,8 @@ struct DmxFixture {
     const FixtureChannel *findChannelByName(const std::string &channelName) const;
     const FixturePattern *findPatternById(const std::string &patternId) const;
 };
+
+// Canonical REST/WebSocket representation. Optional values are omitted when
+// absent; this deliberately replaces oat++'s implicit explicit-null wrappers.
+nlohmann::json dmxFixtureToJson(const DmxFixture &fixture);
 } // namespace creatures
