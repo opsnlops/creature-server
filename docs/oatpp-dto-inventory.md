@@ -47,7 +47,7 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/Animation.h` | `AnimationDto` | REST response and accepted POST/ad-hoc input | Strict model-owned `animationToJson` / `animationFromJson`; API and persistence envelopes are distinct |
 | `src/model/AnimationMetadata.h` | `CreatureRenderChoiceDto`, `AnimationMetadataDto` | Animation list/detail response and nested input | Strict model-owned `animationMetadataToJson` / `animationMetadataFromJson` |
 | `src/model/DialogScript.h` | `DialogScriptTurnDto`, `AcceptedVoiceDto`, `DialogBackgroundMusicDto`, `DialogScriptDto` | Primarily REST and job response; input is already parsed from raw JSON | `dialogScriptToJson`; database-owned `dialogScriptFromJson` |
-| `src/model/DmxFixture.h` | `FixtureChannelDto`, `FixturePatternValueDto`, `FixturePatternDto`, `FixtureBindingDto`, `DmxFixtureDto` | REST responses; config input is already parsed from raw JSON | Database-owned `fixtureFromJson`; no complete neutral serializer |
+| `src/model/DmxFixture.h` | `FixtureChannelDto`, `FixturePatternValueDto`, `FixturePatternDto`, `FixtureBindingDto`, `DmxFixtureDto` | REST responses; config input is already parsed from raw JSON | Strict model-owned `dmxFixtureToJson` / `dmxFixtureFromJson`; persistence still uses its legacy parser |
 | `src/server/ws/dto/InputDto.h` (moved from `src/model/Input.h`) | `InputDto` | Temporary oat++ adapter for remaining non-Creature nested uses | Strict model-owned `inputToJson` / `inputFromJson` |
 | `src/server/ws/dto/NoticeDto.h` (moved from `src/model/Notice.h`) | `NoticeDto` | Temporary oat++ adapter for inbound and outbound WebSocket notices | Strict model-owned `noticeToJson` / `noticeFromJson` |
 | `src/server/ws/dto/PlaylistItemDto.h` (moved from `src/model/PlaylistItem.h`) | `PlaylistItemDto` | Temporary oat++ adapter for nested playlist input/response | Strict model-owned `playlistItemToJson` / `playlistItemFromJson` |
@@ -210,7 +210,7 @@ Nine service headers expose oat++ directly.
 |---|---|---|---|
 | `AnimationService` | `listAllAnimations`, `getAnimation`, `getAdHocAnimation`, `upsertAnimation`, `listAdHocAnimations`, `deleteAnimation`, `playStoredAnimation` | DTO/list/status returns, `oatpp::String` IDs, HTTP assertions/status | `Result<T>`, vectors, `Result<void>`, standard/strong IDs |
 | `CreatureService` | — | Fully neutral: `Result<T>`, request/response structs, and synchronized runtime snapshots | Completed |
-| `DmxFixtureService` | `getAllFixtures`, `getFixture`, `upsertFixture`, `deleteFixture`, `setFixtureUniverse`, `validateFixtureConfig`, `triggerPattern`, `previewPattern`, `setFixtureLive` | DTO/list returns, oat++ IDs, pervasive HTTP assertions/status | `Result<DmxFixture>`, vector, validation struct, `Result<void>` |
+| `DmxFixtureService` | `setFixtureUniverse`, `triggerPattern`, `previewPattern`, `setFixtureLive` | CRUD and validation are neutral; remaining runtime controls still use DTO returns, oat++ IDs, and HTTP assertions | Finish `Result<DmxFixture>` / `Result<void>` conversion for runtime controls |
 | `PlaylistService` | — | Fully neutral: domain/list/status values and checked plain request contracts | Completed |
 | `SoundService` | `buildSoundMetadata`, `playSound`, `getAllSounds`, `getAdHocSounds`, `generateLipSync` | DTO/list/status returns and oat++ filename | Domain/response values and `Result<void>` |
 | `MetricsService` | `getCounters` | Neutral `Result<SystemCountersSnapshot>` return | Ordinary immutable counter snapshot |
