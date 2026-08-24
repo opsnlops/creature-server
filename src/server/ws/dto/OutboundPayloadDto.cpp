@@ -1,20 +1,6 @@
 #include "server/ws/dto/NoticeDto.h"
-#include "server/ws/dto/PlaylistStatusDto.h"
 
 namespace creatures {
-
-oatpp::Object<PlaylistStatusDto> convertToDto(const PlaylistStatus &playlistStatus) {
-    auto dto = PlaylistStatusDto::createShared();
-    dto->universe = playlistStatus.universe;
-    dto->playlist = playlistStatus.playlist;
-    dto->playing = playlistStatus.playing;
-    dto->current_animation = playlistStatus.current_animation;
-    return dto;
-}
-
-PlaylistStatus convertFromDto(const oatpp::Object<PlaylistStatusDto> &dto) {
-    return PlaylistStatus{dto->universe, dto->playlist, dto->playing, dto->current_animation};
-}
 
 oatpp::Object<NoticeDto> convertToDto(const Notice &notice) {
     auto dto = NoticeDto::createShared();

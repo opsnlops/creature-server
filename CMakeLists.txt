@@ -551,7 +551,6 @@ add_executable(creature-server
         src/server/ws/dto/PlaylistItemDto.cpp
         src/model/PlaylistStatus.h
         src/model/PlaylistStatus.cpp
-        src/server/ws/dto/PlaylistStatusDto.h
         src/model/StreamFrame.cpp
         src/model/StreamFrame.h
         src/model/Sound.h

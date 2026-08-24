@@ -281,7 +281,7 @@ header, implementation, controller adaptation, and tests.
 - [ ] Fixtures
 - [x] Creatures
 - [x] Animations and ad-hoc animations
-- [ ] Playlists and playlist status
+- [x] Playlists and playlist status
 - [ ] Sounds and renditions
 - [ ] Dialog scripts, preview, voice acceptance, and music
 - [ ] Voice generation and subscription state

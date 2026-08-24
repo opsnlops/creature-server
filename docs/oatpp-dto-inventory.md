@@ -50,9 +50,8 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/DmxFixture.h` | `FixtureChannelDto`, `FixturePatternValueDto`, `FixturePatternDto`, `FixtureBindingDto`, `DmxFixtureDto` | REST responses; config input is already parsed from raw JSON | Database-owned `fixtureFromJson`; no complete neutral serializer |
 | `src/server/ws/dto/InputDto.h` (moved from `src/model/Input.h`) | `InputDto` | Temporary oat++ adapter for remaining non-Creature nested uses | Strict model-owned `inputToJson` / `inputFromJson` |
 | `src/server/ws/dto/NoticeDto.h` (moved from `src/model/Notice.h`) | `NoticeDto` | Temporary oat++ adapter for inbound and outbound WebSocket notices | Strict model-owned `noticeToJson` / `noticeFromJson` |
-| `src/server/ws/dto/PlaylistDto.h` (moved from `src/model/Playlist.h`) | `PlaylistDto` | Temporary oat++ adapter for REST list/detail/upsert responses | Strict model-owned `playlistToJson` / `playlistFromJson`; trusted database storage strips MongoDB and previously ignored unmodeled fields before parsing |
 | `src/server/ws/dto/PlaylistItemDto.h` (moved from `src/model/PlaylistItem.h`) | `PlaylistItemDto` | Temporary oat++ adapter for nested playlist input/response | Strict model-owned `playlistItemToJson` / `playlistItemFromJson` |
-| `src/server/ws/dto/PlaylistStatusDto.h` (moved from `src/model/PlaylistStatus.h`) | `PlaylistStatusDto` | Temporary oat++ adapter for REST and outbound WebSocket status payloads | Strict model-owned `playlistStatusToJson` / `playlistStatusFromJson` |
+| `src/model/PlaylistStatus.h` | — | REST and outbound status payloads | Strict model-owned `playlistStatusToJson` / `playlistStatusFromJson` |
 | `src/model/Sound.h` | `DialogTurnDto`, `SoundTrackDto`, `MouthCueDto`, `TrackMouthCuesDto`, `WordTimingDto`, `TrackWordsDto`, `SoundDto` | Sound lists and heavy metadata response; dialog-generation support | No complete neutral codec |
 | `src/model/Stage.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned placement and audio keys | `stageToJson`; database-owned `stageFromJson` |
 | `src/model/Storyboard.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned tile action keys | `storyboardToJson`; database-owned `storyboardFromJson` |
@@ -109,8 +108,6 @@ should derive `count` from the final item vector when serializing.
 | `PlaySoundRequestDTO.h` | `PlaySoundRequestDTO` | Sound playback |
 | `RegenerateLipSyncRequestDto.h` | `RegenerateLipSyncRequestDto` | Lip-sync regeneration |
 | `SetFixtureUniverseRequestDto.h` | `SetFixtureUniverseRequestDto` | Fixture universe assignment |
-| `StartPlaylistRequestDto.h` | `StartPlaylistRequestDto` | Playlist start |
-| `StopPlaylistRequestDto.h` | `StopPlaylistRequestDto` | Playlist stop |
 | `TriggerAdHocAnimationRequestDto.h` | `TriggerAdHocAnimationRequestDto` | Prepared ad-hoc animation playback |
 | `TriggerFixturePatternRequestDto.h` | `TriggerFixturePatternRequestDto` | Fixture pattern trigger |
 
@@ -214,7 +211,7 @@ Nine service headers expose oat++ directly.
 | `AnimationService` | `listAllAnimations`, `getAnimation`, `getAdHocAnimation`, `upsertAnimation`, `listAdHocAnimations`, `deleteAnimation`, `playStoredAnimation` | DTO/list/status returns, `oatpp::String` IDs, HTTP assertions/status | `Result<T>`, vectors, `Result<void>`, standard/strong IDs |
 | `CreatureService` | — | Fully neutral: `Result<T>`, request/response structs, and synchronized runtime snapshots | Completed |
 | `DmxFixtureService` | `getAllFixtures`, `getFixture`, `upsertFixture`, `deleteFixture`, `setFixtureUniverse`, `validateFixtureConfig`, `triggerPattern`, `previewPattern`, `setFixtureLive` | DTO/list returns, oat++ IDs, pervasive HTTP assertions/status | `Result<DmxFixture>`, vector, validation struct, `Result<void>` |
-| `PlaylistService` | `getAllPlaylists`, `getPlaylist`, `upsertPlaylist`, `startPlaylist`, `stopPlaylist`, `playlistStatus`, `getAllPlaylistStatuses` | DTO/list/status returns and oat++ ID | Domain values and `Result<void>` |
+| `PlaylistService` | — | Fully neutral: domain/list/status values and checked plain request contracts | Completed |
 | `SoundService` | `buildSoundMetadata`, `playSound`, `getAllSounds`, `getAdHocSounds`, `generateLipSync` | DTO/list/status returns and oat++ filename | Domain/response values and `Result<void>` |
 | `MetricsService` | `getCounters` | Neutral `Result<SystemCountersSnapshot>` return | Ordinary immutable counter snapshot |
 | `VoiceService` | `getAllVoices`, `getSubscriptionStatus`, `generateCreatureSpeech` | Library DTO returns and DTO request | Library domain structs and neutral API request |
