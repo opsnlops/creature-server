@@ -310,51 +310,31 @@ Result<creatures::DmxFixture> Database::fixtureFromJson(json fixtureJson, std::s
 }
 
 Result<creatures::DmxFixture> Database::parseFixtureJson(json fixtureJson, std::shared_ptr<OperationSpan> parentSpan) {
-    return fixtureFromJson(std::move(fixtureJson), std::move(parentSpan));
+    auto span = creatures::observability
+                    ? creatures::observability->createChildOperationSpan("Database.parseFixtureJson", parentSpan)
+                    : nullptr;
+    auto result = dmxFixtureFromJson(fixtureJson);
+    if (!result.isSuccess()) {
+        if (span) {
+            const auto &error = result.getError().value();
+            span->setError(error.getMessage());
+            span->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
+        }
+        return result;
+    }
+    if (span) {
+        const auto &fixture = result.getValue().value();
+        span->setAttribute("fixture.id", fixture.id);
+        span->setAttribute("fixture.channels_count", static_cast<int64_t>(fixture.channels.size()));
+        span->setSuccess();
+    }
+    return result;
 }
 
 Result<bool> Database::validateFixtureJson(const nlohmann::json &json) {
-
-    auto topOkay = has_required_fields(json, fixture_required_top_level_fields);
-    if (!topOkay.isSuccess()) {
-        return topOkay;
-    }
-
-    if (json.contains("channels") && json["channels"].is_array()) {
-        for (const auto &ch : json["channels"]) {
-            auto chOkay = has_required_fields(ch, fixture_required_channel_fields);
-            if (!chOkay.isSuccess()) {
-                return chOkay;
-            }
-        }
-    }
-
-    if (json.contains("patterns") && json["patterns"].is_array()) {
-        for (const auto &p : json["patterns"]) {
-            auto pOkay = has_required_fields(p, fixture_required_pattern_fields);
-            if (!pOkay.isSuccess()) {
-                return pOkay;
-            }
-            if (p.contains("values") && p["values"].is_array()) {
-                for (const auto &v : p["values"]) {
-                    auto vOkay = has_required_fields(v, fixture_required_pattern_value_fields);
-                    if (!vOkay.isSuccess()) {
-                        return vOkay;
-                    }
-                }
-            }
-        }
-    }
-
-    if (json.contains("bindings") && json["bindings"].is_array()) {
-        for (const auto &b : json["bindings"]) {
-            auto bOkay = has_required_fields(b, fixture_required_binding_fields);
-            if (!bOkay.isSuccess()) {
-                return bOkay;
-            }
-        }
-    }
-
+    auto result = dmxFixtureFromJson(json);
+    if (!result.isSuccess())
+        return Result<bool>{result.getError().value()};
     return Result<bool>{true};
 }
 
