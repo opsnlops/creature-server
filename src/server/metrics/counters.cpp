@@ -1,6 +1,8 @@
 
 #include "counters.h"
 
+#include <nlohmann/json.hpp>
+
 namespace creatures {
 
 SystemCounters::SystemCounters() {
@@ -204,56 +206,92 @@ uint64_t SystemCounters::getWebsocketPingsSent() { return websocketPingsSent.loa
 
 uint64_t SystemCounters::getWebsocketPongsReceived() { return websocketPongsReceived.load(); }
 
-/**
- * Create a DTO from the current state of the counters
- *
- * @return a shared pointer to the DTO
- */
-oatpp::Object<SystemCountersDto> SystemCounters::convertToDto() {
-
-    auto dto = SystemCountersDto::createShared();
-
-    dto->totalFrames = totalFrames.load();
-    dto->eventsProcessed = eventsProcessed.load();
-    dto->framesStreamed = framesStreamed.load();
-    dto->dmxEventsProcessed = dmxEventsProcessed.load();
-    dto->animationsPlayed = animationsPlayed.load();
-    dto->soundsPlayed = soundsPlayed.load();
-    dto->playlistsStarted = playlistsStarted.load();
-    dto->playlistsStopped = playlistsStopped.load();
-    dto->playlistsEventsProcessed = playlistsEventsProcessed.load();
-    dto->playlistStatusRequests = playlistStatusRequests.load();
-    dto->restRequestsProcessed = restRequestsProcessed.load();
-    dto->rtpEventsProcessed = rtpEventsProcessed.load();
-    dto->rtpSendFailures = rtpSendFailures.load();
-    dto->rtpSendFailuresSuppressed = rtpSendFailuresSuppressed.load();
-    dto->rtpSendRecoveries = rtpSendRecoveries.load();
-    dto->rtpCircuitBreakerTrips = rtpCircuitBreakerTrips.load();
-    dto->rtcpReportsSent = rtcpReportsSent.load();
-    dto->rtcpSendFailures = rtcpSendFailures.load();
-    dto->rtpEncoderResets = rtpEncoderResets.load();
-    dto->rtpAudioLoadersActive = rtpAudioLoadersActive.load();
-    dto->rtpAudioLoadsQueued = rtpAudioLoadsQueued.load();
-    dto->rtpAudioLoadsAccepted = rtpAudioLoadsAccepted.load();
-    dto->rtpAudioLoadsCompleted = rtpAudioLoadsCompleted.load();
-    dto->rtpAudioLoadsRejected = rtpAudioLoadsRejected.load();
-    dto->rtpAudioLoadsCancelled = rtpAudioLoadsCancelled.load();
-    dto->rtpAudioLoadsFailed = rtpAudioLoadsFailed.load();
-    dto->localAudioPlaybacksActive = localAudioPlaybacksActive.load();
-    dto->localAudioPlaybacksQueued = localAudioPlaybacksQueued.load();
-    dto->localAudioPlaybacksAccepted = localAudioPlaybacksAccepted.load();
-    dto->localAudioPlaybacksCompleted = localAudioPlaybacksCompleted.load();
-    dto->localAudioPlaybacksReplaced = localAudioPlaybacksReplaced.load();
-    dto->localAudioPlaybacksRejected = localAudioPlaybacksRejected.load();
-    dto->localAudioPlaybacksStopped = localAudioPlaybacksStopped.load();
-    dto->localAudioPlaybacksFailed = localAudioPlaybacksFailed.load();
-    dto->localAudioPlaybacksTimedOut = localAudioPlaybacksTimedOut.load();
-    dto->websocketConnectionsProcessed = websocketConnectionsProcessed.load();
-    dto->websocketMessagesReceived = websocketMessagesReceived.load();
-    dto->websocketMessagesSent = websocketMessagesSent.load();
-    dto->websocketPingsSent = websocketPingsSent.load();
-    dto->websocketPongsReceived = websocketPongsReceived.load();
-
-    return dto;
+SystemCountersSnapshot SystemCounters::snapshot() const {
+    return {totalFrames.load(),
+            eventsProcessed.load(),
+            framesStreamed.load(),
+            dmxEventsProcessed.load(),
+            animationsPlayed.load(),
+            soundsPlayed.load(),
+            playlistsStarted.load(),
+            playlistsStopped.load(),
+            playlistsEventsProcessed.load(),
+            playlistStatusRequests.load(),
+            restRequestsProcessed.load(),
+            rtpEventsProcessed.load(),
+            rtpSendFailures.load(),
+            rtpSendFailuresSuppressed.load(),
+            rtpSendRecoveries.load(),
+            rtpCircuitBreakerTrips.load(),
+            rtcpReportsSent.load(),
+            rtcpSendFailures.load(),
+            rtpAudioLoadersActive.load(),
+            rtpAudioLoadsQueued.load(),
+            rtpAudioLoadsAccepted.load(),
+            rtpAudioLoadsCompleted.load(),
+            rtpAudioLoadsRejected.load(),
+            rtpAudioLoadsCancelled.load(),
+            rtpAudioLoadsFailed.load(),
+            localAudioPlaybacksActive.load(),
+            localAudioPlaybacksQueued.load(),
+            localAudioPlaybacksAccepted.load(),
+            localAudioPlaybacksCompleted.load(),
+            localAudioPlaybacksReplaced.load(),
+            localAudioPlaybacksRejected.load(),
+            localAudioPlaybacksStopped.load(),
+            localAudioPlaybacksFailed.load(),
+            localAudioPlaybacksTimedOut.load(),
+            soundFilesServed.load(),
+            websocketConnectionsProcessed.load(),
+            websocketMessagesReceived.load(),
+            websocketMessagesSent.load(),
+            websocketPingsSent.load(),
+            websocketPongsReceived.load(),
+            rtpEncoderResets.load()};
 }
+
+nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapshot) {
+    return {{"totalFrames", snapshot.totalFrames},
+            {"eventsProcessed", snapshot.eventsProcessed},
+            {"framesStreamed", snapshot.framesStreamed},
+            {"dmxEventsProcessed", snapshot.dmxEventsProcessed},
+            {"animationsPlayed", snapshot.animationsPlayed},
+            {"soundsPlayed", snapshot.soundsPlayed},
+            {"playlistsStarted", snapshot.playlistsStarted},
+            {"playlistsStopped", snapshot.playlistsStopped},
+            {"playlistsEventsProcessed", snapshot.playlistsEventsProcessed},
+            {"playlistStatusRequests", snapshot.playlistStatusRequests},
+            {"restRequestsProcessed", snapshot.restRequestsProcessed},
+            {"rtpEventsProcessed", snapshot.rtpEventsProcessed},
+            {"rtpSendFailures", snapshot.rtpSendFailures},
+            {"rtpSendFailuresSuppressed", snapshot.rtpSendFailuresSuppressed},
+            {"rtpSendRecoveries", snapshot.rtpSendRecoveries},
+            {"rtpCircuitBreakerTrips", snapshot.rtpCircuitBreakerTrips},
+            {"rtcpReportsSent", snapshot.rtcpReportsSent},
+            {"rtcpSendFailures", snapshot.rtcpSendFailures},
+            {"rtpAudioLoadersActive", snapshot.rtpAudioLoadersActive},
+            {"rtpAudioLoadsQueued", snapshot.rtpAudioLoadsQueued},
+            {"rtpAudioLoadsAccepted", snapshot.rtpAudioLoadsAccepted},
+            {"rtpAudioLoadsCompleted", snapshot.rtpAudioLoadsCompleted},
+            {"rtpAudioLoadsRejected", snapshot.rtpAudioLoadsRejected},
+            {"rtpAudioLoadsCancelled", snapshot.rtpAudioLoadsCancelled},
+            {"rtpAudioLoadsFailed", snapshot.rtpAudioLoadsFailed},
+            {"localAudioPlaybacksActive", snapshot.localAudioPlaybacksActive},
+            {"localAudioPlaybacksQueued", snapshot.localAudioPlaybacksQueued},
+            {"localAudioPlaybacksAccepted", snapshot.localAudioPlaybacksAccepted},
+            {"localAudioPlaybacksCompleted", snapshot.localAudioPlaybacksCompleted},
+            {"localAudioPlaybacksReplaced", snapshot.localAudioPlaybacksReplaced},
+            {"localAudioPlaybacksRejected", snapshot.localAudioPlaybacksRejected},
+            {"localAudioPlaybacksStopped", snapshot.localAudioPlaybacksStopped},
+            {"localAudioPlaybacksFailed", snapshot.localAudioPlaybacksFailed},
+            {"localAudioPlaybacksTimedOut", snapshot.localAudioPlaybacksTimedOut},
+            {"soundFilesServed", snapshot.soundFilesServed},
+            {"websocketConnectionsProcessed", snapshot.websocketConnectionsProcessed},
+            {"websocketMessagesReceived", snapshot.websocketMessagesReceived},
+            {"websocketMessagesSent", snapshot.websocketMessagesSent},
+            {"websocketPingsSent", snapshot.websocketPingsSent},
+            {"websocketPongsReceived", snapshot.websocketPongsReceived},
+            {"rtpEncoderResets", snapshot.rtpEncoderResets}};
+}
+
 } // namespace creatures

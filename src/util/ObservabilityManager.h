@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <variant>
 
 // Disable shadow warnings for OpenTelemetry headers (third-party code)
 #pragma GCC diagnostic push
@@ -116,10 +117,10 @@ class ObservabilityManager {
      * @param samplingRate The percentage (0.0-1.0) of normal spans to export
      * @return A unique pointer to the sampling span
      */
-    std::shared_ptr<SamplingSpan> createSamplingSpan(const std::string &operationName, double samplingRate = 0.001);
+    std::shared_ptr<SamplingSpan> createSamplingSpan(const std::string &operationName, double samplingRate = 0.0005);
     std::shared_ptr<SamplingSpan> createSamplingSpan(const std::string &operationName,
                                                      std::shared_ptr<OperationSpan> parentSpan,
-                                                     double samplingRate = 0.001);
+                                                     double samplingRate = 0.0005);
 
     /**
      * Export all metrics from the SystemCounters to OTel
@@ -422,6 +423,11 @@ class SamplingSpan : public OperationSpan {
     void recordException(const std::exception &ex);
 
   private:
+    using BufferedAttribute = std::variant<std::string, int64_t, double, bool>;
+
+    void reifySpan(const char *reason);
+    void replayBufferedAttributes();
+
     double samplingRate_;
     bool shouldExport_;
     opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer_;
@@ -429,6 +435,7 @@ class SamplingSpan : public OperationSpan {
     // can name the lazily created span correctly instead of falling back to
     // a single hardcoded "eventloop.frame".
     std::string operationName_;
+    std::unordered_map<std::string, BufferedAttribute> bufferedAttributes_;
 
     // Allow access to ObservabilityManager for creating error spans
     friend class ObservabilityManager;

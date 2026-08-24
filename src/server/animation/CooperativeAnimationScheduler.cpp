@@ -189,8 +189,11 @@ void unwindAdoptedAudioSession(const std::shared_ptr<PlaybackSession> &session, 
                 // playlist whose snapshot actually names one.
                 if (snapshot && !snapshot->playlist.empty()) {
                     if (eventLoop) {
-                        eventLoop->scheduleEvent(
-                            std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe));
+                        if (const auto eventContext = capturedSessionManager->claimPlaylistEvent(universe)) {
+                            eventLoop->scheduleEvent(std::make_shared<PlaylistEvent>(
+                                eventLoop->getNextFrameNumber(), universe, eventContext->generation,
+                                eventContext->triggerTraceId, eventContext->triggerSpanId));
+                        }
                     } else {
                         warn("Interrupted playlist resume after failed interrupt skipped: event loop unavailable");
                     }
@@ -245,7 +248,8 @@ struct AsyncAudioLoadContext {
 Result<std::shared_ptr<PlaybackSession>>
 CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const Animation &animation,
                                                  universe_t universe, creatures::runtime::ActivityReason reason,
-                                                 bool cancelEntireUniverse, const std::string &chainId) {
+                                                 bool cancelEntireUniverse, const std::string &chainId,
+                                                 std::optional<uint64_t> expectedPlaylistGeneration) {
     // Create observability span
     auto scheduleSpan =
         observability ? observability->createOperationSpan("CooperativeAnimationScheduler.scheduleAnimation") : nullptr;
@@ -419,7 +423,15 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
     // (reason, running) — the ordering the fixture binding dispatcher needs — and (b) the
     // idle-restart check in the playback runner can never observe the universe as free
     // while we're still loading audio (issues #62/#63).
-    sessionManager->registerSession(universe, session, false, scheduleSpan, cancelEntireUniverse);
+    if (!sessionManager->registerSession(universe, session, false, scheduleSpan, cancelEntireUniverse,
+                                         expectedPlaylistGeneration)) {
+        const std::string errorMsg = "Playlist generation changed before animation adoption";
+        if (scheduleSpan) {
+            scheduleSpan->setAttribute("playlist.stale_event", true);
+            scheduleSpan->setSuccess();
+        }
+        return Result<std::shared_ptr<PlaybackSession>>{ServerError(ServerError::Conflict, errorMsg)};
+    }
 
     // Broadcast initial activity state for involved creatures using the session UUID.
     // The generation was minted by adoption just above, so a delayed run of this
@@ -999,10 +1011,13 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
                     if (!eventLoop) {
                         warn("Interrupted playlist resume skipped: event loop unavailable");
                     } else {
-                        auto nextPlaylistEvent =
-                            std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
-                        eventLoop->scheduleEvent(nextPlaylistEvent);
-                        info("Scheduled PlaylistEvent to resume playlist on universe {}", universe);
+                        if (const auto eventContext = sessionManager->claimPlaylistEvent(universe)) {
+                            auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(
+                                eventLoop->getNextFrameNumber(), universe, eventContext->generation,
+                                eventContext->triggerTraceId, eventContext->triggerSpanId);
+                            eventLoop->scheduleEvent(nextPlaylistEvent);
+                            info("Scheduled PlaylistEvent to resume playlist on universe {}", universe);
+                        }
                     }
                 } else {
                     warn("Interrupted playlist state inconsistent - playlist snapshot missing for universe {}",
@@ -1027,10 +1042,14 @@ void CooperativeAnimationScheduler::setupLifecycleCallbacks(std::shared_ptr<Play
         if (auto finishedSession = weakSession.lock()) {
             if (finishedSession->getActivityReason() == creatures::runtime::ActivityReason::Playlist &&
                 sessionManager->getPlaylistState(universe) == PlaylistState::Active && eventLoop) {
-                auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe);
-                eventLoop->scheduleEvent(nextPlaylistEvent);
-                debug("Playlist chain: scheduled next PlaylistEvent on universe {} after session {} finished", universe,
-                      finishedSession->getSessionId());
+                if (const auto eventContext = sessionManager->claimPlaylistEvent(universe)) {
+                    auto nextPlaylistEvent = std::make_shared<PlaylistEvent>(
+                        eventLoop->getNextFrameNumber(), universe, eventContext->generation,
+                        eventContext->triggerTraceId, eventContext->triggerSpanId);
+                    eventLoop->scheduleEvent(nextPlaylistEvent);
+                    debug("Playlist chain: scheduled next PlaylistEvent on universe {} after session {} finished",
+                          universe, finishedSession->getSessionId());
+                }
             }
         }
     });

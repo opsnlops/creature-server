@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include "api/WebSocketEnvelope.h"
 #include "model/CacheInvalidation.h"
 #include "model/Notice.h"
 #include "model/PlaylistStatus.h"
+#include "server/ws/dto/websocket/MessageTypes.h"
 
 namespace creatures {
 
@@ -40,6 +42,32 @@ TEST(CacheInvalidationJson, PreservesCacheTypeMapping) {
     const auto unknown = cacheInvalidationFromJson({{"cache_type", "not-a-cache"}});
     ASSERT_TRUE(unknown.isSuccess()) << unknown.getError()->getMessage();
     EXPECT_EQ(unknown.getValue()->cache_type, CacheType::Unknown);
+}
+
+TEST(WebSocketEnvelopeJson, PreservesOutboundCommandAndPayloadShape) {
+    const Notice notice{"2026-08-22T12:00:00Z", "Hello"};
+    const auto json = api::webSocketEnvelopeToJson(ws::toString(ws::MessageType::Notice), noticeToJson(notice));
+
+    EXPECT_EQ(json, (nlohmann::json{{"command", "notice"},
+                                    {"payload", {{"timestamp", notice.timestamp}, {"message", notice.message}}}}));
+    EXPECT_EQ(nlohmann::json::parse(api::serializeWebSocketEnvelope("notice", noticeToJson(notice))), json);
+}
+
+TEST(WebSocketEnvelopeJson, StrictlyParsesInboundEnvelope) {
+    const nlohmann::json envelope = {{"command", "notice"},
+                                     {"payload", {{"timestamp", "2026-08-22T12:00:00Z"}, {"message", "Hello"}}}};
+    const auto parsed = api::webSocketEnvelopeFromJson(envelope);
+
+    ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
+    EXPECT_EQ(parsed.getValue()->command, "notice");
+    EXPECT_EQ(parsed.getValue()->payload.get(), envelope.at("payload"));
+    EXPECT_FALSE(api::webSocketEnvelopeFromJson({{"command", "notice"}}).isSuccess());
+    EXPECT_FALSE(api::webSocketEnvelopeFromJson({{"command", "notice"}, {"payload", "wrong"}}).isSuccess());
+    EXPECT_FALSE(api::webSocketEnvelopeFromJson({{"command", "notice"}, {"payload", {}}, {"extra", true}}).isSuccess());
+    EXPECT_FALSE(api::webSocketEnvelopeFromJson(
+                     {{"command", std::string(api::MAX_WEBSOCKET_COMMAND_BYTES + 1, 'x')}, {"payload", {}}})
+                     .isSuccess());
+    EXPECT_FALSE(api::webSocketEnvelopeFromJson({{"command", "notice\\nspoof"}, {"payload", {}}}).isSuccess());
 }
 
 } // namespace creatures

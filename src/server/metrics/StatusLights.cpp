@@ -1,11 +1,9 @@
 
 #include <spdlog/spdlog.h>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
-
 #include "blockingconcurrentqueue.h"
 
+#include "api/WebSocketEnvelope.h"
 #include "model/VirtualStatusLights.h"
 #include "server/gpio/gpio.h"
 #include "server/metrics/StatusLights.h"
@@ -16,7 +14,6 @@
 #include "server/namespace-stuffs.h"
 
 #include "server/ws/dto/websocket/MessageTypes.h"
-#include "server/ws/dto/websocket/VirtualStatusLightsMessage.h"
 
 namespace creatures {
 
@@ -172,15 +169,8 @@ void StatusLights::sendUpdateToClients() const {
     virtualStatusLights.streaming = streamingLightOn;
     virtualStatusLights.animation_playing = animationLightOn;
 
-    // Create the message to send
-    auto message = oatpp::Object<ws::VirtualStatusLightsMessage>::createShared();
-    message->command = toString(ws::MessageType::VirtualStatusLights);
-    message->payload = convertToDto(virtualStatusLights);
-
-    // Make a JSON mapper
-    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-
-    std::string outgoingMessage = jsonMapper->writeToString(message);
+    const std::string outgoingMessage = api::serializeWebSocketEnvelope(toString(ws::MessageType::VirtualStatusLights),
+                                                                        virtualStatusLightsToJson(virtualStatusLights));
     debug("Outgoing message to clients: {}", outgoingMessage);
 
     websocketOutgoingMessages->enqueue(outgoingMessage);

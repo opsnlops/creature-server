@@ -6,7 +6,7 @@
 #include <string>
 #include <unordered_map>
 
-#include <oatpp/core/Types.hpp>
+#include <nlohmann/json.hpp>
 
 #include "IMessageHandler.h"
 
@@ -16,7 +16,7 @@ class MessageProcessor {
 
   public:
     MessageProcessor();
-    void processIncomingMessage(const std::string &command, const oatpp::String &message);
+    void processIncomingMessage(const nlohmann::json &envelope, std::string_view message);
 
   private:
     std::unordered_map<std::string, std::unique_ptr<creatures::ws::IMessageHandler>> handlers;

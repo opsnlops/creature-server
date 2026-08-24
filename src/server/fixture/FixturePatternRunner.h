@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -33,6 +34,7 @@ enum class FixturePatternPhase {
  * the new `startValues`, so there is never a DMX snap.
  */
 struct ActivePattern {
+    uint64_t generation{0};
     fixtureId_t fixtureId;
     std::string patternId;
     universe_t universe;
@@ -112,7 +114,7 @@ class FixturePatternRunner {
      */
     bool start(const DmxFixture &fixture, const FixturePattern &pattern, universe_t universe,
                const creatureId_t &creatureId, framenum_t currentFrame,
-               std::shared_ptr<class OperationSpan> parentSpan = nullptr);
+               std::shared_ptr<class OperationSpan> parentSpan = nullptr, uint64_t *generationOut = nullptr);
 
     /**
      * Stop a pattern. Transitions it into FadeOut; the entry is removed from the map
@@ -120,6 +122,10 @@ class FixturePatternRunner {
      */
     void stop(const fixtureId_t &fixtureId, framenum_t currentFrame,
               std::shared_ptr<class OperationSpan> parentSpan = nullptr);
+
+    /** Stop only the exact activation that scheduled the request. */
+    void stopIfGeneration(const fixtureId_t &fixtureId, uint64_t generation, framenum_t currentFrame,
+                          std::shared_ptr<class OperationSpan> parentSpan = nullptr);
 
     /**
      * Drive a fixture's channels directly with raw DMX values. Cancels any active
@@ -196,9 +202,13 @@ class FixturePatternRunner {
     }
 
   private:
+    void stopMatching(const fixtureId_t &fixtureId, std::optional<uint64_t> expectedGeneration, framenum_t currentFrame,
+                      std::shared_ptr<class OperationSpan> parentSpan);
+
     mutable std::mutex mapMutex_;
     std::unordered_map<fixtureId_t, ActivePattern> active_;
     std::unordered_map<fixtureId_t, ActiveLive> live_;
+    uint64_t nextPatternGeneration_{1};
 
     mutable std::mutex armMutex_;
     bool tickArmed_{false};

@@ -1258,15 +1258,7 @@ void SamplingSpan::setSuccess() {
 }
 
 void SamplingSpan::setError(const std::string &errorMessage) {
-    // If we don't have a span but need to report an error, create one now
-    if (!span_ && !shouldExport_ && tracer_) {
-        span_ = tracer_->StartSpan(operationName_);
-        if (span_) {
-            span_->SetAttribute("component", "creature-server");
-            span_->SetAttribute("sampling.rate", samplingRate_);
-            span_->SetAttribute("sampling.force_export_reason", "error");
-        }
-    }
+    reifySpan("error");
 
     if (span_) {
         span_->SetStatus(trace_api::StatusCode::kError, errorMessage);
@@ -1281,14 +1273,7 @@ void SamplingSpan::setError(const std::string &errorMessage) {
 }
 
 void SamplingSpan::forceExport() {
-    // If we don't have a span but are forced to export, create one now
-    if (!span_ && tracer_) {
-        span_ = tracer_->StartSpan(operationName_);
-        if (span_) {
-            span_->SetAttribute("component", "creature-server");
-            span_->SetAttribute("sampling.rate", samplingRate_);
-        }
-    }
+    reifySpan("manual");
 
     shouldExport_ = true;
     if (span_) {
@@ -1298,39 +1283,71 @@ void SamplingSpan::forceExport() {
 }
 
 void SamplingSpan::setAttribute(const std::string &key, const std::string &value) {
-    if (span_)
+    if (span_) {
         span_->SetAttribute(key, value);
+    } else {
+        bufferedAttributes_[key] = value;
+    }
 }
 
 void SamplingSpan::setAttribute(const std::string &key, int64_t value) {
-    if (span_)
+    if (span_) {
         span_->SetAttribute(key, value);
+    } else {
+        bufferedAttributes_[key] = value;
+    }
 }
 
 void SamplingSpan::setAttribute(const std::string &key, double value) {
-    if (span_)
+    if (span_) {
         span_->SetAttribute(key, value);
+    } else {
+        bufferedAttributes_[key] = value;
+    }
 }
 
 void SamplingSpan::setAttribute(const std::string &key, bool value) {
-    if (span_)
+    if (span_) {
         span_->SetAttribute(key, value);
+    } else {
+        bufferedAttributes_[key] = value;
+    }
 }
 
 void SamplingSpan::setAttribute(const std::string &key, framenum_t value) {
-    if (span_)
+    if (span_) {
         span_->SetAttribute(key, static_cast<int64_t>(value));
+    } else {
+        bufferedAttributes_[key] = static_cast<int64_t>(value);
+    }
+}
+
+void SamplingSpan::reifySpan(const char *reason) {
+    if (span_ || !tracer_) {
+        return;
+    }
+    span_ = tracer_->StartSpan(operationName_);
+    if (!span_) {
+        return;
+    }
+    span_->SetAttribute("component", "creature-server");
+    span_->SetAttribute("sampling.rate", samplingRate_);
+    span_->SetAttribute("sampling.force_export_reason", reason);
+    replayBufferedAttributes();
+}
+
+void SamplingSpan::replayBufferedAttributes() {
+    if (!span_) {
+        return;
+    }
+    for (const auto &[key, value] : bufferedAttributes_) {
+        std::visit([&](const auto &typedValue) { span_->SetAttribute(key, typedValue); }, value);
+    }
+    bufferedAttributes_.clear();
 }
 
 void SamplingSpan::recordException(const std::exception &ex) {
-    // If we don't have a span but need to report an exception, create one now
-    if (!span_ && tracer_) {
-        span_ = tracer_->StartSpan(operationName_);
-        if (span_) {
-            span_->SetAttribute("component", "creature-server");
-            span_->SetAttribute("sampling.rate", samplingRate_);
-        }
-    }
+    reifySpan("exception");
 
     if (span_) {
         span_->AddEvent("exception", {{"exception.type", typeid(ex).name()}, {"exception.message", ex.what()}});

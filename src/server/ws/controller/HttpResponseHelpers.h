@@ -9,13 +9,12 @@
 #include <oatpp/web/protocol/http/outgoing/Response.hpp>
 
 #include "api/JsonResponse.h"
-#include "server/ws/dto/StatusDto.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
 namespace creatures::ws {
 
-// Canonical values for StatusDto.status. All lowercase per issue #16.
+// Canonical values for status-response JSON. All lowercase per issue #16.
 // "ok" — success (2xx).
 // "error" — generic failure (4xx other than 404, plus all 5xx).
 // "not_found" — 404 specifically; clients use this as a cheap discriminator so
@@ -28,18 +27,6 @@ inline constexpr const char *STATUS_NOT_FOUND = api::STATUS_NOT_FOUND;
 // Pick the canonical status string for an HTTP code when the caller hasn't
 // overridden it. 404 → "not_found", 2xx → "ok", everything else → "error".
 inline const char *defaultStatusForCode(int code) { return api::defaultStatusForCode(code); }
-
-// Build the canonical StatusDto envelope. Doesn't touch any oatpp response
-// machinery so it's trivially unit-testable.
-inline oatpp::Object<StatusDto> buildStatusDto(int code, const std::string &message,
-                                               const char *statusStringOverride = nullptr) {
-    const auto response = api::makeStatusResponse(code, message, statusStringOverride);
-    auto dto = StatusDto::createShared();
-    dto->status = response.status.c_str();
-    dto->code = response.code;
-    dto->message = response.message.c_str();
-    return dto;
-}
 
 // CRTP mixin that gives an oatpp ApiController consistent error/success
 // response shapes. Inherit alongside ApiController, with the controller's own
@@ -89,7 +76,7 @@ template <typename Self> class HttpResponseHelpers {
         return jsonResponse(span, HttpStatus(code, statusReasonForCode(code)), body);
     }
 
-    // Success-shaped StatusDto response — for endpoints whose only return
+    // Success-shaped canonical JSON response — for endpoints whose only return
     // value is "yes, it worked." Status code defaults to 200 but can be any
     // 2xx (e.g. 201 Created on a POST).
     template <typename SpanT>

@@ -5,17 +5,9 @@
 #include <optional>
 #include <string>
 
-#include "spdlog/spdlog.h"
-
-#include <oatpp/core/macro/component.hpp>
-#include <oatpp/web/protocol/http/Http.hpp>
-
+#include "api/JsonResponse.h"
+#include "api/SoundResponses.h"
 #include "model/Sound.h"
-#include "server/ws/dto/SoundDto.h"
-
-#include "server/ws/dto/AdHocSoundEntryDto.h"
-#include "server/ws/dto/ListDto.h"
-#include "server/ws/dto/StatusDto.h"
 
 namespace creatures {
 class OperationSpan;
@@ -25,9 +17,6 @@ class RequestSpan;
 namespace creatures ::ws {
 
 class SoundService {
-
-  private:
-    typedef oatpp::web::protocol::http::Status Status;
 
   public:
     SoundService() = default;
@@ -45,16 +34,17 @@ class SoundService {
     /// search so dialog/ renders resolve — #46), then the ad-hoc store. Returns
     /// std::nullopt if neither has it. The single owner of the store-precedence
     /// policy the rendition/provenance/metadata endpoints all share.
-    std::optional<ResolvedSound> resolveSoundPath(const std::string &filename,
-                                                  std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    std::optional<ResolvedSound> resolveSoundPath(const std::string &filename,
-                                                  std::shared_ptr<OperationSpan> parentSpan);
+    Result<std::optional<ResolvedSound>> resolveSoundPath(const std::string &filename,
+                                                          std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<std::optional<ResolvedSound>> resolveSoundPath(const std::string &filename,
+                                                          std::shared_ptr<OperationSpan> parentSpan);
 
-    /// Build the full (heavy) structured-metadata DTO for one already-resolved
+    /// Build the full (heavy) structured metadata for one already-resolved
     /// sound file: size, sidecars, and all embedded iXML metadata including the
     /// per-track mouth cues and word timings. Backs GET /sound/{filename}/metadata
     /// (issue #56) — the sound LIST stays light and omits the heavy arrays.
-    oatpp::Object<creatures::SoundDto> buildSoundMetadata(const std::string &absolutePath, const std::string &filename);
+    Result<Sound> buildSoundMetadata(const std::string &absolutePath, const std::string &filename,
+                                     std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Play a sound file for testing
@@ -62,46 +52,37 @@ class SoundService {
      * @param soundFile
      * @return
      */
-    oatpp::Object<creatures::ws::StatusDto> playSound(const oatpp::String &soundFile,
-                                                      std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<api::StatusResponse> playSound(const std::string &soundFile,
+                                          std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Get all of the sound files
      */
-    oatpp::Object<ListDto<oatpp::Object<creatures::SoundDto>>> getAllSounds();
+    Result<std::vector<Sound>> getAllSounds(std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Get all ad-hoc generated sound files.
      */
-    oatpp::Object<AdHocSoundListDto> getAdHocSounds(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<std::vector<api::AdHocSoundEntry>> getAdHocSounds(std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Resolve the absolute path for an ad-hoc sound filename.
      */
-    std::string resolveAdHocSoundPath(const std::string &filename, std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    std::string resolveAdHocSoundPath(const std::string &filename, std::shared_ptr<OperationSpan> parentSpan);
+    Result<std::string> resolveAdHocSoundPath(const std::string &filename,
+                                              std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<std::string> resolveAdHocSoundPath(const std::string &filename, std::shared_ptr<OperationSpan> parentSpan);
 
     /**
      * Resolve the absolute path for a permanent-store sound by basename.
      *
      * Tries a top-level file first, then walks the permanent sound tree so that
      * sounds living in subdirectories (e.g. dialog/ renders) resolve too (#46).
-     * Throws an HTTP 404 if nothing matches, 400 for an unsafe filename.
+     * Returns NotFound if nothing matches, InvalidData for an unsafe filename.
      */
-    std::string resolvePermanentSoundPath(const std::string &filename,
-                                          std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    std::string resolvePermanentSoundPath(const std::string &filename, std::shared_ptr<OperationSpan> parentSpan);
-
-    /**
-     * Generate lip sync data for a sound file using Rhubarb Lip Sync
-     *
-     * @param soundFile The name of the sound file to process (must be .wav)
-     * @param allowOverwrite Whether to allow overwriting an existing JSON file
-     * @param parentSpan Optional parent span for tracing
-     * @return StatusDto with the result or error details
-     */
-    oatpp::Object<creatures::ws::StatusDto> generateLipSync(const oatpp::String &soundFile, bool allowOverwrite,
-                                                            std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<std::string> resolvePermanentSoundPath(const std::string &filename,
+                                                  std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<std::string> resolvePermanentSoundPath(const std::string &filename,
+                                                  std::shared_ptr<OperationSpan> parentSpan);
 };
 
 } // namespace creatures::ws

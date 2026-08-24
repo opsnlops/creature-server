@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include "api/JsonResponse.h"
+#include "api/PlaylistRequests.h"
 #include "model/Playlist.h"
 
 namespace creatures {
@@ -81,6 +83,44 @@ TEST(PlaylistJson, RejectsInvalidAggregateConstraints) {
     duplicateAnimation["number_of_items"] = 2;
     duplicateAnimation["items"].push_back(duplicateAnimation["items"][0]);
     EXPECT_FALSE(playlistFromJson(duplicateAnimation).isSuccess());
+}
+
+TEST(PlaylistApiContract, StartRequestRequiresAUuidAndKnownFields) {
+    const auto valid =
+        api::startPlaylistRequestFromJson({{"playlist_id", "11111111-1111-4111-8111-111111111111"}, {"universe", 1}});
+    ASSERT_TRUE(valid.isSuccess()) << valid.getError()->getMessage();
+    EXPECT_EQ(valid.getValue()->playlistId, "11111111-1111-4111-8111-111111111111");
+    EXPECT_EQ(valid.getValue()->universe, 1U);
+
+    EXPECT_FALSE(api::startPlaylistRequestFromJson({{"universe", 1}}).isSuccess());
+    EXPECT_FALSE(api::startPlaylistRequestFromJson({{"playlist_id", "not-a-uuid"}, {"universe", 1}}).isSuccess());
+    EXPECT_FALSE(api::startPlaylistRequestFromJson(
+                     {{"playlist_id", "11111111-1111-4111-8111-111111111111"}, {"universe", 64000}})
+                     .isSuccess());
+    EXPECT_FALSE(
+        api::startPlaylistRequestFromJson({{"playlist_id", "11111111-1111-4111-8111-111111111111"}, {"universe", 0}})
+            .isSuccess());
+    EXPECT_FALSE(api::startPlaylistRequestFromJson(
+                     {{"playlist_id", "11111111-1111-4111-8111-111111111111"}, {"universe", 1}, {"extra", true}})
+                     .isSuccess());
+}
+
+TEST(PlaylistApiContract, StopRequestRequiresOneBoundedInteger) {
+    const auto valid = api::stopPlaylistRequestFromJson({{"universe", 63999}});
+    ASSERT_TRUE(valid.isSuccess()) << valid.getError()->getMessage();
+    EXPECT_EQ(valid.getValue()->universe, 63999U);
+
+    EXPECT_FALSE(api::stopPlaylistRequestFromJson(nlohmann::json::object()).isSuccess());
+    EXPECT_FALSE(api::stopPlaylistRequestFromJson({{"universe", -1}}).isSuccess());
+    EXPECT_FALSE(api::stopPlaylistRequestFromJson({{"universe", 0}}).isSuccess());
+    EXPECT_FALSE(api::stopPlaylistRequestFromJson({{"universe", true}}).isSuccess());
+    EXPECT_FALSE(api::stopPlaylistRequestFromJson({{"universe", 1}, {"extra", true}}).isSuccess());
+}
+
+TEST(PlaylistApiContract, StatusResponseOmitsUnavailableSessionId) {
+    const auto response = api::statusResponseToJson(api::makeStatusResponse(200, "Started playback"));
+    EXPECT_EQ(response, nlohmann::json({{"status", "ok"}, {"code", 200}, {"message", "Started playback"}}));
+    EXPECT_FALSE(response.contains("session_id"));
 }
 
 } // namespace creatures

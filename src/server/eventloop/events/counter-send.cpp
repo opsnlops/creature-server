@@ -1,10 +1,8 @@
 #include <spdlog/spdlog.h>
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
-
 #include "blockingconcurrentqueue.h"
 
+#include "api/WebSocketEnvelope.h"
 #include "server/config.h"
 
 #include "server/eventloop/event.h"
@@ -13,8 +11,8 @@
 
 #include "server/metrics/counters.h"
 #include "server/namespace-stuffs.h"
+#include "server/runtime/RuntimeSnapshot.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
-#include "server/ws/dto/websocket/ServerCountersMessage.h"
 #include "server/ws/service/CreatureService.h"
 
 // Include the ObservabilityManager for metrics export
@@ -47,32 +45,18 @@ Result<framenum_t> CounterSendEvent::executeImpl() {
         return Result<framenum_t>{ServerError(ServerError::InternalError, errorMsg)};
     }
 
-    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-
     debug("sending the server metrics to all clients");
 
-    // First, send to websocket clients
-    auto message = oatpp::Object<ws::ServerCountersMessage>::createShared();
-    message->command = toString(ws::MessageType::ServerCounters);
-
-    // Build payload with counters and runtime state snapshot
-    auto payload = ws::ServerCountersPayloadDto::createShared();
-    payload->counters = metrics->convertToDto();
-
-    auto runtimeSnapshot = creatures::ws::CreatureService::getRuntimeStates();
-    auto runtimeList = oatpp::List<oatpp::Object<ws::ServerCountersCreatureRuntimeDto>>::createShared();
-    for (const auto &entry : runtimeSnapshot) {
-        auto runtimeDto = ws::ServerCountersCreatureRuntimeDto::createShared();
-        runtimeDto->creature_id = entry.first.c_str();
-        runtimeDto->runtime = entry.second;
-        runtimeList->emplace_back(runtimeDto);
+    nlohmann::json runtimeStates = nlohmann::json::array();
+    for (const auto &[creatureId, runtime] : creatures::ws::CreatureService::getRuntimeStates()) {
+        runtimeStates.push_back(
+            {{"creature_id", creatureId}, {"runtime", runtime::creatureRuntimeSnapshotToJson(runtime)}});
     }
-    payload->runtime_states = runtimeList;
 
-    message->payload = payload;
-
-    // Serialize our message to a string
-    std::string messageAsString = jsonMapper->writeToString(message);
+    const nlohmann::json payload = {{"counters", systemCountersSnapshotToJson(metrics->snapshot())},
+                                    {"runtime_states", std::move(runtimeStates)}};
+    const std::string messageAsString =
+        api::serializeWebSocketEnvelope(toString(ws::MessageType::ServerCounters), payload);
     trace("websocket message as string: {}", messageAsString);
 
     // Push this into the websocket queue

@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <optional>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
@@ -104,7 +105,8 @@ class PlaylistEvent : public EventBase<PlaylistEvent> {
   public:
     using EventBase::EventBase;
 
-    PlaylistEvent(framenum_t frameNumber_, universe_t universe_);
+    PlaylistEvent(framenum_t frameNumber_, universe_t universe_, uint64_t generation = 0,
+                  std::string triggerTraceId = {}, std::string triggerSpanId = {});
 
     virtual ~PlaylistEvent() = default;
 
@@ -112,6 +114,9 @@ class PlaylistEvent : public EventBase<PlaylistEvent> {
 
   private:
     universe_t activeUniverse;
+    uint64_t playlistGeneration;
+    std::string triggerTraceId;
+    std::string triggerSpanId;
 
     // PlaylistEvent helpers (implemented in playlist.cpp)
     Result<void> ensureDependencies(std::shared_ptr<OperationSpan> span);
@@ -125,8 +130,7 @@ class PlaylistEvent : public EventBase<PlaylistEvent> {
     Result<Animation> fetchAnimation(const std::string &animationId, std::shared_ptr<OperationSpan> span);
     std::unordered_set<creatureId_t> collectInvolvedCreatures(const Animation &animation);
     Result<framenum_t> scheduleChosenAnimation(const Animation &animation);
-    void scheduleNextPlaylistEvent(framenum_t lastFrame);
-    void updatePlaylistStatus(PlaylistStatus playlistStatus, const std::string &chosenAnimation);
+    bool commitPlaylistEvent(framenum_t lastFrame, PlaylistStatus playlistStatus, const std::string &chosenAnimation);
     void startIdleLoopsForUniverse(const std::unordered_set<creatureId_t> &involvedCreatures,
                                    std::shared_ptr<OperationSpan> span);
     static void sendEmptyPlaylistUpdate(universe_t universe);

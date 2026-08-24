@@ -5,7 +5,6 @@
 
 #include "api/JsonResponse.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/StatusDto.h"
 #include "util/Result.h"
 
 namespace creatures::ws {
@@ -24,34 +23,24 @@ TEST(HttpResponseHelpers, DefaultStatusForCodePicksCorrectVocabulary) {
     EXPECT_STREQ(defaultStatusForCode(503), STATUS_ERROR);
 }
 
-TEST(HttpResponseHelpers, BuildStatusDtoForCommonCodes) {
-    auto bad = buildStatusDto(400, "scriptId must be a UUID");
-    EXPECT_EQ(std::string(*bad->status), "error");
-    EXPECT_EQ(*bad->code, 400u);
-    EXPECT_EQ(std::string(*bad->message), "scriptId must be a UUID");
+TEST(JsonResponse, StatusResponseDerivesCanonicalValues) {
+    const auto bad = api::makeStatusResponse(400, "scriptId must be a UUID");
+    EXPECT_EQ(bad.status, "error");
+    EXPECT_EQ(bad.code, 400);
+    EXPECT_EQ(bad.message, "scriptId must be a UUID");
 
-    auto missing = buildStatusDto(404, "no such creature");
-    EXPECT_EQ(std::string(*missing->status), "not_found");
-    EXPECT_EQ(*missing->code, 404u);
-    EXPECT_EQ(std::string(*missing->message), "no such creature");
+    const auto missing = api::makeStatusResponse(404, "no such creature");
+    EXPECT_EQ(missing.status, "not_found");
 
-    auto boom = buildStatusDto(500, "database unavailable");
-    EXPECT_EQ(std::string(*boom->status), "error");
-    EXPECT_EQ(*boom->code, 500u);
-    EXPECT_EQ(std::string(*boom->message), "database unavailable");
+    const auto created = api::makeStatusResponse(201, "DialogScript created");
+    EXPECT_EQ(created.status, "ok");
 
-    auto created = buildStatusDto(201, "DialogScript created");
-    EXPECT_EQ(std::string(*created->status), "ok");
-    EXPECT_EQ(*created->code, 201u);
-}
-
-TEST(HttpResponseHelpers, BuildStatusDtoHonorsOverride) {
     // Most call sites won't use this, but a 200 response that wants to
     // surface a soft "not_found" hint (e.g. /validate flagging missing
     // creature ids) can override the default.
-    auto soft = buildStatusDto(200, "validation surfaced missing ids", STATUS_NOT_FOUND);
-    EXPECT_EQ(std::string(*soft->status), "not_found");
-    EXPECT_EQ(*soft->code, 200u);
+    const auto soft = api::makeStatusResponse(200, "validation surfaced missing ids", STATUS_NOT_FOUND);
+    EXPECT_EQ(soft.status, "not_found");
+    EXPECT_EQ(soft.code, 200);
 }
 
 TEST(JsonResponse, StatusResponseHasExactCanonicalShape) {

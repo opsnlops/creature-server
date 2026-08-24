@@ -107,4 +107,21 @@ TEST(FixturePatternRunnerSetLiveTest, EmptyChannelsFixtureFails) {
     EXPECT_FALSE(runner.setLive(fixture, values, 5000, 1, 0));
 }
 
+TEST(FixturePatternRunnerGenerationTest, StaleStopDoesNotStopReplacementPattern) {
+    FixturePatternRunner runner;
+    const auto fixture = buildTwoChannelFixture();
+    FixturePattern first{.id = "first", .name = "First", .values = {{"red", 255}}, .fade_out_ms = 0};
+    FixturePattern second{.id = "second", .name = "Second", .values = {{"green", 255}}, .fade_out_ms = 0};
+    uint64_t firstGeneration = 0;
+    uint64_t secondGeneration = 0;
+
+    ASSERT_TRUE(runner.start(fixture, first, 1, "", 0, nullptr, &firstGeneration));
+    ASSERT_TRUE(runner.start(fixture, second, 1, "", 1, nullptr, &secondGeneration));
+    ASSERT_NE(firstGeneration, secondGeneration);
+
+    runner.stopIfGeneration(fixture.id, firstGeneration, 2);
+    runner.tick(3);
+    EXPECT_TRUE(runner.hasActivePatterns());
+}
+
 } // namespace creatures

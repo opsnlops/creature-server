@@ -1,19 +1,17 @@
 
 #pragma once
 
-#include "spdlog/spdlog.h"
-
+#include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
-#include <oatpp/web/protocol/http/Http.hpp>
-
+#include "api/CreatureResponse.h"
 #include "model/Creature.h"
 #include "server/runtime/Activity.h"
-#include "server/ws/dto/CreatureConfigValidationDto.h"
-#include "server/ws/dto/CreatureDto.h"
-#include "server/ws/dto/ListDto.h"
+#include "server/runtime/RuntimeSnapshot.h"
+#include "util/Result.h"
 
 namespace creatures {
 class RequestSpan;
@@ -23,16 +21,12 @@ class OperationSpan;
 namespace creatures ::ws {
 
 class CreatureService {
-
-  private:
-    typedef oatpp::web::protocol::http::Status Status;
-
   public:
-    static oatpp::Object<ListDto<oatpp::Object<creatures::CreatureDto>>>
+    static Result<std::vector<api::CreatureResponse>>
     getAllCreatures(std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
-    static oatpp::Object<creatures::CreatureDto> getCreature(const oatpp::String &inCreatureId,
-                                                             std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<api::CreatureResponse> getCreature(const creatureId_t &creatureId,
+                                                     std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Upsert (create or update) a creature
@@ -41,9 +35,9 @@ class CreatureService {
      *                     required fields must me present.
      * @return the creature that was created or updated in the standard form
      */
-    static oatpp::Object<creatures::CreatureDto>
-    upsertCreature(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan = nullptr,
-                   std::shared_ptr<OperationSpan> parentOperationSpan = nullptr);
+    static Result<api::CreatureResponse> upsertCreature(const std::string &jsonCreature,
+                                                        std::shared_ptr<RequestSpan> parentSpan = nullptr,
+                                                        std::shared_ptr<OperationSpan> parentOperationSpan = nullptr);
 
     /**
      * Register a creature with its universe assignment
@@ -55,14 +49,14 @@ class CreatureService {
      * @param universe the universe this creature is currently assigned to
      * @return the creature that was registered
      */
-    static oatpp::Object<creatures::CreatureDto> registerCreature(const std::string &jsonCreature, universe_t universe,
-                                                                  std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<api::CreatureResponse> registerCreature(const std::string &jsonCreature, universe_t universe,
+                                                          std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Toggle idle enabled/disabled for a creature (runtime only)
      */
-    static oatpp::Object<creatures::CreatureDto> setIdleEnabled(const oatpp::String &inCreatureId, bool enabled,
-                                                                std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<api::CreatureResponse> setIdleEnabled(const creatureId_t &creatureId, bool enabled,
+                                                        std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
      * Update runtime activity state for creatures (runtime only)
@@ -129,7 +123,7 @@ class CreatureService {
     /**
      * Validate a creature config document without persisting it.
      */
-    static oatpp::Object<CreatureConfigValidationDto>
+    static api::CreatureConfigValidationResponse
     validateCreatureConfig(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**
@@ -159,7 +153,7 @@ class CreatureService {
     /**
      * Snapshot of all creature runtime states currently held in memory.
      */
-    static std::vector<std::pair<std::string, oatpp::Object<creatures::CreatureRuntimeDto>>> getRuntimeStates();
+    static std::vector<std::pair<std::string, runtime::CreatureRuntimeSnapshot>> getRuntimeStates();
 };
 
 } // namespace creatures::ws

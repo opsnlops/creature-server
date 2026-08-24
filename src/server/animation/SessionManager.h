@@ -41,6 +41,11 @@ enum class PlaylistState {
  */
 class SessionManager {
   public:
+    struct PlaylistEventContext {
+        uint64_t generation{0};
+        std::string triggerTraceId;
+        std::string triggerSpanId;
+    };
     SessionManager() = default;
     ~SessionManager() = default;
 
@@ -73,8 +78,9 @@ class SessionManager {
      * @param parentSpan Optional parent for the adoption span
      * @param cancelEntireUniverse Cancel all sessions on the universe, not just overlapping ones
      */
-    void registerSession(universe_t universe, std::shared_ptr<PlaybackSession> session, bool isPlaylist = false,
-                         std::shared_ptr<OperationSpan> parentSpan = nullptr, bool cancelEntireUniverse = false);
+    bool registerSession(universe_t universe, std::shared_ptr<PlaybackSession> session, bool isPlaylist = false,
+                         std::shared_ptr<OperationSpan> parentSpan = nullptr, bool cancelEntireUniverse = false,
+                         std::optional<uint64_t> expectedPlaylistGeneration = std::nullopt);
 
     /**
      * Interrupt current playback on a universe with a new animation
@@ -233,7 +239,22 @@ class SessionManager {
      * @param universe The universe the playlist is on
      * @param playlistId The ID of the playlist
      */
-    void startPlaylist(universe_t universe, const std::string &playlistId);
+    PlaylistEventContext startPlaylist(universe_t universe, const std::string &playlistId,
+                                       std::string triggerTraceId = {}, std::string triggerSpanId = {});
+
+    /// Claims the one queued PlaylistEvent slot for an active playlist, if available.
+    std::optional<PlaylistEventContext> claimPlaylistEvent(universe_t universe,
+                                                           std::optional<uint64_t> expectedGeneration = std::nullopt);
+
+    /// Marks a claimed event as executing. A replacement context means a newer start
+    /// coalesced into this event while it waited in the event-loop queue.
+    std::optional<PlaylistEventContext> beginPlaylistEvent(universe_t universe, uint64_t generation);
+    bool isPlaylistGenerationCurrent(universe_t universe, uint64_t generation) const;
+
+    /// Atomically publish an event's status and claim its successor only while
+    /// the same playlist generation remains active.
+    std::optional<PlaylistEventContext> commitPlaylistEvent(universe_t universe, uint64_t generation,
+                                                            const PlaylistStatus &status);
 
     /**
      * Clear the current session pointer (called when session finishes)
@@ -319,6 +340,7 @@ class SessionManager {
     std::optional<PlaylistStatus> getPlaylistStatus(universe_t universe) const;
     std::vector<PlaylistStatus> getAllPlaylistStatuses() const;
     void clearPlaylist(universe_t universe);
+    bool clearPlaylistIfGeneration(universe_t universe, uint64_t generation);
 
   private:
     struct UniverseState {
@@ -336,6 +358,9 @@ class SessionManager {
         // Playlist identity + status snapshot for resumption and broadcasts
         std::string playlistId;
         std::optional<PlaylistStatus> playlistStatus;
+        PlaylistEventContext playlistEventContext;
+        bool playlistEventPending{false};
+        uint64_t pendingPlaylistEventGeneration{0};
 
         // Owner of the playlist state above: the most recently adopted
         // playlist-reason session (issue #100). abortLoadingSession clears the
@@ -385,6 +410,7 @@ class SessionManager {
 
     mutable std::mutex mutex_;
     std::map<universe_t, UniverseState> universeStates_;
+    std::map<universe_t, uint64_t> playlistGenerations_;
 
     // Monotonic activity-write generation, minted per adoption under mutex_. Because
     // adoptions are serialized here, a later adoption of any creature always carries a

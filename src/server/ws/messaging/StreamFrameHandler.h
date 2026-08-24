@@ -14,7 +14,8 @@ namespace creatures::ws {
 class StreamFrameHandler : public IMessageHandler {
 
   public:
-    void processMessage(const oatpp::String &payload) override;
+    bool processMessage(const nlohmann::json &payload, std::string_view message, std::string_view command,
+                        std::shared_ptr<SamplingSpan> messageSpan) override;
 
   private:
     /**
@@ -22,7 +23,7 @@ class StreamFrameHandler : public IMessageHandler {
      *
      * @param frame the frame to stream
      */
-    void stream(StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan);
+    bool stream(StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan);
 
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 

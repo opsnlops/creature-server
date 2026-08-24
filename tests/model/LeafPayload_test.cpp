@@ -3,9 +3,11 @@
 
 #include <limits>
 
+#include "api/WebSocketEnvelope.h"
 #include "model/LogItem.h"
 #include "model/StreamFrame.h"
 #include "model/VirtualStatusLights.h"
+#include "server/ws/dto/websocket/MessageTypes.h"
 
 namespace creatures {
 
@@ -34,8 +36,33 @@ TEST(VirtualStatusLightsJson, RoundTripsExactBooleanShape) {
     EXPECT_EQ(parsed.getValue()->animation_playing, lights.animation_playing);
 }
 
+TEST(LeafOutboundWebSocketEnvelopeJson, PreservesLogAndStatusLightWireShapes) {
+    const LogItem logItem{"2026-08-22T12:00:00Z", LogLevel::warn, "Careful", "server", 42};
+    EXPECT_EQ(api::webSocketEnvelopeToJson(ws::toString(ws::MessageType::LogMessage), logItemToJson(logItem)),
+              (nlohmann::json{{"command", "log"},
+                              {"payload",
+                               {{"timestamp", logItem.timestamp},
+                                {"level", "warning"},
+                                {"message", logItem.message},
+                                {"logger_name", logItem.logger_name},
+                                {"thread_id", logItem.thread_id}}}}));
+
+    const VirtualStatusLights lights{true, false, true, false};
+    EXPECT_EQ(
+        api::webSocketEnvelopeToJson(ws::toString(ws::MessageType::VirtualStatusLights),
+                                     virtualStatusLightsToJson(lights)),
+        (nlohmann::json{
+            {"command", "status-lights"},
+            {"payload", {{"running", true}, {"dmx", false}, {"streaming", true}, {"animation_playing", false}}}}));
+}
+
 TEST(StreamFrameJson, EnforcesSmallValidDmxFrames) {
     const StreamFrame frame{"11111111-1111-4111-8111-111111111111", 1, base64::to_base64("\x01\x02")};
+    EXPECT_EQ(
+        api::webSocketEnvelopeToJson(ws::toString(ws::MessageType::StreamFrame), streamFrameToJson(frame)),
+        (nlohmann::json{
+            {"command", "stream-frame"},
+            {"payload", {{"creature_id", frame.creature_id}, {"universe", frame.universe}, {"data", frame.data}}}}));
     const auto parsed = streamFrameFromJson(streamFrameToJson(frame));
     ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
     EXPECT_EQ(parsed.getValue()->data, frame.data);

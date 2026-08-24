@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "server/namespace-stuffs.h"
 #include "server/runtime/Activity.h"
 #include "util/Result.h"
@@ -23,6 +25,7 @@ namespace creatures {
  */
 Result<framenum_t>
 scheduleAnimation(framenum_t startingFrame, const creatures::Animation &animation, universe_t universe,
-                  creatures::runtime::ActivityReason reason = creatures::runtime::ActivityReason::Play);
+                  creatures::runtime::ActivityReason reason = creatures::runtime::ActivityReason::Play,
+                  std::optional<uint64_t> expectedPlaylistGeneration = std::nullopt);
 
 } // namespace creatures

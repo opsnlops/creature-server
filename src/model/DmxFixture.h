@@ -3,9 +3,13 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "server/namespace-stuffs.h"
+#include "util/Result.h"
 
 namespace creatures {
 enum class FixtureType { Light, SmokeMachine, Fogger, Generic };
@@ -46,4 +50,9 @@ struct DmxFixture {
     const FixtureChannel *findChannelByName(const std::string &channelName) const;
     const FixturePattern *findPatternById(const std::string &patternId) const;
 };
+
+// Canonical REST/WebSocket representation. Optional values are omitted when
+// absent; this deliberately replaces oat++'s implicit explicit-null wrappers.
+nlohmann::json dmxFixtureToJson(const DmxFixture &fixture);
+Result<DmxFixture> dmxFixtureFromJson(const nlohmann::json &json, std::string_view path = "fixture");
 } // namespace creatures

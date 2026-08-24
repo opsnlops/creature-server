@@ -2,9 +2,10 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include "api/FixtureRequests.h"
+#include "api/FixtureResponses.h"
 #include "model/DmxFixture.h"
 #include "server/database.h"
-#include "server/ws/dto/DmxFixtureDto.h"
 
 namespace creatures {
 
@@ -154,21 +155,37 @@ TEST(DmxFixtureJsonTest, UnknownTypeFallsBackToGeneric) {
     EXPECT_EQ(result.getValue().value().type, FixtureType::Generic);
 }
 
-TEST(DmxFixtureJsonTest, RoundTripsThroughDto) {
-    auto j = makeValidFixtureJson();
-    auto fixture = Database::parseFixtureJson(j).getValue().value();
-    auto dto = convertToDto(fixture);
-    auto roundTripped = convertFromDto(dto.getPtr());
-    EXPECT_EQ(roundTripped.id, fixture.id);
-    EXPECT_EQ(roundTripped.name, fixture.name);
-    EXPECT_EQ(roundTripped.type, fixture.type);
-    EXPECT_EQ(roundTripped.channel_offset, fixture.channel_offset);
-    EXPECT_EQ(roundTripped.channels.size(), fixture.channels.size());
-    EXPECT_EQ(roundTripped.patterns.size(), fixture.patterns.size());
-    EXPECT_EQ(roundTripped.bindings.size(), fixture.bindings.size());
-    ASSERT_EQ(roundTripped.bindings.size(), 1u);
-    EXPECT_EQ(roundTripped.bindings[0].creature_id, fixture.bindings[0].creature_id);
-    EXPECT_EQ(roundTripped.bindings[0].on_reason, fixture.bindings[0].on_reason);
+TEST(DmxFixtureJsonTest, NeutralSerializerPreservesTheCanonicalFixtureShape) {
+    const auto fixture = Database::parseFixtureJson(makeValidFixtureJson()).getValue().value();
+    EXPECT_EQ(dmxFixtureToJson(fixture), makeValidFixtureJson());
+}
+
+TEST(DmxFixtureJsonTest, NeutralCodecRoundTripsTheCanonicalFixtureShape) {
+    const auto result = dmxFixtureFromJson(makeValidFixtureJson());
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+    EXPECT_EQ(dmxFixtureToJson(result.getValue().value()), makeValidFixtureJson());
+}
+
+TEST(DmxFixtureJsonTest, NeutralCodecRejectsUnknownAndInvalidIdFields) {
+    auto unknown = makeValidFixtureJson();
+    unknown["unexpected"] = true;
+    EXPECT_FALSE(dmxFixtureFromJson(unknown).isSuccess());
+
+    auto invalidId = makeValidFixtureJson();
+    invalidId["id"] = "not-a-uuid";
+    EXPECT_FALSE(dmxFixtureFromJson(invalidId).isSuccess());
+}
+
+TEST(DmxFixtureJsonTest, NeutralSerializerOmitsAbsentOptionalFields) {
+    auto fixture = Database::parseFixtureJson(makeValidFixtureJson()).getValue().value();
+    fixture.assigned_universe.reset();
+    fixture.bindings.front().on_reason.reset();
+    fixture.bindings.front().on_state.reset();
+
+    const auto json = dmxFixtureToJson(fixture);
+    EXPECT_FALSE(json.contains("assigned_universe"));
+    EXPECT_FALSE(json.at("bindings").at(0).contains("on_reason"));
+    EXPECT_FALSE(json.at("bindings").at(0).contains("on_state"));
 }
 
 TEST(DmxFixtureJsonTest, ValidateFixtureJsonCatchesMissingTopLevelField) {
@@ -176,6 +193,75 @@ TEST(DmxFixtureJsonTest, ValidateFixtureJsonCatchesMissingTopLevelField) {
     j.erase("type");
     auto result = Database::validateFixtureJson(j);
     EXPECT_FALSE(result.isSuccess());
+}
+
+TEST(FixtureControlRequestTest, ParsesStrictBoundedControlRequests) {
+    const auto universe = api::setFixtureUniverseRequestFromJson({{"universe", 63999}});
+    ASSERT_TRUE(universe.isSuccess());
+    EXPECT_EQ(universe.getValue()->universe, 63999u);
+
+    const auto trigger = api::triggerFixturePatternRequestFromJson({{"stop_after_ms", 1000}});
+    ASSERT_TRUE(trigger.isSuccess());
+    ASSERT_TRUE(trigger.getValue()->stopAfterMs.has_value());
+    EXPECT_EQ(*trigger.getValue()->stopAfterMs, 1000u);
+
+    const auto preview = api::previewFixturePatternRequestFromJson(
+        {{"values", {{{"channel", "red"}, {"value", 255}}}}, {"fade_in_ms", 10}, {"hold_ms", 20}});
+    ASSERT_TRUE(preview.isSuccess());
+    ASSERT_EQ(preview.getValue()->values.size(), 1u);
+    EXPECT_EQ(preview.getValue()->values[0].channel, "red");
+    EXPECT_EQ(preview.getValue()->values[0].value, 255);
+    EXPECT_EQ(preview.getValue()->fadeInMs, 10u);
+    EXPECT_EQ(preview.getValue()->fadeOutMs, 0u);
+
+    const auto live = api::setFixtureLiveRequestFromJson(
+        {{"values", {{{"channel", "brightness"}, {"value", 128}}}}, {"timeout_ms", 5000}});
+    ASSERT_TRUE(live.isSuccess());
+    EXPECT_EQ(live.getValue()->timeoutMs, 5000u);
+}
+
+TEST(FixtureControlRequestTest, RejectsMalformedAndUnsafeControlRequests) {
+    EXPECT_FALSE(api::setFixtureUniverseRequestFromJson({{"universe", 0}}).isSuccess());
+    EXPECT_FALSE(api::setFixtureUniverseRequestFromJson({{"universe", 64000}}).isSuccess());
+    EXPECT_FALSE(api::setFixtureUniverseRequestFromJson({{"universe", nullptr}}).isSuccess());
+    EXPECT_FALSE(api::triggerFixturePatternRequestFromJson({{"stop_after_ms", 0}}).isSuccess());
+    EXPECT_FALSE(api::triggerFixturePatternRequestFromJson({{"stop_after_ms", 600001}}).isSuccess());
+    EXPECT_FALSE(api::triggerFixturePatternRequestFromJson({{"unexpected", true}}).isSuccess());
+    EXPECT_FALSE(api::previewFixturePatternRequestFromJson({{"values", nlohmann::json::array()}}).isSuccess());
+    EXPECT_FALSE(api::previewFixturePatternRequestFromJson(
+                     {{"values", {{{"channel", "red"}, {"value", 1}}}}, {"fade_in_ms", 600001}})
+                     .isSuccess());
+    EXPECT_FALSE(api::previewFixturePatternRequestFromJson(
+                     {{"values", {{{"channel", "red"}, {"value", 1}}}}, {"fade_out_ms", 600001}})
+                     .isSuccess());
+    EXPECT_FALSE(api::previewFixturePatternRequestFromJson(
+                     {{"values", {{{"channel", "red"}, {"value", 1}}}}, {"hold_ms", 600001}})
+                     .isSuccess());
+    EXPECT_FALSE(
+        api::previewFixturePatternRequestFromJson({{"values", {{{"channel", "red"}, {"value", 256}}}}}).isSuccess());
+    EXPECT_FALSE(
+        api::setFixtureLiveRequestFromJson({{"values", {{{"channel", "red"}, {"value", 1}}}}, {"timeout_ms", 0}})
+            .isSuccess());
+    EXPECT_FALSE(api::setFixtureLiveRequestFromJson(
+                     {{"values", {{{"channel", "red"}, {"value", 1}, {"extra", true}}}}, {"timeout_ms", 1}})
+                     .isSuccess());
+    EXPECT_FALSE(
+        api::setFixtureLiveRequestFromJson(
+            {{"values", {{{"channel", "red"}, {"value", 1}}, {{"channel", "red"}, {"value", 2}}}}, {"timeout_ms", 1}})
+            .isSuccess());
+}
+
+TEST(FixtureValidationResponseTest, OmitsUnknownFixtureId) {
+    api::FixtureConfigValidationResponse invalid;
+    invalid.errorMessages.push_back("invalid fixture");
+    const auto invalidJson = api::fixtureConfigValidationResponseToJson(invalid);
+    EXPECT_FALSE(invalidJson.contains("fixture_id"));
+
+    api::FixtureConfigValidationResponse valid;
+    valid.valid = true;
+    valid.fixtureId = "8e3a4b5c-1d2f-4e6a-9b0c-7f8e9d0a1b2c";
+    const auto validJson = api::fixtureConfigValidationResponseToJson(valid);
+    EXPECT_EQ(validJson.at("fixture_id"), *valid.fixtureId);
 }
 
 } // namespace creatures

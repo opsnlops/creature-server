@@ -1,34 +1,36 @@
-
 #pragma once
 
-#include "spdlog/spdlog.h"
+#include <memory>
+#include <string>
+#include <vector>
 
-#include <oatpp/core/macro/component.hpp>
-#include <oatpp/web/protocol/http/Http.hpp>
-
+#include "api/JsonResponse.h"
 #include "model/Playlist.h"
-#include "server/ws/dto/ListDto.h"
-#include "server/ws/dto/PlaylistDto.h"
-#include "server/ws/dto/PlaylistStatusDto.h"
-#include "server/ws/dto/StatusDto.h"
+#include "model/PlaylistStatus.h"
+#include "util/Result.h"
 
-namespace creatures ::ws {
+namespace creatures {
+class RequestSpan;
+}
+
+namespace creatures::ws {
 
 class PlaylistService {
-
-  private:
-    typedef oatpp::web::protocol::http::Status Status;
-
   public:
-    static oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistDto>>> getAllPlaylists();
-    static oatpp::Object<creatures::PlaylistDto> getPlaylist(const oatpp::String &playlistId);
-    static oatpp::Object<creatures::PlaylistDto> upsertPlaylist(const std::string &playlistJson);
+    static Result<std::vector<Playlist>> getAllPlaylists(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<Playlist> getPlaylist(const playlistId_t &playlistId,
+                                        std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<Playlist> upsertPlaylist(const std::string &playlistJson,
+                                           std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
-    static oatpp::Object<creatures::ws::StatusDto> startPlaylist(universe_t universe, const oatpp::String &playlistId);
-    static oatpp::Object<creatures::ws::StatusDto> stopPlaylist(universe_t universe);
-    static oatpp::Object<creatures::PlaylistStatusDto> playlistStatus(universe_t universe);
-
-    static oatpp::Object<ListDto<oatpp::Object<creatures::PlaylistStatusDto>>> getAllPlaylistStatuses();
+    static Result<api::StatusResponse> startPlaylist(universe_t universe, const playlistId_t &playlistId,
+                                                     std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<api::StatusResponse> stopPlaylist(universe_t universe,
+                                                    std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<PlaylistStatus> playlistStatus(universe_t universe,
+                                                 std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<std::vector<PlaylistStatus>>
+    getAllPlaylistStatuses(std::shared_ptr<RequestSpan> parentSpan = nullptr);
 };
 
 } // namespace creatures::ws

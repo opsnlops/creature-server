@@ -8,10 +8,7 @@
 
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
-#include "model/Sound.h"
 #include "server/ws/dto/AnimationDto.h"
-#include "server/ws/dto/CreatureDto.h"
-#include "server/ws/dto/SoundDto.h"
 
 #include OATPP_CODEGEN_BEGIN(DTO)
 
@@ -25,14 +22,6 @@ template <class T> class ListDto : public oatpp::DTO {
 
 class AnimationsListDto : public ListDto<oatpp::Object<creatures::AnimationMetadataDto>> {
     DTO_INIT(AnimationsListDto, ListDto<oatpp::Object<creatures::AnimationMetadataDto>>)
-};
-
-class CreaturesListDto : public ListDto<oatpp::Object<creatures::CreatureDto>> {
-    DTO_INIT(CreaturesListDto, ListDto<oatpp::Object<creatures::CreatureDto>>)
-};
-
-class SoundsListDto : public ListDto<oatpp::Object<creatures::SoundDto>> {
-    DTO_INIT(SoundsListDto, ListDto<oatpp::Object<creatures::SoundDto>>)
 };
 
 class VoiceListDto : public ListDto<oatpp::Object<creatures::voice::VoiceDto>> {

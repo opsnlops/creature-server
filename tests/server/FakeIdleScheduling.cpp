@@ -25,7 +25,8 @@ void EventLoop::scheduleEvent(const std::shared_ptr<Event> & /*e*/) {}
 Result<framenum_t> DMXEvent::executeImpl() { return Result<framenum_t>{0}; }
 
 Result<framenum_t> scheduleAnimation(framenum_t /*startingFrame*/, const Animation & /*animation*/,
-                                     universe_t /*universe*/, creatures::runtime::ActivityReason /*reason*/) {
+                                     universe_t /*universe*/, creatures::runtime::ActivityReason /*reason*/,
+                                     std::optional<uint64_t> /*expectedPlaylistGeneration*/) {
     return Result<framenum_t>{0};
 }
 
@@ -43,7 +44,8 @@ Result<framenum_t> PlaybackRunnerEvent::executeImpl() { return Result<framenum_t
 Result<std::shared_ptr<PlaybackSession>>
 CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const Animation &animation,
                                                  universe_t universe, creatures::runtime::ActivityReason reason,
-                                                 bool cancelEntireUniverse, const std::string &chainId) {
+                                                 bool cancelEntireUniverse, const std::string &chainId,
+                                                 std::optional<uint64_t> expectedPlaylistGeneration) {
     auto session = std::make_shared<PlaybackSession>(animation, universe, startingFrame, nullptr);
     session->setActivityReason(reason);
     session->setChainId(chainId);
@@ -52,7 +54,11 @@ CooperativeAnimationScheduler::scheduleAnimation(framenum_t startingFrame, const
             ServerError(ServerError::InvalidData, "test session failed to decode frames")};
     }
     if (sessionManager) {
-        sessionManager->registerSession(universe, session, false, nullptr, cancelEntireUniverse);
+        if (!sessionManager->registerSession(universe, session, false, nullptr, cancelEntireUniverse,
+                                             expectedPlaylistGeneration)) {
+            return Result<std::shared_ptr<PlaybackSession>>{
+                ServerError(ServerError::Conflict, "test playlist generation changed")};
+        }
     }
     return Result<std::shared_ptr<PlaybackSession>>{session};
 }

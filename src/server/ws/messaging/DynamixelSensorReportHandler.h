@@ -2,7 +2,6 @@
 #pragma once
 
 #include <memory>
-#include <oatpp/core/Types.hpp>
 
 #include "IMessageHandler.h"
 
@@ -23,7 +22,8 @@ namespace creatures::ws {
 class DynamixelSensorReportHandler : public IMessageHandler {
 
   public:
-    void processMessage(const oatpp::String &payload) override;
+    bool processMessage(const nlohmann::json &payload, std::string_view message, std::string_view command,
+                        std::shared_ptr<SamplingSpan> messageSpan) override;
 };
 
 } // namespace creatures::ws

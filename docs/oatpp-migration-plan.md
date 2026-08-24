@@ -238,8 +238,8 @@ Migrate leaf models before aggregate models.
 - [x] `Animation`
 - [x] `Creature` configuration (runtime state remains a separate snapshot-concurrency checkpoint)
 - [x] `Playlist`
-- [ ] `Sound` and nested timing/cue types
-- [ ] `DmxFixture` and nested channel/pattern/binding types
+- [x] `Sound` and nested timing/cue types
+- [x] `DmxFixture` and nested channel/pattern/binding types
 - [ ] `DialogScript` and nested accepted-voice/music types
 - [ ] `AdHocExchange`
 - [x] `Stage`
@@ -278,11 +278,11 @@ For every model:
 Convert one vertical resource family at a time. Each slice includes the service
 header, implementation, controller adaptation, and tests.
 
-- [ ] Fixtures
-- [ ] Creatures
+- [x] Fixtures
+- [x] Creatures
 - [x] Animations and ad-hoc animations
-- [ ] Playlists and playlist status
-- [ ] Sounds and renditions
+- [x] Playlists and playlist status
+- [x] Sounds and renditions
 - [ ] Dialog scripts, preview, voice acceptance, and music
 - [ ] Voice generation and subscription state
 - [ ] Metrics, jobs, and runtime status
@@ -308,19 +308,42 @@ header, implementation, controller adaptation, and tests.
 **Exit criterion:** all REST request and response bodies are parsed and rendered
 by the neutral JSON layer; oat++ is only routing and transporting bytes.
 
+#### Creature slice template and exception
+
+The Creature migration establishes the reusable REST slice pattern:
+
+1. bound the raw request body before parsing;
+2. parse into a checked neutral request struct;
+3. keep the service interface on `Result<T>`, domain values, and snapshots;
+4. serialize a neutral response through `HttpResponseHelpers::jsonResponse`;
+5. preserve request/service/database span hierarchy and error attributes; and
+6. characterize the exact legacy wire shape, including explicit null fields.
+
+Creature persistence is intentionally *not* the template for other resources.
+Creature JSON files are hand-authored on controllers and the submitted object
+is the source of truth. `CreatureService::upsertCreature` and registration must
+therefore pass the original JSON document to `storage::publishCreature`; they
+must never serialize the parsed `Creature` model back into a replacement
+document, because doing so would discard unmodeled controller fields. The
+database validates a modeled view but stores the complete parsed object.
+
 ### Phase 5 — Replace WebSocket DTOs
 
-- [ ] Define a neutral `{command, payload}` envelope.
-- [ ] Parse the envelope once and dispatch by command.
+- [x] Define a neutral `{command, payload}` envelope.
+- [x] Parse the envelope once and dispatch by command.
 - [ ] Parse each inbound payload into a command-specific plain struct.
-- [ ] Convert stream-frame, notice, sensor-report, and Dynamixel commands.
+      Notice, stream-frame, board/motor sensor-report, and Dynamixel are complete.
+- [x] Convert stream-frame, notice, sensor-report, and Dynamixel commands.
 - [ ] Convert cache invalidation, activity, jobs, logs, counters, playlist
       status, stream frames, notices, and status-light outbound messages.
+      Cache invalidation, activity, jobs, logs, counters, playlist status,
+      notices, and status lights are complete. Stream frames have no active
+      outbound path; their unused oat++ wrapper has been removed.
 - [ ] Preserve message and aggregate-array size caps.
 - [ ] Preserve fragmented-message handling and malformed-message isolation.
-- [ ] Change message handler interfaces from `oatpp::String` to `std::string_view`
+- [x] Change message handler interfaces from `oatpp::String` to `std::string_view`
       or another lifetime-safe standard type.
-- [ ] Remove the oat++ object mapper from WebSocket handling.
+- [x] Remove the oat++ object mapper from WebSocket handling.
 
 **Exit criterion:** WebSocket business code only sends and receives standard C++
 types and serialized JSON strings.

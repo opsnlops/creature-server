@@ -7,8 +7,6 @@
 
 #include <oatpp-websocket/ConnectionHandler.hpp>
 #include <oatpp-websocket/WebSocket.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
-
 #include <oatpp/core/macro/component.hpp>
 
 #include "server/ws/websocket/ClientCafe.h"
@@ -79,7 +77,6 @@ class ClientConnection : public oatpp::websocket::WebSocket::Listener {
     bool m_bufferOverflowed = false;
 
     OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-    OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper);
     OATPP_COMPONENT(std::shared_ptr<creatures::ws::MessageProcessor>, messageProcessor);
 
     /**

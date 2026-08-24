@@ -312,11 +312,8 @@ Completed and failed jobs remain in memory for a configurable TTL (default: 1 ho
 - `src/server/jobs/JobWorker.{h,cpp}` - Background worker thread
 - `src/server/voice/LipSyncProcessor.{h,cpp}` - Extracted business logic
 - `src/util/uuidUtils.{h,cpp}` - UUID generation utility
-- `src/server/ws/dto/JobProgressDto.h` - DTO for progress updates
-- `src/server/ws/dto/JobCompleteDto.h` - DTO for completion messages
+- `src/server/jobs/JobPayload.h` - Framework-neutral WebSocket payload codecs
 - `src/server/ws/dto/JobCreatedDto.h` - DTO for job creation response
-- `src/server/ws/dto/websocket/JobProgressMessage.h` - WebSocket message wrapper
-- `src/server/ws/dto/websocket/JobCompleteMessage.h` - WebSocket message wrapper
 
 ### Modified Files
 - `src/server/main.cpp` - Wire up JobManager and JobWorker

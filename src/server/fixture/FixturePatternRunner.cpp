@@ -18,7 +18,7 @@ extern std::shared_ptr<ObservabilityManager> observability;
 
 bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern &pattern, universe_t universe,
                                  const creatureId_t &creatureId, framenum_t currentFrame,
-                                 std::shared_ptr<OperationSpan> parentSpan) {
+                                 std::shared_ptr<OperationSpan> parentSpan, uint64_t *generationOut) {
 
     auto span =
         observability ? observability->createChildOperationSpan("FixturePatternRunner.start", parentSpan) : nullptr;
@@ -46,19 +46,6 @@ bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern
     // Live control wins. If a slider is driving this fixture, refuse to install a new
     // pattern — let the human operator finish before bindings or manual triggers fight
     // them for the channels. Future pattern triggers work fine once live expires.
-    {
-        std::lock_guard<std::mutex> lock(mapMutex_);
-        if (live_.find(fixture.id) != live_.end()) {
-            debug("FixturePatternRunner::start: fixture {} is under live control, refusing pattern {}", fixture.id,
-                  pattern.id);
-            if (span) {
-                span->setAttribute("error.type", "FixtureUnderLiveControl");
-                span->setError("fixture is currently under live control");
-            }
-            return false;
-        }
-    }
-
     // Compute the span the pattern occupies (max channel offset + 1).
     uint16_t maxOffset = 0;
     for (const auto &ch : fixture.channels) {
@@ -118,6 +105,18 @@ bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern
 
     {
         std::lock_guard<std::mutex> lock(mapMutex_);
+        if (live_.find(fixture.id) != live_.end()) {
+            debug("FixturePatternRunner::start: fixture {} is under live control, refusing pattern {}", fixture.id,
+                  pattern.id);
+            if (span) {
+                span->setAttribute("error.type", "FixtureUnderLiveControl");
+                span->setError("fixture is currently under live control");
+            }
+            return false;
+        }
+        entry.generation = nextPatternGeneration_++;
+        if (nextPatternGeneration_ == 0)
+            nextPatternGeneration_ = 1;
         auto it = active_.find(fixture.id);
         if (it != active_.end()) {
             // Smooth handoff — seed startValues from the currently rendered bytes.
@@ -129,6 +128,8 @@ bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern
             entry.startValues.assign(channelSpan, 0);
         }
         entry.lastRenderedValues = entry.startValues;
+        if (generationOut)
+            *generationOut = entry.generation;
         active_[fixture.id] = std::move(entry);
     }
 
@@ -142,6 +143,16 @@ bool FixturePatternRunner::start(const DmxFixture &fixture, const FixturePattern
 
 void FixturePatternRunner::stop(const fixtureId_t &fixtureId, framenum_t currentFrame,
                                 std::shared_ptr<OperationSpan> parentSpan) {
+    stopMatching(fixtureId, std::nullopt, currentFrame, std::move(parentSpan));
+}
+
+void FixturePatternRunner::stopIfGeneration(const fixtureId_t &fixtureId, uint64_t generation, framenum_t currentFrame,
+                                            std::shared_ptr<OperationSpan> parentSpan) {
+    stopMatching(fixtureId, generation, currentFrame, std::move(parentSpan));
+}
+
+void FixturePatternRunner::stopMatching(const fixtureId_t &fixtureId, std::optional<uint64_t> expectedGeneration,
+                                        framenum_t currentFrame, std::shared_ptr<OperationSpan> parentSpan) {
     auto span =
         observability ? observability->createChildOperationSpan("FixturePatternRunner.stop", parentSpan) : nullptr;
     if (span) {
@@ -158,6 +169,15 @@ void FixturePatternRunner::stop(const fixtureId_t &fixtureId, framenum_t current
         return;
     }
     auto &entry = it->second;
+    if (expectedGeneration.has_value() && entry.generation != *expectedGeneration) {
+        if (span) {
+            span->setAttribute("fixture.pattern.no_op", "generation_mismatch");
+            span->setAttribute("pattern.expected_generation", static_cast<int64_t>(*expectedGeneration));
+            span->setAttribute("pattern.generation", static_cast<int64_t>(entry.generation));
+            span->setSuccess();
+        }
+        return;
+    }
     if (entry.phase == FixturePatternPhase::FadeOut || entry.phase == FixturePatternPhase::Done) {
         if (span) {
             span->setAttribute("fixture.pattern.no_op", "already_stopping");

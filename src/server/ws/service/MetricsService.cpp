@@ -1,47 +1,46 @@
 
 
-#include "exception/exception.h"
-#include "model/Creature.h"
-#include "server/database.h"
-
-#include "server/ws/dto/StatusDto.h"
-
-#include "server/metrics/counters.h"
-
 #include "MetricsService.h"
+
+#include <string_view>
+#include <utility>
+
+#include <spdlog/spdlog.h>
 
 namespace creatures {
 extern std::shared_ptr<SystemCounters> metrics;
-}
+extern std::shared_ptr<ObservabilityManager> observability;
+} // namespace creatures
 
 namespace creatures ::ws {
 
-using oatpp::web::protocol::http::Status;
-
-oatpp::Object<creatures::SystemCountersDto> MetricsService::getCounters() {
-
-    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-    auto logger = appLogger ? appLogger : spdlog::default_logger();
-
-    if (logger) {
-        logger->trace("MetricsService::getCounters()");
+Result<SystemCountersSnapshot> MetricsService::getCounters(std::shared_ptr<RequestSpan> parentSpan) {
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("MetricsService.getCounters", std::move(parentSpan))
+                    : nullptr;
+    if (span) {
+        span->setAttribute("service", "MetricsService");
+        span->setAttribute("operation", "getCounters");
     }
 
-    bool error = false;
-    oatpp::String errorMessage;
-
-    // Make sure we have a metrics object
-    if (creatures::metrics == nullptr) {
-        errorMessage = "Metrics object is null";
-        if (logger) {
-            logger->error(std::string(errorMessage));
+    if (!creatures::metrics) {
+        constexpr std::string_view errorMessage = "Metrics object is null";
+        spdlog::error("{}", errorMessage);
+        if (span) {
+            span->setError(std::string(errorMessage));
+            span->setAttribute("error.type", "InternalError");
+            span->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
+            span->setAttribute("error.message", std::string(errorMessage));
         }
-        error = true;
+        return Result<SystemCountersSnapshot>{ServerError{ServerError::InternalError, std::string(errorMessage)}};
     }
-    OATPP_ASSERT_HTTP(!error, Status::CODE_500, errorMessage)
 
-    // Return a copy of the system metrics as a DTO
-    return creatures::metrics->convertToDto();
+    const auto snapshot = creatures::metrics->snapshot();
+    if (span) {
+        span->setAttribute("metrics.counter.count", static_cast<int64_t>(41));
+        span->setSuccess();
+    }
+    return Result<SystemCountersSnapshot>{snapshot};
 }
 
 } // namespace creatures::ws

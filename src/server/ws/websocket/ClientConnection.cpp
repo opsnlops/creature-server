@@ -1,22 +1,20 @@
 
 
-#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <oatpp-websocket/WebSocket.hpp>
 #include <oatpp/core/macro/component.hpp>
 
+#include "api/WebSocketEnvelope.h"
 #include "model/Notice.h"
 
 #include "server/metrics/counters.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
-#include "server/ws/dto/websocket/NoticeMessage.h"
-#include "server/ws/dto/websocket/WebSocketMessageDto.h"
-#include "server/ws/messaging/BasicCommandDto.h"
 #include "server/ws/messaging/MessageProcessor.h"
 #include "server/ws/websocket/ClientCafe.h"
 #include "server/ws/websocket/ClientConnection.h"
 
+#include "util/JsonParser.h"
 #include "util/helpers.h"
 
 namespace creatures {
@@ -76,13 +74,14 @@ void ClientConnection::onClose(const WebSocket &socket, v_uint16 code, const oat
 // Cap accumulated inbound message size to bound memory under a hostile
 // client that sends an unbounded multi-frame message. If a client tries
 // to exceed this we drop the buffer and close the connection — the JSON
-// payloads we actually use are well under 64 KiB; 4 MiB is generous.
-static constexpr oatpp::v_io_size MAX_INBOUND_MESSAGE_BYTES = 4ULL * 1024 * 1024;
+// payloads we actually use are well under 64 KiB.
+static constexpr oatpp::v_io_size MAX_INBOUND_MESSAGE_BYTES = 64ULL * 1024;
 
 void ClientConnection::readMessage(const WebSocket &socket, v_uint8 opcode, p_char8 data, oatpp::v_io_size size) {
 
     // Silence the warnings about an unused parameter
     (void)opcode;
+    static_cast<void>(socket);
 
     if (m_bufferOverflowed) {
         // We've already decided to drop this message. Keep ignoring frames
@@ -100,67 +99,25 @@ void ClientConnection::readMessage(const WebSocket &socket, v_uint8 opcode, p_ch
 
         auto wholeMessage = m_messageBuffer.toString();
         m_messageBuffer.setCurrentPosition(0);
+        const std::string message(wholeMessage);
 
-        appLogger->debug("received a message from client {}: {}", clientId, std::string(wholeMessage));
+        appLogger->debug("received a {} byte message from client {}", message.size(), clientId);
 
         try {
-
-            // Make a new JSON Mapper that allows for unknown fields
-            auto permissiveJsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-            permissiveJsonMapper->getDeserializer()->getConfig()->allowUnknownFields = true;
-
-            // Pull out just the command via a BasicCommandDto.
-            auto basicDto = permissiveJsonMapper->readFromString<oatpp::Object<BasicCommandDto>>(wholeMessage);
-            if (basicDto) {
-
-                appLogger->trace("request decoded, command: {}", std::string(basicDto->command));
-
-                auto command = basicDto->command;
-                messageProcessor->processIncomingMessage(command, wholeMessage);
-
+            const auto parsedMessage = JsonParser::parseApiJsonString(message, "WebSocket message");
+            if (parsedMessage.isSuccess()) {
+                messageProcessor->processIncomingMessage(parsedMessage.getValue().value(), message);
             } else {
-                appLogger->warn("Failed to parse command from message");
+                appLogger->warn("Rejected inbound WebSocket message: {}", parsedMessage.getError()->getMessage());
+                const Notice notice{getCurrentTimeISO8601(), "Dropped malformed WebSocket message."};
+                sendTextMessage(
+                    api::serializeWebSocketEnvelope(toString(ws::MessageType::Notice), noticeToJson(notice)));
             }
-
-        } catch (const oatpp::parser::ParsingError &e) {
-            appLogger->warn("parser error decoding a message: {}", e.what());
-        } catch (const std::exception &e) {
-            appLogger->warn("exception thrown while decoding an incoming message: {}", e.what());
+        } catch (const std::exception &error) {
+            appLogger->warn("Exception while processing inbound WebSocket message from client {}: {}", clientId,
+                            error.what());
         } catch (...) {
-
-            /*
-             * Whoa, the client sent us something we don't know how to handle. Let's let them know.
-             */
-            appLogger->warn("A websocket client sent us a junk message: {}", std::string(wholeMessage));
-
-            try {
-                auto clientMessage =
-                    fmt::format("WARNING: You send us a junk message, so we just dropped it on the floor! It was: {}",
-                                std::string(wholeMessage));
-
-                // Send a message back to the client to let them know something was wrong
-                Notice notice;
-                notice.timestamp = getCurrentTimeISO8601();
-                notice.message = clientMessage;
-
-                auto message = oatpp::Object<ws::NoticeMessage>::createShared();
-                message->command = toString(ws::MessageType::Notice);
-                message->payload = creatures::convertToDto(notice);
-
-                // Switch back to the real JSON parser to send things
-                std::string messageAsString = apiObjectMapper->writeToString(message);
-                try {
-                    socket.sendOneFrameText(messageAsString);
-                } catch (const std::runtime_error &e) {
-                    appLogger->warn("Failed to send notice to client {}: {} (likely disconnected)", clientId, e.what());
-                } catch (const std::exception &e) {
-                    appLogger->warn("Exception sending notice to client {}: {}", clientId, e.what());
-                } catch (...) {
-                    appLogger->warn("Unknown exception sending notice to client {}", clientId);
-                }
-            } catch (...) {
-                appLogger->warn("Unable to send a message to a client that sent us junk?!");
-            }
+            appLogger->warn("Unknown exception while processing inbound WebSocket message from client {}", clientId);
         }
 
         metrics->incrementWebsocketMessagesReceived();
