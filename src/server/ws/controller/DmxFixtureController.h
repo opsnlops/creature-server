@@ -17,7 +17,6 @@
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/FixtureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/PreviewFixturePatternRequestDto.h"
 #include "server/ws/dto/SetFixtureLiveRequestDto.h"
@@ -140,20 +139,20 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
     ENDPOINT_INFO(validateFixtureConfig) {
         info->summary = "Validate a fixture config payload without saving";
         info->addTag("Fixtures");
-        info->addResponse<Object<FixtureConfigValidationDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/fixture/validate", validateFixtureConfig, BODY_STRING(String, body),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        return runEndpoint("POST /api/v1/fixture/validate", "POST", "api/v1/fixture/validate", "validateFixtureConfig",
-                           "DmxFixtureController", request, [&](const auto &span) {
-                               if (span)
-                                   span->setAttribute("request.body_size",
-                                                      static_cast<int64_t>(body ? body->size() : 0));
-                               const auto result = m_service.validateFixtureConfig(std::string(body), span);
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, result);
-                           });
+        return runEndpoint(
+            "POST /api/v1/fixture/validate", "POST", "api/v1/fixture/validate", "validateFixtureConfig",
+            "DmxFixtureController", request, [&](const auto &span) {
+                if (span)
+                    span->setAttribute("request.body_size", static_cast<int64_t>(body ? body->size() : 0));
+                const auto result = m_service.validateFixtureConfig(std::string(body), span);
+                if (span)
+                    span->setHttpStatus(200);
+                return jsonResponse(span, Status::CODE_200, api::fixtureConfigValidationResponseToJson(result));
+            });
     }
 
     ENDPOINT_INFO(setFixtureUniverse) {

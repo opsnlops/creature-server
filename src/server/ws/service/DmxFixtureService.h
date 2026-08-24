@@ -5,11 +5,9 @@
 #include <string>
 #include <vector>
 
-#include <oatpp/web/protocol/http/Http.hpp>
-
+#include "api/FixtureResponses.h"
 #include "model/DmxFixture.h"
 #include "server/ws/dto/DmxFixtureDto.h"
-#include "server/ws/dto/FixtureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 
 namespace creatures {
@@ -20,9 +18,6 @@ class OperationSpan;
 namespace creatures ::ws {
 
 class DmxFixtureService {
-
-  private:
-    typedef oatpp::web::protocol::http::Status Status;
 
   public:
     static oatpp::Object<ListDto<oatpp::Object<creatures::DmxFixtureDto>>>
@@ -49,7 +44,7 @@ class DmxFixtureService {
     /**
      * Validate a fixture config payload without persisting it.
      */
-    static oatpp::Object<FixtureConfigValidationDto>
+    static api::FixtureConfigValidationResponse
     validateFixtureConfig(const std::string &jsonFixture, std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     /**

@@ -10,6 +10,7 @@
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
+#include <oatpp/web/protocol/http/Http.hpp>
 #include <spdlog/spdlog.h>
 
 #include "exception/exception.h"
@@ -20,7 +21,6 @@
 #include "server/fixture/FixturePatternRunner.h"
 #include "server/fixture/FixturePatternTickEvent.h"
 #include "server/storage/Storage.h"
-#include "server/ws/dto/FixtureConfigValidationDto.h"
 #include "server/ws/dto/ListDto.h"
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
@@ -373,54 +373,52 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::setFixtureUniverse(co
     return creatures::convertToDto(fetched.getValue().value());
 }
 
-oatpp::Object<FixtureConfigValidationDto>
-DmxFixtureService::validateFixtureConfig(const std::string &jsonFixture, std::shared_ptr<RequestSpan> parentSpan) {
+api::FixtureConfigValidationResponse DmxFixtureService::validateFixtureConfig(const std::string &jsonFixture,
+                                                                              std::shared_ptr<RequestSpan> parentSpan) {
 
     auto span =
         creatures::observability
             ? creatures::observability->createOperationSpan("DmxFixtureService.validateFixtureConfig", parentSpan)
             : nullptr;
 
-    auto resultDto = FixtureConfigValidationDto::createShared();
-    resultDto->valid = true;
-    resultDto->missing_creature_ids = oatpp::List<oatpp::String>::createShared();
-    resultDto->error_messages = oatpp::List<oatpp::String>::createShared();
+    api::FixtureConfigValidationResponse response;
+    response.valid = true;
 
     if (!creatures::db) {
-        resultDto->valid = false;
-        resultDto->error_messages->push_back("Database unavailable");
+        response.valid = false;
+        response.errorMessages.push_back("Database unavailable");
         if (span)
             span->setError("Database unavailable");
-        return resultDto;
+        return response;
     }
 
     nlohmann::json parsed;
     try {
         parsed = nlohmann::json::parse(jsonFixture);
     } catch (const std::exception &ex) {
-        resultDto->valid = false;
-        resultDto->error_messages->push_back(fmt::format("Invalid JSON: {}", ex.what()).c_str());
+        response.valid = false;
+        response.errorMessages.push_back(fmt::format("Invalid JSON: {}", ex.what()));
         if (span)
             span->setError("Invalid JSON");
-        return resultDto;
+        return response;
     }
 
     auto parseResult = creatures::Database::parseFixtureJson(parsed, span);
     if (!parseResult.isSuccess()) {
-        resultDto->valid = false;
-        resultDto->error_messages->push_back(parseResult.getError()->getMessage().c_str());
+        response.valid = false;
+        response.errorMessages.push_back(parseResult.getError()->getMessage());
         if (span)
             span->setError(parseResult.getError()->getMessage());
-        return resultDto;
+        return response;
     }
     if (!parseResult.getValue().has_value()) {
-        resultDto->valid = false;
-        resultDto->error_messages->push_back("Fixture validation returned no value");
-        return resultDto;
+        response.valid = false;
+        response.errorMessages.push_back("Fixture validation returned no value");
+        return response;
     }
 
     auto fixture = parseResult.getValue().value();
-    resultDto->fixture_id = fixture.id.c_str();
+    response.fixtureId = fixture.id;
     if (span) {
         span->setAttribute("fixture.id", fixture.id);
         span->setAttribute("fixture.bindings_count", static_cast<int64_t>(fixture.bindings.size()));
@@ -438,18 +436,18 @@ DmxFixtureService::validateFixtureConfig(const std::string &jsonFixture, std::sh
     for (const auto &creatureId : uniqueCreatureIds) {
         auto creatureLookup = creatures::db->getCreature(creatureId, span);
         if (!creatureLookup.isSuccess()) {
-            resultDto->missing_creature_ids->push_back(creatureId.c_str());
+            response.missingCreatureIds.push_back(creatureId);
         }
     }
 
     if (span) {
-        span->setAttribute("validation.passed", static_cast<bool>(resultDto->valid));
+        span->setAttribute("validation.passed", response.valid);
         span->setAttribute("validation.missing_creature_ids_count",
-                           static_cast<int64_t>(resultDto->missing_creature_ids->size()));
-        span->setAttribute("validation.error_count", static_cast<int64_t>(resultDto->error_messages->size()));
+                           static_cast<int64_t>(response.missingCreatureIds.size()));
+        span->setAttribute("validation.error_count", static_cast<int64_t>(response.errorMessages.size()));
         span->setSuccess();
     }
-    return resultDto;
+    return response;
 }
 
 oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::triggerPattern(const oatpp::String &inFixtureId,
