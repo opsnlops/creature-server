@@ -51,6 +51,21 @@ constexpr universe_t UNIVERSE = 1;
 
 } // namespace
 
+TEST(SessionManagerOwnership, PlaylistGenerationsInvalidateSupersededAndStoppedEvents) {
+    SessionManager manager;
+
+    const auto firstGeneration = manager.startPlaylist(UNIVERSE, "playlist-1");
+    EXPECT_TRUE(manager.isPlaylistGenerationCurrent(UNIVERSE, firstGeneration));
+
+    const auto secondGeneration = manager.startPlaylist(UNIVERSE, "playlist-2");
+    EXPECT_GT(secondGeneration, firstGeneration);
+    EXPECT_FALSE(manager.isPlaylistGenerationCurrent(UNIVERSE, firstGeneration));
+    EXPECT_TRUE(manager.isPlaylistGenerationCurrent(UNIVERSE, secondGeneration));
+
+    manager.stopPlaylist(UNIVERSE);
+    EXPECT_FALSE(manager.isPlaylistGenerationCurrent(UNIVERSE, secondGeneration));
+}
+
 TEST(SessionManagerOwnership, NonConflictingSessionsCoexistWithAscendingGenerations) {
     SessionManager manager;
     auto sessionA = makeSession("anim-a", "creature-a");

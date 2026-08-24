@@ -686,6 +686,7 @@ void SessionManager::stopPlaylist(universe_t universe) {
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        ++playlistGenerations_[universe];
 
         auto it = universeStates_.find(universe);
         if (it == universeStates_.end() || (it->second.playlistState != PlaylistState::Active &&
@@ -722,8 +723,9 @@ void SessionManager::stopPlaylist(universe_t universe) {
     }
 }
 
-void SessionManager::startPlaylist(universe_t universe, const std::string &playlistId) {
+uint64_t SessionManager::startPlaylist(universe_t universe, const std::string &playlistId) {
     std::lock_guard<std::mutex> lock(mutex_);
+    const uint64_t generation = ++playlistGenerations_[universe];
 
     info("SessionManager: registering playlist start on universe {} (playlist: {})", universe, playlistId);
 
@@ -741,6 +743,13 @@ void SessionManager::startPlaylist(universe_t universe, const std::string &playl
     }
     state.playlistStatus->playlist = playlistId;
     state.playlistStatus->playing = true;
+    return generation;
+}
+
+bool SessionManager::isPlaylistGenerationCurrent(universe_t universe, uint64_t generation) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = playlistGenerations_.find(universe);
+    return it != playlistGenerations_.end() && it->second == generation;
 }
 
 void SessionManager::clearSession(universe_t universe, const std::string &sessionId) {

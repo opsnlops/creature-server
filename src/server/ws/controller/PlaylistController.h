@@ -124,6 +124,10 @@ class PlaylistController : public oatpp::web::server::api::ApiController,
                 if (parseSpan)
                     parseSpan->setSuccess();
                 const auto parsed = requestResult.getValue().value();
+                if (span) {
+                    span->setAttribute("playlist.id", parsed.playlistId);
+                    span->setAttribute("playlist.universe", static_cast<int64_t>(parsed.universe));
+                }
                 const auto result = PlaylistService::startPlaylist(parsed.universe, parsed.playlistId, span);
                 if (!result.isSuccess())
                     return bailFromServerError(span, result.getError().value());
@@ -159,7 +163,10 @@ class PlaylistController : public oatpp::web::server::api::ApiController,
                 }
                 if (parseSpan)
                     parseSpan->setSuccess();
-                const auto result = PlaylistService::stopPlaylist(requestResult.getValue()->universe, span);
+                const auto universe = requestResult.getValue()->universe;
+                if (span)
+                    span->setAttribute("playlist.universe", static_cast<int64_t>(universe));
+                const auto result = PlaylistService::stopPlaylist(universe, span);
                 if (!result.isSuccess())
                     return bailFromServerError(span, result.getError().value());
                 if (span)
@@ -178,8 +185,10 @@ class PlaylistController : public oatpp::web::server::api::ApiController,
         return runEndpoint(
             "GET /api/v1/playlist/status/{universe}", "GET", "api/v1/playlist/status/" + std::to_string(*universe),
             "playlistStatus", "PlaylistController", request, [&](const auto &span) {
-                if (!universe || *universe > api::MAX_PLAYLIST_UNIVERSE)
-                    return bailHttp(span, Status::CODE_400, "universe must be between 0 and 63999");
+                if (!universe || *universe < api::MIN_PLAYLIST_UNIVERSE || *universe > api::MAX_PLAYLIST_UNIVERSE)
+                    return bailHttp(span, Status::CODE_400, "universe must be between 1 and 63999");
+                if (span)
+                    span->setAttribute("playlist.universe", static_cast<int64_t>(*universe));
                 const auto result = PlaylistService::playlistStatus(*universe, span);
                 if (!result.isSuccess())
                     return bailFromServerError(span, result.getError().value());

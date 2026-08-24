@@ -97,6 +97,9 @@ TEST(PlaylistApiContract, StartRequestRequiresAUuidAndKnownFields) {
     EXPECT_FALSE(api::startPlaylistRequestFromJson(
                      {{"playlist_id", "11111111-1111-4111-8111-111111111111"}, {"universe", 64000}})
                      .isSuccess());
+    EXPECT_FALSE(
+        api::startPlaylistRequestFromJson({{"playlist_id", "11111111-1111-4111-8111-111111111111"}, {"universe", 0}})
+            .isSuccess());
     EXPECT_FALSE(api::startPlaylistRequestFromJson(
                      {{"playlist_id", "11111111-1111-4111-8111-111111111111"}, {"universe", 1}, {"extra", true}})
                      .isSuccess());
@@ -109,6 +112,7 @@ TEST(PlaylistApiContract, StopRequestRequiresOneBoundedInteger) {
 
     EXPECT_FALSE(api::stopPlaylistRequestFromJson(nlohmann::json::object()).isSuccess());
     EXPECT_FALSE(api::stopPlaylistRequestFromJson({{"universe", -1}}).isSuccess());
+    EXPECT_FALSE(api::stopPlaylistRequestFromJson({{"universe", 0}}).isSuccess());
     EXPECT_FALSE(api::stopPlaylistRequestFromJson({{"universe", true}}).isSuccess());
     EXPECT_FALSE(api::stopPlaylistRequestFromJson({{"universe", 1}, {"extra", true}}).isSuccess());
 }

@@ -140,7 +140,7 @@ Result<api::StatusResponse> PlaylistService::startPlaylist(universe_t universe, 
     if (span) {
         span->setAttribute("service", "PlaylistService");
         span->setAttribute("operation", "startPlaylist");
-        span->setAttribute("universe", static_cast<int64_t>(universe));
+        span->setAttribute("playlist.universe", static_cast<int64_t>(universe));
         span->setAttribute("playlist.id", playlistId);
     }
     if (!db || !sessionManager || !eventLoop)
@@ -161,10 +161,11 @@ Result<api::StatusResponse> PlaylistService::startPlaylist(universe_t universe, 
     if (auto existingSession = sessionManager->getCurrentSession(universe);
         existingSession && !existingSession->isCancelled())
         existingSession->cancel();
-    const PlaylistStatus status{universe, playlistId, true, ""};
-    sessionManager->startPlaylist(universe, playlistId);
-    sessionManager->setPlaylistStatus(universe, status);
-    eventLoop->scheduleEvent(std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe));
+    const auto generation = sessionManager->startPlaylist(universe, playlistId);
+    const std::string triggerTraceId = span ? span->getTraceIdHex() : std::string{};
+    const std::string triggerSpanId = span ? span->getSpanIdHex() : std::string{};
+    eventLoop->scheduleEvent(std::make_shared<PlaylistEvent>(eventLoop->getNextFrameNumber(), universe, generation,
+                                                             triggerTraceId, triggerSpanId));
     if (metrics)
         metrics->incrementPlaylistsStarted();
 
@@ -186,7 +187,7 @@ Result<api::StatusResponse> PlaylistService::stopPlaylist(universe_t universe,
     if (span) {
         span->setAttribute("service", "PlaylistService");
         span->setAttribute("operation", "stopPlaylist");
-        span->setAttribute("universe", static_cast<int64_t>(universe));
+        span->setAttribute("playlist.universe", static_cast<int64_t>(universe));
     }
     if (!sessionManager)
         return unavailable<api::StatusResponse>(span, "Playlist scheduler unavailable");
@@ -208,7 +209,7 @@ Result<PlaylistStatus> PlaylistService::playlistStatus(universe_t universe, std:
     if (span) {
         span->setAttribute("service", "PlaylistService");
         span->setAttribute("operation", "playlistStatus");
-        span->setAttribute("universe", static_cast<int64_t>(universe));
+        span->setAttribute("playlist.universe", static_cast<int64_t>(universe));
     }
     const auto status = sessionManager ? sessionManager->getPlaylistStatus(universe) : std::nullopt;
     if (span)

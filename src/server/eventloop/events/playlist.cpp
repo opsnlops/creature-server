@@ -4,6 +4,7 @@
 #include <random>
 #include <stdexcept>
 #include <unordered_set>
+#include <utility>
 
 #include "spdlog/spdlog.h"
 
@@ -35,13 +36,29 @@ extern std::shared_ptr<ObservabilityManager> observability;
 extern std::shared_ptr<SessionManager> sessionManager;
 extern std::shared_ptr<ObjectCache<creatureId_t, universe_t>> creatureUniverseMap;
 
-PlaylistEvent::PlaylistEvent(framenum_t frameNumber_, universe_t universe_)
-    : EventBase(frameNumber_), activeUniverse(universe_) {}
+PlaylistEvent::PlaylistEvent(framenum_t frameNumber_, universe_t universe_, uint64_t generation,
+                             std::string triggerTraceId_, std::string triggerSpanId_)
+    : EventBase(frameNumber_), activeUniverse(universe_), playlistGeneration(generation),
+      triggerTraceId(std::move(triggerTraceId_)), triggerSpanId(std::move(triggerSpanId_)) {}
 
 Result<framenum_t> PlaylistEvent::executeImpl() {
     auto span = observability ? observability->createOperationSpan("playlist_event.execute") : nullptr;
     if (span) {
-        span->setAttribute("active_universe", activeUniverse);
+        span->setAttribute("playlist.universe", static_cast<int64_t>(activeUniverse));
+        span->setAttribute("playlist.generation", static_cast<int64_t>(playlistGeneration));
+        if (!triggerTraceId.empty()) {
+            span->setAttribute("trigger.trace_id", triggerTraceId);
+            span->setAttribute("trigger.span_id", triggerSpanId);
+        }
+    }
+
+    if (playlistGeneration != 0 &&
+        (!sessionManager || !sessionManager->isPlaylistGenerationCurrent(activeUniverse, playlistGeneration))) {
+        if (span) {
+            span->setAttribute("playlist.stale_event", true);
+            span->setSuccess();
+        }
+        return Result<framenum_t>{this->frameNumber};
     }
 
     debug("hello from a playlist event for universe {}", activeUniverse);
@@ -365,7 +382,8 @@ Result<framenum_t> PlaylistEvent::scheduleChosenAnimation(const Animation &anima
             framenum_t retryFrame = eventLoop->getNextFrameNumber() + retryDelay;
             info("Playlist on universe {} deferring: {} — retrying at frame {}", activeUniverse,
                  schedulingError.getMessage(), retryFrame);
-            auto retryEvent = std::make_shared<PlaylistEvent>(retryFrame, activeUniverse);
+            auto retryEvent = std::make_shared<PlaylistEvent>(retryFrame, activeUniverse, playlistGeneration,
+                                                              triggerTraceId, triggerSpanId);
             eventLoop->scheduleEvent(retryEvent);
             return Result<framenum_t>{ServerError(ServerError::Conflict, schedulingError.getMessage())};
         }
@@ -382,7 +400,8 @@ Result<framenum_t> PlaylistEvent::scheduleChosenAnimation(const Animation &anima
 }
 
 void PlaylistEvent::scheduleNextPlaylistEvent(framenum_t lastFrame) {
-    auto nextEvent = std::make_shared<PlaylistEvent>(lastFrame + 1, activeUniverse);
+    auto nextEvent = std::make_shared<PlaylistEvent>(lastFrame + 1, activeUniverse, playlistGeneration, triggerTraceId,
+                                                     triggerSpanId);
     eventLoop->scheduleEvent(nextEvent);
 }
 

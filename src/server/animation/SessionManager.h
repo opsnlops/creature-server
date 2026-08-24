@@ -233,7 +233,10 @@ class SessionManager {
      * @param universe The universe the playlist is on
      * @param playlistId The ID of the playlist
      */
-    void startPlaylist(universe_t universe, const std::string &playlistId);
+    uint64_t startPlaylist(universe_t universe, const std::string &playlistId);
+
+    /// True only for the most recently started playlist generation on a universe.
+    bool isPlaylistGenerationCurrent(universe_t universe, uint64_t generation) const;
 
     /**
      * Clear the current session pointer (called when session finishes)
@@ -385,6 +388,7 @@ class SessionManager {
 
     mutable std::mutex mutex_;
     std::map<universe_t, UniverseState> universeStates_;
+    std::map<universe_t, uint64_t> playlistGenerations_;
 
     // Monotonic activity-write generation, minted per adoption under mutex_. Because
     // adoptions are serialized here, a later adoption of any creature always carries a
