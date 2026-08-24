@@ -24,8 +24,8 @@ class DmxFixtureService {
     static Result<DmxFixture> getFixture(const fixtureId_t &fixtureId,
                                          std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
-    static oatpp::Object<creatures::DmxFixtureDto> upsertFixture(const std::string &jsonFixture,
-                                                                 std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<DmxFixture> upsertFixture(const std::string &jsonFixture,
+                                            std::shared_ptr<RequestSpan> parentSpan = nullptr);
 
     static Result<void> deleteFixture(const fixtureId_t &fixtureId, std::shared_ptr<RequestSpan> parentSpan = nullptr);
 

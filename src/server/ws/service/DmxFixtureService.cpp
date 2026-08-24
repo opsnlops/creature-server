@@ -164,8 +164,8 @@ Result<DmxFixture> DmxFixtureService::getFixture(const fixtureId_t &fixtureId,
     return Result<DmxFixture>{fixture};
 }
 
-oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::upsertFixture(const std::string &jsonFixture,
-                                                                         std::shared_ptr<RequestSpan> parentSpan) {
+Result<DmxFixture> DmxFixtureService::upsertFixture(const std::string &jsonFixture,
+                                                    std::shared_ptr<RequestSpan> parentSpan) {
 
     if (!creatures::db) {
         OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database unavailable");
@@ -243,7 +243,7 @@ oatpp::Object<creatures::DmxFixtureDto> DmxFixtureService::upsertFixture(const s
         span->setSuccess();
     }
 
-    return creatures::convertToDto(fixture);
+    return Result<DmxFixture>{fixture};
 }
 
 Result<void> DmxFixtureService::deleteFixture(const fixtureId_t &fixtureId, std::shared_ptr<RequestSpan> parentSpan) {

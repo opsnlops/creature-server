@@ -109,11 +109,13 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                                                       static_cast<int64_t>(fixtureConfig.length()));
                                }
                                const auto result = m_service.upsertFixture(fixtureConfig, span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
                                if (span) {
-                                   span->setAttribute("fixture.id", std::string(result->id));
+                                   span->setAttribute("fixture.id", result.getValue()->id);
                                    span->setHttpStatus(200);
                                }
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(span, Status::CODE_200, dmxFixtureToJson(result.getValue().value()));
                            });
     }
 
