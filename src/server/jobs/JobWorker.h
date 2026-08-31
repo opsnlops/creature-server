@@ -29,6 +29,13 @@ namespace creatures::jobs {
  */
 class JobWorker : public creatures::StoppableThread {
   public:
+    struct QueueAdmission {
+        enum class Status { Queued, Full, EnqueueFailed };
+
+        Status status{Status::Full};
+        std::string jobId;
+    };
+
     /**
      * Create a new job worker
      *
@@ -49,10 +56,10 @@ class JobWorker : public creatures::StoppableThread {
      */
     void queueJob(const std::string &jobId);
 
-    /// Reserve a bounded slot on the general worker and queue the job. Returns
-    /// false when eight jobs are already queued/running, so request handlers
-    /// can reject bursts instead of retaining unbounded payloads and paid work.
-    [[nodiscard]] bool tryQueueJob(const std::string &jobId);
+    /// Atomically reserve bounded general-worker capacity, create the JobState,
+    /// and queue it. A full queue creates no JobState and retains no details.
+    [[nodiscard]] QueueAdmission tryCreateAndQueueJob(JobType type, const std::string &details,
+                                                      std::shared_ptr<creatures::RequestSpan> parentSpan = nullptr);
 
     /// Reserve one of the bounded music-generation slots and queue the job on
     /// its dedicated worker. Returns false without queueing when both slots are

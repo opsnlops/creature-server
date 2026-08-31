@@ -84,6 +84,10 @@ class JobManager {
      */
     void failJob(const std::string &jobId, const std::string &errorMessage);
 
+    /// End and erase a job that could not be admitted to its worker queue.
+    /// Unlike failJob, this deliberately retains no request details.
+    void discardJob(const std::string &jobId, const std::string &errorMessage);
+
     /**
      * Remove jobs that have been completed for more than the specified duration
      *
@@ -92,8 +96,8 @@ class JobManager {
     void cleanupOldJobs(std::chrono::seconds olderThan = std::chrono::hours(1));
 
   private:
-    std::mutex mutex_;                        // Protects access to jobs map
-    std::map<std::string, JobState> jobs_;    // Map of job ID to job state
+    std::mutex mutex_;                     // Protects access to jobs map
+    std::map<std::string, JobState> jobs_; // Map of job ID to job state
 };
 
 } // namespace creatures::jobs

@@ -24,6 +24,7 @@
 #include "server/namespace-stuffs.h"
 #include "server/script/DialogScriptMutationLock.h"
 #include "server/storage/Storage.h"
+#include "server/voice/DialogCache.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/StatusDto.h"
@@ -519,15 +520,6 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, "dialog script updated_at cannot advance");
                 }
 
-                // Demote first: if the move fails we would rather keep the
-                // acceptance pointing at a file that still exists than clear
-                // it and strand the audio in the permanent tree.
-                auto demoted = creatures::storage::demoteVoiceTake(
-                    existingScript.accepted_voice->sound_file, existingScript.accepted_voice->generation_id, opSpan);
-                if (!demoted.isSuccess()) {
-                    return bailFromServerError(span, demoted.getError().value());
-                }
-
                 auto updated = creatures::dialogScriptToJson(existingScript);
                 updated.erase("accepted_voice");
                 updated["updated_at"] = std::max(nowMillis(), existingScript.updated_at + 1);
@@ -535,6 +527,18 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 if (!published.isSuccess()) {
                     return bailFromServerError(span, published.getError().value());
                 }
+
+                // Publishing the clear is the commit point. Cleanup follows
+                // so a filesystem failure can leave only an unreferenced file,
+                // never a script pointing at a WAV that was already moved.
+                auto demoted = creatures::storage::demoteVoiceTake(
+                    existingScript.accepted_voice->sound_file, existingScript.accepted_voice->generation_id, opSpan);
+                if (!demoted.isSuccess()) {
+                    warn("cleared accepted voice take {} but could not demote its WAV: {}",
+                         existingScript.accepted_voice->generation_id, demoted.getError()->getMessage());
+                }
+                creatures::voice::removeAcceptedGeneration(existingScript.accepted_voice->dialog_cache_key,
+                                                           existingScript.accepted_voice->generation_id);
                 if (span)
                     span->setHttpStatus(200);
                 return jsonResponse(span, Status::CODE_200,

@@ -142,13 +142,16 @@ class DialogController : public oatpp::web::server::api::ApiController, public H
                     span->setAttribute("dialog.autoplay", dialogRequest.autoplay);
                 }
 
-                const std::string jobId =
-                    creatures::jobManager->createJob(creatures::jobs::JobType::Dialog, detailsStr, span);
-                if (!creatures::jobWorker->tryQueueJob(jobId)) {
-                    creatures::jobManager->failJob(jobId, "dialog job queue is full");
+                const auto admission =
+                    creatures::jobWorker->tryCreateAndQueueJob(creatures::jobs::JobType::Dialog, detailsStr, span);
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::Full) {
                     return bailHttp(span, Status::CODE_429,
                                     "Eight dialog jobs are already queued or running; try again shortly");
                 }
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::EnqueueFailed) {
+                    return bailHttp(span, Status::CODE_500, "Could not queue dialog job");
+                }
+                const auto &jobId = admission.jobId;
 
                 if (span) {
                     span->setAttribute("job.id", jobId);

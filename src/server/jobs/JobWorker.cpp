@@ -184,17 +184,46 @@ void JobWorker::queueJob(const std::string &jobId) {
     info("Job {} queued for processing", jobId);
 }
 
-bool JobWorker::tryQueueJob(const std::string &jobId) {
+JobWorker::QueueAdmission JobWorker::tryCreateAndQueueJob(JobType type, const std::string &details,
+                                                          std::shared_ptr<creatures::RequestSpan> parentSpan) {
     auto current = jobsInFlight_.load(std::memory_order_relaxed);
     while (current < kMaxJobsInFlight) {
         if (jobsInFlight_.compare_exchange_weak(current, current + 1, std::memory_order_acq_rel,
                                                 std::memory_order_relaxed)) {
-            jobQueue_->enqueue(QueuedJob{jobId, true});
+            if (parentSpan) {
+                parentSpan->setAttribute("admission.scope", "dialog.general");
+                parentSpan->setAttribute("admission.limit", static_cast<int64_t>(kMaxJobsInFlight));
+                parentSpan->setAttribute("admission.in_flight", static_cast<int64_t>(current + 1));
+            }
+            std::string jobId;
+            try {
+                jobId = jobManager_->createJob(type, details, parentSpan);
+            } catch (...) {
+                jobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
+                throw;
+            }
+            if (!jobQueue_->enqueue(QueuedJob{jobId, true})) {
+                jobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
+                jobManager_->discardJob(jobId, "general job queue allocation failed");
+                if (parentSpan)
+                    parentSpan->setAttribute("admission.outcome", "enqueue.failed");
+                return {QueueAdmission::Status::EnqueueFailed, {}};
+            }
             info("Job {} queued for processing", jobId);
-            return true;
+            if (parentSpan) {
+                parentSpan->setAttribute("admission.outcome", "accepted");
+                parentSpan->setAttribute("job.id", jobId);
+            }
+            return {QueueAdmission::Status::Queued, std::move(jobId)};
         }
     }
-    return false;
+    if (parentSpan) {
+        parentSpan->setAttribute("admission.scope", "dialog.general");
+        parentSpan->setAttribute("admission.limit", static_cast<int64_t>(kMaxJobsInFlight));
+        parentSpan->setAttribute("admission.in_flight", static_cast<int64_t>(current));
+        parentSpan->setAttribute("admission.outcome", "rejected");
+    }
+    return {QueueAdmission::Status::Full, {}};
 }
 
 bool JobWorker::tryQueueMusicJob(const std::string &jobId) {
@@ -2880,19 +2909,13 @@ void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
 
     updateProgress(0.85f);
 
-    // Make the take durable BEFORE anything is demoted or published (#146).
-    //
-    // Acceptance has to mean "this exact performance, forever", but the
-    // generation only exists in temp space that a cron sweep or a reboot may
-    // delete. Once that happens the render finds nothing and quietly
-    // regenerates a DIFFERENT take. Copy it somewhere permanent first, and
-    // fail the acceptance outright if we can't — an acceptance we cannot
-    // honour later is worse than no acceptance at all.
-    auto madeDurable = creatures::voice::saveAcceptedGeneration(cacheKey, generationId);
-    if (!madeDurable.isSuccess()) {
-        return failJob(
-            fmt::format("could not store the accepted take durably: {}", madeDurable.getError().value().getMessage()));
-    }
+    const auto failRecheck = [&](const std::string &message, const char *outcome) {
+        if (jobState.span) {
+            jobState.span->setAttribute("voice.accept_outcome", outcome);
+            jobState.span->setAttribute("job.failure_stage", "commit_recheck");
+        }
+        failJob(message);
+    };
 
     // Serialize the final read/move/publish transaction with synchronous
     // edits and accept/clear requests. Assembly stays outside the lock: it can
@@ -2900,16 +2923,17 @@ void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
     const std::scoped_lock mutationLock(creatures::script::mutationMutex());
     auto latest = creatures::db->getDialogScript(scriptId, jobState.span);
     if (!latest.isSuccess()) {
-        return failJob(latest.getError().value().getMessage());
+        return failRecheck(latest.getError().value().getMessage(), "script_reload_failed");
     }
     script = latest.getValue().value();
     currentKey = creatures::voice::computeScriptCacheKey(script.turns, jobState.span);
     if (!currentKey.isSuccess()) {
-        return failJob(currentKey.getError().value().getMessage());
+        return failRecheck(currentKey.getError().value().getMessage(), "cache_key_failed");
     }
     if (currentKey.getValue().value() != cacheKey) {
-        return failJob("the script's turns changed while this take's audio was being assembled — re-audition and "
-                       "accept again");
+        return failRecheck(
+            "the script's turns changed while this take's audio was being assembled — re-audition and accept again",
+            "stale_script");
     }
     if (script.accepted_voice && script.accepted_voice->generation_id == generationId) {
         if (jobState.span) {
@@ -2922,26 +2946,34 @@ void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
         return;
     }
     if (script.updated_at == std::numeric_limits<int64_t>::max()) {
-        return failJob("dialog script updated_at cannot advance");
+        return failRecheck("dialog script updated_at cannot advance", "version_overflow");
     }
 
-    // Demote after the assembly, so a failure above leaves the previously
-    // accepted take whole rather than half-moved.
-    if (script.accepted_voice && script.accepted_voice->generation_id != generationId) {
-        auto demoted = creatures::storage::demoteVoiceTake(script.accepted_voice->sound_file,
-                                                           script.accepted_voice->generation_id, jobState.span);
-        if (!demoted.isSuccess()) {
-            return failJob(demoted.getError().value().getMessage());
+    // Acceptance means "this exact performance, forever". Copy the
+    // generation under the mutation lock after the stale-script recheck, so a
+    // failed recheck cannot orphan a huge durable PCM and synchronous accepts
+    // cannot race the same .tmp files.
+    const bool durableAlreadyExisted = creatures::voice::acceptedGenerationExists(cacheKey, generationId);
+    if (!durableAlreadyExisted) {
+        auto madeDurable = creatures::voice::saveAcceptedGeneration(cacheKey, generationId);
+        if (!madeDurable.isSuccess()) {
+            creatures::voice::removeAcceptedGeneration(cacheKey, generationId);
+            return failJob(fmt::format("could not store the accepted take durably: {}",
+                                       madeDurable.getError().value().getMessage()));
         }
-        // Best effort — a leftover durable copy costs disk, not correctness.
-        creatures::voice::removeAcceptedGeneration(script.accepted_voice->dialog_cache_key,
-                                                   script.accepted_voice->generation_id);
     }
+    const auto failAfterDurable = [&](const std::string &message, const char *outcome) {
+        if (!durableAlreadyExisted)
+            creatures::voice::removeAcceptedGeneration(cacheKey, generationId);
+        failRecheck(message, outcome);
+    };
+
+    const auto previousAcceptance = script.accepted_voice;
 
     const auto filename = creatures::util::exportBasename(script.title, generationId) + ".wav";
     auto promoted = creatures::storage::promoteVoiceTake(generationId, filename, jobState.span);
     if (!promoted.isSuccess()) {
-        return failJob(promoted.getError().value().getMessage());
+        return failAfterDurable(promoted.getError().value().getMessage(), "promotion_failed");
     }
 
     creatures::AcceptedVoice accepted;
@@ -2957,7 +2989,25 @@ void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
     updated["updated_at"] = std::max(accepted.accepted_at, script.updated_at + 1);
     auto published = creatures::storage::publishDialogScript(updated.dump(), jobState.span);
     if (!published.isSuccess()) {
-        return failJob(published.getError().value().getMessage());
+        const auto rollback = creatures::storage::demoteVoiceTake(accepted.sound_file, generationId, jobState.span);
+        if (!rollback.isSuccess()) {
+            warn("could not roll back voice take {} after script publish failed: {}", generationId,
+                 rollback.getError()->getMessage());
+        }
+        return failAfterDurable(published.getError().value().getMessage(), "publish_failed");
+    }
+
+    // Publication is the commit point. Only now retire the old assets; a
+    // cleanup failure can leak disk, but cannot invalidate the stored script.
+    if (previousAcceptance) {
+        auto demoted = creatures::storage::demoteVoiceTake(previousAcceptance->sound_file,
+                                                           previousAcceptance->generation_id, jobState.span);
+        if (!demoted.isSuccess()) {
+            warn("accepted voice take {} but could not demote previous take {}: {}", generationId,
+                 previousAcceptance->generation_id, demoted.getError()->getMessage());
+        }
+        creatures::voice::removeAcceptedGeneration(previousAcceptance->dialog_cache_key,
+                                                   previousAcceptance->generation_id);
     }
 
     // Same body the synchronous accept returns, so a client that got a 202

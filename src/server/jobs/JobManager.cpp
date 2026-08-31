@@ -147,6 +147,20 @@ void JobManager::failJob(const std::string &jobId, const std::string &errorMessa
     }
 }
 
+void JobManager::discardJob(const std::string &jobId, const std::string &errorMessage) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = jobs_.find(jobId);
+    if (it == jobs_.end()) {
+        return;
+    }
+    if (it->second.span) {
+        it->second.span->setAttribute("job.status", toString(JobStatus::Failed));
+        recordSpanError(it->second.span, errorMessage, "QueueEnqueueFailure", ServerError::InternalError);
+        it->second.span->end();
+    }
+    jobs_.erase(it);
+}
+
 void JobManager::cleanupOldJobs(std::chrono::seconds olderThan) {
     std::lock_guard<std::mutex> lock(mutex_);
 

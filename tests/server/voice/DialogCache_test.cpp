@@ -12,6 +12,7 @@
 #include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
 
+using creatures::voice::acceptedGenerationExists;
 using creatures::voice::CachedGeneration;
 using creatures::voice::computeCacheKey;
 using creatures::voice::DialogInput;
@@ -354,6 +355,7 @@ TEST_F(AcceptedTakeTest, SurvivesTheEphemeralCacheBeingWiped) {
     auto gen = sampleGen("gen-durable", {9, 8, 7, 6, 5});
     ASSERT_TRUE(saveGeneration(key, gen).isSuccess());
     ASSERT_TRUE(saveAcceptedGeneration(key, "gen-durable").isSuccess());
+    EXPECT_TRUE(acceptedGenerationExists(key, "gen-durable"));
 
     std::error_code ec;
     std::filesystem::remove_all(cacheDirFor(key), ec);
@@ -402,6 +404,7 @@ TEST_F(AcceptedTakeTest, RemoveDropsTheDurableCopy) {
     ASSERT_TRUE(loadAcceptedGeneration(key, "gen-old").isSuccess());
 
     ASSERT_TRUE(removeAcceptedGeneration(key, "gen-old").isSuccess());
+    EXPECT_FALSE(acceptedGenerationExists(key, "gen-old"));
     EXPECT_FALSE(loadAcceptedGeneration(key, "gen-old").isSuccess());
 }
 

@@ -158,13 +158,16 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
 
                 // Generation needed — hand off to the JobWorker and return 202.
                 const auto detailsStr = api::dialogPreviewRequestToJson(neutralRequest).dump();
-                const std::string jobId =
-                    creatures::jobManager->createJob(creatures::jobs::JobType::DialogPreview, detailsStr, span);
-                if (!creatures::jobWorker->tryQueueJob(jobId)) {
-                    creatures::jobManager->failJob(jobId, "dialog job queue is full");
+                const auto admission = creatures::jobWorker->tryCreateAndQueueJob(
+                    creatures::jobs::JobType::DialogPreview, detailsStr, span);
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::Full) {
                     return bailHttp(span, Status::CODE_429,
                                     "Eight dialog jobs are already queued or running; try again shortly");
                 }
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::EnqueueFailed) {
+                    return bailHttp(span, Status::CODE_500, "Could not queue dialog preview job");
+                }
+                const auto &jobId = admission.jobId;
                 if (span) {
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);
@@ -364,13 +367,16 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 // WAV into the ad-hoc bucket, and reports a downloadable
                 // file_name in the completion result.
                 const auto detailsStr = api::dialogPreviewRequestToJson(parsed.getValue().value()).dump();
-                const std::string jobId =
-                    creatures::jobManager->createJob(creatures::jobs::JobType::DialogPreviewExport, detailsStr, span);
-                if (!creatures::jobWorker->tryQueueJob(jobId)) {
-                    creatures::jobManager->failJob(jobId, "dialog job queue is full");
+                const auto admission = creatures::jobWorker->tryCreateAndQueueJob(
+                    creatures::jobs::JobType::DialogPreviewExport, detailsStr, span);
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::Full) {
                     return bailHttp(span, Status::CODE_429,
                                     "Eight dialog jobs are already queued or running; try again shortly");
                 }
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::EnqueueFailed) {
+                    return bailHttp(span, Status::CODE_500, "Could not queue dialog preview export job");
+                }
+                const auto &jobId = admission.jobId;
                 if (span) {
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);

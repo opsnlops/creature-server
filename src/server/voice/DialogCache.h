@@ -96,6 +96,10 @@ Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::
 /// auto-cleaned, and rendered from here.
 Result<CachedGeneration> loadAcceptedGeneration(const std::string &cacheKey, const std::string &generationId);
 
+/// Cheap existence check for both durable files. Unlike
+/// loadAcceptedGeneration, this never reads the potentially huge PCM payload.
+bool acceptedGenerationExists(const std::string &cacheKey, const std::string &generationId);
+
 /// Copy a generation out of the ephemeral cache into the durable accepted-take
 /// store. Called when a take is accepted, while the cache entry is still known
 /// to be present. NotFound if it isn't.

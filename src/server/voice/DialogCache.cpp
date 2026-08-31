@@ -354,6 +354,19 @@ Result<CachedGeneration> loadAcceptedGeneration(const std::string &cacheKey, con
     return loadGenerationFromDir(root / cacheKey, cacheKey, generationId);
 }
 
+bool acceptedGenerationExists(const std::string &cacheKey, const std::string &generationId) {
+    if (!validateCacheAddress(cacheKey, generationId).isSuccess())
+        return false;
+    const auto root = acceptedTakeRoot();
+    if (root.empty())
+        return false;
+    std::error_code ec;
+    const auto dir = root / cacheKey;
+    const bool pcmExists = std::filesystem::is_regular_file(dir / (generationId + ".pcm"), ec) && !ec;
+    ec.clear();
+    return pcmExists && std::filesystem::is_regular_file(dir / (generationId + ".json"), ec) && !ec;
+}
+
 Result<void> saveAcceptedGeneration(const std::string &cacheKey, const std::string &generationId) {
     auto validation = validateCacheAddress(cacheKey, generationId);
     if (!validation.isSuccess())
