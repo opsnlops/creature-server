@@ -265,11 +265,11 @@ Result<std::vector<AdHocExchangeRecord>> Database::listAdHocExchanges(int limit,
             records.push_back(recordResult.getValue().value());
         }
         if (mongoSpan) {
-            mongoSpan->setAttribute("adhoc_exchanges.count", static_cast<int64_t>(records.size()));
+            mongoSpan->setAttribute("exchanges.count", static_cast<int64_t>(records.size()));
             mongoSpan->setSuccess();
         }
         if (dbSpan) {
-            dbSpan->setAttribute("adhoc_exchanges.count", static_cast<int64_t>(records.size()));
+            dbSpan->setAttribute("exchanges.count", static_cast<int64_t>(records.size()));
             dbSpan->setSuccess();
         }
         return Result<std::vector<AdHocExchangeRecord>>{records};

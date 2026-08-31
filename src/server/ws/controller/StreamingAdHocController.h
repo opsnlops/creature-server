@@ -90,7 +90,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
                 const auto requestValue = parsed.getValue().value();
                 if (span) {
                     span->setAttribute("creature.id", canonicalUuid(requestValue.creatureId));
-                    span->setAttribute("playback.resume_playlist", requestValue.resumePlaylist);
+                    span->setAttribute("playback.resume.playlist", requestValue.resumePlaylist);
                 }
 
                 auto &mgr = creatures::voice::StreamingAdHocSessionManager::instance();
@@ -182,7 +182,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
                                                                session->getChunksReceived()};
 
                 if (span) {
-                    span->setAttribute("text.chunks_received", static_cast<int64_t>(session->getChunksReceived()));
+                    span->setAttribute("text.chunks.received", static_cast<int64_t>(session->getChunksReceived()));
                     span->setHttpStatus(200);
                 }
 
@@ -241,17 +241,17 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
 
                 auto finishResult = session->finish(span);
 
-                // Safe to remove now — finish() completes all TTS and animation
-                // construction before returning. Playback is triggered via interrupt()
-                // which creates its own PlaybackSession with its own lifecycle.
-                mgr.removeSession(requestValue.sessionId);
-
                 if (!finishResult.isSuccess()) {
                     if (span) {
                         span->setError(finishResult.getError()->getMessage());
                     }
                     return bailFromServerError(span, finishResult.getError().value());
                 }
+
+                // Only the request that reached terminal completion may free
+                // the registry slot. A racing second /finish receives 409 and
+                // must not make the still-running first request invisible.
+                mgr.removeSession(requestValue.sessionId);
 
                 const auto summary = finishResult.getValue().value();
 
@@ -268,8 +268,8 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
                     if (!summary.lastAnimationId.empty())
                         span->setAttribute("animation.id", canonicalUuid(summary.lastAnimationId));
                     span->setAttribute("exchange.status", summary.exchangeStatus);
-                    span->setAttribute("exchange.parts_rendered", static_cast<int64_t>(summary.partsRendered));
-                    span->setAttribute("exchange.parts_total", static_cast<int64_t>(summary.partsTotal));
+                    span->setAttribute("exchange.parts.rendered", static_cast<int64_t>(summary.partsRendered));
+                    span->setAttribute("exchange.parts.total", static_cast<int64_t>(summary.partsTotal));
                     span->setHttpStatus(200);
                 }
 

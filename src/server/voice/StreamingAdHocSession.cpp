@@ -53,6 +53,8 @@ StreamingAdHocSession::StreamingAdHocSession(const std::string &sessionId, const
                                              bool resumePlaylist, std::shared_ptr<RequestSpan> parentSpan)
     : sessionId_(sessionId), creatureId_(creatureId), resumePlaylist_(resumePlaylist) {
 
+    touch();
+
     if (parentSpan && creatures::observability) {
         span_ = creatures::observability->createLinkedOperationSpan("StreamingAdHocSession", parentSpan);
         if (span_) {
@@ -65,16 +67,61 @@ StreamingAdHocSession::StreamingAdHocSession(const std::string &sessionId, const
 }
 
 StreamingAdHocSession::~StreamingAdHocSession() {
-    // Ensure playback thread is joined if still running
+    // Ensure both workers are joined if the manager expires or shuts down a
+    // session that the client abandoned.
+    cancelled_.store(true);
+    finished_.store(true);
+    renderCv_.notify_one();
+    playbackCv_.notify_one();
+    if (renderThread_.joinable()) {
+        renderThread_.join();
+    }
     if (playbackThread_.joinable()) {
-        finished_.store(true);
-        playbackCv_.notify_one();
         playbackThread_.join();
     }
 
     debug("StreamingAdHocSession destroyed: session={}", sessionId_);
     if (span_) {
-        span_->setSuccess();
+        if (lifecycleCompleted_.load() && lifecycleFailed_.load()) {
+            span_->setAttribute("session.outcome", "partial");
+            recordSpanError(span_, "Streaming session completed with failed sentences or playback",
+                            "DegradedStreamingSession", ServerError::InternalError);
+        } else if (lifecycleCompleted_.load()) {
+            span_->setAttribute("session.outcome", "completed");
+            span_->setSuccess();
+        } else if (lifecycleFailed_.load()) {
+            span_->setAttribute("session.outcome", "failed");
+        } else {
+            span_->setAttribute("session.outcome", "abandoned");
+            recordSpanError(span_, "Streaming session ended without finish", "AbandonedSession", ServerError::Conflict);
+        }
+    }
+}
+
+void StreamingAdHocSession::touch() {
+    lastActivityNs_.store(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count(),
+        std::memory_order_relaxed);
+}
+
+bool StreamingAdHocSession::isIdleExpired(std::chrono::steady_clock::time_point now) const {
+    if (finished_.load(std::memory_order_acquire) || outstandingSentenceWork_.load(std::memory_order_acquire) > 0)
+        return false;
+    const auto lastActivity = std::chrono::steady_clock::time_point(
+        std::chrono::nanoseconds(lastActivityNs_.load(std::memory_order_relaxed)));
+    return now - lastActivity >= STREAMING_AD_HOC_IDLE_TIMEOUT;
+}
+
+void StreamingAdHocSession::resolveFailedSentence(int sentenceIndex) noexcept {
+    std::lock_guard<std::mutex> lock(offsetMutex_);
+    try {
+        offsetPromises_.at(static_cast<std::size_t>(sentenceIndex - 1)).set_value(0);
+    } catch (const std::exception &) {
+    }
+    try {
+        requestIdPromises_.at(static_cast<std::size_t>(sentenceIndex - 1)).set_value("");
+    } catch (const std::exception &) {
     }
 }
 
@@ -82,23 +129,29 @@ Result<void> StreamingAdHocSession::start() {
     auto startSpan = creatures::observability
                          ? creatures::observability->createChildOperationSpan("StreamingAdHocSession.start", span_)
                          : nullptr;
+    const auto fail = [&](const ServerError &failure, const char *errorType) -> Result<void> {
+        lifecycleFailed_.store(true);
+        recordSpanError(startSpan, failure.getMessage(), errorType, failure.getCode());
+        recordSpanError(span_, failure.getMessage(), errorType, failure.getCode());
+        return Result<void>{failure};
+    };
 
     // Look up creature
     auto creatureJsonResult = creatures::db->getCreatureJson(creatureId_, startSpan);
     if (!creatureJsonResult.isSuccess()) {
-        return Result<void>{creatureJsonResult.getError().value()};
+        return fail(creatureJsonResult.getError().value(), "CreatureLookupFailed");
     }
     creatureJson_ = creatureJsonResult.getValue().value();
 
     auto creatureResult = creatures::db->getCreature(creatureId_, startSpan);
     if (!creatureResult.isSuccess()) {
-        return Result<void>{creatureResult.getError().value()};
+        return fail(creatureResult.getError().value(), "CreatureLookupFailed");
     }
     creature_ = creatureResult.getValue().value();
 
     if (!creatureJson_.contains("voice") || creatureJson_["voice"].is_null()) {
-        return Result<void>{
-            ServerError(ServerError::InvalidData, fmt::format("No voice config for creature {}", creatureId_))};
+        return fail(ServerError(ServerError::InvalidData, fmt::format("No voice config for creature {}", creatureId_)),
+                    "MissingVoiceConfig");
     }
 
     // Extract voice config
@@ -110,7 +163,12 @@ Result<void> StreamingAdHocSession::start() {
         stability_ = voiceConfig["stability"].get<float>();
         similarityBoost_ = voiceConfig["similarity_boost"].get<float>();
     } catch (const std::exception &e) {
-        return Result<void>{ServerError(ServerError::InvalidData, fmt::format("Bad voice config: {}", e.what()))};
+        if (startSpan)
+            startSpan->recordException(e);
+        if (span_)
+            span_->recordException(e);
+        return fail(ServerError(ServerError::InvalidData, fmt::format("Bad voice config: {}", e.what())),
+                    "InvalidVoiceConfig");
     }
 
     // Validate model supports streaming
@@ -118,8 +176,9 @@ Result<void> StreamingAdHocSession::start() {
                                                                 "eleven_monolingual_v1", "eleven_multilingual_v1"};
     for (const auto &blocked : nonStreamingModels) {
         if (modelId_ == blocked) {
-            return Result<void>{ServerError(ServerError::InvalidData,
-                                            fmt::format("Model '{}' does not support WebSocket streaming.", modelId_))};
+            return fail(ServerError(ServerError::InvalidData,
+                                    fmt::format("Model '{}' does not support WebSocket streaming.", modelId_)),
+                        "UnsupportedVoiceModel");
         }
     }
 
@@ -128,8 +187,13 @@ Result<void> StreamingAdHocSession::start() {
         auto universePtr = creatures::creatureUniverseMap->get(creatureId_);
         universe_ = *universePtr;
     } catch (const std::exception &e) {
-        return Result<void>{ServerError(ServerError::InvalidData,
-                                        fmt::format("Creature {} is not registered with a universe.", creatureId_))};
+        if (startSpan)
+            startSpan->recordException(e);
+        if (span_)
+            span_->recordException(e);
+        return fail(ServerError(ServerError::InvalidData,
+                                fmt::format("Creature {} is not registered with a universe.", creatureId_)),
+                    "CreatureUniverseMissing");
     }
 
     // Resolve speech-loop base frames via the shared helper (issue #15).
@@ -137,7 +201,7 @@ Result<void> StreamingAdHocSession::start() {
     std::mt19937 rng(static_cast<uint32_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
     auto resolveResult = resolveSpeechBaseFrames(creature_, *creatures::db, rng, startSpan);
     if (!resolveResult.isSuccess()) {
-        return Result<void>{resolveResult.getError().value()};
+        return fail(resolveResult.getError().value(), "SpeechBaseResolutionFailed");
     }
     auto resolved = resolveResult.getValue().value();
     decodedBaseFrames_ = std::move(resolved.baseFrames);
@@ -163,6 +227,12 @@ Result<void> StreamingAdHocSession::start() {
         auto publishResult = creatures::storage::publishAdHocExchange(exchange, startSpan);
         if (!publishResult.isSuccess()) {
             warn("Unable to record ad-hoc exchange {}: {}", sessionId_, publishResult.getError()->getMessage());
+            if (startSpan) {
+                startSpan->setAttribute("exchange.persistence.outcome", "failed");
+                startSpan->setAttribute("exchange.persistence.error", publishResult.getError()->getMessage());
+            }
+        } else if (startSpan) {
+            startSpan->setAttribute("exchange.persistence.outcome", "success");
         }
     }
 
@@ -172,8 +242,8 @@ Result<void> StreamingAdHocSession::start() {
     if (startSpan) {
         startSpan->setAttribute("voice.id", voiceId_);
         startSpan->setAttribute("voice.model", modelId_);
-        startSpan->setAttribute("base_animation.id", baseAnimationId);
-        startSpan->setAttribute("base_animation.frames", static_cast<int64_t>(decodedBaseFrames_.size()));
+        startSpan->setAttribute("animation.base.id", baseAnimationId);
+        startSpan->setAttribute("animation.base.frames", static_cast<int64_t>(decodedBaseFrames_.size()));
         startSpan->setSuccess();
     }
 
@@ -201,11 +271,13 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
             ServerError(ServerError::Conflict, fmt::format("Streaming session reached its {} byte transcript limit",
                                                            MAX_STREAMING_AD_HOC_TOTAL_TEXT_BYTES))};
     }
+    touch();
     if (!fullText_.empty()) {
         fullText_ += " ";
     }
     fullText_ += text;
     const int sentenceIndex = chunksReceived_.fetch_add(1) + 1;
+    outstandingSentenceWork_.fetch_add(1, std::memory_order_release);
     sentenceTexts_.push_back(text);
 
     info("StreamingAdHocSession received sentence {} ({} bytes)", sentenceIndex, text.size());
@@ -234,9 +306,9 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
         sentenceSpan->setAttribute("sentence.length", static_cast<int64_t>(text.size()));
     }
 
-    auto future = std::async(
-        std::launch::async,
-        [this, text, sentenceIndex, creatureName, sentenceSpan = std::move(sentenceSpan)]() -> Result<Animation> {
+    std::packaged_task<Result<Animation>()> renderTask([this, text, sentenceIndex, creatureName,
+                                                        sentenceSpan]() -> Result<Animation> {
+        try {
             // 1. TTS via REST with previous_request_ids for prosody continuity.
             // Read the previous sentence's request-id future under the lock —
             // concurrent addText() can be doing push_back() which would invalidate
@@ -262,16 +334,10 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
                 client.generateSpeechREST(creatures::config->getVoiceApiKey(), voiceId_, modelId_, text, "pcm_48000",
                                           stability_, similarityBoost_, prevIds, nullptr, sentenceSpan);
             if (!ttsResult.isSuccess()) {
-                if (sentenceSpan)
-                    sentenceSpan->setError(ttsResult.getError()->getMessage());
-                // Unblock next sentence's waits
-                std::lock_guard<std::mutex> lock(offsetMutex_);
-                if (sentenceIndex <= static_cast<int>(offsetPromises_.size())) {
-                    offsetPromises_[sentenceIndex - 1].set_value(0);
-                }
-                if (sentenceIndex <= static_cast<int>(requestIdPromises_.size())) {
-                    requestIdPromises_[sentenceIndex - 1].set_value("");
-                }
+                const auto failure = ttsResult.getError().value();
+                lifecycleFailed_.store(true);
+                recordSpanError(sentenceSpan, failure.getMessage(), "TextToSpeechFailed", failure.getCode());
+                resolveFailedSentence(sentenceIndex);
                 return Result<Animation>{ttsResult.getError().value()};
             }
             const auto tts = ttsResult.getValue().value();
@@ -282,16 +348,26 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
             std::filesystem::create_directories(tempDir);
 
             auto wavPath = tempDir / fmt::format("s{}.wav", sentenceIndex);
+            auto pcmSpan =
+                creatures::observability
+                    ? creatures::observability->createChildOperationSpan("StreamingAdHocSession.wrapPcm", sentenceSpan)
+                    : nullptr;
+            if (pcmSpan) {
+                pcmSpan->setAttribute("audio.input.bytes", static_cast<int64_t>(tts.audioData.size()));
+                pcmSpan->setAttribute("audio.channel", static_cast<int64_t>(audioChannel_));
+                pcmSpan->setAttribute("audio.sample.rate", static_cast<int64_t>(48000));
+            }
             auto convertResult = writePcmToMultichannelWav(tts.audioData, wavPath, audioChannel_, 48000);
             if (!convertResult.isSuccess()) {
-                if (sentenceSpan)
-                    sentenceSpan->setError(convertResult.getError()->getMessage());
-                std::lock_guard<std::mutex> lock(offsetMutex_);
-                if (sentenceIndex <= static_cast<int>(offsetPromises_.size())) {
-                    offsetPromises_[sentenceIndex - 1].set_value(0);
-                }
+                const auto failure = convertResult.getError().value();
+                lifecycleFailed_.store(true);
+                recordSpanError(pcmSpan, failure.getMessage(), "PcmWavWriteFailed", failure.getCode());
+                recordSpanError(sentenceSpan, failure.getMessage(), "PcmWavWriteFailed", failure.getCode());
+                resolveFailedSentence(sentenceIndex);
                 return Result<Animation>{convertResult.getError().value()};
             }
+            if (pcmSpan)
+                pcmSpan->setSuccess();
 
             // 3. Opus encoding (parallel across channels)
             // Prewarm only — the buffer is discarded here and this sentence's temp
@@ -299,16 +375,6 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
             // budget that keeps show audio warm (issue #93).
             creatures::rtp::AudioStreamBuffer::loadFromWavFile(
                 wavPath.string(), sentenceSpan, creatures::rtp::AudioStreamBuffer::RetentionIntent::OneShot);
-
-            // 4. Lip sync from alignment
-            std::vector<RhubarbMouthCue> mouthCues;
-            if (!tts.charTimings.empty()) {
-                mouthCues = textToViseme_.charTimingsToMouthCues(tts.charTimings);
-            }
-            RhubarbSoundData lipSyncData;
-            lipSyncData.metadata.soundFile = wavPath.filename().string();
-            lipSyncData.metadata.duration = tts.audioDurationSeconds;
-            lipSyncData.mouthCues = mouthCues;
 
             // 5. Wait for previous sentence's frame offset. Same locking
             // pattern as the request-id read above: copy the future under
@@ -328,8 +394,40 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
                 1,
                 static_cast<size_t>(std::ceil((tts.audioDurationSeconds * 1000.0) / static_cast<double>(msPerFrame_))));
 
-            SoundDataProcessor processor;
-            auto mouthData = processor.processSoundData(lipSyncData, msPerFrame_, targetFrames);
+            // 4/6. Convert the provider's character alignment into mouth
+            // frames. Keep this as one coarse span: per-cue/per-frame spans
+            // would add volume without making the pipeline easier to query.
+            auto lipSyncSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                              "StreamingAdHocSession.buildLipSync", sentenceSpan)
+                                                        : nullptr;
+            if (lipSyncSpan) {
+                lipSyncSpan->setAttribute("alignment.characters", static_cast<int64_t>(tts.charTimings.size()));
+                lipSyncSpan->setAttribute("animation.target.frames", static_cast<int64_t>(targetFrames));
+            }
+            std::vector<uint8_t> mouthData;
+            try {
+                std::vector<RhubarbMouthCue> mouthCues;
+                if (!tts.charTimings.empty()) {
+                    mouthCues = textToViseme_.charTimingsToMouthCues(tts.charTimings);
+                }
+                RhubarbSoundData lipSyncData;
+                lipSyncData.metadata.soundFile = wavPath.filename().string();
+                lipSyncData.metadata.duration = tts.audioDurationSeconds;
+                lipSyncData.mouthCues = mouthCues;
+
+                SoundDataProcessor processor;
+                mouthData = processor.processSoundData(lipSyncData, msPerFrame_, targetFrames);
+                if (lipSyncSpan) {
+                    lipSyncSpan->setAttribute("mouth.cues", static_cast<int64_t>(mouthCues.size()));
+                    lipSyncSpan->setAttribute("mouth.frames", static_cast<int64_t>(mouthData.size()));
+                    lipSyncSpan->setSuccess();
+                }
+            } catch (const std::exception &exception) {
+                if (lipSyncSpan)
+                    lipSyncSpan->recordException(exception);
+                recordSpanError(lipSyncSpan, exception.what(), "LipSyncBuildException", ServerError::InternalError);
+                throw;
+            }
 
             // Shared frame-build via the speech track builder (issue #15).
             // mouth_slot bounds check + body cycle + mouth-byte insertion all
@@ -343,12 +441,30 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
             trackInput.animationId = ""; // stamped onto the Animation below
             SpeechTrackOptions trackOptions;
             trackOptions.startOffset = baseOffset;
-            auto trackResult = buildSpeechTrack(trackInput, trackOptions, sentenceSpan);
+            auto trackSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                            "StreamingAdHocSession.buildTrack", sentenceSpan)
+                                                      : nullptr;
+            if (trackSpan) {
+                trackSpan->setAttribute("animation.target.frames", static_cast<int64_t>(targetFrames));
+                trackSpan->setAttribute("frame.base.offset", static_cast<int64_t>(baseOffset));
+                trackSpan->setAttribute("mouth.slot", static_cast<int64_t>(trackInput.mouthSlot));
+            }
+            auto trackResult = buildSpeechTrack(trackInput, trackOptions, trackSpan);
             if (!trackResult.isSuccess()) {
+                const auto failure = trackResult.getError().value();
+                lifecycleFailed_.store(true);
+                recordSpanError(trackSpan, failure.getMessage(), "SpeechTrackBuildFailed", failure.getCode());
+                recordSpanError(sentenceSpan, failure.getMessage(), "SpeechTrackBuildFailed", failure.getCode());
+                resolveFailedSentence(sentenceIndex);
                 return Result<Animation>{trackResult.getError().value()};
             }
             const std::size_t endOffset = trackResult.getValue()->endOffset;
             std::vector<std::string> encodedFrames = std::move(trackResult.getValue()->track.frames);
+            if (trackSpan) {
+                trackSpan->setAttribute("animation.frames", static_cast<int64_t>(encodedFrames.size()));
+                trackSpan->setAttribute("frame.end.offset", static_cast<int64_t>(endOffset));
+                trackSpan->setSuccess();
+            }
 
             // 7. Signal next sentence with our ending offset and request ID
             {
@@ -389,7 +505,7 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
             if (sentenceSpan) {
                 sentenceSpan->setAttribute("animation.id", animation.id);
                 sentenceSpan->setAttribute("animation.frames", static_cast<int64_t>(targetFrames));
-                sentenceSpan->setAttribute("base_frame_offset", static_cast<int64_t>(baseOffset));
+                sentenceSpan->setAttribute("frame.base.offset", static_cast<int64_t>(baseOffset));
                 sentenceSpan->setSuccess();
             }
 
@@ -397,19 +513,41 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
                  tts.audioDurationSeconds);
 
             return animation;
-        });
+        } catch (const std::exception &exception) {
+            lifecycleFailed_.store(true);
+            if (sentenceSpan)
+                sentenceSpan->recordException(exception);
+            recordSpanError(sentenceSpan, exception.what(), "BackgroundPipelineException", ServerError::InternalError);
+            resolveFailedSentence(sentenceIndex);
+            return Result<Animation>{ServerError(ServerError::InternalError, "Background speech pipeline failed")};
+        } catch (...) {
+            lifecycleFailed_.store(true);
+            recordSpanError(sentenceSpan, "Unknown background speech pipeline failure",
+                            "UnknownBackgroundPipelineException", ServerError::InternalError);
+            resolveFailedSentence(sentenceIndex);
+            return Result<Animation>{ServerError(ServerError::InternalError, "Background speech pipeline failed")};
+        }
+    });
+    auto future = renderTask.get_future();
 
     {
         std::lock_guard<std::mutex> lock(futuresMutex_);
         sentenceFutures_.push_back(std::move(future));
+        sentenceSpans_.push_back(sentenceSpan);
+    }
+    {
+        std::lock_guard<std::mutex> lock(renderMutex_);
+        renderTasks_.push_back(std::move(renderTask));
     }
 
     // Spawn the playback thread on the first sentence. It will start waiting
     // for sentence 1's future to resolve and trigger playback immediately.
     if (sentenceIndex == 1) {
+        renderThread_ = std::thread(&StreamingAdHocSession::renderThreadFunc, this);
         playbackThread_ = std::thread(&StreamingAdHocSession::playbackThreadFunc, this);
     }
 
+    renderCv_.notify_one();
     // Wake the playback thread so it knows a new future is available.
     // The future is already in the vector (pushed under lock above), so the
     // playback thread's predicate will see it when it re-checks.
@@ -418,6 +556,30 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
     debug("Sentence {} queued for pipelined playback", sentenceIndex);
 
     return Result<void>{};
+}
+
+void StreamingAdHocSession::renderThreadFunc() {
+    info("Render thread started for session {}", sessionId_);
+    while (true) {
+        std::packaged_task<Result<Animation>()> task;
+        {
+            std::unique_lock<std::mutex> lock(renderMutex_);
+            renderCv_.wait(lock, [&] { return !renderTasks_.empty() || finished_.load() || cancelled_.load(); });
+            if (cancelled_.load()) {
+                renderTasks_.clear();
+                break;
+            }
+            if (renderTasks_.empty()) {
+                if (finished_.load())
+                    break;
+                continue;
+            }
+            task = std::move(renderTasks_.front());
+            renderTasks_.pop_front();
+        }
+        task();
+    }
+    info("Render thread finished for session {}", sessionId_);
 }
 
 void StreamingAdHocSession::playbackThreadFunc() {
@@ -435,6 +597,7 @@ void StreamingAdHocSession::playbackThreadFunc() {
         while (nextIndex < sentenceFutures_.size()) {
             // Move the future out so we can release the lock while waiting on it
             auto future = std::move(sentenceFutures_[nextIndex]);
+            auto sentenceSpan = sentenceSpans_[nextIndex];
             lock.unlock();
 
             int sentenceIndex = static_cast<int>(nextIndex + 1);
@@ -443,30 +606,13 @@ void StreamingAdHocSession::playbackThreadFunc() {
             try {
                 animationResult.emplace(future.get());
             } catch (const std::exception &exception) {
+                lifecycleFailed_.store(true);
                 error("Sentence {} background pipeline threw: {}", sentenceIndex, exception.what());
-                // An exception may have escaped before the sentence resolved
-                // its hand-off promises. Resolve them best-effort so the next
-                // parallel sentence cannot wait forever.
-                std::lock_guard<std::mutex> offsetLock(offsetMutex_);
-                try {
-                    offsetPromises_[sentenceIndex - 1].set_value(0);
-                } catch (const std::future_error &) {
-                }
-                try {
-                    requestIdPromises_[sentenceIndex - 1].set_value("");
-                } catch (const std::future_error &) {
-                }
+                resolveFailedSentence(sentenceIndex);
             } catch (...) {
+                lifecycleFailed_.store(true);
                 error("Sentence {} background pipeline threw an unknown exception", sentenceIndex);
-                std::lock_guard<std::mutex> offsetLock(offsetMutex_);
-                try {
-                    offsetPromises_[sentenceIndex - 1].set_value(0);
-                } catch (const std::future_error &) {
-                }
-                try {
-                    requestIdPromises_[sentenceIndex - 1].set_value("");
-                } catch (const std::future_error &) {
-                }
+                resolveFailedSentence(sentenceIndex);
             }
             if (!animationResult || !animationResult->isSuccess()) {
                 if (animationResult) {
@@ -474,14 +620,30 @@ void StreamingAdHocSession::playbackThreadFunc() {
                 }
                 lock.lock();
                 sentenceOutcomes_.push_back({false, ""});
+                outstandingSentenceWork_.fetch_sub(1, std::memory_order_release);
+                touch();
                 nextIndex++;
                 continue;
             }
             auto animation = animationResult->getValue().value();
             lastAnimationId = animation.id;
 
+            auto playbackSpan =
+                creatures::observability
+                    ? creatures::observability->createChildOperationSpan("StreamingAdHocSession.playback", sentenceSpan)
+                    : nullptr;
+            if (playbackSpan) {
+                playbackSpan->setAttribute("session.id", sessionId_);
+                playbackSpan->setAttribute("creature.id", creatureId_);
+                playbackSpan->setAttribute("sentence.index", static_cast<int64_t>(sentenceIndex));
+                playbackSpan->setAttribute("animation.id", animation.id);
+                playbackSpan->setAttribute("playback.universe", static_cast<int64_t>(universe_));
+            }
+
             bool dispatched = true;
             if (nextIndex == 0) {
+                if (playbackSpan)
+                    playbackSpan->setAttribute("playback.dispatch.mode", "interrupt");
                 info("Sentence {}: interrupt() for immediate playback (pipelined!)", sentenceIndex);
                 // Our session id is the chain id: every sentence's playback session
                 // carries it, so queue entries and failure cleanup stay scoped to
@@ -490,9 +652,13 @@ void StreamingAdHocSession::playbackThreadFunc() {
                     creatures::sessionManager->interrupt(universe_, animation, resumePlaylist_, nullptr, sessionId_);
                 if (!sessionResult.isSuccess()) {
                     warn("Sentence {} playback failed: {}", sentenceIndex, sessionResult.getError()->getMessage());
+                    const auto failure = sessionResult.getError().value();
+                    recordSpanError(playbackSpan, failure.getMessage(), "PlaybackInterruptFailed", failure.getCode());
                     dispatched = false;
                 }
             } else {
+                if (playbackSpan)
+                    playbackSpan->setAttribute("playback.dispatch.mode", "queue");
                 info("Sentence {}: queueAnimation() for chained playback", sentenceIndex);
                 const bool queued = creatures::sessionManager->queueAnimation(universe_, animation, sessionId_);
                 if (!queued) {
@@ -500,19 +666,34 @@ void StreamingAdHocSession::playbackThreadFunc() {
                     // before this render resolved. Play the sentence now instead
                     // of stranding an entry no session could ever pop (issue #100).
                     info("Sentence {}: chain idle, scheduling directly", sentenceIndex);
+                    if (playbackSpan)
+                        playbackSpan->setAttribute("playback.dispatch.mode", "direct");
                     auto scheduled = creatures::CooperativeAnimationScheduler::scheduleAnimation(
                         creatures::eventLoop ? creatures::eventLoop->getNextFrameNumber() : 0, animation, universe_,
                         creatures::runtime::ActivityReason::AdHoc, false, sessionId_);
                     if (!scheduled.isSuccess()) {
                         warn("Sentence {} direct playback failed: {}", sentenceIndex,
                              scheduled.getError()->getMessage());
+                        const auto failure = scheduled.getError().value();
+                        recordSpanError(playbackSpan, failure.getMessage(), "DirectPlaybackScheduleFailed",
+                                        failure.getCode());
                         dispatched = false;
                     }
                 }
             }
 
+            if (playbackSpan) {
+                playbackSpan->setAttribute("playback.dispatched", dispatched);
+                if (dispatched)
+                    playbackSpan->setSuccess();
+            }
+            if (!dispatched)
+                lifecycleFailed_.store(true);
+
             lock.lock();
             sentenceOutcomes_.push_back({dispatched, dispatched ? animation.id : ""});
+            outstandingSentenceWork_.fetch_sub(1, std::memory_order_release);
+            touch();
             nextIndex++;
         }
 
@@ -533,15 +714,16 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish(std::shared_ptr<Requ
 
     {
         std::lock_guard<std::mutex> stateLock(stateMutex_);
+        touch();
         if (fullText_.empty()) {
-            if (finishSpan)
-                finishSpan->setError("No text was added to the session");
+            recordSpanError(finishSpan, "No text was added to the session", "EmptyStreamingSession",
+                            ServerError::InvalidData);
             return Result<StreamingFinishResult>{
                 ServerError(ServerError::InvalidData, "No text was added to the session")};
         }
         if (finished_.exchange(true)) {
-            if (finishSpan)
-                finishSpan->setError("Streaming session is already finishing");
+            recordSpanError(finishSpan, "Streaming session is already finishing", "SessionAlreadyFinishing",
+                            ServerError::Conflict);
             return Result<StreamingFinishResult>{
                 ServerError(ServerError::Conflict, "Streaming session is already finishing")};
         }
@@ -567,9 +749,14 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish(std::shared_ptr<Requ
 
     // Signal the playback thread that no more sentences are coming. The flag
     // was set under stateMutex_ above so a concurrent /text cannot slip in.
+    renderCv_.notify_one();
     playbackCv_.notify_one();
 
-    // Wait for the playback thread to finish processing all animations
+    // Drain the bounded render queue first, then wait for playback to consume
+    // every now-ready future.
+    if (renderThread_.joinable()) {
+        renderThread_.join();
+    }
     if (playbackThread_.joinable()) {
         playbackThread_.join();
     }
@@ -645,9 +832,21 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish(std::shared_ptr<Requ
         }
 
         const auto stitchedPath = tempDir / fmt::format("{}.wav", sessionId_);
+        auto stitchSpan =
+            creatures::observability
+                ? creatures::observability->createChildOperationSpan("StreamingAdHocSession.stitchExchange", finishSpan)
+                : nullptr;
+        if (stitchSpan) {
+            stitchSpan->setAttribute("session.id", sessionId_);
+            stitchSpan->setAttribute("exchange.parts", static_cast<int64_t>(partWavs.size()));
+            stitchSpan->setAttribute("provenance.generation.ids",
+                                     static_cast<int64_t>(provenance.generationIds.size()));
+        }
         auto stitchResult = stitchMultichannelWavs(partWavs, stitchedPath, provenance);
         if (!stitchResult.isSuccess()) {
             warn("Failed to stitch exchange WAV for session {}: {}", sessionId_, stitchResult.getError()->getMessage());
+            const auto failure = stitchResult.getError().value();
+            recordSpanError(stitchSpan, failure.getMessage(), "ExchangeStitchFailed", failure.getCode());
             exchange.status = EXCHANGE_STATUS_FAILED;
         } else {
             // Result::getValue() returns the optional BY VALUE — copy, never
@@ -655,6 +854,10 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish(std::shared_ptr<Requ
             const auto stitched = stitchResult.getValue().value();
             exchange.sound_file = stitchedPath.string();
             exchange.duration_ms = stitched.totalDurationMs;
+            if (stitchSpan) {
+                stitchSpan->setAttribute("audio.duration.ms", stitched.totalDurationMs);
+                stitchSpan->setSuccess();
+            }
             for (size_t i = 0; i < parts.size() && i < stitched.partDurationsMs.size(); i++) {
                 parts[i].duration_ms = stitched.partDurationsMs[i];
             }
@@ -669,13 +872,29 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish(std::shared_ptr<Requ
     auto finalizeResult = creatures::storage::finalizeAdHocExchange(exchange, finishSpan);
     if (!finalizeResult.isSuccess()) {
         warn("Unable to finalize ad-hoc exchange {}: {}", sessionId_, finalizeResult.getError()->getMessage());
+        if (finishSpan) {
+            finishSpan->setAttribute("exchange.persistence.outcome", "failed");
+            finishSpan->setAttribute("exchange.persistence.error", finalizeResult.getError()->getMessage());
+        }
+    } else if (finishSpan) {
+        finishSpan->setAttribute("exchange.persistence.outcome", "success");
     }
 
     if (finishSpan) {
-        finishSpan->setAttribute("animations_built", static_cast<int64_t>(parts.size()));
+        finishSpan->setAttribute("session.id", sessionId_);
+        finishSpan->setAttribute("creature.id", creatureId_);
+        finishSpan->setAttribute("animations.built", static_cast<int64_t>(parts.size()));
         finishSpan->setAttribute("exchange.status", exchange.status);
+        finishSpan->setAttribute("exchange.degraded", exchange.status != EXCHANGE_STATUS_READY);
         finishSpan->setSuccess();
     }
+    if (span_) {
+        span_->setAttribute("exchange.status", exchange.status);
+        span_->setAttribute("exchange.parts.rendered", static_cast<int64_t>(parts.size()));
+        span_->setAttribute("exchange.parts.total", static_cast<int64_t>(chunksReceived));
+        span_->setAttribute("session.degraded", exchange.status != EXCHANGE_STATUS_READY);
+    }
+    lifecycleCompleted_.store(true);
 
     info("StreamingAdHocSession finished: session={}, {}/{} sentences rendered, exchange '{}'", sessionId_,
          parts.size(), chunksReceived, exchange.status);
@@ -698,23 +917,39 @@ StreamingAdHocSessionManager &StreamingAdHocSessionManager::instance() {
 Result<std::shared_ptr<StreamingAdHocSession>>
 StreamingAdHocSessionManager::createSession(const std::string &creatureId, bool resumePlaylist,
                                             std::shared_ptr<RequestSpan> parentSpan) {
-    auto sessionId = util::generateUUID();
-    auto session = std::make_shared<StreamingAdHocSession>(sessionId, creatureId, resumePlaylist, parentSpan);
-
+    std::vector<std::shared_ptr<StreamingAdHocSession>> expiredSessions;
     std::lock_guard<std::mutex> lock(mutex_);
+    const auto now = std::chrono::steady_clock::now();
+    for (auto iterator = sessions_.begin(); iterator != sessions_.end();) {
+        if (iterator->second->isIdleExpired(now)) {
+            expiredSessions.push_back(std::move(iterator->second));
+            iterator = sessions_.erase(iterator);
+        } else {
+            ++iterator;
+        }
+    }
     if (sessions_.size() >= MAX_ACTIVE_STREAMING_AD_HOC_SESSIONS) {
         return Result<std::shared_ptr<StreamingAdHocSession>>{
             ServerError(ServerError::Conflict, fmt::format("Streaming speech already has {} active sessions",
                                                            MAX_ACTIVE_STREAMING_AD_HOC_SESSIONS))};
     }
+    auto sessionId = util::generateUUID();
+    auto session = std::make_shared<StreamingAdHocSession>(sessionId, creatureId, resumePlaylist, parentSpan);
     sessions_[sessionId] = session;
     return Result<std::shared_ptr<StreamingAdHocSession>>{session};
 }
 
 std::shared_ptr<StreamingAdHocSession> StreamingAdHocSessionManager::getSession(const std::string &sessionId) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::shared_ptr<StreamingAdHocSession> expiredSession;
+    std::unique_lock<std::mutex> lock(mutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
+        return nullptr;
+    }
+    if (it->second->isIdleExpired(std::chrono::steady_clock::now())) {
+        expiredSession = std::move(it->second);
+        sessions_.erase(it);
+        lock.unlock();
         return nullptr;
     }
     return it->second;

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -24,6 +26,7 @@ inline constexpr std::size_t MAX_STREAMING_AD_HOC_CHUNK_TEXT_BYTES = 32 * 1024;
 inline constexpr std::size_t MAX_STREAMING_AD_HOC_CHUNKS = 100;
 inline constexpr std::size_t MAX_STREAMING_AD_HOC_TOTAL_TEXT_BYTES = 256 * 1024;
 inline constexpr std::size_t MAX_ACTIVE_STREAMING_AD_HOC_SESSIONS = 32;
+inline constexpr auto STREAMING_AD_HOC_IDLE_TIMEOUT = std::chrono::minutes(10);
 
 /// What finish() learned about the session, for an honest /finish response and
 /// the exchange record (issue #150).
@@ -80,8 +83,12 @@ class StreamingAdHocSession {
 
     [[nodiscard]] const std::string &getSessionId() const { return sessionId_; }
     [[nodiscard]] int getChunksReceived() const { return chunksReceived_.load(); }
+    [[nodiscard]] bool isIdleExpired(std::chrono::steady_clock::time_point now) const;
 
   private:
+    void touch();
+    void resolveFailedSentence(int sentenceIndex) noexcept;
+    void renderThreadFunc();
     /// Background thread that monitors futures and triggers playback in order.
     void playbackThreadFunc();
 
@@ -89,6 +96,10 @@ class StreamingAdHocSession {
     std::string creatureId_;
     bool resumePlaylist_;
     std::shared_ptr<OperationSpan> span_;
+    std::atomic<bool> lifecycleCompleted_{false};
+    std::atomic<bool> lifecycleFailed_{false};
+    std::atomic<int64_t> lastActivityNs_{0};
+    std::atomic<std::size_t> outstandingSentenceWork_{0};
 
     // Creature data (populated during start())
     Creature creature_;
@@ -133,6 +144,16 @@ class StreamingAdHocSession {
     // Each future produces a ready-to-play Animation
     std::mutex futuresMutex_;
     std::vector<std::future<Result<Animation>>> sentenceFutures_;
+    std::vector<std::shared_ptr<OperationSpan>> sentenceSpans_;
+
+    // One render worker per active session. ElevenLabs prosody continuity
+    // already makes sentence pipelines sequential within a session, so a
+    // bounded queue preserves useful cross-session parallelism without
+    // creating one blocked native thread for every pending sentence.
+    std::mutex renderMutex_;
+    std::condition_variable renderCv_;
+    std::deque<std::packaged_task<Result<Animation>()>> renderTasks_;
+    std::thread renderThread_;
 
     // Condition variable to wake the playback thread when new futures are added
     // or when finish() signals no more sentences.
@@ -141,6 +162,7 @@ class StreamingAdHocSession {
     // Playback thread — spawned on first addText(), joins in finish()
     std::thread playbackThread_;
     std::atomic<bool> finished_{false}; // Signals: no more sentences coming
+    std::atomic<bool> cancelled_{false};
 
     // Frame offset synchronization: each sentence waits for the previous one's
     // offset before building, so body motion is seamless. Uses promise/future pairs.
