@@ -40,7 +40,7 @@ inline Result<StartPlaylistRequest> startPlaylistRequestFromJson(const nlohmann:
         return json_codec::invalid<StartPlaylistRequest>("playlist start request.universe must be at least 1");
     if (!isUuidShape(playlistId.getValue().value()))
         return json_codec::invalid<StartPlaylistRequest>("playlist start request.playlist_id must be a UUID");
-    return Result<StartPlaylistRequest>{{playlistId.getValue().value(), universe.getValue().value()}};
+    return Result<StartPlaylistRequest>{{canonicalUuid(playlistId.getValue().value()), universe.getValue().value()}};
 }
 
 inline Result<StopPlaylistRequest> stopPlaylistRequestFromJson(const nlohmann::json &json) {

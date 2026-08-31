@@ -3,6 +3,9 @@
 
 #include "spdlog/spdlog.h"
 
+#include <algorithm>
+#include <cctype>
+
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/exception/exception.hpp>
 #include <bsoncxx/json.hpp>
@@ -13,6 +16,7 @@
 #include "server/database.h"
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
+#include "util/UuidValidation.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -43,8 +47,8 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
 
     debug("attempting to get the JSON for a playlist by ID: {}", playlistId);
 
-    if (playlistId.empty()) {
-        std::string errorMessage = "unable to get a playlist because the id was empty";
+    if (!isUuidShape(playlistId)) {
+        std::string errorMessage = "unable to get a playlist because the id was not a UUID";
         info(errorMessage);
         recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<json>{ServerError(ServerError::InvalidData, errorMessage)};
@@ -64,7 +68,14 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
     try {
         mongoSpan = creatures::observability->createChildOperationSpan("getPlaylistJson.mongoQuery", dbSpan);
 
-        auto filter = document{} << "id" << playlistId << finalize;
+        const auto canonicalId = canonicalUuid(playlistId);
+        auto uppercaseId = canonicalId;
+        std::ranges::transform(uppercaseId, uppercaseId.begin(),
+                               [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
+        auto filter = document{} << "id" << bsoncxx::builder::stream::open_document << "$in"
+                                 << bsoncxx::builder::stream::open_array << canonicalId << uppercaseId
+                                 << bsoncxx::builder::stream::close_array << bsoncxx::builder::stream::close_document
+                                 << finalize;
         auto maybe_result = collection.find_one(filter.view());
         if (mongoSpan)
             mongoSpan->setSuccess();

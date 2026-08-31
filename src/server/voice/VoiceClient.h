@@ -43,6 +43,8 @@ struct Voice {
     std::string name;
 };
 
+Result<std::vector<Voice>> parseVoiceListResponse(const std::string &response);
+
 class VoiceClient {
   public:
     explicit VoiceClient(std::string apiKey);

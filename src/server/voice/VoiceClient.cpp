@@ -192,6 +192,33 @@ Result<nlohmann::json> parseResponse(const std::string &response, const char *op
 
 VoiceClient::VoiceClient(std::string apiKey) : apiKey_(std::move(apiKey)) {}
 
+Result<std::vector<Voice>> parseVoiceListResponse(const std::string &response) {
+    auto parsed = parseResponse(response, "voices");
+    if (!parsed.isSuccess())
+        return Result<std::vector<Voice>>{parsed.getError().value()};
+
+    try {
+        // Result::getValue() returns its optional by value. Keep the JSON alive
+        // locally before taking a reference to its voices array.
+        const auto document = parsed.getValue().value();
+        const auto &items = document.at("voices");
+        if (!items.is_array()) {
+            return Result<std::vector<Voice>>{
+                ServerError(ServerError::InvalidData, "ElevenLabs voices response did not contain an array")};
+        }
+        std::vector<Voice> voices;
+        voices.reserve(items.size());
+        for (const auto &item : items)
+            voices.push_back(Voice{item.at("voice_id").get<std::string>(), item.at("name").get<std::string>()});
+        std::ranges::sort(voices, {}, &Voice::name);
+        return Result<std::vector<Voice>>{std::move(voices)};
+    } catch (const nlohmann::json::exception &error) {
+        return Result<std::vector<Voice>>{
+            ServerError(ServerError::InvalidData,
+                        fmt::format("ElevenLabs voices response had an invalid shape: {}", error.what()))};
+    }
+}
+
 Result<std::vector<Voice>> VoiceClient::listAllAvailableVoices(std::shared_ptr<OperationSpan> parentSpan) {
     auto span = observability ? observability->createChildOperationSpan("VoiceClient.listAllAvailableVoices",
                                                                         std::move(parentSpan))
@@ -210,36 +237,17 @@ Result<std::vector<Voice>> VoiceClient::listAllAvailableVoices(std::shared_ptr<O
     if (!response.isSuccess())
         return Result<std::vector<Voice>>{response.getError().value()};
 
-    auto parsed = parseResponse(response.getValue().value(), "voices");
-    if (!parsed.isSuccess()) {
-        recordSpanError(span, parsed.getError()->getMessage(), "ElevenLabsResponseParseError",
-                        parsed.getError()->getCode());
-        return Result<std::vector<Voice>>{parsed.getError().value()};
+    auto voices = parseVoiceListResponse(response.getValue().value());
+    if (!voices.isSuccess()) {
+        const auto error = voices.getError().value();
+        recordSpanError(span, error.getMessage(), "ElevenLabsResponseParseError", error.getCode());
+        return voices;
     }
-
-    try {
-        const auto &items = parsed.getValue().value().at("voices");
-        if (!items.is_array()) {
-            return Result<std::vector<Voice>>{
-                ServerError(ServerError::InvalidData, "ElevenLabs voices response did not contain an array")};
-        }
-        std::vector<Voice> voices;
-        voices.reserve(items.size());
-        for (const auto &item : items)
-            voices.push_back(Voice{item.at("voice_id").get<std::string>(), item.at("name").get<std::string>()});
-        std::ranges::sort(voices, {}, &Voice::name);
-        if (span) {
-            span->setAttribute("voice.count", static_cast<int64_t>(voices.size()));
-            span->setSuccess();
-        }
-        return Result<std::vector<Voice>>{std::move(voices)};
-    } catch (const nlohmann::json::exception &error) {
-        const auto message = fmt::format("ElevenLabs voices response had an invalid shape: {}", error.what());
-        if (span)
-            span->recordException(error);
-        recordSpanError(span, message, "ElevenLabsResponseShapeError", ServerError::InvalidData);
-        return Result<std::vector<Voice>>{ServerError(ServerError::InvalidData, message)};
+    if (span) {
+        span->setAttribute("voice.count", static_cast<int64_t>(voices.getValue()->size()));
+        span->setSuccess();
     }
+    return voices;
 }
 
 Result<Subscription> VoiceClient::getSubscriptionStatus(std::shared_ptr<OperationSpan> parentSpan) {

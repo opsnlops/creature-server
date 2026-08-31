@@ -3,6 +3,9 @@
 
 #include "spdlog/spdlog.h"
 
+#include <algorithm>
+#include <cctype>
+
 // Disable shadow warnings for MongoDB C++ driver headers (third-party code)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -21,6 +24,7 @@
 #include "server/database.h"
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
+#include "util/UuidValidation.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -70,7 +74,7 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         }
 
         auto bsonSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.json-to-bson", upsertSpan);
-        const auto normalizedJson = jsonObject.dump();
+        const auto normalizedJson = playlistToJson(playlist).dump();
         auto bsonResult =
             JsonParser::jsonStringToBson(normalizedJson, fmt::format("playlist {}", playlist.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
@@ -100,8 +104,14 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
             collectionSpan->setSuccess();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.mongoQuery", upsertSpan);
-        bsoncxx::builder::stream::document filter_builder;
-        filter_builder << "id" << playlist.id;
+        auto uppercaseId = playlist.id;
+        std::ranges::transform(uppercaseId, uppercaseId.begin(),
+                               [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
+        auto filter = bsoncxx::builder::stream::document{} << "id" << bsoncxx::builder::stream::open_document << "$in"
+                                                           << bsoncxx::builder::stream::open_array << playlist.id
+                                                           << uppercaseId << bsoncxx::builder::stream::close_array
+                                                           << bsoncxx::builder::stream::close_document
+                                                           << bsoncxx::builder::stream::finalize;
 
         // REPLACE, not $set (#135). A $set upsert cannot remove a field, so no
         // caller can ever delete one — the failure is silent and returns 200.
@@ -110,7 +120,7 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         mongocxx::options::replace replace_options;
         replace_options.upsert(true);
 
-        collection.replace_one(filter_builder.view(), bsonDoc.view(), replace_options);
+        collection.replace_one(filter.view(), bsonDoc.view(), replace_options);
         if (mongoSpan)
             mongoSpan->setSuccess();
 

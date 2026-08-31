@@ -68,6 +68,19 @@ TEST(PlaylistJson, RoundTripsStrictNeutralCodec) {
     EXPECT_EQ(parsed.getValue()->number_of_items, playlist.number_of_items);
 }
 
+TEST(PlaylistJson, CanonicalizesUppercaseUuids) {
+    const nlohmann::json json = {
+        {"id", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"},
+        {"name", "Loud IDs"},
+        {"number_of_items", 1},
+        {"items", {{{"animation_id", "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}, {"weight", 1}}}}};
+    const auto parsed = playlistFromJson(json);
+    ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
+    EXPECT_EQ(parsed.getValue()->id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    EXPECT_EQ(parsed.getValue()->items[0].animation_id, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    EXPECT_EQ(playlistToJson(parsed.getValue().value())["id"], "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+}
+
 TEST(PlaylistJson, RejectsInvalidAggregateConstraints) {
     nlohmann::json playlist = {{"id", "11111111-1111-4111-8111-111111111111"},
                                {"name", "Weighted"},
@@ -91,6 +104,11 @@ TEST(PlaylistApiContract, StartRequestRequiresAUuidAndKnownFields) {
     ASSERT_TRUE(valid.isSuccess()) << valid.getError()->getMessage();
     EXPECT_EQ(valid.getValue()->playlistId, "11111111-1111-4111-8111-111111111111");
     EXPECT_EQ(valid.getValue()->universe, 1U);
+
+    const auto uppercase =
+        api::startPlaylistRequestFromJson({{"playlist_id", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"}, {"universe", 1}});
+    ASSERT_TRUE(uppercase.isSuccess());
+    EXPECT_EQ(uppercase.getValue()->playlistId, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
 
     EXPECT_FALSE(api::startPlaylistRequestFromJson({{"universe", 1}}).isSuccess());
     EXPECT_FALSE(api::startPlaylistRequestFromJson({{"playlist_id", "not-a-uuid"}, {"universe", 1}}).isSuccess());

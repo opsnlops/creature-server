@@ -786,6 +786,7 @@ add_executable(creature-server-test
         tests/server/FakeWebsocketUtils.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
         tests/server/voice/MusicClient_test.cpp
+        tests/server/voice/VoiceClient_test.cpp
         tests/server/voice/SpeechTrackBuilder_test.cpp
         src/server/voice/SpeechTrackBuilder.cpp
         tests/server/voice/DialogAnimation_test.cpp
@@ -837,6 +838,7 @@ add_executable(creature-server-test
         src/server/voice/DialogCache.cpp
         src/server/voice/DialogClient.cpp
         src/server/voice/MusicClient.cpp
+        src/server/voice/VoiceClient.cpp
         src/server/voice/DialogPipeline.cpp
         src/server/voice/DialogWav.cpp
         tests/server/TestGlobals.cpp
@@ -919,6 +921,7 @@ target_link_libraries(creature-server-test
         Threads::Threads
         OpenSSL::SSL
         OpenSSL::Crypto
+        CURL::libcurl
         ${MONGO_SYSTEM_LIBS}
 )
 
