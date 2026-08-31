@@ -76,5 +76,16 @@ TEST(JobResponses, PreservesJobCreatedWireShape) {
               (nlohmann::json{{"job_id", ANIMATION_ID}, {"job_type", "animation-lip-sync"}, {"message", "Queued"}}));
 }
 
+TEST(JobResponses, PreservesPollingStateWireShape) {
+    const JobStateResponse response{ANIMATION_ID, "voice-file", "running", 0.5F, "", "request-json"};
+
+    EXPECT_EQ(jobStateResponseToJson(response), (nlohmann::json{{"job_id", ANIMATION_ID},
+                                                                {"job_type", "voice-file"},
+                                                                {"status", "running"},
+                                                                {"progress", 0.5F},
+                                                                {"result", ""},
+                                                                {"details", "request-json"}}));
+}
+
 } // namespace
 } // namespace creatures::api

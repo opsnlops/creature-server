@@ -20,7 +20,6 @@
 
 #include "api/SoundRequests.h"
 #include "server/audio/SoundPathResolver.h"
-#include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/SoundRenditionService.h"
 #include "server/ws/service/SoundService.h"
 
@@ -203,8 +202,8 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->addTag("Sounds");
 
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound", getAllSounds, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/sound", "GET", "api/v1/sound", "getAllSounds", "SoundController", request,
@@ -223,7 +222,7 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->summary = "List ad-hoc/generated sound files";
         info->addTag("Sounds");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound/ad-hoc", getAdHocSounds, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/sound/ad-hoc", "GET", "api/v1/sound/ad-hoc", "getAdHocSounds",
@@ -243,11 +242,11 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->summary = "Queue up a sound to play on the next frame";
         info->addTag("Sounds");
 
-        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_409, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/sound/play", playSound, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
@@ -285,9 +284,9 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->addTag("Sounds");
 
         info->addResponse<String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/sound/generate-lipsync/upload", generateLipSyncFromUpload,
              QUERY(String, filename, "filename"), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -448,9 +447,9 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->addResponse<String>(Status::CODE_200, "audio/ogg");
         info->addResponse<String>(Status::CODE_200, "audio/wav");
         info->addResponse<String>(Status::CODE_200, "application/octet-stream");
-        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     /// Shared by GET and HEAD so the two can't disagree about status, headers
     /// or Content-Length (#139).
@@ -514,8 +513,8 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->summary = "Retrieve an ad-hoc generated sound file";
         info->addTag("Sounds");
         info->addResponse<String>(Status::CODE_200, "audio/wav");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     std::shared_ptr<OutgoingResponse> serveAdHocSound(const std::shared_ptr<IncomingRequest> &request,
                                                       const oatpp::String &filename) {
@@ -574,10 +573,10 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
             "(immutable), same as the MP3 rendition.";
         info->addTag("Sounds");
         info->addResponse<String>(Status::CODE_200, "audio/ogg");
-        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_422, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound/shareable/{filename}", getShareableSound, PATH(String, filename),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -596,10 +595,10 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
             "Slack, and every browser (issue #57).";
         info->addTag("Sounds");
         info->addResponse<String>(Status::CODE_200, "audio/mpeg");
-        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_422, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound/mp3/{filename}", getSoundMp3, PATH(String, filename),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -614,8 +613,8 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                             "raw iXML (BWFXML) document. 404 if the sound has no embedded provenance.";
         info->addTag("Sounds");
         info->addResponse<String>(Status::CODE_200, "application/xml");
-        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound/provenance/{filename}", getSoundProvenance, PATH(String, filename),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -666,8 +665,8 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                             "editing. Empty structured fields for plain sounds and pre-dialog-pipeline renders.";
         info->addTag("Sounds");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_403, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_403, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/sound/{filename}/metadata", getSoundMetadata, PATH(String, filename),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -706,8 +705,8 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
         info->addTag("Sounds");
 
         info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/sound/generate-lipsync", generateLipSync,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {

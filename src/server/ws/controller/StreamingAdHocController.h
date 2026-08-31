@@ -17,7 +17,6 @@
 #include "server/voice/StreamingAdHocSession.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/SoundRenditionService.h"
 #include "util/JsonParser.h"
 #include "util/Slugify.h"
@@ -340,7 +339,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         info->summary = "Get one streamed ad-hoc exchange";
         info->addTag("Streaming Ad-Hoc Speech");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchange/{sessionId}", getExchange, PATH(String, sessionId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -387,7 +386,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         info->summary = "Download a whole exchange as one fully-tagged MP3";
         info->addTag("Streaming Ad-Hoc Speech");
         info->addResponse<String>(Status::CODE_200, "audio/mpeg");
-        info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_409, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.mp3", getExchangeAudioMp3,
              PATH(String, sessionId), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -401,7 +400,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         info->summary = "Download a whole exchange as one tagged Ogg/Opus file";
         info->addTag("Streaming Ad-Hoc Speech");
         info->addResponse<String>(Status::CODE_200, "audio/ogg");
-        info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_409, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.ogg", getExchangeAudioOgg,
              PATH(String, sessionId), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -415,7 +414,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         info->summary = "Download a whole exchange as the stitched 17-channel WAV";
         info->addTag("Streaming Ad-Hoc Speech");
         info->addResponse<String>(Status::CODE_200, "audio/wav");
-        info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_409, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.wav", getExchangeAudioWav,
              PATH(String, sessionId), REQUEST(std::shared_ptr<IncomingRequest>, request)) {

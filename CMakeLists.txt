@@ -539,19 +539,14 @@ add_executable(creature-server
         src/server/fixture/FixturePatternTickEvent.cpp
         src/model/Input.h
         src/model/Input.cpp
-        src/server/ws/dto/InputDto.h
-        src/server/ws/dto/InputDto.cpp
         src/model/LogLevel.h
         src/model/LogItem.h
         src/model/Notice.h
         src/model/Notice.cpp
-        src/server/ws/dto/NoticeDto.h
         src/model/Playlist.h
         src/model/Playlist.cpp
         src/model/PlaylistItem.h
         src/model/PlaylistItem.cpp
-        src/server/ws/dto/PlaylistItemDto.h
-        src/server/ws/dto/PlaylistItemDto.cpp
         src/model/PlaylistStatus.h
         src/model/PlaylistStatus.cpp
         src/model/StreamFrame.cpp
@@ -583,9 +578,6 @@ add_executable(creature-server
         src/server/ws/App.h
         src/server/ws/App.cpp
 
-        src/server/ws/dto/OutboundPayloadDto.cpp
-        src/server/ws/dto/SimpleResponseDto.h
-        src/server/ws/dto/StatusDto.h
 
         src/server/ws/ErrorHandler.cpp
         src/server/ws/ErrorHandler.h
@@ -603,7 +595,6 @@ add_executable(creature-server
 
         src/server/ws/dto/websocket/MessageTypes.h
         src/server/ws/dto/websocket/MessageTypes.cpp
-        src/server/ws/dto/websocket/WebSocketMessageDto.h
 
         src/server/ws/messaging/IMessageHandler.h
         src/server/ws/messaging/NoticeMessageHandler.cpp
@@ -854,27 +845,25 @@ add_executable(creature-server-test
         src/model/AnimationMetadata.cpp
         src/model/Playlist.cpp
         src/model/PlaylistItem.cpp
-        src/server/ws/dto/PlaylistItemDto.cpp
         src/model/LogItem.cpp
         src/model/StreamFrame.cpp
         src/server/sensors/SensorReport.cpp
         src/model/VirtualStatusLights.cpp
         tests/api/SoundRequests_test.cpp
         tests/api/AnimationRequests_test.cpp
+        tests/api/DebugResponses_test.cpp
         tests/api/StreamingAdHocContracts_test.cpp
         tests/api/DialogContracts_test.cpp
         tests/api/VoiceContracts_test.cpp
         src/model/PlaylistStatus.cpp
         src/model/Notice.cpp
         src/model/CacheInvalidation.cpp
-        src/server/ws/dto/OutboundPayloadDto.cpp
         src/model/SortBy.h
         src/model/Track.cpp
         src/model/Creature.cpp
         src/model/DmxFixture.cpp
         src/model/DialogScript.cpp
         src/model/Input.cpp
-        src/server/ws/dto/InputDto.cpp
         src/model/StreamFrame.cpp
         src/model/VirtualStatusLights.cpp
         src/model/Stage.cpp

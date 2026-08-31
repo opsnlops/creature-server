@@ -4,7 +4,6 @@
 #include <nlohmann/json.hpp>
 
 #include "model/PlaylistItem.h"
-#include "server/ws/dto/PlaylistItemDto.h"
 
 namespace creatures {
 
@@ -96,16 +95,6 @@ TEST(PlaylistItemJson, RejectsInvalidValuesAndUnknownFields) {
     auto unknown = validPlaylistItemJson();
     unknown["future_field"] = true;
     expectInvalid(unknown, "contains unknown field 'future_field'");
-}
-
-TEST(PlaylistItemLegacyDto, AdaptsWithoutChangingTheNeutralModel) {
-    const PlaylistItem item{ANIMATION_ID, 12};
-    const auto dto = convertToDto(item);
-
-    ASSERT_TRUE(dto);
-    EXPECT_EQ(std::string(dto->animation_id), item.animation_id);
-    EXPECT_EQ(*dto->weight, item.weight);
-    EXPECT_EQ(convertFromDto(dto), item);
 }
 
 } // namespace creatures

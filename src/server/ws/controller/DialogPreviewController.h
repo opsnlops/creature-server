@@ -34,7 +34,6 @@
 #include "server/voice/PcmWavWriter.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/DialogPreviewService.h"
 #include "server/ws/service/SoundRenditionService.h"
 #include "util/JsonParser.h"
@@ -121,9 +120,9 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
         info->addTag("Multi-character Dialog");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/preview/meta", submitPreviewMeta,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -192,7 +191,7 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
         info->pathParams["cache_key"].description = "Hex sha256 of the turns; from /preview/meta or /preview/lookup.";
         info->pathParams["generation_id"].description = "UUID of the specific take; from /preview/meta or /lookup.";
         info->addResponse<oatpp::String>(Status::CODE_200, "audio/wav");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     // oatpp's URL Pattern matcher only checks parts at `/` boundaries — a
     // literal suffix after a path variable (`{var}.wav`) is parsed but never
@@ -255,8 +254,8 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
         info->pathParams["generation_id"].description = "UUID of the specific take; from /preview/meta or /lookup.";
         info->addResponse<oatpp::String>(Status::CODE_200, "audio/mpeg");
         info->addResponse<oatpp::String>(Status::CODE_200, "audio/ogg");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     // Same URL-matcher caveat as getPreviewAudio: the whole last segment is one
     // variable and the extension is stripped server-side.
@@ -348,8 +347,8 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                             "creature's audio appears in its `audio_channel` lane; all other lanes are silent.";
         info->addTag("Multi-character Dialog");
         info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/preview/multichannel", submitPreviewMultichannel,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -403,8 +402,8 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
             "Animation' button as fast (cached) vs slow (will hit ElevenLabs).";
         info->addTag("Multi-character Dialog");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/preview/lookup", lookupPreview,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {

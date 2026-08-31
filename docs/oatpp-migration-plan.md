@@ -295,13 +295,13 @@ header, implementation, controller adaptation, and tests.
 
 ### Phase 4 — Replace REST DTOs
 
-- [ ] Convert request DTOs under `src/server/ws/dto/` to plain structs and
+- [x] Convert request DTOs under `src/server/ws/dto/` to plain structs and
       checked neutral parsers.
-- [ ] Convert response DTOs to domain serializers or plain response structs.
-- [ ] Replace `BODY_DTO` endpoints with raw-body parsing where needed.
-- [ ] Replace `createDtoResponse` with canonical raw JSON responses.
-- [ ] Preserve body-size limits and strict unknown-field behavior.
-- [ ] Preserve request-span creation, HTTP attributes, status recording, and
+- [x] Convert response DTOs to domain serializers or plain response structs.
+- [x] Replace `BODY_DTO` endpoints with raw-body parsing where needed.
+- [x] Replace `createDtoResponse` with canonical raw JSON responses.
+- [x] Preserve body-size limits and strict unknown-field behavior.
+- [x] Preserve request-span creation, HTTP attributes, status recording, and
       exception/error recording.
 - [x] Remove generic oat++ `ListDto` types.
 - [ ] Remove the oat++ JSON object mapper from REST handling.
@@ -365,9 +365,9 @@ boundary no longer exist.
 
 - [x] Add a CI/build check that forbids oat++ references in `src/model`,
       `src/api`, services, messaging business logic, and public voice models.
-- [ ] Delete all temporary `legacy_dto/` adapters.
-- [ ] Delete obsolete DTO conversion functions and DTO-only tests.
-- [ ] Retain or replace golden JSON and validation tests as permanent contract
+- [x] Delete all temporary DTO adapters.
+- [x] Delete obsolete DTO conversion functions and DTO-only tests.
+- [x] Retain or replace golden JSON and validation tests as permanent contract
       coverage.
 - [ ] Remove oatpp-swagger and its packaged resources.
 - [ ] Remove the oat++ object mapper and DTO code-generation dependencies.

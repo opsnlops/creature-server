@@ -20,7 +20,6 @@
 #include "server/voice/MusicGenerationCache.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/DialogMusicService.h"
 #include "server/ws/service/SoundRenditionService.h"
 #include "util/JsonParser.h"
@@ -61,8 +60,8 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
             "completion result contains an immutable MP3 preview URL. The 48 kHz WAV stays server-side.";
         info->addTag("Multi-character Dialog");
         info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_429, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_429, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/music", submitDialogMusic,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -130,7 +129,7 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
         info->summary = "Get an immutable MP3 audition rendition of a generated music take";
         info->addTag("Multi-character Dialog");
         info->addResponse<String>(Status::CODE_200, "audio/mpeg");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/dialog/music/generated/{filename}", getGeneratedMusicMp3, PATH(String, filename),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {

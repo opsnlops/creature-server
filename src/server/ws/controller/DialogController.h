@@ -18,7 +18,6 @@
 #include "server/voice/ScriptCacheKey.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/StatusDto.h"
 #include "util/JsonParser.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
@@ -55,8 +54,8 @@ class DialogController : public oatpp::web::server::api::ApiController, public H
             "stream. Filter for the returned job_id to follow this scene's job.";
         info->addTag("Multi-character Dialog");
         info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog", submitDialog, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(

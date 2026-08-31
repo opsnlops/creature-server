@@ -27,7 +27,6 @@
 #include "server/voice/DialogCache.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/StatusDto.h"
 #include "util/uuidUtils.h"
 #include "util/websocketUtils.h"
 
@@ -89,7 +88,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
         info->summary = "List all saved dialog scripts (newest first by updated_at)";
         info->addTag("Multi-character Dialog");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/dialog/script", listDialogScripts,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -117,8 +116,8 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
         info->addTag("Multi-character Dialog");
         info->pathParams["scriptId"].description = "DialogScript UUID";
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/dialog/script/{scriptId}", getDialogScript, PATH(String, scriptId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -149,8 +148,8 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                             "stored script with its new id.";
         info->addTag("Multi-character Dialog");
         info->addResponse<oatpp::String>(Status::CODE_201, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/script", createDialogScript,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -210,9 +209,9 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
         info->addTag("Multi-character Dialog");
         info->pathParams["scriptId"].description = "DialogScript UUID";
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("PUT", "api/v1/animation/dialog/script/{scriptId}", updateDialogScript, PATH(String, scriptId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -288,9 +287,9 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
         info->addTag("Multi-character Dialog");
         info->pathParams["scriptId"].description = "DialogScript UUID";
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("DELETE", "api/v1/animation/dialog/script/{scriptId}/music", clearDialogBackgroundMusic,
              PATH(String, scriptId), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -485,8 +484,8 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
         info->addTag("Multi-character Dialog");
         info->pathParams["scriptId"].description = "Dialog script UUID";
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("DELETE", "api/v1/animation/dialog/script/{scriptId}/voice", clearAcceptedVoice, PATH(String, scriptId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -552,8 +551,8 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                             "turns in their metadata, so they remain playable and traceable.";
         info->addTag("Multi-character Dialog");
         info->pathParams["scriptId"].description = "DialogScript UUID";
-        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("DELETE", "api/v1/animation/dialog/script/{scriptId}", deleteDialogScript, PATH(String, scriptId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {

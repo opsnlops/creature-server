@@ -9,7 +9,6 @@
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/MetricsService.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
@@ -37,7 +36,7 @@ class MetricsController : public oatpp::web::server::api::ApiController, public 
         info->addTag("Metrics");
 
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/metric/counters", counters, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/metric/counters", "GET", "api/v1/metric/counters", "counters",
