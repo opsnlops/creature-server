@@ -14,6 +14,8 @@ TEST(VoiceContracts, ParsesQueuedRequestWithAbsentTitle) {
     ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
     EXPECT_EQ(result.getValue()->creatureId, CREATURE_ID);
     EXPECT_FALSE(result.getValue()->title.has_value());
+    EXPECT_EQ(makeSoundFileRequestToJson(result.getValue().value()),
+              (nlohmann::json{{"creature_id", CREATURE_ID}, {"text", "Hello there"}}));
 }
 
 TEST(VoiceContracts, RejectsNonUuidAndOversizedText) {
@@ -34,6 +36,15 @@ TEST(VoiceContracts, PreservesCreatureSpeechResponseShape) {
                                     {"sound_file_name", "speech.wav"},
                                     {"transcript_file_name", "speech.txt"},
                                     {"sound_file_size", 1234}}));
+}
+
+TEST(VoiceContracts, PreservesSpeechToTextResponseShape) {
+    const SpeechToTextResponse response{"ok", "Hello there", 1.25, 42.5};
+
+    EXPECT_EQ(speechToTextResponseToJson(response), (nlohmann::json{{"status", "ok"},
+                                                                    {"transcript", "Hello there"},
+                                                                    {"audio_duration_sec", 1.25},
+                                                                    {"transcription_time_ms", 42.5}}));
 }
 
 } // namespace

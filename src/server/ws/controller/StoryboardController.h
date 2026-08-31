@@ -21,7 +21,6 @@
 #include "server/storage/Storage.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/StatusDto.h"
 #include "util/uuidUtils.h"
 #include "util/websocketUtils.h"
 
@@ -97,7 +96,7 @@ class StoryboardController : public oatpp::web::server::api::ApiController,
                             "verbatim — see creature-console/docs/storyboard-server-contract.md for the action shapes.";
         info->addTag("Storyboards");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/storyboard", listStoryboards, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/storyboard", "GET", "api/v1/storyboard", "listStoryboards",
@@ -127,8 +126,8 @@ class StoryboardController : public oatpp::web::server::api::ApiController,
         info->addTag("Storyboards");
         info->pathParams["storyboardId"].description = "Storyboard UUID";
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/storyboard/{storyboardId}", getStoryboard, PATH(String, storyboardId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -159,8 +158,8 @@ class StoryboardController : public oatpp::web::server::api::ApiController,
                             "verbatim — see creature-console/docs/storyboard-server-contract.md.";
         info->addTag("Storyboards");
         info->addResponse<oatpp::String>(Status::CODE_201, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/storyboard", createStoryboard, BODY_STRING(String, body),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -213,9 +212,9 @@ class StoryboardController : public oatpp::web::server::api::ApiController,
         info->addTag("Storyboards");
         info->pathParams["storyboardId"].description = "Storyboard UUID";
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("PUT", "api/v1/storyboard/{storyboardId}", updateStoryboard, PATH(String, storyboardId),
              BODY_STRING(String, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -272,9 +271,9 @@ class StoryboardController : public oatpp::web::server::api::ApiController,
         info->summary = "Delete a storyboard";
         info->addTag("Storyboards");
         info->pathParams["storyboardId"].description = "Storyboard UUID";
-        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("DELETE", "api/v1/storyboard/{storyboardId}", deleteStoryboard, PATH(String, storyboardId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {

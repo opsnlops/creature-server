@@ -8,6 +8,7 @@
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/JobResponses.h"
 #include "api/JsonResponse.h"
 #include "api/VoiceContracts.h"
 #include "server/database.h"
@@ -17,9 +18,6 @@
 
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/JobCreatedDto.h"
-#include "server/ws/dto/MakeSoundFileRequestDto.h"
-#include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/VoiceService.h"
 
 #include "server/metrics/counters.h"
@@ -50,8 +48,8 @@ class VoiceController : public oatpp::web::server::api::ApiController, public Ht
         info->addTag("Voice");
 
         info->addResponse<String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/voice/list-available", getAllVoices, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/voice/list-available", "GET", "api/v1/voice/list-available", "getAllVoices",
@@ -72,8 +70,8 @@ class VoiceController : public oatpp::web::server::api::ApiController, public Ht
         info->addTag("Voice");
 
         info->addResponse<String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/voice/subscription", getSubscriptionStatus,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -97,49 +95,61 @@ class VoiceController : public oatpp::web::server::api::ApiController, public Ht
                             "result is the CreatureSpeechResponse JSON the sync path used to return.";
         info->addTag("Voice");
 
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/voice", makeSoundFile,
-             BODY_DTO(Object<creatures::ws::MakeSoundFileRequestDto>, requestBody),
-             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("POST /api/v1/voice", "POST", "api/v1/voice", "makeSoundFile", "VoiceController", request,
-                           [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                               if (!requestBody || !requestBody->creature_id || requestBody->creature_id->empty() ||
-                                   !requestBody->text || requestBody->text->empty()) {
-                                   return bailHttp(span, Status::CODE_400, "creature_id and text are required");
-                               }
-                               if (span) {
-                                   span->setAttribute("creature.id", std::string(requestBody->creature_id));
-                                   const auto text = std::string(requestBody->text);
-                                   span->setAttribute("speech.text_length", static_cast<int64_t>(text.size()));
-                               }
+    ENDPOINT("POST", "api/v1/voice", makeSoundFile, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "POST /api/v1/voice", "POST", "api/v1/voice", "makeSoundFile", "VoiceController", request,
+            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                const auto body = readRequestBodyLimited(request, api::MAX_VOICE_REQUEST_BYTES, span);
+                const auto parseSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                                      "VoiceController.parseMakeSoundFileRequest", span)
+                                                                : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "voice.file.create");
+                const auto json = JsonParser::parseApiJsonString(body, "voice file request", parseSpan);
+                if (!json.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, json.getError().value());
+                }
+                const auto parsed = api::makeSoundFileRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidVoiceFileRequest", error.getCode());
+                    return bailFromServerError(span, error);
+                }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
+                const auto voiceRequest = parsed.getValue().value();
+                if (span) {
+                    span->setAttribute("creature.id", canonicalUuid(voiceRequest.creatureId));
+                    span->setAttribute("speech.text_length", static_cast<int64_t>(voiceRequest.text.size()));
+                    span->setAttribute("speech.has_title", voiceRequest.title.has_value());
+                }
 
-                               nlohmann::json details = {{"creature_id", std::string(*requestBody->creature_id)},
-                                                         {"text", std::string(*requestBody->text)}};
-                               if (requestBody->title)
-                                   details["title"] = std::string(*requestBody->title);
-                               auto parsed = api::makeSoundFileRequestFromJson(details);
-                               if (!parsed.isSuccess())
-                                   return bailFromServerError(span, parsed.getError().value());
-                               const std::string detailsStr = details.dump();
+                const auto details = api::makeSoundFileRequestToJson(voiceRequest);
+                const std::string detailsStr = details.dump();
 
-                               const std::string jobId = creatures::jobManager->createJob(
-                                   creatures::jobs::JobType::VoiceFile, detailsStr, span);
-                               creatures::jobWorker->queueJob(jobId);
-                               if (span) {
-                                   span->setAttribute("job.id", jobId);
-                                   span->setHttpStatus(202);
-                               }
-                               auto response = JobCreatedDto::createShared();
-                               response->job_id = jobId.c_str();
-                               response->job_type = "voice-file";
-                               response->message =
-                                   "Voice file job created. Listen for job-progress and job-complete WebSocket "
-                                   "messages on this job_id, or poll GET /api/v1/job/{job_id}.";
-                               return createDtoResponse(Status::CODE_202, response);
-                           });
+                const std::string jobId =
+                    creatures::jobManager->createJob(creatures::jobs::JobType::VoiceFile, detailsStr, span);
+                creatures::jobWorker->queueJob(jobId);
+                if (span) {
+                    span->setAttribute("job.id", jobId);
+                    span->setHttpStatus(202);
+                }
+                const api::JobCreatedResponse response{
+                    jobId, "voice-file",
+                    "Voice file job created. Listen for job-progress and job-complete WebSocket "
+                    "messages on this job_id, or poll GET /api/v1/job/{job_id}."};
+                return jsonResponse(span, Status::CODE_202, api::jobCreatedResponseToJson(response));
+            });
     }
 };
 

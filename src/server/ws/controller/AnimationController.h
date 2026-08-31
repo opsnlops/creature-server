@@ -73,9 +73,9 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->summary = "List all of the animations";
         info->addTag("Animations");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation", listAllAnimations, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("REST call to listAllAnimations");
@@ -98,7 +98,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->summary = "List ad-hoc animations stored in the TTL collection";
         info->addTag("Animations");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc", listAdHocAnimations,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -120,9 +120,9 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->summary = "Get an ad-hoc animation by id";
         info->addTag("Animations");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
         info->pathParams["animationId"].description = "Ad-hoc animation ID";
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc/{animationId}", getAdHocAnimation, PATH(String, animationId),
@@ -150,9 +150,9 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->summary = "Get an animation by id";
         info->addTag("Animations");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
         info->pathParams["animationId"].description = "Animation ID in the form of a UUID";
     }
     ENDPOINT("GET", "api/v1/animation/{animationId}", getAnimation, PATH(String, animationId),
@@ -183,10 +183,10 @@ class AnimationController : public oatpp::web::server::api::ApiController,
             "Queues a background job to derive per-creature lip sync from the animation's multitrack audio.";
         info->addTag("Animations");
         info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_422, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/generate-lipsync", generateLipSyncForAnimation,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -282,9 +282,9 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->summary = "Create or update an animation in the database";
         info->addTag("Animations");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_413, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_413, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation", upsertAnimation, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         debug("new animation uploaded via REST API");
@@ -310,10 +310,10 @@ class AnimationController : public oatpp::web::server::api::ApiController,
     ENDPOINT_INFO(deleteAnimation) {
         info->summary = "Delete an animation and all of its tracks";
         info->addTag("Animations");
-        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
         info->pathParams["animationId"].description = "Animation ID";
     }
     ENDPOINT("DELETE", "api/v1/animation/{animationId}", deleteAnimation, PATH(String, animationId),
@@ -348,10 +348,10 @@ class AnimationController : public oatpp::web::server::api::ApiController,
     ENDPOINT_INFO(playStoredAnimation) {
         info->summary = "Play one animation out of the database on a given universe";
         info->addTag("Animations");
-        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/play", playStoredAnimation, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
@@ -418,10 +418,10 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->summary = "Interrupt current playback with a new animation (for interactive Zoom meetings!)";
         info->description = "Cancels the current session on the universe and plays the given animation instead.";
         info->addTag("Animations");
-        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/interrupt", interruptAnimation,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -513,8 +513,8 @@ class AnimationController : public oatpp::web::server::api::ApiController,
             "Creates a job that synthesizes audio, generates lip sync, stores a temporary animation, and interrupts.";
         info->addTag("Animations");
         info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc", createAdHocAnimation,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -529,9 +529,9 @@ class AnimationController : public oatpp::web::server::api::ApiController,
             "Creates the same ad-hoc speech job pipeline but skips the final playback. Use the play endpoint later.";
         info->addTag("Animations");
         info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_422, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc/prepare", prepareAdHocAnimation,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -545,12 +545,12 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->description =
             "Loads an ad-hoc animation from the TTL cache and interrupts the current universe without regenerating.";
         info->addTag("Animations");
-        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_409, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_409, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_422, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc/play", playPreparedAdHocAnimation,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {

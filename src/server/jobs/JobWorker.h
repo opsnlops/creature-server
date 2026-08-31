@@ -166,7 +166,7 @@ class JobWorker : public creatures::StoppableThread {
     /**
      * Single-voice TTS of text into a permanent sound file.
      *
-     * Details JSON is a serialized MakeSoundFileRequestDto. Completion result
+     * Details JSON is the neutral MakeSoundFileRequest contract. Completion result
      * is the neutral CreatureSpeechResponse JSON; fires a SoundList cache
      * invalidation on success.
      */

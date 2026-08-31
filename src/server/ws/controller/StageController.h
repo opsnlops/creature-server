@@ -13,6 +13,7 @@
 #include <oatpp/web/protocol/http/outgoing/ResponseFactory.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/JobResponses.h"
 #include "model/CacheInvalidation.h"
 #include "model/Stage.h"
 #include "server/config.h"
@@ -23,8 +24,6 @@
 #include "server/storage/Storage.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/JobCreatedDto.h"
-#include "server/ws/dto/StatusDto.h"
 #include "util/uuidUtils.h"
 #include "util/websocketUtils.h"
 
@@ -107,7 +106,7 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
                             "are preserved verbatim.";
         info->addTag("Stages");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/stage", listStages, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/stage", "GET", "api/v1/stage", "listStages", "StageController", request,
@@ -137,8 +136,8 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
         info->addTag("Stages");
         info->pathParams["stageId"].description = "Stage UUID";
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/stage/{stageId}", getStage, PATH(String, stageId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -168,8 +167,8 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
                             "creature_id plus x/y/z in metres (listener at the origin, +/-5 m) and yaw in degrees.";
         info->addTag("Stages");
         info->addResponse<oatpp::String>(Status::CODE_201, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/stage", createStage, BODY_STRING(String, body),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -222,9 +221,9 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
         info->addTag("Stages");
         info->pathParams["stageId"].description = "Stage UUID";
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("PUT", "api/v1/stage/{stageId}", updateStage, PATH(String, stageId), BODY_STRING(String, body),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -285,8 +284,8 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
         info->addTag("Stages");
         info->pathParams["stageId"].description = "Stage UUID";
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/stage/{stageId}/animations", listStageAnimations, PATH(String, stageId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -357,9 +356,9 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
             "job_id; listen for job-progress and job-complete.";
         info->addTag("Stages");
         info->pathParams["stageId"].description = "Stage UUID";
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/stage/{stageId}/rerender", rerenderStage, PATH(String, stageId), BODY_STRING(String, body),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -423,19 +422,17 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
                     creatures::jobManager->createJob(creatures::jobs::JobType::StageRerender, details.dump(), span);
                 creatures::jobWorker->queueJob(jobId);
 
-                auto response = JobCreatedDto::createShared();
-                response->job_id = jobId.c_str();
-                response->job_type = "stage-rerender";
-                response->message = fmt::format("Re-rendering {} animation(s) against stage '{}'. No audio is "
-                                                "regenerated. Listen for job-progress and job-complete.",
-                                                animationIds.size(), stage.title)
-                                        .c_str();
+                const api::JobCreatedResponse response{
+                    jobId, "stage-rerender",
+                    fmt::format("Re-rendering {} animation(s) against stage '{}'. No audio is regenerated. Listen "
+                                "for job-progress and job-complete.",
+                                animationIds.size(), stage.title)};
                 if (span) {
                     span->setAttribute("job.id", jobId);
                     span->setAttribute("rerender.animation_count", static_cast<int64_t>(animationIds.size()));
                     span->setHttpStatus(202);
                 }
-                return createDtoResponse(Status::CODE_202, response);
+                return jsonResponse(Status::CODE_202, api::jobCreatedResponseToJson(response));
             });
     }
 
@@ -450,8 +447,8 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
             "Returns 202 with a job_id.";
         info->addTag("Stages");
         info->pathParams["animationId"].description = "Animation UUID";
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/{animationId}/rerender", rerenderAnimation, PATH(String, animationId),
              BODY_STRING(String, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -488,16 +485,15 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
                     creatures::jobManager->createJob(creatures::jobs::JobType::StageRerender, details.dump(), span);
                 creatures::jobWorker->queueJob(jobId);
 
-                auto response = JobCreatedDto::createShared();
-                response->job_id = jobId.c_str();
-                response->job_type = "stage-rerender";
-                response->message = "Re-rendering animation motion. No audio is regenerated. Listen for "
-                                    "job-progress and job-complete.";
+                const api::JobCreatedResponse response{
+                    jobId, "stage-rerender",
+                    "Re-rendering animation motion. No audio is regenerated. Listen for job-progress and "
+                    "job-complete."};
                 if (span) {
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);
                 }
-                return createDtoResponse(Status::CODE_202, response);
+                return jsonResponse(Status::CODE_202, api::jobCreatedResponseToJson(response));
             });
     }
 
@@ -505,9 +501,9 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
         info->summary = "Delete a stage";
         info->addTag("Stages");
         info->pathParams["stageId"].description = "Stage UUID";
-        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("DELETE", "api/v1/stage/{stageId}", deleteStage, PATH(String, stageId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {

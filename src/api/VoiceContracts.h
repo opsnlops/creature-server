@@ -23,6 +23,13 @@ struct MakeSoundFileRequest {
     std::string text;
 };
 
+struct SpeechToTextResponse {
+    std::string status;
+    std::string transcript;
+    double audioDurationSec;
+    double transcriptionTimeMs;
+};
+
 inline Result<MakeSoundFileRequest> makeSoundFileRequestFromJson(const nlohmann::json &json) {
     auto fields = json_codec::rejectUnknownFields(json, "voice file request", {"creature_id", "title", "text"});
     if (!fields.isSuccess())
@@ -53,6 +60,13 @@ inline Result<MakeSoundFileRequest> makeSoundFileRequestFromJson(std::string_vie
     }
 }
 
+inline nlohmann::json makeSoundFileRequestToJson(const MakeSoundFileRequest &request) {
+    nlohmann::json json{{"creature_id", request.creatureId}, {"text", request.text}};
+    if (request.title)
+        json["title"] = *request.title;
+    return json;
+}
+
 inline nlohmann::json voiceToJson(const voice::Voice &voice) {
     return {{"voice_id", voice.voiceId}, {"name", voice.name}};
 }
@@ -69,6 +83,13 @@ inline nlohmann::json creatureSpeechResponseToJson(const voice::CreatureSpeechRe
             {"sound_file_name", response.sound_file_name},
             {"transcript_file_name", response.transcript_file_name},
             {"sound_file_size", response.sound_file_size}};
+}
+
+inline nlohmann::json speechToTextResponseToJson(const SpeechToTextResponse &response) {
+    return {{"status", response.status},
+            {"transcript", response.transcript},
+            {"audio_duration_sec", response.audioDurationSec},
+            {"transcription_time_ms", response.transcriptionTimeMs}};
 }
 
 } // namespace creatures::api

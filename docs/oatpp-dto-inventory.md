@@ -47,7 +47,7 @@ transport and messaging, the 15 surviving DTO adapter files, and two HTTP-client
 or compatibility helpers. `src/model`,
 `src/api`, the service layer, and `JobWorker.cpp` remain oat++-free.
 
-## Post-3.45.9 neutral-boundary checkpoint
+## 3.45.10 neutral-boundary checkpoint
 
 The service inventory was re-audited before beginning the next slice. Contrary
 to the release-status shorthand, `AnimationService` was already fully neutral;
@@ -63,7 +63,22 @@ the 0.05% inbound-message sampling strategy.
 `cmake/CheckNeutralFrameworkBoundary.cmake` now runs as a required build target
 and a CTest. It rejects case-insensitive oat++ references in `src/model`,
 `src/api`, every service, `JobWorker`, voice code, and WebSocket messaging. The
-current `src` reference count is 51 files, all outside that enforced boundary.
+`src` reference count at this checkpoint is 51 files, all outside that enforced
+boundary.
+
+## 3.45.11 DTO-removal checkpoint
+
+The final six runtime DTOs (`AudioCachePruneDto`, `JobCreatedDto`,
+`JobStateDto`, `MakeSoundFileRequestDto`, `SpeechToTextDto`, and `StatusDto`)
+now use checked neutral request parsing and explicit JSON response serializers.
+The audit also found nine dead adapter files left behind by earlier vertical
+slices; those adapters and their DTO-only tests have been deleted. No oat++ DTO
+definition remains under `src`.
+
+The only files left in `src/server/ws/dto` are the neutral WebSocket
+`MessageTypes` declarations. That directory is now included in the enforced
+framework-neutral boundary. The current `src` reference count is 36 files,
+confined to controller/transport infrastructure and HTTP compatibility helpers.
 
 ## Domain and model DTOs
 
@@ -77,9 +92,9 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/AnimationMetadata.h` | — | Animation list/detail response and nested input use neutral JSON | Strict model-owned `animationMetadataToJson` / `animationMetadataFromJson` |
 | `src/model/DialogScript.h` | — | REST and job responses use canonical neutral JSON | `dialogScriptToJson`; database-owned `dialogScriptFromJson` |
 | `src/model/DmxFixture.h` | — | REST responses; config input is parsed from raw JSON | Strict model-owned `dmxFixtureToJson` / `dmxFixtureFromJson`; persistence still uses its legacy parser |
-| `src/server/ws/dto/InputDto.h` (moved from `src/model/Input.h`) | `InputDto` | Temporary oat++ adapter for remaining non-Creature nested uses | Strict model-owned `inputToJson` / `inputFromJson` |
-| `src/server/ws/dto/NoticeDto.h` (moved from `src/model/Notice.h`) | `NoticeDto` | Temporary oat++ adapter for inbound and outbound WebSocket notices | Strict model-owned `noticeToJson` / `noticeFromJson` |
-| `src/server/ws/dto/PlaylistItemDto.h` (moved from `src/model/PlaylistItem.h`) | `PlaylistItemDto` | Temporary oat++ adapter for nested playlist input/response | Strict model-owned `playlistItemToJson` / `playlistItemFromJson` |
+| `src/model/Input.h` | — | Framework-neutral nested input model | Strict model-owned `inputToJson` / `inputFromJson`; obsolete adapter removed |
+| `src/model/Notice.h` | — | Framework-neutral inbound and outbound WebSocket notice | Strict model-owned `noticeToJson` / `noticeFromJson`; obsolete adapter removed |
+| `src/model/PlaylistItem.h` | — | Framework-neutral nested playlist input/response | Strict model-owned `playlistItemToJson` / `playlistItemFromJson`; obsolete adapter removed |
 | `src/model/PlaylistStatus.h` | — | REST and outbound status payloads | Strict model-owned `playlistStatusToJson` / `playlistStatusFromJson` |
 | `src/model/Sound.h` | — | Sound lists, ad-hoc summaries, and heavy metadata response | Model-owned `soundToJson`; nested timing/cue serializers preserve the wire shape and omit empty heavy arrays |
 | `src/model/Stage.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned placement and audio keys | `stageToJson`; database-owned `stageFromJson` |
@@ -133,7 +148,7 @@ should derive `count` from the final item vector when serializing.
 |---|---|---|
 | `api/DialogContracts.h` | `AcceptVoiceTakeRequest` | Strict bounded dialog take acceptance |
 | `api/SoundRequests.h` | `GenerateLipSyncRequest`, `PlaySoundRequest` | Strict bounded lip-sync and playback requests |
-| `MakeSoundFileRequestDto.h` | `MakeSoundFileRequestDto` | Voice generation/job input |
+| `api/VoiceContracts.h` | `MakeSoundFileRequest` | Strict, bounded voice generation/job input |
 | `api/AnimationRequests.h` | `PlayAnimationRequest`, `RegenerateAnimationLipSyncRequest`, `CreateAdHocAnimationRequest`, `TriggerAdHocAnimationRequest` | Strict bounded animation control and ad-hoc speech requests |
 | `api/FixtureRequests.h` | `SetFixtureUniverseRequest`, `TriggerFixturePatternRequest` | Strict fixture universe/pattern-trigger requests |
 
@@ -173,36 +188,30 @@ contracts, and `DialogScript` responses use `dialogScriptToJson`. The obsolete
 and validation DTO adapters have been removed. The five controllers still use
 oat++ only for route declaration and byte transport pending the transport phase.
 
-### Validation and generic response DTOs
+### Validation and generic responses
 
 | File | DTO classes | Direction |
 |---|---|---|
 | `api/DialogContracts.h` | `DialogScriptValidationResponse` | Neutral response |
-| `FixtureConfigValidationDto.h` | `FixtureConfigValidationDto` | Response |
-| `JobCreatedDto.h` | `JobCreatedDto` | Response |
-| `JobStateDto.h` | `JobStateDto` | REST response |
-| `SimpleResponseDto.h` | `SimpleResponseDto` | Response |
-| `SpeechToTextDto.h` | `SpeechToTextResponseDto` | Response |
-| `StatusDto.h` | `StatusDto` | Legacy service-level success/error adapter |
+| `api/FixtureResponses.h` | `FixtureConfigValidationResponse` | Neutral response |
+| `api/JobResponses.h` | `JobCreatedResponse`, `JobStateResponse` | Neutral responses |
+| `api/VoiceContracts.h` | `SpeechToTextResponse` | Neutral response |
+| `api/JsonResponse.h` | `StatusResponse` | Canonical neutral status response |
+| `api/DebugResponses.h` | `AudioCachePruneResponse` | Neutral response |
 
 The controller-level canonical status contract is now framework-neutral:
 `api::StatusResponse`, `makeStatusResponse`, and `statusResponseToJson` live in
 `src/api/JsonResponse.h`. `HttpResponseHelpers` emits that JSON directly and no
-longer constructs `StatusDto`. Remaining `StatusDto` references describe legacy
-Swagger error responses or belong to resource slices that have not yet migrated.
+longer constructs an oat++ status DTO. Swagger error declarations now document
+their raw JSON response body without importing a DTO adapter.
 
 ## WebSocket DTOs
-
-### Outbound and shared messages
-
-| File | DTO classes | Payload/use |
-|---|---|---|
-| `WebSocketMessageDto.h` | `WebSocketMessageDto<T>` | Legacy generic `{command, payload}` envelope for remaining oat++ messages |
 
 `src/api/WebSocketEnvelope.h` now renders the framework-neutral outbound
 `{command, payload}` envelope. Cache invalidation, notice, playlist status,
 server log, virtual-status-light, creature-activity, idle-state, counter/runtime,
-and job broadcasts use it; all unused outbound oat++ wrappers have been removed.
+and job broadcasts use it; all unused outbound oat++ wrappers, including the
+generic `WebSocketMessageDto`, have been removed.
 
 ### Inbound command DTOs
 

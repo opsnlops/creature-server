@@ -28,7 +28,6 @@
 #include "server/voice/ScriptCacheKey.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/StatusDto.h"
 #include "util/JsonParser.h"
 #include "util/Slugify.h"
 
@@ -84,8 +83,8 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
         info->addTag("Multi-character Dialog");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/voice/accept", acceptVoiceTake,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {

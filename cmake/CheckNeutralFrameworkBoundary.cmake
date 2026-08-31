@@ -6,6 +6,7 @@ set(NEUTRAL_ROOTS
     "${SOURCE_ROOT}/src/api"
     "${SOURCE_ROOT}/src/model"
     "${SOURCE_ROOT}/src/server/voice"
+    "${SOURCE_ROOT}/src/server/ws/dto"
     "${SOURCE_ROOT}/src/server/ws/messaging"
     "${SOURCE_ROOT}/src/server/ws/service"
 )

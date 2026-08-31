@@ -5,7 +5,6 @@
 #include <nlohmann/json.hpp>
 
 #include "model/Input.h"
-#include "server/ws/dto/InputDto.h"
 
 namespace creatures {
 
@@ -111,18 +110,6 @@ TEST(InputJson, RejectsInvalidRangesAndUnknownFields) {
     auto unknown = validInputJson();
     unknown["future_field"] = true;
     expectInvalid(unknown, "contains unknown field 'future_field'");
-}
-
-TEST(InputLegacyDto, AdaptsWithoutChangingTheNeutralModel) {
-    const Input input{"beak", 5, 1, 5};
-    const auto dto = convertToDto(input);
-
-    ASSERT_TRUE(dto);
-    EXPECT_EQ(std::string(dto->name), input.name);
-    EXPECT_EQ(*dto->slot, input.slot);
-    EXPECT_EQ(*dto->width, input.width);
-    EXPECT_EQ(*dto->joystick_axis, input.joystick_axis);
-    EXPECT_EQ(convertFromDto(dto), input);
 }
 
 } // namespace creatures

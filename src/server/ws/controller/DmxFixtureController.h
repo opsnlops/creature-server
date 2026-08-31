@@ -46,7 +46,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
         info->summary = "List all DMX fixtures";
         info->addTag("Fixtures");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/fixture", getAllFixtures,
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
@@ -67,8 +67,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
         info->summary = "Get one DMX fixture by id";
         info->addTag("Fixtures");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
     }
     ENDPOINT("GET", "api/v1/fixture/{fixtureId}", getFixture, PATH(String, fixtureId),
@@ -95,8 +95,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                             "type, channel_offset, channels.";
         info->addTag("Fixtures");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/fixture", upsertFixture,
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
@@ -122,8 +122,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
     ENDPOINT_INFO(deleteFixture) {
         info->summary = "Delete a DMX fixture";
         info->addTag("Fixtures");
-        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
     }
     ENDPOINT("DELETE", "api/v1/fixture/{fixtureId}", deleteFixture, PATH(String, fixtureId),
@@ -168,8 +168,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                             "lookup map. Survives server restart.";
         info->addTag("Fixtures");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
     }
     ENDPOINT("PUT", "api/v1/fixture/{fixtureId}/universe", setFixtureUniverse, PATH(String, fixtureId),
@@ -216,8 +216,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
                             "have an assigned universe (`PUT /api/v1/fixture/{id}/universe`).";
         info->addTag("Fixtures");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
         info->pathParams["patternId"].description = "Pattern UUID (must exist on the fixture)";
     }
@@ -279,8 +279,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
             "preempts: if a live session is active for this fixture, the preview is refused with a 400.";
         info->addTag("Fixtures");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
     }
     ENDPOINT("POST", "api/v1/fixture/{fixtureId}/pattern/preview", previewFixturePattern, PATH(String, fixtureId),
@@ -344,8 +344,8 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
             "hold their previous live value (or default to 0 on the first call).";
         info->addTag("Fixtures");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
     }
     ENDPOINT("POST", "api/v1/fixture/{fixtureId}/live", setFixtureLive, PATH(String, fixtureId),
@@ -397,7 +397,7 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
         info->summary = "Clear a fixture's DMX universe assignment";
         info->addTag("Fixtures");
         info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
         info->pathParams["fixtureId"].description = "Fixture UUID";
     }
     ENDPOINT("DELETE", "api/v1/fixture/{fixtureId}/universe", clearFixtureUniverse, PATH(String, fixtureId),

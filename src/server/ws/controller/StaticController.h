@@ -13,7 +13,6 @@
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/StatusDto.h"
 
 namespace creatures ::ws {
 
@@ -61,7 +60,7 @@ class StaticController : public oatpp::web::server::api::ApiController, public H
         info->summary = "Returns OK if the server is healthy";
         info->addTag("System");
 
-        info->addResponse<Object<StatusDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/health", health, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/health", "GET", "api/v1/health", "health", "StaticController", request,

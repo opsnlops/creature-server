@@ -6,12 +6,11 @@
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/VoiceContracts.h"
 #include "server/namespace-stuffs.h"
 #include "server/voice/WhisperLipSyncProcessor.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/SpeechToTextDto.h"
-#include "server/ws/dto/StatusDto.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
 
@@ -37,7 +36,7 @@ class SpeechToTextController : public oatpp::web::server::api::ApiController,
                             "Returns the transcribed text. Used by creature-listener to offload "
                             "STT from the Pi to the server's faster CPU.";
         info->addTag("Speech-to-Text");
-        info->addResponse<Object<SpeechToTextResponseDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/stt/transcribe", transcribeAudio, BODY_STRING(String, body),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
@@ -74,8 +73,9 @@ class SpeechToTextController : public oatpp::web::server::api::ApiController,
                 info("STT request: {:.1f}s of audio ({} samples, {} bytes)", durationSec, numSamples, bodySize);
 
                 if (span) {
-                    span->setAttribute("audio.duration_sec", fmt::format("{:.1f}", durationSec));
+                    span->setAttribute("audio.duration_ms", static_cast<int64_t>(durationSec * 1000.0F));
                     span->setAttribute("audio.samples", static_cast<int64_t>(numSamples));
+                    span->setAttribute("audio.bytes", static_cast<int64_t>(bodySize));
                 }
 
                 // Transcribe using the shared whisper context
@@ -97,21 +97,17 @@ class SpeechToTextController : public oatpp::web::server::api::ApiController,
 
                 auto transcript = transcribeResult.getValue().value();
 
-                auto response = SpeechToTextResponseDto::createShared();
-                response->status = "ok";
-                response->transcript = transcript.c_str();
-                response->audio_duration_sec = static_cast<double>(durationSec);
-                response->transcription_time_ms = elapsedMs;
+                const api::SpeechToTextResponse response{"ok", transcript, static_cast<double>(durationSec), elapsedMs};
 
                 if (span) {
                     span->setAttribute("transcript.length", static_cast<int64_t>(transcript.size()));
-                    span->setAttribute("transcription.time_ms", fmt::format("{:.0f}", elapsedMs));
+                    span->setAttribute("transcription.time_ms", static_cast<int64_t>(elapsedMs));
                     span->setHttpStatus(200);
                 }
 
                 info("STT complete in {:.0f}ms: \"{}\"", elapsedMs, transcript);
 
-                return createDtoResponse(Status::CODE_200, response);
+                return jsonResponse(span, Status::CODE_200, api::speechToTextResponseToJson(response));
             });
     }
 };

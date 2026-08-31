@@ -10,13 +10,12 @@
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/JobResponses.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobState.h"
 #include "server/namespace-stuffs.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/JobStateDto.h"
-#include "server/ws/dto/StatusDto.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
 
@@ -46,39 +45,41 @@ class JobController : public oatpp::web::server::api::ApiController, public Http
                             "created by one of the async endpoints. Primarily for polling clients (e.g. the CLI). "
                             "404 if the job id is unknown (never existed or already cleaned up).";
         info->addTag("Jobs");
-        info->pathParams["jobId"].description = "UUID of the job, from the JobCreatedDto returned at submission.";
-        info->addResponse<Object<JobStateDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
+        info->pathParams["jobId"].description = "UUID returned when the background job was submitted.";
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/job/{jobId}", getJob, PATH(String, jobId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/job/{jobId}", "GET", "api/v1/job/{jobId}", "getJob", "JobController", request,
                            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
                                const std::string id = jobId ? std::string(*jobId) : std::string();
-                               if (id.empty()) {
-                                   return bailHttp(span, Status::CODE_400, "jobId is required");
+                               if (!isUuidShape(id)) {
+                                   return bailHttp(span, Status::CODE_400, "jobId must be a UUID");
                                }
+                               if (span)
+                                   span->setAttribute("job.id", canonicalUuid(id));
                                auto jobStateOpt = creatures::jobManager->getJob(id);
                                if (!jobStateOpt) {
                                    return bailHttp(span, Status::CODE_404, fmt::format("job '{}' not found", id));
                                }
                                const auto &jobState = *jobStateOpt;
 
-                               auto dto = JobStateDto::createShared();
-                               dto->job_id = jobState.jobId.c_str();
-                               dto->job_type = creatures::jobs::toString(jobState.jobType).c_str();
-                               dto->status = creatures::jobs::toString(jobState.status).c_str();
-                               dto->progress = jobState.progress;
-                               dto->result = jobState.result.c_str();
-                               dto->details = jobState.details.c_str();
+                               const api::JobStateResponse response{jobState.jobId,
+                                                                    creatures::jobs::toString(jobState.jobType),
+                                                                    creatures::jobs::toString(jobState.status),
+                                                                    jobState.progress,
+                                                                    jobState.result,
+                                                                    jobState.details};
 
                                if (span) {
-                                   span->setAttribute("job.id", id);
                                    span->setAttribute("job.type", creatures::jobs::toString(jobState.jobType));
                                    span->setAttribute("job.status", creatures::jobs::toString(jobState.status));
+                                   span->setAttribute("job.progress_percent",
+                                                      static_cast<int64_t>(jobState.progress * 100.0F));
                                    span->setHttpStatus(200);
                                }
-                               return createDtoResponse(Status::CODE_200, dto);
+                               return jsonResponse(span, Status::CODE_200, api::jobStateResponseToJson(response));
                            });
     }
 };
