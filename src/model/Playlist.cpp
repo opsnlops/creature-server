@@ -8,6 +8,7 @@
 #include "model/JsonCodec.h"
 #include "model/Playlist.h"
 #include "model/PlaylistItem.h"
+#include "util/UuidValidation.h"
 #include "util/helpers.h"
 
 namespace creatures {
@@ -24,7 +25,7 @@ nlohmann::json playlistToJson(const Playlist &playlist) {
     nlohmann::json items = nlohmann::json::array();
     for (const auto &item : playlist.items)
         items.push_back(playlistItemToJson(item));
-    return {{"id", playlist.id},
+    return {{"id", isUuidShape(playlist.id) ? canonicalUuid(playlist.id) : playlist.id},
             {"name", playlist.name},
             {"items", std::move(items)},
             {"number_of_items", static_cast<uint32_t>(playlist.items.size())}};
@@ -57,7 +58,7 @@ Result<Playlist> playlistFromJson(const nlohmann::json &json, std::string_view p
         }
 
         Playlist playlist;
-        playlist.id = id.getValue().value();
+        playlist.id = canonicalUuid(id.getValue().value());
         playlist.name = name.getValue().value();
         playlist.number_of_items = numberOfItems.getValue().value();
         playlist.items.reserve(items.size());
@@ -66,7 +67,7 @@ Result<Playlist> playlistFromJson(const nlohmann::json &json, std::string_view p
             auto item = playlistItemFromJson(items[index], fmt::format("{}.items[{}]", path, index));
             if (!item.isSuccess())
                 return forwardPlaylistError(item);
-            if (!animationIds.emplace(item.getValue()->animation_id).second) {
+            if (!animationIds.emplace(canonicalUuid(item.getValue()->animation_id)).second) {
                 return json_codec::invalid<Playlist>(
                     fmt::format("{}.items[{}].animation_id must not duplicate an earlier item", path, index));
             }

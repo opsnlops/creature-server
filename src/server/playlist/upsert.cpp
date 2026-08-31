@@ -10,9 +10,11 @@
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/exception/exception.hpp>
 #include <bsoncxx/json.hpp>
+#include <bsoncxx/types.hpp>
 
 #include <mongocxx/client.hpp>
 #include <mongocxx/exception/bulk_write_exception.hpp>
+#include <mongocxx/options/find.hpp>
 
 #pragma GCC diagnostic pop
 
@@ -21,6 +23,7 @@
 #include "server/database.h"
 #include "util/JsonParser.h"
 #include "util/ObservabilityManager.h"
+#include "util/UuidValidation.h"
 
 #include "server/namespace-stuffs.h"
 
@@ -70,6 +73,11 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         }
 
         auto bsonSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.json-to-bson", upsertSpan);
+        // Canonicalize the playlist's own identity while retaining the exact
+        // lookup spelling of referenced animations. Animation persistence is
+        // still case-sensitive for legacy records; the API serializer can emit
+        // those references lowercase without silently rewriting storage.
+        jsonObject["id"] = playlist.id;
         const auto normalizedJson = jsonObject.dump();
         auto bsonResult =
             JsonParser::jsonStringToBson(normalizedJson, fmt::format("playlist {}", playlist.id), bsonSpan);
@@ -99,9 +107,32 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         if (collectionSpan)
             collectionSpan->setSuccess();
 
-        auto mongoSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.mongoQuery", upsertSpan);
-        bsoncxx::builder::stream::document filter_builder;
-        filter_builder << "id" << playlist.id;
+        auto lookupSpan =
+            creatures::observability->createChildOperationSpan("upsertPlaylist.findCanonicalId", upsertSpan);
+        if (lookupSpan)
+            lookupSpan->setAttribute("database.operation", "find");
+        const auto idPattern = fmt::format("^{}$", playlist.id);
+        auto compatibilityFilter = bsoncxx::builder::stream::document{} << "id"
+                                                                        << bsoncxx::types::b_regex{idPattern, "i"}
+                                                                        << bsoncxx::builder::stream::finalize;
+        mongocxx::options::find compatibilityOptions;
+        compatibilityOptions.limit(2);
+        bool foundStoredId = false;
+        for (const auto &candidate : collection.find(compatibilityFilter.view(), compatibilityOptions)) {
+            (void)candidate;
+            if (foundStoredId) {
+                const auto errorMessage =
+                    fmt::format("Multiple playlist records differ only by UUID casing: {}", playlist.id);
+                recordSpanError(lookupSpan, errorMessage, "CaseFoldCollision", ServerError::InvalidData);
+                recordSpanError(upsertSpan, errorMessage, "CaseFoldCollision", ServerError::InvalidData);
+                return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            foundStoredId = true;
+        }
+        if (lookupSpan) {
+            lookupSpan->setAttribute("database.matched_count", static_cast<int64_t>(foundStoredId));
+            lookupSpan->setSuccess();
+        }
 
         // REPLACE, not $set (#135). A $set upsert cannot remove a field, so no
         // caller can ever delete one — the failure is silent and returns 200.
@@ -110,9 +141,21 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         mongocxx::options::replace replace_options;
         replace_options.upsert(true);
 
-        collection.replace_one(filter_builder.view(), bsonDoc.view(), replace_options);
+        auto mongoSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.mongoQuery", upsertSpan);
         if (mongoSpan)
+            mongoSpan->setAttribute("database.operation", "replace_one");
+        // Reuse the case-insensitive filter for the write. If two callers race
+        // while canonicalizing an uppercase record, the second still matches
+        // the lowercase replacement instead of upserting a duplicate.
+        const auto writeResult = collection.replace_one(compatibilityFilter.view(), bsonDoc.view(), replace_options);
+        if (mongoSpan) {
+            if (writeResult) {
+                mongoSpan->setAttribute("database.matched_count", static_cast<int64_t>(writeResult->matched_count()));
+                mongoSpan->setAttribute("database.modified_count", static_cast<int64_t>(writeResult->modified_count()));
+                mongoSpan->setAttribute("database.upserted", writeResult->upserted_id().has_value());
+            }
             mongoSpan->setSuccess();
+        }
 
         info("Playlist upserted in the database: {}", playlist.id);
         if (upsertSpan) {

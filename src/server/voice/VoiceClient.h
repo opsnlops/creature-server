@@ -43,6 +43,9 @@ struct Voice {
     std::string name;
 };
 
+Result<std::vector<Voice>> parseVoiceListResponse(const std::string &response,
+                                                  const std::shared_ptr<OperationSpan> &span = nullptr);
+
 class VoiceClient {
   public:
     explicit VoiceClient(std::string apiKey);

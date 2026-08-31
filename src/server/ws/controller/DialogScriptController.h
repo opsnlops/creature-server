@@ -128,11 +128,12 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 if (!scriptId || !isUuidShape(std::string(*scriptId))) {
                     return bailHttp(span, Status::CODE_400, "scriptId must be a UUID");
                 }
+                const auto id = canonicalUuid(std::string(*scriptId));
                 if (span)
-                    span->setAttribute("script.id", std::string(*scriptId));
+                    span->setAttribute("script.id", id);
                 auto opSpan =
                     creatures::observability->createChildOperationSpan("DialogScriptController.getDialogScript", span);
-                auto result = creatures::db->getDialogScript(std::string(*scriptId), opSpan);
+                auto result = creatures::db->getDialogScript(id, opSpan);
                 if (!result.isSuccess()) {
                     return bailFromServerError(span, result.getError().value());
                 }
@@ -215,68 +216,69 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
     }
     ENDPOINT("PUT", "api/v1/animation/dialog/script/{scriptId}", updateDialogScript, PATH(String, scriptId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint(
-            "PUT /api/v1/animation/dialog/script/{scriptId}", "PUT", "api/v1/animation/dialog/script/{scriptId}",
-            "updateDialogScript", "DialogScriptController", request,
-            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (!scriptId || !isUuidShape(std::string(*scriptId))) {
-                    return bailHttp(span, Status::CODE_400, "scriptId must be a UUID");
-                }
-                if (span)
-                    span->setAttribute("script.id", std::string(*scriptId));
-                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
+        return runEndpoint("PUT /api/v1/animation/dialog/script/{scriptId}", "PUT",
+                           "api/v1/animation/dialog/script/{scriptId}", "updateDialogScript", "DialogScriptController",
+                           request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                               if (!scriptId || !isUuidShape(std::string(*scriptId))) {
+                                   return bailHttp(span, Status::CODE_400, "scriptId must be a UUID");
+                               }
+                               const auto id = canonicalUuid(std::string(*scriptId));
+                               if (span)
+                                   span->setAttribute("script.id", id);
+                               const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
 
-                auto opSpan = creatures::observability->createChildOperationSpan(
-                    "DialogScriptController.updateDialogScript", span);
-                const std::scoped_lock mutationLock(creatures::script::mutationMutex());
+                               auto opSpan = creatures::observability->createChildOperationSpan(
+                                   "DialogScriptController.updateDialogScript", span);
+                               const std::scoped_lock mutationLock(creatures::script::mutationMutex());
 
-                // Must exist — PUT replaces, not creates-via-id.
-                auto existing = creatures::db->getDialogScript(std::string(*scriptId), opSpan);
-                if (!existing.isSuccess()) {
-                    return bailFromServerError(span, existing.getError().value());
-                }
-                const auto existingScript = existing.getValue().value();
-                const auto createdAt = existingScript.created_at;
+                               // Must exist — PUT replaces, not creates-via-id.
+                               auto existing = creatures::db->getDialogScript(id, opSpan);
+                               if (!existing.isSuccess()) {
+                                   return bailFromServerError(span, existing.getError().value());
+                               }
+                               const auto existingScript = existing.getValue().value();
+                               const auto createdAt = existingScript.created_at;
 
-                nlohmann::json parsed;
-                try {
-                    parsed = buildScriptJsonForUpsert(body, std::string(*scriptId), createdAt, nowMillis());
-                    // Accepted music and the accepted voice take are server-managed:
-                    // an ordinary script edit must neither forge one nor detach one.
-                    // Carrying them forward is now load-bearing rather than tidy —
-                    // the upsert replaces the document (#134), so anything not
-                    // written here is gone.
-                    const auto existingJson = creatures::dialogScriptToJson(existingScript);
-                    if (existingScript.background_music) {
-                        parsed["background_music"] = existingJson["background_music"];
-                    } else {
-                        parsed.erase("background_music");
-                    }
-                    if (existingScript.accepted_voice) {
-                        parsed["accepted_voice"] = existingJson["accepted_voice"];
-                    } else {
-                        parsed.erase("accepted_voice");
-                    }
-                } catch (const nlohmann::json::exception &e) {
-                    return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
-                } catch (const std::exception &e) {
-                    return bailHttp(span, Status::CODE_400, e.what());
-                }
+                               nlohmann::json parsed;
+                               try {
+                                   parsed = buildScriptJsonForUpsert(body, id, createdAt, nowMillis());
+                                   // Accepted music and the accepted voice take are server-managed:
+                                   // an ordinary script edit must neither forge one nor detach one.
+                                   // Carrying them forward is now load-bearing rather than tidy —
+                                   // the upsert replaces the document (#134), so anything not
+                                   // written here is gone.
+                                   const auto existingJson = creatures::dialogScriptToJson(existingScript);
+                                   if (existingScript.background_music) {
+                                       parsed["background_music"] = existingJson["background_music"];
+                                   } else {
+                                       parsed.erase("background_music");
+                                   }
+                                   if (existingScript.accepted_voice) {
+                                       parsed["accepted_voice"] = existingJson["accepted_voice"];
+                                   } else {
+                                       parsed.erase("accepted_voice");
+                                   }
+                               } catch (const nlohmann::json::exception &e) {
+                                   return bailHttp(span, Status::CODE_400, fmt::format("Invalid JSON: {}", e.what()));
+                               } catch (const std::exception &e) {
+                                   return bailHttp(span, Status::CODE_400, e.what());
+                               }
 
-                auto parseResult = creatures::Database::parseDialogScriptJson(parsed, opSpan);
-                if (!parseResult.isSuccess()) {
-                    return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
-                }
+                               auto parseResult = creatures::Database::parseDialogScriptJson(parsed, opSpan);
+                               if (!parseResult.isSuccess()) {
+                                   return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
+                               }
 
-                auto result = creatures::storage::publishDialogScript(
-                    creatures::dialogScriptToJson(parseResult.getValue().value()).dump(), opSpan);
-                if (!result.isSuccess()) {
-                    return bailFromServerError(span, result.getError().value());
-                }
-                if (span)
-                    span->setHttpStatus(200);
-                return jsonResponse(span, Status::CODE_200, creatures::dialogScriptToJson(result.getValue().value()));
-            });
+                               auto result = creatures::storage::publishDialogScript(
+                                   creatures::dialogScriptToJson(parseResult.getValue().value()).dump(), opSpan);
+                               if (!result.isSuccess()) {
+                                   return bailFromServerError(span, result.getError().value());
+                               }
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return jsonResponse(span, Status::CODE_200,
+                                                   creatures::dialogScriptToJson(result.getValue().value()));
+                           });
     }
 
     ENDPOINT_INFO(clearDialogBackgroundMusic) {
@@ -300,7 +302,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 if (!scriptId || !isUuidShape(std::string(*scriptId))) {
                     return bailHttp(span, Status::CODE_400, "scriptId must be a UUID");
                 }
-                const std::string id = *scriptId;
+                const auto id = canonicalUuid(std::string(*scriptId));
                 if (span)
                     span->setAttribute("script.id", id);
 
@@ -499,7 +501,10 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 auto opSpan = creatures::observability->createChildOperationSpan(
                     "DialogScriptController.clearAcceptedVoice", span);
                 const std::scoped_lock mutationLock(creatures::script::mutationMutex());
-                auto existing = creatures::db->getDialogScript(std::string(*scriptId), opSpan);
+                const auto id = canonicalUuid(std::string(*scriptId));
+                if (span)
+                    span->setAttribute("script.id", id);
+                auto existing = creatures::db->getDialogScript(id, opSpan);
                 if (!existing.isSuccess()) {
                     return bailFromServerError(span, existing.getError().value());
                 }
@@ -562,12 +567,13 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                                if (!scriptId || !isUuidShape(std::string(*scriptId))) {
                                    return bailHttp(span, Status::CODE_400, "scriptId must be a UUID");
                                }
+                               const auto id = canonicalUuid(std::string(*scriptId));
                                if (span)
-                                   span->setAttribute("script.id", std::string(*scriptId));
+                                   span->setAttribute("script.id", id);
                                auto opSpan = creatures::observability->createChildOperationSpan(
                                    "DialogScriptController.deleteDialogScript", span);
                                const std::scoped_lock mutationLock(creatures::script::mutationMutex());
-                               auto result = creatures::storage::deleteDialogScript(std::string(*scriptId), opSpan);
+                               auto result = creatures::storage::deleteDialogScript(id, opSpan);
                                if (!result.isSuccess()) {
                                    return bailFromServerError(span, result.getError().value());
                                }

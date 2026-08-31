@@ -3,6 +3,7 @@
 #include "model/PlaylistItem.h"
 
 #include "model/JsonCodec.h"
+#include "util/UuidValidation.h"
 #include "util/helpers.h"
 
 namespace creatures {
@@ -16,7 +17,9 @@ template <typename T> Result<PlaylistItem> forwardError(const Result<T> &result)
 } // namespace
 
 nlohmann::json playlistItemToJson(const PlaylistItem &playlistItem) {
-    return {{"animation_id", playlistItem.animation_id}, {"weight", playlistItem.weight}};
+    return {{"animation_id", isUuidShape(playlistItem.animation_id) ? canonicalUuid(playlistItem.animation_id)
+                                                                    : playlistItem.animation_id},
+            {"weight", playlistItem.weight}};
 }
 
 Result<PlaylistItem> playlistItemFromJson(const nlohmann::json &json, std::string_view path) {
@@ -38,6 +41,9 @@ Result<PlaylistItem> playlistItemFromJson(const nlohmann::json &json, std::strin
         return json_codec::invalid<PlaylistItem>(fmt::format("{}.weight must be greater than zero", path));
     }
 
+    // Keep lookup spelling intact in the model. Existing animation documents
+    // may predate canonical UUID writes and Mongo equality is case-sensitive.
+    // The wire serializer above still emits the preferred lowercase form.
     return Result<PlaylistItem>{PlaylistItem{animationIdResult.getValue().value(), weightResult.getValue().value()}};
 }
 
