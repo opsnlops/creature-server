@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include <fmt/format.h>
@@ -20,6 +22,7 @@
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
 #include "server/namespace-stuffs.h"
+#include "server/script/DialogScriptMutationLock.h"
 #include "server/storage/Storage.h"
 #include "server/voice/DialogCache.h"
 #include "server/voice/ScriptCacheKey.h"
@@ -127,6 +130,7 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
 
                 auto opSpan =
                     creatures::observability->createChildOperationSpan("DialogVoiceController.acceptVoiceTake", span);
+                const std::scoped_lock mutationLock(creatures::script::mutationMutex());
 
                 auto existing = creatures::db->getDialogScript(scriptId, opSpan);
                 if (!existing.isSuccess()) {
@@ -155,6 +159,9 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                     if (span)
                         span->setHttpStatus(200);
                     return jsonResponse(span, Status::CODE_200, creatures::dialogScriptToJson(script));
+                }
+                if (script.updated_at == std::numeric_limits<int64_t>::max()) {
+                    return bailHttp(span, Status::CODE_400, "dialog script updated_at cannot advance");
                 }
 
                 // Promotion moves the take's 17-channel WAV out of the ad-hoc
@@ -205,7 +212,11 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                     details["dialog_cache_key"] = cacheKey;
                     const std::string jobId = creatures::jobManager->createJob(
                         creatures::jobs::JobType::VoiceTakeAccept, details.dump(), span);
-                    creatures::jobWorker->queueJob(jobId);
+                    if (!creatures::jobWorker->tryQueueJob(jobId)) {
+                        creatures::jobManager->failJob(jobId, "dialog job queue is full");
+                        return bailHttp(span, Status::CODE_429,
+                                        "Eight dialog jobs are already queued or running; try again shortly");
+                    }
                     if (span) {
                         span->setAttribute("job.id", jobId);
                         span->setHttpStatus(202);

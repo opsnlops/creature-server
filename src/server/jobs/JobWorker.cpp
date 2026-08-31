@@ -7,6 +7,7 @@
 #include <cmath>
 #include <filesystem>
 #include <future>
+#include <limits>
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
@@ -29,6 +30,7 @@
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
+#include "server/script/DialogScriptMutationLock.h"
 #include "server/storage/Storage.h"
 #include "server/voice/DialogAnimation.h"
 #include "server/voice/DialogCache.h"
@@ -158,7 +160,7 @@ Result<void> prewarmAudioCache(const std::filesystem::path &wavPath, std::shared
 } // namespace
 
 JobWorker::JobWorker(std::shared_ptr<JobManager> jobManager)
-    : jobManager_(jobManager), jobQueue_(std::make_shared<moodycamel::BlockingConcurrentQueue<std::string>>()),
+    : jobManager_(jobManager), jobQueue_(std::make_shared<moodycamel::BlockingConcurrentQueue<QueuedJob>>()),
       musicJobQueue_(std::make_shared<moodycamel::BlockingConcurrentQueue<std::string>>()) {
     info("JobWorker created");
 }
@@ -178,8 +180,21 @@ void JobWorker::shutdown() {
 }
 
 void JobWorker::queueJob(const std::string &jobId) {
-    jobQueue_->enqueue(jobId);
+    jobQueue_->enqueue(QueuedJob{jobId, false});
     info("Job {} queued for processing", jobId);
+}
+
+bool JobWorker::tryQueueJob(const std::string &jobId) {
+    auto current = jobsInFlight_.load(std::memory_order_relaxed);
+    while (current < kMaxJobsInFlight) {
+        if (jobsInFlight_.compare_exchange_weak(current, current + 1, std::memory_order_acq_rel,
+                                                std::memory_order_relaxed)) {
+            jobQueue_->enqueue(QueuedJob{jobId, true});
+            info("Job {} queued for processing", jobId);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool JobWorker::tryQueueMusicJob(const std::string &jobId) {
@@ -199,13 +214,16 @@ void JobWorker::run() {
     setThreadName("JobWorker");
     info("JobWorker thread started");
 
-    std::string jobId;
+    QueuedJob queuedJob;
 
     while (!stop_requested.load()) {
         // Wait for a job with a timeout so we can check stop_requested
-        if (jobQueue_->wait_dequeue_timed(jobId, std::chrono::milliseconds(500))) {
-            info("Dequeued job {} for processing", jobId);
-            processJob(jobId);
+        if (jobQueue_->wait_dequeue_timed(queuedJob, std::chrono::milliseconds(500))) {
+            info("Dequeued job {} for processing", queuedJob.jobId);
+            processJob(queuedJob.jobId);
+            if (queuedJob.countsTowardLimit) {
+                jobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
+            }
         }
     }
 
@@ -2552,11 +2570,10 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                                     static_cast<double>(animation.metadata.milliseconds_per_frame) / 1000.0,
                                 persistence == DialogPersistence::AdHoc ? "adhoc" : "permanent",
                                 autoplayed};
-    jobManager_->completeJob(jobState.jobId, api::dialogJobResultToJson(result).dump());
     if (jobState.span) {
         jobState.span->setAttribute("dialog.animation_id", animation.id);
-        jobState.span->setSuccess();
     }
+    jobManager_->completeJob(jobState.jobId, api::dialogJobResultToJson(result).dump());
     info("Dialog job {} succeeded: animation_id={}", jobState.jobId, animation.id);
     broadcastCompletion(jobState.jobId);
 }
@@ -2633,11 +2650,10 @@ void JobWorker::handleDialogPreviewJob(JobState &jobState) {
         ws::DialogPreviewService::makeMetaResponse(outcome.generation, outcome.cacheKey, outcome.cached);
 
     updateProgress(1.0f);
-    jobManager_->completeJob(jobState.jobId, api::dialogPreviewMetaResponseToJson(response).dump());
     if (jobState.span) {
         jobState.span->setAttribute("dialog.generation_id", outcome.generation.generationId);
-        jobState.span->setSuccess();
     }
+    jobManager_->completeJob(jobState.jobId, api::dialogPreviewMetaResponseToJson(response).dump());
     info("Dialog preview job {} succeeded: generation_id={}", jobState.jobId, outcome.generation.generationId);
     broadcastCompletion(jobState.jobId);
 }
@@ -2709,12 +2725,11 @@ void JobWorker::handleDialogPreviewExportJob(JobState &jobState) {
     api::DialogPreviewExportResult result{fileName, outcome.generation.generationId, outcome.cacheKey};
 
     updateProgress(1.0f);
-    jobManager_->completeJob(jobState.jobId, api::dialogPreviewExportResultToJson(result).dump());
     if (jobState.span) {
         jobState.span->setAttribute("dialog.generation_id", outcome.generation.generationId);
         jobState.span->setAttribute("export.file_name", fileName);
-        jobState.span->setSuccess();
     }
+    jobManager_->completeJob(jobState.jobId, api::dialogPreviewExportResultToJson(result).dump());
     info("Dialog preview export job {} succeeded: file_name={}", jobState.jobId, fileName);
     broadcastCompletion(jobState.jobId);
 }
@@ -2879,6 +2894,37 @@ void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
             fmt::format("could not store the accepted take durably: {}", madeDurable.getError().value().getMessage()));
     }
 
+    // Serialize the final read/move/publish transaction with synchronous
+    // edits and accept/clear requests. Assembly stays outside the lock: it can
+    // take minutes for a long scene and does not mutate the script.
+    const std::scoped_lock mutationLock(creatures::script::mutationMutex());
+    auto latest = creatures::db->getDialogScript(scriptId, jobState.span);
+    if (!latest.isSuccess()) {
+        return failJob(latest.getError().value().getMessage());
+    }
+    script = latest.getValue().value();
+    currentKey = creatures::voice::computeScriptCacheKey(script.turns, jobState.span);
+    if (!currentKey.isSuccess()) {
+        return failJob(currentKey.getError().value().getMessage());
+    }
+    if (currentKey.getValue().value() != cacheKey) {
+        return failJob("the script's turns changed while this take's audio was being assembled — re-audition and "
+                       "accept again");
+    }
+    if (script.accepted_voice && script.accepted_voice->generation_id == generationId) {
+        if (jobState.span) {
+            jobState.span->setAttribute("voice.sound_file", script.accepted_voice->sound_file);
+            jobState.span->setAttribute("voice.accept_outcome", "already_accepted");
+        }
+        updateProgress(1.0f);
+        jobManager_->completeJob(jobState.jobId, creatures::dialogScriptToJson(script).dump());
+        broadcastCompletion(jobState.jobId);
+        return;
+    }
+    if (script.updated_at == std::numeric_limits<int64_t>::max()) {
+        return failJob("dialog script updated_at cannot advance");
+    }
+
     // Demote after the assembly, so a failure above leaves the previously
     // accepted take whole rather than half-moved.
     if (script.accepted_voice && script.accepted_voice->generation_id != generationId) {
@@ -2917,11 +2963,11 @@ void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
     // Same body the synchronous accept returns, so a client that got a 202
     // ends up with exactly what a 200 would have given it.
     updateProgress(1.0f);
-    jobManager_->completeJob(jobState.jobId, creatures::dialogScriptToJson(published.getValue().value()).dump());
     if (jobState.span) {
         jobState.span->setAttribute("voice.sound_file", accepted.sound_file);
-        jobState.span->setSuccess();
+        jobState.span->setAttribute("voice.accept_outcome", "accepted");
     }
+    jobManager_->completeJob(jobState.jobId, creatures::dialogScriptToJson(published.getValue().value()).dump());
     info("accepted voice take {} for script '{}' -> {} (job {})", generationId, script.title, accepted.sound_file,
          jobState.jobId);
     broadcastCompletion(jobState.jobId);

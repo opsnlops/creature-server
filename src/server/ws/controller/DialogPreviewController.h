@@ -160,7 +160,11 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 const auto detailsStr = api::dialogPreviewRequestToJson(neutralRequest).dump();
                 const std::string jobId =
                     creatures::jobManager->createJob(creatures::jobs::JobType::DialogPreview, detailsStr, span);
-                creatures::jobWorker->queueJob(jobId);
+                if (!creatures::jobWorker->tryQueueJob(jobId)) {
+                    creatures::jobManager->failJob(jobId, "dialog job queue is full");
+                    return bailHttp(span, Status::CODE_429,
+                                    "Eight dialog jobs are already queued or running; try again shortly");
+                }
                 if (span) {
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);
@@ -362,7 +366,11 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 const auto detailsStr = api::dialogPreviewRequestToJson(parsed.getValue().value()).dump();
                 const std::string jobId =
                     creatures::jobManager->createJob(creatures::jobs::JobType::DialogPreviewExport, detailsStr, span);
-                creatures::jobWorker->queueJob(jobId);
+                if (!creatures::jobWorker->tryQueueJob(jobId)) {
+                    creatures::jobManager->failJob(jobId, "dialog job queue is full");
+                    return bailHttp(span, Status::CODE_429,
+                                    "Eight dialog jobs are already queued or running; try again shortly");
+                }
                 if (span) {
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);

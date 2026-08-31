@@ -49,6 +49,11 @@ class JobWorker : public creatures::StoppableThread {
      */
     void queueJob(const std::string &jobId);
 
+    /// Reserve a bounded slot on the general worker and queue the job. Returns
+    /// false when eight jobs are already queued/running, so request handlers
+    /// can reject bursts instead of retaining unbounded payloads and paid work.
+    [[nodiscard]] bool tryQueueJob(const std::string &jobId);
+
     /// Reserve one of the bounded music-generation slots and queue the job on
     /// its dedicated worker. Returns false without queueing when both slots are
     /// already queued/running.
@@ -63,12 +68,19 @@ class JobWorker : public creatures::StoppableThread {
     void run() override;
 
   private:
+    struct QueuedJob {
+        std::string jobId;
+        bool countsTowardLimit{false};
+    };
+
     std::shared_ptr<JobManager> jobManager_;
-    std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> jobQueue_;
+    std::shared_ptr<moodycamel::BlockingConcurrentQueue<QueuedJob>> jobQueue_;
     std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> musicJobQueue_;
+    std::atomic<std::size_t> jobsInFlight_{0};
     std::atomic<std::size_t> musicJobsInFlight_{0};
     std::thread musicThread_;
 
+    static constexpr std::size_t kMaxJobsInFlight = 8;
     static constexpr std::size_t kMaxMusicJobsInFlight = 2;
 
     void runMusicJobs();

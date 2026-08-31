@@ -185,7 +185,11 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
                 }
 
-                auto result = creatures::storage::publishDialogScript(parsed.dump(), opSpan);
+                // Persist the parsed model, not the original client document.
+                // This is the allowlist boundary that drops tolerated unknown
+                // fields instead of retaining arbitrary JSON in MongoDB.
+                auto result = creatures::storage::publishDialogScript(
+                    creatures::dialogScriptToJson(parseResult.getValue().value()).dump(), opSpan);
                 if (!result.isSuccess()) {
                     return bailFromServerError(span, result.getError().value());
                 }
@@ -264,7 +268,8 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
                 }
 
-                auto result = creatures::storage::publishDialogScript(parsed.dump(), opSpan);
+                auto result = creatures::storage::publishDialogScript(
+                    creatures::dialogScriptToJson(parseResult.getValue().value()).dump(), opSpan);
                 if (!result.isSuccess()) {
                     return bailFromServerError(span, result.getError().value());
                 }
@@ -396,6 +401,14 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     return jsonResponse(span, Status::CODE_200,
                                         api::dialogScriptValidationResponseToJson(validationResponse));
                 }
+                if (!parsed.is_object()) {
+                    validationResponse.valid = false;
+                    validationResponse.errorMessages.emplace_back("request body must be a JSON object");
+                    if (span)
+                        span->setHttpStatus(200);
+                    return jsonResponse(span, Status::CODE_200,
+                                        api::dialogScriptValidationResponseToJson(validationResponse));
+                }
 
                 // parseDialogScriptJson requires `id` since it's also used by the upsert
                 // path. For validate, the client may not have an id yet (create flow) —
@@ -485,6 +498,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 }
                 auto opSpan = creatures::observability->createChildOperationSpan(
                     "DialogScriptController.clearAcceptedVoice", span);
+                const std::scoped_lock mutationLock(creatures::script::mutationMutex());
                 auto existing = creatures::db->getDialogScript(std::string(*scriptId), opSpan);
                 if (!existing.isSuccess()) {
                     return bailFromServerError(span, existing.getError().value());
@@ -500,6 +514,9 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     if (span)
                         span->setHttpStatus(200);
                     return jsonResponse(span, Status::CODE_200, creatures::dialogScriptToJson(existingScript));
+                }
+                if (existingScript.updated_at == std::numeric_limits<int64_t>::max()) {
+                    return bailHttp(span, Status::CODE_400, "dialog script updated_at cannot advance");
                 }
 
                 // Demote first: if the move fails we would rather keep the

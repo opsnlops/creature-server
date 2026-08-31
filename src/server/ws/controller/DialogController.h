@@ -144,7 +144,11 @@ class DialogController : public oatpp::web::server::api::ApiController, public H
 
                 const std::string jobId =
                     creatures::jobManager->createJob(creatures::jobs::JobType::Dialog, detailsStr, span);
-                creatures::jobWorker->queueJob(jobId);
+                if (!creatures::jobWorker->tryQueueJob(jobId)) {
+                    creatures::jobManager->failJob(jobId, "dialog job queue is full");
+                    return bailHttp(span, Status::CODE_429,
+                                    "Eight dialog jobs are already queued or running; try again shortly");
+                }
 
                 if (span) {
                     span->setAttribute("job.id", jobId);
