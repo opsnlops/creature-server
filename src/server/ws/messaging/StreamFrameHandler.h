@@ -1,9 +1,6 @@
 
 #pragma once
 
-#include <oatpp/core/Types.hpp>
-#include <oatpp/core/macro/component.hpp>
-
 #include "model/StreamFrame.h"
 #include "util/ObservabilityManager.h"
 
@@ -14,6 +11,8 @@ namespace creatures::ws {
 class StreamFrameHandler : public IMessageHandler {
 
   public:
+    using IMessageHandler::IMessageHandler;
+
     bool processMessage(const nlohmann::json &payload, std::string_view message, std::string_view command,
                         std::shared_ptr<SamplingSpan> messageSpan) override;
 
@@ -24,8 +23,6 @@ class StreamFrameHandler : public IMessageHandler {
      * @param frame the frame to stream
      */
     bool stream(StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan);
-
-    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
 
     framenum_t framesStreamed = 0;
 };

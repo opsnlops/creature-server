@@ -47,6 +47,24 @@ transport and messaging, the 15 surviving DTO adapter files, and two HTTP-client
 or compatibility helpers. `src/model`,
 `src/api`, the service layer, and `JobWorker.cpp` remain oat++-free.
 
+## Post-3.45.9 neutral-boundary checkpoint
+
+The service inventory was re-audited before beginning the next slice. Contrary
+to the release-status shorthand, `AnimationService` was already fully neutral;
+Phase 3 is complete across the entire service directory.
+
+The remaining oat++ component lookups in WebSocket message handlers were only
+being used to acquire the application logger. Logger resolution now happens in
+`AppComponent`, at the transport boundary, and `MessageProcessor` passes an
+ordinary `std::shared_ptr<spdlog::logger>` to its handlers. This removes oat++
+from WebSocket messaging business code without changing the 1 ms event loop or
+the 0.05% inbound-message sampling strategy.
+
+`cmake/CheckNeutralFrameworkBoundary.cmake` now runs as a required build target
+and a CTest. It rejects case-insensitive oat++ references in `src/model`,
+`src/api`, every service, `JobWorker`, voice code, and WebSocket messaging. The
+current `src` reference count is 51 files, all outside that enforced boundary.
+
 ## Domain and model DTOs
 
 These are the most important architectural coupling because oat++ declarations
@@ -239,7 +257,7 @@ to search implementations as well as headers.
 | `src/server/logging/CreatureLogSink.h` | Converts `LogItem` and serializes `LogMessage` | Logging cannot depend on the future transport; emit neutral JSON through the existing broadcast seam |
 | `src/util/websocketUtils.cpp` | Serializes notice, invalidation, playlist, and job messages | Natural home for the first neutral outbound envelope helper |
 | `src/server/ws/websocket/ClientConnection.cpp` | Permissive first-pass parsing and error-notice serialization | Replace after neutral inbound envelope/parser exists |
-| `src/server/ws/messaging/*Handler.cpp` | Reparse complete messages through oat++ mappers | Convert per inbound command family |
+| `src/server/ws/messaging/*Handler.cpp` | Receive the retained neutral payload and an explicitly injected logger | Completed; no framework or object-mapper dependency remains |
 
 Controllers, `AppComponent`, error handling, request draining, HEAD support, and
 WebSocket socket/session classes are expected transport coupling and remain out

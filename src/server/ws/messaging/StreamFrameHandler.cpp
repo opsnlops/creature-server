@@ -5,6 +5,7 @@
 #include <optional>
 #include <unordered_set>
 
+#include "StreamFrameHandler.h"
 #include "model/StreamFrame.h"
 #include "server/animation/SessionManager.h"
 #include "server/config/Configuration.h"
@@ -16,9 +17,6 @@
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
 #include "util/helpers.h"
-#include <oatpp/core/macro/component.hpp>
-
-#include "StreamFrameHandler.h"
 
 /**
  * This handler does a lot of heavy lifting. Streaming from the console is one of the most
@@ -191,7 +189,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
 
     if (message.size() > MAX_STREAM_FRAME_MESSAGE_BYTES) {
         const auto errorMessage = fmt::format("StreamFrame message exceeds {} bytes", MAX_STREAM_FRAME_MESSAGE_BYTES);
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (messageSpan) {
             messageSpan->setError(errorMessage);
             messageSpan->setAttribute("error.type", "InvalidStreamFrameEnvelope");
@@ -208,7 +206,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
         const auto frameResult = streamFrameFromJson(payload);
         if (!frameResult.isSuccess()) {
             const auto error = frameResult.getError().value();
-            appLogger->warn("Rejected streamed frame: {}", error.getMessage());
+            logger_->warn("Rejected streamed frame: {}", error.getMessage());
             if (messageSpan) {
                 messageSpan->setError(error.getMessage());
                 messageSpan->setAttribute("websocket.rejection.stage", "payload");
@@ -230,7 +228,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
 
     } catch (const std::bad_cast &e) {
         auto errorMessage = fmt::format("Error (std::bad_cast) while processing a StreamFrame message: {}", e.what());
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (messageSpan) {
             messageSpan->recordException(e);
             messageSpan->setError(errorMessage);
@@ -240,7 +238,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
         }
     } catch (const std::exception &e) {
         auto errorMessage = fmt::format("Error (std::exception) while processing a StreamFrame message: {}", e.what());
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (messageSpan) {
             messageSpan->recordException(e);
             messageSpan->setError(errorMessage);
@@ -250,7 +248,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
         }
     } catch (...) {
         auto errorMessage = "An unknown error happened while processing a StreamFrame message";
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (messageSpan) {
             messageSpan->setError(errorMessage);
             messageSpan->setAttribute("error.type", "unknown");
@@ -267,7 +265,7 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     // `span` may be nullptr if observability is uninitialized — guard every dereference.
     auto span = parentSpan;
 
-    appLogger->trace("Entered StreamFrameHandler::stream()");
+    logger_->trace("Entered StreamFrameHandler::stream()");
 
     // Make sure this creature is in the cache
     std::shared_ptr<Creature> creature;
@@ -281,7 +279,7 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
             span->setAttribute("creature.cache.hit", false);
             span->forceExport();
         }
-        appLogger->debug(" 🛜  creature {} was not found in the cache. Going to the DB...", frame.creature_id);
+        logger_->debug(" 🛜  creature {} was not found in the cache. Going to the DB...", frame.creature_id);
 
         // Create a child span specifically for the database fallback operation
         auto dbFallbackSpan =
@@ -296,21 +294,21 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
 
         auto result = db->getCreature(frame.creature_id, dbFallbackSpan);
         if (!result.isSuccess()) {
+            const auto error = result.getError().value();
             auto errorMessage = fmt::format("Dropping stream frame to {} because it can't be found: {}",
-                                            frame.creature_id, result.getError().value().getMessage());
-            appLogger->warn(errorMessage);
-            if (dbFallbackSpan) {
-                dbFallbackSpan->setError(errorMessage);
-            }
+                                            frame.creature_id, error.getMessage());
+            logger_->warn(errorMessage);
+            recordSpanError(dbFallbackSpan, errorMessage, "CreatureLookupFailed", error.getCode());
             if (span) {
                 span->setError(errorMessage);
-                span->setAttribute("error.type", "NotFound");
-                span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
+                span->setAttribute("error.type", "CreatureLookupFailed");
+                span->setAttribute("error.message", errorMessage);
+                span->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
             }
             return false;
         }
         creature = std::make_shared<Creature>(result.getValue().value());
-        appLogger->debug("creature is now: name: {}, channel_offset: {}", creature->name, creature->channel_offset);
+        logger_->debug("creature is now: name: {}, channel_offset: {}", creature->name, creature->channel_offset);
 
         if (dbFallbackSpan) {
             dbFallbackSpan->setAttribute("creature.name", creature->name);
@@ -324,7 +322,7 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     // Make sure it's valid before we go on
     if (!creature) {
         auto errorMessage = fmt::format("Creature {} was not found in the cache or the database", frame.creature_id);
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (span) {
             span->setError(errorMessage);
             span->setAttribute("error.type", "NotFound");
@@ -341,7 +339,7 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
 
     const auto playlistState = creatures::sessionManager->getPlaylistState(frame.universe);
     if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
-        appLogger->info("Stopping playlist on universe {} for live streaming", frame.universe);
+        logger_->info("Stopping playlist on universe {} for live streaming", frame.universe);
         creatures::sessionManager->stopPlaylist(frame.universe);
     }
 
@@ -381,13 +379,13 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
         eventLoop->scheduleEvent(timeoutEvent);
     }
 
-    // appLogger->debug("Creature: {}, Offset: {}", creature->name, creature->channel_offset);
+    // logger_->debug("Creature: {}, Offset: {}", creature->name, creature->channel_offset);
 
     // Parse this out
     auto frameData = decodeBase64(frame.data);
 
 #ifdef STREAM_FRAME_DEBUG
-    appLogger->debug("Requested frame data: {}", vectorToHexString(frameData));
+    logger_->debug("Requested frame data: {}", vectorToHexString(frameData));
 #endif
 
     auto event = std::make_shared<DMXEvent>(eventLoop->getNextFrameNumber());
@@ -395,7 +393,7 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     event->channelOffset = creature->channel_offset;
     event->data.reserve(frameData.size());
 
-    // appLogger->debug("universe: {}, channelOffset: {}", event->universe, event->channelOffset);
+    // logger_->debug("universe: {}, channelOffset: {}", event->universe, event->channelOffset);
 
     for (uint8_t byte : frameData) {
 

@@ -53,7 +53,7 @@ struct StreamingTTSResult {
  * 6. Connection closes when stream is complete
  *
  * This implementation uses OpenSSL for TLS and manual WebSocket framing
- * since oatpp-openssl is not available in the build.
+ * because the server's HTTP transport does not provide a reusable TLS client.
  */
 class StreamingTTSClient {
   public:
