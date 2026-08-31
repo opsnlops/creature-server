@@ -218,7 +218,9 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
                         : nullptr;
                 auto pruneResult = creatures::audioCache->pruneOrphanedEntries(isDryRun, pruneSpan);
                 if (!pruneResult.isSuccess()) {
-                    return bailHttp(span, Status::CODE_500, pruneResult.getError()->getMessage());
+                    const auto error = pruneResult.getError().value();
+                    recordSpanError(pruneSpan, error.getMessage(), "AudioCachePruneFailure", error.getCode());
+                    return bailFromServerError(span, error);
                 }
                 const auto report = pruneResult.getValue().value();
 
@@ -241,6 +243,10 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
                     pruneSpan->setAttribute("cache.entries_scanned", static_cast<int64_t>(report.entriesScanned));
                     pruneSpan->setAttribute("cache.orphaned_entries", static_cast<int64_t>(report.orphanedEntries));
                     pruneSpan->setAttribute("cache.incomplete_entries", static_cast<int64_t>(report.incompleteEntries));
+                    pruneSpan->setAttribute("cache.temporary_files", static_cast<int64_t>(report.temporaryFiles));
+                    pruneSpan->setAttribute("cache.orphaned_lock_files",
+                                            static_cast<int64_t>(report.orphanedLockFiles));
+                    pruneSpan->setAttribute("cache.removed.count", static_cast<int64_t>(report.removed.size()));
                     pruneSpan->setAttribute("cache.bytes_reclaimed", static_cast<int64_t>(report.bytesReclaimed));
                     pruneSpan->setSuccess();
                 }

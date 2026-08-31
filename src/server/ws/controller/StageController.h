@@ -432,7 +432,8 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
                     span->setAttribute("rerender.animation_count", static_cast<int64_t>(animationIds.size()));
                     span->setHttpStatus(202);
                 }
-                return jsonResponse(Status::CODE_202, api::jobCreatedResponseToJson(response));
+                return HttpResponseHelpers<StageController>::jsonResponse(span, Status::CODE_202,
+                                                                          api::jobCreatedResponseToJson(response));
             });
     }
 
@@ -493,7 +494,8 @@ class StageController : public oatpp::web::server::api::ApiController, public Ht
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);
                 }
-                return jsonResponse(Status::CODE_202, api::jobCreatedResponseToJson(response));
+                return HttpResponseHelpers<StageController>::jsonResponse(span, Status::CODE_202,
+                                                                          api::jobCreatedResponseToJson(response));
             });
     }
 

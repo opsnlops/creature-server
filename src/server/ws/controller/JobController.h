@@ -51,36 +51,37 @@ class JobController : public oatpp::web::server::api::ApiController, public Http
     }
     ENDPOINT("GET", "api/v1/job/{jobId}", getJob, PATH(String, jobId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("GET /api/v1/job/{jobId}", "GET", "api/v1/job/{jobId}", "getJob", "JobController", request,
-                           [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                               const std::string id = jobId ? std::string(*jobId) : std::string();
-                               if (!isUuidShape(id)) {
-                                   return bailHttp(span, Status::CODE_400, "jobId must be a UUID");
-                               }
-                               if (span)
-                                   span->setAttribute("job.id", canonicalUuid(id));
-                               auto jobStateOpt = creatures::jobManager->getJob(id);
-                               if (!jobStateOpt) {
-                                   return bailHttp(span, Status::CODE_404, fmt::format("job '{}' not found", id));
-                               }
-                               const auto &jobState = *jobStateOpt;
+        return runEndpoint(
+            "GET /api/v1/job/{jobId}", "GET", "api/v1/job/{jobId}", "getJob", "JobController", request,
+            [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                const std::string id = jobId ? std::string(*jobId) : std::string();
+                if (!isUuidShape(id)) {
+                    return bailHttp(span, Status::CODE_400, "jobId must be a UUID", nullptr, "InvalidJobId");
+                }
+                if (span)
+                    span->setAttribute("job.id", canonicalUuid(id));
+                auto jobStateOpt = creatures::jobManager->getJob(id);
+                if (!jobStateOpt) {
+                    return bailHttp(span, Status::CODE_404, fmt::format("job '{}' not found", id), nullptr,
+                                    "JobNotFound");
+                }
+                const auto &jobState = *jobStateOpt;
 
-                               const api::JobStateResponse response{jobState.jobId,
-                                                                    creatures::jobs::toString(jobState.jobType),
-                                                                    creatures::jobs::toString(jobState.status),
-                                                                    jobState.progress,
-                                                                    jobState.result,
-                                                                    jobState.details};
+                const api::JobStateResponse response{jobState.jobId,
+                                                     creatures::jobs::toString(jobState.jobType),
+                                                     creatures::jobs::toString(jobState.status),
+                                                     jobState.progress,
+                                                     jobState.result,
+                                                     jobState.details};
 
-                               if (span) {
-                                   span->setAttribute("job.type", creatures::jobs::toString(jobState.jobType));
-                                   span->setAttribute("job.status", creatures::jobs::toString(jobState.status));
-                                   span->setAttribute("job.progress_percent",
-                                                      static_cast<int64_t>(jobState.progress * 100.0F));
-                                   span->setHttpStatus(200);
-                               }
-                               return jsonResponse(span, Status::CODE_200, api::jobStateResponseToJson(response));
-                           });
+                if (span) {
+                    span->setAttribute("job.type", creatures::jobs::toString(jobState.jobType));
+                    span->setAttribute("job.status", creatures::jobs::toString(jobState.status));
+                    span->setAttribute("job.progress_percent", static_cast<int64_t>(jobState.progress * 100.0F));
+                    span->setHttpStatus(200);
+                }
+                return jsonResponse(span, Status::CODE_200, api::jobStateResponseToJson(response));
+            });
     }
 };
 

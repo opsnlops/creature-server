@@ -89,10 +89,9 @@ class SpeechToTextController : public oatpp::web::server::api::ApiController,
                 double elapsedMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
 
                 if (!transcribeResult.isSuccess()) {
-                    if (span) {
-                        span->setError(transcribeResult.getError()->getMessage());
-                    }
-                    return bailFromServerError(span, transcribeResult.getError().value());
+                    const auto error = transcribeResult.getError().value();
+                    recordSpanError(operationSpan, error.getMessage(), "SpeechToTextFailure", error.getCode());
+                    return bailFromServerError(span, error);
                 }
 
                 auto transcript = transcribeResult.getValue().value();
