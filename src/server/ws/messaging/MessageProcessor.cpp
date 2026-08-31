@@ -62,6 +62,7 @@ void MessageProcessor::processIncomingMessage(const nlohmann::json &envelope, st
             span->setAttribute("websocket.envelope.valid", false);
             span->setAttribute("websocket.rejection.stage", "envelope");
             span->setAttribute("websocket.error.type", "InvalidEnvelope");
+            span->setAttribute("error.type", "InvalidEnvelope");
             span->setAttribute("error.message", errorMessage);
             span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
         }
@@ -94,6 +95,7 @@ void MessageProcessor::processIncomingMessage(const nlohmann::json &envelope, st
             span->setAttribute("websocket.command", parsed.command);
             span->setAttribute("websocket.rejection.stage", "dispatch");
             span->setAttribute("websocket.error.type", "UnknownCommand");
+            span->setAttribute("error.type", "UnknownCommand");
             span->setAttribute("error.message", "No handler registered for WebSocket command");
             span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
         }

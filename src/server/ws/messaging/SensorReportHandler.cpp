@@ -45,11 +45,11 @@ bool SensorReportHandler::processMessage(const nlohmann::json &payload, std::str
                 try {
                     creatureName = creatures::creatureCache->get(report.creatureId)->name;
                     if (messageSpan) {
-                        messageSpan->setAttribute("cache.creature.hit", true);
+                        messageSpan->setAttribute("creature.cache.hit", true);
                     }
                 } catch (const std::out_of_range &) {
                     if (messageSpan) {
-                        messageSpan->setAttribute("cache.creature.hit", false);
+                        messageSpan->setAttribute("creature.cache.hit", false);
                     }
                     if (creatures::db) {
                         std::shared_ptr<OperationSpan> operationSpan = messageSpan;

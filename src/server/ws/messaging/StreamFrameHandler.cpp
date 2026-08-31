@@ -53,11 +53,22 @@ std::unordered_map<creatureId_t, framenum_t> streamingDeadlines;
 std::unordered_set<creatureId_t> timeoutEventPending;
 // When each streaming session started, so the session-end span can report a duration
 // (once per session — zero cost on the 50Hz frame path).
-std::unordered_map<creatureId_t, std::chrono::steady_clock::time_point> streamingStartedAt;
+struct StreamingSessionContext {
+    std::chrono::steady_clock::time_point startedAt;
+    universe_t universe;
+    std::string creatureName;
+    std::string triggerTraceId;
+    std::string triggerSpanId;
+};
 
-void markStreamingStarted(const creatureId_t &creatureId) {
+std::unordered_map<creatureId_t, StreamingSessionContext> streamingSessionContexts;
+
+void markStreamingStarted(const creatureId_t &creatureId, universe_t universe, std::string creatureName,
+                          const std::shared_ptr<SamplingSpan> &triggerSpan) {
     std::lock_guard<std::mutex> lock(streamingMutex);
-    streamingStartedAt[creatureId] = std::chrono::steady_clock::now();
+    streamingSessionContexts[creatureId] = {std::chrono::steady_clock::now(), universe, std::move(creatureName),
+                                            triggerSpan ? triggerSpan->getTraceIdHex() : std::string{},
+                                            triggerSpan ? triggerSpan->getSpanIdHex() : std::string{}};
 }
 
 void updateStreamingDeadline(const creatureId_t &creatureId, framenum_t deadline) {
@@ -85,7 +96,7 @@ struct ExpiryDecision {
     enum class Action { alreadyGone, chase, expired };
     Action action;
     framenum_t chaseDeadline{0};
-    std::optional<std::chrono::steady_clock::time_point> startedAt{};
+    std::optional<StreamingSessionContext> sessionContext{};
 };
 
 ExpiryDecision decideExpiry(const creatureId_t &creatureId, framenum_t eventFrame) {
@@ -100,9 +111,9 @@ ExpiryDecision decideExpiry(const creatureId_t &creatureId, framenum_t eventFram
     }
 
     ExpiryDecision decision{ExpiryDecision::Action::expired};
-    if (auto startIt = streamingStartedAt.find(creatureId); startIt != streamingStartedAt.end()) {
-        decision.startedAt = startIt->second;
-        streamingStartedAt.erase(startIt);
+    if (auto contextIt = streamingSessionContexts.find(creatureId); contextIt != streamingSessionContexts.end()) {
+        decision.sessionContext.emplace(std::move(contextIt->second));
+        streamingSessionContexts.erase(contextIt);
     }
     streamingDeadlines.erase(it);
     timeoutEventPending.erase(creatureId);
@@ -151,24 +162,47 @@ class StreamingTimeoutEvent : public EventBase<StreamingTimeoutEvent> {
                                : nullptr;
         if (timeoutSpan) {
             timeoutSpan->setAttribute("creature.id", creatureId_);
-            timeoutSpan->setAttribute("creature.name",
-                                      creatures::ws::CreatureService::resolveCreatureName(creatureId_));
             timeoutSpan->setAttribute("streaming.session.chase_count", static_cast<int64_t>(chaseCount_));
-            if (decision.startedAt.has_value()) {
+            if (decision.sessionContext.has_value()) {
+                timeoutSpan->setAttribute("creature.name", decision.sessionContext->creatureName);
                 auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                      std::chrono::steady_clock::now() - decision.startedAt.value())
+                                      std::chrono::steady_clock::now() - decision.sessionContext->startedAt)
                                       .count();
                 timeoutSpan->setAttribute("streaming.session.duration_ms", static_cast<int64_t>(durationMs));
+                timeoutSpan->setAttribute("streaming.universe",
+                                          static_cast<int64_t>(decision.sessionContext->universe));
+                if (!decision.sessionContext->triggerTraceId.empty())
+                    timeoutSpan->setAttribute("trigger.trace_id", decision.sessionContext->triggerTraceId);
+                if (!decision.sessionContext->triggerSpanId.empty())
+                    timeoutSpan->setAttribute("trigger.span_id", decision.sessionContext->triggerSpanId);
             }
         }
 
-        creatures::ws::CreatureService::setActivityState(
-            {creatureId_}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
-            creatures::runtime::ActivityState::Stopped, "" /*sessionId*/, timeoutSpan);
-        info("Streaming timeout reached for creature {} at frame {}", creatureId_, this->frameNumber);
-        creatures::ws::CreatureService::startIdleIfNeeded(creatureId_, timeoutSpan);
-        if (timeoutSpan) {
-            timeoutSpan->setSuccess();
+        try {
+            if (timeoutSpan)
+                timeoutSpan->setAttribute("streaming.timeout.phase", "activity_stopped");
+            creatures::ws::CreatureService::setActivityState(
+                {creatureId_}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
+                creatures::runtime::ActivityState::Stopped, "" /*sessionId*/, timeoutSpan);
+            info("Streaming timeout reached for creature {} at frame {}", creatureId_, this->frameNumber);
+            if (timeoutSpan)
+                timeoutSpan->setAttribute("streaming.timeout.phase", "idle_restart");
+            creatures::ws::CreatureService::startIdleIfNeeded(creatureId_, timeoutSpan);
+            if (timeoutSpan)
+                timeoutSpan->setSuccess();
+        } catch (const std::exception &error) {
+            const auto errorMessage = fmt::format("Streaming timeout side effect failed: {}", error.what());
+            spdlog::error(errorMessage);
+            if (timeoutSpan)
+                timeoutSpan->recordException(error);
+            recordSpanError(timeoutSpan, errorMessage, "StreamingTimeoutFailure", ServerError::InternalError);
+            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+        } catch (...) {
+            constexpr std::string_view errorMessage = "Streaming timeout side effect failed with an unknown error";
+            spdlog::error(errorMessage);
+            recordSpanError(timeoutSpan, std::string(errorMessage), "StreamingTimeoutFailure",
+                            ServerError::InternalError);
+            return Result<framenum_t>{ServerError(ServerError::InternalError, std::string(errorMessage))};
         }
         return Result<framenum_t>{this->frameNumber};
     }
@@ -347,20 +381,37 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     // once-per-session transition, so give it a real span — the sampled frame span is
     // null 99.95% of the time and would leave the activity write an orphan root.
     if (creatures::ws::CreatureService::markStreamingIfNew(frame.creature_id)) {
-        markStreamingStarted(frame.creature_id);
-        auto startSpan = creatures::observability
-                             ? creatures::observability->createOperationSpan("StreamFrameHandler.streamingStarted")
-                             : nullptr;
+        if (span)
+            span->forceExport();
+        auto startSpan =
+            creatures::observability
+                ? (span ? creatures::observability->createChildOperationSpan(
+                              "StreamFrameHandler.streamingStarted", std::static_pointer_cast<OperationSpan>(span))
+                        : creatures::observability->createOperationSpan("StreamFrameHandler.streamingStarted"))
+                : nullptr;
+        markStreamingStarted(frame.creature_id, frame.universe, creature->name, span);
         if (startSpan) {
             startSpan->setAttribute("creature.id", frame.creature_id);
             startSpan->setAttribute("creature.name", creature->name);
             startSpan->setAttribute("streaming.universe", static_cast<int64_t>(frame.universe));
         }
-        creatures::ws::CreatureService::setActivityState(
-            {frame.creature_id}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
-            creatures::runtime::ActivityState::Running, "" /*sessionId*/, startSpan);
-        if (startSpan) {
-            startSpan->setSuccess();
+        try {
+            creatures::ws::CreatureService::setActivityState(
+                {frame.creature_id}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
+                creatures::runtime::ActivityState::Running, "" /*sessionId*/, startSpan);
+            if (startSpan) {
+                startSpan->setSuccess();
+            }
+        } catch (const std::exception &error) {
+            const auto errorMessage = fmt::format("Failed to start streaming activity: {}", error.what());
+            if (startSpan)
+                startSpan->recordException(error);
+            recordSpanError(startSpan, errorMessage, "StreamingStartFailure", ServerError::InternalError);
+            throw;
+        } catch (...) {
+            recordSpanError(startSpan, "Failed to start streaming activity with an unknown error",
+                            "StreamingStartFailure", ServerError::InternalError);
+            throw;
         }
     }
 
@@ -409,9 +460,9 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     metrics->incrementFramesStreamed();
 
     // Keep some metrics internally
-    framesStreamed += 1;
-    if (framesStreamed % 500 == 0) {
-        debug("streamed {} frames", framesStreamed);
+    const auto streamedCount = framesStreamed.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (streamedCount % 500 == 0) {
+        debug("streamed {} frames", streamedCount);
     }
 
     if (span) {

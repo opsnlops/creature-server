@@ -1,6 +1,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include "model/StreamFrame.h"
 #include "util/ObservabilityManager.h"
 
@@ -24,7 +26,7 @@ class StreamFrameHandler : public IMessageHandler {
      */
     bool stream(StreamFrame frame, std::shared_ptr<SamplingSpan> parentSpan);
 
-    framenum_t framesStreamed = 0;
+    std::atomic<framenum_t> framesStreamed{0};
 };
 
 } // namespace creatures::ws
