@@ -116,6 +116,8 @@ StreamingAdHocSession::~StreamingAdHocSession() {
             span_->setSuccess();
         } else if (lifecycleFailed_.load()) {
             span_->setAttribute("session.outcome", "failed");
+            recordSpanError(span_, "Streaming session failed before terminal completion", "FailedStreamingSession",
+                            ServerError::InternalError);
         } else {
             span_->setAttribute("session.outcome", "abandoned");
             recordSpanError(span_, "Streaming session ended without finish", "AbandonedSession", ServerError::Conflict);
@@ -140,6 +142,10 @@ bool StreamingAdHocSession::tryRenewClientLease(std::chrono::steady_clock::time_
         std::chrono::duration_cast<std::chrono::nanoseconds>(STREAMING_AD_HOC_IDLE_TIMEOUT).count();
     const bool absoluteExpired = nowNs >= absoluteDeadlineNs;
     if (idleExpired || absoluteExpired) {
+        if (span_) {
+            span_->setAttribute("session.cancellation.reason", idleExpired ? "idle_timeout" : "absolute_timeout");
+            span_->setAttribute("session.age.ms", (nowNs - createdAtNs_) / 1'000'000);
+        }
         cancelled_.store(true, std::memory_order_release);
         finished_.store(true, std::memory_order_release);
         renderCv_.notify_one();
@@ -172,6 +178,10 @@ bool StreamingAdHocSession::tryExpire(std::chrono::steady_clock::time_point now)
     if (!idleExpired && !absoluteExpired)
         return false;
 
+    if (span_) {
+        span_->setAttribute("session.cancellation.reason", idleExpired ? "idle_timeout" : "absolute_timeout");
+        span_->setAttribute("session.age.ms", (nowNs - createdAtNs_) / 1'000'000);
+    }
     cancelled_.store(true, std::memory_order_release);
     finished_.store(true, std::memory_order_release);
     renderCv_.notify_one();
@@ -338,15 +348,32 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
                                                            MAX_STREAMING_AD_HOC_TOTAL_TEXT_BYTES))};
     }
     if (outstandingSentenceWork_.load(std::memory_order_acquire) >= MAX_PENDING_STREAMING_AD_HOC_SENTENCES) {
+        if (triggerSpan) {
+            triggerSpan->setAttribute("admission.outcome", "rejected");
+            triggerSpan->setAttribute("admission.scope", "session");
+            triggerSpan->setAttribute("admission.limit", static_cast<int64_t>(MAX_PENDING_STREAMING_AD_HOC_SENTENCES));
+        }
         return Result<void>{
             ServerError(ServerError::Conflict, fmt::format("Streaming session already has {} pending sentences",
                                                            MAX_PENDING_STREAMING_AD_HOC_SENTENCES))};
     }
     auto renderReservation = tryReserveGlobalRender();
     if (!renderReservation) {
+        if (triggerSpan) {
+            triggerSpan->setAttribute("admission.outcome", "rejected");
+            triggerSpan->setAttribute("admission.scope", "global");
+            triggerSpan->setAttribute("admission.limit", static_cast<int64_t>(MAX_GLOBAL_STREAMING_AD_HOC_RENDERS));
+        }
         return Result<void>{
             ServerError(ServerError::Conflict, fmt::format("Streaming speech already has {} queued or active renders",
                                                            MAX_GLOBAL_STREAMING_AD_HOC_RENDERS))};
+    }
+    if (triggerSpan) {
+        triggerSpan->setAttribute("admission.outcome", "accepted");
+        triggerSpan->setAttribute("admission.session.pending",
+                                  static_cast<int64_t>(outstandingSentenceWork_.load(std::memory_order_relaxed) + 1));
+        triggerSpan->setAttribute("admission.global.reserved",
+                                  static_cast<int64_t>(globalReservedRenders.load(std::memory_order_relaxed)));
     }
     touchClientActivity();
     if (!fullText_.empty()) {
@@ -572,6 +599,15 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
             newTrack.frames = std::move(encodedFrames);
             animation.tracks = {newTrack};
 
+            // Expiration can race the one already-running render after queued
+            // work is discarded. Do not persist or dispatch that stale result.
+            if (cancelled_.load(std::memory_order_acquire)) {
+                lifecycleFailed_.store(true);
+                recordSpanError(sentenceSpan, "Streaming render cancelled after session expiry", "RenderCancelled",
+                                ServerError::Conflict);
+                return Result<Animation>{ServerError(ServerError::Conflict, "Streaming render cancelled")};
+            }
+
             // 9. Insert into DB. Storage facade pairs the insert + invalidations
             // so each sentence's clients learn about the new artifact ASAP
             // (issue #11).
@@ -687,10 +723,21 @@ void StreamingAdHocSession::playbackThreadFunc() {
             } catch (const std::exception &exception) {
                 lifecycleFailed_.store(true);
                 error("Sentence {} background pipeline threw: {}", sentenceIndex, exception.what());
+                if (sentenceSpan)
+                    sentenceSpan->recordException(exception);
+                recordSpanError(
+                    sentenceSpan, exception.what(),
+                    cancelled_.load(std::memory_order_acquire) ? "RenderCancelled" : "BackgroundPipelineException",
+                    cancelled_.load(std::memory_order_acquire) ? ServerError::Conflict : ServerError::InternalError);
                 resolveFailedSentence(sentenceIndex);
             } catch (...) {
                 lifecycleFailed_.store(true);
                 error("Sentence {} background pipeline threw an unknown exception", sentenceIndex);
+                recordSpanError(sentenceSpan, "Unknown background pipeline exception",
+                                cancelled_.load(std::memory_order_acquire) ? "RenderCancelled"
+                                                                           : "UnknownBackgroundPipelineException",
+                                cancelled_.load(std::memory_order_acquire) ? ServerError::Conflict
+                                                                           : ServerError::InternalError);
                 resolveFailedSentence(sentenceIndex);
             }
             if (!animationResult || !animationResult->isSuccess()) {
@@ -704,6 +751,16 @@ void StreamingAdHocSession::playbackThreadFunc() {
                 continue;
             }
             auto animation = animationResult->getValue().value();
+            if (cancelled_.load(std::memory_order_acquire)) {
+                lifecycleFailed_.store(true);
+                recordSpanError(sentenceSpan, "Playback suppressed after streaming session expiry", "RenderCancelled",
+                                ServerError::Conflict);
+                lock.lock();
+                sentenceOutcomes_.push_back({false, ""});
+                outstandingSentenceWork_.fetch_sub(1, std::memory_order_release);
+                nextIndex++;
+                continue;
+            }
             lastAnimationId = animation.id;
 
             auto playbackSpan =
