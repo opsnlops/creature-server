@@ -1,6 +1,6 @@
 # Oat++ DTO and service coupling inventory
 
-**Snapshot:** 2026-08-22
+**Snapshot:** 2026-08-30
 **Master issue:** [#162](https://github.com/opsnlops/creature-server/issues/162)
 **Related plan:** [oatpp-migration-plan.md](oatpp-migration-plan.md)
 
@@ -43,7 +43,7 @@ live beside otherwise framework-neutral domain structs.
 
 | File | DTO classes | Current role | Neutral path already present |
 |---|---|---|---|
-| `src/model/AdHocExchange.h` | `AdHocExchangePartDto`, `AdHocExchangeDto`, `AdHocExchangeListDto` | REST response/list; exchange persistence uses the domain type | `adHocExchangeToJson` and `adHocExchangeFromJson` |
+| `src/model/AdHocExchange.h` | — | Domain and persistence values; REST responses use neutral API JSON | Strict, bounded `adHocExchangeFromJson`; persistence and public response serializers are separate |
 | `src/model/Animation.h` | — | REST response and accepted POST input use neutral JSON | Strict model-owned `animationToJson` / `animationFromJson`; API and persistence envelopes are distinct |
 | `src/model/AnimationMetadata.h` | — | Animation list/detail response and nested input use neutral JSON | Strict model-owned `animationMetadataToJson` / `animationMetadataFromJson` |
 | `src/model/DialogScript.h` | `DialogScriptTurnDto`, `AcceptedVoiceDto`, `DialogBackgroundMusicDto`, `DialogScriptDto` | Primarily REST and job response; input is already parsed from raw JSON | `dialogScriptToJson`; database-owned `dialogScriptFromJson` |
@@ -120,15 +120,14 @@ Sound control requests use the same strict unknown-field/type policy, cap JSON
 bodies at 4 KiB, and cap filenames at 255 bytes. Raw WAV uploads use the shared
 bounded-body reader with a 1 GiB ceiling.
 
-### Streaming ad-hoc DTOs
+### Streaming ad-hoc contracts
 
-| File | DTO classes | Direction |
-|---|---|---|
-| `StreamingAdHocDto.h` | `StreamingAdHocStartRequestDto`, `StreamingAdHocTextRequestDto`, `StreamingAdHocFinishRequestDto` | Request |
-| `StreamingAdHocDto.h` | `StreamingAdHocStartResponseDto`, `StreamingAdHocTextResponseDto`, `StreamingAdHocFinishResponseDto` | Response |
-
-These form a stateful three-call contract and should migrate as one vertical
-slice rather than as six independent DTOs.
+The stateful start/text/finish contract and exchange responses now use the
+framework-neutral, strictly parsed contracts in `api/StreamingAdHocContracts.h`.
+Request bodies, text, transcript size, part count, active session count, and
+list limits are bounded. Background sentence spans are linked to the HTTP
+request that launched each asynchronous TTS pipeline. The legacy
+`StreamingAdHocDto.h` and `AdHocExchangeDto.*` adapters have been removed.
 
 ### Dialog and preview DTOs
 

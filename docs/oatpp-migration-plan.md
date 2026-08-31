@@ -242,7 +242,7 @@ Migrate leaf models before aggregate models.
 - [x] `Sound` and nested timing/cue types
 - [x] `DmxFixture` and nested channel/pattern/binding types
 - [ ] `DialogScript` and nested accepted-voice/music types
-- [ ] `AdHocExchange`
+- [x] `AdHocExchange`
 - [x] `Stage`
 - [x] `Storyboard`
 - [ ] Move remaining oat++ DTOs into temporary transport adapters or remove them.

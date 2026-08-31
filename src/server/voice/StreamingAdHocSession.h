@@ -20,6 +20,11 @@
 
 namespace creatures::voice {
 
+inline constexpr std::size_t MAX_STREAMING_AD_HOC_CHUNK_TEXT_BYTES = 32 * 1024;
+inline constexpr std::size_t MAX_STREAMING_AD_HOC_CHUNKS = 100;
+inline constexpr std::size_t MAX_STREAMING_AD_HOC_TOTAL_TEXT_BYTES = 256 * 1024;
+inline constexpr std::size_t MAX_ACTIVE_STREAMING_AD_HOC_SESSIONS = 32;
+
 /// What finish() learned about the session, for an honest /finish response and
 /// the exchange record (issue #150).
 struct StreamingFinishResult {
@@ -63,7 +68,7 @@ class StreamingAdHocSession {
      * On the first call, also spawns the playback thread that will trigger
      * interrupt() as soon as sentence 1's TTS completes.
      */
-    Result<void> addText(const std::string &text);
+    Result<void> addText(const std::string &text, std::shared_ptr<RequestSpan> triggerSpan = nullptr);
 
     /**
      * Signal that no more sentences are coming. Waits for the playback thread
@@ -71,10 +76,10 @@ class StreamingAdHocSession {
      * disk once that join returns), then stitches the parts into one exchange
      * WAV with iXML provenance and finalizes the exchange record (issue #150).
      */
-    Result<StreamingFinishResult> finish();
+    Result<StreamingFinishResult> finish(std::shared_ptr<RequestSpan> triggerSpan = nullptr);
 
     [[nodiscard]] const std::string &getSessionId() const { return sessionId_; }
-    [[nodiscard]] int getChunksReceived() const { return chunksReceived_; }
+    [[nodiscard]] int getChunksReceived() const { return chunksReceived_.load(); }
 
   private:
     /// Background thread that monitors futures and triggers playback in order.
@@ -104,7 +109,10 @@ class StreamingAdHocSession {
 
     // Accumulated text for transcript
     std::string fullText_;
-    int chunksReceived_ = 0;
+    std::atomic<int> chunksReceived_{0};
+    // Serializes concurrent /text and /finish requests so sentence indexes,
+    // transcript order, and the finished transition remain coherent.
+    std::mutex stateMutex_;
 
     // Per-sentence text, in order — becomes the exchange's script provenance.
     std::vector<std::string> sentenceTexts_;
@@ -153,8 +161,8 @@ class StreamingAdHocSessionManager {
   public:
     static StreamingAdHocSessionManager &instance();
 
-    std::shared_ptr<StreamingAdHocSession> createSession(const std::string &creatureId, bool resumePlaylist,
-                                                         std::shared_ptr<RequestSpan> parentSpan);
+    Result<std::shared_ptr<StreamingAdHocSession>> createSession(const std::string &creatureId, bool resumePlaylist,
+                                                                 std::shared_ptr<RequestSpan> parentSpan);
 
     std::shared_ptr<StreamingAdHocSession> getSession(const std::string &sessionId);
 
