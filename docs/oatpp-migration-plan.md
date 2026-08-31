@@ -28,7 +28,8 @@ Oat++ is currently used far beyond socket handling:
 - 176 source, test, and `CreatureVoicesLib` files refer to oat++; 167 are in
   Creature Server's `src` and `tests` trees.
 - Domain headers in `src/model/` define oat++ DTOs next to the real models.
-- Nine service headers expose oat++ types.
+- The original baseline had nine service headers exposing oat++ types; Phase 3
+  is now complete and the service directory has no oat++ references.
 - WebSocket envelopes, commands, and payloads use the oat++ object mapper.
 - `CreatureVoicesLib` exposes oat++ DTOs from its public model headers.
 

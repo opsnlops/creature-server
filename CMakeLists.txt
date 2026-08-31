@@ -552,6 +552,8 @@ add_executable(creature-server
         src/model/StreamFrame.h
         src/model/Sound.h
         src/model/Sound.cpp
+        src/api/AnimationRequests.h
+        src/api/JobResponses.h
         src/api/SoundRequests.h
         src/api/SoundResponses.h
         src/model/SortBy.h
@@ -566,6 +568,7 @@ add_executable(creature-server
         src/util/Result.h
         src/util/uuidUtils.cpp
         src/util/uuidUtils.h
+        src/util/UuidValidation.h
         src/util/websocketUtils.h
         src/util/websocketUtils.cpp
 
@@ -573,16 +576,10 @@ add_executable(creature-server
         src/server/ws/App.h
         src/server/ws/App.cpp
 
-        src/server/ws/dto/AdHocAnimationDto.h
         src/server/ws/dto/AdHocExchangeDto.h
         src/server/ws/dto/AdHocExchangeDto.cpp
-        src/server/ws/dto/AdHocDtoUtils.h
-        src/server/ws/dto/AdHocDtoUtils.cpp
-        src/server/ws/dto/AnimationDto.h
-        src/server/ws/dto/AnimationDto.cpp
         src/server/ws/dto/OutboundPayloadDto.cpp
         src/server/ws/dto/ListDto.h
-        src/server/ws/dto/PlayAnimationRequestDto.h
         src/server/ws/dto/SimpleResponseDto.h
         src/server/ws/dto/StatusDto.h
 
@@ -765,6 +762,7 @@ add_executable(creature-server-test
         tests/util/SetAttributeOverload_test.cpp
         tests/util/AudioCache_test.cpp
         tests/util/Slugify_test.cpp
+        tests/util/UuidValidation_test.cpp
         tests/server/ws/CreatureActivityMessage_test.cpp
         tests/server/ws/CreatureService_streaming_test.cpp
         tests/server/ws/CreatureService_activityOwnership_test.cpp
@@ -849,6 +847,7 @@ add_executable(creature-server-test
         src/server/sensors/SensorReport.cpp
         src/model/VirtualStatusLights.cpp
         tests/api/SoundRequests_test.cpp
+        tests/api/AnimationRequests_test.cpp
         tests/api/DialogContracts_test.cpp
         tests/api/VoiceContracts_test.cpp
         src/model/PlaylistStatus.cpp
@@ -878,7 +877,6 @@ add_executable(creature-server-test
         src/server/storyboard/helpers.cpp
         src/server/ws/service/CreatureService.cpp
         src/server/metrics/counters.cpp
-        src/server/ws/dto/AnimationDto.cpp
         src/server/ws/dto/websocket/MessageTypes.cpp
         src/util/JsonParser.cpp
         src/util/AudioCache.cpp

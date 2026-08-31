@@ -271,7 +271,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
             "GET /api/v1/animation/ad-hoc-stream/exchange/{sessionId}", "GET",
             "api/v1/animation/ad-hoc-stream/exchange/{sessionId}", "getExchange", "StreamingAdHocController", request,
             [&](const auto &span) {
-                if (!isUuid(sessionId)) {
+                if (!sessionId || !creatures::isUuidShape(std::string_view(sessionId->c_str(), sessionId->size()))) {
                     return bailHttp(span, Status::CODE_400, "sessionId must be a UUID");
                 }
                 auto opSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
@@ -336,17 +336,6 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
   private:
     enum class ExchangeAudio { Wav, Mp3, Ogg };
 
-    /// Strict UUID shape check — the session id becomes part of an on-disk
-    /// path, so nothing but the canonical 8-4-4-4-12 hex layout gets anywhere
-    /// near the filesystem. Delegates to the codebase's one trust-boundary
-    /// UUID gate (security review M4).
-    static bool isUuid(const oatpp::String &value) {
-        if (!value) {
-            return false;
-        }
-        return creatures::isUuidShape(std::string_view(value->c_str(), value->size()));
-    }
-
     /// Download filename in the shared export shape (#126, #152): slugified
     /// title plus a short session-id tail, so identically-worded exchanges
     /// don't collide. e.g. "beaky-somebody-is-at-the-door-e3af1c4d.mp3"
@@ -358,7 +347,7 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
     template <typename SpanT>
     std::shared_ptr<HttpOutgoingResponse> serveExchangeAudio(const oatpp::String &sessionId, ExchangeAudio format,
                                                              const SpanT &span) {
-        if (!isUuid(sessionId)) {
+        if (!sessionId || !creatures::isUuidShape(std::string_view(sessionId->c_str(), sessionId->size()))) {
             return bailHttp(span, Status::CODE_400, "sessionId must be a UUID");
         }
         auto opSpan = creatures::observability ? creatures::observability->createChildOperationSpan(

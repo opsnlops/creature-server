@@ -355,8 +355,8 @@ asHeadResponse(const std::shared_ptr<oatpp::web::protocol::http::outgoing::Respo
     return head;
 }
 
-// isUuidShape lives in util/helpers.h so non-controller callers (JobWorker,
-// model parsers) can share the single canonical check. We re-export it into
+// isUuidShape lives in util/UuidValidation.h so non-controller callers
+// (JobWorker, model parsers) share the single canonical check. We re-export it into
 // the ws namespace so existing controller call sites stay unqualified.
 using creatures::isUuidShape;
 

@@ -237,6 +237,19 @@ inline Result<bool> requiredBool(const nlohmann::json &json, std::string_view pa
     return Result<bool>{iterator->get<bool>()};
 }
 
+inline Result<std::optional<bool>> optionalBool(const nlohmann::json &json, std::string_view path, std::string_view key,
+                                                bool allowNull = false) {
+    const auto iterator = json.find(key);
+    if (iterator == json.end() || (allowNull && iterator->is_null())) {
+        return Result<std::optional<bool>>{std::optional<bool>{}};
+    }
+    auto valueResult = requiredBool(json, path, key);
+    if (!valueResult.isSuccess()) {
+        return Result<std::optional<bool>>{valueResult.getError().value()};
+    }
+    return Result<std::optional<bool>>{std::optional<bool>{valueResult.getValue().value()}};
+}
+
 inline Result<std::reference_wrapper<const nlohmann::json>> requiredArray(const nlohmann::json &json,
                                                                           std::string_view path, std::string_view key,
                                                                           std::size_t maximumEntries,
