@@ -1,8 +1,5 @@
-#include "blockingconcurrentqueue.h"
-#include "spdlog/spdlog.h"
-#include <oatpp/core/macro/component.hpp>
-
 #include "DynamixelSensorReportHandler.h"
+#include "blockingconcurrentqueue.h"
 #include "server/database.h"
 #include "server/sensors/SensorDataCache.h"
 #include "server/sensors/SensorReport.h"
@@ -21,8 +18,6 @@ namespace creatures::ws {
 
 bool DynamixelSensorReportHandler::processMessage(const nlohmann::json &payload, std::string_view message,
                                                   std::string_view command, std::shared_ptr<SamplingSpan> messageSpan) {
-    OATPP_COMPONENT(std::shared_ptr<spdlog::logger>, appLogger);
-
     if (messageSpan) {
         messageSpan->setAttribute("websocket.command", std::string(command));
         messageSpan->setAttribute("websocket.handler", "dynamixel-sensor-report");
@@ -33,11 +28,12 @@ bool DynamixelSensorReportHandler::processMessage(const nlohmann::json &payload,
         const auto parsed = dynamixelSensorReportFromJson(payload);
         if (!parsed.isSuccess()) {
             const auto errorMessage = parsed.getError()->getMessage();
-            appLogger->warn("Rejected Dynamixel sensor report: {}", errorMessage);
+            logger_->warn("Rejected Dynamixel sensor report: {}", errorMessage);
             if (messageSpan) {
                 messageSpan->setError(errorMessage);
                 messageSpan->setAttribute("websocket.rejection.stage", "payload");
                 messageSpan->setAttribute("error.type", "InvalidDynamixelSensorReport");
+                messageSpan->setAttribute("error.message", errorMessage);
                 messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
             }
         } else {
@@ -49,11 +45,11 @@ bool DynamixelSensorReportHandler::processMessage(const nlohmann::json &payload,
                 try {
                     creatureName = creatures::creatureCache->get(report.creatureId)->name;
                     if (messageSpan) {
-                        messageSpan->setAttribute("cache.creature.hit", true);
+                        messageSpan->setAttribute("creature.cache.hit", true);
                     }
                 } catch (const std::out_of_range &) {
                     if (messageSpan) {
-                        messageSpan->setAttribute("cache.creature.hit", false);
+                        messageSpan->setAttribute("creature.cache.hit", false);
                     }
                     if (creatures::db) {
                         std::shared_ptr<OperationSpan> operationSpan = messageSpan;
@@ -61,8 +57,8 @@ bool DynamixelSensorReportHandler::processMessage(const nlohmann::json &payload,
                         if (creatureResult.isSuccess()) {
                             creatureName = creatureResult.getValue()->name;
                         } else {
-                            appLogger->warn("Failed to look up creature name for ID: {} - {}", report.creatureId,
-                                            creatureResult.getError()->getMessage());
+                            logger_->warn("Failed to look up creature name for ID: {} - {}", report.creatureId,
+                                          creatureResult.getError()->getMessage());
                         }
                     }
                 }
@@ -85,8 +81,8 @@ bool DynamixelSensorReportHandler::processMessage(const nlohmann::json &payload,
             if (creatures::sensorDataCache) {
                 creatures::sensorDataCache->updateDynamixelData(report.creatureId, creatureName, report.readings);
             }
-            appLogger->debug("Updated Dynamixel cache for creature {} ({}): {} servo readings", creatureName,
-                             report.creatureId, report.readings.size());
+            logger_->debug("Updated Dynamixel cache for creature {} ({}): {} servo readings", creatureName,
+                           report.creatureId, report.readings.size());
             if (messageSpan) {
                 messageSpan->setSuccess();
             }
@@ -98,7 +94,7 @@ bool DynamixelSensorReportHandler::processMessage(const nlohmann::json &payload,
         }
     } catch (const std::exception &error) {
         const auto errorMessage = fmt::format("Exception while processing Dynamixel sensor report: {}", error.what());
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (messageSpan) {
             messageSpan->recordException(error);
             messageSpan->setError(errorMessage);
@@ -108,10 +104,11 @@ bool DynamixelSensorReportHandler::processMessage(const nlohmann::json &payload,
         }
     } catch (...) {
         constexpr std::string_view errorMessage = "Unknown error while processing Dynamixel sensor report";
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (messageSpan) {
             messageSpan->setError(std::string(errorMessage));
             messageSpan->setAttribute("error.type", "unknown");
+            messageSpan->setAttribute("error.message", std::string(errorMessage));
             messageSpan->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));
         }
     }

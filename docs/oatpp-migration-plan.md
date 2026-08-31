@@ -363,7 +363,7 @@ boundary no longer exist.
 
 ### Phase 7 — Enforce the boundary and remove DTO infrastructure
 
-- [ ] Add a CI/build check that forbids oat++ references in `src/model`,
+- [x] Add a CI/build check that forbids oat++ references in `src/model`,
       `src/api`, services, messaging business logic, and public voice models.
 - [ ] Delete all temporary `legacy_dto/` adapters.
 - [ ] Delete obsolete DTO conversion functions and DTO-only tests.

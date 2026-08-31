@@ -5,6 +5,7 @@
 #include <optional>
 #include <unordered_set>
 
+#include "StreamFrameHandler.h"
 #include "model/StreamFrame.h"
 #include "server/animation/SessionManager.h"
 #include "server/config/Configuration.h"
@@ -16,9 +17,6 @@
 #include "util/ObservabilityManager.h"
 #include "util/cache.h"
 #include "util/helpers.h"
-#include <oatpp/core/macro/component.hpp>
-
-#include "StreamFrameHandler.h"
 
 /**
  * This handler does a lot of heavy lifting. Streaming from the console is one of the most
@@ -55,11 +53,22 @@ std::unordered_map<creatureId_t, framenum_t> streamingDeadlines;
 std::unordered_set<creatureId_t> timeoutEventPending;
 // When each streaming session started, so the session-end span can report a duration
 // (once per session — zero cost on the 50Hz frame path).
-std::unordered_map<creatureId_t, std::chrono::steady_clock::time_point> streamingStartedAt;
+struct StreamingSessionContext {
+    std::chrono::steady_clock::time_point startedAt;
+    universe_t universe;
+    std::string creatureName;
+    std::string triggerTraceId;
+    std::string triggerSpanId;
+};
 
-void markStreamingStarted(const creatureId_t &creatureId) {
+std::unordered_map<creatureId_t, StreamingSessionContext> streamingSessionContexts;
+
+void markStreamingStarted(const creatureId_t &creatureId, universe_t universe, std::string creatureName,
+                          const std::shared_ptr<SamplingSpan> &triggerSpan) {
     std::lock_guard<std::mutex> lock(streamingMutex);
-    streamingStartedAt[creatureId] = std::chrono::steady_clock::now();
+    streamingSessionContexts[creatureId] = {std::chrono::steady_clock::now(), universe, std::move(creatureName),
+                                            triggerSpan ? triggerSpan->getTraceIdHex() : std::string{},
+                                            triggerSpan ? triggerSpan->getSpanIdHex() : std::string{}};
 }
 
 void updateStreamingDeadline(const creatureId_t &creatureId, framenum_t deadline) {
@@ -87,7 +96,7 @@ struct ExpiryDecision {
     enum class Action { alreadyGone, chase, expired };
     Action action;
     framenum_t chaseDeadline{0};
-    std::optional<std::chrono::steady_clock::time_point> startedAt{};
+    std::optional<StreamingSessionContext> sessionContext{};
 };
 
 ExpiryDecision decideExpiry(const creatureId_t &creatureId, framenum_t eventFrame) {
@@ -102,9 +111,9 @@ ExpiryDecision decideExpiry(const creatureId_t &creatureId, framenum_t eventFram
     }
 
     ExpiryDecision decision{ExpiryDecision::Action::expired};
-    if (auto startIt = streamingStartedAt.find(creatureId); startIt != streamingStartedAt.end()) {
-        decision.startedAt = startIt->second;
-        streamingStartedAt.erase(startIt);
+    if (auto contextIt = streamingSessionContexts.find(creatureId); contextIt != streamingSessionContexts.end()) {
+        decision.sessionContext.emplace(std::move(contextIt->second));
+        streamingSessionContexts.erase(contextIt);
     }
     streamingDeadlines.erase(it);
     timeoutEventPending.erase(creatureId);
@@ -153,24 +162,47 @@ class StreamingTimeoutEvent : public EventBase<StreamingTimeoutEvent> {
                                : nullptr;
         if (timeoutSpan) {
             timeoutSpan->setAttribute("creature.id", creatureId_);
-            timeoutSpan->setAttribute("creature.name",
-                                      creatures::ws::CreatureService::resolveCreatureName(creatureId_));
             timeoutSpan->setAttribute("streaming.session.chase_count", static_cast<int64_t>(chaseCount_));
-            if (decision.startedAt.has_value()) {
+            if (decision.sessionContext.has_value()) {
+                timeoutSpan->setAttribute("creature.name", decision.sessionContext->creatureName);
                 auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                      std::chrono::steady_clock::now() - decision.startedAt.value())
+                                      std::chrono::steady_clock::now() - decision.sessionContext->startedAt)
                                       .count();
                 timeoutSpan->setAttribute("streaming.session.duration_ms", static_cast<int64_t>(durationMs));
+                timeoutSpan->setAttribute("streaming.universe",
+                                          static_cast<int64_t>(decision.sessionContext->universe));
+                if (!decision.sessionContext->triggerTraceId.empty())
+                    timeoutSpan->setAttribute("trigger.trace_id", decision.sessionContext->triggerTraceId);
+                if (!decision.sessionContext->triggerSpanId.empty())
+                    timeoutSpan->setAttribute("trigger.span_id", decision.sessionContext->triggerSpanId);
             }
         }
 
-        creatures::ws::CreatureService::setActivityState(
-            {creatureId_}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
-            creatures::runtime::ActivityState::Stopped, "" /*sessionId*/, timeoutSpan);
-        info("Streaming timeout reached for creature {} at frame {}", creatureId_, this->frameNumber);
-        creatures::ws::CreatureService::startIdleIfNeeded(creatureId_, timeoutSpan);
-        if (timeoutSpan) {
-            timeoutSpan->setSuccess();
+        try {
+            if (timeoutSpan)
+                timeoutSpan->setAttribute("streaming.timeout.phase", "activity_stopped");
+            creatures::ws::CreatureService::setActivityState(
+                {creatureId_}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
+                creatures::runtime::ActivityState::Stopped, "" /*sessionId*/, timeoutSpan);
+            info("Streaming timeout reached for creature {} at frame {}", creatureId_, this->frameNumber);
+            if (timeoutSpan)
+                timeoutSpan->setAttribute("streaming.timeout.phase", "idle_restart");
+            creatures::ws::CreatureService::startIdleIfNeeded(creatureId_, timeoutSpan);
+            if (timeoutSpan)
+                timeoutSpan->setSuccess();
+        } catch (const std::exception &error) {
+            const auto errorMessage = fmt::format("Streaming timeout side effect failed: {}", error.what());
+            spdlog::error(errorMessage);
+            if (timeoutSpan)
+                timeoutSpan->recordException(error);
+            recordSpanError(timeoutSpan, errorMessage, "StreamingTimeoutFailure", ServerError::InternalError);
+            return Result<framenum_t>{ServerError(ServerError::InternalError, errorMessage)};
+        } catch (...) {
+            constexpr std::string_view errorMessage = "Streaming timeout side effect failed with an unknown error";
+            spdlog::error(errorMessage);
+            recordSpanError(timeoutSpan, std::string(errorMessage), "StreamingTimeoutFailure",
+                            ServerError::InternalError);
+            return Result<framenum_t>{ServerError(ServerError::InternalError, std::string(errorMessage))};
         }
         return Result<framenum_t>{this->frameNumber};
     }
@@ -191,7 +223,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
 
     if (message.size() > MAX_STREAM_FRAME_MESSAGE_BYTES) {
         const auto errorMessage = fmt::format("StreamFrame message exceeds {} bytes", MAX_STREAM_FRAME_MESSAGE_BYTES);
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (messageSpan) {
             messageSpan->setError(errorMessage);
             messageSpan->setAttribute("error.type", "InvalidStreamFrameEnvelope");
@@ -208,7 +240,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
         const auto frameResult = streamFrameFromJson(payload);
         if (!frameResult.isSuccess()) {
             const auto error = frameResult.getError().value();
-            appLogger->warn("Rejected streamed frame: {}", error.getMessage());
+            logger_->warn("Rejected streamed frame: {}", error.getMessage());
             if (messageSpan) {
                 messageSpan->setError(error.getMessage());
                 messageSpan->setAttribute("websocket.rejection.stage", "payload");
@@ -230,7 +262,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
 
     } catch (const std::bad_cast &e) {
         auto errorMessage = fmt::format("Error (std::bad_cast) while processing a StreamFrame message: {}", e.what());
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (messageSpan) {
             messageSpan->recordException(e);
             messageSpan->setError(errorMessage);
@@ -240,7 +272,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
         }
     } catch (const std::exception &e) {
         auto errorMessage = fmt::format("Error (std::exception) while processing a StreamFrame message: {}", e.what());
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (messageSpan) {
             messageSpan->recordException(e);
             messageSpan->setError(errorMessage);
@@ -250,7 +282,7 @@ bool StreamFrameHandler::processMessage(const nlohmann::json &payload, std::stri
         }
     } catch (...) {
         auto errorMessage = "An unknown error happened while processing a StreamFrame message";
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (messageSpan) {
             messageSpan->setError(errorMessage);
             messageSpan->setAttribute("error.type", "unknown");
@@ -267,7 +299,7 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     // `span` may be nullptr if observability is uninitialized — guard every dereference.
     auto span = parentSpan;
 
-    appLogger->trace("Entered StreamFrameHandler::stream()");
+    logger_->trace("Entered StreamFrameHandler::stream()");
 
     // Make sure this creature is in the cache
     std::shared_ptr<Creature> creature;
@@ -281,7 +313,7 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
             span->setAttribute("creature.cache.hit", false);
             span->forceExport();
         }
-        appLogger->debug(" 🛜  creature {} was not found in the cache. Going to the DB...", frame.creature_id);
+        logger_->debug(" 🛜  creature {} was not found in the cache. Going to the DB...", frame.creature_id);
 
         // Create a child span specifically for the database fallback operation
         auto dbFallbackSpan =
@@ -296,21 +328,21 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
 
         auto result = db->getCreature(frame.creature_id, dbFallbackSpan);
         if (!result.isSuccess()) {
+            const auto error = result.getError().value();
             auto errorMessage = fmt::format("Dropping stream frame to {} because it can't be found: {}",
-                                            frame.creature_id, result.getError().value().getMessage());
-            appLogger->warn(errorMessage);
-            if (dbFallbackSpan) {
-                dbFallbackSpan->setError(errorMessage);
-            }
+                                            frame.creature_id, error.getMessage());
+            logger_->warn(errorMessage);
+            recordSpanError(dbFallbackSpan, errorMessage, "CreatureLookupFailed", error.getCode());
             if (span) {
                 span->setError(errorMessage);
-                span->setAttribute("error.type", "NotFound");
-                span->setAttribute("error.code", static_cast<int64_t>(ServerError::NotFound));
+                span->setAttribute("error.type", "CreatureLookupFailed");
+                span->setAttribute("error.message", errorMessage);
+                span->setAttribute("error.code", static_cast<int64_t>(error.getCode()));
             }
             return false;
         }
         creature = std::make_shared<Creature>(result.getValue().value());
-        appLogger->debug("creature is now: name: {}, channel_offset: {}", creature->name, creature->channel_offset);
+        logger_->debug("creature is now: name: {}, channel_offset: {}", creature->name, creature->channel_offset);
 
         if (dbFallbackSpan) {
             dbFallbackSpan->setAttribute("creature.name", creature->name);
@@ -324,7 +356,7 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     // Make sure it's valid before we go on
     if (!creature) {
         auto errorMessage = fmt::format("Creature {} was not found in the cache or the database", frame.creature_id);
-        appLogger->warn(errorMessage);
+        logger_->warn(errorMessage);
         if (span) {
             span->setError(errorMessage);
             span->setAttribute("error.type", "NotFound");
@@ -341,7 +373,7 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
 
     const auto playlistState = creatures::sessionManager->getPlaylistState(frame.universe);
     if (playlistState == PlaylistState::Active || playlistState == PlaylistState::Interrupted) {
-        appLogger->info("Stopping playlist on universe {} for live streaming", frame.universe);
+        logger_->info("Stopping playlist on universe {} for live streaming", frame.universe);
         creatures::sessionManager->stopPlaylist(frame.universe);
     }
 
@@ -349,20 +381,37 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     // once-per-session transition, so give it a real span — the sampled frame span is
     // null 99.95% of the time and would leave the activity write an orphan root.
     if (creatures::ws::CreatureService::markStreamingIfNew(frame.creature_id)) {
-        markStreamingStarted(frame.creature_id);
-        auto startSpan = creatures::observability
-                             ? creatures::observability->createOperationSpan("StreamFrameHandler.streamingStarted")
-                             : nullptr;
+        if (span)
+            span->forceExport();
+        auto startSpan =
+            creatures::observability
+                ? (span ? creatures::observability->createChildOperationSpan(
+                              "StreamFrameHandler.streamingStarted", std::static_pointer_cast<OperationSpan>(span))
+                        : creatures::observability->createOperationSpan("StreamFrameHandler.streamingStarted"))
+                : nullptr;
+        markStreamingStarted(frame.creature_id, frame.universe, creature->name, span);
         if (startSpan) {
             startSpan->setAttribute("creature.id", frame.creature_id);
             startSpan->setAttribute("creature.name", creature->name);
             startSpan->setAttribute("streaming.universe", static_cast<int64_t>(frame.universe));
         }
-        creatures::ws::CreatureService::setActivityState(
-            {frame.creature_id}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
-            creatures::runtime::ActivityState::Running, "" /*sessionId*/, startSpan);
-        if (startSpan) {
-            startSpan->setSuccess();
+        try {
+            creatures::ws::CreatureService::setActivityState(
+                {frame.creature_id}, "" /*animationId*/, creatures::runtime::ActivityReason::Streaming,
+                creatures::runtime::ActivityState::Running, "" /*sessionId*/, startSpan);
+            if (startSpan) {
+                startSpan->setSuccess();
+            }
+        } catch (const std::exception &error) {
+            const auto errorMessage = fmt::format("Failed to start streaming activity: {}", error.what());
+            if (startSpan)
+                startSpan->recordException(error);
+            recordSpanError(startSpan, errorMessage, "StreamingStartFailure", ServerError::InternalError);
+            throw;
+        } catch (...) {
+            recordSpanError(startSpan, "Failed to start streaming activity with an unknown error",
+                            "StreamingStartFailure", ServerError::InternalError);
+            throw;
         }
     }
 
@@ -381,13 +430,13 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
         eventLoop->scheduleEvent(timeoutEvent);
     }
 
-    // appLogger->debug("Creature: {}, Offset: {}", creature->name, creature->channel_offset);
+    // logger_->debug("Creature: {}, Offset: {}", creature->name, creature->channel_offset);
 
     // Parse this out
     auto frameData = decodeBase64(frame.data);
 
 #ifdef STREAM_FRAME_DEBUG
-    appLogger->debug("Requested frame data: {}", vectorToHexString(frameData));
+    logger_->debug("Requested frame data: {}", vectorToHexString(frameData));
 #endif
 
     auto event = std::make_shared<DMXEvent>(eventLoop->getNextFrameNumber());
@@ -395,7 +444,7 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     event->channelOffset = creature->channel_offset;
     event->data.reserve(frameData.size());
 
-    // appLogger->debug("universe: {}, channelOffset: {}", event->universe, event->channelOffset);
+    // logger_->debug("universe: {}, channelOffset: {}", event->universe, event->channelOffset);
 
     for (uint8_t byte : frameData) {
 
@@ -411,9 +460,9 @@ bool StreamFrameHandler::stream(creatures::StreamFrame frame, std::shared_ptr<Sa
     metrics->incrementFramesStreamed();
 
     // Keep some metrics internally
-    framesStreamed += 1;
-    if (framesStreamed % 500 == 0) {
-        debug("streamed {} frames", framesStreamed);
+    const auto streamedCount = framesStreamed.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (streamedCount % 500 == 0) {
+        debug("streamed {} frames", streamedCount);
     }
 
     if (span) {

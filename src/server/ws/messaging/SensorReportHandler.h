@@ -21,6 +21,8 @@ namespace creatures::ws {
 class SensorReportHandler : public IMessageHandler {
 
   public:
+    using IMessageHandler::IMessageHandler;
+
     bool processMessage(const nlohmann::json &payload, std::string_view message, std::string_view command,
                         std::shared_ptr<SamplingSpan> messageSpan) override;
 };

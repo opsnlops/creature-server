@@ -32,6 +32,14 @@ set(CREATURE_SERVER_WARNING_FLAGS
     -Wpedantic
 )
 
+add_custom_target(check-neutral-framework-boundary ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_ROOT=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/CheckNeutralFrameworkBoundary.cmake
+    COMMENT "Checking the framework-neutral source boundary"
+    VERBATIM
+)
+
 set(PACKAGE_AUTHOR "April White")
 
 find_package(PkgConfig REQUIRED)
@@ -662,6 +670,7 @@ add_executable(creature-server
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
+add_dependencies(creature-server check-neutral-framework-boundary)
 if(ALSA_FOUND)
     target_compile_definitions(creature-server PRIVATE CREATURE_HAS_ALSA=1)
 endif()
@@ -724,6 +733,13 @@ endif() # EXISTS src/server/main.cpp
 
 enable_testing()
 
+add_test(
+    NAME neutral-framework-boundary
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_ROOT=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/CheckNeutralFrameworkBoundary.cmake
+)
+
 if (EXISTS ${CMAKE_SOURCE_DIR}/tests/server/TestGlobals.cpp)
 
 add_executable(creature-server-test
@@ -764,6 +780,7 @@ add_executable(creature-server-test
         tests/server/ws/CreatureService_activityOwnership_test.cpp
         tests/server/ws/CreatureService_validate_test.cpp
         tests/server/ws/HttpResponseHelpers_test.cpp
+        tests/server/ws/MessageHandlerBoundary_test.cpp
         tests/server/ws/SoundRenditionService_test.cpp
         src/server/ws/service/SoundRenditionService.cpp
         tests/server/ws/ErrorHandler_test.cpp
@@ -915,6 +932,8 @@ target_link_libraries(creature-server-test
         OpenSSL::Crypto
         ${MONGO_SYSTEM_LIBS}
 )
+
+add_dependencies(creature-server-test check-neutral-framework-boundary)
 
 # Apply strict warning flags to our test executable too
 target_compile_options(creature-server-test PRIVATE ${CREATURE_SERVER_WARNING_FLAGS})
