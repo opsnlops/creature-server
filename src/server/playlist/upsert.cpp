@@ -3,8 +3,6 @@
 
 #include "spdlog/spdlog.h"
 
-#include <optional>
-
 // Disable shadow warnings for MongoDB C++ driver headers (third-party code)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -119,23 +117,22 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
                                                                         << bsoncxx::builder::stream::finalize;
         mongocxx::options::find compatibilityOptions;
         compatibilityOptions.limit(2);
-        std::optional<std::string> storedId;
+        bool foundStoredId = false;
         for (const auto &candidate : collection.find(compatibilityFilter.view(), compatibilityOptions)) {
-            if (storedId) {
+            (void)candidate;
+            if (foundStoredId) {
                 const auto errorMessage =
                     fmt::format("Multiple playlist records differ only by UUID casing: {}", playlist.id);
                 recordSpanError(lookupSpan, errorMessage, "CaseFoldCollision", ServerError::InvalidData);
                 recordSpanError(upsertSpan, errorMessage, "CaseFoldCollision", ServerError::InvalidData);
                 return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
             }
-            storedId = std::string(candidate["id"].get_string().value);
+            foundStoredId = true;
         }
         if (lookupSpan) {
-            lookupSpan->setAttribute("database.matched_count", static_cast<int64_t>(storedId.has_value()));
+            lookupSpan->setAttribute("database.matched_count", static_cast<int64_t>(foundStoredId));
             lookupSpan->setSuccess();
         }
-        auto filter = bsoncxx::builder::stream::document{} << "id" << storedId.value_or(playlist.id)
-                                                           << bsoncxx::builder::stream::finalize;
 
         // REPLACE, not $set (#135). A $set upsert cannot remove a field, so no
         // caller can ever delete one — the failure is silent and returns 200.
@@ -147,7 +144,10 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         auto mongoSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.mongoQuery", upsertSpan);
         if (mongoSpan)
             mongoSpan->setAttribute("database.operation", "replace_one");
-        const auto writeResult = collection.replace_one(filter.view(), bsonDoc.view(), replace_options);
+        // Reuse the case-insensitive filter for the write. If two callers race
+        // while canonicalizing an uppercase record, the second still matches
+        // the lowercase replacement instead of upserting a duplicate.
+        const auto writeResult = collection.replace_one(compatibilityFilter.view(), bsonDoc.view(), replace_options);
         if (mongoSpan) {
             if (writeResult) {
                 mongoSpan->setAttribute("database.matched_count", static_cast<int64_t>(writeResult->matched_count()));
