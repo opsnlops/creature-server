@@ -125,9 +125,11 @@ bounded-body reader with a 1 GiB ceiling.
 The stateful start/text/finish contract and exchange responses now use the
 framework-neutral, strictly parsed contracts in `api/StreamingAdHocContracts.h`.
 Request bodies, text, transcript size, part count, active session count, and
-list limits are bounded. Idle sessions expire after ten minutes, and each
-active session uses one bounded render worker instead of creating a native
-thread for every sentence. Background sentence spans are linked to the HTTP
+list limits are bounded. Idle sessions expire after ten minutes even when
+render work remains queued, with a thirty-minute absolute lease. Each active
+session uses one render worker and may retain at most 16 pending sentences;
+all sessions share a 128-render reservation ceiling instead of creating a
+native thread for every sentence. Background sentence spans are linked to the HTTP
 request that launched each asynchronous TTS pipeline, with child spans for
 PCM wrapping, lip-sync construction, track construction, and playback. The legacy
 `StreamingAdHocDto.h` and `AdHocExchangeDto.*` adapters have been removed.

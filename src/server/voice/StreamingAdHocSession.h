@@ -26,7 +26,11 @@ inline constexpr std::size_t MAX_STREAMING_AD_HOC_CHUNK_TEXT_BYTES = 32 * 1024;
 inline constexpr std::size_t MAX_STREAMING_AD_HOC_CHUNKS = 100;
 inline constexpr std::size_t MAX_STREAMING_AD_HOC_TOTAL_TEXT_BYTES = 256 * 1024;
 inline constexpr std::size_t MAX_ACTIVE_STREAMING_AD_HOC_SESSIONS = 32;
+inline constexpr std::size_t MAX_PENDING_STREAMING_AD_HOC_SENTENCES = 16;
+inline constexpr std::size_t MAX_GLOBAL_STREAMING_AD_HOC_RENDERS = 128;
 inline constexpr auto STREAMING_AD_HOC_IDLE_TIMEOUT = std::chrono::minutes(10);
+inline constexpr auto STREAMING_AD_HOC_ABSOLUTE_TIMEOUT = std::chrono::minutes(30);
+inline constexpr auto STREAMING_AD_HOC_CLAIM_GRACE = std::chrono::seconds(5);
 
 /// What finish() learned about the session, for an honest /finish response and
 /// the exchange record (issue #150).
@@ -83,10 +87,11 @@ class StreamingAdHocSession {
 
     [[nodiscard]] const std::string &getSessionId() const { return sessionId_; }
     [[nodiscard]] int getChunksReceived() const { return chunksReceived_.load(); }
-    [[nodiscard]] bool isIdleExpired(std::chrono::steady_clock::time_point now) const;
+    [[nodiscard]] bool tryRenewClientLease(std::chrono::steady_clock::time_point now);
+    [[nodiscard]] bool tryExpire(std::chrono::steady_clock::time_point now);
 
   private:
-    void touch();
+    void touchClientActivity();
     void resolveFailedSentence(int sentenceIndex) noexcept;
     void renderThreadFunc();
     /// Background thread that monitors futures and triggers playback in order.
@@ -98,7 +103,9 @@ class StreamingAdHocSession {
     std::shared_ptr<OperationSpan> span_;
     std::atomic<bool> lifecycleCompleted_{false};
     std::atomic<bool> lifecycleFailed_{false};
-    std::atomic<int64_t> lastActivityNs_{0};
+    int64_t createdAtNs_{0};
+    int64_t lastClientActivityNs_{0};
+    int64_t clientClaimUntilNs_{0};
     std::atomic<std::size_t> outstandingSentenceWork_{0};
 
     // Creature data (populated during start())

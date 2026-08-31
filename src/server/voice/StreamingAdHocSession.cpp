@@ -45,7 +45,31 @@ extern std::shared_ptr<util::AudioCache> audioCache;
 
 namespace creatures::voice {
 
-namespace {} // namespace
+namespace {
+
+std::atomic<std::size_t> globalReservedRenders{0};
+
+class GlobalRenderReservation {
+  public:
+    ~GlobalRenderReservation() { globalReservedRenders.fetch_sub(1, std::memory_order_release); }
+};
+
+std::unique_ptr<GlobalRenderReservation> tryReserveGlobalRender() {
+    auto reserved = globalReservedRenders.load(std::memory_order_relaxed);
+    while (reserved < MAX_GLOBAL_STREAMING_AD_HOC_RENDERS) {
+        if (globalReservedRenders.compare_exchange_weak(reserved, reserved + 1, std::memory_order_acquire,
+                                                        std::memory_order_relaxed)) {
+            return std::make_unique<GlobalRenderReservation>();
+        }
+    }
+    return nullptr;
+}
+
+int64_t monotonicNowNs(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now()) {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+}
+
+} // namespace
 
 // --- StreamingAdHocSession ---
 
@@ -53,7 +77,8 @@ StreamingAdHocSession::StreamingAdHocSession(const std::string &sessionId, const
                                              bool resumePlaylist, std::shared_ptr<RequestSpan> parentSpan)
     : sessionId_(sessionId), creatureId_(creatureId), resumePlaylist_(resumePlaylist) {
 
-    touch();
+    createdAtNs_ = monotonicNowNs();
+    lastClientActivityNs_ = createdAtNs_;
 
     if (parentSpan && creatures::observability) {
         span_ = creatures::observability->createLinkedOperationSpan("StreamingAdHocSession", parentSpan);
@@ -98,19 +123,60 @@ StreamingAdHocSession::~StreamingAdHocSession() {
     }
 }
 
-void StreamingAdHocSession::touch() {
-    lastActivityNs_.store(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
-            .count(),
-        std::memory_order_relaxed);
+void StreamingAdHocSession::touchClientActivity() { lastClientActivityNs_ = monotonicNowNs(); }
+
+bool StreamingAdHocSession::tryRenewClientLease(std::chrono::steady_clock::time_point now) {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    if (cancelled_.load(std::memory_order_acquire))
+        return false;
+    if (finished_.load(std::memory_order_acquire))
+        return true;
+
+    const auto nowNs = monotonicNowNs(now);
+    const auto absoluteDeadlineNs =
+        createdAtNs_ + std::chrono::duration_cast<std::chrono::nanoseconds>(STREAMING_AD_HOC_ABSOLUTE_TIMEOUT).count();
+    const bool idleExpired =
+        nowNs - lastClientActivityNs_ >=
+        std::chrono::duration_cast<std::chrono::nanoseconds>(STREAMING_AD_HOC_IDLE_TIMEOUT).count();
+    const bool absoluteExpired = nowNs >= absoluteDeadlineNs;
+    if (idleExpired || absoluteExpired) {
+        cancelled_.store(true, std::memory_order_release);
+        finished_.store(true, std::memory_order_release);
+        renderCv_.notify_one();
+        playbackCv_.notify_one();
+        return false;
+    }
+    lastClientActivityNs_ = nowNs;
+    clientClaimUntilNs_ = std::min(
+        absoluteDeadlineNs + std::chrono::duration_cast<std::chrono::nanoseconds>(STREAMING_AD_HOC_CLAIM_GRACE).count(),
+        nowNs + std::chrono::duration_cast<std::chrono::nanoseconds>(STREAMING_AD_HOC_CLAIM_GRACE).count());
+    return true;
 }
 
-bool StreamingAdHocSession::isIdleExpired(std::chrono::steady_clock::time_point now) const {
-    if (finished_.load(std::memory_order_acquire) || outstandingSentenceWork_.load(std::memory_order_acquire) > 0)
+bool StreamingAdHocSession::tryExpire(std::chrono::steady_clock::time_point now) {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    if (cancelled_.load(std::memory_order_acquire))
+        return true;
+    if (finished_.load(std::memory_order_acquire))
         return false;
-    const auto lastActivity = std::chrono::steady_clock::time_point(
-        std::chrono::nanoseconds(lastActivityNs_.load(std::memory_order_relaxed)));
-    return now - lastActivity >= STREAMING_AD_HOC_IDLE_TIMEOUT;
+
+    const auto nowNs = monotonicNowNs(now);
+    if (nowNs < clientClaimUntilNs_)
+        return false;
+    const bool idleExpired =
+        nowNs - lastClientActivityNs_ >=
+        std::chrono::duration_cast<std::chrono::nanoseconds>(STREAMING_AD_HOC_IDLE_TIMEOUT).count();
+    const bool absoluteExpired =
+        nowNs - createdAtNs_ >=
+        std::chrono::duration_cast<std::chrono::nanoseconds>(STREAMING_AD_HOC_ABSOLUTE_TIMEOUT).count();
+    if (!idleExpired && !absoluteExpired)
+        return false;
+
+    cancelled_.store(true, std::memory_order_release);
+    finished_.store(true, std::memory_order_release);
+    renderCv_.notify_one();
+    playbackCv_.notify_one();
+    return true;
 }
 
 void StreamingAdHocSession::resolveFailedSentence(int sentenceIndex) noexcept {
@@ -271,7 +337,18 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
             ServerError(ServerError::Conflict, fmt::format("Streaming session reached its {} byte transcript limit",
                                                            MAX_STREAMING_AD_HOC_TOTAL_TEXT_BYTES))};
     }
-    touch();
+    if (outstandingSentenceWork_.load(std::memory_order_acquire) >= MAX_PENDING_STREAMING_AD_HOC_SENTENCES) {
+        return Result<void>{
+            ServerError(ServerError::Conflict, fmt::format("Streaming session already has {} pending sentences",
+                                                           MAX_PENDING_STREAMING_AD_HOC_SENTENCES))};
+    }
+    auto renderReservation = tryReserveGlobalRender();
+    if (!renderReservation) {
+        return Result<void>{
+            ServerError(ServerError::Conflict, fmt::format("Streaming speech already has {} queued or active renders",
+                                                           MAX_GLOBAL_STREAMING_AD_HOC_RENDERS))};
+    }
+    touchClientActivity();
     if (!fullText_.empty()) {
         fullText_ += " ";
     }
@@ -306,8 +383,10 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
         sentenceSpan->setAttribute("sentence.length", static_cast<int64_t>(text.size()));
     }
 
-    std::packaged_task<Result<Animation>()> renderTask([this, text, sentenceIndex, creatureName,
-                                                        sentenceSpan]() -> Result<Animation> {
+    std::packaged_task<Result<Animation>()> renderTask([this, text, sentenceIndex, creatureName, sentenceSpan,
+                                                        renderReservation =
+                                                            std::move(renderReservation)]() -> Result<Animation> {
+        (void)renderReservation;
         try {
             // 1. TTS via REST with previous_request_ids for prosody continuity.
             // Read the previous sentence's request-id future under the lock —
@@ -621,7 +700,6 @@ void StreamingAdHocSession::playbackThreadFunc() {
                 lock.lock();
                 sentenceOutcomes_.push_back({false, ""});
                 outstandingSentenceWork_.fetch_sub(1, std::memory_order_release);
-                touch();
                 nextIndex++;
                 continue;
             }
@@ -693,7 +771,6 @@ void StreamingAdHocSession::playbackThreadFunc() {
             lock.lock();
             sentenceOutcomes_.push_back({dispatched, dispatched ? animation.id : ""});
             outstandingSentenceWork_.fetch_sub(1, std::memory_order_release);
-            touch();
             nextIndex++;
         }
 
@@ -714,7 +791,7 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish(std::shared_ptr<Requ
 
     {
         std::lock_guard<std::mutex> stateLock(stateMutex_);
-        touch();
+        touchClientActivity();
         if (fullText_.empty()) {
             recordSpanError(finishSpan, "No text was added to the session", "EmptyStreamingSession",
                             ServerError::InvalidData);
@@ -921,7 +998,7 @@ StreamingAdHocSessionManager::createSession(const std::string &creatureId, bool 
     std::lock_guard<std::mutex> lock(mutex_);
     const auto now = std::chrono::steady_clock::now();
     for (auto iterator = sessions_.begin(); iterator != sessions_.end();) {
-        if (iterator->second->isIdleExpired(now)) {
+        if (iterator->second->tryExpire(now)) {
             expiredSessions.push_back(std::move(iterator->second));
             iterator = sessions_.erase(iterator);
         } else {
@@ -946,7 +1023,7 @@ std::shared_ptr<StreamingAdHocSession> StreamingAdHocSessionManager::getSession(
     if (it == sessions_.end()) {
         return nullptr;
     }
-    if (it->second->isIdleExpired(std::chrono::steady_clock::now())) {
+    if (!it->second->tryRenewClientLease(std::chrono::steady_clock::now())) {
         expiredSession = std::move(it->second);
         sessions_.erase(it);
         lock.unlock();
