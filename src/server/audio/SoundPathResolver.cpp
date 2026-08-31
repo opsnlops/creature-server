@@ -415,7 +415,7 @@ std::optional<SoundStoreIndex::Entry> SoundStoreIndex::makeEntry(const fs::path 
                    [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
     if (extension == ".wav") {
         if (auto stream = MonoWavStream::open(entry.canonicalPath); stream.isSuccess()) {
-            const auto &wav = stream.getValue().value();
+            const auto wav = stream.getValue().value();
             entry.sampleRate = static_cast<uint32_t>(wav->sampleRate());
             entry.channels = wav->channels();
             entry.rtpPlayable =
