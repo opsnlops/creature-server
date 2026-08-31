@@ -11,11 +11,12 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
-#include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/DialogContracts.h"
+#include "api/JsonResponse.h"
 #include "model/CacheInvalidation.h"
 #include "model/DialogScript.h"
 #include "server/config.h"
@@ -23,11 +24,9 @@
 #include "server/namespace-stuffs.h"
 #include "server/script/DialogScriptMutationLock.h"
 #include "server/storage/Storage.h"
+#include "server/voice/DialogCache.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/DialogScriptDto.h"
-#include "server/ws/dto/DialogScriptValidationDto.h"
-#include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/StatusDto.h"
 #include "util/uuidUtils.h"
 #include "util/websocketUtils.h"
@@ -68,15 +67,10 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
     /// server-managed fields (id / created_at / updated_at) on top. The result
     /// is what `parseDialogScriptJson` expects.
     ///
-    /// Using nlohmann instead of `BODY_DTO(UpsertDialogScriptRequestDto, …)`
-    /// matters for client UX: oatpp's strict deserializer rejects any unknown
-    /// field with "[oatpp::parser::json::mapping::Deserializer::readObject()]:
-    /// Error. Unknown field" — leaks implementation paths and doesn't name the
-    /// offending field. Going through nlohmann + parseDialogScriptJson means
-    /// extras are silently dropped (so clients can round-trip a full
-    /// DialogScriptDto) AND structural problems surface with friendly,
-    /// field-specific messages from invalidScriptData (security review S3
-    /// caps live there).
+    /// Parsing into neutral JSON matters for client UX: extras are silently
+    /// dropped so clients can round-trip a full script response, while
+    /// structural problems surface with friendly, field-specific messages
+    /// from invalidScriptData (security review S3 caps live there).
     static nlohmann::json buildScriptJsonForUpsert(const std::string &rawBody, const std::string &id, int64_t createdAt,
                                                    int64_t updatedAt) {
         auto parsed = nlohmann::json::parse(rawBody); // throws on bad JSON; caller catches.
@@ -94,8 +88,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
     ENDPOINT_INFO(listDialogScripts) {
         info->summary = "List all saved dialog scripts (newest first by updated_at)";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<ListDto<Object<DialogScriptDto>>>>(Status::CODE_200,
-                                                                    "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/dialog/script", listDialogScripts,
@@ -110,15 +103,12 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                                    return bailFromServerError(span, result.getError().value());
                                }
                                const auto scripts = result.getValue().value();
-                               auto list = ListDto<Object<DialogScriptDto>>::createShared();
-                               list->count = static_cast<v_uint32>(scripts.size());
-                               list->items = oatpp::Vector<Object<DialogScriptDto>>::createShared();
-                               for (const auto &s : scripts) {
-                                   list->items->push_back(creatures::convertToDto(s));
-                               }
-                               if (span)
+                               if (span) {
+                                   span->setAttribute("response.items.count", static_cast<int64_t>(scripts.size()));
                                    span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, list);
+                               }
+                               return jsonResponse(span, Status::CODE_200,
+                                                   api::listResponseToJson(scripts, creatures::dialogScriptToJson));
                            });
     }
 
@@ -126,7 +116,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
         info->summary = "Fetch one saved dialog script by id";
         info->addTag("Multi-character Dialog");
         info->pathParams["scriptId"].description = "DialogScript UUID";
-        info->addResponse<Object<DialogScriptDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
     }
@@ -149,7 +139,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 }
                 if (span)
                     span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, creatures::convertToDto(result.getValue().value()));
+                return jsonResponse(span, Status::CODE_200, creatures::dialogScriptToJson(result.getValue().value()));
             });
     }
 
@@ -158,26 +148,22 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
         info->description = "Server generates the script's UUID and stamps created_at + updated_at. Returns the "
                             "stored script with its new id.";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<DialogScriptDto>>(Status::CODE_201, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_201, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/animation/dialog/script", createDialogScript, BODY_STRING(String, body),
+    ENDPOINT("POST", "api/v1/animation/dialog/script", createDialogScript,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/dialog/script", "POST", "api/v1/animation/dialog/script", "createDialogScript",
             "DialogScriptController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (!body) {
-                    return bailHttp(span, Status::CODE_400, "Request body is required");
-                }
-                if (span)
-                    span->setAttribute("request.body_size", static_cast<int64_t>(body->size()));
+                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
 
                 const auto now = nowMillis();
                 const auto id = util::generateUUID();
                 nlohmann::json parsed;
                 try {
-                    parsed = buildScriptJsonForUpsert(std::string(*body), id, now, now);
+                    parsed = buildScriptJsonForUpsert(body, id, now, now);
                     // Music references are created only by the promotion endpoint,
                     // after it has verified the permanent WAV and embedded recipe;
                     // an acceptance likewise only comes from the accept endpoint,
@@ -200,7 +186,11 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
                 }
 
-                auto result = creatures::storage::publishDialogScript(parsed.dump(), opSpan);
+                // Persist the parsed model, not the original client document.
+                // This is the allowlist boundary that drops tolerated unknown
+                // fields instead of retaining arbitrary JSON in MongoDB.
+                auto result = creatures::storage::publishDialogScript(
+                    creatures::dialogScriptToJson(parseResult.getValue().value()).dump(), opSpan);
                 if (!result.isSuccess()) {
                     return bailFromServerError(span, result.getError().value());
                 }
@@ -208,7 +198,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     span->setAttribute("script.id", result.getValue().value().id);
                     span->setHttpStatus(201);
                 }
-                return createDtoResponse(Status::CODE_201, creatures::convertToDto(result.getValue().value()));
+                return jsonResponse(span, Status::CODE_201, creatures::dialogScriptToJson(result.getValue().value()));
             });
     }
 
@@ -219,13 +209,13 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                             "script with that id exists.";
         info->addTag("Multi-character Dialog");
         info->pathParams["scriptId"].description = "DialogScript UUID";
-        info->addResponse<Object<DialogScriptDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("PUT", "api/v1/animation/dialog/script/{scriptId}", updateDialogScript, PATH(String, scriptId),
-             BODY_STRING(String, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "PUT /api/v1/animation/dialog/script/{scriptId}", "PUT", "api/v1/animation/dialog/script/{scriptId}",
             "updateDialogScript", "DialogScriptController", request,
@@ -235,11 +225,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 }
                 if (span)
                     span->setAttribute("script.id", std::string(*scriptId));
-                if (!body) {
-                    return bailHttp(span, Status::CODE_400, "Request body is required");
-                }
-                if (span)
-                    span->setAttribute("request.body_size", static_cast<int64_t>(body->size()));
+                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
 
                 auto opSpan = creatures::observability->createChildOperationSpan(
                     "DialogScriptController.updateDialogScript", span);
@@ -255,8 +241,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
 
                 nlohmann::json parsed;
                 try {
-                    parsed =
-                        buildScriptJsonForUpsert(std::string(*body), std::string(*scriptId), createdAt, nowMillis());
+                    parsed = buildScriptJsonForUpsert(body, std::string(*scriptId), createdAt, nowMillis());
                     // Accepted music and the accepted voice take are server-managed:
                     // an ordinary script edit must neither forge one nor detach one.
                     // Carrying them forward is now load-bearing rather than tidy —
@@ -284,13 +269,14 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, parseResult.getError()->getMessage());
                 }
 
-                auto result = creatures::storage::publishDialogScript(parsed.dump(), opSpan);
+                auto result = creatures::storage::publishDialogScript(
+                    creatures::dialogScriptToJson(parseResult.getValue().value()).dump(), opSpan);
                 if (!result.isSuccess()) {
                     return bailFromServerError(span, result.getError().value());
                 }
                 if (span)
                     span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, creatures::convertToDto(result.getValue().value()));
+                return jsonResponse(span, Status::CODE_200, creatures::dialogScriptToJson(result.getValue().value()));
             });
     }
 
@@ -301,7 +287,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
             "WAV/MP3 assets are retained, and the updated script is returned.";
         info->addTag("Multi-character Dialog");
         info->pathParams["scriptId"].description = "DialogScript UUID";
-        info->addResponse<Object<DialogScriptDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
@@ -362,7 +348,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                         opSpan->setSuccess();
                     if (span)
                         span->setHttpStatus(200);
-                    return createDtoResponse(Status::CODE_200, creatures::convertToDto(existingScript));
+                    return jsonResponse(span, Status::CODE_200, creatures::dialogScriptToJson(existingScript));
                 }
 
                 auto updated = creatures::dialogScriptToJson(existingScript);
@@ -382,7 +368,8 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     opSpan->setSuccess();
                 if (span)
                     span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, creatures::convertToDto(published.getValue().value()));
+                return jsonResponse(span, Status::CODE_200,
+                                    creatures::dialogScriptToJson(published.getValue().value()));
             });
     }
 
@@ -392,32 +379,36 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                             "uses, and soft-checks that every turn's creature_id exists. Returns 200 with valid=true "
                             "or valid=false + error_messages — never throws, so the client can render inline form "
                             "errors without exception handling. id, created_at, and updated_at are tolerated if "
-                            "present (the client may send a round-tripped DialogScriptDto) but are not required.";
+                            "present (the client may send a round-tripped script response) but are not required.";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<DialogScriptValidationDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/animation/dialog/script/validate", validateDialogScript, BODY_STRING(String, body),
+    ENDPOINT("POST", "api/v1/animation/dialog/script/validate", validateDialogScript,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/dialog/script/validate", "POST", "api/v1/animation/dialog/script/validate",
             "validateDialogScript", "DialogScriptController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                auto resultDto = DialogScriptValidationDto::createShared();
-                resultDto->valid = true;
-                resultDto->turn_count = static_cast<v_uint32>(0);
-                resultDto->missing_creature_ids = oatpp::List<oatpp::String>::createShared();
-                resultDto->error_messages = oatpp::List<oatpp::String>::createShared();
-
-                const std::string raw = body ? std::string(*body) : std::string{};
+                api::DialogScriptValidationResponse validationResponse;
+                const auto raw = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
                 nlohmann::json parsed;
                 try {
                     parsed = nlohmann::json::parse(raw);
                 } catch (const std::exception &ex) {
-                    resultDto->valid = false;
-                    resultDto->error_messages->push_back(fmt::format("Invalid JSON: {}", ex.what()).c_str());
+                    validationResponse.valid = false;
+                    validationResponse.errorMessages.push_back(fmt::format("Invalid JSON: {}", ex.what()));
                     if (span)
                         span->setHttpStatus(200);
-                    return createDtoResponse(Status::CODE_200, resultDto);
+                    return jsonResponse(span, Status::CODE_200,
+                                        api::dialogScriptValidationResponseToJson(validationResponse));
+                }
+                if (!parsed.is_object()) {
+                    validationResponse.valid = false;
+                    validationResponse.errorMessages.emplace_back("request body must be a JSON object");
+                    if (span)
+                        span->setHttpStatus(200);
+                    return jsonResponse(span, Status::CODE_200,
+                                        api::dialogScriptValidationResponseToJson(validationResponse));
                 }
 
                 // parseDialogScriptJson requires `id` since it's also used by the upsert
@@ -434,17 +425,18 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     "DialogScriptController.validateDialogScript", span);
                 auto parseResult = creatures::Database::parseDialogScriptJson(parsed, opSpan);
                 if (!parseResult.isSuccess()) {
-                    resultDto->valid = false;
-                    resultDto->error_messages->push_back(parseResult.getError()->getMessage().c_str());
+                    validationResponse.valid = false;
+                    validationResponse.errorMessages.push_back(parseResult.getError()->getMessage());
                     if (span)
                         span->setHttpStatus(200);
-                    return createDtoResponse(Status::CODE_200, resultDto);
+                    return jsonResponse(span, Status::CODE_200,
+                                        api::dialogScriptValidationResponseToJson(validationResponse));
                 }
                 const auto script = parseResult.getValue().value();
                 if (clientProvidedId) {
-                    resultDto->script_id = script.id.c_str();
+                    validationResponse.scriptId = script.id;
                 }
-                resultDto->turn_count = static_cast<v_uint32>(script.turns.size());
+                validationResponse.turnCount = static_cast<uint32_t>(script.turns.size());
 
                 // Soft warning: every creature_id the script references must currently
                 // exist on the server. Dedupe so a 50-turn dialog between two creatures
@@ -456,11 +448,10 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                     if (t.creature_id.empty())
                         continue;
                     if (!isUuidShape(t.creature_id)) {
-                        resultDto->valid = false;
-                        resultDto->error_messages->push_back(
+                        validationResponse.valid = false;
+                        validationResponse.errorMessages.push_back(
                             fmt::format("turn creature_id is not a UUID: '{}'",
-                                        t.creature_id.size() > 64 ? t.creature_id.substr(0, 64) + "…" : t.creature_id)
-                                .c_str());
+                                        t.creature_id.size() > 64 ? t.creature_id.substr(0, 64) + "…" : t.creature_id));
                         continue;
                     }
                     uniqueCreatureIds.insert(t.creature_id);
@@ -468,18 +459,19 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 for (const auto &cid : uniqueCreatureIds) {
                     auto creatureLookup = creatures::db->getCreature(cid, opSpan);
                     if (!creatureLookup.isSuccess()) {
-                        resultDto->missing_creature_ids->push_back(cid.c_str());
+                        validationResponse.missingCreatureIds.push_back(cid);
                     }
                 }
 
                 if (span) {
-                    span->setAttribute("validation.passed", static_cast<bool>(resultDto->valid));
+                    span->setAttribute("validation.passed", validationResponse.valid);
                     span->setAttribute("validation.missing_creature_ids_count",
-                                       static_cast<int64_t>(resultDto->missing_creature_ids->size()));
-                    span->setAttribute("validation.turn_count", static_cast<int64_t>(*resultDto->turn_count));
+                                       static_cast<int64_t>(validationResponse.missingCreatureIds.size()));
+                    span->setAttribute("validation.turn_count", static_cast<int64_t>(validationResponse.turnCount));
                     span->setHttpStatus(200);
                 }
-                return createDtoResponse(Status::CODE_200, resultDto);
+                return jsonResponse(span, Status::CODE_200,
+                                    api::dialogScriptValidationResponseToJson(validationResponse));
             });
     }
 
@@ -492,7 +484,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
             "updated_at or broadcasting.";
         info->addTag("Multi-character Dialog");
         info->pathParams["scriptId"].description = "Dialog script UUID";
-        info->addResponse<Object<DialogScriptDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
     }
@@ -507,6 +499,7 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 }
                 auto opSpan = creatures::observability->createChildOperationSpan(
                     "DialogScriptController.clearAcceptedVoice", span);
+                const std::scoped_lock mutationLock(creatures::script::mutationMutex());
                 auto existing = creatures::db->getDialogScript(std::string(*scriptId), opSpan);
                 if (!existing.isSuccess()) {
                     return bailFromServerError(span, existing.getError().value());
@@ -521,16 +514,10 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 if (!existingScript.accepted_voice) {
                     if (span)
                         span->setHttpStatus(200);
-                    return createDtoResponse(Status::CODE_200, creatures::convertToDto(existingScript));
+                    return jsonResponse(span, Status::CODE_200, creatures::dialogScriptToJson(existingScript));
                 }
-
-                // Demote first: if the move fails we would rather keep the
-                // acceptance pointing at a file that still exists than clear
-                // it and strand the audio in the permanent tree.
-                auto demoted = creatures::storage::demoteVoiceTake(
-                    existingScript.accepted_voice->sound_file, existingScript.accepted_voice->generation_id, opSpan);
-                if (!demoted.isSuccess()) {
-                    return bailFromServerError(span, demoted.getError().value());
+                if (existingScript.updated_at == std::numeric_limits<int64_t>::max()) {
+                    return bailHttp(span, Status::CODE_400, "dialog script updated_at cannot advance");
                 }
 
                 auto updated = creatures::dialogScriptToJson(existingScript);
@@ -540,9 +527,22 @@ class DialogScriptController : public oatpp::web::server::api::ApiController,
                 if (!published.isSuccess()) {
                     return bailFromServerError(span, published.getError().value());
                 }
+
+                // Publishing the clear is the commit point. Cleanup follows
+                // so a filesystem failure can leave only an unreferenced file,
+                // never a script pointing at a WAV that was already moved.
+                auto demoted = creatures::storage::demoteVoiceTake(
+                    existingScript.accepted_voice->sound_file, existingScript.accepted_voice->generation_id, opSpan);
+                if (!demoted.isSuccess()) {
+                    warn("cleared accepted voice take {} but could not demote its WAV: {}",
+                         existingScript.accepted_voice->generation_id, demoted.getError()->getMessage());
+                }
+                creatures::voice::removeAcceptedGeneration(existingScript.accepted_voice->dialog_cache_key,
+                                                           existingScript.accepted_voice->generation_id);
                 if (span)
                     span->setHttpStatus(200);
-                return createDtoResponse(Status::CODE_200, creatures::convertToDto(published.getValue().value()));
+                return jsonResponse(span, Status::CODE_200,
+                                    creatures::dialogScriptToJson(published.getValue().value()));
             });
     }
 

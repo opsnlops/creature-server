@@ -241,7 +241,7 @@ Migrate leaf models before aggregate models.
 - [x] `Playlist`
 - [x] `Sound` and nested timing/cue types
 - [x] `DmxFixture` and nested channel/pattern/binding types
-- [ ] `DialogScript` and nested accepted-voice/music types
+- [x] `DialogScript` and nested accepted-voice/music types
 - [x] `AdHocExchange`
 - [x] `Stage`
 - [x] `Storyboard`
@@ -303,7 +303,7 @@ header, implementation, controller adaptation, and tests.
 - [ ] Preserve body-size limits and strict unknown-field behavior.
 - [ ] Preserve request-span creation, HTTP attributes, status recording, and
       exception/error recording.
-- [ ] Remove generic oat++ `ListDto` types.
+- [x] Remove generic oat++ `ListDto` types.
 - [ ] Remove the oat++ JSON object mapper from REST handling.
 
 **Exit criterion:** all REST request and response bodies are parsed and rendered

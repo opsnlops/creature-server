@@ -194,8 +194,8 @@ class ElevenLabsCall {
 /// the Result<T> error message returned to callers is generic ("ElevenLabs
 /// dialog HTTP 4xx") — never includes the upstream body. The upstream body
 /// is attacker-influenceable (a caller's text often round-trips through 4xx
-/// errors), and downstream layers (OATPP_ASSERT_HTTP) propagate Result error
-/// messages verbatim to HTTP clients, so leaking it would surface a request-
+/// errors), and downstream controller adapters propagate Result error messages
+/// verbatim to HTTP clients, so leaking it would surface a request-
 /// side echo plus any incidental upstream metadata (request IDs, quota info,
 /// reverse-proxy debug pages) to whoever called our API.
 template <typename T>

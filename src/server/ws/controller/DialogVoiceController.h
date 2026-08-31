@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include <fmt/format.h>
@@ -13,20 +15,21 @@
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/DialogContracts.h"
+#include "api/JobResponses.h"
 #include "model/DialogScript.h"
 #include "server/database.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
 #include "server/namespace-stuffs.h"
+#include "server/script/DialogScriptMutationLock.h"
 #include "server/storage/Storage.h"
 #include "server/voice/DialogCache.h"
 #include "server/voice/ScriptCacheKey.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/DialogScriptDto.h"
-#include "server/ws/dto/DialogVoiceDto.h"
-#include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/StatusDto.h"
+#include "util/JsonParser.h"
 #include "util/Slugify.h"
 
 namespace creatures {
@@ -79,44 +82,55 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
             "whose ad-hoc file has been swept. The job's completion result is the same script body the 200 "
             "returns. No ElevenLabs call is made either way; the take's performance never changes.";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<DialogScriptDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/voice/accept", acceptVoiceTake,
-             BODY_DTO(Object<AcceptVoiceRequestDto>, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/dialog/voice/accept", "POST", "api/v1/animation/dialog/voice/accept",
             "acceptVoiceTake", "DialogVoiceController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (!body) {
-                    return bailHttp(span, Status::CODE_400, "Request body is required");
+                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "DialogVoiceController.parseAcceptVoiceTakeRequest", span)
+                                           : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "dialog.voice.accept");
+                const auto json = JsonParser::parseApiJsonString(body, "accept voice take request", parseSpan);
+                if (!json.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, json.getError().value());
                 }
-                const std::string scriptId = body->script_id ? std::string(*body->script_id) : std::string{};
-                const std::string generationId =
-                    body->generation_id ? std::string(*body->generation_id) : std::string{};
-                const std::string cacheKey =
-                    body->dialog_cache_key ? std::string(*body->dialog_cache_key) : std::string{};
-
-                if (!isUuidShape(scriptId)) {
-                    return bailHttp(span, Status::CODE_400, "script_id must be a UUID");
+                const auto parsed = api::acceptVoiceTakeRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidAcceptVoiceTakeRequest", error.getCode());
+                    return bailFromServerError(span, error);
                 }
-                if (!isUuidShape(generationId)) {
-                    return bailHttp(span, Status::CODE_400, "generation_id must be a UUID");
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
                 }
-                if (cacheKey.size() != 64 || cacheKey.find_first_not_of("0123456789abcdef") != std::string::npos) {
-                    return bailHttp(span, Status::CODE_400,
-                                    "dialog_cache_key must be a 64-character lowercase hex sha256");
-                }
+                const auto acceptRequest = parsed.getValue().value();
+                const auto &scriptId = acceptRequest.scriptId;
+                const auto &generationId = acceptRequest.generationId;
+                const auto &cacheKey = acceptRequest.dialogCacheKey;
                 if (span) {
-                    span->setAttribute("script.id", scriptId);
-                    span->setAttribute("dialog.generation_id", generationId);
+                    span->setAttribute("script.id", canonicalUuid(scriptId));
+                    span->setAttribute("dialog.generation_id", canonicalUuid(generationId));
                     span->setAttribute("dialog.cache_key", cacheKey);
                 }
 
                 auto opSpan =
                     creatures::observability->createChildOperationSpan("DialogVoiceController.acceptVoiceTake", span);
+                const std::scoped_lock mutationLock(creatures::script::mutationMutex());
 
                 auto existing = creatures::db->getDialogScript(scriptId, opSpan);
                 if (!existing.isSuccess()) {
@@ -144,7 +158,10 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                     // look for an ad-hoc file that has already moved.
                     if (span)
                         span->setHttpStatus(200);
-                    return createDtoResponse(Status::CODE_200, creatures::convertToDto(script));
+                    return jsonResponse(span, Status::CODE_200, creatures::dialogScriptToJson(script));
+                }
+                if (script.updated_at == std::numeric_limits<int64_t>::max()) {
+                    return bailHttp(span, Status::CODE_400, "dialog script updated_at cannot advance");
                 }
 
                 // Promotion moves the take's 17-channel WAV out of the ad-hoc
@@ -193,36 +210,51 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                     details["script_id"] = scriptId;
                     details["generation_id"] = generationId;
                     details["dialog_cache_key"] = cacheKey;
-                    const std::string jobId = creatures::jobManager->createJob(
+                    const auto admission = creatures::jobWorker->tryCreateAndQueueJob(
                         creatures::jobs::JobType::VoiceTakeAccept, details.dump(), span);
-                    creatures::jobWorker->queueJob(jobId);
+                    if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::Full) {
+                        return bailHttp(span, Status::CODE_429,
+                                        "Eight dialog jobs are already queued or running; try again shortly", nullptr,
+                                        "QueueAdmissionRejected");
+                    }
+                    if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::EnqueueFailed) {
+                        return bailHttp(span, Status::CODE_500, "Could not queue voice acceptance job", nullptr,
+                                        "QueueEnqueueFailure");
+                    }
+                    const auto &jobId = admission.jobId;
                     if (span) {
                         span->setAttribute("job.id", jobId);
                         span->setHttpStatus(202);
                     }
-                    auto accepted202 = JobCreatedDto::createShared();
-                    accepted202->job_id = jobId.c_str();
-                    accepted202->job_type = "voice-take-accept";
-                    accepted202->message =
+                    const api::JobCreatedResponse accepted202{
+                        jobId, "voice-take-accept",
                         "This take's audio has to be assembled before it can be accepted. Listen for job-progress "
                         "and job-complete WebSocket messages on this job_id, or poll GET /api/v1/job/{job_id}; the "
-                        "completion result is the updated script.";
-                    return createDtoResponse(Status::CODE_202, accepted202);
+                        "completion result is the updated script."};
+                    return jsonResponse(span, Status::CODE_202, api::jobCreatedResponseToJson(accepted202));
                 }
 
-                // Replacing: demote the outgoing take so the sounds directory
-                // never holds two takes for one script.
-                if (script.accepted_voice) {
-                    auto demoted = creatures::storage::demoteVoiceTake(script.accepted_voice->sound_file,
-                                                                       script.accepted_voice->generation_id, opSpan);
-                    if (!demoted.isSuccess()) {
-                        return bailFromServerError(span, demoted.getError().value());
+                // Acceptance promises that this exact performance survives
+                // cache sweeps and reboots. Make the cached generation durable
+                // before changing either the WAV location or the script.
+                const bool durableAlreadyExisted = creatures::voice::acceptedGenerationExists(cacheKey, generationId);
+                if (!durableAlreadyExisted) {
+                    auto madeDurable = creatures::voice::saveAcceptedGeneration(cacheKey, generationId);
+                    if (!madeDurable.isSuccess()) {
+                        creatures::voice::removeAcceptedGeneration(cacheKey, generationId);
+                        return bailFromServerError(span, madeDurable.getError().value());
                     }
                 }
+                const auto discardNewDurableCopy = [&] {
+                    if (!durableAlreadyExisted)
+                        creatures::voice::removeAcceptedGeneration(cacheKey, generationId);
+                };
+                const auto previousAcceptance = script.accepted_voice;
 
                 const auto filename = util::exportBasename(script.title, generationId) + ".wav";
                 auto promoted = creatures::storage::promoteVoiceTake(generationId, filename, opSpan);
                 if (!promoted.isSuccess()) {
+                    discardNewDurableCopy();
                     return bailFromServerError(span, promoted.getError().value());
                 }
 
@@ -237,7 +269,31 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                 updated["updated_at"] = std::max(nowMillis(), script.updated_at + 1);
                 auto published = creatures::storage::publishDialogScript(updated.dump(), opSpan);
                 if (!published.isSuccess()) {
+                    // Publication is the commit point. Roll the new WAV back
+                    // to ad-hoc and remove a newly-created durable generation;
+                    // the old acceptance has not been touched yet.
+                    const auto rollback =
+                        creatures::storage::demoteVoiceTake(accepted.sound_file, generationId, opSpan);
+                    if (!rollback.isSuccess()) {
+                        warn("could not roll back voice take {} after script publish failed: {}", generationId,
+                             rollback.getError()->getMessage());
+                    }
+                    discardNewDurableCopy();
                     return bailFromServerError(span, published.getError().value());
+                }
+
+                // The script now points at the new take, so cleanup of the old
+                // assets is best effort. A cleanup failure may waste disk, but
+                // cannot leave MongoDB pointing at a moved file.
+                if (previousAcceptance) {
+                    auto demoted = creatures::storage::demoteVoiceTake(previousAcceptance->sound_file,
+                                                                       previousAcceptance->generation_id, opSpan);
+                    if (!demoted.isSuccess()) {
+                        warn("accepted voice take {} but could not demote previous take {}: {}", generationId,
+                             previousAcceptance->generation_id, demoted.getError()->getMessage());
+                    }
+                    creatures::voice::removeAcceptedGeneration(previousAcceptance->dialog_cache_key,
+                                                               previousAcceptance->generation_id);
                 }
 
                 info("accepted voice take {} for script '{}' -> {}", generationId, script.title, accepted.sound_file);
@@ -245,7 +301,8 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                     span->setAttribute("voice.sound_file", accepted.sound_file);
                     span->setHttpStatus(200);
                 }
-                return createDtoResponse(Status::CODE_200, creatures::convertToDto(published.getValue().value()));
+                return jsonResponse(span, Status::CODE_200,
+                                    creatures::dialogScriptToJson(published.getValue().value()));
             });
     }
 };

@@ -29,6 +29,13 @@ namespace creatures::jobs {
  */
 class JobWorker : public creatures::StoppableThread {
   public:
+    struct QueueAdmission {
+        enum class Status { Queued, Full, EnqueueFailed };
+
+        Status status{Status::Full};
+        std::string jobId;
+    };
+
     /**
      * Create a new job worker
      *
@@ -49,10 +56,15 @@ class JobWorker : public creatures::StoppableThread {
      */
     void queueJob(const std::string &jobId);
 
-    /// Reserve one of the bounded music-generation slots and queue the job on
-    /// its dedicated worker. Returns false without queueing when both slots are
-    /// already queued/running.
-    [[nodiscard]] bool tryQueueMusicJob(const std::string &jobId);
+    /// Atomically reserve bounded general-worker capacity, create the JobState,
+    /// and queue it. A full queue creates no JobState and retains no details.
+    [[nodiscard]] QueueAdmission tryCreateAndQueueJob(JobType type, const std::string &details,
+                                                      std::shared_ptr<creatures::RequestSpan> parentSpan = nullptr);
+
+    /// Atomically reserve one of the two music slots, create the JobState, and
+    /// queue it on the dedicated worker. Full admission retains no details.
+    [[nodiscard]] QueueAdmission
+    tryCreateAndQueueMusicJob(const std::string &details, std::shared_ptr<creatures::RequestSpan> parentSpan = nullptr);
 
   protected:
     /**
@@ -63,15 +75,23 @@ class JobWorker : public creatures::StoppableThread {
     void run() override;
 
   private:
+    struct QueuedJob {
+        std::string jobId;
+        bool countsTowardLimit{false};
+    };
+
     std::shared_ptr<JobManager> jobManager_;
-    std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> jobQueue_;
+    std::shared_ptr<moodycamel::BlockingConcurrentQueue<QueuedJob>> jobQueue_;
     std::shared_ptr<moodycamel::BlockingConcurrentQueue<std::string>> musicJobQueue_;
+    std::atomic<std::size_t> jobsInFlight_{0};
     std::atomic<std::size_t> musicJobsInFlight_{0};
     std::thread musicThread_;
 
+    static constexpr std::size_t kMaxJobsInFlight = 8;
     static constexpr std::size_t kMaxMusicJobsInFlight = 2;
 
     void runMusicJobs();
+    void processJobSafely(const std::string &jobId);
 
     /**
      * Process a single job by dispatching to the appropriate handler
@@ -124,17 +144,17 @@ class JobWorker : public creatures::StoppableThread {
     /**
      * Generate (or load) a dialog preview take and return its metadata.
      *
-     * Details JSON is a serialized DialogPreviewRequestDto. Runs the shared
+     * Details JSON is the neutral DialogPreviewRequest contract. Runs the shared
      * DialogPreviewService::loadOrGenerate with per-chunk progress broadcasts;
-     * completion result is the DialogPreviewMetaResponseDto JSON the sync path
-     * used to return.
+     * completion result is the neutral DialogPreviewMetaResponse JSON returned
+     * by the synchronous cache-hit path.
      */
     void handleDialogPreviewJob(JobState &jobState);
 
     /**
      * Assemble a dialog preview's 17-channel WAV into the ad-hoc sound bucket.
      *
-     * Details JSON is a serialized DialogPreviewRequestDto. Generates/loads the
+     * Details JSON is the neutral DialogPreviewRequest contract. Generates/loads the
      * take, then writes the WAV to preview-exports/. Completion result carries
      * the downloadable file_name (+ generation_id, cache_key).
      */
@@ -159,7 +179,7 @@ class JobWorker : public creatures::StoppableThread {
      * the take's WAV from the cached generation — never an ElevenLabs call, so
      * the performance is unchanged — then demotes any outgoing take, promotes
      * this one, and stamps `accepted_voice` on the script. Completion result is
-     * the canonical DialogScriptDto JSON, the same body the synchronous accept
+     * the canonical DialogScript JSON, the same body the synchronous accept
      * returns. The controller only enqueues this when the audio is missing; the
      * ordinary path stays a 200.
      */

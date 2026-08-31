@@ -4,12 +4,12 @@
 
 #include <fmt/format.h>
 
-#include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/DialogContracts.h"
+#include "api/JobResponses.h"
 #include "model/DialogScript.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobState.h"
@@ -18,9 +18,8 @@
 #include "server/voice/ScriptCacheKey.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/DialogDto.h"
-#include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/StatusDto.h"
+#include "util/JsonParser.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
 
@@ -55,35 +54,41 @@ class DialogController : public oatpp::web::server::api::ApiController, public H
             "runs the rest asynchronously and publishes progress + completion over the WebSocket job-progress "
             "stream. Filter for the returned job_id to follow this scene's job.";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/animation/dialog", submitDialog, BODY_DTO(Object<DialogRequestDto>, requestBody),
-             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+    ENDPOINT("POST", "api/v1/animation/dialog", submitDialog, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/dialog", "POST", "api/v1/animation/dialog", "submitDialog", "DialogController",
             request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                // Cheap up-front shape checks. Anything that requires DB
-                // access (creature existence, distinct lanes, etc.) lives in
-                // the worker — failing fast on cheap stuff keeps the client
-                // from having to wait + poll for the obvious "you forgot
-                // turns[]" case.
-                if (!requestBody) {
-                    return bailHttp(span, Status::CODE_400, "request body required");
+                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
+                const auto parseSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                                      "DialogController.parseDialogRequest", span)
+                                                                : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "dialog.submit");
+                const auto json = JsonParser::parseApiJsonString(body, "dialog request", parseSpan);
+                if (!json.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, json.getError().value());
                 }
-                const bool hasTurns = requestBody->turns && !requestBody->turns->empty();
-                const bool hasScriptId = requestBody->script_id && !requestBody->script_id->empty();
-                if (hasTurns && hasScriptId) {
-                    return bailHttp(span, Status::CODE_400, "provide either turns or script_id, not both");
+                const auto parsed = api::dialogRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidDialogRequest", error.getCode());
+                    return bailFromServerError(span, error);
                 }
-                if (!hasTurns && !hasScriptId) {
-                    return bailHttp(span, Status::CODE_400,
-                                    "turns must be a non-empty array (or provide script_id to render a saved script)");
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
                 }
-                if (hasScriptId && !isUuidShape(std::string(*requestBody->script_id))) {
-                    return bailHttp(span, Status::CODE_400, "script_id must be a UUID");
-                }
+                const auto dialogRequest = parsed.getValue().value();
+                const bool hasTurns = !dialogRequest.turns.empty();
+                const bool hasScriptId = dialogRequest.scriptId.has_value();
 
                 // ---- Accepted voice take gate (#131) -----------------------
                 // Strict, not fallback-soft: un-auditioned audio must never
@@ -95,11 +100,11 @@ class DialogController : public oatpp::web::server::api::ApiController, public H
                 // to carry an acceptance, so they keep working as they always
                 // have. An explicit generation_id is still an override, for
                 // the CLI and tooling.
-                const bool hasExplicitGeneration = requestBody->generation_id && !requestBody->generation_id->empty();
+                const bool hasExplicitGeneration = dialogRequest.generationId.has_value();
                 if (hasScriptId && !hasExplicitGeneration) {
                     auto gateSpan =
                         creatures::observability->createChildOperationSpan("DialogController.acceptedVoiceGate", span);
-                    auto scriptResult = creatures::db->getDialogScript(std::string(*requestBody->script_id), gateSpan);
+                    auto scriptResult = creatures::db->getDialogScript(*dialogRequest.scriptId, gateSpan);
                     if (!scriptResult.isSuccess()) {
                         return bailFromServerError(span, scriptResult.getError().value());
                     }
@@ -124,83 +129,49 @@ class DialogController : public oatpp::web::server::api::ApiController, public H
                         span->setAttribute("dialog.accepted_generation_id", script.accepted_voice->generation_id);
                     }
                 }
-                if (!requestBody->persistence ||
-                    (*requestBody->persistence != "adhoc" && *requestBody->persistence != "permanent")) {
-                    return bailHttp(span, Status::CODE_400, "persistence must be 'adhoc' or 'permanent'");
-                }
-                if (hasTurns) {
-                    // Same caps the saved-script path enforces. Without them the inline
-                    // path is the easier amplification target for a JSON bomb (security
-                    // review S1). Shared constants live in model/DialogScript.h.
-                    if (requestBody->turns->size() > creatures::MAX_DIALOG_SCRIPT_TURNS) {
-                        return bailHttp(span, Status::CODE_400,
-                                        fmt::format("turns has {} entries; max {}", requestBody->turns->size(),
-                                                    creatures::MAX_DIALOG_SCRIPT_TURNS));
-                    }
-                    for (const auto &t : *requestBody->turns) {
-                        if (!t || !t->creature_id || t->creature_id->empty() || !t->text || t->text->empty()) {
-                            return bailHttp(span, Status::CODE_400,
-                                            "every turn must have a non-empty creature_id and text");
-                        }
-                        if (t->text->size() > creatures::MAX_DIALOG_SCRIPT_TURN_TEXT) {
-                            return bailHttp(span, Status::CODE_400,
-                                            fmt::format("turn 'text' is {} chars; max {}", t->text->size(),
-                                                        creatures::MAX_DIALOG_SCRIPT_TURN_TEXT));
-                        }
-                    }
-                }
-
-                // Serialize the DTO into a JSON string for the job framework's
-                // string-typed `details` field. The worker round-trips back
-                // through the same ObjectMapper so both sides share one schema
-                // (rather than agreeing on key names by hand).
-                auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-                std::string detailsStr;
-                try {
-                    detailsStr = jsonMapper->writeToString(requestBody)->c_str();
-                } catch (const std::exception &e) {
-                    if (span) {
-                        span->setError(e.what());
-                    }
-                    return bailHttp(span, Status::CODE_500,
-                                    fmt::format("failed to serialize request body: {}", e.what()));
-                }
+                const auto detailsStr = api::dialogRequestToJson(dialogRequest).dump();
 
                 if (span) {
                     if (hasTurns) {
-                        span->setAttribute("dialog.turns", static_cast<int64_t>(requestBody->turns->size()));
+                        span->setAttribute("dialog.turns", static_cast<int64_t>(dialogRequest.turns.size()));
                     }
                     if (hasScriptId) {
-                        span->setAttribute("dialog.script_id", std::string(*requestBody->script_id));
+                        span->setAttribute("dialog.script_id", canonicalUuid(*dialogRequest.scriptId));
                     }
-                    span->setAttribute("dialog.persistence", std::string(*requestBody->persistence));
-                    span->setAttribute("dialog.autoplay",
-                                       requestBody->autoplay ? static_cast<bool>(*requestBody->autoplay) : false);
+                    span->setAttribute("dialog.persistence", dialogRequest.persistence);
+                    span->setAttribute("dialog.autoplay", dialogRequest.autoplay);
                 }
 
-                const std::string jobId =
-                    creatures::jobManager->createJob(creatures::jobs::JobType::Dialog, detailsStr, span);
-                creatures::jobWorker->queueJob(jobId);
+                const auto admission =
+                    creatures::jobWorker->tryCreateAndQueueJob(creatures::jobs::JobType::Dialog, detailsStr, span);
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::Full) {
+                    return bailHttp(span, Status::CODE_429,
+                                    "Eight dialog jobs are already queued or running; try again shortly", nullptr,
+                                    "QueueAdmissionRejected");
+                }
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::EnqueueFailed) {
+                    return bailHttp(span, Status::CODE_500, "Could not queue dialog job", nullptr,
+                                    "QueueEnqueueFailure");
+                }
+                const auto &jobId = admission.jobId;
 
                 if (span) {
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);
                 }
 
-                auto response = JobCreatedDto::createShared();
-                response->job_id = jobId.c_str();
-                response->job_type = "dialog";
-                response->message =
+                api::JobCreatedResponse response;
+                response.jobId = jobId;
+                response.jobType = "dialog";
+                response.message =
                     hasScriptId
                         ? fmt::format("Dialog job created from script {}. Listen for job-progress and job-complete "
                                       "WebSocket messages on this job_id.",
-                                      std::string(*requestBody->script_id))
-                              .c_str()
+                                      *dialogRequest.scriptId)
                         : fmt::format("Dialog job created with {} turn(s). Listen for job-progress and "
                                       "job-complete WebSocket messages on this job_id.",
-                                      requestBody->turns->size())
-                              .c_str();
-                return createDtoResponse(Status::CODE_202, response);
+                                      dialogRequest.turns.size());
+                return jsonResponse(span, Status::CODE_202, api::jobCreatedResponseToJson(response));
             });
     }
 };

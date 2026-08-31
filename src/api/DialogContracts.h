@@ -54,6 +54,12 @@ struct DialogMusicRequest {
     std::string generationMode = "track";
 };
 
+struct AcceptVoiceTakeRequest {
+    std::string scriptId;
+    std::string generationId;
+    std::string dialogCacheKey;
+};
+
 struct DialogMusicGenerationResult {
     std::string musicGenerationId;
     std::string mp3Url;
@@ -111,6 +117,29 @@ struct DialogPreviewMetaResponse {
     std::vector<DialogPreviewTiming> forcedAlignmentChars;
     double forcedAlignmentLoss = 0;
 };
+
+struct DialogPreviewGenerationEntry {
+    std::string generationId;
+    std::string createdAt;
+};
+
+struct DialogPreviewLookupResponse {
+    std::string cacheKey;
+    std::vector<DialogPreviewGenerationEntry> generations;
+    std::string latestGenerationId;
+};
+
+struct DialogScriptValidationResponse {
+    bool valid = true;
+    std::optional<std::string> scriptId;
+    uint32_t turnCount = 0;
+    std::vector<std::string> missingCreatureIds;
+    std::vector<std::string> errorMessages;
+};
+
+inline bool isLowercaseSha256(std::string_view value) {
+    return value.size() == 64 && value.find_first_not_of("0123456789abcdef") == std::string_view::npos;
+}
 
 inline Result<void> validateDialogPreviewRequest(const DialogPreviewRequest &request) {
     if (request.turns.empty() || request.turns.size() > MAX_DIALOG_SCRIPT_TURNS)
@@ -233,6 +262,10 @@ inline Result<DialogRequest> dialogRequestFromJson(const nlohmann::json &json) {
         return json_codec::invalid<DialogRequest>("dialog request requires exactly one of turns or script_id");
     if (hasScriptId && !isUuidShape(*request.scriptId))
         return json_codec::invalid<DialogRequest>("dialog request.script_id must be a UUID");
+    if (request.stageId && !request.stageId->empty() && !isUuidShape(*request.stageId))
+        return json_codec::invalid<DialogRequest>("dialog request.stage_id must be a UUID");
+    if (request.generationId && !isUuidShape(*request.generationId))
+        return json_codec::invalid<DialogRequest>("dialog request.generation_id must be a UUID");
     if (request.persistence != "adhoc" && request.persistence != "permanent")
         return json_codec::invalid<DialogRequest>("dialog request.persistence must be 'adhoc' or 'permanent'");
     return Result<DialogRequest>{std::move(request)};
@@ -298,7 +331,94 @@ inline Result<DialogMusicRequest> dialogMusicRequestFromJson(const nlohmann::jso
                                prompt.getValue().value(),
                                duration.getValue().value().value_or(0),
                                mode.getValue().value().value_or("track")};
+    if (!isUuidShape(request.scriptId))
+        return json_codec::invalid<DialogMusicRequest>("dialog music request.script_id must be a UUID");
+    if (!isLowercaseSha256(request.dialogCacheKey))
+        return json_codec::invalid<DialogMusicRequest>(
+            "dialog music request.dialog_cache_key must be a 64-character lowercase hex sha256");
+    if (!isUuidShape(request.dialogGenerationId))
+        return json_codec::invalid<DialogMusicRequest>("dialog music request.dialog_generation_id must be a UUID");
+    if (request.generationMode != "track" && request.generationMode != "loop" && request.generationMode != "ambience")
+        return json_codec::invalid<DialogMusicRequest>(
+            "dialog music request.generation_mode must be 'track', 'loop', or 'ambience'");
     return Result<DialogMusicRequest>{std::move(request)};
+}
+
+inline Result<AcceptVoiceTakeRequest> acceptVoiceTakeRequestFromJson(const nlohmann::json &json) {
+    auto fields = json_codec::rejectUnknownFields(json, "accept voice take request",
+                                                  {"script_id", "generation_id", "dialog_cache_key"});
+    if (!fields.isSuccess())
+        return Result<AcceptVoiceTakeRequest>{fields.getError().value()};
+    auto scriptId = json_codec::requiredString(json, "accept voice take request", "script_id", 64);
+    auto generationId = json_codec::requiredString(json, "accept voice take request", "generation_id", 64);
+    auto cacheKey = json_codec::requiredString(json, "accept voice take request", "dialog_cache_key", 64);
+    if (!scriptId.isSuccess())
+        return Result<AcceptVoiceTakeRequest>{scriptId.getError().value()};
+    if (!generationId.isSuccess())
+        return Result<AcceptVoiceTakeRequest>{generationId.getError().value()};
+    if (!cacheKey.isSuccess())
+        return Result<AcceptVoiceTakeRequest>{cacheKey.getError().value()};
+    AcceptVoiceTakeRequest request{scriptId.getValue().value(), generationId.getValue().value(),
+                                   cacheKey.getValue().value()};
+    if (!isUuidShape(request.scriptId))
+        return json_codec::invalid<AcceptVoiceTakeRequest>("accept voice take request.script_id must be a UUID");
+    if (!isUuidShape(request.generationId))
+        return json_codec::invalid<AcceptVoiceTakeRequest>("accept voice take request.generation_id must be a UUID");
+    if (!isLowercaseSha256(request.dialogCacheKey))
+        return json_codec::invalid<AcceptVoiceTakeRequest>(
+            "accept voice take request.dialog_cache_key must be a 64-character lowercase hex sha256");
+    return Result<AcceptVoiceTakeRequest>{std::move(request)};
+}
+
+inline Result<std::vector<DialogTurnRequest>> dialogPreviewLookupRequestFromJson(const nlohmann::json &json) {
+    auto fields = json_codec::rejectUnknownFields(json, "dialog preview lookup request", {"turns"});
+    if (!fields.isSuccess())
+        return Result<std::vector<DialogTurnRequest>>{fields.getError().value()};
+    auto turnsJson =
+        json_codec::requiredArray(json, "dialog preview lookup request", "turns", MAX_DIALOG_SCRIPT_TURNS, 1);
+    if (!turnsJson.isSuccess())
+        return Result<std::vector<DialogTurnRequest>>{turnsJson.getError().value()};
+    return dialogTurnsFromJson(turnsJson.getValue().value().get(), "dialog preview lookup request.turns");
+}
+
+inline nlohmann::json dialogTurnsToJson(const std::vector<DialogTurnRequest> &turns) {
+    auto json = nlohmann::json::array();
+    for (const auto &turn : turns)
+        json.push_back({{"creature_id", turn.creatureId}, {"text", turn.text}});
+    return json;
+}
+
+inline nlohmann::json dialogRequestToJson(const DialogRequest &request) {
+    nlohmann::json json{{"persistence", request.persistence}, {"autoplay", request.autoplay}};
+    if (!request.turns.empty())
+        json["turns"] = dialogTurnsToJson(request.turns);
+    if (request.scriptId)
+        json["script_id"] = *request.scriptId;
+    if (request.title)
+        json["title"] = *request.title;
+    if (request.stageId)
+        json["stage_id"] = *request.stageId;
+    if (request.generationId)
+        json["generation_id"] = *request.generationId;
+    return json;
+}
+
+inline nlohmann::json dialogPreviewRequestToJson(const DialogPreviewRequest &request) {
+    nlohmann::json json{{"turns", dialogTurnsToJson(request.turns)}, {"regenerate", request.regenerate}};
+    if (request.generationId)
+        json["generation_id"] = *request.generationId;
+    if (request.title)
+        json["title"] = *request.title;
+    return json;
+}
+
+inline nlohmann::json dialogMusicRequestToJson(const DialogMusicRequest &request) {
+    return {{"script_id", request.scriptId},
+            {"dialog_cache_key", request.dialogCacheKey},
+            {"dialog_generation_id", request.dialogGenerationId},
+            {"prompt", request.prompt},
+            {"duration_extension_ms", request.durationExtensionMs},
+            {"generation_mode", request.generationMode}};
 }
 
 inline nlohmann::json dialogMusicGenerationResultToJson(const DialogMusicGenerationResult &result) {
@@ -355,6 +475,25 @@ inline nlohmann::json dialogPreviewMetaResponseToJson(const DialogPreviewMetaRes
             {"forced_alignment_words", timingsToJson(response.forcedAlignmentWords)},
             {"forced_alignment_chars", timingsToJson(response.forcedAlignmentChars)},
             {"forced_alignment_loss", response.forcedAlignmentLoss}};
+}
+
+inline nlohmann::json dialogPreviewLookupResponseToJson(const DialogPreviewLookupResponse &response) {
+    auto generations = nlohmann::json::array();
+    for (const auto &generation : response.generations)
+        generations.push_back({{"generation_id", generation.generationId}, {"created_at", generation.createdAt}});
+    return {{"cache_key", response.cacheKey},
+            {"generations", std::move(generations)},
+            {"latest_generation_id", response.latestGenerationId}};
+}
+
+inline nlohmann::json dialogScriptValidationResponseToJson(const DialogScriptValidationResponse &response) {
+    nlohmann::json json{{"valid", response.valid},
+                        {"turn_count", response.turnCount},
+                        {"missing_creature_ids", response.missingCreatureIds},
+                        {"error_messages", response.errorMessages}};
+    if (response.scriptId)
+        json["script_id"] = *response.scriptId;
+    return json;
 }
 
 } // namespace creatures::api

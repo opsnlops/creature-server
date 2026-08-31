@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -9,10 +8,11 @@
 #include <fmt/format.h>
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/web/protocol/http/outgoing/ResponseFactory.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/DialogContracts.h"
+#include "api/JobResponses.h"
 #include "model/DialogScript.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
@@ -20,11 +20,10 @@
 #include "server/voice/MusicGenerationCache.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/DialogMusicDto.h"
-#include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/DialogMusicService.h"
 #include "server/ws/service/SoundRenditionService.h"
+#include "util/JsonParser.h"
 #include "util/Sha256.h"
 #include "util/Slugify.h"
 #include "util/helpers.h"
@@ -61,69 +60,69 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
             "Returns a job id. Progress/completion arrive through the existing job WebSocket; the "
             "completion result contains an immutable MP3 preview URL. The 48 kHz WAV stays server-side.";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_429, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/animation/dialog/music", submitDialogMusic, BODY_DTO(Object<DialogMusicRequestDto>, body),
+    ENDPOINT("POST", "api/v1/animation/dialog/music", submitDialogMusic,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/dialog/music", "POST", "api/v1/animation/dialog/music", "submitDialogMusic",
             "DialogMusicController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (!body || !body->script_id || !body->dialog_cache_key || !body->dialog_generation_id ||
-                    !body->prompt) {
-                    return bailHttp(span, Status::CODE_400,
-                                    "script_id, dialog_cache_key, dialog_generation_id, and prompt are required");
+                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "DialogMusicController.parseDialogMusicRequest", span)
+                                           : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "dialog.music.submit");
+                const auto json = JsonParser::parseApiJsonString(body, "dialog music request", parseSpan);
+                if (!json.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, json.getError().value());
                 }
-                const std::string scriptId = body->script_id;
-                const std::string cacheKey = body->dialog_cache_key;
-                const std::string generationId = body->dialog_generation_id;
-                const std::string prompt = body->prompt;
-                const std::string mode = body->generation_mode ? std::string(*body->generation_mode) : "track";
-                const int64_t durationExtensionMs = body->duration_extension_ms ? *body->duration_extension_ms : 0;
-                const bool cacheKeyValid =
-                    cacheKey.size() == 64 && std::all_of(cacheKey.begin(), cacheKey.end(), [](unsigned char c) {
-                        return std::isxdigit(c) && !std::isupper(c);
-                    });
-                if (!isUuidShape(scriptId) || !isUuidShape(generationId) || !cacheKeyValid || prompt.empty() ||
-                    prompt.size() > creatures::MAX_DIALOG_MUSIC_PROMPT || durationExtensionMs < 0 ||
-                    durationExtensionMs > voice::kMaxMusicDurationExtensionMs ||
-                    (mode != "track" && mode != "loop" && mode != "ambience")) {
-                    return bailHttp(span, Status::CODE_400, "dialog music request failed validation");
+                const auto parsed = api::dialogMusicRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidDialogMusicRequest", error.getCode());
+                    return bailFromServerError(span, error);
                 }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
+                const auto musicRequest = parsed.getValue().value();
                 if (span) {
-                    span->setAttribute("dialog.script_id", scriptId);
-                    span->setAttribute("dialog.generation_id", generationId);
-                    span->setAttribute("dialog.cache_key", cacheKey);
-                    span->setAttribute("music.generation_mode", mode);
-                    span->setAttribute("music.prompt_length", static_cast<int64_t>(prompt.size()));
-                    span->setAttribute("music.duration_extension_ms", durationExtensionMs);
+                    span->setAttribute("dialog.script_id", canonicalUuid(musicRequest.scriptId));
+                    span->setAttribute("dialog.generation_id", canonicalUuid(musicRequest.dialogGenerationId));
+                    span->setAttribute("dialog.cache_key", musicRequest.dialogCacheKey);
+                    span->setAttribute("music.generation_mode", musicRequest.generationMode);
+                    span->setAttribute("music.prompt_length", static_cast<int64_t>(musicRequest.prompt.size()));
+                    span->setAttribute("music.duration_extension_ms", musicRequest.durationExtensionMs);
                 }
-                body->generation_mode = mode;
-                body->duration_extension_ms = durationExtensionMs;
-                auto mapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-                std::string details;
-                try {
-                    details = mapper->writeToString(body)->c_str();
-                } catch (const std::exception &e) {
-                    return bailHttp(span, Status::CODE_500,
-                                    fmt::format("failed to serialize music request: {}", e.what()));
-                }
-                const auto jobId = creatures::jobManager->createJob(jobs::JobType::DialogMusic, details, span);
-                if (!creatures::jobWorker->tryQueueMusicJob(jobId)) {
-                    creatures::jobManager->failJob(jobId, "dialog music generation queue is full");
+                const auto details = api::dialogMusicRequestToJson(musicRequest).dump();
+                const auto admission = creatures::jobWorker->tryCreateAndQueueMusicJob(details, span);
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::Full) {
                     return bailHttp(span, Status::CODE_429,
-                                    "Two music generations are already queued or running; try again shortly");
+                                    "Two music generations are already queued or running; try again shortly", nullptr,
+                                    "QueueAdmissionRejected");
                 }
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::EnqueueFailed) {
+                    return bailHttp(span, Status::CODE_500, "Could not queue dialog music job", nullptr,
+                                    "QueueEnqueueFailure");
+                }
+                const auto &jobId = admission.jobId;
                 if (span) {
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);
                 }
-                auto response = JobCreatedDto::createShared();
-                response->job_id = jobId;
-                response->job_type = "dialog-music";
-                response->message = "Dialog music job created; listen for job-progress and job-complete messages.";
-                return createDtoResponse(Status::CODE_202, response);
+                const api::JobCreatedResponse response{
+                    jobId, "dialog-music",
+                    "Dialog music job created; listen for job-progress and job-complete messages."};
+                return jsonResponse(span, Status::CODE_202, api::jobCreatedResponseToJson(response));
             });
     }
 
@@ -236,7 +235,7 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
     ENDPOINT_INFO(promoteGeneratedMusic) {
         info->summary = "Promote a generated take to a permanent provenance-bearing WAV and attach it to its dialog";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<DialogMusicPromotionResultDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/music/generated/{generationId}/promote", promoteGeneratedMusic,
              PATH(String, generationId), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
