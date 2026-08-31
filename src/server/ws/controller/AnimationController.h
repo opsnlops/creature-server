@@ -8,6 +8,8 @@
 #include <oatpp/web/protocol/http/incoming/Request.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/AnimationRequests.h"
+#include "api/JobResponses.h"
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
 #include "server/animation/SessionManager.h"
@@ -20,14 +22,9 @@
 #include "server/metrics/counters.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/AdHocAnimationDto.h"
-#include "server/ws/dto/CreateAdHocAnimationRequestDto.h"
-#include "server/ws/dto/JobCreatedDto.h"
-#include "server/ws/dto/PlayAnimationRequestDto.h"
-#include "server/ws/dto/RegenerateLipSyncRequestDto.h"
-#include "server/ws/dto/TriggerAdHocAnimationRequestDto.h"
 #include "server/ws/service/AnimationService.h"
 #include "server/ws/service/CreatureService.h"
+#include "util/JsonParser.h"
 #include "util/cache.h"
 #include "util/websocketUtils.h"
 #include <nlohmann/json.hpp>
@@ -130,14 +127,14 @@ class AnimationController : public oatpp::web::server::api::ApiController,
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc/{animationId}", getAdHocAnimation, PATH(String, animationId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("GET /api/v1/animation/ad-hoc/{animationId}", "GET",
-                           "api/v1/animation/ad-hoc/" + std::string(animationId), "getAdHocAnimation",
-                           "AnimationController", request, [&](const auto &span) {
+        return runEndpoint("GET /api/v1/animation/ad-hoc/{animationId}", "GET", "api/v1/animation/ad-hoc/{animationId}",
+                           "getAdHocAnimation", "AnimationController", request, [&](const auto &span) {
                                if (!animationId || !isUuidShape(std::string(animationId)))
                                    return bailHttp(span, Status::CODE_400, "animationId must be a UUID");
+                               const auto canonicalAnimationId = canonicalUuid(std::string(animationId));
                                if (span)
-                                   span->setAttribute("animation.id", std::string(animationId));
-                               auto result = m_animationService.getAdHocAnimation(animationId, span);
+                                   span->setAttribute("animation.id", canonicalAnimationId);
+                               auto result = m_animationService.getAdHocAnimation(std::string(animationId), span);
                                if (!result.isSuccess())
                                    return bailFromServerError(span, result.getError().value());
                                const auto animation = result.getValue().value();
@@ -160,14 +157,15 @@ class AnimationController : public oatpp::web::server::api::ApiController,
     }
     ENDPOINT("GET", "api/v1/animation/{animationId}", getAnimation, PATH(String, animationId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("GET /api/v1/animation/{animationId}", "GET", "api/v1/animation/" + std::string(animationId),
+        return runEndpoint("GET /api/v1/animation/{animationId}", "GET", "api/v1/animation/{animationId}",
                            "getAnimation", "AnimationController", request, [&](const auto &span) {
                                if (!animationId || !isUuidShape(std::string(animationId)))
                                    return bailHttp(span, Status::CODE_400, "animationId must be a UUID");
-                               debug("get animation by ID via REST API: {}", std::string(animationId));
+                               const auto canonicalAnimationId = canonicalUuid(std::string(animationId));
+                               debug("get animation by ID via REST API: {}", canonicalAnimationId);
                                if (span)
-                                   span->setAttribute("animation.id", std::string(animationId));
-                               auto result = m_animationService.getAnimation(animationId, span);
+                                   span->setAttribute("animation.id", canonicalAnimationId);
+                               auto result = m_animationService.getAnimation(std::string(animationId), span);
                                if (!result.isSuccess())
                                    return bailFromServerError(span, result.getError().value());
                                const auto animation = result.getValue().value();
@@ -184,38 +182,57 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->description =
             "Queues a background job to derive per-creature lip sync from the animation's multitrack audio.";
         info->addTag("Animations");
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/generate-lipsync", generateLipSyncForAnimation,
-             BODY_DTO(Object<creatures::ws::RegenerateLipSyncRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/generate-lipsync", "POST", "api/v1/animation/generate-lipsync",
             "generateLipSyncForAnimation", "AnimationController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (!requestBody || !requestBody->animation_id || requestBody->animation_id->empty()) {
-                    if (span) {
-                        span->setAttribute("error.type", "invalid_request");
-                    }
-                    return bailHttp(span, Status::CODE_400, "animation_id is required");
+                if (!creatures::db || !creatures::jobManager || !creatures::jobWorker) {
+                    if (span)
+                        span->setAttribute("error.type", "missing_dependencies");
+                    return bailHttp(span, Status::CODE_500,
+                                    "Animation lip sync unavailable: server dependencies missing");
+                }
+                const auto body = readRequestBodyLimited(request, api::MAX_ANIMATION_CONTROL_REQUEST_BODY_BYTES, span);
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "AnimationController.parseRegenerateLipSyncRequest", span)
+                                           : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "animation.lip_sync.regenerate");
+                const auto jsonResult = JsonParser::parseApiJsonString(body, "animation lip sync request", parseSpan);
+                if (!jsonResult.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, jsonResult.getError().value());
+                }
+                const auto requestResult =
+                    api::regenerateAnimationLipSyncRequestFromJson(jsonResult.getValue().value());
+                if (!requestResult.isSuccess()) {
+                    const auto error = requestResult.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidAnimationLipSyncRequest", error.getCode());
+                    return bailFromServerError(span, error);
+                }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
                 }
 
-                std::string animationId = std::string(requestBody->animation_id);
+                const auto animationId = requestResult.getValue()->animationId;
                 if (span) {
-                    span->setAttribute("animation.id", animationId);
+                    span->setAttribute("animation.id", canonicalUuid(animationId));
                 }
 
-                auto animationLookupSpan =
-                    creatures::observability->createOperationSpan("AnimationController.getAnimation", span);
-                if (animationLookupSpan) {
-                    animationLookupSpan->setAttribute("animation.id", animationId);
-                }
-
-                auto animationResult = creatures::db->getAnimation(animationId, animationLookupSpan);
+                auto animationResult = m_animationService.getAnimation(animationId, span);
                 if (!animationResult.isSuccess()) {
                     if (span) {
                         span->setAttribute("error.type", "animation_lookup_failed");
@@ -245,19 +262,19 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                                               jobDetails.dump(), span);
                 creatures::jobWorker->queueJob(jobId);
 
-                auto response = JobCreatedDto::createShared();
-                response->job_id = jobId;
-                response->job_type = "animation-lip-sync";
-                response->message = fmt::format(
-                    "Lip sync generation job created for animation {}. Monitor job-progress events for updates.",
-                    animationId);
+                const api::JobCreatedResponse response{
+                    jobId, "animation-lip-sync",
+                    fmt::format(
+                        "Lip sync generation job created for animation {}. Monitor job-progress events for updates.",
+                        animationId)};
 
                 if (span) {
                     span->setHttpStatus(202);
                     span->setAttribute("job.id", jobId);
+                    span->setAttribute("job.type", "animation-lip-sync");
                 }
 
-                return createDtoResponse(Status::CODE_202, response);
+                return jsonResponse(span, Status::CODE_202, api::jobCreatedResponseToJson(response));
             });
     }
 
@@ -280,7 +297,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                    return bailFromServerError(span, result.getError().value());
                                const auto animation = result.getValue().value();
                                if (span) {
-                                   span->setAttribute("animation.id", animation.id);
+                                   span->setAttribute("animation.id", canonicalUuid(animation.id));
                                    span->setAttribute("animation.title", animation.metadata.title);
                                    span->setHttpStatus(200);
                                }
@@ -301,15 +318,15 @@ class AnimationController : public oatpp::web::server::api::ApiController,
     }
     ENDPOINT("DELETE", "api/v1/animation/{animationId}", deleteAnimation, PATH(String, animationId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("DELETE /api/v1/animation/{animationId}", "DELETE",
-                           fmt::format("api/v1/animation/{}", std::string(animationId)), "deleteAnimation",
-                           "AnimationController", request, [&](const auto &span) {
+        return runEndpoint("DELETE /api/v1/animation/{animationId}", "DELETE", "api/v1/animation/{animationId}",
+                           "deleteAnimation", "AnimationController", request, [&](const auto &span) {
                                if (!animationId || !isUuidShape(std::string(animationId)))
                                    return bailHttp(span, Status::CODE_400, "animationId must be a UUID");
-                               debug("delete animation via REST API: {}", std::string(animationId));
+                               const auto canonicalAnimationId = canonicalUuid(std::string(animationId));
+                               debug("delete animation via REST API: {}", canonicalAnimationId);
                                if (span)
-                                   span->setAttribute("animation.id", std::string(animationId));
-                               auto result = m_animationService.deleteAnimation(animationId, span);
+                                   span->setAttribute("animation.id", canonicalAnimationId);
+                               auto result = m_animationService.deleteAnimation(std::string(animationId), span);
                                if (!result.isSuccess())
                                    return bailFromServerError(span, result.getError().value());
                                if (span)
@@ -324,7 +341,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                                         broadcastResult.getError()->getMessage());
                                }
                                return okStatus(span, Status::CODE_200,
-                                               fmt::format("Deleted animation {}", std::string(animationId)));
+                                               fmt::format("Deleted animation {}", canonicalAnimationId));
                            });
     }
 
@@ -336,9 +353,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
-    ENDPOINT("POST", "api/v1/animation/play", playStoredAnimation,
-             BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody),
-             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+    ENDPOINT("POST", "api/v1/animation/play", playStoredAnimation, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/play", "POST", "api/v1/animation/play", "playStoredAnimation",
             "AnimationController", request, [&](const auto &span) {
@@ -349,24 +364,39 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_500, "Animation play unavailable: server dependencies missing",
                                     nullptr, "MissingDependencies");
                 }
-                if (!requestBody || !requestBody->animation_id ||
-                    !isUuidShape(std::string(requestBody->animation_id))) {
-                    return bailHttp(span, Status::CODE_400, "animation_id must be a UUID", nullptr,
-                                    "InvalidAnimationId");
+                const auto body = readRequestBodyLimited(request, api::MAX_ANIMATION_CONTROL_REQUEST_BODY_BYTES, span);
+                const auto parseSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                                      "AnimationController.parsePlayRequest", span)
+                                                                : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "animation.play");
+                const auto jsonResult = JsonParser::parseApiJsonString(body, "animation play request", parseSpan);
+                if (!jsonResult.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, jsonResult.getError().value());
                 }
-                if (requestBody->universe < 1 || requestBody->universe > 63999) {
-                    return bailHttp(span, Status::CODE_400, "universe must be in [1, 63999]", nullptr,
-                                    "InvalidUniverse");
+                const auto requestResult = api::playAnimationRequestFromJson(jsonResult.getValue().value());
+                if (!requestResult.isSuccess()) {
+                    const auto error = requestResult.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidAnimationPlayRequest", error.getCode());
+                    return bailFromServerError(span, error);
                 }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
+                const auto parsed = requestResult.getValue().value();
 
                 if (span) {
-                    span->setAttribute("animation.id", std::string(requestBody->animation_id));
-                    span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
-                    span->setAttribute("reason", "play");
+                    span->setAttribute("animation.id", canonicalUuid(parsed.animationId));
+                    span->setAttribute("dmx.universe", static_cast<int64_t>(parsed.universe));
+                    span->setAttribute("playback.reason", "play");
                 }
 
-                auto result = m_animationService.playStoredAnimation(std::string(requestBody->animation_id),
-                                                                     requestBody->universe, "play", span);
+                auto result = m_animationService.playStoredAnimation(parsed.animationId, parsed.universe, "play", span);
 
                 if (!result.isSuccess())
                     return bailFromServerError(span, result.getError().value());
@@ -394,7 +424,6 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/interrupt", interruptAnimation,
-             BODY_DTO(Object<creatures::ws::PlayAnimationRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/interrupt", "POST", "api/v1/animation/interrupt", "interruptAnimation",
@@ -406,36 +435,53 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_500,
                                     "Animation interrupt unavailable: server dependencies missing");
                 }
-                if (!requestBody || !requestBody->animation_id ||
-                    !isUuidShape(std::string(requestBody->animation_id))) {
-                    return bailHttp(span, Status::CODE_400, "animation_id must be a UUID");
+                const auto body = readRequestBodyLimited(request, api::MAX_ANIMATION_CONTROL_REQUEST_BODY_BYTES, span);
+                const auto parseSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                                      "AnimationController.parseInterruptRequest", span)
+                                                                : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "animation.interrupt");
+                const auto jsonResult = JsonParser::parseApiJsonString(body, "animation interrupt request", parseSpan);
+                if (!jsonResult.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, jsonResult.getError().value());
                 }
-                if (requestBody->universe < 1 || requestBody->universe > 63999) {
-                    return bailHttp(span, Status::CODE_400, "universe must be in [1, 63999]");
+                const auto requestResult =
+                    api::playAnimationRequestFromJson(jsonResult.getValue().value(), "animation interrupt request");
+                if (!requestResult.isSuccess()) {
+                    const auto error = requestResult.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidAnimationInterruptRequest", error.getCode());
+                    return bailFromServerError(span, error);
                 }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
+                const auto parsed = requestResult.getValue().value();
 
                 {
                     if (span) {
-                        span->setAttribute("animation.id", std::string(requestBody->animation_id));
-                        span->setAttribute("universe", static_cast<int64_t>(requestBody->universe));
-                        span->setAttribute("resume_playlist", static_cast<bool>(requestBody->resumePlaylist));
+                        span->setAttribute("animation.id", canonicalUuid(parsed.animationId));
+                        span->setAttribute("dmx.universe", static_cast<int64_t>(parsed.universe));
+                        span->setAttribute("playback.resume_playlist", parsed.resumePlaylist);
                     }
 
-                    bool shouldResume = requestBody->resumePlaylist ? true : false;
+                    const bool shouldResume = parsed.resumePlaylist;
                     info("REST API: interrupting universe {} with animation {} (resume: {})",
-                         static_cast<uint32_t>(requestBody->universe), std::string(requestBody->animation_id),
-                         shouldResume);
+                         static_cast<uint32_t>(parsed.universe), parsed.animationId, shouldResume);
 
                     // Get the animation from the database
-                    auto animationResult =
-                        m_animationService.getAnimation(std::string(requestBody->animation_id), span);
+                    auto animationResult = m_animationService.getAnimation(parsed.animationId, span);
                     if (!animationResult.isSuccess())
                         return bailFromServerError(span, animationResult.getError().value());
                     auto animation = animationResult.getValue().value();
 
                     // Use SessionManager to interrupt
                     auto sessionResult =
-                        creatures::sessionManager->interrupt(requestBody->universe, animation, shouldResume, span);
+                        creatures::sessionManager->interrupt(parsed.universe, animation, shouldResume, span);
 
                     if (!sessionResult.isSuccess()) {
                         auto errorMsg = sessionResult.getError()->getMessage();
@@ -466,14 +512,13 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->description =
             "Creates a job that synthesizes audio, generates lip sync, stores a temporary animation, and interrupts.";
         info->addTag("Animations");
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc", createAdHocAnimation,
-             BODY_DTO(Object<creatures::ws::CreateAdHocAnimationRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return handleAdHocAnimationRequest(requestBody, request, creatures::jobs::JobType::AdHocSpeech, true,
+        return handleAdHocAnimationRequest(request, creatures::jobs::JobType::AdHocSpeech, true,
                                            "POST /api/v1/animation/ad-hoc", "api/v1/animation/ad-hoc",
                                            "createAdHocAnimation");
     }
@@ -483,15 +528,14 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->description =
             "Creates the same ad-hoc speech job pipeline but skips the final playback. Use the play endpoint later.";
         info->addTag("Animations");
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_422, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc/prepare", prepareAdHocAnimation,
-             BODY_DTO(Object<creatures::ws::CreateAdHocAnimationRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return handleAdHocAnimationRequest(requestBody, request, creatures::jobs::JobType::AdHocSpeechPrepare, false,
+        return handleAdHocAnimationRequest(request, creatures::jobs::JobType::AdHocSpeechPrepare, false,
                                            "POST /api/v1/animation/ad-hoc/prepare", "api/v1/animation/ad-hoc/prepare",
                                            "prepareAdHocAnimation");
     }
@@ -509,7 +553,6 @@ class AnimationController : public oatpp::web::server::api::ApiController,
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc/play", playPreparedAdHocAnimation,
-             BODY_DTO(Object<creatures::ws::TriggerAdHocAnimationRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/ad-hoc/play", "POST", "api/v1/animation/ad-hoc/play", "playPreparedAdHocAnimation",
@@ -522,46 +565,52 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_500, "Ad-hoc play unavailable: server dependencies missing");
                 }
 
-                auto animationId = requestBody->animation_id ? std::string(requestBody->animation_id) : "";
-                bool resumePlaylist =
-                    requestBody->resume_playlist ? static_cast<bool>(requestBody->resume_playlist) : true;
+                const auto body = readRequestBodyLimited(request, api::MAX_ANIMATION_CONTROL_REQUEST_BODY_BYTES, span);
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "AnimationController.parseAdHocTriggerRequest", span)
+                                           : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "animation.ad_hoc.trigger");
+                const auto jsonResult =
+                    JsonParser::parseApiJsonString(body, "ad-hoc animation trigger request", parseSpan);
+                if (!jsonResult.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, jsonResult.getError().value());
+                }
+                const auto requestResult = api::triggerAdHocAnimationRequestFromJson(jsonResult.getValue().value());
+                if (!requestResult.isSuccess()) {
+                    const auto error = requestResult.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidAdHocAnimationTriggerRequest",
+                                    error.getCode());
+                    return bailFromServerError(span, error);
+                }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
+                const auto parsed = requestResult.getValue().value();
+                const auto &animationId = parsed.animationId;
+                const bool resumePlaylist = parsed.resumePlaylist;
 
                 if (span) {
-                    span->setAttribute("animation.id", animationId);
-                    span->setAttribute("resume_playlist", resumePlaylist);
+                    span->setAttribute("animation.id", canonicalUuid(animationId));
+                    span->setAttribute("playback.resume_playlist", resumePlaylist);
                 }
 
-                if (animationId.empty()) {
-                    if (span) {
-                        span->setAttribute("error.type", "invalid_request");
-                    }
-                    return bailHttp(span, Status::CODE_400, "animation_id is required");
-                }
-
-                auto animationLookupSpan =
-                    creatures::observability
-                        ? creatures::observability->createOperationSpan("AnimationController.getAdHocAnimation", span)
-                        : nullptr;
-                if (animationLookupSpan) {
-                    animationLookupSpan->setAttribute("animation.id", animationId);
-                }
-
-                auto animationResult = creatures::db->getAdHocAnimation(animationId, animationLookupSpan);
+                auto animationResult = m_animationService.getAdHocAnimation(animationId, span);
                 if (!animationResult.isSuccess()) {
                     auto error = animationResult.getError().value();
                     if (span) {
                         span->setAttribute("error.type", "adhoc_animation_lookup_failed");
                     }
-                    if (animationLookupSpan) {
-                        animationLookupSpan->setError(error.getMessage());
-                    }
                     return bailFromServerError(span, error);
                 }
 
                 auto animation = animationResult.getValue().value();
-                if (animationLookupSpan) {
-                    animationLookupSpan->setSuccess();
-                }
                 if (animation.tracks.empty()) {
                     if (span) {
                         span->setAttribute("error.type", "empty_animation");
@@ -626,7 +675,7 @@ class AnimationController : public oatpp::web::server::api::ApiController,
 
                 if (span) {
                     span->setAttribute("creature.ids", creatures::joinStrings(targetCreatures, ","));
-                    span->setAttribute("universe", static_cast<int64_t>(universe));
+                    span->setAttribute("dmx.universe", static_cast<int64_t>(universe));
                     span->setAttribute("session.id", sessionResult.getValue().value()->getSessionId());
                     span->setHttpStatus(200);
                 }
@@ -637,67 +686,69 @@ class AnimationController : public oatpp::web::server::api::ApiController,
 
   private:
     std::shared_ptr<OutgoingResponse>
-    handleAdHocAnimationRequest(const oatpp::Object<creatures::ws::CreateAdHocAnimationRequestDto> &requestBody,
-                                const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request,
+    handleAdHocAnimationRequest(const std::shared_ptr<oatpp::web::protocol::http::incoming::Request> &request,
                                 creatures::jobs::JobType jobType, bool autoPlay, const std::string &spanName,
                                 const std::string &endpointPath, const std::string &endpointName) {
         return runEndpoint(
             spanName, "POST", endpointPath, endpointName, "AnimationController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
                 if (span) {
-                    span->setAttribute("auto_play", autoPlay);
+                    span->setAttribute("playback.auto_play", autoPlay);
                 }
 
-                if (!creatures::config || !creatures::db || !creatures::sessionManager) {
+                if (!creatures::config || !creatures::db || !creatures::sessionManager || !creatures::jobManager ||
+                    !creatures::jobWorker) {
                     if (span) {
                         span->setAttribute("error.type", "missing_dependencies");
                     }
                     return bailHttp(span, Status::CODE_500, "Ad-hoc request unavailable: server dependencies missing");
                 }
 
-                auto creatureId = requestBody->creature_id ? std::string(requestBody->creature_id) : "";
-                auto text = requestBody->text ? std::string(requestBody->text) : "";
-                bool resumePlaylist =
-                    requestBody->resume_playlist ? static_cast<bool>(requestBody->resume_playlist) : true;
+                const auto body = readRequestBodyLimited(request, api::MAX_AD_HOC_SPEECH_REQUEST_BODY_BYTES, span);
+                const auto parseSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                                      "AnimationController.parseAdHocRequest", span)
+                                                                : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "animation.ad_hoc.create");
+                const auto jsonResult = JsonParser::parseApiJsonString(body, "ad-hoc animation request", parseSpan);
+                if (!jsonResult.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, jsonResult.getError().value());
+                }
+                const auto requestResult = api::createAdHocAnimationRequestFromJson(jsonResult.getValue().value());
+                if (!requestResult.isSuccess()) {
+                    const auto error = requestResult.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidAdHocAnimationRequest", error.getCode());
+                    return bailFromServerError(span, error);
+                }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
+                const auto parsed = requestResult.getValue().value();
+                const auto &creatureId = parsed.creatureId;
+                const auto &text = parsed.text;
+                const bool resumePlaylist = parsed.resumePlaylist;
 
                 if (span) {
-                    span->setAttribute("creature.id", creatureId);
+                    span->setAttribute("creature.id", canonicalUuid(creatureId));
                     span->setAttribute("text.length", static_cast<int64_t>(text.size()));
-                    span->setAttribute("resume_playlist", resumePlaylist);
+                    span->setAttribute("playback.resume_playlist", resumePlaylist);
                 }
 
-                if (creatureId.empty() || text.empty()) {
-                    if (span) {
-                        span->setAttribute("error.type", "invalid_request");
-                    }
-                    return bailHttp(span, Status::CODE_400, "creature_id and text are required");
-                }
-
-                auto creatureLookupSpan =
-                    creatures::observability->createOperationSpan("AnimationController.lookupCreature", span);
-                if (creatureLookupSpan) {
-                    creatureLookupSpan->setAttribute("creature.id", creatureId);
-                }
-
-                auto creatureResult = creatures::db->getCreature(creatureId, creatureLookupSpan);
+                auto creatureResult = CreatureService::getCreature(creatureId, span);
                 if (!creatureResult.isSuccess()) {
                     auto error = creatureResult.getError().value();
-                    const int statusCode = creatures::serverErrorToStatusCode(error.getCode());
-                    if (creatureLookupSpan) {
-                        creatureLookupSpan->setError(error.getMessage());
-                        creatureLookupSpan->setAttribute("error.code", static_cast<int64_t>(statusCode));
-                    }
                     if (span) {
                         span->setAttribute("error.type", "creature_lookup_failed");
                     }
                     return bailFromServerError(span, error);
                 }
 
-                if (creatureLookupSpan) {
-                    creatureLookupSpan->setSuccess();
-                }
-
-                const auto creature = creatureResult.getValue().value();
+                const auto creature = creatureResult.getValue()->creature;
                 if (creature.speech_loop_animation_ids.empty()) {
                     if (span) {
                         span->setAttribute("error.type", "missing_speech_loop_animation_ids");
@@ -717,15 +768,13 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                 auto jobId = creatures::jobManager->createJob(jobType, jobDetails.dump(), span);
                 creatures::jobWorker->queueJob(jobId);
 
-                auto response = JobCreatedDto::createShared();
-                response->job_id = jobId;
-                response->job_type = creatures::jobs::toString(jobType).c_str();
+                api::JobCreatedResponse response{jobId, creatures::jobs::toString(jobType), {}};
                 if (autoPlay) {
-                    response->message = fmt::format(
+                    response.message = fmt::format(
                         "Ad-hoc speech job created for '{}'. Listen for job-progress and job-complete messages.",
                         creatureId);
                 } else {
-                    response->message = fmt::format(
+                    response.message = fmt::format(
                         "Prepared ad-hoc speech job created for '{}'. Call /api/v1/animation/ad-hoc/play when ready.",
                         creatureId);
                 }
@@ -733,9 +782,10 @@ class AnimationController : public oatpp::web::server::api::ApiController,
                 if (span) {
                     span->setHttpStatus(202);
                     span->setAttribute("job.id", jobId);
+                    span->setAttribute("job.type", response.jobType);
                 }
 
-                return createDtoResponse(Status::CODE_202, response);
+                return jsonResponse(span, Status::CODE_202, api::jobCreatedResponseToJson(response));
             });
     }
 };

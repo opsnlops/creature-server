@@ -44,8 +44,8 @@ live beside otherwise framework-neutral domain structs.
 | File | DTO classes | Current role | Neutral path already present |
 |---|---|---|---|
 | `src/model/AdHocExchange.h` | `AdHocExchangePartDto`, `AdHocExchangeDto`, `AdHocExchangeListDto` | REST response/list; exchange persistence uses the domain type | `adHocExchangeToJson` and `adHocExchangeFromJson` |
-| `src/model/Animation.h` | `AnimationDto` | REST response and accepted POST/ad-hoc input | Strict model-owned `animationToJson` / `animationFromJson`; API and persistence envelopes are distinct |
-| `src/model/AnimationMetadata.h` | `CreatureRenderChoiceDto`, `AnimationMetadataDto` | Animation list/detail response and nested input | Strict model-owned `animationMetadataToJson` / `animationMetadataFromJson` |
+| `src/model/Animation.h` | — | REST response and accepted POST input use neutral JSON | Strict model-owned `animationToJson` / `animationFromJson`; API and persistence envelopes are distinct |
+| `src/model/AnimationMetadata.h` | — | Animation list/detail response and nested input use neutral JSON | Strict model-owned `animationMetadataToJson` / `animationMetadataFromJson` |
 | `src/model/DialogScript.h` | `DialogScriptTurnDto`, `AcceptedVoiceDto`, `DialogBackgroundMusicDto`, `DialogScriptDto` | Primarily REST and job response; input is already parsed from raw JSON | `dialogScriptToJson`; database-owned `dialogScriptFromJson` |
 | `src/model/DmxFixture.h` | — | REST responses; config input is parsed from raw JSON | Strict model-owned `dmxFixtureToJson` / `dmxFixtureFromJson`; persistence still uses its legacy parser |
 | `src/server/ws/dto/InputDto.h` (moved from `src/model/Input.h`) | `InputDto` | Temporary oat++ adapter for remaining non-Creature nested uses | Strict model-owned `inputToJson` / `inputFromJson` |
@@ -56,7 +56,7 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/Stage.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned placement and audio keys | `stageToJson`; database-owned `stageFromJson` |
 | `src/model/Storyboard.h` | — | Runtime serialization uses raw neutral JSON to preserve console-owned tile action keys | `storyboardToJson`; database-owned `storyboardFromJson` |
 | `src/model/StreamFrame.h` | — | Framework-neutral inbound stream command | Strict model-owned `streamFrameToJson` / `streamFrameFromJson`; valid UUID, E1.31 universe, and capped 512-byte decoded DMX payload |
-| `src/model/Track.h` | `TrackDto` | Nested animation input/response | Strict model-owned `trackToJson` / `trackFromJson` |
+| `src/model/Track.h` | — | Nested animation input/response use neutral JSON | Strict model-owned `trackToJson` / `trackFromJson` |
 
 ### Model observations
 
@@ -89,9 +89,11 @@ The 1 ms counter-send event uses `SystemCountersSnapshot` and a deep
 
 | File | DTO classes | Direction |
 |---|---|---|
-| `AdHocAnimationDto.h` | `AdHocAnimationDto`, `AdHocAnimationListDto` | Response |
 | `api/SoundResponses.h` | `AdHocSoundEntry` | Neutral response |
-| `ListDto.h` | `ListDto<T>`, `AnimationsListDto`, `VoiceListDto` | Response |
+| `ListDto.h` | `ListDto<T>` | Temporary dialog-script list response adapter |
+
+Animation and ad-hoc animation lists now render through the neutral model and
+`api::listResponseToJson`; their dedicated oat++ DTOs have been removed.
 
 The generic list DTO stores both `count` and `items`. The neutral replacement
 should derive `count` from the final item vector when serializing.
@@ -100,14 +102,11 @@ should derive `count` from the final item vector when serializing.
 
 | File | DTO classes | Endpoint/resource family |
 |---|---|---|
-| `CreateAdHocAnimationRequestDto.h` | `CreateAdHocAnimationRequestDto` | Ad-hoc animation creation |
 | `DialogVoiceDto.h` | `AcceptVoiceRequestDto` | Dialog take acceptance |
 | `api/SoundRequests.h` | `GenerateLipSyncRequest`, `PlaySoundRequest` | Strict bounded lip-sync and playback requests |
 | `MakeSoundFileRequestDto.h` | `MakeSoundFileRequestDto` | Voice generation/job input |
-| `PlayAnimationRequestDto.h` | `PlayAnimationRequestDto` | Stored animation playback |
-| `RegenerateLipSyncRequestDto.h` | `RegenerateLipSyncRequestDto` | Lip-sync regeneration |
+| `api/AnimationRequests.h` | `PlayAnimationRequest`, `RegenerateAnimationLipSyncRequest`, `CreateAdHocAnimationRequest`, `TriggerAdHocAnimationRequest` | Strict bounded animation control and ad-hoc speech requests |
 | `api/FixtureRequests.h` | `SetFixtureUniverseRequest`, `TriggerFixturePatternRequest` | Strict fixture universe/pattern-trigger requests |
-| `TriggerAdHocAnimationRequestDto.h` | `TriggerAdHocAnimationRequestDto` | Prepared ad-hoc animation playback |
 
 ### Structured fixture requests
 
@@ -196,11 +195,13 @@ contract and the parent project's curl, fmt, spdlog, and nlohmann/json targets.
 
 ## Service interface inventory
 
-Nine service headers expose oat++ directly.
+All nine service interfaces are now framework-neutral. The original coupling
+is retained in the summary column as migration history; `rg 'oatpp|OATPP'
+src/server/ws/service` returns no matches.
 
 | Service | Oat++-coupled methods | Coupling summary | Neutral target |
 |---|---|---|---|
-| `AnimationService` | `listAllAnimations`, `getAnimation`, `getAdHocAnimation`, `upsertAnimation`, `listAdHocAnimations`, `deleteAnimation`, `playStoredAnimation` | DTO/list/status returns, `oatpp::String` IDs, HTTP assertions/status | `Result<T>`, vectors, `Result<void>`, standard/strong IDs |
+| `AnimationService` | — | Fully neutral: domain/list values, standard IDs, `Result<T>`, and no HTTP assertions/status construction | Completed |
 | `CreatureService` | — | Fully neutral: `Result<T>`, request/response structs, and synchronized runtime snapshots | Completed |
 | `DmxFixtureService` | — | Fully neutral: domain values, standard IDs, and checked plain request contracts | Completed |
 | `PlaylistService` | — | Fully neutral: domain/list/status values and checked plain request contracts | Completed |
@@ -239,8 +240,6 @@ of the DTO-neutral definition of done until the later transport phase.
 Tests directly exercising oat++ DTO conversion or its object mapper are limited
 to:
 
-- `tests/model/AnimationMetadata_test.cpp`
-- `tests/model/Animation_roundtrip_test.cpp`
 - `tests/model/DialogScript_test.cpp`
 - `tests/model/DmxFixture_test.cpp`
 - `tests/server/ws/CreatureActivityMessage_test.cpp`
@@ -248,7 +247,7 @@ to:
 - `tests/server/ws/HttpResponseHelpers_test.cpp`
 
 Existing nlohmann/parser coverage additionally includes AdHocExchange,
-Animation, Creature, Track dual-ID validation, Storyboard, LogItem, and the fake
+Animation (including metadata and Track), Creature, Track dual-ID validation, Storyboard, LogItem, and the fake
 database. It is not complete contract coverage: most REST request DTOs, generic
 responses, outbound WebSocket messages, sensor commands, job shapes, sound
 metadata, playlists, counters, and voice-library DTOs have no exact JSON golden

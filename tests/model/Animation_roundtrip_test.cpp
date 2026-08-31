@@ -1,31 +1,36 @@
 /*
  * Round-trip regression tests for issue #117.
  *
- * Contract tests for the neutral Animation codec. One characterization test
- * keeps the legacy oat++ null behavior visible until that adapter is removed.
+ * Contract tests for the neutral Animation codec and persistence compatibility.
  */
 
 #include <gtest/gtest.h>
 
 #include <base64.hpp>
 #include <nlohmann/json.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
 #include "model/Animation.h"
-#include "server/ws/dto/AnimationDto.h"
 #include "util/JsonParser.h"
 
 namespace creatures {
 
 namespace {
 
-/// Serialize through the temporary oat++ HTTP adapter. This intentionally
-/// differs from the clean neutral contract while the transport migration is in
-/// progress: oat++ emits absent wrapper values as explicit nulls.
-nlohmann::json serializeLikeTheLegacyApi(const Animation &animation) {
-    auto mapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    const auto serialized = mapper->writeToString(oatpp::Object<AnimationDto>(convertToDto(animation)));
-    return nlohmann::json::parse(std::string(serialized->c_str(), serialized->size()));
+nlohmann::json makeLegacyPersistenceJson(const Animation &animation) {
+    auto json = animationToJson(animation);
+    for (auto &track : json["tracks"]) {
+        if (!track.contains("creature_id"))
+            track["creature_id"] = nullptr;
+        if (!track.contains("fixture_id"))
+            track["fixture_id"] = nullptr;
+    }
+    for (const auto *field :
+         {"note", "source_script_id", "source_script_turns", "source_stage_id", "source_stage_updated_at",
+          "source_stage_placements", "render_seed", "source_render_choices"}) {
+        if (!json["metadata"].contains(field))
+            json["metadata"][field] = nullptr;
+    }
+    return json;
 }
 
 Animation makeAnimation() {
@@ -81,18 +86,15 @@ void expectInvalid(const nlohmann::json &json, std::string_view messageFragment,
 
 } // namespace
 
-TEST(AnimationRoundTripTest, LegacyApiCreatureTrackSerializesFixtureIdAsNull) {
+TEST(AnimationRoundTripTest, NeutralApiOmitsAbsentOptionalFields) {
     auto animation = makeAnimation();
     animation.tracks.push_back(makeCreatureTrack(animation.id));
 
-    const auto json = serializeLikeTheLegacyApi(animation);
+    const auto json = animationToJson(animation);
 
-    // This is the shape that broke the round trip. If oatpp ever starts omitting
-    // unset fields instead, this expectation is the thing to revisit.
-    ASSERT_TRUE(json["tracks"][0].contains("fixture_id"));
-    EXPECT_TRUE(json["tracks"][0]["fixture_id"].is_null());
-    EXPECT_TRUE(json["metadata"]["source_script_id"].is_null());
-    EXPECT_TRUE(json["metadata"]["source_script_turns"].is_null());
+    EXPECT_FALSE(json["tracks"][0].contains("fixture_id"));
+    EXPECT_FALSE(json["metadata"].contains("source_script_id"));
+    EXPECT_FALSE(json["metadata"].contains("source_script_turns"));
 }
 
 TEST(AnimationRoundTripTest, CreatureDrivenAnimationSurvivesGetThenPost) {
@@ -164,7 +166,7 @@ TEST(AnimationRoundTripTest, RejectsExplicitNullOptionalNote) {
     auto animation = makeAnimation();
     animation.tracks.push_back(makeCreatureTrack(animation.id));
 
-    auto json = serializeLikeTheLegacyApi(animation);
+    auto json = makeLegacyPersistenceJson(animation);
     json["metadata"]["note"] = nullptr;
 
     auto result = acceptLikeTheApi(json);
@@ -175,7 +177,7 @@ TEST(AnimationRoundTripTest, PersistenceAcceptsLegacyNullOptionals) {
     auto animation = makeAnimation();
     animation.tracks.push_back(makeCreatureTrack(animation.id));
 
-    auto json = serializeLikeTheLegacyApi(animation);
+    auto json = makeLegacyPersistenceJson(animation);
     json["metadata"]["note"] = nullptr;
     json["metadata"]["source_stage_id"] = nullptr;
     json["metadata"]["source_stage_updated_at"] = nullptr;
@@ -203,7 +205,7 @@ TEST(AnimationRoundTripTest, ApiRejectsLegacyNullOptionals) {
     auto animation = makeAnimation();
     animation.tracks.push_back(makeCreatureTrack(animation.id));
 
-    const auto json = serializeLikeTheLegacyApi(animation);
+    const auto json = makeLegacyPersistenceJson(animation);
     const auto result = animationFromJson(json, AnimationJsonSource::Api);
     EXPECT_FALSE(result.isSuccess());
 }
@@ -238,7 +240,7 @@ TEST(AnimationRoundTripTest, RejectsTrackWithBothIdsNull) {
     auto animation = makeAnimation();
     animation.tracks.push_back(makeCreatureTrack(animation.id));
 
-    auto json = serializeLikeTheLegacyApi(animation);
+    auto json = makeLegacyPersistenceJson(animation);
     json["tracks"][0]["creature_id"] = nullptr;
 
     // Null-tolerance must not turn into "anything goes" — the XOR rule still holds.
@@ -250,7 +252,7 @@ TEST(AnimationRoundTripTest, RejectsNonStringTrackId) {
     auto animation = makeAnimation();
     animation.tracks.push_back(makeCreatureTrack(animation.id));
 
-    auto json = serializeLikeTheLegacyApi(animation);
+    auto json = makeLegacyPersistenceJson(animation);
     json["tracks"][0]["creature_id"] = 42;
 
     auto result = acceptLikeTheApi(json);
@@ -478,9 +480,12 @@ TEST(AnimationRoundTripTest, RejectsInvalidStagePlacementGeometry) {
 }
 
 TEST(AnimationRoundTripTest, ApiJsonParserClassifiesSyntaxAndDepthAsInvalidData) {
-    const auto malformed = JsonParser::parseApiJsonString("{", "test animation");
+    constexpr std::string_view attackerText = "ATTACKER_CONTROLLED_MARKER";
+    const auto malformed =
+        JsonParser::parseApiJsonString(fmt::format("{{\"field\": {}", attackerText), "test animation");
     ASSERT_FALSE(malformed.isSuccess());
     EXPECT_EQ(malformed.getError()->getCode(), ServerError::InvalidData);
+    EXPECT_EQ(malformed.getError()->getMessage().find(attackerText), std::string::npos);
 
     std::string nested(34, '[');
     nested += "0";

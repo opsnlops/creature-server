@@ -3,7 +3,6 @@
 #include <nlohmann/json.hpp>
 
 #include "model/AnimationMetadata.h"
-#include "server/ws/dto/AnimationDto.h"
 
 namespace creatures {
 
@@ -59,16 +58,15 @@ class AnimationMetadataTest : public ::testing::Test {
 // ===========================================================================
 // Stage provenance round-trips (issues #119, #123)
 //
-// source_render_choices was persisted by animationToJson and read back by the
-// JSON parser, but never added to the DTO — so it was invisible on every HTTP
-// response even though the re-render job could see it. Exactly the shape of
-// #123, in a field added in the same session.
+// source_render_choices was once persisted by animationToJson but omitted from
+// the oat++ response DTO, so it was invisible over HTTP even though the
+// re-render job could see it. The response now uses the neutral codec directly.
 //
-// The lesson these tests encode: a new metadata field has to survive BOTH the
-// JSON path and the DTO path. Covering only one is how both bugs happened.
+// These tests permanently cover the one canonical JSON path used for storage
+// and HTTP responses.
 // ===========================================================================
 
-TEST(AnimationMetadataStageProvenanceTest, RenderChoicesSurviveTheDtoRoundTrip) {
+TEST(AnimationMetadataStageProvenanceTest, RenderChoicesSurviveTheNeutralRoundTrip) {
     creatures::AnimationMetadata md;
     md.animation_id = "c7471c45-58bf-4a34-8a46-76dca6612d72";
     md.title = "scene";
@@ -82,11 +80,9 @@ TEST(AnimationMetadataStageProvenanceTest, RenderChoicesSurviveTheDtoRoundTrip) 
     beaky.idle_start_offset = 87;
     md.source_render_choices.push_back(beaky);
 
-    const auto dto = creatures::convertToDto(md);
-    ASSERT_TRUE(dto->source_render_choices);
-    ASSERT_EQ(dto->source_render_choices->size(), 1u);
-
-    const auto back = creatures::convertFromDto(dto);
+    const auto result = creatures::animationMetadataFromJson(creatures::animationMetadataToJson(md));
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+    const auto back = result.getValue().value();
     ASSERT_EQ(back.source_render_choices.size(), 1u);
     const auto &r = back.source_render_choices[0];
     EXPECT_EQ(r.creature_id, beaky.creature_id);
@@ -95,7 +91,7 @@ TEST(AnimationMetadataStageProvenanceTest, RenderChoicesSurviveTheDtoRoundTrip) 
     EXPECT_EQ(r.idle_start_offset, 87u);
 }
 
-TEST(AnimationMetadataStageProvenanceTest, StagePointerAndSeedSurviveTheDtoRoundTrip) {
+TEST(AnimationMetadataStageProvenanceTest, StagePointerAndSeedSurviveTheNeutralRoundTrip) {
     creatures::AnimationMetadata md;
     md.animation_id = "c7471c45-58bf-4a34-8a46-76dca6612d72";
     md.title = "scene";
@@ -105,7 +101,9 @@ TEST(AnimationMetadataStageProvenanceTest, StagePointerAndSeedSurviveTheDtoRound
     md.source_stage_updated_at = 1785911429306;
     md.render_seed = 1785911444559622805ULL;
 
-    const auto back = creatures::convertFromDto(creatures::convertToDto(md));
+    const auto result = creatures::animationMetadataFromJson(creatures::animationMetadataToJson(md));
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+    const auto back = result.getValue().value();
     EXPECT_EQ(back.source_stage_id, md.source_stage_id);
     EXPECT_EQ(back.source_stage_updated_at, md.source_stage_updated_at);
     EXPECT_EQ(back.render_seed, md.render_seed);
@@ -118,8 +116,8 @@ TEST(AnimationMetadataStageProvenanceTest, AnimationWithoutProvenanceOmitsItAllE
     md.milliseconds_per_frame = 20;
     md.number_of_frames = 10;
 
-    const auto dto = creatures::convertToDto(md);
-    EXPECT_FALSE(dto->source_stage_id);
-    EXPECT_FALSE(dto->render_seed);
-    EXPECT_FALSE(dto->source_render_choices);
+    const auto json = creatures::animationMetadataToJson(md);
+    EXPECT_FALSE(json.contains("source_stage_id"));
+    EXPECT_FALSE(json.contains("render_seed"));
+    EXPECT_FALSE(json.contains("source_render_choices"));
 }
