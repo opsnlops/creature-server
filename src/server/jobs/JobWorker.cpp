@@ -200,6 +200,8 @@ JobWorker::QueueAdmission JobWorker::tryCreateAndQueueJob(JobType type, const st
                 jobId = jobManager_->createJob(type, details, parentSpan);
             } catch (...) {
                 jobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
+                if (parentSpan)
+                    parentSpan->setAttribute("admission.outcome", "create.failed");
                 throw;
             }
             if (!jobQueue_->enqueue(QueuedJob{jobId, true})) {
@@ -226,17 +228,48 @@ JobWorker::QueueAdmission JobWorker::tryCreateAndQueueJob(JobType type, const st
     return {QueueAdmission::Status::Full, {}};
 }
 
-bool JobWorker::tryQueueMusicJob(const std::string &jobId) {
+JobWorker::QueueAdmission JobWorker::tryCreateAndQueueMusicJob(const std::string &details,
+                                                               std::shared_ptr<creatures::RequestSpan> parentSpan) {
     auto current = musicJobsInFlight_.load(std::memory_order_relaxed);
     while (current < kMaxMusicJobsInFlight) {
         if (musicJobsInFlight_.compare_exchange_weak(current, current + 1, std::memory_order_acq_rel,
                                                      std::memory_order_relaxed)) {
-            musicJobQueue_->enqueue(jobId);
+            if (parentSpan) {
+                parentSpan->setAttribute("admission.scope", "dialog.music");
+                parentSpan->setAttribute("admission.limit", static_cast<int64_t>(kMaxMusicJobsInFlight));
+                parentSpan->setAttribute("admission.in_flight", static_cast<int64_t>(current + 1));
+            }
+            std::string jobId;
+            try {
+                jobId = jobManager_->createJob(JobType::DialogMusic, details, parentSpan);
+            } catch (...) {
+                musicJobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
+                if (parentSpan)
+                    parentSpan->setAttribute("admission.outcome", "create.failed");
+                throw;
+            }
+            if (!musicJobQueue_->enqueue(jobId)) {
+                musicJobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
+                jobManager_->discardJob(jobId, "music job queue allocation failed");
+                if (parentSpan)
+                    parentSpan->setAttribute("admission.outcome", "enqueue.failed");
+                return {QueueAdmission::Status::EnqueueFailed, {}};
+            }
             info("Music job {} queued for dedicated processing", jobId);
-            return true;
+            if (parentSpan) {
+                parentSpan->setAttribute("admission.outcome", "accepted");
+                parentSpan->setAttribute("job.id", jobId);
+            }
+            return {QueueAdmission::Status::Queued, std::move(jobId)};
         }
     }
-    return false;
+    if (parentSpan) {
+        parentSpan->setAttribute("admission.scope", "dialog.music");
+        parentSpan->setAttribute("admission.limit", static_cast<int64_t>(kMaxMusicJobsInFlight));
+        parentSpan->setAttribute("admission.in_flight", static_cast<int64_t>(current));
+        parentSpan->setAttribute("admission.outcome", "rejected");
+    }
+    return {QueueAdmission::Status::Full, {}};
 }
 
 void JobWorker::run() {
@@ -249,7 +282,7 @@ void JobWorker::run() {
         // Wait for a job with a timeout so we can check stop_requested
         if (jobQueue_->wait_dequeue_timed(queuedJob, std::chrono::milliseconds(500))) {
             info("Dequeued job {} for processing", queuedJob.jobId);
-            processJob(queuedJob.jobId);
+            processJobSafely(queuedJob.jobId);
             if (queuedJob.countsTowardLimit) {
                 jobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
             }
@@ -265,11 +298,23 @@ void JobWorker::runMusicJobs() {
     std::string jobId;
     while (!stop_requested.load()) {
         if (musicJobQueue_->wait_dequeue_timed(jobId, std::chrono::milliseconds(500))) {
-            processJob(jobId);
+            processJobSafely(jobId);
             musicJobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
         }
     }
     info("Music job worker thread stopping");
+}
+
+void JobWorker::processJobSafely(const std::string &jobId) {
+    try {
+        processJob(jobId);
+    } catch (const std::exception &e) {
+        error("Unhandled exception before job {} reached its handler: {}", jobId, e.what());
+        jobManager_->failJob(jobId, fmt::format("Exception: {}", e.what()));
+    } catch (...) {
+        error("Unhandled non-standard exception while processing job {}", jobId);
+        jobManager_->failJob(jobId, "Unknown exception while processing job");
+    }
 }
 
 void JobWorker::processJob(const std::string &jobId) {

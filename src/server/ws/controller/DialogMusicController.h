@@ -104,12 +104,17 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
                     span->setAttribute("music.duration_extension_ms", musicRequest.durationExtensionMs);
                 }
                 const auto details = api::dialogMusicRequestToJson(musicRequest).dump();
-                const auto jobId = creatures::jobManager->createJob(jobs::JobType::DialogMusic, details, span);
-                if (!creatures::jobWorker->tryQueueMusicJob(jobId)) {
-                    creatures::jobManager->failJob(jobId, "dialog music generation queue is full");
+                const auto admission = creatures::jobWorker->tryCreateAndQueueMusicJob(details, span);
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::Full) {
                     return bailHttp(span, Status::CODE_429,
-                                    "Two music generations are already queued or running; try again shortly");
+                                    "Two music generations are already queued or running; try again shortly", nullptr,
+                                    "QueueAdmissionRejected");
                 }
+                if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::EnqueueFailed) {
+                    return bailHttp(span, Status::CODE_500, "Could not queue dialog music job", nullptr,
+                                    "QueueEnqueueFailure");
+                }
+                const auto &jobId = admission.jobId;
                 if (span) {
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);

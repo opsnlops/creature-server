@@ -61,10 +61,10 @@ class JobWorker : public creatures::StoppableThread {
     [[nodiscard]] QueueAdmission tryCreateAndQueueJob(JobType type, const std::string &details,
                                                       std::shared_ptr<creatures::RequestSpan> parentSpan = nullptr);
 
-    /// Reserve one of the bounded music-generation slots and queue the job on
-    /// its dedicated worker. Returns false without queueing when both slots are
-    /// already queued/running.
-    [[nodiscard]] bool tryQueueMusicJob(const std::string &jobId);
+    /// Atomically reserve one of the two music slots, create the JobState, and
+    /// queue it on the dedicated worker. Full admission retains no details.
+    [[nodiscard]] QueueAdmission
+    tryCreateAndQueueMusicJob(const std::string &details, std::shared_ptr<creatures::RequestSpan> parentSpan = nullptr);
 
   protected:
     /**
@@ -91,6 +91,7 @@ class JobWorker : public creatures::StoppableThread {
     static constexpr std::size_t kMaxMusicJobsInFlight = 2;
 
     void runMusicJobs();
+    void processJobSafely(const std::string &jobId);
 
     /**
      * Process a single job by dispatching to the appropriate handler

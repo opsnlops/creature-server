@@ -162,10 +162,12 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                     creatures::jobs::JobType::DialogPreview, detailsStr, span);
                 if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::Full) {
                     return bailHttp(span, Status::CODE_429,
-                                    "Eight dialog jobs are already queued or running; try again shortly");
+                                    "Eight dialog jobs are already queued or running; try again shortly", nullptr,
+                                    "QueueAdmissionRejected");
                 }
                 if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::EnqueueFailed) {
-                    return bailHttp(span, Status::CODE_500, "Could not queue dialog preview job");
+                    return bailHttp(span, Status::CODE_500, "Could not queue dialog preview job", nullptr,
+                                    "QueueEnqueueFailure");
                 }
                 const auto &jobId = admission.jobId;
                 if (span) {
@@ -371,10 +373,12 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                     creatures::jobs::JobType::DialogPreviewExport, detailsStr, span);
                 if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::Full) {
                     return bailHttp(span, Status::CODE_429,
-                                    "Eight dialog jobs are already queued or running; try again shortly");
+                                    "Eight dialog jobs are already queued or running; try again shortly", nullptr,
+                                    "QueueAdmissionRejected");
                 }
                 if (admission.status == creatures::jobs::JobWorker::QueueAdmission::Status::EnqueueFailed) {
-                    return bailHttp(span, Status::CODE_500, "Could not queue dialog preview export job");
+                    return bailHttp(span, Status::CODE_500, "Could not queue dialog preview export job", nullptr,
+                                    "QueueEnqueueFailure");
                 }
                 const auto &jobId = admission.jobId;
                 if (span) {
