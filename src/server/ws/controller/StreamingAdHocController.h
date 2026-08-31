@@ -9,16 +9,17 @@
 #include <oatpp/web/protocol/http/outgoing/ResponseFactory.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/JsonResponse.h"
+#include "api/StreamingAdHocContracts.h"
 #include "model/AdHocExchange.h"
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
 #include "server/voice/StreamingAdHocSession.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/AdHocExchangeDto.h"
 #include "server/ws/dto/StatusDto.h"
-#include "server/ws/dto/StreamingAdHocDto.h"
 #include "server/ws/service/SoundRenditionService.h"
+#include "util/JsonParser.h"
 #include "util/Slugify.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController)
@@ -49,45 +50,75 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         info->description = "Creates a session that accumulates text chunks from the agent. "
                             "Call /text to add sentences, then /finish to synthesize and play.";
         info->addTag("Streaming Ad-Hoc Speech");
-        info->addResponse<Object<StreamingAdHocStartResponseDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc-stream/start", startStreamingAdHoc,
-             BODY_DTO(Object<StreamingAdHocStartRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("POST /api/v1/animation/ad-hoc-stream/start", "POST", "api/v1/animation/ad-hoc-stream/start",
-                           "startStreamingAdHoc", "StreamingAdHocController", request, [&](const auto &span) {
-                               auto creatureId = requestBody->creature_id;
-                               bool resumePlaylist =
-                                   requestBody->resume_playlist != nullptr ? *requestBody->resume_playlist : true;
+        return runEndpoint(
+            "POST /api/v1/animation/ad-hoc-stream/start", "POST", "api/v1/animation/ad-hoc-stream/start",
+            "startStreamingAdHoc", "StreamingAdHocController", request, [&](const auto &span) {
+                if (!creatures::config || !creatures::db) {
+                    return bailHttp(span, Status::CODE_500,
+                                    "Streaming ad-hoc speech unavailable: server dependencies missing", nullptr,
+                                    "MissingDependencies");
+                }
+                const auto body = readRequestBodyLimited(request, api::MAX_STREAMING_AD_HOC_CONTROL_BODY_BYTES, span);
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "StreamingAdHocController.parseStartRequest", span)
+                                           : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "streaming_ad_hoc.start");
+                const auto json = JsonParser::parseApiJsonString(body, "streaming ad-hoc start request", parseSpan);
+                if (!json.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, json.getError().value());
+                }
+                const auto parsed = api::streamingAdHocStartRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidStreamingStartRequest", error.getCode());
+                    return bailFromServerError(span, error);
+                }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
+                const auto requestValue = parsed.getValue().value();
+                if (span) {
+                    span->setAttribute("creature.id", canonicalUuid(requestValue.creatureId));
+                    span->setAttribute("playback.resume.playlist", requestValue.resumePlaylist);
+                }
 
-                               if (!creatureId || creatureId->empty()) {
-                                   return bailHttp(span, Status::CODE_400, "creature_id is required");
-                               }
+                auto &mgr = creatures::voice::StreamingAdHocSessionManager::instance();
+                auto sessionResult = mgr.createSession(requestValue.creatureId, requestValue.resumePlaylist, span);
+                if (!sessionResult.isSuccess())
+                    return bailFromServerError(span, sessionResult.getError().value());
+                auto session = sessionResult.getValue().value();
 
-                               auto &mgr = creatures::voice::StreamingAdHocSessionManager::instance();
-                               auto session = mgr.createSession(creatureId->c_str(), resumePlaylist, span);
+                auto startResult = session->start();
+                if (!startResult.isSuccess()) {
+                    mgr.removeSession(session->getSessionId());
+                    if (span) {
+                        span->setError(startResult.getError()->getMessage());
+                    }
+                    return bailFromServerError(span, startResult.getError().value());
+                }
 
-                               auto startResult = session->start();
-                               if (!startResult.isSuccess()) {
-                                   mgr.removeSession(session->getSessionId());
-                                   if (span) {
-                                       span->setError(startResult.getError()->getMessage());
-                                   }
-                                   return bailFromServerError(span, startResult.getError().value());
-                               }
+                const api::StreamingAdHocStartResponse response{
+                    session->getSessionId(), "started",
+                    "Session started. Send text chunks via /text, then call /finish."};
 
-                               auto response = StreamingAdHocStartResponseDto::createShared();
-                               response->session_id = session->getSessionId().c_str();
-                               response->status = "started";
-                               response->message = "Session started. Send text chunks via /text, then call /finish.";
+                if (span) {
+                    span->setAttribute("session.id", session->getSessionId());
+                    span->setHttpStatus(200);
+                }
 
-                               if (span) {
-                                   span->setAttribute("session.id", session->getSessionId());
-                                   span->setHttpStatus(200);
-                               }
-
-                               return createDtoResponse(Status::CODE_200, response);
-                           });
+                return jsonResponse(span, Status::CODE_200, api::streamingAdHocStartResponseToJson(response));
+            });
     }
 
     // --- Add text to a session ---
@@ -96,47 +127,67 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         info->summary = "Add a text chunk to a streaming session";
         info->description = "Adds a sentence or text fragment to the session's speech buffer.";
         info->addTag("Streaming Ad-Hoc Speech");
-        info->addResponse<Object<StreamingAdHocTextResponseDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc-stream/text", addStreamingAdHocText,
-             BODY_DTO(Object<StreamingAdHocTextRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("POST /api/v1/animation/ad-hoc-stream/text", "POST", "api/v1/animation/ad-hoc-stream/text",
-                           "addStreamingAdHocText", "StreamingAdHocController", request, [&](const auto &span) {
-                               auto sessionId = requestBody->session_id;
-                               auto text = requestBody->text;
+        return runEndpoint(
+            "POST /api/v1/animation/ad-hoc-stream/text", "POST", "api/v1/animation/ad-hoc-stream/text",
+            "addStreamingAdHocText", "StreamingAdHocController", request, [&](const auto &span) {
+                const auto body = readRequestBodyLimited(request, api::MAX_STREAMING_AD_HOC_TEXT_BODY_BYTES, span);
+                const auto parseSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                                      "StreamingAdHocController.parseTextRequest", span)
+                                                                : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "streaming_ad_hoc.text");
+                const auto json = JsonParser::parseApiJsonString(body, "streaming ad-hoc text request", parseSpan);
+                if (!json.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, json.getError().value());
+                }
+                const auto parsed = api::streamingAdHocTextRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidStreamingTextRequest", error.getCode());
+                    return bailFromServerError(span, error);
+                }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
+                const auto requestValue = parsed.getValue().value();
+                if (span) {
+                    span->setAttribute("session.id", canonicalUuid(requestValue.sessionId));
+                    span->setAttribute("text.length", static_cast<int64_t>(requestValue.text.size()));
+                }
 
-                               if (!sessionId || sessionId->empty() || !text || text->empty()) {
-                                   return bailHttp(span, Status::CODE_400, "session_id and text are required");
-                               }
+                auto &mgr = creatures::voice::StreamingAdHocSessionManager::instance();
+                auto session = mgr.getSession(requestValue.sessionId);
+                if (!session) {
+                    return bailHttp(span, Status::CODE_404, "Session not found");
+                }
 
-                               auto &mgr = creatures::voice::StreamingAdHocSessionManager::instance();
-                               auto session = mgr.getSession(sessionId->c_str());
-                               if (!session) {
-                                   return bailHttp(span, Status::CODE_404, "Session not found");
-                               }
+                auto addResult = session->addText(requestValue.text, span);
+                if (!addResult.isSuccess()) {
+                    if (span) {
+                        span->setError(addResult.getError()->getMessage());
+                    }
+                    return bailFromServerError(span, addResult.getError().value());
+                }
 
-                               auto addResult = session->addText(text->c_str());
-                               if (!addResult.isSuccess()) {
-                                   if (span) {
-                                       span->setError(addResult.getError()->getMessage());
-                                   }
-                                   return bailFromServerError(span, addResult.getError().value());
-                               }
+                const api::StreamingAdHocTextResponse response{requestValue.sessionId, "ok",
+                                                               session->getChunksReceived()};
 
-                               auto response = StreamingAdHocTextResponseDto::createShared();
-                               response->session_id = sessionId;
-                               response->status = "ok";
-                               response->chunks_received = session->getChunksReceived();
+                if (span) {
+                    span->setAttribute("text.chunks.received", static_cast<int64_t>(session->getChunksReceived()));
+                    span->setHttpStatus(200);
+                }
 
-                               if (span) {
-                                   span->setAttribute("session.id", std::string(sessionId->c_str()));
-                                   span->setAttribute("text.length", static_cast<int64_t>(text->size()));
-                                   span->setHttpStatus(200);
-                               }
-
-                               return createDtoResponse(Status::CODE_200, response);
-                           });
+                return jsonResponse(span, Status::CODE_200, api::streamingAdHocTextResponseToJson(response));
+            });
     }
 
     // --- Finish a session ---
@@ -146,61 +197,84 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         info->description =
             "Sends all accumulated text to ElevenLabs, generates lip sync, builds animation, and plays it.";
         info->addTag("Streaming Ad-Hoc Speech");
-        info->addResponse<Object<StreamingAdHocFinishResponseDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/ad-hoc-stream/finish", finishStreamingAdHoc,
-             BODY_DTO(Object<StreamingAdHocFinishRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("POST /api/v1/animation/ad-hoc-stream/finish", "POST",
-                           "api/v1/animation/ad-hoc-stream/finish", "finishStreamingAdHoc", "StreamingAdHocController",
-                           request, [&](const auto &span) {
-                               auto sessionId = requestBody->session_id;
+        return runEndpoint(
+            "POST /api/v1/animation/ad-hoc-stream/finish", "POST", "api/v1/animation/ad-hoc-stream/finish",
+            "finishStreamingAdHoc", "StreamingAdHocController", request, [&](const auto &span) {
+                const auto body = readRequestBodyLimited(request, api::MAX_STREAMING_AD_HOC_CONTROL_BODY_BYTES, span);
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "StreamingAdHocController.parseFinishRequest", span)
+                                           : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "streaming_ad_hoc.finish");
+                const auto json = JsonParser::parseApiJsonString(body, "streaming ad-hoc finish request", parseSpan);
+                if (!json.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, json.getError().value());
+                }
+                const auto parsed = api::streamingAdHocFinishRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidStreamingFinishRequest", error.getCode());
+                    return bailFromServerError(span, error);
+                }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
+                const auto requestValue = parsed.getValue().value();
+                if (span)
+                    span->setAttribute("session.id", canonicalUuid(requestValue.sessionId));
 
-                               if (!sessionId || sessionId->empty()) {
-                                   return bailHttp(span, Status::CODE_400, "session_id is required");
-                               }
+                auto &mgr = creatures::voice::StreamingAdHocSessionManager::instance();
+                auto session = mgr.getSession(requestValue.sessionId);
+                if (!session) {
+                    return bailHttp(span, Status::CODE_404, "Session not found");
+                }
 
-                               auto &mgr = creatures::voice::StreamingAdHocSessionManager::instance();
-                               auto session = mgr.getSession(sessionId->c_str());
-                               if (!session) {
-                                   return bailHttp(span, Status::CODE_404, "Session not found");
-                               }
+                auto finishResult = session->finish(span);
 
-                               auto finishResult = session->finish();
+                if (!finishResult.isSuccess()) {
+                    if (span) {
+                        span->setError(finishResult.getError()->getMessage());
+                    }
+                    return bailFromServerError(span, finishResult.getError().value());
+                }
 
-                               // Safe to remove now — finish() completes all TTS and animation
-                               // construction before returning. Playback is triggered via interrupt()
-                               // which creates its own PlaybackSession with its own lifecycle.
-                               mgr.removeSession(sessionId->c_str());
+                // Only the request that reached terminal completion may free
+                // the registry slot. A racing second /finish receives 409 and
+                // must not make the still-running first request invisible.
+                mgr.removeSession(requestValue.sessionId);
 
-                               if (!finishResult.isSuccess()) {
-                                   if (span) {
-                                       span->setError(finishResult.getError()->getMessage());
-                                   }
-                                   return bailFromServerError(span, finishResult.getError().value());
-                               }
+                const auto summary = finishResult.getValue().value();
 
-                               const auto summary = finishResult.getValue().value();
+                const api::StreamingAdHocFinishResponse response{requestValue.sessionId,
+                                                                 "completed",
+                                                                 "Speech generated and playback triggered",
+                                                                 summary.lastAnimationId,
+                                                                 summary.partsRendered > 0,
+                                                                 summary.exchangeStatus,
+                                                                 summary.partsRendered,
+                                                                 summary.partsTotal};
 
-                               auto response = StreamingAdHocFinishResponseDto::createShared();
-                               response->session_id = sessionId;
-                               response->status = "completed";
-                               response->message = "Speech generated and playback triggered";
-                               response->animation_id = summary.lastAnimationId.c_str();
-                               response->playback_triggered = summary.partsRendered > 0;
-                               response->exchange_status = summary.exchangeStatus.c_str();
-                               response->parts_rendered = summary.partsRendered;
-                               response->parts_total = summary.partsTotal;
+                if (span) {
+                    if (!summary.lastAnimationId.empty())
+                        span->setAttribute("animation.id", canonicalUuid(summary.lastAnimationId));
+                    span->setAttribute("exchange.status", summary.exchangeStatus);
+                    span->setAttribute("exchange.parts.rendered", static_cast<int64_t>(summary.partsRendered));
+                    span->setAttribute("exchange.parts.total", static_cast<int64_t>(summary.partsTotal));
+                    span->setHttpStatus(200);
+                }
 
-                               if (span) {
-                                   span->setAttribute("session.id", std::string(sessionId->c_str()));
-                                   span->setAttribute("animation.id", summary.lastAnimationId);
-                                   span->setAttribute("exchange.status", summary.exchangeStatus);
-                                   span->setHttpStatus(200);
-                               }
-
-                               return createDtoResponse(Status::CODE_200, response);
-                           });
+                return jsonResponse(span, Status::CODE_200, api::streamingAdHocFinishResponseToJson(response));
+            });
     }
 
     // --- Exchange export (issue #150) ---
@@ -215,54 +289,57 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
         info->description = "One exchange per streaming session, including in-flight ones (status 'streaming'). "
                             "TTL'd with the ad-hoc artifacts they reference.";
         info->addTag("Streaming Ad-Hoc Speech");
-        info->addResponse<Object<AdHocExchangeListDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchanges", listExchanges,
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("GET /api/v1/animation/ad-hoc-stream/exchanges", "GET",
-                           "api/v1/animation/ad-hoc-stream/exchanges", "listExchanges", "StreamingAdHocController",
-                           request, [&](const auto &span) {
-                               int limit = 50;
-                               if (auto limitParam = request->getQueryParameter("limit")) {
-                                   try {
-                                       limit = std::stoi(std::string(limitParam->c_str()));
-                                   } catch (const std::exception &) {
-                                       return bailHttp(span, Status::CODE_400, "limit must be an integer");
-                                   }
-                                   if (limit < 1 || limit > 500) {
-                                       return bailHttp(span, Status::CODE_400, "limit must be between 1 and 500");
-                                   }
-                               }
+        return runEndpoint(
+            "GET /api/v1/animation/ad-hoc-stream/exchanges", "GET", "api/v1/animation/ad-hoc-stream/exchanges",
+            "listExchanges", "StreamingAdHocController", request, [&](const auto &span) {
+                if (!creatures::db) {
+                    return bailHttp(span, Status::CODE_500, "Ad-hoc exchange listing unavailable: database missing",
+                                    nullptr, "MissingDependencies");
+                }
+                int limit = api::DEFAULT_AD_HOC_EXCHANGE_LIMIT;
+                if (auto limitParam = request->getQueryParameter("limit")) {
+                    auto limitResult = api::adHocExchangeLimitFromString(std::string(limitParam));
+                    if (!limitResult.isSuccess())
+                        return bailFromServerError(span, limitResult.getError().value());
+                    limit = limitResult.getValue().value();
+                }
+                if (span)
+                    span->setAttribute("query.limit", static_cast<int64_t>(limit));
 
-                               auto opSpan = creatures::observability
-                                                 ? creatures::observability->createChildOperationSpan(
-                                                       "StreamingAdHocController.listExchanges", span)
-                                                 : nullptr;
-                               auto listResult = creatures::db->listAdHocExchanges(limit, opSpan);
-                               if (!listResult.isSuccess()) {
-                                   return bailFromServerError(span, listResult.getError().value());
-                               }
-                               const auto records = listResult.getValue().value();
+                auto opSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                             "StreamingAdHocController.listExchanges", span)
+                                                       : nullptr;
+                auto listResult = creatures::db->listAdHocExchanges(limit, opSpan);
+                if (!listResult.isSuccess()) {
+                    if (opSpan)
+                        opSpan->setError(listResult.getError()->getMessage());
+                    return bailFromServerError(span, listResult.getError().value());
+                }
+                const auto records = listResult.getValue().value();
+                if (opSpan) {
+                    opSpan->setAttribute("exchanges.count", static_cast<int64_t>(records.size()));
+                    opSpan->setSuccess();
+                }
 
-                               auto response = AdHocExchangeListDto::createShared();
-                               response->items = oatpp::Vector<oatpp::Object<AdHocExchangeDto>>::createShared();
-                               for (const auto &record : records) {
-                                   response->items->push_back(convertToDto(record.exchange, record.createdAt));
-                               }
-                               response->count = static_cast<uint32_t>(response->items->size());
+                const auto response =
+                    api::listResponseToJson(records, [](const auto &record) { return exchangeResponseToJson(record); });
 
-                               if (span) {
-                                   span->setAttribute("exchanges.count", static_cast<int64_t>(records.size()));
-                                   span->setHttpStatus(200);
-                               }
-                               return createDtoResponse(Status::CODE_200, response);
-                           });
+                if (span) {
+                    span->setAttribute("exchanges.count", static_cast<int64_t>(records.size()));
+                    span->setHttpStatus(200);
+                }
+                return jsonResponse(span, Status::CODE_200, response);
+            });
     }
 
     ENDPOINT_INFO(getExchange) {
         info->summary = "Get one streamed ad-hoc exchange";
         info->addTag("Streaming Ad-Hoc Speech");
-        info->addResponse<Object<AdHocExchangeDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/animation/ad-hoc-stream/exchange/{sessionId}", getExchange, PATH(String, sessionId),
@@ -271,6 +348,10 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
             "GET /api/v1/animation/ad-hoc-stream/exchange/{sessionId}", "GET",
             "api/v1/animation/ad-hoc-stream/exchange/{sessionId}", "getExchange", "StreamingAdHocController", request,
             [&](const auto &span) {
+                if (!creatures::db) {
+                    return bailHttp(span, Status::CODE_500, "Ad-hoc exchange lookup unavailable: database missing",
+                                    nullptr, "MissingDependencies");
+                }
                 if (!sessionId || !creatures::isUuidShape(std::string_view(sessionId->c_str(), sessionId->size()))) {
                     return bailHttp(span, Status::CODE_400, "sessionId must be a UUID");
                 }
@@ -285,14 +366,20 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
                     opSpan->setAttribute("session.id", canonicalSessionId);
                 auto lookup = creatures::db->getAdHocExchange(canonicalSessionId, opSpan);
                 if (!lookup.isSuccess()) {
+                    if (opSpan)
+                        opSpan->setError(lookup.getError()->getMessage());
                     return bailFromServerError(span, lookup.getError().value());
                 }
                 const auto record = lookup.getValue().value();
+                if (opSpan) {
+                    opSpan->setAttribute("exchange.status", record.exchange.status);
+                    opSpan->setSuccess();
+                }
                 if (span) {
                     span->setAttribute("exchange.status", record.exchange.status);
                     span->setHttpStatus(200);
                 }
-                return createDtoResponse(Status::CODE_200, convertToDto(record.exchange, record.createdAt));
+                return jsonResponse(span, Status::CODE_200, exchangeResponseToJson(record));
             });
     }
 
@@ -341,6 +428,15 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
   private:
     enum class ExchangeAudio { Wav, Mp3, Ogg };
 
+    static nlohmann::json exchangeResponseToJson(const creatures::AdHocExchangeRecord &record) {
+        std::optional<std::string> finishedAt;
+        if (record.exchange.finished_at_ms > 0) {
+            finishedAt = formatTimeISO8601(
+                std::chrono::system_clock::time_point(std::chrono::milliseconds(record.exchange.finished_at_ms)));
+        }
+        return api::adHocExchangeResponseToJson(record.exchange, formatTimeISO8601(record.createdAt), finishedAt);
+    }
+
     /// Download filename in the shared export shape (#126, #152): slugified
     /// title plus a short session-id tail, so identically-worded exchanges
     /// don't collide. e.g. "beaky-somebody-is-at-the-door-e3af1c4d.mp3"
@@ -352,6 +448,10 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
     template <typename SpanT>
     std::shared_ptr<HttpOutgoingResponse> serveExchangeAudio(const oatpp::String &sessionId, ExchangeAudio format,
                                                              const SpanT &span) {
+        if (!creatures::db) {
+            return bailHttp(span, Status::CODE_500, "Ad-hoc exchange audio unavailable: database missing", nullptr,
+                            "MissingDependencies");
+        }
         if (!sessionId || !creatures::isUuidShape(std::string_view(sessionId->c_str(), sessionId->size()))) {
             return bailHttp(span, Status::CODE_400, "sessionId must be a UUID");
         }
@@ -366,10 +466,16 @@ class StreamingAdHocController : public oatpp::web::server::api::ApiController,
             opSpan->setAttribute("session.id", canonicalSessionId);
         auto lookup = creatures::db->getAdHocExchange(canonicalSessionId, opSpan);
         if (!lookup.isSuccess()) {
+            if (opSpan)
+                opSpan->setError(lookup.getError()->getMessage());
             return bailFromServerError(span, lookup.getError().value());
         }
         const auto record = lookup.getValue().value();
         const auto &exchange = record.exchange;
+        if (opSpan) {
+            opSpan->setAttribute("exchange.status", exchange.status);
+            opSpan->setSuccess();
+        }
         if (span) {
             span->setAttribute("session.id", exchange.session_id);
             span->setAttribute("exchange.status", exchange.status);

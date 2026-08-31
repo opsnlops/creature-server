@@ -76,7 +76,7 @@ Per-part durations fall out of the data-chunk sizes for free.
 
 ```
 GET api/v1/animation/ad-hoc-stream/exchanges                        → list, newest first
-GET api/v1/animation/ad-hoc-stream/exchange/{sessionId}             → full AdHocExchangeDto
+GET api/v1/animation/ad-hoc-stream/exchange/{sessionId}             → full neutral exchange JSON
 GET api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.mp3   → SoundRenditionService::renderWav(stitched)
 GET api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.ogg   → same, Ogg/Opus
 GET api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.wav   → raw stitched 17-ch WAV
@@ -105,8 +105,9 @@ and on finalize at `/finish`.
 ## Work list
 
 1. **Model** — `src/model/AdHocExchange.{h,cpp}`: structs (`AdHocExchange`,
-   `AdHocExchangePart`), DTOs, `convertToDto`/JSON codec. Status as a string
-   enum with helpers.
+   `AdHocExchangePart`) and strict persistence JSON codec. Status as a string
+   enum with helpers. Public API serialization is kept separately in
+   `src/api/StreamingAdHocContracts.h`.
 2. **DB** — `ADHOC_EXCHANGES_COLLECTION` in `config.h`;
    `src/server/animation/exchange.cpp` (existing globbed dir — no CMake edit):
    `insertAdHocExchange`, `finalizeAdHocExchange`, `listAdHocExchanges`,
@@ -122,8 +123,8 @@ and on finalize at `/finish`.
 6. **Session** — track per-sentence text/outcome (playback thread already sees
    each result); create the doc in `start()`; stitch + finalize in `finish()`;
    return a richer finish result (last animation id, counts, status).
-7. **Controller + DTOs** — five endpoints, `AdHocExchangeDto`, finish-response
-   fields, UUID validation.
+7. **Controller + contracts** — five endpoints, neutral exchange and
+   finish-response JSON, UUID validation.
 8. **Tests** — stitcher (sample counts, channel placement, iXML round-trip
    through `readIxmlChunk`/`parseIxmlProvenance`); rendition of a stitched WAV
    carries TITLE/ARTIST/LYRICS; exchange JSON codec round-trip; UUID validator.

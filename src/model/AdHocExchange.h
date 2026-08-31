@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -9,8 +10,12 @@
 
 namespace creatures {
 
+inline constexpr std::size_t MAX_AD_HOC_EXCHANGE_PARTS = 100;
+inline constexpr std::size_t MAX_AD_HOC_EXCHANGE_TEXT_BYTES = 32 * 1024;
+inline constexpr std::size_t MAX_AD_HOC_EXCHANGE_TRANSCRIPT_BYTES = 256 * 1024;
+
 // Status values for an ad-hoc exchange (issue #150). Plain strings rather than
-// an enum — they go straight into Mongo and DTOs, and clients treat them as
+// an enum — they go straight into Mongo and API responses, and clients treat them as
 // opaque labels.
 inline constexpr const char *EXCHANGE_STATUS_STREAMING = "streaming"; // session open, sentences arriving
 inline constexpr const char *EXCHANGE_STATUS_READY = "ready";         // finished, every sentence stitched

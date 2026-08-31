@@ -556,6 +556,7 @@ add_executable(creature-server
         src/api/JobResponses.h
         src/api/SoundRequests.h
         src/api/SoundResponses.h
+        src/api/StreamingAdHocContracts.h
         src/model/SortBy.h
         src/model/Track.cpp
         src/model/Track.h
@@ -576,8 +577,6 @@ add_executable(creature-server
         src/server/ws/App.h
         src/server/ws/App.cpp
 
-        src/server/ws/dto/AdHocExchangeDto.h
-        src/server/ws/dto/AdHocExchangeDto.cpp
         src/server/ws/dto/OutboundPayloadDto.cpp
         src/server/ws/dto/ListDto.h
         src/server/ws/dto/SimpleResponseDto.h
@@ -848,6 +847,7 @@ add_executable(creature-server-test
         src/model/VirtualStatusLights.cpp
         tests/api/SoundRequests_test.cpp
         tests/api/AnimationRequests_test.cpp
+        tests/api/StreamingAdHocContracts_test.cpp
         tests/api/DialogContracts_test.cpp
         tests/api/VoiceContracts_test.cpp
         src/model/PlaylistStatus.cpp
