@@ -1,6 +1,7 @@
 #include "DialogCache.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -8,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "server/namespace-stuffs.h"
@@ -19,6 +21,35 @@
 namespace creatures::voice {
 
 namespace {
+
+bool isLowerHex(std::string_view value) {
+    return std::ranges::all_of(value, [](unsigned char character) {
+        return std::isdigit(character) != 0 || (character >= 'a' && character <= 'f');
+    });
+}
+
+bool validCacheKey(std::string_view value) { return value.size() == 64 && isLowerHex(value); }
+
+bool validGenerationId(std::string_view value) {
+    // Keep legacy on-disk test/development generations readable while making
+    // path separators and traversal tokens impossible. HTTP contracts enforce
+    // UUID shape for all newly supplied identifiers.
+    if (value.empty() || value.size() > 64)
+        return false;
+    return std::ranges::all_of(value, [](unsigned char character) {
+        return std::isalnum(character) != 0 || character == '-' || character == '_';
+    });
+}
+
+Result<void> validateCacheAddress(const std::string &cacheKey, const std::string &generationId) {
+    if (!validCacheKey(cacheKey))
+        return Result<void>{
+            ServerError(ServerError::InvalidData, "DialogCache: cache key must be 64 lowercase hex characters")};
+    if (!validGenerationId(generationId))
+        return Result<void>{
+            ServerError(ServerError::InvalidData, "DialogCache: generation id contains unsafe characters")};
+    return Result<void>{};
+}
 
 /// Root of the on-disk dialog cache. Delegated to the storage facade
 /// (Persistence::GenerationCache) so there's one place in the codebase that
@@ -198,6 +229,8 @@ std::string computeCacheKey(const std::vector<DialogInput> &turns) {
 
 std::vector<GenerationListEntry> listGenerations(const std::string &cacheKey) {
     std::vector<GenerationListEntry> out;
+    if (!validCacheKey(cacheKey))
+        return out;
     const auto dir = cacheKeyDir(cacheKey);
     std::error_code ec;
     if (!std::filesystem::exists(dir, ec) || !std::filesystem::is_directory(dir, ec)) {
@@ -302,10 +335,16 @@ static Result<CachedGeneration> loadGenerationFromDir(const std::filesystem::pat
 }
 
 Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::string &generationId) {
+    auto validation = validateCacheAddress(cacheKey, generationId);
+    if (!validation.isSuccess())
+        return Result<CachedGeneration>{validation.getError().value()};
     return loadGenerationFromDir(cacheKeyDir(cacheKey), cacheKey, generationId);
 }
 
 Result<CachedGeneration> loadAcceptedGeneration(const std::string &cacheKey, const std::string &generationId) {
+    auto validation = validateCacheAddress(cacheKey, generationId);
+    if (!validation.isSuccess())
+        return Result<CachedGeneration>{validation.getError().value()};
     const auto root = acceptedTakeRoot();
     if (root.empty()) {
         return Result<CachedGeneration>{
@@ -316,9 +355,9 @@ Result<CachedGeneration> loadAcceptedGeneration(const std::string &cacheKey, con
 }
 
 Result<void> saveAcceptedGeneration(const std::string &cacheKey, const std::string &generationId) {
-    if (cacheKey.empty() || generationId.empty()) {
-        return Result<void>{ServerError(ServerError::InvalidData, "DialogCache: cacheKey/generationId is empty")};
-    }
+    auto validation = validateCacheAddress(cacheKey, generationId);
+    if (!validation.isSuccess())
+        return validation;
     const auto root = acceptedTakeRoot();
     if (root.empty()) {
         return Result<void>{ServerError(ServerError::InternalError,
@@ -368,8 +407,11 @@ Result<void> saveAcceptedGeneration(const std::string &cacheKey, const std::stri
 }
 
 Result<void> removeAcceptedGeneration(const std::string &cacheKey, const std::string &generationId) {
+    auto validation = validateCacheAddress(cacheKey, generationId);
+    if (!validation.isSuccess())
+        return validation;
     const auto root = acceptedTakeRoot();
-    if (root.empty() || cacheKey.empty() || generationId.empty()) {
+    if (root.empty()) {
         return Result<void>{};
     }
     std::error_code ec;
@@ -382,12 +424,9 @@ Result<void> removeAcceptedGeneration(const std::string &cacheKey, const std::st
 }
 
 Result<void> saveGeneration(const std::string &cacheKey, const CachedGeneration &gen) {
-    if (cacheKey.empty()) {
-        return Result<void>{ServerError(ServerError::InvalidData, "DialogCache: cacheKey is empty")};
-    }
-    if (gen.generationId.empty()) {
-        return Result<void>{ServerError(ServerError::InvalidData, "DialogCache: generation id is empty")};
-    }
+    auto validation = validateCacheAddress(cacheKey, gen.generationId);
+    if (!validation.isSuccess())
+        return validation;
     if (gen.audioPcm.empty()) {
         return Result<void>{ServerError(ServerError::InvalidData, "DialogCache: generation audio is empty")};
     }
@@ -474,6 +513,9 @@ Result<void> saveGeneration(const std::string &cacheKey, const CachedGeneration 
 
 Result<void> updateGenerationProvenance(const std::string &cacheKey, const std::string &generationId,
                                         const WavProvenance &provenance) {
+    auto validation = validateCacheAddress(cacheKey, generationId);
+    if (!validation.isSuccess())
+        return validation;
     const auto jsonFile = jsonPath(cacheKey, generationId);
     std::error_code ec;
     if (!std::filesystem::exists(jsonFile, ec) || ec) {

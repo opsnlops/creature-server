@@ -255,7 +255,8 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
                                if (span) {
                                    span->setHttpStatus(200);
                                }
-                               return createDtoResponse(Status::CODE_200, promoted.getValue().value());
+                               return jsonResponse(span, Status::CODE_200,
+                                                   api::dialogMusicPromotionResultToJson(promoted.getValue().value()));
                            });
     }
 };

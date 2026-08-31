@@ -88,27 +88,23 @@ Result<DialogMusicContext> loadDialogMusicContext(const DialogScript &script,
 
 } // namespace
 
-Result<oatpp::Object<DialogMusicGenerationResultDto>>
-DialogMusicService::generate(const oatpp::Object<DialogMusicRequestDto> &request,
-                             std::shared_ptr<OperationSpan> parentSpan, const std::string &jobId) const {
+Result<api::DialogMusicGenerationResult> DialogMusicService::generate(const api::DialogMusicRequest &request,
+                                                                      std::shared_ptr<OperationSpan> parentSpan,
+                                                                      const std::string &jobId) const {
     auto span = creatures::observability
                     ? creatures::observability->createChildOperationSpan("DialogMusicService.generate", parentSpan)
                     : nullptr;
-    using GenerateResult = Result<oatpp::Object<DialogMusicGenerationResultDto>>;
+    using GenerateResult = Result<api::DialogMusicGenerationResult>;
     const auto fail = [&span](ServerError error, const std::string &type = "DialogMusicGenerationError") {
         recordSpanError(span, error.getMessage(), type, error.getCode());
         return GenerateResult{std::move(error)};
     };
-    if (!request || !request->script_id || !request->dialog_cache_key || !request->dialog_generation_id ||
-        !request->prompt) {
-        return fail(ServerError(ServerError::InvalidData, "dialog music request is incomplete"), "InvalidData");
-    }
-    const std::string scriptId = request->script_id;
-    const std::string cacheKey = request->dialog_cache_key;
-    const std::string dialogGenerationId = request->dialog_generation_id;
-    const std::string prompt = request->prompt;
-    const std::string mode = request->generation_mode ? std::string(*request->generation_mode) : "track";
-    const int64_t durationExtensionMs = request->duration_extension_ms ? *request->duration_extension_ms : 0;
+    const std::string &scriptId = request.scriptId;
+    const std::string &cacheKey = request.dialogCacheKey;
+    const std::string &dialogGenerationId = request.dialogGenerationId;
+    const std::string &prompt = request.prompt;
+    const std::string &mode = request.generationMode;
+    const int64_t durationExtensionMs = request.durationExtensionMs;
     if (span) {
         span->setAttribute("job.id", jobId);
         span->setAttribute("dialog.script_id", scriptId);
@@ -226,26 +222,26 @@ DialogMusicService::generate(const oatpp::Object<DialogMusicRequestDto> &request
         return fail(saved.getError().value(), "MusicCacheWriteError");
     }
 
-    auto dto = DialogMusicGenerationResultDto::createShared();
-    dto->music_generation_id = generationId;
-    dto->mp3_url = fmt::format("/api/v1/animation/dialog/music/generated/{}.mp3", generationId);
-    dto->duration_seconds = candidate.durationSeconds;
-    dto->dialog_duration_ms = exactLengthMs;
-    dto->duration_extension_ms = durationExtensionMs;
-    dto->requested_music_length_ms = requestLengthMs;
-    dto->prompt = prompt;
+    api::DialogMusicGenerationResult result{
+        generationId,
+        fmt::format("/api/v1/animation/dialog/music/generated/{}.mp3", generationId),
+        candidate.durationSeconds,
+        exactLengthMs,
+        durationExtensionMs,
+        requestLengthMs,
+        prompt};
     if (span) {
         span->setAttribute("music.generation_id", generationId);
         span->setAttribute("music.pcm_bytes", static_cast<int64_t>(music.audioPcm.size()));
         span->setSuccess();
     }
-    return Result<oatpp::Object<DialogMusicGenerationResultDto>>{dto};
+    return Result<api::DialogMusicGenerationResult>{std::move(result)};
 }
 
-Result<oatpp::Object<DialogMusicPromotionResultDto>>
+Result<api::DialogMusicPromotionResult>
 DialogMusicService::backfillMusicSourceFromPromotedFile(const std::string &generationId,
                                                         const std::shared_ptr<OperationSpan> &span) const {
-    using PromotionResult = Result<oatpp::Object<DialogMusicPromotionResultDto>>;
+    using PromotionResult = Result<api::DialogMusicPromotionResult>;
     const auto notFound = [](const std::string &message) {
         return PromotionResult{ServerError(ServerError::NotFound, message)};
     };
@@ -283,12 +279,9 @@ DialogMusicService::backfillMusicSourceFromPromotedFile(const std::string &gener
                                                        script.title, generationId))};
     }
 
-    const auto buildDto = [&] {
-        auto dto = DialogMusicPromotionResultDto::createShared();
-        dto->music_generation_id = generationId;
-        dto->sound_file = script.background_music->sound_file;
-        dto->mp3_url = fmt::format("/api/v1/sound/mp3/{}.mp3", promotedPath.stem().string());
-        return dto;
+    const auto buildResult = [&] {
+        return api::DialogMusicPromotionResult{generationId, script.background_music->sound_file,
+                                               fmt::format("/api/v1/sound/mp3/{}.mp3", promotedPath.stem().string())};
     };
 
     // Nothing to repair is still a success — this path is reached by re-running
@@ -301,7 +294,7 @@ DialogMusicService::backfillMusicSourceFromPromotedFile(const std::string &gener
             span->setAttribute("music.recovered_from_promoted_file", true);
             span->setSuccess();
         }
-        return PromotionResult{buildDto()};
+        return PromotionResult{buildResult()};
     }
 
     script.background_music->source_dialog_generation_id = provenance.music->sourceDialogGenerationId;
@@ -320,15 +313,15 @@ DialogMusicService::backfillMusicSourceFromPromotedFile(const std::string &gener
         span->setAttribute("music.recovered_from_promoted_file", true);
         span->setSuccess();
     }
-    return PromotionResult{buildDto()};
+    return PromotionResult{buildResult()};
 }
 
-Result<oatpp::Object<DialogMusicPromotionResultDto>>
-DialogMusicService::promote(const std::string &generationId, std::shared_ptr<RequestSpan> parentSpan) const {
+Result<api::DialogMusicPromotionResult> DialogMusicService::promote(const std::string &generationId,
+                                                                    std::shared_ptr<RequestSpan> parentSpan) const {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DialogMusicService.promote", parentSpan)
                     : nullptr;
-    using PromotionResult = Result<oatpp::Object<DialogMusicPromotionResultDto>>;
+    using PromotionResult = Result<api::DialogMusicPromotionResult>;
     const auto fail = [&span](ServerError error, const std::string &type = "DialogMusicPromotionError") {
         recordSpanError(span, error.getMessage(), type, error.getCode());
         return PromotionResult{std::move(error)};
@@ -397,17 +390,16 @@ DialogMusicService::promote(const std::string &generationId, std::shared_ptr<Req
                     span->setAttribute("music.source_backfilled", true);
                 }
             }
-            auto dto = DialogMusicPromotionResultDto::createShared();
-            dto->music_generation_id = generationId;
-            dto->sound_file = script.background_music->sound_file;
-            dto->mp3_url = fmt::format("/api/v1/sound/mp3/{}.mp3", existingPath.stem().string());
+            api::DialogMusicPromotionResult result{
+                generationId, script.background_music->sound_file,
+                fmt::format("/api/v1/sound/mp3/{}.mp3", existingPath.stem().string())};
             if (span) {
                 span->setAttribute("promotion.idempotent_hit", true);
                 span->setAttribute("sound.file_hash", util::sha256Hex(script.background_music->sound_file));
                 span->setAttribute("sound.file_extension", existingPath.extension().string());
                 span->setSuccess();
             }
-            return PromotionResult{dto};
+            return PromotionResult{std::move(result)};
         }
     }
 
@@ -522,17 +514,16 @@ DialogMusicService::promote(const std::string &generationId, std::shared_ptr<Req
         return fail(published.getError().value(), "DialogScriptPublishError");
     }
 
-    auto dto = DialogMusicPromotionResultDto::createShared();
-    dto->music_generation_id = generationId;
-    dto->sound_file = permanentPath.forMetadata;
-    dto->mp3_url = fmt::format("/api/v1/sound/mp3/{}.mp3", std::filesystem::path(filename).stem().string());
+    api::DialogMusicPromotionResult result{
+        generationId, permanentPath.forMetadata,
+        fmt::format("/api/v1/sound/mp3/{}.mp3", std::filesystem::path(filename).stem().string())};
     if (span) {
         span->setAttribute("sound.file_hash", util::sha256Hex(permanentPath.forMetadata));
         span->setAttribute("sound.file_extension", permanentPath.absolute.extension().string());
         span->setAttribute("music.pcm_samples", static_cast<int64_t>(samples.size()));
         span->setSuccess();
     }
-    return Result<oatpp::Object<DialogMusicPromotionResultDto>>{dto};
+    return Result<api::DialogMusicPromotionResult>{std::move(result)};
 }
 
 } // namespace creatures::ws

@@ -8,10 +8,8 @@
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
-#include <model/CreatureSpeechRequest.h>
-#include <model/CreatureSpeechResponse.h>
-#include <model/Voice.h>
-
+#include "api/JsonResponse.h"
+#include "api/VoiceContracts.h"
 #include "server/database.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
@@ -20,7 +18,6 @@
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/dto/JobCreatedDto.h"
-#include "server/ws/dto/ListDto.h"
 #include "server/ws/dto/MakeSoundFileRequestDto.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/VoiceService.h"
@@ -52,17 +49,21 @@ class VoiceController : public oatpp::web::server::api::ApiController, public Ht
         info->summary = "Lists all of the voices files";
         info->addTag("Voice");
 
-        info->addResponse<Object<VoiceListDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("GET", "api/v1/voice/list-available", getAllVoices, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/voice/list-available", "GET", "api/v1/voice/list-available", "getAllVoices",
                            "VoiceController", request, [&](const auto &span) {
-                               const auto result = m_voiceService.getAllVoices();
+                               const auto result = m_voiceService.getAllVoices(span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
                                if (span)
                                    span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(
+                                   span, Status::CODE_200,
+                                   api::listResponseToJson(result.getValue().value(), api::voiceToJson));
                            });
     }
 
@@ -70,8 +71,7 @@ class VoiceController : public oatpp::web::server::api::ApiController, public Ht
         info->summary = "Returns the status of our subscription to the voice API";
         info->addTag("Voice");
 
-        info->addResponse<Object<creatures::voice::SubscriptionDto>>(Status::CODE_200,
-                                                                     "application/json; charset=utf-8");
+        info->addResponse<String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
@@ -79,10 +79,13 @@ class VoiceController : public oatpp::web::server::api::ApiController, public Ht
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/voice/subscription", "GET", "api/v1/voice/subscription",
                            "getSubscriptionStatus", "VoiceController", request, [&](const auto &span) {
-                               const auto result = m_voiceService.getSubscriptionStatus();
+                               const auto result = m_voiceService.getSubscriptionStatus(span);
+                               if (!result.isSuccess())
+                                   return bailFromServerError(span, result.getError().value());
                                if (span)
                                    span->setHttpStatus(200);
-                               return createDtoResponse(Status::CODE_200, result);
+                               return jsonResponse(span, Status::CODE_200,
+                                                   api::subscriptionToJson(result.getValue().value()));
                            });
     }
 
@@ -91,7 +94,7 @@ class VoiceController : public oatpp::web::server::api::ApiController, public Ht
         info->description = "Single-voice TTS of the given text. Long text can outlive a 60s HTTP timeout, so this "
                             "returns 202 with a job_id; the worker generates the sound file asynchronously and "
                             "publishes progress + completion over the WebSocket job-progress stream. The completion "
-                            "result is the CreatureSpeechResponseDto JSON the sync path used to return.";
+                            "result is the CreatureSpeechResponse JSON the sync path used to return.";
         info->addTag("Voice");
 
         info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
@@ -111,22 +114,16 @@ class VoiceController : public oatpp::web::server::api::ApiController, public Ht
                                    span->setAttribute("creature.id", std::string(requestBody->creature_id));
                                    const auto text = std::string(requestBody->text);
                                    span->setAttribute("speech.text_length", static_cast<int64_t>(text.size()));
-                                   span->setAttribute("speech.text_preview", text.substr(0, 60));
                                }
 
-                               // Serialize the request DTO into the job framework's string-typed
-                               // `details` field; the worker round-trips it through the same
-                               // ObjectMapper.
-                               std::string detailsStr;
-                               try {
-                                   auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-                                   detailsStr = jsonMapper->writeToString(requestBody)->c_str();
-                               } catch (const std::exception &e) {
-                                   if (span)
-                                       span->setError(e.what());
-                                   return bailHttp(span, Status::CODE_500,
-                                                   fmt::format("failed to serialize request body: {}", e.what()));
-                               }
+                               nlohmann::json details = {{"creature_id", std::string(*requestBody->creature_id)},
+                                                         {"text", std::string(*requestBody->text)}};
+                               if (requestBody->title)
+                                   details["title"] = std::string(*requestBody->title);
+                               auto parsed = api::makeSoundFileRequestFromJson(details);
+                               if (!parsed.isSuccess())
+                                   return bailFromServerError(span, parsed.getError().value());
+                               const std::string detailsStr = details.dump();
 
                                const std::string jobId = creatures::jobManager->createJob(
                                    creatures::jobs::JobType::VoiceFile, detailsStr, span);

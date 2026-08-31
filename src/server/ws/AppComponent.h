@@ -16,8 +16,6 @@
 
 #include <oatpp-websocket/ConnectionHandler.hpp>
 
-#include <CreatureVoices.h>
-
 #include "ErrorHandler.h"
 #include "RequestBodyDrain.h"
 #include "SwaggerComponent.h"
@@ -102,13 +100,6 @@ class AppComponent {
     }());
 
     OATPP_CREATE_COMPONENT(std::shared_ptr<ClientCafe>, cafe)([] { return std::make_shared<ClientCafe>(); }());
-
-    /**
-     * Register the voice service
-     */
-    OATPP_CREATE_COMPONENT(std::shared_ptr<creatures::voice::CreatureVoices>, creatureVoices)([] {
-        return std::make_shared<creatures::voice::CreatureVoices>(config->getVoiceApiKey());
-    }());
 
     /**
      * Create the MessageProcessor

@@ -4,8 +4,6 @@
 #include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 
-#include <model/Voice.h>
-
 #include "model/Animation.h"
 #include "model/AnimationMetadata.h"
 #include "server/ws/dto/AnimationDto.h"
@@ -22,10 +20,6 @@ template <class T> class ListDto : public oatpp::DTO {
 
 class AnimationsListDto : public ListDto<oatpp::Object<creatures::AnimationMetadataDto>> {
     DTO_INIT(AnimationsListDto, ListDto<oatpp::Object<creatures::AnimationMetadataDto>>)
-};
-
-class VoiceListDto : public ListDto<oatpp::Object<creatures::voice::VoiceDto>> {
-    DTO_INIT(VoiceListDto, ListDto<oatpp::Object<creatures::voice::VoiceDto>>)
 };
 
 #include OATPP_CODEGEN_END(DTO)

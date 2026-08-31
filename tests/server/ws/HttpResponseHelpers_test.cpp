@@ -90,6 +90,7 @@ TEST(JsonResponse, ListResponseSerializesEmptyAndPopulatedRanges) {
 
 TEST(HttpResponseHelpers, ServerErrorToHttpStatusCodeIsExhaustive) {
     EXPECT_EQ(creatures::serverErrorToStatusCode(creatures::ServerError::NotFound), 404);
+    EXPECT_EQ(creatures::serverErrorToStatusCode(creatures::ServerError::Unauthorized), 401);
     EXPECT_EQ(creatures::serverErrorToStatusCode(creatures::ServerError::Forbidden), 403);
     EXPECT_EQ(creatures::serverErrorToStatusCode(creatures::ServerError::InvalidData), 400);
     EXPECT_EQ(creatures::serverErrorToStatusCode(creatures::ServerError::Conflict), 409);

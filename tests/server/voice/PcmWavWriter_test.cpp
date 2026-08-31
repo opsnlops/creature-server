@@ -49,6 +49,12 @@ std::vector<uint8_t> readAllBytes(const std::filesystem::path &path) {
 
 } // namespace
 
+TEST(PcmWavWriter, RejectsInvalidChannelAndUnalignedPcm) {
+    const auto path = std::filesystem::temp_directory_path() / "creature-server-invalid.wav";
+    EXPECT_FALSE(writePcmToMultichannelWav(samplePcm(), path, 0, 48000).isSuccess());
+    EXPECT_FALSE(writePcmToMultichannelWav({0x01}, path, 1, 48000).isSuccess());
+}
+
 TEST(PcmWavWriter, NoProvenanceIsACanonical44ByteWav) {
     const auto pcm = samplePcm();
     const auto wav = wrapMonoPcmAsWav(pcm, 48000);

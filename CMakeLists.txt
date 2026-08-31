@@ -333,7 +333,6 @@ add_definitions(
 
 #... and our own libraries
 add_subdirectory(lib/e131_service)
-add_subdirectory(lib/CreatureVoicesLib)
 
 #Umbrella target for the Docker build to pre - compile every heavy FetchContent
 #library before src / is COPYed into the image.The Dockerfile runs
@@ -704,7 +703,6 @@ target_link_libraries(creature-server
         opentelemetry_exporter_otlp_http_metric
         argparse
         e131_service
-        CreatureVoicesLib
         Threads::Threads
         uvgrtp
         opus
@@ -851,6 +849,8 @@ add_executable(creature-server-test
         src/server/sensors/SensorReport.cpp
         src/model/VirtualStatusLights.cpp
         tests/api/SoundRequests_test.cpp
+        tests/api/DialogContracts_test.cpp
+        tests/api/VoiceContracts_test.cpp
         src/model/PlaylistStatus.cpp
         src/model/Notice.cpp
         src/model/CacheInvalidation.cpp
@@ -911,7 +911,6 @@ target_link_libraries(creature-server-test
         opentelemetry_exporter_otlp_http_metric
         argparse
         e131_service
-        CreatureVoicesLib
         opus
         ogg
         ${MP3LAME_LIBRARIES}

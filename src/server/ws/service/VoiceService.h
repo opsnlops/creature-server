@@ -1,46 +1,35 @@
 #pragma once
 
-#include "spdlog/spdlog.h"
+#include <memory>
+#include <utility>
+#include <vector>
 
-#include <oatpp/core/macro/component.hpp>
-#include <oatpp/web/protocol/http/Http.hpp>
+#include "api/VoiceContracts.h"
+#include "server/voice/VoiceClient.h"
+#include "util/Result.h"
 
-// From our CreatureVoiceLib
-#include <model/Subscription.h>
-#include <model/Voice.h>
+namespace creatures {
+class OperationSpan;
+class RequestSpan;
+} // namespace creatures
 
-#include "server/ws/dto/ListDto.h"
-#include "server/ws/dto/MakeSoundFileRequestDto.h"
-
-namespace creatures ::ws {
+namespace creatures::ws {
 
 class VoiceService {
+  public:
+    explicit VoiceService(std::shared_ptr<voice::VoiceClient> voiceClient = nullptr)
+        : voiceClient_(std::move(voiceClient)) {}
+
+    Result<std::vector<voice::Voice>> getAllVoices(std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+    Result<voice::Subscription> getSubscriptionStatus(std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+    Result<voice::CreatureSpeechResponse>
+    generateCreatureSpeech(const api::MakeSoundFileRequest &request,
+                           std::shared_ptr<OperationSpan> parentSpan = nullptr) const;
 
   private:
-    typedef oatpp::web::protocol::http::Status Status;
+    Result<std::shared_ptr<voice::VoiceClient>> resolveClient() const;
 
-  public:
-    VoiceService() = default;
-    virtual ~VoiceService() = default;
-
-    /**
-     * Get all of the voices
-     */
-    oatpp::Object<ListDto<oatpp::Object<creatures::voice::VoiceDto>>> getAllVoices();
-
-    /**
-     * Gets the status of our subscription
-     */
-    oatpp::Object<creatures::voice::SubscriptionDto> getSubscriptionStatus();
-
-    /**
-     * Generate a sound file for a creature based on the text given
-     *
-     * @param speechRequest the request to generate the speech
-     * @return A VoiceResult with information about what happened
-     */
-    oatpp::Object<creatures::voice::CreatureSpeechResponseDto>
-    generateCreatureSpeech(const oatpp::Object<MakeSoundFileRequestDto> &soundFileRequest);
+    std::shared_ptr<voice::VoiceClient> voiceClient_;
 };
 
 } // namespace creatures::ws

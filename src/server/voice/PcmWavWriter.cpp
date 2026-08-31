@@ -18,7 +18,16 @@ Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmDat
     const uint16_t bitsPerSample = 16;
     const uint16_t bytesPerSample = bitsPerSample / 8;
 
+    if (audioChannel == 0 || audioChannel > totalChannels)
+        return Result<std::size_t>{ServerError(ServerError::InvalidData, "Audio channel is outside the WAV layout")};
+    if (pcmData.size() % bytesPerSample != 0)
+        return Result<std::size_t>{ServerError(ServerError::InvalidData, "Mono PCM byte count is not sample-aligned")};
+
     const std::size_t monoSamples = pcmData.size() / bytesPerSample;
+    constexpr auto maxRiffDataBytes = std::numeric_limits<uint32_t>::max() - 36ULL;
+    if (monoSamples > maxRiffDataBytes / totalChannels / bytesPerSample)
+        return Result<std::size_t>{
+            ServerError(ServerError::InvalidData, "Multichannel WAV would exceed the RIFF 4 GB limit")};
     const std::size_t dataSize = monoSamples * totalChannels * bytesPerSample;
 
     std::ofstream file(wavPath, std::ios::binary);
