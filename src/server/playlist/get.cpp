@@ -3,13 +3,14 @@
 
 #include "spdlog/spdlog.h"
 
-#include <algorithm>
-#include <cctype>
+#include <optional>
 
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/exception/exception.hpp>
 #include <bsoncxx/json.hpp>
+#include <bsoncxx/types.hpp>
 #include <mongocxx/client.hpp>
+#include <mongocxx/options/find.hpp>
 
 #include "exception/exception.h"
 #include "server/creature-server.h"
@@ -36,13 +37,14 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
         warn("no parent span provided for Database.getPlaylistJson, creating a root span");
     }
     auto dbSpan = creatures::observability->createChildOperationSpan("Database.getPlaylistJson", parentSpan);
+    const auto canonicalId = isUuidShape(playlistId) ? canonicalUuid(playlistId) : playlistId;
 
     if (dbSpan) {
         dbSpan->setAttribute("database.collection", PLAYLISTS_COLLECTION);
-        dbSpan->setAttribute("database.operation", "find_one");
+        dbSpan->setAttribute("database.operation", "find");
         dbSpan->setAttribute("database.system", "mongodb");
         dbSpan->setAttribute("database.name", DB_NAME);
-        dbSpan->setAttribute("playlist.id", playlistId);
+        dbSpan->setAttribute("playlist.id", canonicalId);
     }
 
     debug("attempting to get the JSON for a playlist by ID: {}", playlistId);
@@ -68,19 +70,26 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
     try {
         mongoSpan = creatures::observability->createChildOperationSpan("getPlaylistJson.mongoQuery", dbSpan);
 
-        const auto canonicalId = canonicalUuid(playlistId);
-        auto uppercaseId = canonicalId;
-        std::ranges::transform(uppercaseId, uppercaseId.begin(),
-                               [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
-        auto filter = document{} << "id" << bsoncxx::builder::stream::open_document << "$in"
-                                 << bsoncxx::builder::stream::open_array << canonicalId << uppercaseId
-                                 << bsoncxx::builder::stream::close_array << bsoncxx::builder::stream::close_document
-                                 << finalize;
-        auto maybe_result = collection.find_one(filter.view());
+        const auto idPattern = fmt::format("^{}$", canonicalId);
+        auto filter = document{} << "id" << bsoncxx::types::b_regex{idPattern, "i"} << finalize;
+        mongocxx::options::find options;
+        options.limit(2);
+        auto cursor = collection.find(filter.view(), options);
+        std::optional<bsoncxx::document::value> maybeResult;
+        for (const auto &candidate : cursor) {
+            if (maybeResult) {
+                const auto errorMessage =
+                    fmt::format("Multiple playlist records differ only by UUID casing: {}", canonicalId);
+                recordSpanError(mongoSpan, errorMessage, "CaseFoldCollision", ServerError::InvalidData);
+                recordSpanError(dbSpan, errorMessage, "CaseFoldCollision", ServerError::InvalidData);
+                return Result<json>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            maybeResult.emplace(candidate);
+        }
         if (mongoSpan)
             mongoSpan->setSuccess();
 
-        if (!maybe_result) {
+        if (!maybeResult) {
             std::string errorMessage = fmt::format("Playlist not found: {}", playlistId);
             warn(errorMessage);
             recordSpanError(dbSpan, errorMessage, "NotFound", ServerError::NotFound);
@@ -89,7 +98,7 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
 
         auto convertSpan = creatures::observability->createChildOperationSpan("getPlaylistJson.bson-to-json", dbSpan);
         auto jsonResult =
-            JsonParser::bsonToJson(maybe_result->view(), fmt::format("playlist {}", playlistId), convertSpan);
+            JsonParser::bsonToJson(maybeResult->view(), fmt::format("playlist {}", playlistId), convertSpan);
         if (!jsonResult.isSuccess()) {
             auto err = jsonResult.getError().value();
             warn("Failed to convert BSON to JSON for playlist {}: {}", playlistId, err.getMessage());
@@ -136,24 +145,25 @@ Result<creatures::Playlist> Database::getPlaylist(const playlistId_t &playlistId
         warn("no parent span provided for Database.getPlaylist, creating a root span");
     }
     auto dbSpan = creatures::observability->createChildOperationSpan("Database.getPlaylist", parentSpan);
+    const auto canonicalId = isUuidShape(playlistId) ? canonicalUuid(playlistId) : playlistId;
 
     if (dbSpan) {
         dbSpan->setAttribute("database.collection", PLAYLISTS_COLLECTION);
         dbSpan->setAttribute("database.operation", "find_one");
         dbSpan->setAttribute("database.system", "mongodb");
         dbSpan->setAttribute("database.name", DB_NAME);
-        dbSpan->setAttribute("playlist.id", playlistId);
+        dbSpan->setAttribute("playlist.id", canonicalId);
     }
 
-    if (playlistId.empty()) {
-        std::string errorMessage = "unable to get a playlist because the id was empty";
+    if (!isUuidShape(playlistId)) {
+        std::string errorMessage = "unable to get a playlist because the id was not a UUID";
         warn(errorMessage);
         recordSpanError(dbSpan, errorMessage, "InvalidData", ServerError::InvalidData);
         return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
     }
 
     auto jsonSpan = creatures::observability->createChildOperationSpan("getPlaylist.getPlaylistJson", dbSpan);
-    auto playlistJson = getPlaylistJson(playlistId, jsonSpan);
+    auto playlistJson = getPlaylistJson(canonicalId, jsonSpan);
     if (!playlistJson.isSuccess()) {
         auto err = playlistJson.getError().value();
         std::string errorMessage = fmt::format("unable to get a playlist by ID: {}", err.getMessage());

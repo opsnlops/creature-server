@@ -192,10 +192,14 @@ Result<nlohmann::json> parseResponse(const std::string &response, const char *op
 
 VoiceClient::VoiceClient(std::string apiKey) : apiKey_(std::move(apiKey)) {}
 
-Result<std::vector<Voice>> parseVoiceListResponse(const std::string &response) {
+Result<std::vector<Voice>> parseVoiceListResponse(const std::string &response,
+                                                  const std::shared_ptr<OperationSpan> &span) {
     auto parsed = parseResponse(response, "voices");
-    if (!parsed.isSuccess())
+    if (!parsed.isSuccess()) {
+        const auto error = parsed.getError().value();
+        recordSpanError(span, error.getMessage(), "ElevenLabsResponseParseError", error.getCode());
         return Result<std::vector<Voice>>{parsed.getError().value()};
+    }
 
     try {
         // Result::getValue() returns its optional by value. Keep the JSON alive
@@ -203,8 +207,9 @@ Result<std::vector<Voice>> parseVoiceListResponse(const std::string &response) {
         const auto document = parsed.getValue().value();
         const auto &items = document.at("voices");
         if (!items.is_array()) {
-            return Result<std::vector<Voice>>{
-                ServerError(ServerError::InvalidData, "ElevenLabs voices response did not contain an array")};
+            const std::string message = "ElevenLabs voices response did not contain an array";
+            recordSpanError(span, message, "ElevenLabsResponseShapeError", ServerError::InvalidData);
+            return Result<std::vector<Voice>>{ServerError(ServerError::InvalidData, message)};
         }
         std::vector<Voice> voices;
         voices.reserve(items.size());
@@ -213,9 +218,11 @@ Result<std::vector<Voice>> parseVoiceListResponse(const std::string &response) {
         std::ranges::sort(voices, {}, &Voice::name);
         return Result<std::vector<Voice>>{std::move(voices)};
     } catch (const nlohmann::json::exception &error) {
-        return Result<std::vector<Voice>>{
-            ServerError(ServerError::InvalidData,
-                        fmt::format("ElevenLabs voices response had an invalid shape: {}", error.what()))};
+        const auto message = fmt::format("ElevenLabs voices response had an invalid shape: {}", error.what());
+        if (span)
+            span->recordException(error);
+        recordSpanError(span, message, "ElevenLabsResponseShapeError", ServerError::InvalidData);
+        return Result<std::vector<Voice>>{ServerError(ServerError::InvalidData, message)};
     }
 }
 
@@ -237,12 +244,9 @@ Result<std::vector<Voice>> VoiceClient::listAllAvailableVoices(std::shared_ptr<O
     if (!response.isSuccess())
         return Result<std::vector<Voice>>{response.getError().value()};
 
-    auto voices = parseVoiceListResponse(response.getValue().value());
-    if (!voices.isSuccess()) {
-        const auto error = voices.getError().value();
-        recordSpanError(span, error.getMessage(), "ElevenLabsResponseParseError", error.getCode());
+    auto voices = parseVoiceListResponse(response.getValue().value(), span);
+    if (!voices.isSuccess())
         return voices;
-    }
     if (span) {
         span->setAttribute("voice.count", static_cast<int64_t>(voices.getValue()->size()));
         span->setSuccess();

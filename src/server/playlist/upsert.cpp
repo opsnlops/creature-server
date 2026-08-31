@@ -3,8 +3,7 @@
 
 #include "spdlog/spdlog.h"
 
-#include <algorithm>
-#include <cctype>
+#include <optional>
 
 // Disable shadow warnings for MongoDB C++ driver headers (third-party code)
 #pragma GCC diagnostic push
@@ -13,9 +12,11 @@
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/exception/exception.hpp>
 #include <bsoncxx/json.hpp>
+#include <bsoncxx/types.hpp>
 
 #include <mongocxx/client.hpp>
 #include <mongocxx/exception/bulk_write_exception.hpp>
+#include <mongocxx/options/find.hpp>
 
 #pragma GCC diagnostic pop
 
@@ -74,7 +75,12 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         }
 
         auto bsonSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.json-to-bson", upsertSpan);
-        const auto normalizedJson = playlistToJson(playlist).dump();
+        // Canonicalize the playlist's own identity while retaining the exact
+        // lookup spelling of referenced animations. Animation persistence is
+        // still case-sensitive for legacy records; the API serializer can emit
+        // those references lowercase without silently rewriting storage.
+        jsonObject["id"] = playlist.id;
+        const auto normalizedJson = jsonObject.dump();
         auto bsonResult =
             JsonParser::jsonStringToBson(normalizedJson, fmt::format("playlist {}", playlist.id), bsonSpan);
         if (!bsonResult.isSuccess()) {
@@ -103,14 +109,32 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         if (collectionSpan)
             collectionSpan->setSuccess();
 
-        auto mongoSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.mongoQuery", upsertSpan);
-        auto uppercaseId = playlist.id;
-        std::ranges::transform(uppercaseId, uppercaseId.begin(),
-                               [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
-        auto filter = bsoncxx::builder::stream::document{} << "id" << bsoncxx::builder::stream::open_document << "$in"
-                                                           << bsoncxx::builder::stream::open_array << playlist.id
-                                                           << uppercaseId << bsoncxx::builder::stream::close_array
-                                                           << bsoncxx::builder::stream::close_document
+        auto lookupSpan =
+            creatures::observability->createChildOperationSpan("upsertPlaylist.findCanonicalId", upsertSpan);
+        if (lookupSpan)
+            lookupSpan->setAttribute("database.operation", "find");
+        const auto idPattern = fmt::format("^{}$", playlist.id);
+        auto compatibilityFilter = bsoncxx::builder::stream::document{} << "id"
+                                                                        << bsoncxx::types::b_regex{idPattern, "i"}
+                                                                        << bsoncxx::builder::stream::finalize;
+        mongocxx::options::find compatibilityOptions;
+        compatibilityOptions.limit(2);
+        std::optional<std::string> storedId;
+        for (const auto &candidate : collection.find(compatibilityFilter.view(), compatibilityOptions)) {
+            if (storedId) {
+                const auto errorMessage =
+                    fmt::format("Multiple playlist records differ only by UUID casing: {}", playlist.id);
+                recordSpanError(lookupSpan, errorMessage, "CaseFoldCollision", ServerError::InvalidData);
+                recordSpanError(upsertSpan, errorMessage, "CaseFoldCollision", ServerError::InvalidData);
+                return Result<creatures::Playlist>{ServerError(ServerError::InvalidData, errorMessage)};
+            }
+            storedId = std::string(candidate["id"].get_string().value);
+        }
+        if (lookupSpan) {
+            lookupSpan->setAttribute("database.matched_count", static_cast<int64_t>(storedId.has_value()));
+            lookupSpan->setSuccess();
+        }
+        auto filter = bsoncxx::builder::stream::document{} << "id" << storedId.value_or(playlist.id)
                                                            << bsoncxx::builder::stream::finalize;
 
         // REPLACE, not $set (#135). A $set upsert cannot remove a field, so no
@@ -120,9 +144,18 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
         mongocxx::options::replace replace_options;
         replace_options.upsert(true);
 
-        collection.replace_one(filter.view(), bsonDoc.view(), replace_options);
+        auto mongoSpan = creatures::observability->createChildOperationSpan("upsertPlaylist.mongoQuery", upsertSpan);
         if (mongoSpan)
+            mongoSpan->setAttribute("database.operation", "replace_one");
+        const auto writeResult = collection.replace_one(filter.view(), bsonDoc.view(), replace_options);
+        if (mongoSpan) {
+            if (writeResult) {
+                mongoSpan->setAttribute("database.matched_count", static_cast<int64_t>(writeResult->matched_count()));
+                mongoSpan->setAttribute("database.modified_count", static_cast<int64_t>(writeResult->modified_count()));
+                mongoSpan->setAttribute("database.upserted", writeResult->upserted_id().has_value());
+            }
             mongoSpan->setSuccess();
+        }
 
         info("Playlist upserted in the database: {}", playlist.id);
         if (upsertSpan) {

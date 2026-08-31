@@ -67,7 +67,7 @@ Result<Playlist> playlistFromJson(const nlohmann::json &json, std::string_view p
             auto item = playlistItemFromJson(items[index], fmt::format("{}.items[{}]", path, index));
             if (!item.isSuccess())
                 return forwardPlaylistError(item);
-            if (!animationIds.emplace(item.getValue()->animation_id).second) {
+            if (!animationIds.emplace(canonicalUuid(item.getValue()->animation_id)).second) {
                 return json_codec::invalid<Playlist>(
                     fmt::format("{}.items[{}].animation_id must not duplicate an earlier item", path, index));
             }

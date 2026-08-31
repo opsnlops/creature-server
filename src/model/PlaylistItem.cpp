@@ -41,8 +41,10 @@ Result<PlaylistItem> playlistItemFromJson(const nlohmann::json &json, std::strin
         return json_codec::invalid<PlaylistItem>(fmt::format("{}.weight must be greater than zero", path));
     }
 
-    return Result<PlaylistItem>{
-        PlaylistItem{canonicalUuid(animationIdResult.getValue().value()), weightResult.getValue().value()}};
+    // Keep lookup spelling intact in the model. Existing animation documents
+    // may predate canonical UUID writes and Mongo equality is case-sensitive.
+    // The wire serializer above still emits the preferred lowercase form.
+    return Result<PlaylistItem>{PlaylistItem{animationIdResult.getValue().value(), weightResult.getValue().value()}};
 }
 
 } // namespace creatures

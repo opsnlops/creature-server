@@ -77,8 +77,10 @@ TEST(PlaylistJson, CanonicalizesUppercaseUuids) {
     const auto parsed = playlistFromJson(json);
     ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
     EXPECT_EQ(parsed.getValue()->id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
-    EXPECT_EQ(parsed.getValue()->items[0].animation_id, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
-    EXPECT_EQ(playlistToJson(parsed.getValue().value())["id"], "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    EXPECT_EQ(parsed.getValue()->items[0].animation_id, "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB");
+    const auto serialized = playlistToJson(parsed.getValue().value());
+    EXPECT_EQ(serialized["id"], "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    EXPECT_EQ(serialized["items"][0]["animation_id"], "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
 }
 
 TEST(PlaylistJson, RejectsInvalidAggregateConstraints) {
@@ -95,6 +97,9 @@ TEST(PlaylistJson, RejectsInvalidAggregateConstraints) {
     auto duplicateAnimation = playlist;
     duplicateAnimation["number_of_items"] = 2;
     duplicateAnimation["items"].push_back(duplicateAnimation["items"][0]);
+    EXPECT_FALSE(playlistFromJson(duplicateAnimation).isSuccess());
+    duplicateAnimation["items"][1]["animation_id"] = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA";
+    duplicateAnimation["items"][0]["animation_id"] = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     EXPECT_FALSE(playlistFromJson(duplicateAnimation).isSuccess());
 }
 
