@@ -519,8 +519,6 @@ add_executable(creature-server
         src/model/Animation.h
         src/model/CacheInvalidation.h
         src/model/CacheInvalidation.cpp
-        src/server/ws/dto/DialogScriptDto.h
-        src/server/ws/dto/DialogScriptDto.cpp
         src/model/Creature.h
         src/model/Creature.cpp
         src/model/DmxFixture.h
@@ -578,7 +576,6 @@ add_executable(creature-server
         src/server/ws/App.cpp
 
         src/server/ws/dto/OutboundPayloadDto.cpp
-        src/server/ws/dto/ListDto.h
         src/server/ws/dto/SimpleResponseDto.h
         src/server/ws/dto/StatusDto.h
 
@@ -859,7 +856,6 @@ add_executable(creature-server-test
         src/model/Creature.cpp
         src/model/DmxFixture.cpp
         src/model/DialogScript.cpp
-        src/server/ws/dto/DialogScriptDto.cpp
         src/model/Input.cpp
         src/server/ws/dto/InputDto.cpp
         src/model/StreamFrame.cpp

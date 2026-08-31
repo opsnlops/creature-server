@@ -36,6 +36,17 @@ or derives from the oat++-backed `ListDto`/`WebSocketMessageDto` templates. DTO
 descriptions and endpoint-only Swagger annotations are not counted as separate
 contracts.
 
+## 3.45.9 Dialog checkpoint
+
+The Dialog controller family now uses neutral request, queued-job, and response
+contracts, and seven Dialog DTO adapter files plus the now-unused generic
+`ListDto` have been removed. There are 58 files under `src` with a case-insensitive
+oatpp reference, down from 67 after the streaming checkpoint. The remaining
+references are confined to controller/transport infrastructure, WebSocket
+transport and messaging, the 15 surviving DTO adapter files, and two HTTP-client
+or compatibility helpers. `src/model`,
+`src/api`, the service layer, and `JobWorker.cpp` remain oat++-free.
+
 ## Domain and model DTOs
 
 These are the most important architectural coupling because oat++ declarations
@@ -46,7 +57,7 @@ live beside otherwise framework-neutral domain structs.
 | `src/model/AdHocExchange.h` | — | Domain and persistence values; REST responses use neutral API JSON | Strict, bounded `adHocExchangeFromJson`; persistence and public response serializers are separate |
 | `src/model/Animation.h` | — | REST response and accepted POST input use neutral JSON | Strict model-owned `animationToJson` / `animationFromJson`; API and persistence envelopes are distinct |
 | `src/model/AnimationMetadata.h` | — | Animation list/detail response and nested input use neutral JSON | Strict model-owned `animationMetadataToJson` / `animationMetadataFromJson` |
-| `src/model/DialogScript.h` | `DialogScriptTurnDto`, `AcceptedVoiceDto`, `DialogBackgroundMusicDto`, `DialogScriptDto` | Primarily REST and job response; input is already parsed from raw JSON | `dialogScriptToJson`; database-owned `dialogScriptFromJson` |
+| `src/model/DialogScript.h` | — | REST and job responses use canonical neutral JSON | `dialogScriptToJson`; database-owned `dialogScriptFromJson` |
 | `src/model/DmxFixture.h` | — | REST responses; config input is parsed from raw JSON | Strict model-owned `dmxFixtureToJson` / `dmxFixtureFromJson`; persistence still uses its legacy parser |
 | `src/server/ws/dto/InputDto.h` (moved from `src/model/Input.h`) | `InputDto` | Temporary oat++ adapter for remaining non-Creature nested uses | Strict model-owned `inputToJson` / `inputFromJson` |
 | `src/server/ws/dto/NoticeDto.h` (moved from `src/model/Notice.h`) | `NoticeDto` | Temporary oat++ adapter for inbound and outbound WebSocket notices | Strict model-owned `noticeToJson` / `noticeFromJson` |
@@ -90,7 +101,7 @@ The 1 ms counter-send event uses `SystemCountersSnapshot` and a deep
 | File | DTO classes | Direction |
 |---|---|---|
 | `api/SoundResponses.h` | `AdHocSoundEntry` | Neutral response |
-| `ListDto.h` | `ListDto<T>` | Temporary dialog-script list response adapter |
+| `api/JsonResponse.h` | `listResponseToJson` | Neutral list response helper; the unused oat++ `ListDto` adapter has been removed |
 
 Animation and ad-hoc animation lists now render through the neutral model and
 `api::listResponseToJson`; their dedicated oat++ DTOs have been removed.
@@ -102,7 +113,7 @@ should derive `count` from the final item vector when serializing.
 
 | File | DTO classes | Endpoint/resource family |
 |---|---|---|
-| `DialogVoiceDto.h` | `AcceptVoiceRequestDto` | Dialog take acceptance |
+| `api/DialogContracts.h` | `AcceptVoiceTakeRequest` | Strict bounded dialog take acceptance |
 | `api/SoundRequests.h` | `GenerateLipSyncRequest`, `PlaySoundRequest` | Strict bounded lip-sync and playback requests |
 | `MakeSoundFileRequestDto.h` | `MakeSoundFileRequestDto` | Voice generation/job input |
 | `api/AnimationRequests.h` | `PlayAnimationRequest`, `RegenerateAnimationLipSyncRequest`, `CreateAdHocAnimationRequest`, `TriggerAdHocAnimationRequest` | Strict bounded animation control and ad-hoc speech requests |
@@ -134,26 +145,21 @@ request that launched each asynchronous TTS pipeline, with child spans for
 PCM wrapping, lip-sync construction, track construction, and playback. The legacy
 `StreamingAdHocDto.h` and `AdHocExchangeDto.*` adapters have been removed.
 
-### Dialog and preview DTOs
+### Dialog and preview contracts
 
-| File | DTO classes | Direction |
-|---|---|---|
-| `DialogDto.h` | `DialogTurnDto`, `DialogRequestDto`, `DialogPreviewRequestDto`, `DialogPreviewLookupRequestDto` | Request/nested input |
-| `DialogDto.h` | `DialogJobResultDto`, `DialogPreviewVoiceSegmentDto`, `DialogPreviewWordTimingDto`, `DialogPreviewCharTimingDto`, `DialogPreviewMetaResponseDto`, `DialogPreviewGenerationEntryDto`, `DialogPreviewLookupResponseDto` | Response/nested output |
-| `DialogMusicDto.h` | `DialogMusicRequestDto` | Request and queued-job detail |
-| `DialogMusicDto.h` | `DialogMusicGenerationResultDto`, `DialogMusicPromotionResultDto` | Response/job result |
-| `DialogPreviewExportResultDto.h` | `DialogPreviewExportResultDto` | Job result |
-
-This is the largest cross-layer DTO family. `DialogPreviewService` accepts DTOs
-despite describing itself as HTTP-free, and `JobWorker` parses and emits these
-DTOs directly. The dialog slice must include controllers, services, and queued
-job detail/result serialization together.
+The Dialog, preview, script, voice-acceptance, and music controllers now parse
+bounded raw request bodies into the strict contracts in `api/DialogContracts.h`
+and emit neutral JSON. Queued-job detail/result serialization uses those same
+contracts, and `DialogScript` responses use `dialogScriptToJson`. The obsolete
+`DialogDto`, `DialogMusicDto`, `DialogVoiceDto`, `DialogScriptDto`, preview-export,
+and validation DTO adapters have been removed. The five controllers still use
+oat++ only for route declaration and byte transport pending the transport phase.
 
 ### Validation and generic response DTOs
 
 | File | DTO classes | Direction |
 |---|---|---|
-| `DialogScriptValidationDto.h` | `DialogScriptValidationDto` | Response |
+| `api/DialogContracts.h` | `DialogScriptValidationResponse` | Neutral response |
 | `FixtureConfigValidationDto.h` | `FixtureConfigValidationDto` | Response |
 | `JobCreatedDto.h` | `JobCreatedDto` | Response |
 | `JobStateDto.h` | `JobStateDto` | REST response |
@@ -244,7 +250,6 @@ of the DTO-neutral definition of done until the later transport phase.
 Tests directly exercising oat++ DTO conversion or its object mapper are limited
 to:
 
-- `tests/model/DialogScript_test.cpp`
 - `tests/model/DmxFixture_test.cpp`
 - `tests/server/ws/CreatureActivityMessage_test.cpp`
 - `tests/server/ws/ErrorHandler_test.cpp`
@@ -275,8 +280,8 @@ The inventory supports this order:
    several WebSocket messages.
 6. **Fixture, playlist, and sound vertical slices.** Each removes a complete
    service's oat++ surface.
-7. **Dialog/jobs.** Largest cross-layer slice; do only after conventions are
-   proven elsewhere.
+7. **Dialog/jobs.** Completed: controllers, services, jobs, models, and response
+   serialization share neutral contracts; only route transport remains oat++.
 8. **Inbound WebSocket commands.** Share the neutral envelope but require strict
    payload validation and message-size preservation.
 9. **CreatureVoicesLib adapters.** Can overlap VoiceService work once neutral

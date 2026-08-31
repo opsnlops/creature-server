@@ -13,6 +13,8 @@
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
+#include "api/DialogContracts.h"
+#include "api/JobResponses.h"
 #include "model/DialogScript.h"
 #include "server/database.h"
 #include "server/jobs/JobManager.h"
@@ -23,10 +25,8 @@
 #include "server/voice/ScriptCacheKey.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/DialogScriptDto.h"
-#include "server/ws/dto/DialogVoiceDto.h"
-#include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/StatusDto.h"
+#include "util/JsonParser.h"
 #include "util/Slugify.h"
 
 namespace creatures {
@@ -79,39 +79,49 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
             "whose ad-hoc file has been swept. The job's completion result is the same script body the 200 "
             "returns. No ElevenLabs call is made either way; the take's performance never changes.";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<DialogScriptDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/voice/accept", acceptVoiceTake,
-             BODY_DTO(Object<AcceptVoiceRequestDto>, body), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/dialog/voice/accept", "POST", "api/v1/animation/dialog/voice/accept",
             "acceptVoiceTake", "DialogVoiceController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (!body) {
-                    return bailHttp(span, Status::CODE_400, "Request body is required");
+                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "DialogVoiceController.parseAcceptVoiceTakeRequest", span)
+                                           : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "dialog.voice.accept");
+                const auto json = JsonParser::parseApiJsonString(body, "accept voice take request", parseSpan);
+                if (!json.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, json.getError().value());
                 }
-                const std::string scriptId = body->script_id ? std::string(*body->script_id) : std::string{};
-                const std::string generationId =
-                    body->generation_id ? std::string(*body->generation_id) : std::string{};
-                const std::string cacheKey =
-                    body->dialog_cache_key ? std::string(*body->dialog_cache_key) : std::string{};
-
-                if (!isUuidShape(scriptId)) {
-                    return bailHttp(span, Status::CODE_400, "script_id must be a UUID");
+                const auto parsed = api::acceptVoiceTakeRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidAcceptVoiceTakeRequest", error.getCode());
+                    return bailFromServerError(span, error);
                 }
-                if (!isUuidShape(generationId)) {
-                    return bailHttp(span, Status::CODE_400, "generation_id must be a UUID");
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
                 }
-                if (cacheKey.size() != 64 || cacheKey.find_first_not_of("0123456789abcdef") != std::string::npos) {
-                    return bailHttp(span, Status::CODE_400,
-                                    "dialog_cache_key must be a 64-character lowercase hex sha256");
-                }
+                const auto acceptRequest = parsed.getValue().value();
+                const auto &scriptId = acceptRequest.scriptId;
+                const auto &generationId = acceptRequest.generationId;
+                const auto &cacheKey = acceptRequest.dialogCacheKey;
                 if (span) {
-                    span->setAttribute("script.id", scriptId);
-                    span->setAttribute("dialog.generation_id", generationId);
+                    span->setAttribute("script.id", canonicalUuid(scriptId));
+                    span->setAttribute("dialog.generation_id", canonicalUuid(generationId));
                     span->setAttribute("dialog.cache_key", cacheKey);
                 }
 
@@ -144,7 +154,7 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                     // look for an ad-hoc file that has already moved.
                     if (span)
                         span->setHttpStatus(200);
-                    return createDtoResponse(Status::CODE_200, creatures::convertToDto(script));
+                    return jsonResponse(span, Status::CODE_200, creatures::dialogScriptToJson(script));
                 }
 
                 // Promotion moves the take's 17-channel WAV out of the ad-hoc
@@ -200,14 +210,12 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                         span->setAttribute("job.id", jobId);
                         span->setHttpStatus(202);
                     }
-                    auto accepted202 = JobCreatedDto::createShared();
-                    accepted202->job_id = jobId.c_str();
-                    accepted202->job_type = "voice-take-accept";
-                    accepted202->message =
+                    const api::JobCreatedResponse accepted202{
+                        jobId, "voice-take-accept",
                         "This take's audio has to be assembled before it can be accepted. Listen for job-progress "
                         "and job-complete WebSocket messages on this job_id, or poll GET /api/v1/job/{job_id}; the "
-                        "completion result is the updated script.";
-                    return createDtoResponse(Status::CODE_202, accepted202);
+                        "completion result is the updated script."};
+                    return jsonResponse(span, Status::CODE_202, api::jobCreatedResponseToJson(accepted202));
                 }
 
                 // Replacing: demote the outgoing take so the sounds directory
@@ -245,7 +253,8 @@ class DialogVoiceController : public oatpp::web::server::api::ApiController,
                     span->setAttribute("voice.sound_file", accepted.sound_file);
                     span->setHttpStatus(200);
                 }
-                return createDtoResponse(Status::CODE_200, creatures::convertToDto(published.getValue().value()));
+                return jsonResponse(span, Status::CODE_200,
+                                    creatures::dialogScriptToJson(published.getValue().value()));
             });
     }
 };

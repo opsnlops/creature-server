@@ -35,6 +35,18 @@ TEST(DialogContracts, RejectsUnknownAndMalformedTurnFields) {
     EXPECT_NE(result.getError()->getMessage().find("unknown field"), std::string::npos);
 }
 
+TEST(DialogContracts, RejectsMalformedDialogRequestIdentifiers) {
+    nlohmann::json json = {{"turns", {{{"creature_id", CREATURE_ID}, {"text", "hello"}}}},
+                           {"persistence", "adhoc"},
+                           {"stage_id", "not-a-uuid"}};
+
+    EXPECT_FALSE(dialogRequestFromJson(json).isSuccess());
+
+    json["stage_id"] = SCRIPT_ID;
+    json["generation_id"] = "not-a-uuid";
+    EXPECT_FALSE(dialogRequestFromJson(json).isSuccess());
+}
+
 TEST(DialogContracts, ParsesAndBoundsDialogMusicRequest) {
     const nlohmann::json json = {{"script_id", SCRIPT_ID},
                                  {"dialog_cache_key", std::string(64, 'a')},
@@ -47,6 +59,67 @@ TEST(DialogContracts, ParsesAndBoundsDialogMusicRequest) {
 
     ASSERT_FALSE(result.isSuccess());
     EXPECT_NE(result.getError()->getMessage().find("between 0 and 60000"), std::string::npos);
+}
+
+TEST(DialogContracts, ValidatesDialogMusicIdentifiersAndMode) {
+    nlohmann::json json = {{"script_id", SCRIPT_ID},
+                           {"dialog_cache_key", std::string(64, 'a')},
+                           {"dialog_generation_id", GENERATION_ID},
+                           {"prompt", "quiet instrumental underscore"},
+                           {"generation_mode", "track"}};
+
+    ASSERT_TRUE(dialogMusicRequestFromJson(json).isSuccess());
+
+    json["dialog_cache_key"] = std::string(64, 'A');
+    EXPECT_FALSE(dialogMusicRequestFromJson(json).isSuccess());
+    json["dialog_cache_key"] = std::string(64, 'a');
+    json["generation_mode"] = "surprise";
+    EXPECT_FALSE(dialogMusicRequestFromJson(json).isSuccess());
+}
+
+TEST(DialogContracts, ParsesStrictAcceptVoiceTakeRequest) {
+    const nlohmann::json json = {
+        {"script_id", SCRIPT_ID}, {"generation_id", GENERATION_ID}, {"dialog_cache_key", std::string(64, 'a')}};
+
+    const auto result = acceptVoiceTakeRequestFromJson(json);
+
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+    EXPECT_EQ(result.getValue()->scriptId, SCRIPT_ID);
+    EXPECT_EQ(result.getValue()->generationId, GENERATION_ID);
+    EXPECT_EQ(result.getValue()->dialogCacheKey, std::string(64, 'a'));
+
+    auto unknown = json;
+    unknown["unexpected"] = true;
+    EXPECT_FALSE(acceptVoiceTakeRequestFromJson(unknown).isSuccess());
+}
+
+TEST(DialogContracts, PreviewLookupUsesTheSameStrictTurnContract) {
+    const nlohmann::json json = {
+        {"turns", {{{"creature_id", CREATURE_ID}, {"text", "hello"}}}},
+    };
+
+    const auto result = dialogPreviewLookupRequestFromJson(json);
+
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+    ASSERT_EQ(result.getValue()->size(), 1);
+    EXPECT_EQ(result.getValue()->front().creatureId, CREATURE_ID);
+
+    auto unknown = json;
+    unknown["regenerate"] = true;
+    EXPECT_FALSE(dialogPreviewLookupRequestFromJson(unknown).isSuccess());
+}
+
+TEST(DialogContracts, SerializesCanonicalQueuedRequests) {
+    DialogRequest dialog{{{CREATURE_ID, "hello"}}, std::nullopt, "adhoc", true, "A scene", std::nullopt, GENERATION_ID};
+    const auto dialogJson = dialogRequestToJson(dialog);
+    EXPECT_EQ(dialogJson.at("turns").at(0).at("creature_id"), CREATURE_ID);
+    EXPECT_EQ(dialogJson.at("generation_id"), GENERATION_ID);
+    EXPECT_FALSE(dialogJson.contains("script_id"));
+
+    DialogPreviewRequest preview{{{CREATURE_ID, "hello"}}, GENERATION_ID, false, std::nullopt};
+    const auto previewJson = dialogPreviewRequestToJson(preview);
+    EXPECT_EQ(previewJson.at("generation_id"), GENERATION_ID);
+    EXPECT_FALSE(previewJson.contains("title"));
 }
 
 TEST(DialogContracts, SerializesPreviewMetadataWithStableWireKeys) {
@@ -77,6 +150,22 @@ TEST(DialogContracts, RejectsUnsafePreviewGenerationIdAndCreatureId) {
     request.generationId = GENERATION_ID;
     request.turns.front().creatureId = "not-a-uuid";
     EXPECT_FALSE(validateDialogPreviewRequest(request).isSuccess());
+}
+
+TEST(DialogContracts, SerializesLookupAndValidationResponses) {
+    DialogPreviewLookupResponse lookup{std::string(64, 'c'), {{GENERATION_ID, "2026-08-30T12:00:00Z"}}, GENERATION_ID};
+    const auto lookupJson = dialogPreviewLookupResponseToJson(lookup);
+    EXPECT_EQ(lookupJson.at("generations").at(0).at("generation_id"), GENERATION_ID);
+    EXPECT_EQ(lookupJson.at("latest_generation_id"), GENERATION_ID);
+
+    DialogScriptValidationResponse validation;
+    validation.valid = false;
+    validation.turnCount = 2;
+    validation.errorMessages = {"bad turn"};
+    const auto validationJson = dialogScriptValidationResponseToJson(validation);
+    EXPECT_FALSE(validationJson.at("valid"));
+    EXPECT_FALSE(validationJson.contains("script_id"));
+    EXPECT_EQ(validationJson.at("error_messages").at(0), "bad turn");
 }
 
 } // namespace

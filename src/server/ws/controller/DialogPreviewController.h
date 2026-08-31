@@ -15,14 +15,13 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
-#include <oatpp/core/Types.hpp>
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/web/protocol/http/outgoing/ResponseFactory.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
-
+#include "api/DialogContracts.h"
+#include "api/JobResponses.h"
 #include "server/database.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
@@ -35,11 +34,10 @@
 #include "server/voice/PcmWavWriter.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
-#include "server/ws/dto/DialogDto.h"
-#include "server/ws/dto/JobCreatedDto.h"
 #include "server/ws/dto/StatusDto.h"
 #include "server/ws/service/DialogPreviewService.h"
 #include "server/ws/service/SoundRenditionService.h"
+#include "util/JsonParser.h"
 #include "util/uuidUtils.h"
 
 namespace creatures {
@@ -82,53 +80,33 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
     DialogPreviewService dialogPreviewService_;
     SoundRenditionService renditionService_;
 
-    /// Serialize a preview request DTO into the job framework's string-typed
-    /// `details` field. The worker round-trips it back through the same
-    /// ObjectMapper so both sides share one schema.
-    static std::string serializePreviewRequest(const oatpp::Object<DialogPreviewRequestDto> &body) {
-        auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-        return jsonMapper->writeToString(body)->c_str();
-    }
-
-    static api::DialogPreviewRequest neutralPreviewRequest(const oatpp::Object<DialogPreviewRequestDto> &body) {
-        api::DialogPreviewRequest request;
-        request.turns.reserve(body->turns->size());
-        for (const auto &turn : *body->turns)
-            request.turns.push_back({std::string(*turn->creature_id), std::string(*turn->text)});
-        if (body->generation_id)
-            request.generationId = std::string(*body->generation_id);
-        request.regenerate = body->regenerate && static_cast<bool>(*body->regenerate);
-        if (body->title)
-            request.title = std::string(*body->title);
-        return request;
-    }
-
-    static std::vector<api::DialogTurnRequest>
-    neutralDialogTurns(const oatpp::List<oatpp::Object<DialogTurnDto>> &turns) {
-        std::vector<api::DialogTurnRequest> result;
-        result.reserve(turns->size());
-        for (const auto &turn : *turns)
-            result.push_back({std::string(*turn->creature_id), std::string(*turn->text)});
-        return result;
-    }
-
-    /// Shared validation for the two POST preview endpoints (/meta and
-    /// /multichannel). Returns nullptr on success; an error response otherwise.
     template <typename SpanT>
-    std::shared_ptr<OutgoingResponse> validatePreviewBody(const oatpp::Object<DialogPreviewRequestDto> &body,
-                                                          const SpanT &span) {
-        if (!body || !body->turns || body->turns->empty()) {
-            return bailHttp(span, Status::CODE_400, "turns must be a non-empty array");
+    Result<api::DialogPreviewRequest> parsePreviewRequest(const std::string &body, const SpanT &span,
+                                                          std::string_view operation) {
+        const auto parseSpan = creatures::observability
+                                   ? creatures::observability->createChildOperationSpan(std::string(operation), span)
+                                   : nullptr;
+        if (parseSpan)
+            parseSpan->setAttribute("validation.contract", "dialog.preview");
+        const auto json = JsonParser::parseApiJsonString(body, "dialog preview request", parseSpan);
+        if (!json.isSuccess()) {
+            if (parseSpan)
+                parseSpan->setAttribute("validation.result", "rejected");
+            return Result<api::DialogPreviewRequest>{json.getError().value()};
         }
-        for (const auto &t : *body->turns) {
-            if (!t || !t->creature_id || t->creature_id->empty() || !t->text || t->text->empty()) {
-                return bailHttp(span, Status::CODE_400, "every turn must have a non-empty creature_id and text");
-            }
+        const auto parsed = api::dialogPreviewRequestFromJson(json.getValue().value());
+        if (!parsed.isSuccess()) {
+            const auto error = parsed.getError().value();
+            if (parseSpan)
+                parseSpan->setAttribute("validation.result", "rejected");
+            recordSpanError(parseSpan, error.getMessage(), "InvalidDialogPreviewRequest", error.getCode());
+            return Result<api::DialogPreviewRequest>{error};
         }
-        const auto validation = api::validateDialogPreviewRequest(neutralPreviewRequest(body));
-        if (!validation.isSuccess())
-            return bailFromServerError(span, validation.getError().value());
-        return nullptr;
+        if (parseSpan) {
+            parseSpan->setAttribute("validation.result", "accepted");
+            parseSpan->setSuccess();
+        }
+        return parsed;
     }
 
   public:
@@ -141,28 +119,30 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
             "regenerate=true); reuses the latest cached take by default; loads a specific take if generation_id "
             "is set (404 if expired).";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<DialogPreviewMetaResponseDto>>(Status::CODE_200, "application/json; charset=utf-8");
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/preview/meta", submitPreviewMeta,
-             BODY_DTO(Object<DialogPreviewRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/dialog/preview/meta", "POST", "api/v1/animation/dialog/preview/meta",
             "submitPreviewMeta", "DialogPreviewController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (auto errResp = validatePreviewBody(requestBody, span))
-                    return errResp;
+                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
+                const auto parsed =
+                    parsePreviewRequest(body, span, "DialogPreviewController.parseSubmitPreviewMetaRequest");
+                if (!parsed.isSuccess())
+                    return bailFromServerError(span, parsed.getError().value());
                 auto opSpan = creatures::observability->createChildOperationSpan(
                     "DialogPreviewController.submitPreviewMeta", span);
 
                 // Fast path: a specific generation_id, or the latest take when
                 // regenerate is false, is a cheap disk read — serve it 200
                 // synchronously. Anything requiring ElevenLabs becomes a job.
-                const auto neutralRequest = neutralPreviewRequest(requestBody);
+                const auto neutralRequest = parsed.getValue().value();
                 auto fastResult = dialogPreviewService_.tryServeFromCache(neutralRequest, opSpan, "meta");
                 if (!fastResult.isSuccess())
                     return bailFromServerError(span, fastResult.getError().value());
@@ -177,15 +157,7 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 }
 
                 // Generation needed — hand off to the JobWorker and return 202.
-                std::string detailsStr;
-                try {
-                    detailsStr = serializePreviewRequest(requestBody);
-                } catch (const std::exception &e) {
-                    if (span)
-                        span->setError(e.what());
-                    return bailHttp(span, Status::CODE_500,
-                                    fmt::format("failed to serialize request body: {}", e.what()));
-                }
+                const auto detailsStr = api::dialogPreviewRequestToJson(neutralRequest).dump();
                 const std::string jobId =
                     creatures::jobManager->createJob(creatures::jobs::JobType::DialogPreview, detailsStr, span);
                 creatures::jobWorker->queueJob(jobId);
@@ -193,12 +165,11 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);
                 }
-                auto response = JobCreatedDto::createShared();
-                response->job_id = jobId.c_str();
-                response->job_type = "dialog-preview";
-                response->message = "Dialog preview job created. Listen for job-progress and job-complete "
-                                    "WebSocket messages on this job_id, or poll GET /api/v1/job/{job_id}.";
-                return createDtoResponse(Status::CODE_202, response);
+                const api::JobCreatedResponse response{
+                    jobId, "dialog-preview",
+                    "Dialog preview job created. Listen for job-progress and job-complete WebSocket messages on "
+                    "this job_id, or poll GET /api/v1/job/{job_id}."};
+                return jsonResponse(span, Status::CODE_202, api::jobCreatedResponseToJson(response));
             });
     }
 
@@ -231,9 +202,10 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 if (gid.size() > 4 && gid.compare(gid.size() - 4, 4, ".wav") == 0) {
                     gid.resize(gid.size() - 4);
                 }
-                if (ck.empty() || gid.empty()) {
-                    return bailHttp(span, Status::CODE_400, "cache_key and generation_id are required");
-                }
+                if (!api::isLowercaseSha256(ck))
+                    return bailHttp(span, Status::CODE_400, "cache_key must be a 64-character lowercase hex sha256");
+                if (!isUuidShape(gid))
+                    return bailHttp(span, Status::CODE_400, "generation_id must be a UUID");
                 auto loadResult = creatures::voice::loadGeneration(ck, gid);
                 if (!loadResult.isSuccess()) {
                     return bailHttp(span, Status::CODE_404, fmt::format("generation '{}/{}' not found", ck, gid));
@@ -298,9 +270,10 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 } else if (gid.size() > 4 && gid.compare(gid.size() - 4, 4, ".ogg") == 0) {
                     gid.resize(gid.size() - 4);
                 }
-                if (ck.empty() || gid.empty()) {
-                    return bailHttp(span, Status::CODE_400, "cache_key and generation_id are required");
-                }
+                if (!api::isLowercaseSha256(ck))
+                    return bailHttp(span, Status::CODE_400, "cache_key must be a 64-character lowercase hex sha256");
+                if (!isUuidShape(gid))
+                    return bailHttp(span, Status::CODE_400, "generation_id must be a UUID");
                 auto loadResult = creatures::voice::loadGeneration(ck, gid);
                 if (!loadResult.isSuccess()) {
                     return bailHttp(span, Status::CODE_404, fmt::format("generation '{}/{}' not found", ck, gid));
@@ -365,34 +338,28 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                             "downloading into Audacity (or any 17-channel-aware tool) for inspection. Each "
                             "creature's audio appears in its `audio_channel` lane; all other lanes are silent.";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<JobCreatedDto>>(Status::CODE_202, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_500, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/preview/multichannel", submitPreviewMultichannel,
-             BODY_DTO(Object<DialogPreviewRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/dialog/preview/multichannel", "POST",
             "api/v1/animation/dialog/preview/multichannel", "submitPreviewMultichannel", "DialogPreviewController",
             request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (auto errResp = validatePreviewBody(requestBody, span))
-                    return errResp;
+                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
+                const auto parsed =
+                    parsePreviewRequest(body, span, "DialogPreviewController.parseSubmitPreviewMultichannelRequest");
+                if (!parsed.isSuccess())
+                    return bailFromServerError(span, parsed.getError().value());
 
                 // Always a job. Even a fully-cached long scene means writing a
                 // ~0.5 GB 17-channel WAV, which must never ride one HTTP
                 // response. The worker generates/loads the take, assembles the
                 // WAV into the ad-hoc bucket, and reports a downloadable
                 // file_name in the completion result.
-                std::string detailsStr;
-                try {
-                    detailsStr = serializePreviewRequest(requestBody);
-                } catch (const std::exception &e) {
-                    if (span)
-                        span->setError(e.what());
-                    return bailHttp(span, Status::CODE_500,
-                                    fmt::format("failed to serialize request body: {}", e.what()));
-                }
+                const auto detailsStr = api::dialogPreviewRequestToJson(parsed.getValue().value()).dump();
                 const std::string jobId =
                     creatures::jobManager->createJob(creatures::jobs::JobType::DialogPreviewExport, detailsStr, span);
                 creatures::jobWorker->queueJob(jobId);
@@ -400,15 +367,13 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                     span->setAttribute("job.id", jobId);
                     span->setHttpStatus(202);
                 }
-                auto response = JobCreatedDto::createShared();
-                response->job_id = jobId.c_str();
-                response->job_type = "dialog-preview-export";
-                response->message =
+                const api::JobCreatedResponse response{
+                    jobId, "dialog-preview-export",
                     "Dialog preview export job created. The 17-channel WAV lands in the ad-hoc sound bucket; "
                     "the completion result carries its file_name (downloadable via GET "
                     "/api/v1/sound/ad-hoc/{filename}). Listen for job-complete on this job_id, or poll GET "
-                    "/api/v1/job/{job_id}.";
-                return createDtoResponse(Status::CODE_202, response);
+                    "/api/v1/job/{job_id}."};
+                return jsonResponse(span, Status::CODE_202, api::jobCreatedResponseToJson(response));
             });
     }
 
@@ -419,35 +384,45 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
             "first) for the given turns, or 404 if nothing is cached. UI can use this to badge the 'Make "
             "Animation' button as fast (cached) vs slow (will hit ElevenLabs).";
         info->addTag("Multi-character Dialog");
-        info->addResponse<Object<DialogPreviewLookupResponseDto>>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_400, "application/json; charset=utf-8");
         info->addResponse<Object<StatusDto>>(Status::CODE_404, "application/json; charset=utf-8");
     }
     ENDPOINT("POST", "api/v1/animation/dialog/preview/lookup", lookupPreview,
-             BODY_DTO(Object<DialogPreviewLookupRequestDto>, requestBody),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint(
             "POST /api/v1/animation/dialog/preview/lookup", "POST", "api/v1/animation/dialog/preview/lookup",
             "lookupPreview", "DialogPreviewController", request,
             [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
-                if (!requestBody || !requestBody->turns || requestBody->turns->empty()) {
-                    return bailHttp(span, Status::CODE_400, "turns must be a non-empty array");
+                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "DialogPreviewController.parseLookupPreviewRequest", span)
+                                           : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "dialog.preview.lookup");
+                const auto json = JsonParser::parseApiJsonString(body, "dialog preview lookup request", parseSpan);
+                if (!json.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, json.getError().value());
                 }
-                for (const auto &t : *requestBody->turns) {
-                    if (!t || !t->creature_id || t->creature_id->empty() || !t->text || t->text->empty()) {
-                        return bailHttp(span, Status::CODE_400,
-                                        "every turn must have a non-empty creature_id and text");
-                    }
+                const auto parsed = api::dialogPreviewLookupRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidDialogPreviewLookupRequest",
+                                    error.getCode());
+                    return bailFromServerError(span, error);
                 }
-
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
                 auto opSpan =
                     creatures::observability->createChildOperationSpan("DialogPreviewController.lookupPreview", span);
-                const auto turns = neutralDialogTurns(requestBody->turns);
-                api::DialogPreviewRequest neutralRequest;
-                neutralRequest.turns = turns;
-                const auto validation = api::validateDialogPreviewRequest(neutralRequest);
-                if (!validation.isSuccess())
-                    return bailFromServerError(span, validation.getError().value());
+                const auto turns = parsed.getValue().value();
                 auto resolvedResult = DialogPreviewService::resolveCreatures(turns, opSpan);
                 if (!resolvedResult.isSuccess()) {
                     return bailFromServerError(span, resolvedResult.getError().value());
@@ -463,31 +438,27 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_404, "no cached generations for these turns");
                 }
 
-                auto dto = DialogPreviewLookupResponseDto::createShared();
-                dto->cache_key = cacheKey.c_str();
-                dto->latest_generation_id = generations.front().generationId.c_str();
-                auto entries = oatpp::List<oatpp::Object<DialogPreviewGenerationEntryDto>>::createShared();
+                api::DialogPreviewLookupResponse response;
+                response.cacheKey = cacheKey;
+                response.latestGenerationId = generations.front().generationId;
+                response.generations.reserve(generations.size());
                 for (const auto &g : generations) {
-                    auto ed = DialogPreviewGenerationEntryDto::createShared();
-                    ed->generation_id = g.generationId.c_str();
                     // ISO-8601 from the time_point.
                     const auto secs =
                         std::chrono::duration_cast<std::chrono::seconds>(g.createdAt.time_since_epoch()).count();
                     const std::time_t tt = static_cast<std::time_t>(secs);
                     std::tm tm{};
                     gmtime_r(&tt, &tm);
-                    ed->created_at = fmt::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", tm.tm_year + 1900,
-                                                 tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec)
-                                         .c_str();
-                    entries->push_back(ed);
+                    response.generations.push_back(
+                        {g.generationId, fmt::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", tm.tm_year + 1900,
+                                                     tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec)});
                 }
-                dto->generations = entries;
                 if (span) {
                     span->setAttribute("dialog.cache_key", cacheKey);
                     span->setAttribute("dialog.generations", static_cast<int64_t>(generations.size()));
                     span->setHttpStatus(200);
                 }
-                return createDtoResponse(Status::CODE_200, dto);
+                return jsonResponse(span, Status::CODE_200, api::dialogPreviewLookupResponseToJson(response));
             });
     }
 };
