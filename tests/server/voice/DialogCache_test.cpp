@@ -243,6 +243,14 @@ TEST(DialogCacheSave, RejectsEmptyCacheKey) {
     EXPECT_EQ(res.getError().value().getCode(), creatures::ServerError::InvalidData);
 }
 
+TEST(DialogCacheSave, RejectsPathTraversalGenerationId) {
+    std::vector<DialogInput> turns{turn("v", "DialogCacheSave-RejectsPathTraversalGenerationId")};
+    const auto key = computeCacheKey(turns);
+    auto result = saveGeneration(key, sampleGen("../escaped"));
+    ASSERT_FALSE(result.isSuccess());
+    EXPECT_EQ(result.getError()->getCode(), creatures::ServerError::InvalidData);
+}
+
 TEST(DialogCacheSave, RejectsEmptyGenerationId) {
     CacheScope scope;
     std::vector<DialogInput> turns{turn("v", "DialogCacheSave-RejectsEmptyGenerationId")};

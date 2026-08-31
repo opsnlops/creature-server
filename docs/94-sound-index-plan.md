@@ -46,7 +46,7 @@ class SoundStoreIndex {
 - Walk skips `.opus_cache`, `dialog-cache`, and dot-directories; same
   extension set as the sound list.
 - **Self-healing** (out-of-band writers are a supported workflow —
-  `modernize-sounds.py`, streaming sessions, CreatureVoicesLib): a `Found` hit
+  `modernize-sounds.py`, streaming sessions, or the voice client): a `Found` hit
   is stat-revalidated; a vanished/changed file drops that entry and falls back
   to a single-file probe (`root/basename`), never a full walk.
 - Entries record `sampleRate`/`channels`/`rtpPlayable` from one cheap

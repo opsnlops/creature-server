@@ -90,6 +90,28 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
         return jsonMapper->writeToString(body)->c_str();
     }
 
+    static api::DialogPreviewRequest neutralPreviewRequest(const oatpp::Object<DialogPreviewRequestDto> &body) {
+        api::DialogPreviewRequest request;
+        request.turns.reserve(body->turns->size());
+        for (const auto &turn : *body->turns)
+            request.turns.push_back({std::string(*turn->creature_id), std::string(*turn->text)});
+        if (body->generation_id)
+            request.generationId = std::string(*body->generation_id);
+        request.regenerate = body->regenerate && static_cast<bool>(*body->regenerate);
+        if (body->title)
+            request.title = std::string(*body->title);
+        return request;
+    }
+
+    static std::vector<api::DialogTurnRequest>
+    neutralDialogTurns(const oatpp::List<oatpp::Object<DialogTurnDto>> &turns) {
+        std::vector<api::DialogTurnRequest> result;
+        result.reserve(turns->size());
+        for (const auto &turn : *turns)
+            result.push_back({std::string(*turn->creature_id), std::string(*turn->text)});
+        return result;
+    }
+
     /// Shared validation for the two POST preview endpoints (/meta and
     /// /multichannel). Returns nullptr on success; an error response otherwise.
     template <typename SpanT>
@@ -103,6 +125,9 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 return bailHttp(span, Status::CODE_400, "every turn must have a non-empty creature_id and text");
             }
         }
+        const auto validation = api::validateDialogPreviewRequest(neutralPreviewRequest(body));
+        if (!validation.isSuccess())
+            return bailFromServerError(span, validation.getError().value());
         return nullptr;
     }
 
@@ -137,18 +162,18 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 // Fast path: a specific generation_id, or the latest take when
                 // regenerate is false, is a cheap disk read — serve it 200
                 // synchronously. Anything requiring ElevenLabs becomes a job.
-                auto fastResult = dialogPreviewService_.tryServeFromCache(requestBody, opSpan, "meta");
+                const auto neutralRequest = neutralPreviewRequest(requestBody);
+                auto fastResult = dialogPreviewService_.tryServeFromCache(neutralRequest, opSpan, "meta");
                 if (!fastResult.isSuccess())
                     return bailFromServerError(span, fastResult.getError().value());
                 const auto fast = fastResult.getValue().value();
 
                 if (fast.cacheHit) {
-                    auto dto = DialogPreviewMetaResponseDto::createShared();
-                    DialogPreviewService::populateMetaResponse(dto, fast.outcome->generation, fast.outcome->cacheKey,
-                                                               fast.outcome->cached);
+                    const auto response = DialogPreviewService::makeMetaResponse(
+                        fast.outcome->generation, fast.outcome->cacheKey, fast.outcome->cached);
                     if (span)
                         span->setHttpStatus(200);
-                    return createDtoResponse(Status::CODE_200, dto);
+                    return jsonResponse(span, Status::CODE_200, api::dialogPreviewMetaResponseToJson(response));
                 }
 
                 // Generation needed — hand off to the JobWorker and return 202.
@@ -417,12 +442,17 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
 
                 auto opSpan =
                     creatures::observability->createChildOperationSpan("DialogPreviewController.lookupPreview", span);
-                auto resolvedResult = DialogPreviewService::resolveCreatures(requestBody->turns, opSpan);
+                const auto turns = neutralDialogTurns(requestBody->turns);
+                api::DialogPreviewRequest neutralRequest;
+                neutralRequest.turns = turns;
+                const auto validation = api::validateDialogPreviewRequest(neutralRequest);
+                if (!validation.isSuccess())
+                    return bailFromServerError(span, validation.getError().value());
+                auto resolvedResult = DialogPreviewService::resolveCreatures(turns, opSpan);
                 if (!resolvedResult.isSuccess()) {
                     return bailFromServerError(span, resolvedResult.getError().value());
                 }
-                const auto inputs =
-                    DialogPreviewService::buildDialogInputs(requestBody->turns, resolvedResult.getValue().value());
+                const auto inputs = DialogPreviewService::buildDialogInputs(turns, resolvedResult.getValue().value());
                 const auto cacheKey = creatures::voice::computeCacheKey(inputs);
                 const auto generations = creatures::voice::listGenerations(cacheKey);
 

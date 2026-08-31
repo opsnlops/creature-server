@@ -10,7 +10,7 @@ namespace creatures {
 // Define the ServerError struct
 class ServerError {
   public:
-    enum Code { NotFound, Forbidden, InternalError, InvalidData, DatabaseError, Conflict };
+    enum Code { NotFound, Forbidden, InternalError, InvalidData, DatabaseError, Conflict, Unauthorized };
 
     ServerError(Code errorCode, const std::string &errorMessage);
     Code getCode() const;
@@ -57,6 +57,8 @@ inline int serverErrorToStatusCode(ServerError::Code code) {
     switch (code) {
     case ServerError::NotFound:
         return 404;
+    case ServerError::Unauthorized:
+        return 401;
     case ServerError::Forbidden:
         return 403;
     case ServerError::InvalidData:

@@ -72,11 +72,11 @@ buildPreviewProvenance(const std::vector<creatures::voice::DialogInput> &inputs,
 } // namespace
 
 creatures::Result<std::unordered_map<std::string, DialogPreviewService::PreviewCreature>>
-DialogPreviewService::resolveCreatures(const oatpp::List<oatpp::Object<DialogTurnDto>> &turns,
+DialogPreviewService::resolveCreatures(const std::vector<api::DialogTurnRequest> &turns,
                                        const std::shared_ptr<creatures::OperationSpan> &span) {
     std::unordered_map<std::string, PreviewCreature> resolved;
-    for (const auto &t : *turns) {
-        const std::string cid(*t->creature_id);
+    for (const auto &turn : turns) {
+        const std::string &cid = turn.creatureId;
         if (resolved.count(cid)) {
             continue;
         }
@@ -104,15 +104,13 @@ DialogPreviewService::resolveCreatures(const oatpp::List<oatpp::Object<DialogTur
 }
 
 std::vector<creatures::voice::DialogInput>
-DialogPreviewService::buildDialogInputs(const oatpp::List<oatpp::Object<DialogTurnDto>> &turns,
+DialogPreviewService::buildDialogInputs(const std::vector<api::DialogTurnRequest> &turns,
                                         const std::unordered_map<std::string, PreviewCreature> &resolved) {
     std::vector<creatures::voice::DialogInput> out;
-    out.reserve(turns->size());
-    for (const auto &t : *turns) {
-        const std::string cid(*t->creature_id);
-        const std::string text(*t->text);
-        const auto &c = resolved.at(cid);
-        out.push_back({c.voiceId, text});
+    out.reserve(turns.size());
+    for (const auto &turn : turns) {
+        const auto &creature = resolved.at(turn.creatureId);
+        out.push_back({creature.voiceId, turn.text});
     }
     return out;
 }
@@ -133,65 +131,42 @@ std::string DialogPreviewService::makeTurnsSummary(const std::vector<creatures::
     return s;
 }
 
-void DialogPreviewService::populateMetaResponse(oatpp::Object<DialogPreviewMetaResponseDto> &dto,
-                                                const creatures::voice::CachedGeneration &gen,
-                                                const std::string &cacheKey, bool cached) {
-    dto->cache_key = cacheKey.c_str();
-    dto->generation_id = gen.generationId.c_str();
-    dto->cached = cached;
-    dto->audio_url =
-        fmt::format("/api/v1/animation/dialog/preview/audio/{}/{}.wav", cacheKey, gen.generationId).c_str();
-    dto->audio_format = "pcm_48000";
-    dto->sample_rate = 48000;
-    dto->duration_seconds = static_cast<double>(gen.audioPcm.size()) / (48000.0 * 2.0); // mono S16
-
-    auto segs = oatpp::List<oatpp::Object<DialogPreviewVoiceSegmentDto>>::createShared();
-    for (const auto &s : gen.voiceSegments) {
-        auto sd = DialogPreviewVoiceSegmentDto::createShared();
-        sd->voice_id = s.voiceId.c_str();
-        sd->character_start_index = static_cast<v_uint64>(s.characterStartIndex);
-        sd->character_end_index = static_cast<v_uint64>(s.characterEndIndex);
-        sd->dialog_input_index = static_cast<v_uint64>(s.dialogInputIndex);
-        segs->push_back(sd);
+api::DialogPreviewMetaResponse DialogPreviewService::makeMetaResponse(const creatures::voice::CachedGeneration &gen,
+                                                                      const std::string &cacheKey, bool cached) {
+    api::DialogPreviewMetaResponse response;
+    response.cacheKey = cacheKey;
+    response.generationId = gen.generationId;
+    response.cached = cached;
+    response.audioUrl = fmt::format("/api/v1/animation/dialog/preview/audio/{}/{}.wav", cacheKey, gen.generationId);
+    response.audioFormat = "pcm_48000";
+    response.sampleRate = 48000;
+    response.durationSeconds = static_cast<double>(gen.audioPcm.size()) / (48000.0 * 2.0);
+    for (const auto &segment : gen.voiceSegments) {
+        response.voiceSegments.push_back({segment.voiceId, static_cast<uint64_t>(segment.characterStartIndex),
+                                          static_cast<uint64_t>(segment.characterEndIndex),
+                                          static_cast<uint64_t>(segment.dialogInputIndex)});
     }
-    dto->voice_segments = segs;
-
-    auto words = oatpp::List<oatpp::Object<DialogPreviewWordTimingDto>>::createShared();
-    for (const auto &w : gen.forcedAlignment.words) {
-        auto wd = DialogPreviewWordTimingDto::createShared();
-        wd->text = w.text.c_str();
-        wd->start = w.startSeconds;
-        wd->end = w.endSeconds;
-        words->push_back(wd);
-    }
-    dto->forced_alignment_words = words;
-
-    auto chars = oatpp::List<oatpp::Object<DialogPreviewCharTimingDto>>::createShared();
-    for (const auto &c : gen.forcedAlignment.characters) {
-        auto cd = DialogPreviewCharTimingDto::createShared();
-        cd->text = c.text.c_str();
-        cd->start = c.startSeconds;
-        cd->end = c.endSeconds;
-        chars->push_back(cd);
-    }
-    dto->forced_alignment_chars = chars;
-
-    dto->forced_alignment_loss = gen.forcedAlignment.loss;
+    for (const auto &word : gen.forcedAlignment.words)
+        response.forcedAlignmentWords.push_back({word.text, word.startSeconds, word.endSeconds});
+    for (const auto &character : gen.forcedAlignment.characters)
+        response.forcedAlignmentChars.push_back({character.text, character.startSeconds, character.endSeconds});
+    response.forcedAlignmentLoss = gen.forcedAlignment.loss;
+    return response;
 }
 
 creatures::Result<DialogPreviewService::CacheProbe>
-DialogPreviewService::probeCache(const oatpp::Object<DialogPreviewRequestDto> &body,
+DialogPreviewService::probeCache(const api::DialogPreviewRequest &body,
                                  const std::shared_ptr<creatures::OperationSpan> &opSpan, const char *spanAttrName) {
     CacheProbe probe;
 
-    auto resolvedResult = resolveCreatures(body->turns, opSpan);
+    auto resolvedResult = resolveCreatures(body.turns, opSpan);
     if (!resolvedResult.isSuccess()) {
         return creatures::Result<CacheProbe>{resolvedResult.getError().value()};
     }
     probe.resolved = resolvedResult.getValue().value();
-    probe.inputs = buildDialogInputs(body->turns, probe.resolved);
+    probe.inputs = buildDialogInputs(body.turns, probe.resolved);
     probe.cacheKey = creatures::voice::computeCacheKey(probe.inputs);
-    probe.regenerate = body->regenerate ? static_cast<bool>(*body->regenerate) : false;
+    probe.regenerate = body.regenerate;
 
     if (opSpan) {
         opSpan->setAttribute("dialog.cache_key", probe.cacheKey);
@@ -201,14 +176,14 @@ DialogPreviewService::probeCache(const oatpp::Object<DialogPreviewRequestDto> &b
         }
     }
 
-    if (body->generation_id && !body->generation_id->empty()) {
+    if (body.generationId && !body.generationId->empty()) {
         // Explicit generation_id — load that one specifically. NotFound if it's
         // been cron-cleaned.
-        auto loadResult = creatures::voice::loadGeneration(probe.cacheKey, std::string(*body->generation_id));
+        auto loadResult = creatures::voice::loadGeneration(probe.cacheKey, *body.generationId);
         if (!loadResult.isSuccess()) {
             return creatures::Result<CacheProbe>{creatures::ServerError(
-                creatures::ServerError::NotFound, fmt::format("generation '{}' not found (expired or never existed)",
-                                                              std::string(*body->generation_id)))};
+                creatures::ServerError::NotFound,
+                fmt::format("generation '{}' not found (expired or never existed)", *body.generationId))};
         }
         probe.generation = loadResult.getValue().value();
         const bool normalized =
@@ -240,7 +215,7 @@ DialogPreviewService::probeCache(const oatpp::Object<DialogPreviewRequestDto> &b
 }
 
 creatures::Result<DialogPreviewService::MetaFastPath>
-DialogPreviewService::tryServeFromCache(const oatpp::Object<DialogPreviewRequestDto> &body,
+DialogPreviewService::tryServeFromCache(const api::DialogPreviewRequest &body,
                                         const std::shared_ptr<creatures::OperationSpan> &opSpan,
                                         const char *spanAttrName) {
     auto probeResult = probeCache(body, opSpan, spanAttrName);
@@ -269,7 +244,7 @@ DialogPreviewService::tryServeFromCache(const oatpp::Object<DialogPreviewRequest
 }
 
 creatures::Result<DialogPreviewService::PreviewOutcome>
-DialogPreviewService::loadOrGenerate(const oatpp::Object<DialogPreviewRequestDto> &body,
+DialogPreviewService::loadOrGenerate(const api::DialogPreviewRequest &body,
                                      const std::shared_ptr<creatures::OperationSpan> &opSpan, const char *spanAttrName,
                                      std::function<void(float)> progress, const std::string &jobId) {
     auto probeResult = probeCache(body, opSpan, spanAttrName);
@@ -438,7 +413,7 @@ DialogPreviewService::loadOrGenerate(const oatpp::Object<DialogPreviewRequestDto
         // Re-persist whenever it differs from what's on disk — the title can change
         // between previews of the same turns (the cache key is turns-only), and the
         // mono/Ogg export endpoints read provenance straight from the cache.
-        const std::string title = body->title ? std::string(*body->title) : std::string();
+        const std::string title = body.title.value_or("");
         auto built = buildPreviewProvenance(out.inputs, out.resolved, out.generation.generationId,
                                             /*scriptId=*/"", title);
         if (built != out.generation.provenance) {
@@ -546,18 +521,13 @@ DialogPreviewService::ensureAdHocExportForTake(const std::vector<creatures::Dial
             creatures::ServerError(creatures::ServerError::InvalidData, "script has no turns")};
     }
 
-    // The preview pipeline speaks DTOs; a stored script speaks model structs.
-    // They carry the same two fields, so the conversion is a shim rather than
-    // a second source of truth.
-    auto turnDtos = oatpp::List<oatpp::Object<DialogTurnDto>>::createShared();
+    std::vector<api::DialogTurnRequest> requestTurns;
+    requestTurns.reserve(turns.size());
     for (const auto &turn : turns) {
-        auto dto = DialogTurnDto::createShared();
-        dto->creature_id = turn.creature_id.c_str();
-        dto->text = turn.text.c_str();
-        turnDtos->push_back(dto);
+        requestTurns.push_back({turn.creature_id, turn.text});
     }
 
-    auto resolvedResult = resolveCreatures(turnDtos, opSpan);
+    auto resolvedResult = resolveCreatures(requestTurns, opSpan);
     if (!resolvedResult.isSuccess()) {
         return creatures::Result<std::filesystem::path>{resolvedResult.getError().value()};
     }
@@ -572,7 +542,7 @@ DialogPreviewService::ensureAdHocExportForTake(const std::vector<creatures::Dial
     outcome.cacheKey = cacheKey;
     outcome.cached = true;
     outcome.resolved = resolvedResult.getValue().value();
-    outcome.inputs = buildDialogInputs(turnDtos, outcome.resolved);
+    outcome.inputs = buildDialogInputs(requestTurns, outcome.resolved);
 
     // Generations written before the index-space fix carry raw ElevenLabs
     // character indices; every other load path normalizes them, so this one

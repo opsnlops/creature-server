@@ -14,10 +14,6 @@
 #include "server/namespace-stuffs.h"
 #include "server/voice/PcmWavWriter.h"
 
-namespace creatures {
-extern std::shared_ptr<creatures::voice::CreatureVoices> voiceService;
-}
-
 namespace creatures::voice {
 
 Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const SpeechGenerationRequest &request) {

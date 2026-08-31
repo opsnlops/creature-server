@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-#include "server/ws/dto/DialogMusicDto.h"
+#include "api/DialogContracts.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
@@ -11,12 +11,12 @@ namespace creatures::ws {
 
 class DialogMusicService {
   public:
-    Result<oatpp::Object<DialogMusicGenerationResultDto>> generate(const oatpp::Object<DialogMusicRequestDto> &request,
-                                                                   std::shared_ptr<OperationSpan> parentSpan = nullptr,
-                                                                   const std::string &jobId = "") const;
+    Result<api::DialogMusicGenerationResult> generate(const api::DialogMusicRequest &request,
+                                                      std::shared_ptr<OperationSpan> parentSpan = nullptr,
+                                                      const std::string &jobId = "") const;
 
-    Result<oatpp::Object<DialogMusicPromotionResultDto>>
-    promote(const std::string &generationId, std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+    Result<api::DialogMusicPromotionResult> promote(const std::string &generationId,
+                                                    std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
 
   private:
     /// Repair an already-accepted music block whose composition source was
@@ -32,7 +32,7 @@ class DialogMusicService {
     /// Returns NotFound when no accepted music anywhere claims this
     /// generation, which lets the caller report the original cache miss
     /// instead of a confusing repair failure.
-    Result<oatpp::Object<DialogMusicPromotionResultDto>>
+    Result<api::DialogMusicPromotionResult>
     backfillMusicSourceFromPromotedFile(const std::string &generationId,
                                         const std::shared_ptr<OperationSpan> &span) const;
 };

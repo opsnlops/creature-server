@@ -19,7 +19,7 @@ This document explains how the ad-hoc speech feature works, how it is configured
 2. **Server job pipeline**
    - Looks up the creature, validates it has `speech_loop_animation_ids`, and picks one at random.
    - Uses `SpeechGenerationManager` (shared with `/api/v1/voice`) to:
-     - Generate speech via ElevenLabs (`CreatureVoices`).
+     - Generate speech via ElevenLabs (`VoiceClient`).
      - Convert the MP3 to a 17-channel WAV (`AudioConverter`) targeting the creature’s audio channel.
    - Runs Rhubarb lip sync against the WAV, producing a JSON of mouth cues, while pre-warming the 17-channel Opus cache
      in parallel so the first playback already has encoded audio.

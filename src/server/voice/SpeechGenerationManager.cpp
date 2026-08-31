@@ -14,10 +14,6 @@
 #include "spdlog/spdlog.h"
 #include <fmt/format.h>
 
-namespace creatures {
-extern std::shared_ptr<creatures::voice::CreatureVoices> voiceService;
-}
-
 namespace creatures::voice {
 
 namespace {
@@ -29,11 +25,11 @@ std::filesystem::path resolveOutputDirectory(const SpeechGenerationRequest &requ
     return std::filesystem::path(creatures::config->getSoundFileLocation());
 }
 
-std::shared_ptr<CreatureVoices> resolveVoiceClient(const SpeechGenerationRequest &request) {
+std::shared_ptr<VoiceClient> resolveVoiceClient(const SpeechGenerationRequest &request) {
     if (request.voiceClient) {
         return request.voiceClient;
     }
-    return std::make_shared<CreatureVoices>(creatures::config->getVoiceApiKey());
+    return std::make_shared<VoiceClient>(creatures::config->getVoiceApiKey());
 }
 
 } // namespace
@@ -143,30 +139,13 @@ Result<SpeechGenerationResult> SpeechGenerationManager::generate(const SpeechGen
         }
 
         auto voiceClient = resolveVoiceClient(request);
-        auto mp3Result = voiceClient->generateCreatureSpeech(outputDir, speechRequest);
+        auto mp3Result = voiceClient->generateCreatureSpeech(outputDir, speechRequest, span);
         if (!mp3Result.isSuccess()) {
-            auto error = mp3Result.getError().value();
+            const auto error = mp3Result.getError().value();
             if (span) {
                 span->setError(error.getMessage());
             }
-            ServerError::Code serverCode = ServerError::InternalError;
-            switch (error.getCode()) {
-            case creatures::voice::VoiceError::InvalidData:
-                serverCode = ServerError::InvalidData;
-                break;
-            case creatures::voice::VoiceError::NotFound:
-                serverCode = ServerError::NotFound;
-                break;
-            case creatures::voice::VoiceError::Forbidden:
-            case creatures::voice::VoiceError::InvalidApiKey:
-                serverCode = ServerError::Forbidden;
-                break;
-            case creatures::voice::VoiceError::InternalError:
-            default:
-                serverCode = ServerError::InternalError;
-                break;
-            }
-            return Result<SpeechGenerationResult>{ServerError(serverCode, error.getMessage())};
+            return Result<SpeechGenerationResult>{error};
         }
         auto pcmMetadata = mp3Result.getValue().value();
 
@@ -204,6 +183,10 @@ Result<SpeechGenerationResult> SpeechGenerationManager::generate(const SpeechGen
         auto conversion = writePcmToMultichannelWav(pcmBytes, wavPath, audioChannel, 48000);
         if (!conversion.isSuccess()) {
             auto error = conversion.getError().value();
+            std::error_code cleanupError;
+            std::filesystem::remove(pcmPath, cleanupError);
+            std::filesystem::remove(wavPath, cleanupError);
+            std::filesystem::remove(transcriptPath, cleanupError);
             if (convertSpan)
                 convertSpan->setError(error.getMessage());
             if (span)

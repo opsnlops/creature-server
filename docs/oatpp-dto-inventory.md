@@ -187,18 +187,12 @@ and job broadcasts use it; all unused outbound oat++ wrappers have been removed.
 framework-neutral envelope codec, validates its `command` and object `payload`,
 and dispatches the retained payload JSON value to every typed handler parser.
 
-## CreatureVoicesLib public DTOs
+## ElevenLabs voice client
 
-| File | DTO | Existing domain type | Direction |
-|---|---|---|---|
-| `model/Voice.h` | `VoiceDto` | `Voice` | External response and Creature Server response |
-| `model/Subscription.h` | `SubscriptionDto` | `Subscription` | External response and Creature Server response |
-| `model/CreatureSpeechRequest.h` | `CreatureSpeechRequestDto` | `CreatureSpeechRequest` | External request |
-| `model/CreatureSpeechResponse.h` | `CreatureSpeechResponseDto` | `CreatureSpeechResponse` | External/Creature Server response |
-
-The public headers already contain ordinary structs, so their DTOs can become
-private oat++ client adapters first. Creature Server's `VoiceService` must stop
-returning the library DTOs before those adapters can be removed completely.
+The former `CreatureVoicesLib` project has been folded into
+`src/server/voice/VoiceClient.{h,cpp}`. Its request, response, subscription, and
+voice values are plain structs; the client uses the server's `Result<T>` error
+contract and the parent project's curl, fmt, spdlog, and nlohmann/json targets.
 
 ## Service interface inventory
 
@@ -211,10 +205,10 @@ Nine service headers expose oat++ directly.
 | `DmxFixtureService` | — | Fully neutral: domain values, standard IDs, and checked plain request contracts | Completed |
 | `PlaylistService` | — | Fully neutral: domain/list/status values and checked plain request contracts | Completed |
 | `SoundService` | — | Fully neutral: domain/response values, standard strings, optionals, and `Result<T>` errors | Completed |
-| `MetricsService` | `getCounters` | Neutral `Result<SystemCountersSnapshot>` return | Ordinary immutable counter snapshot |
-| `VoiceService` | `getAllVoices`, `getSubscriptionStatus`, `generateCreatureSpeech` | Library DTO returns and DTO request | Library domain structs and neutral API request |
-| `DialogMusicService` | `generate`, `promote`, private `backfillMusicSourceFromPromotedFile` | DTO request/results inside `Result` | Plain request and result structs |
-| `DialogPreviewService` | `tryServeFromCache`, `loadOrGenerate`, `populateMetaResponse`, `resolveCreatures`, `buildDialogInputs`, private `probeCache` | oat++ preview request, list, and response types inside an otherwise HTTP-free service | Plain preview request/turn/result structs |
+| `MetricsService` | — | Neutral `Result<SystemCountersSnapshot>` return | Completed |
+| `VoiceService` | — | In-tree voice structs and neutral API requests inside `Result<T>` | Completed |
+| `DialogMusicService` | — | Plain request and result structs | Completed |
+| `DialogPreviewService` | — | Plain preview request, turn, cache, and response structs | Completed |
 
 ### Hidden service coupling
 
@@ -227,7 +221,7 @@ to search implementations as well as headers.
 
 | Consumer | DTO/object-mapper use | Migration implication |
 |---|---|---|
-| `src/server/jobs/JobWorker.cpp` | Parses dialog, preview, music, and voice job details; serializes multiple job result DTOs | Migrate with the matching dialog/voice API slice, not as controller cleanup |
+| `src/server/jobs/JobWorker.cpp` | Parses and serializes dialog, preview, music, and voice jobs through neutral contracts | Completed with the dialog/voice service slice |
 | `src/server/eventloop/events/counter-send.cpp` | Builds a neutral counter/runtime JSON snapshot and enqueues it through `WebSocketEnvelope` | Preserve the 1 ms loop guarantees while retaining the existing wire shape |
 | `src/server/metrics/StatusLights.cpp` | Builds and serializes `VirtualStatusLightsMessage` | Convert with outbound WebSocket messages |
 | `src/server/metrics/counters.{h,cpp}` | Defines and serializes `SystemCountersSnapshot` | Shared REST/WebSocket counter contract |

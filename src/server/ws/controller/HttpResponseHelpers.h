@@ -120,6 +120,8 @@ template <typename Self> class HttpResponseHelpers {
         switch (code) {
         case creatures::ServerError::NotFound:
             return "NotFound";
+        case creatures::ServerError::Unauthorized:
+            return "Unauthorized";
         case creatures::ServerError::Forbidden:
             return "Forbidden";
         case creatures::ServerError::InvalidData:
@@ -141,6 +143,8 @@ template <typename Self> class HttpResponseHelpers {
         switch (code) {
         case 400:
             return "Bad Request";
+        case 401:
+            return "Unauthorized";
         case 403:
             return "Forbidden";
         case 404:

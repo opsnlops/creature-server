@@ -10,12 +10,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include <oatpp/core/Types.hpp>
-
+#include "api/DialogContracts.h"
 #include "model/DialogScript.h"
 #include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
-#include "server/ws/dto/DialogDto.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
@@ -25,7 +23,7 @@ namespace creatures ::ws {
 ///
 /// Both the sync cache-read path (DialogPreviewController) and the async
 /// generation path (JobWorker) call one implementation here. Nothing in this
-/// class touches oatpp HTTP responses — errors come back as Result<T> and the
+/// class touches transport HTTP responses — errors come back as Result<T> and the
 /// callers decide how to surface them (bailHttp on the controller, failJob on
 /// the worker).
 class DialogPreviewService {
@@ -67,7 +65,7 @@ class DialogPreviewService {
     /// ElevenLabs work: on a miss it returns `cacheHit == false` so the caller
     /// can enqueue a job instead. Errors (bad creature, explicit generation_id
     /// not cached) come back as ServerError.
-    creatures::Result<MetaFastPath> tryServeFromCache(const oatpp::Object<DialogPreviewRequestDto> &body,
+    creatures::Result<MetaFastPath> tryServeFromCache(const api::DialogPreviewRequest &body,
                                                       const std::shared_ptr<creatures::OperationSpan> &opSpan,
                                                       const char *spanAttrName);
 
@@ -77,7 +75,7 @@ class DialogPreviewService {
     /// once per generated chunk with a 0..1 fraction.
     /// `jobId`, when non-empty, is stamped on the per-chunk spans so a job's chunk
     /// work can be pivoted to across traces in Honeycomb by `job.id`.
-    creatures::Result<PreviewOutcome> loadOrGenerate(const oatpp::Object<DialogPreviewRequestDto> &body,
+    creatures::Result<PreviewOutcome> loadOrGenerate(const api::DialogPreviewRequest &body,
                                                      const std::shared_ptr<creatures::OperationSpan> &opSpan,
                                                      const char *spanAttrName,
                                                      std::function<void(float)> progress = nullptr,
@@ -112,22 +110,21 @@ class DialogPreviewService {
     ensureAdHocExportForTake(const std::vector<creatures::DialogScriptTurn> &turns, const std::string &cacheKey,
                              const std::string &generationId, const std::shared_ptr<creatures::OperationSpan> &opSpan);
 
-    /// Pack our internal voice_segments / forced_alignment into the response DTO.
-    static void populateMetaResponse(oatpp::Object<DialogPreviewMetaResponseDto> &dto,
-                                     const creatures::voice::CachedGeneration &gen, const std::string &cacheKey,
-                                     bool cached);
+    /// Pack internal voice segments and forced alignment into a neutral response.
+    static api::DialogPreviewMetaResponse makeMetaResponse(const creatures::voice::CachedGeneration &gen,
+                                                           const std::string &cacheKey, bool cached);
 
     /// Walk the request's turns, resolve each unique creature_id to its
     /// voice_id (+ audio_channel for multichannel use). Shared with the
     /// controller's lookup endpoint.
     static creatures::Result<std::unordered_map<std::string, PreviewCreature>>
-    resolveCreatures(const oatpp::List<oatpp::Object<DialogTurnDto>> &turns,
+    resolveCreatures(const std::vector<api::DialogTurnRequest> &turns,
                      const std::shared_ptr<creatures::OperationSpan> &span);
 
     /// Convert the API DTO turns + resolved creature lookup into the internal
     /// DialogInput list (voice_id + text).
     static std::vector<creatures::voice::DialogInput>
-    buildDialogInputs(const oatpp::List<oatpp::Object<DialogTurnDto>> &turns,
+    buildDialogInputs(const std::vector<api::DialogTurnRequest> &turns,
                       const std::unordered_map<std::string, PreviewCreature> &resolved);
 
   private:
@@ -142,7 +139,7 @@ class DialogPreviewService {
         bool cached = false;
         bool regenerate = false;
     };
-    creatures::Result<CacheProbe> probeCache(const oatpp::Object<DialogPreviewRequestDto> &body,
+    creatures::Result<CacheProbe> probeCache(const api::DialogPreviewRequest &body,
                                              const std::shared_ptr<creatures::OperationSpan> &opSpan,
                                              const char *spanAttrName);
 

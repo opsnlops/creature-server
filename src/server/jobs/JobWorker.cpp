@@ -9,12 +9,15 @@
 #include <future>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <base64.hpp>
 #include <fmt/chrono.h>
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
+#include "api/DialogContracts.h"
+#include "api/VoiceContracts.h"
 #include "model/Animation.h"
 #include "model/Stage.h"
 #include "server/animation/SessionManager.h"
@@ -45,15 +48,9 @@
 #include "server/voice/StreamingSpeechGenerationManager.h"
 #include "server/voice/TextToViseme.h"
 #include "server/voice/WavFileReader.h"
-#include "server/ws/dto/DialogDto.h"
-#include "server/ws/dto/DialogMusicDto.h"
-#include "server/ws/dto/DialogPreviewExportResultDto.h"
-#include "server/ws/dto/MakeSoundFileRequestDto.h"
 #include "server/ws/service/DialogMusicService.h"
 #include "server/ws/service/DialogPreviewService.h"
 #include "server/ws/service/VoiceService.h"
-
-#include <model/CreatureSpeechResponse.h>
 
 #include "util/ObservabilityManager.h"
 #include "util/Sha256.h"
@@ -63,7 +60,6 @@
 #include "util/threadName.h"
 #include "util/uuidUtils.h"
 #include "util/websocketUtils.h"
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 
 namespace creatures {
 extern std::shared_ptr<Configuration> config;
@@ -303,6 +299,11 @@ void JobWorker::processJob(const std::string &jobId) {
         }
     } catch (const std::exception &e) {
         error("Exception while processing job {}: {}", jobId, e.what());
+        if (jobState.span) {
+            jobState.span->recordException(e);
+            jobState.span->setAttribute("job.failure_stage", "unhandled_exception");
+        }
+        recordSpanError(jobState.span, e.what(), "std::exception", ServerError::InternalError);
         jobManager_->failJob(jobId, fmt::format("Exception: {}", e.what()));
     }
 
@@ -333,20 +334,15 @@ void JobWorker::handleDialogMusicJob(JobState &jobState) {
         broadcastCompletion();
     };
 
-    auto mapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    oatpp::Object<ws::DialogMusicRequestDto> request;
-    try {
-        request = mapper->readFromString<oatpp::Object<ws::DialogMusicRequestDto>>(jobState.details.c_str());
-    } catch (const std::exception &e) {
-        if (jobState.span)
-            jobState.span->recordException(e);
-        return failJob(fmt::format("invalid dialog music job details: {}", e.what()), "JsonParsingException",
-                       ServerError::InvalidData, "deserialize");
-    }
-    if (!request) {
-        return failJob("dialog music job details deserialized to null", "InvalidData", ServerError::InvalidData,
+    auto jsonResult = api::parseContractJson(jobState.details, "dialog music job details");
+    if (!jsonResult.isSuccess())
+        return failJob(jsonResult.getError().value().getMessage(), "InvalidData", ServerError::InvalidData,
                        "deserialize");
-    }
+    auto requestResult = api::dialogMusicRequestFromJson(jsonResult.getValue().value());
+    if (!requestResult.isSuccess())
+        return failJob(requestResult.getError().value().getMessage(), "InvalidData", ServerError::InvalidData,
+                       "deserialize");
+    const auto request = requestResult.getValue().value();
     jobManager_->updateJobProgress(jobState.jobId, 0.05f);
     broadcastProgress();
 
@@ -358,7 +354,8 @@ void JobWorker::handleDialogMusicJob(JobState &jobState) {
     }
     jobManager_->updateJobProgress(jobState.jobId, 1.0f);
     broadcastProgress();
-    jobManager_->completeJob(jobState.jobId, mapper->writeToString(generated.getValue().value())->c_str());
+    jobManager_->completeJob(jobState.jobId,
+                             api::dialogMusicGenerationResultToJson(generated.getValue().value()).dump());
     if (jobState.span)
         jobState.span->setSuccess();
     broadcastCompletion();
@@ -1536,30 +1533,14 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         broadcastCompletion(jobState.jobId);
     };
 
-    // ---- Parse the job details — which is the controller's serialized
-    // DialogRequestDto. Round-trip through oatpp's ObjectMapper so the schema
-    // is enforced on both ends rather than picked apart by hand.
-    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    oatpp::Object<ws::DialogRequestDto> reqDto;
-    try {
-        reqDto = jsonMapper->readFromString<oatpp::Object<ws::DialogRequestDto>>(jobState.details.c_str());
-    } catch (const std::exception &e) {
-        return failJob(fmt::format("invalid dialog job details: {}", e.what()));
-    }
-    if (!reqDto) {
-        return failJob("dialog job details deserialized to null");
-    }
-    const bool hasInlineTurns = reqDto->turns && !reqDto->turns->empty();
-    const bool hasScriptId = reqDto->script_id && !reqDto->script_id->empty();
-    if (hasInlineTurns && hasScriptId) {
-        return failJob("dialog job got both turns[] and script_id — controller should have rejected this");
-    }
-    if (!hasInlineTurns && !hasScriptId) {
-        return failJob("dialog job requires turns[] or script_id");
-    }
-    if (!reqDto->persistence) {
-        return failJob("dialog job requires persistence ('adhoc' or 'permanent')");
-    }
+    auto jsonResult = api::parseContractJson(jobState.details, "dialog job details");
+    if (!jsonResult.isSuccess())
+        return failJob(jsonResult.getError().value().getMessage());
+    auto requestResult = api::dialogRequestFromJson(jsonResult.getValue().value());
+    if (!requestResult.isSuccess())
+        return failJob(requestResult.getError().value().getMessage());
+    const auto request = requestResult.getValue().value();
+    const bool hasScriptId = request.scriptId.has_value();
 
     std::vector<std::pair<std::string, std::string>> rawTurns;
     // Provenance for the rendered Animation. Empty when rendering from inline
@@ -1575,7 +1556,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         // the worker rehydrates from a serialized blob and may eventually be fed
         // from non-controller sources (retry, cron). Keeps attacker strings out of
         // log lines and span attributes (security review S2).
-        const std::string requestedScriptId(*reqDto->script_id);
+        const std::string &requestedScriptId = *request.scriptId;
         if (!isUuidShape(requestedScriptId)) {
             return failJob("script_id is not a UUID");
         }
@@ -1600,23 +1581,20 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             acceptedVoiceGenerationId = script.accepted_voice->generation_id;
         }
     } else {
-        rawTurns.reserve(reqDto->turns->size());
-        sourceScriptTurns.reserve(reqDto->turns->size());
-        for (const auto &t : *reqDto->turns) {
-            if (!t || !t->creature_id || !t->text) {
-                return failJob("each turn must have a non-null creature_id and text");
-            }
-            rawTurns.emplace_back(*t->creature_id, *t->text);
+        rawTurns.reserve(request.turns.size());
+        sourceScriptTurns.reserve(request.turns.size());
+        for (const auto &turn : request.turns) {
+            rawTurns.emplace_back(turn.creatureId, turn.text);
             // Snapshot the inline turns for provenance too (#60). There's no saved
             // script to point at (sourceScriptId stays empty), but the CoW snapshot
             // still records exactly what was rendered so the document keeps its history.
-            sourceScriptTurns.push_back(creatures::DialogScriptTurn{*t->creature_id, *t->text});
+            sourceScriptTurns.push_back(creatures::DialogScriptTurn{turn.creatureId, turn.text});
         }
     }
 
     DialogPersistence persistence = DialogPersistence::AdHoc;
     {
-        const std::string pstr = *reqDto->persistence;
+        const std::string &pstr = request.persistence;
         if (pstr == "adhoc") {
             persistence = DialogPersistence::AdHoc;
         } else if (pstr == "permanent") {
@@ -1625,10 +1603,9 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             return failJob(fmt::format("unknown persistence '{}' (expected 'adhoc' or 'permanent')", pstr));
         }
     }
-    const bool autoplay = reqDto->autoplay ? *reqDto->autoplay : false;
-    std::string title = reqDto->title ? std::string(*reqDto->title) : std::string{};
-    const std::string requestedGenerationId =
-        reqDto->generation_id ? std::string(*reqDto->generation_id) : std::string{};
+    const bool autoplay = request.autoplay;
+    std::string title = request.title.value_or("");
+    const std::string requestedGenerationId = request.generationId.value_or("");
     // Stage binding (#119). Three cases, and the middle one is the ordinary
     // render (#128):
     //
@@ -1639,8 +1616,8 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     //   request sends ""    -> force no stage, so the override works in both
     //                          directions rather than only toward "more"
     std::string stageId;
-    if (reqDto->stage_id) {
-        stageId = std::string(*reqDto->stage_id); // may be "" — deliberate opt-out
+    if (request.stageId) {
+        stageId = *request.stageId; // may be "" — deliberate opt-out
     } else {
         stageId = scriptStageId;
         if (!stageId.empty()) {
@@ -2568,17 +2545,14 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         }
     }
 
-    // ---- Success. Build the typed result DTO and let oatpp serialize it for
-    // the framework's string-shaped JobState::result field.
-    auto resultDto = ws::DialogJobResultDto::createShared();
-    resultDto->animation_id = animation.id.c_str();
-    resultDto->number_of_frames = animation.metadata.number_of_frames;
-    resultDto->milliseconds_per_frame = animation.metadata.milliseconds_per_frame;
-    resultDto->duration_seconds = static_cast<double>(animation.metadata.number_of_frames) *
-                                  static_cast<double>(animation.metadata.milliseconds_per_frame) / 1000.0;
-    resultDto->persistence = (persistence == DialogPersistence::AdHoc) ? "adhoc" : "permanent";
-    resultDto->autoplayed = autoplayed;
-    jobManager_->completeJob(jobState.jobId, jsonMapper->writeToString(resultDto)->c_str());
+    api::DialogJobResult result{animation.id,
+                                animation.metadata.number_of_frames,
+                                animation.metadata.milliseconds_per_frame,
+                                static_cast<double>(animation.metadata.number_of_frames) *
+                                    static_cast<double>(animation.metadata.milliseconds_per_frame) / 1000.0,
+                                persistence == DialogPersistence::AdHoc ? "adhoc" : "permanent",
+                                autoplayed};
+    jobManager_->completeJob(jobState.jobId, api::dialogJobResultToJson(result).dump());
     if (jobState.span) {
         jobState.span->setAttribute("dialog.animation_id", animation.id);
         jobState.span->setSuccess();
@@ -2623,22 +2597,19 @@ void JobWorker::handleDialogPreviewJob(JobState &jobState) {
         broadcastCompletion(jobState.jobId);
     };
 
-    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    oatpp::Object<ws::DialogPreviewRequestDto> reqDto;
-    try {
-        reqDto = jsonMapper->readFromString<oatpp::Object<ws::DialogPreviewRequestDto>>(jobState.details.c_str());
-    } catch (const std::exception &e) {
-        return failJob(fmt::format("invalid dialog preview job details: {}", e.what()));
-    }
-    if (!reqDto) {
-        return failJob("dialog preview job details deserialized to null");
-    }
+    auto jsonResult = api::parseContractJson(jobState.details, "dialog preview job details");
+    if (!jsonResult.isSuccess())
+        return failJob(jsonResult.getError().value().getMessage());
+    auto requestResult = api::dialogPreviewRequestFromJson(jsonResult.getValue().value());
+    if (!requestResult.isSuccess())
+        return failJob(requestResult.getError().value().getMessage());
+    const auto previewRequest = requestResult.getValue().value();
 
     updateProgress(0.05f);
 
     ws::DialogPreviewService service;
     auto progress = [&](float f) { updateProgress(0.05f + 0.90f * std::clamp(f, 0.0f, 1.0f)); };
-    auto outcomeResult = service.loadOrGenerate(reqDto, jobState.span, "meta-job", progress, jobState.jobId);
+    auto outcomeResult = service.loadOrGenerate(previewRequest, jobState.span, "meta-job", progress, jobState.jobId);
     if (!outcomeResult.isSuccess()) {
         return failJob(outcomeResult.getError().value().getMessage());
     }
@@ -2658,11 +2629,11 @@ void JobWorker::handleDialogPreviewJob(JobState &jobState) {
              exportResult.getError().value().getMessage());
     }
 
-    auto dto = ws::DialogPreviewMetaResponseDto::createShared();
-    ws::DialogPreviewService::populateMetaResponse(dto, outcome.generation, outcome.cacheKey, outcome.cached);
+    const auto response =
+        ws::DialogPreviewService::makeMetaResponse(outcome.generation, outcome.cacheKey, outcome.cached);
 
     updateProgress(1.0f);
-    jobManager_->completeJob(jobState.jobId, jsonMapper->writeToString(dto)->c_str());
+    jobManager_->completeJob(jobState.jobId, api::dialogPreviewMetaResponseToJson(response).dump());
     if (jobState.span) {
         jobState.span->setAttribute("dialog.generation_id", outcome.generation.generationId);
         jobState.span->setSuccess();
@@ -2703,23 +2674,21 @@ void JobWorker::handleDialogPreviewExportJob(JobState &jobState) {
         broadcastCompletion(jobState.jobId);
     };
 
-    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    oatpp::Object<ws::DialogPreviewRequestDto> reqDto;
-    try {
-        reqDto = jsonMapper->readFromString<oatpp::Object<ws::DialogPreviewRequestDto>>(jobState.details.c_str());
-    } catch (const std::exception &e) {
-        return failJob(fmt::format("invalid dialog preview export job details: {}", e.what()));
-    }
-    if (!reqDto) {
-        return failJob("dialog preview export job details deserialized to null");
-    }
+    auto jsonResult = api::parseContractJson(jobState.details, "dialog preview export job details");
+    if (!jsonResult.isSuccess())
+        return failJob(jsonResult.getError().value().getMessage());
+    auto requestResult = api::dialogPreviewRequestFromJson(jsonResult.getValue().value());
+    if (!requestResult.isSuccess())
+        return failJob(requestResult.getError().value().getMessage());
+    const auto previewRequest = requestResult.getValue().value();
 
     updateProgress(0.05f);
 
     ws::DialogPreviewService service;
     // loadOrGenerate owns 0.05..0.70; the WAV assembly owns the rest.
     auto progress = [&](float f) { updateProgress(0.05f + 0.65f * std::clamp(f, 0.0f, 1.0f)); };
-    auto outcomeResult = service.loadOrGenerate(reqDto, jobState.span, "multichannel-job", progress, jobState.jobId);
+    auto outcomeResult =
+        service.loadOrGenerate(previewRequest, jobState.span, "multichannel-job", progress, jobState.jobId);
     if (!outcomeResult.isSuccess()) {
         return failJob(outcomeResult.getError().value().getMessage());
     }
@@ -2737,13 +2706,10 @@ void JobWorker::handleDialogPreviewExportJob(JobState &jobState) {
     const auto fileName = exportResult.getValue().value().filename().string();
     updateProgress(0.95f);
 
-    auto resultDto = ws::DialogPreviewExportResultDto::createShared();
-    resultDto->file_name = fileName.c_str();
-    resultDto->generation_id = outcome.generation.generationId.c_str();
-    resultDto->cache_key = outcome.cacheKey.c_str();
+    api::DialogPreviewExportResult result{fileName, outcome.generation.generationId, outcome.cacheKey};
 
     updateProgress(1.0f);
-    jobManager_->completeJob(jobState.jobId, jsonMapper->writeToString(resultDto)->c_str());
+    jobManager_->completeJob(jobState.jobId, api::dialogPreviewExportResultToJson(result).dump());
     if (jobState.span) {
         jobState.span->setAttribute("dialog.generation_id", outcome.generation.generationId);
         jobState.span->setAttribute("export.file_name", fileName);
@@ -2785,44 +2751,30 @@ void JobWorker::handleVoiceFileJob(JobState &jobState) {
         broadcastCompletion(jobState.jobId);
     };
 
-    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    oatpp::Object<ws::MakeSoundFileRequestDto> reqDto;
-    try {
-        reqDto = jsonMapper->readFromString<oatpp::Object<ws::MakeSoundFileRequestDto>>(jobState.details.c_str());
-    } catch (const std::exception &e) {
-        return failJob(fmt::format("invalid voice file job details: {}", e.what()));
-    }
-    if (!reqDto || !reqDto->creature_id || reqDto->creature_id->empty() || !reqDto->text || reqDto->text->empty()) {
-        return failJob("voice file jobs require both creature_id and text");
-    }
+    auto requestResult = api::makeSoundFileRequestFromJson(std::string_view(jobState.details));
+    if (!requestResult.isSuccess())
+        return failJob(requestResult.getError().value().getMessage());
+    const auto request = requestResult.getValue().value();
 
     if (jobState.span) {
-        jobState.span->setAttribute("creature.id", std::string(*reqDto->creature_id));
-        const auto text = std::string(*reqDto->text);
-        jobState.span->setAttribute("speech.text_length", static_cast<int64_t>(text.size()));
-        jobState.span->setAttribute("speech.text_preview", text.substr(0, 60));
+        jobState.span->setAttribute("creature.id", request.creatureId);
+        jobState.span->setAttribute("speech.text_length", static_cast<int64_t>(request.text.size()));
     }
 
     updateProgress(0.05f);
 
     ws::VoiceService voiceService;
-    oatpp::Object<creatures::voice::CreatureSpeechResponseDto> response;
-    try {
-        response = voiceService.generateCreatureSpeech(reqDto);
-    } catch (const std::exception &e) {
-        return failJob(fmt::format("speech generation failed: {}", e.what()));
-    }
-    if (!response) {
-        return failJob("speech generation returned no response");
-    }
+    auto response = voiceService.generateCreatureSpeech(request, jobState.span);
+    if (!response.isSuccess())
+        return failJob(response.getError().value().getMessage());
 
-    // The underlying CreatureVoicesLib write doesn't go through the storage
+    // The underlying voice-client write doesn't go through the storage
     // facade's writeSoundFile yet, so fire the SoundList invalidation manually
     // (mirrors what the old synchronous controller did).
     creatures::storage::broadcastCacheInvalidation(CacheType::SoundList);
 
     updateProgress(1.0f);
-    jobManager_->completeJob(jobState.jobId, jsonMapper->writeToString(response)->c_str());
+    jobManager_->completeJob(jobState.jobId, api::creatureSpeechResponseToJson(response.getValue().value()).dump());
     if (jobState.span) {
         jobState.span->setSuccess();
     }
@@ -2964,11 +2916,8 @@ void JobWorker::handleVoiceTakeAcceptJob(JobState &jobState) {
 
     // Same body the synchronous accept returns, so a client that got a 202
     // ends up with exactly what a 200 would have given it.
-    auto jsonMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    auto dto = creatures::convertToDto(published.getValue().value());
-
     updateProgress(1.0f);
-    jobManager_->completeJob(jobState.jobId, jsonMapper->writeToString(dto)->c_str());
+    jobManager_->completeJob(jobState.jobId, creatures::dialogScriptToJson(published.getValue().value()).dump());
     if (jobState.span) {
         jobState.span->setAttribute("voice.sound_file", accepted.sound_file);
         jobState.span->setSuccess();

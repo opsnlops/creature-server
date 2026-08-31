@@ -283,12 +283,12 @@ header, implementation, controller adaptation, and tests.
 - [x] Animations and ad-hoc animations
 - [x] Playlists and playlist status
 - [x] Sounds and renditions
-- [ ] Dialog scripts, preview, voice acceptance, and music
-- [ ] Voice generation and subscription state
-- [ ] Metrics, jobs, and runtime status
-- [ ] Remove oat++ assertions and HTTP status construction from services.
-- [ ] Return `Result<T>`, `Result<void>`, vectors, optionals, and domain values.
-- [ ] Accept `std::string`, strong IDs, domain values, and neutral request structs.
+- [x] Dialog scripts, preview, voice acceptance, and music
+- [x] Voice generation and subscription state
+- [x] Metrics, jobs, and runtime status
+- [x] Remove oat++ assertions and HTTP status construction from services.
+- [x] Return `Result<T>`, `Result<void>`, vectors, optionals, and domain values.
+- [x] Accept `std::string`, strong IDs, domain values, and neutral request structs.
 
 **Exit criterion:** `rg 'oatpp|OATPP' src/server/ws/service` returns no matches.
 
@@ -348,17 +348,17 @@ database validates a modeled view but stores the complete parsed object.
 **Exit criterion:** WebSocket business code only sends and receives standard C++
 types and serialized JSON strings.
 
-### Phase 6 — Neutralize CreatureVoicesLib public models
+### Phase 6 — Fold CreatureVoicesLib into the server
 
-- [ ] Convert `Voice`.
-- [ ] Convert `Subscription`.
-- [ ] Convert creature-speech request and response models.
-- [ ] Keep any temporary oat++ HTTP-client conversion inside the client
-      implementation, not public model headers.
-- [ ] Update Creature Server's voice service to consume neutral library types.
+- [x] Convert `Voice` and `Subscription` to neutral structs.
+- [x] Convert creature-speech request and response models.
+- [x] Move the ElevenLabs client into `src/server/voice/VoiceClient.{h,cpp}`.
+- [x] Replace the duplicate `VoiceResult`/`VoiceError` layer with `Result<T>`.
+- [x] Remove the standalone CMake project and `CreatureVoicesLib` target.
+- [x] Update Creature Server's voice consumers to use the in-tree client.
 
-**Exit criterion:** public `CreatureVoicesLib` model headers contain no oat++
-types, includes, or macros.
+**Exit criterion:** `lib/CreatureVoicesLib` and its independent dependency/build
+boundary no longer exist.
 
 ### Phase 7 — Enforce the boundary and remove DTO infrastructure
 

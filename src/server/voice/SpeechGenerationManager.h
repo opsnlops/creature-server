@@ -4,10 +4,10 @@
 #include <memory>
 #include <string>
 
-#include <CreatureVoices.h>
 #include <nlohmann/json.hpp>
 
 #include "model/Creature.h"
+#include "server/voice/VoiceClient.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
@@ -28,7 +28,7 @@ struct SpeechGenerationRequest {
     std::string title;
     std::filesystem::path outputDirectory;
     std::shared_ptr<OperationSpan> parentSpan{nullptr};
-    std::shared_ptr<CreatureVoices> voiceClient{nullptr};
+    std::shared_ptr<VoiceClient> voiceClient{nullptr};
 };
 
 struct SpeechGenerationResult {

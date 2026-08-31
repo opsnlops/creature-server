@@ -56,7 +56,7 @@ std::string sanitizeForLogging(const std::string &filename);
  * explicitly so callers can return a deterministic ambiguity error.
  *
  * Out-of-band writers are a supported workflow (modernize-sounds.py rewrites
- * files in place; streaming speech sessions and CreatureVoicesLib write
+ * files in place; streaming speech sessions and the ElevenLabs client write
  * without the storage facade), so the index is advisory with cheap
  * self-healing: every hit is stat-revalidated, vanished entries are dropped,
  * and a miss falls back to a single-file probe of `root/basename` — never a
