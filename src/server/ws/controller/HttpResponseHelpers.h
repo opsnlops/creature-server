@@ -69,9 +69,14 @@ template <typename Self> class HttpResponseHelpers {
     template <typename SpanT>
     std::shared_ptr<HttpOutgoingResponse> bailFromServerError(const SpanT &span, const creatures::ServerError &error) {
         const int code = creatures::serverErrorToStatusCode(error.getCode());
-        recordSpanError(span, error.getMessage(), serverErrorType(error.getCode()), error.getCode());
-        if (span)
+        if (span) {
+            span->setError(error.getMessage());
+            span->setAttribute("error.type", serverErrorType(error.getCode()));
+            span->setAttribute("error.code", static_cast<int64_t>(code));
+            span->setAttribute("error.message", error.getMessage());
+            span->setAttribute("server.error.code", static_cast<int64_t>(error.getCode()));
             span->setHttpStatus(code);
+        }
         const auto body = api::statusResponseToJson(api::makeStatusResponse(code, error.getMessage()));
         return jsonResponse(span, HttpStatus(code, statusReasonForCode(code)), body);
     }

@@ -95,12 +95,16 @@ Result<nlohmann::json> JsonParser::parseApiJsonString(const std::string &jsonStr
         }
         return Result<nlohmann::json>{std::move(result)};
     } catch (const nlohmann::json::parse_error &exception) {
-        auto message = fmt::format("JSON parse error for {}: {} at byte {}", context, exception.what(), exception.byte);
-        warn(message);
-        setSpanError(span, "JSONParseError", message, exception);
+        // nlohmann's diagnostic includes a fragment of the submitted document. Keep
+        // attacker-controlled request contents out of logs, traces, and responses.
+        auto message = fmt::format("Invalid JSON for {} at byte {}", context, exception.byte);
+        warn("{}", message);
+        const std::runtime_error sanitizedException(message);
+        setSpanError(span, "JSONParseError", message, sanitizedException);
         if (span) {
             span->setError(message);
             span->setAttribute("error.code", static_cast<int64_t>(ServerError::InvalidData));
+            span->setAttribute("error.byte_position", static_cast<int64_t>(exception.byte));
         }
         return Result<nlohmann::json>{ServerError(ServerError::InvalidData, message)};
     } catch (const JsonDepthError &exception) {
@@ -113,9 +117,11 @@ Result<nlohmann::json> JsonParser::parseApiJsonString(const std::string &jsonStr
         }
         return Result<nlohmann::json>{ServerError(ServerError::InvalidData, message)};
     } catch (const std::exception &exception) {
-        auto message = fmt::format("Unexpected error during API JSON parsing for {}: {}", context, exception.what());
+        (void)exception;
+        auto message = fmt::format("Unexpected error during API JSON parsing for {}", context);
         error(message);
-        setSpanError(span, "UnexpectedError", message, exception);
+        const std::runtime_error sanitizedException(message);
+        setSpanError(span, "UnexpectedError", message, sanitizedException);
         if (span) {
             span->setError(message);
             span->setAttribute("error.code", static_cast<int64_t>(ServerError::InternalError));

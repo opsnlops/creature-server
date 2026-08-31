@@ -47,6 +47,10 @@ inline Result<std::string> animationRequestUuid(const nlohmann::json &json, std:
         return value;
     if (!isUuidShape(value.getValue().value()))
         return json_codec::invalid<std::string>(fmt::format("{}.{} must be a UUID", path, key));
+    // MongoDB currently stores UUIDs as case-sensitive strings and historical
+    // records may predate canonical lowercase persistence. Preserve the lookup
+    // spelling until that data has been migrated; callers can canonicalize for
+    // display and telemetry without stranding existing records.
     return value;
 }
 

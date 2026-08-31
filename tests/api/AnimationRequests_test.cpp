@@ -22,6 +22,13 @@ TEST(AnimationRequests, ParsesPlayRequestWithLegacyCamelCaseResumeField) {
     EXPECT_TRUE(explicitResult.getValue()->resumePlaylist);
 }
 
+TEST(AnimationRequests, AcceptsUppercaseUuidWithoutChangingDatabaseLookupSpelling) {
+    const auto result =
+        playAnimationRequestFromJson({{"animation_id", "ABCDEF12-3456-4ABC-8DEF-1234567890AB"}, {"universe", 42}});
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+    EXPECT_EQ(result.getValue()->animationId, "ABCDEF12-3456-4ABC-8DEF-1234567890AB");
+}
+
 TEST(AnimationRequests, RejectsInvalidPlayFields) {
     EXPECT_FALSE(playAnimationRequestFromJson({{"animation_id", "not-a-uuid"}, {"universe", 1}}).isSuccess());
     EXPECT_FALSE(playAnimationRequestFromJson({{"animation_id", ANIMATION_ID}, {"universe", 0}}).isSuccess());

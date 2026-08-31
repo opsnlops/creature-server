@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cstddef>
+#include <string>
 #include <string_view>
 
 namespace creatures {
@@ -23,6 +24,14 @@ inline bool isUuidShape(std::string_view value) {
             return false;
     }
     return true;
+}
+
+/// Return the canonical lowercase representation of an already validated UUID.
+inline std::string canonicalUuid(std::string_view value) {
+    std::string result(value);
+    for (auto &character : result)
+        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    return result;
 }
 
 } // namespace creatures

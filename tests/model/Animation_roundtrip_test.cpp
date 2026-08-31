@@ -480,9 +480,12 @@ TEST(AnimationRoundTripTest, RejectsInvalidStagePlacementGeometry) {
 }
 
 TEST(AnimationRoundTripTest, ApiJsonParserClassifiesSyntaxAndDepthAsInvalidData) {
-    const auto malformed = JsonParser::parseApiJsonString("{", "test animation");
+    constexpr std::string_view attackerText = "ATTACKER_CONTROLLED_MARKER";
+    const auto malformed =
+        JsonParser::parseApiJsonString(fmt::format("{{\"field\": {}", attackerText), "test animation");
     ASSERT_FALSE(malformed.isSuccess());
     EXPECT_EQ(malformed.getError()->getCode(), ServerError::InvalidData);
+    EXPECT_EQ(malformed.getError()->getMessage().find(attackerText), std::string::npos);
 
     std::string nested(34, '[');
     nested += "0";
