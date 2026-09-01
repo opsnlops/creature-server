@@ -250,6 +250,18 @@ def encode_client_frame(opcode: int, payload: bytes, *, final: bool = True, mask
     return header + mask + masked
 
 
+def encode_unmasked_frame(opcode: int, payload: bytes, *, final: bool = True) -> bytes:
+    first = (0x80 if final else 0) | opcode
+    length = len(payload)
+    if length < 126:
+        header = bytes((first, length))
+    elif length <= 0xFFFF:
+        header = bytes((first, 126)) + struct.pack("!H", length)
+    else:
+        header = bytes((first, 127)) + struct.pack("!Q", length)
+    return header + payload
+
+
 def read_server_frame(reader: HttpSocketReader) -> tuple[bool, int, bytes]:
     first, second = reader.read_exactly(2)
     final = bool(first & 0x80)
@@ -285,6 +297,25 @@ def read_matching_server_frame(
         if predicate(final, opcode, payload):
             return frame
     raise TimeoutError("no matching WebSocket frame arrived before the deadline")
+
+
+def wait_for_websocket_close(connection: socket.socket, reader: HttpSocketReader, *, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            connection.settimeout(remaining)
+            _, opcode, payload = read_server_frame(reader)
+            if opcode == 0x8:
+                return True
+            if opcode == 0x9:
+                connection.sendall(encode_client_frame(0xA, payload))
+    except TimeoutError:
+        return False
+    except (BrokenPipeError, ConnectionError, EOFError):
+        return True
 
 
 class TransportContractTests(unittest.TestCase):
@@ -339,16 +370,25 @@ class TransportContractTests(unittest.TestCase):
         self.assertTrue(body.get("error_messages"))
 
     def test_fixture_validation_rejects_oversized_body(self) -> None:
-        oversized = b" " * (MAX_FIXTURE_CONFIG_REQUEST_BODY_BYTES + 1)
-        code, headers, raw = http_request(
-            self.config,
-            "POST",
-            "/api/v1/fixture/validate",
-            body=oversized,
-            headers={"Content-Type": "application/json"},
-        )
-        self.assertEqual(code, 413)
-        assert_status_envelope(self, decode_json(self, headers, raw), 413, "error")
+        connection = open_socket(self.config)
+        try:
+            fixture_path = self.config.path("/api/v1/fixture/validate")
+            request = (
+                f"POST {fixture_path} HTTP/1.1\r\n"
+                f"Host: {self.config.host_header}\r\n"
+                "Content-Type: application/json\r\n"
+                f"Content-Length: {MAX_FIXTURE_CONFIG_REQUEST_BODY_BYTES + 1}\r\n"
+                "Connection: keep-alive\r\n\r\n"
+            ).encode("ascii")
+            started = time.monotonic()
+            connection.sendall(request)
+            code, headers, raw = HttpSocketReader(connection).read_http_response()
+            self.assertLess(time.monotonic() - started, 1.0, "server waited for an oversized fixed-length body")
+            self.assertEqual(code, 413)
+            self.assertEqual(headers.get("connection", "").lower(), "close")
+            assert_status_envelope(self, decode_json(self, headers, raw), 413, "error")
+        finally:
+            connection.close()
 
     def test_fixture_validation_rejects_oversized_chunked_body(self) -> None:
         connection = open_socket(self.config)
@@ -513,29 +553,60 @@ class TransportContractTests(unittest.TestCase):
                 connection.sendall(
                     encode_client_frame(0x1 if index == 0 else 0x0, b"x" * (8 * 1024), final=False)
                 )
-            closed = False
             try:
                 connection.sendall(encode_client_frame(0x0, b"x", final=True))
             except (BrokenPipeError, ConnectionResetError):
-                closed = True
-            deadline = time.monotonic() + self.config.timeout
-            try:
-                while not closed:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        break
-                    connection.settimeout(remaining)
-                    _, candidate_opcode, candidate_payload = read_server_frame(reader)
-                    if candidate_opcode == 0x8:
-                        closed = True
-                        break
-                    if candidate_opcode == 0x9:
-                        connection.sendall(encode_client_frame(0xA, candidate_payload))
-            except TimeoutError:
                 pass
-            except (ConnectionError, EOFError):
-                closed = True
-            self.assertTrue(closed, "server kept an oversized WebSocket message connection open")
+            self.assertTrue(
+                wait_for_websocket_close(connection, reader, timeout=self.config.timeout),
+                "server kept an oversized WebSocket message connection open",
+            )
+        finally:
+            connection.close()
+
+        connection, reader = self.open_websocket()
+        try:
+            # Invalid unmasked client frames must not bypass the aggregate
+            # logical-message ceiling even if a framework tolerates them.
+            try:
+                for index in range(8):
+                    connection.sendall(
+                        encode_unmasked_frame(0x1 if index == 0 else 0x0, b"x" * (8 * 1024), final=False)
+                    )
+                connection.sendall(encode_unmasked_frame(0x0, b"x", final=True))
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            self.assertTrue(
+                wait_for_websocket_close(connection, reader, timeout=self.config.timeout),
+                "server accepted oversized unmasked WebSocket fragmentation",
+            )
+        finally:
+            connection.close()
+
+        connection, reader = self.open_websocket()
+        try:
+            # A valid masked frame header that declares UINT64_MAX bytes must
+            # be rejected before length arithmetic, allocation, or payload access.
+            connection.sendall(
+                bytes((0x81, 0xFF)) + struct.pack("!Q", 0xFFFFFFFFFFFFFFFF) + b"\x01\x02\x03\x04"
+            )
+            self.assertTrue(
+                wait_for_websocket_close(connection, reader, timeout=self.config.timeout),
+                "server waited for an impossible masked WebSocket payload",
+            )
+        finally:
+            connection.close()
+
+        connection, reader = self.open_websocket()
+        try:
+            # An unmasked client frame is invalid as soon as its header arrives.
+            # It must not occupy a connection while waiting for nonexistent mask
+            # or payload bytes.
+            connection.sendall(bytes((0x81, 0x7F)) + struct.pack("!Q", 0xFFFFFFFFFFFFFFFF))
+            self.assertTrue(
+                wait_for_websocket_close(connection, reader, timeout=self.config.timeout),
+                "server waited for an impossible unmasked WebSocket payload",
+            )
         finally:
             connection.close()
 

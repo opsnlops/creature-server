@@ -21,6 +21,8 @@ project(creature-server
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
 
+option(CREATURE_BUILD_UWS_OTEL_GATE "Build the uWebSockets OTel/Mongo integration gate" OFF)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
@@ -477,6 +479,10 @@ list(REMOVE_ITEM serverFiles
 )
 list(APPEND serverFiles ${AUDIO_PLATFORM_SOURCE})
 
+if(CREATURE_BUILD_UWS_OTEL_GATE)
+    add_subdirectory(spikes/uwebsockets-transport uwebsockets-otel-gate)
+endif()
+
 file(GLOB clientFiles
         src/client/*
         src/exception/*
@@ -616,6 +622,7 @@ add_executable(creature-server
         src/server/ws/service/SoundRenditionService.cpp
         src/server/ws/service/DmxFixtureService.h
         src/server/ws/service/DmxFixtureService.cpp
+        src/server/ws/service/DmxFixtureReadService.cpp
         src/server/ws/service/MetricsService.h
         src/server/ws/service/MetricsService.cpp
         src/server/ws/service/PlaylistService.h
