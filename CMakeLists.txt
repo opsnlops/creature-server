@@ -731,6 +731,19 @@ add_test(
         -P ${CMAKE_SOURCE_DIR}/cmake/CheckNeutralFrameworkBoundary.cmake
 )
 
+# The live transport contract targets an explicitly selected disposable server
+# and is therefore not run implicitly by CTest. Its protocol harness still has
+# always-safe self-tests so framing bugs in the oracle itself are caught.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/tests/transport/transport_contract_test.py)
+    add_test(
+        NAME transport-contract-harness
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tests/transport/transport_contract_test.py
+            --self-test
+    )
+endif()
+
 if (EXISTS ${CMAKE_SOURCE_DIR}/tests/server/TestGlobals.cpp)
 
 add_executable(creature-server-test
