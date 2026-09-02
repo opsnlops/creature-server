@@ -45,6 +45,8 @@ COPY cmake/ /build/creature-server/cmake
 COPY lib/ /build/creature-server/lib
 COPY externals/ /build/creature-server/externals
 COPY LICENSE README.md CMakeLists.txt build_oatpp.sh /build/creature-server/
+COPY docs/transport-route-manifest.json /build/creature-server/docs/transport-route-manifest.json
+COPY scripts/transport-route-manifest.py /build/creature-server/scripts/transport-route-manifest.py
 
 # CMakeLists.txt's top-level configure_file() needs this template at configure
 # time (see CMakeLists.txt:27). Pulled in by itself in Phase 1 so we don't have
@@ -79,7 +81,7 @@ RUN cd /build/creature-server && \
 # (defined in CMakeLists.txt). This is the ~15 minute step today; with this
 # layer cached it only re-runs when CMakeLists / cmake / lib / externals /
 # build_oatpp.sh change.
-RUN cd /build/creature-server/build && ninja -j4 deps_only
+RUN cd /build/creature-server/build && ninja -j8 deps_only
 
 # ---- Phase 2: copy our source + build the final binary. Only this layer
 # re-runs on a typical "I changed a .cpp file" PR.
@@ -97,12 +99,24 @@ COPY VERSION.txt /build/creature-server/
 # against the now-populated src/ tree. (Without this, ninja would still see
 # the empty-src configuration from Phase 1.) Configure is fast — a few seconds
 # — once the FetchContent sources are already populated.
-RUN cd /build/creature-server/build && cmake .. && ninja -j4
+RUN cd /build/creature-server/build && cmake .. && ninja -j8
 
 # CPack package export for Linux validation from a macOS host. This is a build
 # artifact stage, not a runtime image; production installs the resulting .deb.
 FROM build AS package
 
+# The .deb declares this runtime dependency. Install it in the validation stage
+# so the extracted payload runs under the same en_US.UTF-8 locale contract as
+# an installed package, rather than under the intentionally minimal builder.
+RUN apt update && apt install -y --no-install-recommends locales-all
+
 # Make a package
 RUN mkdir -p /package
 RUN cd /build/creature-server/build && cpack -G DEB && cp *.deb /package
+
+# Validate the exact filesystem payload that will be deployed. The smoke gate
+# extracts the package, checks its runtime links and notices, then boots the
+# packaged binary with default uWebSockets and explicit oat++ rollback.
+RUN python3 /build/creature-server/tests/transport/debian_package_smoke_test.py \
+        --package /package/creature-server_*.deb \
+        --network-device lo

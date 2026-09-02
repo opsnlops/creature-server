@@ -25,9 +25,17 @@
 #define EVENT_LOOP_PERIOD_MS 1
 
 #define DB_URI_ENV "MONGO_URI"
-#define DEFAULT_DB_URI "mongodb://10.19.63.5/?serverSelectionTimeoutMS=2000"
+#define DEFAULT_DB_URI                                                                                                 \
+    "mongodb://10.19.63.5/?serverSelectionTimeoutMS=750&connectTimeoutMS=500&socketTimeoutMS=1000&waitQueueTimeoutMS=" \
+    "250&wTimeoutMS=750"
 #define SERVER_PORT_ENV "SERVER_PORT"
 #define DEFAULT_SERVER_PORT 8000
+#define HTTP_TRANSPORT_ENV "HTTP_TRANSPORT"
+#define DEFAULT_HTTP_TRANSPORT "uwebsockets"
+#define HTTP_MAX_CONNECTIONS_ENV "HTTP_MAX_CONNECTIONS"
+#define DEFAULT_HTTP_MAX_CONNECTIONS 512
+#define HTTP_MAX_CONNECTIONS_PER_PEER_ENV "HTTP_MAX_CONNECTIONS_PER_PEER"
+#define DEFAULT_HTTP_MAX_CONNECTIONS_PER_PEER 64
 #define DB_NAME "creature_server"
 #define CREATURES_COLLECTION "creatures"
 #define ANIMATIONS_COLLECTION "animations"

@@ -30,6 +30,11 @@ class Configuration {
         RTP    ///< Stream audio via RTP multicast
     };
 
+    enum class HttpTransport {
+        Oatpp,
+        UWebSockets,
+    };
+
     /** CommandLine class is allowed to modify configuration settings */
     friend class CommandLine;
 
@@ -40,6 +45,12 @@ class Configuration {
 
     /** @return MongoDB connection URI string */
     std::string getMongoURI() const;
+
+    /** @return HTTP/WebSocket transport selected once at process startup. */
+    HttpTransport getHttpTransport() const;
+
+    uint32_t getHttpMaxConnections() const;
+    uint32_t getHttpMaxConnectionsPerPeer() const;
 
     /** @return Stable exact native output device name, if configured. */
     std::optional<std::string> getSoundDeviceName() const;
@@ -116,6 +127,12 @@ class Configuration {
     /** @param _mongoURI MongoDB connection URI */
     void setMongoURI(std::string _mongoURI);
 
+    /** @param _httpTransport HTTP/WebSocket transport selected for this process. */
+    void setHttpTransport(HttpTransport _httpTransport);
+
+    void setHttpMaxConnections(uint32_t _maximum);
+    void setHttpMaxConnectionsPerPeer(uint32_t _maximum);
+
     void setSoundDeviceName(std::string _soundDeviceName);
     void setDialogGainDb(float _dialogGainDb);
     void setBgmGainDb(float _bgmGainDb);
@@ -191,6 +208,11 @@ class Configuration {
 
     /** MongoDB connection URI, defaults to value in config.h */
     std::string mongoURI = DEFAULT_DB_URI;
+
+    /** HTTP/WebSocket server implementation. oat++ remains available as the rollback transport. */
+    HttpTransport httpTransport = HttpTransport::UWebSockets;
+    uint32_t httpMaxConnections = DEFAULT_HTTP_MAX_CONNECTIONS;
+    uint32_t httpMaxConnectionsPerPeer = DEFAULT_HTTP_MAX_CONNECTIONS_PER_PEER;
 
     // Audio configuration
 

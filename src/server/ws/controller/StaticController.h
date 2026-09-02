@@ -11,6 +11,7 @@
 #include "Version.h"
 
 #include "server/metrics/counters.h"
+#include "server/transport/ApiDocumentation.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 
@@ -39,8 +40,8 @@ class StaticController : public oatpp::web::server::api::ApiController, public H
                                "  </head>"
                                "  <body>"
                                "    <h1>April's Creature Workshop</h1>"
-                               "    <p>This is the server that controls everything. <a href='swagger/ui'>Checkout "
-                               "the Swagger-UI page</a>!</p>"
+                               "    <p>This is the server that controls everything. <a href='/api/docs'>Browse "
+                               "the API</a>!</p>"
                                "  </body>"
                                "</html>";
             auto response = createResponse(Status::CODE_200, html);
@@ -65,6 +66,32 @@ class StaticController : public oatpp::web::server::api::ApiController, public H
     ENDPOINT("GET", "api/v1/health", health, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/health", "GET", "api/v1/health", "health", "StaticController", request,
                            [&](const auto &span) { return okStatus(span, Status::CODE_200, "Server is operational"); });
+    }
+
+    ENDPOINT("GET", "/api/docs", apiDocs, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/docs", "GET", "/api/docs", "apiDocs", "StaticController", request, [&](const auto &span) {
+                auto response = createResponse(Status::CODE_200, oatpp::String(transport::apiBrowserHtml().data(),
+                                                                               transport::apiBrowserHtml().size()));
+                response->putHeader(Header::CONTENT_TYPE, "text/html; charset=utf-8");
+                response->putHeader("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; "
+                                                               "script-src 'unsafe-inline'; connect-src 'self'");
+                if (span)
+                    span->setHttpStatus(200);
+                return response;
+            });
+    }
+
+    ENDPOINT("GET", "/api/openapi.json", openApi, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/openapi.json", "GET", "/api/openapi.json", "openApi", "StaticController", request,
+                           [&](const auto &span) {
+                               const auto &document = transport::openApiDocument();
+                               auto response = createResponse(Status::CODE_200, oatpp::String(document));
+                               response->putHeader(Header::CONTENT_TYPE, "application/json; charset=utf-8");
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return response;
+                           });
     }
 };
 

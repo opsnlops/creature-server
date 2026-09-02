@@ -33,12 +33,7 @@ template <typename T> Result<T> fixtureReadError(const std::shared_ptr<Operation
     return Result<T>{error};
 }
 
-} // namespace
-
-Result<std::vector<DmxFixture>> DmxFixtureService::getAllFixtures(std::shared_ptr<RequestSpan> parentSpan) {
-    auto span =
-        observability ? observability->createOperationSpan("DmxFixtureService.getAllFixtures", parentSpan) : nullptr;
-
+Result<std::vector<DmxFixture>> getAllFixturesWithSpan(const std::shared_ptr<OperationSpan> &span) {
     if (!db) {
         return fixtureReadError<std::vector<DmxFixture>>(
             span, ServerError(ServerError::InternalError, "Database unavailable"));
@@ -56,14 +51,10 @@ Result<std::vector<DmxFixture>> DmxFixtureService::getAllFixtures(std::shared_pt
     return Result<std::vector<DmxFixture>>{fixtures};
 }
 
-Result<DmxFixture> DmxFixtureService::getFixture(const fixtureId_t &fixtureId,
-                                                 std::shared_ptr<RequestSpan> parentSpan) {
-    auto span =
-        observability ? observability->createOperationSpan("DmxFixtureService.getFixture", parentSpan) : nullptr;
+Result<DmxFixture> getFixtureWithSpan(const fixtureId_t &fixtureId, const std::shared_ptr<OperationSpan> &span) {
     if (span) {
         span->setAttribute("fixture.id", fixtureId);
     }
-
     if (fixtureId.empty()) {
         return fixtureReadError<DmxFixture>(span, ServerError(ServerError::InvalidData, "fixtureId is required"));
     }
@@ -87,6 +78,36 @@ Result<DmxFixture> DmxFixtureService::getFixture(const fixtureId_t &fixtureId,
         span->setSuccess();
     }
     return Result<DmxFixture>{fixture};
+}
+
+} // namespace
+
+Result<std::vector<DmxFixture>> DmxFixtureService::getAllFixtures(std::shared_ptr<RequestSpan> parentSpan) {
+    auto span =
+        observability ? observability->createOperationSpan("DmxFixtureService.getAllFixtures", parentSpan) : nullptr;
+
+    return getAllFixturesWithSpan(span);
+}
+
+Result<std::vector<DmxFixture>>
+DmxFixtureService::getAllFixturesFromOperation(std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = observability ? observability->createChildOperationSpan("DmxFixtureService.getAllFixtures", parentSpan)
+                              : nullptr;
+    return getAllFixturesWithSpan(span);
+}
+
+Result<DmxFixture> DmxFixtureService::getFixture(const fixtureId_t &fixtureId,
+                                                 std::shared_ptr<RequestSpan> parentSpan) {
+    auto span =
+        observability ? observability->createOperationSpan("DmxFixtureService.getFixture", parentSpan) : nullptr;
+    return getFixtureWithSpan(fixtureId, span);
+}
+
+Result<DmxFixture> DmxFixtureService::getFixtureFromOperation(const fixtureId_t &fixtureId,
+                                                              std::shared_ptr<OperationSpan> parentSpan) {
+    auto span =
+        observability ? observability->createChildOperationSpan("DmxFixtureService.getFixture", parentSpan) : nullptr;
+    return getFixtureWithSpan(fixtureId, span);
 }
 
 } // namespace creatures::ws

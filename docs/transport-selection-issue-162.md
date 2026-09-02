@@ -6,6 +6,13 @@ Creature Server will productionize **uWebSockets 20.79.0** as the replacement
 HTTP/WebSocket transport for oat++. The comparison phase is complete; the
 production migration will be planned separately.
 
+The production migration is specified in
+[`uwebsockets-productionization-plan.md`](uwebsockets-productionization-plan.md).
+Implementation is proceeding incrementally with uWebSockets as the startup
+default for deployable test builds. `--http-transport oatpp` or
+`HTTP_TRANSPORT=oatpp` selects the compiled rollback transport without changing
+the package or database.
+
 This decision assumes Creature Server's actual threat and deployment model:
 the process controls animatronics on a trusted LAN, has no external
 authentication proxy, and keeps its timing-critical 1 ms event loop separate

@@ -71,13 +71,16 @@ Result<json> Database::getCreatureJson(const creatureId_t &creatureId,
         recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
         return Result<json>{err};
     }
-    auto collection = collectionResult.getValue().value();
+    auto collectionLease = collectionResult.getValue().value();
+    auto &collection = collectionLease->collection();
 
     std::shared_ptr<OperationSpan> mongoSpan;
     try {
         mongoSpan = creatures::observability->createChildOperationSpan("getCreatureJson.mongoQuery", dbSpan);
         auto query = document{} << "id" << creatureId << finalize;
-        auto maybe_result = collection.find_one(query.view());
+        mongocxx::options::find readOptions;
+        mongo::applyOperationDeadline(readOptions);
+        auto maybe_result = collection.find_one(query.view(), readOptions);
         if (mongoSpan)
             mongoSpan->setSuccess();
 

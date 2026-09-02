@@ -20,6 +20,8 @@
 #include <mongocxx/cursor.hpp>
 #include <mongocxx/exception/bulk_write_exception.hpp>
 #include <mongocxx/instance.hpp>
+#include <mongocxx/options/count.hpp>
+#include <mongocxx/options/find.hpp>
 #include <mongocxx/pool.hpp>
 
 #pragma GCC diagnostic pop
@@ -38,6 +40,7 @@ using json = nlohmann::json;
 #include "model/Stage.h"
 #include "model/Storyboard.h"
 #include "model/Track.h"
+#include "server/config/MongoUri.h"
 #include "server/namespace-stuffs.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
@@ -342,10 +345,22 @@ class Database {
     static Result<bool> checkJsonField(const nlohmann::json &jsonObj, const std::string &fieldName);
 
   private:
+    class CollectionLease {
+      public:
+        CollectionLease(mongocxx::pool::entry client, const std::string &collectionName);
+
+        mongocxx::collection &collection();
+
+      private:
+        // Keep the pool entry alive for at least as long as the collection handle.
+        mongocxx::pool::entry client;
+        mongocxx::collection collectionHandle;
+    };
+
     std::string mongoURI;
     mongocxx::pool mongoPool;
 
-    Result<mongocxx::collection> getCollection(const std::string &collectionName);
+    Result<std::shared_ptr<CollectionLease>> getCollection(const std::string &collectionName);
 
     static Result<creatures::Creature> creatureFromJson(json creatureJson,
                                                         std::shared_ptr<OperationSpan> parentSpan = nullptr);

@@ -22,6 +22,10 @@ project(creature-server
         LANGUAGES C CXX)
 
 option(CREATURE_BUILD_UWS_OTEL_GATE "Build the uWebSockets OTel/Mongo integration gate" OFF)
+option(CREATURE_ENABLE_UWS_TRANSPORT "Build the opt-in production uWebSockets migration transport" ON)
+option(CREATURE_RUN_UWS_LIVE_GATE "Register the production uWebSockets black-box lifecycle gate" OFF)
+set(CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE "" CACHE STRING
+    "Loopback interface name used by the production uWebSockets live gate (for example lo0 or lo)")
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
@@ -45,6 +49,10 @@ add_custom_target(check-neutral-framework-boundary ALL
 set(PACKAGE_AUTHOR "April White")
 
 find_package(PkgConfig REQUIRED)
+# Resolve the imported OpenSSL targets before dependency subprojects populate
+# similarly named cache variables. The server links OpenSSL for audio-cache
+# hashing even though the LAN uWebSockets transport itself is built without TLS.
+find_package(OpenSSL REQUIRED)
 
 set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
 
@@ -103,6 +111,34 @@ endif()
 #This project uses threads
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
+
+if(CREATURE_ENABLE_UWS_TRANSPORT OR CREATURE_BUILD_UWS_OTEL_GATE)
+    FetchContent_Declare(
+        uwebsockets
+        GIT_REPOSITORY https://github.com/uNetworking/uWebSockets.git
+        GIT_TAG v20.79.0
+        GIT_SHALLOW TRUE
+        GIT_SUBMODULES uSockets
+        GIT_SUBMODULES_RECURSE FALSE
+    )
+    FetchContent_MakeAvailable(uwebsockets)
+
+    file(
+        GLOB USOCKETS_SOURCES CONFIGURE_DEPENDS
+        "${uwebsockets_SOURCE_DIR}/uSockets/src/*.c"
+        "${uwebsockets_SOURCE_DIR}/uSockets/src/eventing/*.c"
+        "${uwebsockets_SOURCE_DIR}/uSockets/src/crypto/*.c"
+        "${uwebsockets_SOURCE_DIR}/uSockets/src/io_uring/*.c"
+    )
+    add_library(uSockets STATIC ${USOCKETS_SOURCES})
+    target_include_directories(uSockets SYSTEM PUBLIC "${uwebsockets_SOURCE_DIR}/uSockets/src")
+    target_compile_definitions(uSockets PRIVATE LIBUS_NO_SSL)
+
+    add_library(creature_uwebsockets INTERFACE)
+    target_include_directories(creature_uwebsockets SYSTEM INTERFACE "${uwebsockets_SOURCE_DIR}/src")
+    target_compile_definitions(creature_uwebsockets INTERFACE UWS_NO_ZLIB)
+    target_link_libraries(creature_uwebsockets INTERFACE uSockets Threads::Threads)
+endif()
 
 #Why are UUIDs so hard in 2025 ?
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
@@ -378,6 +414,9 @@ add_custom_target(deps_only DEPENDS
         gtest_main
         gmock_main
 )
+if(TARGET uSockets)
+    add_dependencies(deps_only uSockets)
+endif()
 
 #Set up a base64 encoder / decoder
 set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
@@ -417,9 +456,6 @@ else()
     message(FATAL_ERROR "Native audio output is only implemented for Linux and macOS")
 endif()
 
-#OpenSSL for SHA - 256 hashing in audio cache
-find_package(OpenSSL REQUIRED)
-
 #libcurl for HTTP client(ElevenLabs REST API)
 find_package(CURL REQUIRED)
 
@@ -449,6 +485,14 @@ message(STATUS "Using libmp3lame: ${MP3LAME_LIBRARIES}")
 #Our source files. CONFIGURE_DEPENDS so adding a new .cpp in an existing
 #dir doesn't require editing this file (which would bust the Docker dep cache
 #per issue #18). Adding a brand-new src/server/X/ dir still needs a glob line.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/docs/transport-route-manifest.json")
+file(READ "${CMAKE_SOURCE_DIR}/docs/transport-route-manifest.json" ROUTE_MANIFEST_JSON)
+configure_file(
+        "${CMAKE_SOURCE_DIR}/cmake/TransportRouteManifest.h.in"
+        "${CMAKE_BINARY_DIR}/TransportRouteManifest.h"
+        @ONLY
+)
 file(GLOB serverFiles CONFIGURE_DEPENDS
         src/util/*
         src/exception/*
@@ -469,6 +513,7 @@ file(GLOB serverFiles CONFIGURE_DEPENDS
         src/server/stage/*
         src/server/storage/*
         src/server/storyboard/*
+        src/server/transport/*
         src/server/voice/*
         src/server/watchdog/*
         src/model/*
@@ -668,6 +713,9 @@ add_executable(creature-server
 )
 
 target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
+if(CREATURE_ENABLE_UWS_TRANSPORT)
+    target_compile_definitions(creature-server PRIVATE CREATURE_HAS_UWEBSOCKETS_TRANSPORT)
+endif()
 add_dependencies(creature-server check-neutral-framework-boundary)
 if(ALSA_FOUND)
     target_compile_definitions(creature-server PRIVATE CREATURE_HAS_ALSA=1)
@@ -715,6 +763,9 @@ target_link_libraries(creature-server
         ${MONGO_SYSTEM_LIBS}
         ${AUDIO_PLATFORM_LIBRARIES}
 )
+if(CREATURE_ENABLE_UWS_TRANSPORT)
+    target_link_libraries(creature-server PRIVATE creature_uwebsockets)
+endif()
 
 install(TARGETS creature-server
         COMPONENT creature-server
@@ -742,12 +793,56 @@ add_test(
 # and is therefore not run implicitly by CTest. Its protocol harness still has
 # always-safe self-tests so framing bugs in the oracle itself are caught.
 find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/transport-route-manifest.py)
+    add_custom_target(check-transport-route-manifest ALL
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/scripts/transport-route-manifest.py
+            --source-root ${CMAKE_SOURCE_DIR}
+            --check
+        COMMENT "Checking the frozen oat++ transport route manifest"
+        VERBATIM
+    )
+    if(TARGET creature-server)
+        add_dependencies(creature-server check-transport-route-manifest)
+    endif()
+    add_test(
+        NAME transport-route-manifest
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/scripts/transport-route-manifest.py
+            --source-root ${CMAKE_SOURCE_DIR}
+            --check
+    )
+endif()
 if(Python3_Interpreter_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/tests/transport/transport_contract_test.py)
     add_test(
         NAME transport-contract-harness
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tests/transport/transport_contract_test.py
             --self-test
+    )
+endif()
+if(CREATURE_RUN_UWS_LIVE_GATE)
+    if(NOT CREATURE_ENABLE_UWS_TRANSPORT)
+        message(FATAL_ERROR "CREATURE_RUN_UWS_LIVE_GATE requires CREATURE_ENABLE_UWS_TRANSPORT")
+    endif()
+    if(NOT Python3_Interpreter_FOUND)
+        message(FATAL_ERROR "CREATURE_RUN_UWS_LIVE_GATE requires Python 3")
+    endif()
+    if(CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE STREQUAL "")
+        message(FATAL_ERROR
+            "Set CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE to the loopback interface name (lo0 on macOS, lo on Linux)")
+    endif()
+    add_test(
+        NAME uwebsockets-production-live-gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tests/transport/uwebsockets_production_gate_test.py
+            --server $<TARGET_FILE:creature-server>
+            --network-device ${CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE}
+    )
+    set_tests_properties(uwebsockets-production-live-gate PROPERTIES
+        TIMEOUT 30
+        LABELS "transport;uwebsockets;live"
+        RUN_SERIAL TRUE
     )
 endif()
 
@@ -801,6 +896,19 @@ add_executable(creature-server-test
         tests/server/storyboard/StoryboardParse_test.cpp
         tests/server/storage/Storage_test.cpp
         tests/server/storage/StoragePublishers_test.cpp
+        tests/server/config/MongoUri_test.cpp
+        src/server/config/MongoUri.cpp
+        tests/server/config/HttpTransport_test.cpp
+        tests/server/transport/ApiDocumentation_test.cpp
+        src/server/transport/ApiDocumentation.cpp
+        tests/server/transport/ApplicationExecutor_test.cpp
+        src/server/transport/ApplicationExecutor.cpp
+        tests/server/transport/CreatureReadHandlers_test.cpp
+        src/server/transport/CreatureReadHandlers.cpp
+        tests/server/transport/FixtureReadHandlers_test.cpp
+        src/server/transport/FixtureReadHandlers.cpp
+        tests/server/transport/RequestRegistry_test.cpp
+        src/server/transport/RequestRegistry.cpp
         src/server/storage/Storage.cpp
         src/server/config/Configuration.cpp
         tests/server/FakeWebsocketUtils.cpp

@@ -19,9 +19,12 @@ class DmxFixtureService {
 
   public:
     static Result<std::vector<DmxFixture>> getAllFixtures(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<std::vector<DmxFixture>> getAllFixturesFromOperation(std::shared_ptr<OperationSpan> parentSpan);
 
     static Result<DmxFixture> getFixture(const fixtureId_t &fixtureId,
                                          std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<DmxFixture> getFixtureFromOperation(const fixtureId_t &fixtureId,
+                                                      std::shared_ptr<OperationSpan> parentSpan);
 
     static Result<DmxFixture> upsertFixture(const std::string &jsonFixture,
                                             std::shared_ptr<RequestSpan> parentSpan = nullptr);

@@ -96,10 +96,12 @@ Result<std::vector<creatures::Creature>> Database::getAllCreatures(creatures::So
             }
             return Result<std::vector<creatures::Creature>>{error};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("getAllCreatures.mongoQuery", dbSpan);
         mongocxx::options::find opts;
+        mongo::applyOperationDeadline(opts);
         opts.sort(sort_doc.view());
         mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
 
