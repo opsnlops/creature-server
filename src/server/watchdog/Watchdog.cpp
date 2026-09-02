@@ -20,9 +20,20 @@ Watchdog::Watchdog(const std::shared_ptr<Database> &db_) : db(db_) {
     logger->info("Watchdog created");
 }
 
+Watchdog::~Watchdog() {
+    shutdown();
+    logger->info("Watchdog destroyed");
+}
+
 void Watchdog::start() {
     logger->info("starting the watchdog thread");
     StoppableThread::start();
+}
+
+void Watchdog::shutdown() {
+    StoppableThread::shutdown();
+    sleepCondition.notify_all();
+    join();
 }
 
 void Watchdog::run() {
@@ -41,8 +52,11 @@ void Watchdog::run() {
             logger->error("Database healthcheck failed: {}", e.what());
         }
 
-        // Sleep for a bit
-        std::this_thread::sleep_for(std::chrono::seconds(WATCHDOG_SLEEP_SECONDS));
+        // Sleep interruptibly so shutdown is bounded by an in-flight Mongo
+        // operation rather than an additional watchdog period.
+        std::unique_lock lock(sleepMutex);
+        sleepCondition.wait_for(lock, std::chrono::seconds(WATCHDOG_SLEEP_SECONDS),
+                                [this] { return stop_requested.load(); });
     }
 }
 

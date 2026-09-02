@@ -103,7 +103,8 @@ Result<creatures::Storyboard> Database::upsertStoryboard(const std::string &stor
             warn(errorMessage);
             return Result<Storyboard>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
         if (collectionSpan)
             collectionSpan->setSuccess();
 
@@ -187,7 +188,8 @@ Result<void> Database::deleteStoryboard(const storyboardId_t &storyboardId,
             recordSpanError(span, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("deleteStoryboard.mongoQuery", span);
         bsoncxx::builder::stream::document filter_builder;

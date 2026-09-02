@@ -20,6 +20,7 @@
 #include "util/JsonParser.h"
 
 #include "server/metrics/counters.h"
+#include "server/transport/CreatureReadHandlers.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/service/CreatureService.h"
@@ -58,14 +59,11 @@ class CreatureController : public oatpp::web::server::api::ApiController,
     ENDPOINT("GET", "api/v1/creature", getAllCreatures, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
         return runEndpoint("GET /api/v1/creature", "GET", "api/v1/creature", "getAllCreatures", "CreatureController",
                            request, [&](const auto &span) {
-                               const auto result = m_creatureService.getAllCreatures(span);
-                               if (!result.isSuccess())
-                                   return bailFromServerError(span, result.getError().value());
-                               const auto items = result.getValue().value();
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return jsonResponse(span, Status::CODE_200,
-                                                   api::listResponseToJson(items, api::creatureResponseToJson));
+                               auto operationSpan = creatures::observability
+                                                        ? creatures::observability->createChildOperationSpan(
+                                                              "CreatureController.getAllCreatures.handler", span)
+                                                        : nullptr;
+                               return preparedResponse(span, transport::listCreatures(operationSpan));
                            });
     }
 
@@ -81,21 +79,15 @@ class CreatureController : public oatpp::web::server::api::ApiController,
     }
     ENDPOINT("GET", "api/v1/creature/{creatureId}", getCreature, PATH(String, creatureId),
              REQUEST(std::shared_ptr<IncomingRequest>, request)) {
-        return runEndpoint("GET /api/v1/creature/{creatureId}", "GET", "api/v1/creature/" + std::string(creatureId),
-                           "getCreature", "CreatureController", request, [&](const auto &span) {
-                               if (!creatureId || !isUuidShape(std::string(creatureId))) {
-                                   return bailHttp(span, Status::CODE_400, "creatureId must be a UUID");
-                               }
-                               if (span)
-                                   span->setAttribute("creature.id", std::string(creatureId));
-                               const auto result = m_creatureService.getCreature(std::string(creatureId), span);
-                               if (!result.isSuccess())
-                                   return bailFromServerError(span, result.getError().value());
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return jsonResponse(span, Status::CODE_200,
-                                                   api::creatureResponseToJson(result.getValue().value()));
-                           });
+        return runEndpoint(
+            "GET /api/v1/creature/{creatureId}", "GET", "api/v1/creature/" + std::string(creatureId), "getCreature",
+            "CreatureController", request, [&](const auto &span) {
+                auto operationSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                                    "CreatureController.getCreature.handler", span)
+                                                              : nullptr;
+                return preparedResponse(
+                    span, transport::getCreature(creatureId ? std::string(creatureId) : std::string{}, operationSpan));
+            });
     }
 
     ENDPOINT_INFO(exportCreature) {

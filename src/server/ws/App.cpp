@@ -140,6 +140,16 @@ void App::shutdown() {
         cafe->requestShutdown();
     }
 
+    // Stop accepting work and interrupt the blocking Server::run() call before
+    // joining the transport thread. This keeps the legacy transport inside the
+    // same shutdown ownership contract as uWebSockets during migration.
+    {
+        OATPP_COMPONENT(std::shared_ptr<oatpp::network::ServerConnectionProvider>, connectionProvider);
+        OATPP_COMPONENT(std::shared_ptr<oatpp::network::ConnectionHandler>, connectionHandler, "rest");
+        connectionProvider->stop();
+        connectionHandler->stop();
+    }
+
     // Call the base class shutdown
     StoppableThread::shutdown();
 
@@ -155,6 +165,9 @@ void App::shutdown() {
         messageLoopThread.join();
         internalLogger->info("Message loop thread finished");
     }
+
+    join();
+    internalLogger->info("Web server thread finished");
 }
 
 App::~App() {

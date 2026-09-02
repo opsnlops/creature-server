@@ -16,6 +16,7 @@
 #include "server/config.h"
 #include "server/database.h"
 #include "server/metrics/counters.h"
+#include "server/transport/FixtureReadHandlers.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
 #include "server/ws/service/DmxFixtureService.h"
@@ -52,14 +53,11 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
         return runEndpoint("GET /api/v1/fixture", "GET", "api/v1/fixture", "getAllFixtures", "DmxFixtureController",
                            request, [&](const auto &span) {
-                               const auto result = m_service.getAllFixtures(span);
-                               if (!result.isSuccess())
-                                   return bailFromServerError(span, result.getError().value());
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return jsonResponse(
-                                   span, Status::CODE_200,
-                                   api::listResponseToJson(result.getValue().value(), dmxFixtureToJson));
+                               auto operationSpan = creatures::observability
+                                                        ? creatures::observability->createChildOperationSpan(
+                                                              "DmxFixtureController.getAllFixtures.handler", span)
+                                                        : nullptr;
+                               return preparedResponse(span, transport::listFixtures(operationSpan));
                            });
     }
 
@@ -73,20 +71,15 @@ class DmxFixtureController : public oatpp::web::server::api::ApiController,
     }
     ENDPOINT("GET", "api/v1/fixture/{fixtureId}", getFixture, PATH(String, fixtureId),
              REQUEST(std::shared_ptr<oatpp::web::protocol::http::incoming::Request>, request)) {
-        return runEndpoint("GET /api/v1/fixture/{fixtureId}", "GET", "api/v1/fixture/" + std::string(fixtureId),
-                           "getFixture", "DmxFixtureController", request, [&](const auto &span) {
-                               if (span)
-                                   span->setAttribute("fixture.id", std::string(fixtureId));
-                               if (!fixtureId || !isUuidShape(std::string(fixtureId))) {
-                                   return bailHttp(span, Status::CODE_400, "fixtureId must be a UUID");
-                               }
-                               const auto result = m_service.getFixture(std::string(fixtureId), span);
-                               if (!result.isSuccess())
-                                   return bailFromServerError(span, result.getError().value());
-                               if (span)
-                                   span->setHttpStatus(200);
-                               return jsonResponse(span, Status::CODE_200, dmxFixtureToJson(result.getValue().value()));
-                           });
+        return runEndpoint(
+            "GET /api/v1/fixture/{fixtureId}", "GET", "api/v1/fixture/" + std::string(fixtureId), "getFixture",
+            "DmxFixtureController", request, [&](const auto &span) {
+                auto operationSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                                    "DmxFixtureController.getFixture.handler", span)
+                                                              : nullptr;
+                return preparedResponse(
+                    span, transport::getFixture(fixtureId ? std::string(fixtureId) : std::string{}, operationSpan));
+            });
     }
 
     ENDPOINT_INFO(upsertFixture) {

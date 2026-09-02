@@ -1,0 +1,770 @@
+{
+  "schema_version": 1,
+  "source_framework": "oatpp",
+  "explicit_route_count": 109,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/",
+      "handler": "root",
+      "controller": "StaticController",
+      "source": "src/server/ws/controller/StaticController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs",
+      "handler": "apiDocs",
+      "controller": "StaticController",
+      "source": "src/server/ws/controller/StaticController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi.json",
+      "handler": "openApi",
+      "controller": "StaticController",
+      "source": "src/server/ws/controller/StaticController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation",
+      "handler": "listAllAnimations",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation",
+      "handler": "upsertAnimation",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/ad-hoc",
+      "handler": "listAdHocAnimations",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/ad-hoc",
+      "handler": "createAdHocAnimation",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}",
+      "handler": "getExchange",
+      "controller": "StreamingAdHocController",
+      "source": "src/server/ws/controller/StreamingAdHocController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.mp3",
+      "handler": "getExchangeAudioMp3",
+      "controller": "StreamingAdHocController",
+      "source": "src/server/ws/controller/StreamingAdHocController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.ogg",
+      "handler": "getExchangeAudioOgg",
+      "controller": "StreamingAdHocController",
+      "source": "src/server/ws/controller/StreamingAdHocController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.wav",
+      "handler": "getExchangeAudioWav",
+      "controller": "StreamingAdHocController",
+      "source": "src/server/ws/controller/StreamingAdHocController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/ad-hoc-stream/exchanges",
+      "handler": "listExchanges",
+      "controller": "StreamingAdHocController",
+      "source": "src/server/ws/controller/StreamingAdHocController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/ad-hoc-stream/finish",
+      "handler": "finishStreamingAdHoc",
+      "controller": "StreamingAdHocController",
+      "source": "src/server/ws/controller/StreamingAdHocController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/ad-hoc-stream/start",
+      "handler": "startStreamingAdHoc",
+      "controller": "StreamingAdHocController",
+      "source": "src/server/ws/controller/StreamingAdHocController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/ad-hoc-stream/text",
+      "handler": "addStreamingAdHocText",
+      "controller": "StreamingAdHocController",
+      "source": "src/server/ws/controller/StreamingAdHocController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/ad-hoc/play",
+      "handler": "playPreparedAdHocAnimation",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/ad-hoc/prepare",
+      "handler": "prepareAdHocAnimation",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/ad-hoc/{animationId}",
+      "handler": "getAdHocAnimation",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog",
+      "handler": "submitDialog",
+      "controller": "DialogController",
+      "source": "src/server/ws/controller/DialogController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog/music",
+      "handler": "submitDialogMusic",
+      "controller": "DialogMusicController",
+      "source": "src/server/ws/controller/DialogMusicController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/dialog/music/generated/{filename}",
+      "handler": "getGeneratedMusicMp3",
+      "controller": "DialogMusicController",
+      "source": "src/server/ws/controller/DialogMusicController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog/music/generated/{generationId}/promote",
+      "handler": "promoteGeneratedMusic",
+      "controller": "DialogMusicController",
+      "source": "src/server/ws/controller/DialogMusicController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/dialog/preview/audio/{cache_key}/{filename}",
+      "handler": "getPreviewAudio",
+      "controller": "DialogPreviewController",
+      "source": "src/server/ws/controller/DialogPreviewController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog/preview/lookup",
+      "handler": "lookupPreview",
+      "controller": "DialogPreviewController",
+      "source": "src/server/ws/controller/DialogPreviewController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog/preview/meta",
+      "handler": "submitPreviewMeta",
+      "controller": "DialogPreviewController",
+      "source": "src/server/ws/controller/DialogPreviewController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog/preview/multichannel",
+      "handler": "submitPreviewMultichannel",
+      "controller": "DialogPreviewController",
+      "source": "src/server/ws/controller/DialogPreviewController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/dialog/preview/share/{cache_key}/{filename}",
+      "handler": "getPreviewShareable",
+      "controller": "DialogPreviewController",
+      "source": "src/server/ws/controller/DialogPreviewController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/dialog/script",
+      "handler": "listDialogScripts",
+      "controller": "DialogScriptController",
+      "source": "src/server/ws/controller/DialogScriptController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog/script",
+      "handler": "createDialogScript",
+      "controller": "DialogScriptController",
+      "source": "src/server/ws/controller/DialogScriptController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog/script/validate",
+      "handler": "validateDialogScript",
+      "controller": "DialogScriptController",
+      "source": "src/server/ws/controller/DialogScriptController.h"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/animation/dialog/script/{scriptId}",
+      "handler": "deleteDialogScript",
+      "controller": "DialogScriptController",
+      "source": "src/server/ws/controller/DialogScriptController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/dialog/script/{scriptId}",
+      "handler": "getDialogScript",
+      "controller": "DialogScriptController",
+      "source": "src/server/ws/controller/DialogScriptController.h"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/animation/dialog/script/{scriptId}",
+      "handler": "updateDialogScript",
+      "controller": "DialogScriptController",
+      "source": "src/server/ws/controller/DialogScriptController.h"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/animation/dialog/script/{scriptId}/music",
+      "handler": "clearDialogBackgroundMusic",
+      "controller": "DialogScriptController",
+      "source": "src/server/ws/controller/DialogScriptController.h"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/animation/dialog/script/{scriptId}/voice",
+      "handler": "clearAcceptedVoice",
+      "controller": "DialogScriptController",
+      "source": "src/server/ws/controller/DialogScriptController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog/voice/accept",
+      "handler": "acceptVoiceTake",
+      "controller": "DialogVoiceController",
+      "source": "src/server/ws/controller/DialogVoiceController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/generate-lipsync",
+      "handler": "generateLipSyncForAnimation",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/interrupt",
+      "handler": "interruptAnimation",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/play",
+      "handler": "playStoredAnimation",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/animation/{animationId}",
+      "handler": "deleteAnimation",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/{animationId}",
+      "handler": "getAnimation",
+      "controller": "AnimationController",
+      "source": "src/server/ws/controller/AnimationController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/{animationId}/rerender",
+      "handler": "rerenderAnimation",
+      "controller": "StageController",
+      "source": "src/server/ws/controller/StageController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/creature",
+      "handler": "getAllCreatures",
+      "controller": "CreatureController",
+      "source": "src/server/ws/controller/CreatureController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creature",
+      "handler": "upsertCreature",
+      "controller": "CreatureController",
+      "source": "src/server/ws/controller/CreatureController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creature/register",
+      "handler": "registerCreature",
+      "controller": "CreatureController",
+      "source": "src/server/ws/controller/CreatureController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creature/validate",
+      "handler": "validateCreatureConfig",
+      "controller": "CreatureController",
+      "source": "src/server/ws/controller/CreatureController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/creature/{creatureId}",
+      "handler": "getCreature",
+      "controller": "CreatureController",
+      "source": "src/server/ws/controller/CreatureController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/creature/{creatureId}/export",
+      "handler": "exportCreature",
+      "controller": "CreatureController",
+      "source": "src/server/ws/controller/CreatureController.h"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/creature/{creatureId}/idle",
+      "handler": "setIdleEnabled",
+      "controller": "CreatureController",
+      "source": "src/server/ws/controller/CreatureController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/cache-invalidate/ad-hoc-animation-list",
+      "handler": "invalidate_adhoc_animation_list",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/cache-invalidate/ad-hoc-sound-list",
+      "handler": "invalidate_adhoc_sound_list",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/cache-invalidate/animation",
+      "handler": "invalidate_animation",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/cache-invalidate/creature",
+      "handler": "invalidate_creature",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/cache-invalidate/dialog-script-list",
+      "handler": "invalidate_dialog_script_list",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/cache-invalidate/fixture",
+      "handler": "invalidate_fixture",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/cache-invalidate/playlist",
+      "handler": "invalidate_playlist",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/cache-invalidate/sound-list",
+      "handler": "invalidate_sound_list",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/cache-invalidate/stage-list",
+      "handler": "invalidate_stage_list",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/cache-invalidate/storyboard-list",
+      "handler": "invalidate_storyboard_list",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/debug/cache/audio/prune",
+      "handler": "prune_audio_cache",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/debug/playlist/update",
+      "handler": "test_playlist_updates",
+      "controller": "DebugController",
+      "source": "src/server/ws/controller/DebugController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fixture",
+      "handler": "getAllFixtures",
+      "controller": "DmxFixtureController",
+      "source": "src/server/ws/controller/DmxFixtureController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fixture",
+      "handler": "upsertFixture",
+      "controller": "DmxFixtureController",
+      "source": "src/server/ws/controller/DmxFixtureController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fixture/validate",
+      "handler": "validateFixtureConfig",
+      "controller": "DmxFixtureController",
+      "source": "src/server/ws/controller/DmxFixtureController.h"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/fixture/{fixtureId}",
+      "handler": "deleteFixture",
+      "controller": "DmxFixtureController",
+      "source": "src/server/ws/controller/DmxFixtureController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fixture/{fixtureId}",
+      "handler": "getFixture",
+      "controller": "DmxFixtureController",
+      "source": "src/server/ws/controller/DmxFixtureController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fixture/{fixtureId}/live",
+      "handler": "setFixtureLive",
+      "controller": "DmxFixtureController",
+      "source": "src/server/ws/controller/DmxFixtureController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fixture/{fixtureId}/pattern/preview",
+      "handler": "previewFixturePattern",
+      "controller": "DmxFixtureController",
+      "source": "src/server/ws/controller/DmxFixtureController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger",
+      "handler": "triggerFixturePattern",
+      "controller": "DmxFixtureController",
+      "source": "src/server/ws/controller/DmxFixtureController.h"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/fixture/{fixtureId}/universe",
+      "handler": "clearFixtureUniverse",
+      "controller": "DmxFixtureController",
+      "source": "src/server/ws/controller/DmxFixtureController.h"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/fixture/{fixtureId}/universe",
+      "handler": "setFixtureUniverse",
+      "controller": "DmxFixtureController",
+      "source": "src/server/ws/controller/DmxFixtureController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "handler": "health",
+      "controller": "StaticController",
+      "source": "src/server/ws/controller/StaticController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/job/{jobId}",
+      "handler": "getJob",
+      "controller": "JobController",
+      "source": "src/server/ws/controller/JobController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metric/counters",
+      "handler": "counters",
+      "controller": "MetricsController",
+      "source": "src/server/ws/controller/MetricsController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/playlist",
+      "handler": "getAllPlaylists",
+      "controller": "PlaylistController",
+      "source": "src/server/ws/controller/PlaylistController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/playlist",
+      "handler": "upsertPlaylist",
+      "controller": "PlaylistController",
+      "source": "src/server/ws/controller/PlaylistController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/playlist/id/{playlistId}",
+      "handler": "getPlaylist",
+      "controller": "PlaylistController",
+      "source": "src/server/ws/controller/PlaylistController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/playlist/start",
+      "handler": "startPlaylist",
+      "controller": "PlaylistController",
+      "source": "src/server/ws/controller/PlaylistController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/playlist/status",
+      "handler": "getAllPlaylistStatuses",
+      "controller": "PlaylistController",
+      "source": "src/server/ws/controller/PlaylistController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/playlist/status/{universe}",
+      "handler": "playlistStatus",
+      "controller": "PlaylistController",
+      "source": "src/server/ws/controller/PlaylistController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/playlist/stop",
+      "handler": "stopPlaylist",
+      "controller": "PlaylistController",
+      "source": "src/server/ws/controller/PlaylistController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sound",
+      "handler": "getAllSounds",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sound/ad-hoc",
+      "handler": "getAdHocSounds",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sound/ad-hoc/{filename}",
+      "handler": "getAdHocSound",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sound/generate-lipsync",
+      "handler": "generateLipSync",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sound/generate-lipsync/upload",
+      "handler": "generateLipSyncFromUpload",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sound/mp3/{filename}",
+      "handler": "getSoundMp3",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sound/play",
+      "handler": "playSound",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sound/provenance/{filename}",
+      "handler": "getSoundProvenance",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sound/shareable/{filename}",
+      "handler": "getShareableSound",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sound/{filename}",
+      "handler": "getSound",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sound/{filename}/metadata",
+      "handler": "getSoundMetadata",
+      "controller": "SoundController",
+      "source": "src/server/ws/controller/SoundController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/stage",
+      "handler": "listStages",
+      "controller": "StageController",
+      "source": "src/server/ws/controller/StageController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/stage",
+      "handler": "createStage",
+      "controller": "StageController",
+      "source": "src/server/ws/controller/StageController.h"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/stage/{stageId}",
+      "handler": "deleteStage",
+      "controller": "StageController",
+      "source": "src/server/ws/controller/StageController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/stage/{stageId}",
+      "handler": "getStage",
+      "controller": "StageController",
+      "source": "src/server/ws/controller/StageController.h"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/stage/{stageId}",
+      "handler": "updateStage",
+      "controller": "StageController",
+      "source": "src/server/ws/controller/StageController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/stage/{stageId}/animations",
+      "handler": "listStageAnimations",
+      "controller": "StageController",
+      "source": "src/server/ws/controller/StageController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/stage/{stageId}/rerender",
+      "handler": "rerenderStage",
+      "controller": "StageController",
+      "source": "src/server/ws/controller/StageController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/storyboard",
+      "handler": "listStoryboards",
+      "controller": "StoryboardController",
+      "source": "src/server/ws/controller/StoryboardController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/storyboard",
+      "handler": "createStoryboard",
+      "controller": "StoryboardController",
+      "source": "src/server/ws/controller/StoryboardController.h"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/storyboard/{storyboardId}",
+      "handler": "deleteStoryboard",
+      "controller": "StoryboardController",
+      "source": "src/server/ws/controller/StoryboardController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/storyboard/{storyboardId}",
+      "handler": "getStoryboard",
+      "controller": "StoryboardController",
+      "source": "src/server/ws/controller/StoryboardController.h"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/storyboard/{storyboardId}",
+      "handler": "updateStoryboard",
+      "controller": "StoryboardController",
+      "source": "src/server/ws/controller/StoryboardController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/stt/transcribe",
+      "handler": "transcribeAudio",
+      "controller": "SpeechToTextController",
+      "source": "src/server/ws/controller/SpeechToTextController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/voice",
+      "handler": "makeSoundFile",
+      "controller": "VoiceController",
+      "source": "src/server/ws/controller/VoiceController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/voice/list-available",
+      "handler": "getAllVoices",
+      "controller": "VoiceController",
+      "source": "src/server/ws/controller/VoiceController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/voice/subscription",
+      "handler": "getSubscriptionStatus",
+      "controller": "VoiceController",
+      "source": "src/server/ws/controller/VoiceController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/websocket",
+      "handler": "ws",
+      "controller": "WebSocketController",
+      "source": "src/server/ws/controller/WebSocketController.h"
+    }
+  ]
+}

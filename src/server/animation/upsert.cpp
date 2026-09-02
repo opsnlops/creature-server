@@ -96,7 +96,8 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
             recordSpanError(upsertSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<creatures::Animation>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
         if (collectionSpan)
             collectionSpan->setSuccess();
 
@@ -132,7 +133,9 @@ Result<creatures::Animation> Database::upsertAnimation(const std::string &animat
             if (anyMissing) {
                 auto lookupSpan =
                     creatures::observability->createChildOperationSpan("upsertAnimation.lookup-existing", upsertSpan);
-                auto existingDoc = collection.find_one(filter_builder.view());
+                mongocxx::options::find readOptions;
+                mongo::applyOperationDeadline(readOptions);
+                auto existingDoc = collection.find_one(filter_builder.view(), readOptions);
                 if (lookupSpan) {
                     lookupSpan->setAttribute("database.collection", ANIMATIONS_COLLECTION);
                     lookupSpan->setAttribute("database.operation", "find_one");
@@ -330,7 +333,8 @@ Result<void> Database::deleteAnimation(const animationId_t &animationId,
         recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
         return Result<void>{err};
     }
-    auto collection = collectionResult.getValue().value();
+    auto collectionLease = collectionResult.getValue().value();
+    auto &collection = collectionLease->collection();
 
     try {
         auto mongoSpan = creatures::observability->createChildOperationSpan("deleteAnimation.mongoQuery", dbSpan);
@@ -432,7 +436,8 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation &animatio
             recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("insertAdHocAnimation.mongoQuery", dbSpan);
         auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(createdAt.time_since_epoch());
@@ -483,10 +488,12 @@ Result<std::vector<AdHocAnimationRecord>> Database::listAdHocAnimations(std::sha
             recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<std::vector<AdHocAnimationRecord>>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("listAdHocAnimations.mongoQuery", dbSpan);
         mongocxx::options::find options;
+        mongo::applyOperationDeadline(options);
         bsoncxx::builder::stream::document sortDoc;
         sortDoc << "created_at" << -1;
         options.sort(sortDoc.view());
@@ -564,17 +571,20 @@ Result<creatures::Animation> Database::getAdHocAnimation(const animationId_t &an
             recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<creatures::Animation>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("getAdHocAnimation.mongoQuery", dbSpan);
         auto filterById = bsoncxx::builder::stream::document{} << "id" << animationId
                                                                << bsoncxx::builder::stream::finalize;
-        auto docOpt = collection.find_one(filterById.view());
+        mongocxx::options::find readOptions;
+        mongo::applyOperationDeadline(readOptions);
+        auto docOpt = collection.find_one(filterById.view(), readOptions);
         if (!docOpt) {
             // Fallback: older docs stored the id under metadata.animation_id only.
             auto filterByMetadataId = bsoncxx::builder::stream::document{} << "metadata.animation_id" << animationId
                                                                            << bsoncxx::builder::stream::finalize;
-            docOpt = collection.find_one(filterByMetadataId.view());
+            docOpt = collection.find_one(filterByMetadataId.view(), readOptions);
         }
         if (mongoSpan)
             mongoSpan->setSuccess();

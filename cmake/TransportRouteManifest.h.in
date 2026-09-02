@@ -1,0 +1,9 @@
+#pragma once
+
+#include <string_view>
+
+namespace creatures::transport::generated {
+
+inline constexpr std::string_view ROUTE_MANIFEST_JSON = R"ROUTES(@ROUTE_MANIFEST_JSON@)ROUTES";
+
+} // namespace creatures::transport::generated
