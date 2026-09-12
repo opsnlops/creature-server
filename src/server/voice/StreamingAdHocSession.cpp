@@ -325,10 +325,13 @@ Result<void> StreamingAdHocSession::start() {
         // Validate model supports streaming
         for (const auto &blocked : nonStreamingModels) {
             if (participant.modelId == blocked) {
-                return fail(
-                    ServerError(ServerError::InvalidData,
-                                fmt::format("Model '{}' does not support WebSocket streaming.", participant.modelId)),
-                    "UnsupportedVoiceModel");
+                // Name the creature: in a cast of several this is the whole
+                // diagnosis, and the world only sees the message.
+                return fail(ServerError(ServerError::InvalidData,
+                                        fmt::format("{}'s voice model '{}' does not support streaming; use a "
+                                                    "streaming-capable model such as eleven_turbo_v2_5",
+                                                    participant.name, participant.modelId)),
+                            "UnsupportedVoiceModel");
             }
         }
 
