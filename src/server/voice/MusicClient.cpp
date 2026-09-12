@@ -263,6 +263,7 @@ Result<MusicGenerationResult> MusicClient::generateInstrumental(const std::strin
 
     long httpCode = 0;
     const auto curlResult = call.perform(httpCode);
+    call.recordTimings(span);
     if (span) {
         span->setAttribute("http.response.status_code", static_cast<int64_t>(httpCode));
         span->setAttribute("http.response.body.size", static_cast<int64_t>(response.size()));

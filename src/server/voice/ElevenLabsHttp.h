@@ -1,9 +1,11 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -97,6 +99,49 @@ inline size_t appendToString(char *data, size_t size, size_t nmemb, void *userda
 
 /// RAII wrapper for an ElevenLabs HTTP call.
 ///
+/// Process-wide curl share handle: one pool of connections, DNS answers and
+/// TLS sessions for every ElevenLabs call in the process (issue #193).
+///
+/// Each ElevenLabsCall still gets its own easy handle — that's what keeps the
+/// call sites simple and independent — but without a share, cleaning that
+/// handle up closes its connection, so every streamed sentence paid a fresh
+/// TCP + TLS handshake to api.elevenlabs.io before the request was even sent:
+/// most of the ~240 ms floor under a short sentence. With the share, an easy
+/// handle borrows a warm connection from the pool and returns it on cleanup.
+///
+/// The share lives for the life of the process (deliberately never freed —
+/// easy handles in other threads may still reference it during static
+/// destruction). libcurl calls the lock callbacks from whichever thread is
+/// performing a transfer, hence one mutex per lock-data kind.
+inline CURLSH *sharedConnectionPool() {
+    struct Pool {
+        CURLSH *share{nullptr};
+        std::array<std::mutex, CURL_LOCK_DATA_LAST> locks;
+
+        static void lock(CURL *, curl_lock_data data, curl_lock_access, void *userdata) {
+            static_cast<Pool *>(userdata)->locks[static_cast<std::size_t>(data)].lock();
+        }
+        static void unlock(CURL *, curl_lock_data data, void *userdata) {
+            static_cast<Pool *>(userdata)->locks[static_cast<std::size_t>(data)].unlock();
+        }
+
+        Pool() {
+            share = curl_share_init();
+            if (!share) {
+                return;
+            }
+            curl_share_setopt(share, CURLSHOPT_LOCKFUNC, &Pool::lock);
+            curl_share_setopt(share, CURLSHOPT_UNLOCKFUNC, &Pool::unlock);
+            curl_share_setopt(share, CURLSHOPT_USERDATA, this);
+            curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
+            curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+            curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+        }
+    };
+    static Pool *const pool = new Pool();
+    return pool->share;
+}
+
 /// Owns the curl easy handle, the headers list, and (optionally) the MIME body —
 /// all freed in the destructor regardless of how the call site exits. Pre-wires
 /// the standard xi-api-key auth header and the request-id capture callback so
@@ -125,6 +170,11 @@ class ElevenLabsCall {
         curl_easy_setopt(curl_, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl_, CURLOPT_HEADERFUNCTION, &captureResponseHeader);
         curl_easy_setopt(curl_, CURLOPT_HEADERDATA, &responseHeaders_);
+        // Borrow a warm connection instead of opening one per call (#193).
+        if (CURLSH *pool = sharedConnectionPool()) {
+            curl_easy_setopt(curl_, CURLOPT_SHARE, pool);
+        }
+        curl_easy_setopt(curl_, CURLOPT_TCP_KEEPALIVE, 1L);
     }
 
     ~ElevenLabsCall() {
@@ -173,6 +223,31 @@ class ElevenLabsCall {
         httpCode = 0;
         curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &httpCode);
         return rc;
+    }
+
+    /// After perform(): stamp curl's phase timings on a span, so Honeycomb can
+    /// split a call into handshake, upstream processing and transfer instead
+    /// of one opaque duration (#193). `elevenlabs.http.new_connections` is the
+    /// proof of reuse: 0 means the call rode a pooled connection.
+    void recordTimings(const std::shared_ptr<OperationSpan> &span) const {
+        if (!span || !curl_) {
+            return;
+        }
+        const auto put = [&](const char *name, CURLINFO info) {
+            curl_off_t microseconds = 0;
+            if (curl_easy_getinfo(curl_, info, &microseconds) == CURLE_OK) {
+                span->setAttribute(name, static_cast<int64_t>(microseconds / 1000));
+            }
+        };
+        put("elevenlabs.http.namelookup_ms", CURLINFO_NAMELOOKUP_TIME_T);
+        put("elevenlabs.http.connect_ms", CURLINFO_CONNECT_TIME_T);
+        put("elevenlabs.http.tls_ms", CURLINFO_APPCONNECT_TIME_T);
+        put("elevenlabs.http.first_byte_ms", CURLINFO_STARTTRANSFER_TIME_T);
+        put("elevenlabs.http.total_ms", CURLINFO_TOTAL_TIME_T);
+        long newConnections = 0;
+        if (curl_easy_getinfo(curl_, CURLINFO_NUM_CONNECTS, &newConnections) == CURLE_OK) {
+            span->setAttribute("elevenlabs.http.new_connections", static_cast<int64_t>(newConnections));
+        }
     }
 
   private:
