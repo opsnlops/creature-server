@@ -166,6 +166,17 @@ struct SpeechTrackOptions {
     // frozen-baseFrames[0] fallback deliberately does NOT get this treatment —
     // that frame is the authoritative rest pose, mouth value included.
     std::uint8_t mouthRestByte{0};
+
+    // ---- Entry fade across a turn boundary (issue #186) ------------------
+    // A streamed multi-creature dialog renders each turn as its own track,
+    // and a creature that was speaking in the previous turn is listening in
+    // this one (or the reverse) — a different loop, so the body would snap
+    // at frame 0. When set, frames 0..entryFadeFrames blend from this body
+    // frame (the previous turn's `lastBodyFrame`) toward whatever this track
+    // emits, in any mode. Empty (the default) leaves frame 0 exactly as it
+    // always was. Must match the base frame width; otherwise it is ignored.
+    std::span<const uint8_t> entryFadeFrom{};
+    std::size_t entryFadeFrames{10};
 };
 
 struct SpeechTrackResult {
@@ -198,6 +209,17 @@ struct SpeechTrackResult {
     // written on frames where the creature is listening — while it speaks, its
     // body loop keeps the tilt (issue #144).
     bool gazeCockApplied{false};
+
+    // ---- Streamed-turn continuity (issue #186) ---------------------------
+    // Where the idle counter landed, as `endOffset` is for the speech loop:
+    // (idleStartOffset + idle frames emitted) % idleFrames.size(). 0 when no
+    // idle loop was cycled.
+    std::size_t idleEndOffset{0};
+
+    // The last body frame emitted, before the mouth byte and gaze layers were
+    // written — what the next turn should fade in from if this creature
+    // changes role. Empty only when totalFrames was 0.
+    std::vector<uint8_t> lastBodyFrame;
 };
 
 // The shared inner loop. Cycles base frames + (when in range) writes mouth

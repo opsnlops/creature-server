@@ -39,9 +39,10 @@ Result<Animation> animationFromJson(const nlohmann::json &json, AnimationJsonSou
         if (metadataIterator == json.end())
             return json_codec::invalid<Animation>("animation.metadata is required");
         const bool allowLegacyPersistenceFields = source == AnimationJsonSource::Persistence;
-        auto metadata =
-            animationMetadataFromJson(*metadataIterator, "animation.metadata",
-                                      source == AnimationJsonSource::Persistence, allowLegacyPersistenceFields);
+        const bool allowTrustedAbsoluteSoundFile =
+            source == AnimationJsonSource::Persistence || source == AnimationJsonSource::AdHoc;
+        auto metadata = animationMetadataFromJson(*metadataIterator, "animation.metadata",
+                                                  allowTrustedAbsoluteSoundFile, allowLegacyPersistenceFields);
         if (!metadata.isSuccess())
             return Result<Animation>{metadata.getError().value()};
         if (metadata.getValue()->animation_id != id.getValue().value())

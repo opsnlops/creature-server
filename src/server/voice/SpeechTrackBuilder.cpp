@@ -236,6 +236,22 @@ Result<SpeechTrackResult> buildSpeechTrack(const SpeechTrackInput &input, const 
     std::size_t fadeRemaining = 0;
     const std::size_t fadeTotal = useIdleLoop ? options.crossfadeFrames : 0;
 
+    // Entry fade (issue #186): ease in from the previous turn's body pose. It
+    // shares the blend loop below but has its own length, because it applies
+    // in simple mode too, where fadeTotal is 0.
+    std::size_t entryFadeTotal = 0;
+    if (!options.entryFadeFrom.empty() && options.entryFadeFrames > 0) {
+        if (options.entryFadeFrom.size() == frameWidth) {
+            fadeSource.assign(options.entryFadeFrom.begin(), options.entryFadeFrom.end());
+            entryFadeTotal = options.entryFadeFrames;
+            fadeRemaining = entryFadeTotal;
+        } else {
+            warn("buildSpeechTrack: creature '{}' entry fade frame is {} bytes wide but the loop is {} — skipping the "
+                 "entry fade",
+                 input.creatureId, options.entryFadeFrom.size(), frameWidth);
+        }
+    }
+
     // Cock-axis ownership (issue #144). The cock aims at nothing — it's the
     // quizzical listening tilt — and a speaking creature holds it level, so
     // the gaze layer emits a dead constant for the whole of every turn it
@@ -265,7 +281,9 @@ Result<SpeechTrackResult> buildSpeechTrack(const SpeechTrackInput &input, const 
         if (f > 0 && fadeTotal > 0 && speakingAt[f] != speakingAt[f - 1]) {
             fadeSource = lastBody;
             fadeRemaining = fadeTotal;
+            entryFadeTotal = 0; // a mode change supersedes any entry fade still running
         }
+        const std::size_t activeFadeTotal = entryFadeTotal > 0 ? entryFadeTotal : fadeTotal;
 
         std::vector<uint8_t> frame;
         if (speakingAt[f]) {
@@ -282,7 +300,8 @@ Result<SpeechTrackResult> buildSpeechTrack(const SpeechTrackInput &input, const 
         // Blend the body BEFORE the mouth byte goes in, so the mouth is never
         // smeared across a transition.
         if (fadeRemaining > 0 && fadeSource.size() == frame.size()) {
-            const double t = static_cast<double>(fadeTotal - fadeRemaining + 1) / static_cast<double>(fadeTotal + 1);
+            const double t =
+                static_cast<double>(activeFadeTotal - fadeRemaining + 1) / static_cast<double>(activeFadeTotal + 1);
             for (std::size_t i = 0; i < frame.size(); ++i) {
                 const double from = static_cast<double>(fadeSource[i]);
                 const double to = static_cast<double>(frame[i]);
@@ -350,6 +369,8 @@ Result<SpeechTrackResult> buildSpeechTrack(const SpeechTrackInput &input, const 
     // speaking frame, modulo bookkeeping. Convert to a 0-based offset into
     // baseFrames for the next caller.
     result.endOffset = speakingCounter % input.baseFrames.size();
+    result.idleEndOffset = useIdleLoop ? idleCounter % options.idleFrames.size() : 0;
+    result.lastBodyFrame = std::move(lastBody);
 
     if (parentSpan) {
         parentSpan->setAttribute("track.creature_id", input.creatureId);

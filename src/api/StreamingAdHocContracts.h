@@ -165,20 +165,39 @@ inline nlohmann::json adHocExchangeResponseToJson(const AdHocExchange &exchange,
     auto parts = nlohmann::json::array();
     parts.get_ref<nlohmann::json::array_t &>().reserve(exchange.parts.size());
     for (const auto &part : exchange.parts) {
+        // A part written before streamed dialogs (#186) has no speaker of its
+        // own: the exchange's single creature said it.
+        const bool hasSpeaker = !part.creature_id.empty();
         parts.push_back({{"index", part.index},
                          {"animation_id", canonicalUuidForWire(part.animation_id)},
                          {"text", part.text},
-                         {"duration_ms", part.duration_ms}});
+                         {"duration_ms", part.duration_ms},
+                         {"creature_id", canonicalUuidForWire(hasSpeaker ? part.creature_id : exchange.creature_id)},
+                         {"creature_name", hasSpeaker ? part.creature_name : exchange.creature_name}});
+    }
+    auto participants = nlohmann::json::array();
+    if (exchange.participants.empty()) {
+        participants.push_back(
+            {{"creature_id", canonicalUuidForWire(exchange.creature_id)}, {"creature_name", exchange.creature_name}});
+    } else {
+        for (const auto &participant : exchange.participants) {
+            participants.push_back({{"creature_id", canonicalUuidForWire(participant.creature_id)},
+                                    {"creature_name", participant.creature_name},
+                                    {"audio_channel", participant.audio_channel}});
+        }
     }
     nlohmann::json json = {{"session_id", canonicalUuidForWire(exchange.session_id)},
                            {"creature_id", canonicalUuidForWire(exchange.creature_id)},
                            {"creature_name", exchange.creature_name},
+                           {"participants", std::move(participants)},
                            {"status", exchange.status},
                            {"title", exchange.title},
                            {"transcript", exchange.transcript},
                            {"duration_ms", exchange.duration_ms},
                            {"created_at", createdAt},
                            {"parts", std::move(parts)}};
+    if (!exchange.stage_id.empty())
+        json["stage_id"] = canonicalUuidForWire(exchange.stage_id);
     if (finishedAt)
         json["finished_at"] = *finishedAt;
     return json;

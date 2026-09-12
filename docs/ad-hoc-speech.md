@@ -55,6 +55,60 @@ The play endpoint looks up the cached animation, verifies the creature is curren
 spot. It reuses the same payload as `/api/v1/animation/interrupt`, so `resume_playlist` retains its meaning and defaults
 to `true` if omitted.
 
+## Streaming a Dialog Between Several Creatures
+
+`/api/v1/animation/dialog-stream` (3.46.0, issue #186) is the multi-creature form of the streaming
+ad-hoc session: the world composes a scene turn by turn and sends each turn the moment it exists; the
+server synthesizes it in that creature's voice, lip-syncs it on that creature's channels, and plays it
+in arrival order while the other participants cycle their idle loop with their beak shut and look at
+the speaker. Turns for different creatures may interleave freely — the server does no turn-taking of
+its own. See [186-dialog-stream-plan.md](186-dialog-stream-plan.md) for the design.
+
+Every session is bound to a **stage** (`stage_id` is required) so head aiming works: the speaker
+plays to the audience, the listeners turn to the speaker. Every participant must be placed on that
+stage and registered on the same universe.
+
+```bash
+# 1. Start: who is in the scene, and where they stand.
+curl -sS -X POST http://localhost:8000/api/v1/animation/dialog-stream/start \
+  -H 'Content-Type: application/json' -H "traceparent: $TRACEPARENT" \
+  -d '{"creature_ids":["<beaky uuid>","<mango uuid>"],"stage_id":"<mainstage uuid>","resume_playlist":true}'
+# → {"session_id":"…","status":"started","message":"…","creature_ids":[…],"stage_id":"…"}
+
+# 2. One call per sentence, naming the speaker. Playback starts as soon as the first one renders.
+curl -sS -X POST http://localhost:8000/api/v1/animation/dialog-stream/turn \
+  -H 'Content-Type: application/json' -H "traceparent: $TRACEPARENT" \
+  -d '{"session_id":"<session>","creature_id":"<beaky uuid>","text":"April, I think the servos you ordered are here!"}'
+curl -sS -X POST http://localhost:8000/api/v1/animation/dialog-stream/turn \
+  -H 'Content-Type: application/json' -H "traceparent: $TRACEPARENT" \
+  -d '{"session_id":"<session>","creature_id":"<mango uuid>","text":"Or it is more heat sinks. It is always heat sinks."}'
+# → {"session_id":"…","status":"ok","turns_received":2}
+
+# 3. Finish: waits for every queued turn to play, then stitches the exchange.
+curl -sS -X POST http://localhost:8000/api/v1/animation/dialog-stream/finish \
+  -H 'Content-Type: application/json' -H "traceparent: $TRACEPARENT" \
+  -d '{"session_id":"<session>"}'
+# → {"session_id":"…","status":"completed","message":"…",
+#    "animation_id":"<the whole exchange as one ad-hoc animation with every participant's track>",
+#    "last_turn_animation_id":"<the last turn's own animation>",
+#    "playback_triggered":true,"exchange_status":"ready","parts_rendered":2,"parts_total":2}
+```
+
+- `animation_id` is a TTL'd ad-hoc animation (`GET /api/v1/animation/ad-hoc/{id}`) whose tracks are
+  the turns concatenated and sized against the stitched WAV, so lip sync stays aligned to the last word.
+- The exchange is listed and exportable exactly like a single-creature one
+  (`GET /api/v1/animation/ad-hoc-stream/exchanges`, `…/exchange/{session_id}/audio.mp3`). Dialog
+  exchanges additionally carry `participants`, `stage_id`, and a `creature_id`/`creature_name` on every
+  part; the transcript names who said what; the MP3's `ARTIST` and `LYRICS` list every speaker.
+- Errors mirror `/ad-hoc-stream`: `404` unknown session or stage; `400` non-UUID, empty or duplicate
+  `creature_ids`, missing `stage_id`, a participant not placed on the stage, a `creature_id` on `/turn`
+  that isn't a participant, participants on different universes, or two participants sharing an
+  `audio_channel`; `409` session already finishing, admission limits, or a participant whose controller
+  isn't registered. `/ad-hoc-stream/text` against a dialog session is a `409` — say who is speaking.
+- Trade-off: each turn is a single-voice render, so the voices don't react to each other in tone the way
+  the complete-scene `/dialog` render (ElevenLabs Text-to-Dialogue) does. Use this when latency matters
+  more than joint conditioning.
+
 ## Configuration
 
 | Setting | Purpose | Default / Example |

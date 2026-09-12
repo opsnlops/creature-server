@@ -42,17 +42,10 @@ uint32_t drawUint(std::mt19937 &rng, uint32_t lo, uint32_t hi) {
     return dist(rng);
 }
 
-/// The per-axis animation state used while filling the angle stream.
-struct AxisMotion {
-    float held{0.0f};       // angle currently being held
-    std::size_t start{0};   // first frame of the sweep
-    std::size_t arrive{0};  // frame the overshoot peak is reached
-    std::size_t settled{0}; // frame the target is finally held
-    float from{0.0f};       // angle at `start`
-    float target{0.0f};     // angle finally held
-    float peak{0.0f};       // target + overshoot
-    bool active{false};
-};
+/// The per-axis animation state used while filling the angle stream. Shared
+/// with GazeContinuity so a streamed session can carry an in-flight sweep
+/// across a turn boundary (issue #186).
+using AxisMotion = GazeAxisMotion;
 
 /// Evaluate one axis at a frame: sweep out to the overshoot peak, settle back
 /// to the target, then hold.
@@ -203,11 +196,16 @@ std::vector<SpeakerSpan> buildSpeakerTimeline(const std::vector<std::string> &cr
 
 GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometry> &others,
                          const std::vector<SpeakerSpan> &timeline, std::size_t totalFrames, uint32_t msPerFrame,
-                         std::mt19937 &rng, const GazeOptions &options) {
+                         std::mt19937 &rng, const GazeOptions &options, GazeContinuity *continuity) {
     GazeTrack track;
     if (totalFrames == 0 || msPerFrame == 0 || (!self.pan && !self.elevation && !self.cock)) {
         return track;
     }
+    // A streamed turn (issue #186): the head opens where the previous turn left
+    // it, the per-scene draws are made once for the whole session, and the
+    // end-of-scene settle is left for the session's end.
+    const bool streamedTurn = continuity != nullptr;
+    const bool resuming = streamedTurn && continuity->primed;
 
     std::unordered_map<std::string, const GazeGeometry *> byId;
     byId.reserve(others.size());
@@ -267,11 +265,21 @@ GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometr
     };
     // Which way this creature favours cocking its head. Drawn once per scene,
     // before anything else touches the rng, so it stays stable and the stream
-    // position remains deterministic.
-    const float preferredCockSide = drawFloat(rng, 0.0f, 1.0f) < 0.5f ? -1.0f : 1.0f;
+    // position remains deterministic. A resumed turn already drew it.
+    const float preferredCockSide =
+        resuming ? continuity->preferredCockSide : (drawFloat(rng, 0.0f, 1.0f) < 0.5f ? -1.0f : 1.0f);
 
     std::vector<GazeSegmentLocal> segments;
-    segments.push_back(GazeSegmentLocal{0, listenerPan, listenerElevation, cockCentre});
+    if (resuming) {
+        // Open on where the head is GOING, not where it happens to be mid-
+        // sweep: the "already cocked" and "sub-degree change" checks below
+        // are about intent, and the in-flight motions carried in `continuity`
+        // take care of the actual position.
+        segments.push_back(
+            GazeSegmentLocal{0, continuity->pan.target, continuity->elevation.target, continuity->cock.target});
+    } else {
+        segments.push_back(GazeSegmentLocal{0, listenerPan, listenerElevation, cockCentre});
+    }
 
     // How long the floor must stay quiet before heads drift home, and how far
     // into that silence the move begins.
@@ -319,7 +327,12 @@ GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometr
     // down. Without this, a turn (or a fresh head-cock) landing in the last
     // second leaves the head committed to a target it never reaches, and blocks
     // the settle that makes the handoff to the idle loop smooth.
-    const std::size_t latestUsefulStart = totalFrames > neutralTravelFrames ? totalFrames - neutralTravelFrames : 0;
+    //
+    // A streamed turn has no such horizon: the next turn continues the sweep
+    // (frames are session-absolute, see GazeContinuity), so aiming is always
+    // worth starting.
+    const std::size_t latestUsefulStart =
+        streamedTurn ? totalFrames : (totalFrames > neutralTravelFrames ? totalFrames - neutralTravelFrames : 0);
 
     std::size_t quietSince = 0; // frame the floor last went quiet
     for (const auto &span : timeline) {
@@ -402,27 +415,52 @@ GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometr
     // So the tail settle is unconditional, and it starts late enough to look
     // like winding down but early enough to actually arrive — even if that
     // means beginning while the last few words are still being said.
-    if (quietSince > 0 && totalFrames > 0) {
+    //
+    // Not for a streamed turn: the scene isn't over, and settling between
+    // sentences is exactly the twitch the hold above exists to prevent.
+    if (!streamedTurn && quietSince > 0 && totalFrames > 0) {
         pushNeutral(std::min(quietSince + neutralHoldFrames, latestUsefulStart));
     }
 
     // Per-creature drift phase and period, drawn once so the wander is stable
     // across the whole scene rather than re-randomizing every frame.
-    const float panDriftPhase = drawFloat(rng, 0.0f, 2.0f * std::numbers::pi_v<float>);
-    const float elevationDriftPhase = drawFloat(rng, 0.0f, 2.0f * std::numbers::pi_v<float>);
-    const auto panDriftFrames = std::max<std::size_t>(
-        1, msToFrames(drawUint(rng, options.minDriftPeriodMs, options.maxDriftPeriodMs), msPerFrame));
-    const auto elevationDriftFrames = std::max<std::size_t>(
-        1, msToFrames(drawUint(rng, options.minDriftPeriodMs, options.maxDriftPeriodMs), msPerFrame));
+    float panDriftPhase = 0.0f;
+    float elevationDriftPhase = 0.0f;
+    std::size_t panDriftFrames = 1;
+    std::size_t elevationDriftFrames = 1;
+    if (resuming) {
+        panDriftPhase = continuity->panDriftPhase;
+        elevationDriftPhase = continuity->elevationDriftPhase;
+        panDriftFrames = continuity->panDriftFrames;
+        elevationDriftFrames = continuity->elevationDriftFrames;
+    } else {
+        panDriftPhase = drawFloat(rng, 0.0f, 2.0f * std::numbers::pi_v<float>);
+        elevationDriftPhase = drawFloat(rng, 0.0f, 2.0f * std::numbers::pi_v<float>);
+        panDriftFrames = std::max<std::size_t>(
+            1, msToFrames(drawUint(rng, options.minDriftPeriodMs, options.maxDriftPeriodMs), msPerFrame));
+        elevationDriftFrames = std::max<std::size_t>(
+            1, msToFrames(drawUint(rng, options.minDriftPeriodMs, options.maxDriftPeriodMs), msPerFrame));
+    }
 
     const auto settleFrames = std::max<std::size_t>(1, msToFrames(options.settleMs, msPerFrame));
+
+    // Frame numbers below are session-absolute when streaming so a carried
+    // motion's timing stays meaningful; for a whole-scene render base is 0 and
+    // nothing changes.
+    const std::size_t base = resuming ? continuity->frameBase : 0;
 
     AxisMotion panMotion;
     AxisMotion elevationMotion;
     AxisMotion cockMotion;
-    panMotion.held = panMotion.target = segments.front().panAngle;
-    elevationMotion.held = elevationMotion.target = segments.front().elevationAngle;
-    cockMotion.held = cockMotion.target = segments.front().cockAngle;
+    if (resuming) {
+        panMotion = continuity->pan;
+        elevationMotion = continuity->elevation;
+        cockMotion = continuity->cock;
+    } else {
+        panMotion.held = panMotion.target = segments.front().panAngle;
+        elevationMotion.held = elevationMotion.target = segments.front().elevationAngle;
+        cockMotion.held = cockMotion.target = segments.front().cockAngle;
+    }
 
     // Pre-compute each transition's timing. All draws happen here, in segment
     // order, so the rng stream is deterministic for a given seed.
@@ -465,7 +503,7 @@ GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometr
             1, msToFrames(static_cast<uint32_t>(std::lround(panTravelMs * elevationScale)), msPerFrame));
 
         PlannedMove move;
-        move.start = segment.changeFrame + reactionFrames;
+        move.start = base + segment.changeFrame + reactionFrames;
         move.panArrive = move.start + panTravelFrames;
         move.panSettled = move.panArrive + settleFrames;
         move.elevationArrive = move.start + elevationTravelFrames;
@@ -511,36 +549,54 @@ GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometr
         // while an earlier one is still running simply replaces it, starting
         // from wherever the head currently is — which is what interrupting a
         // turn should look like.
+        const std::size_t now = base + f;
         while (nextMove < moves.size() && segments[nextMove + 1].changeFrame <= f) {
             const auto &move = moves[nextMove];
             const auto &segment = segments[nextMove + 1];
-            arm(panMotion, f, move.start, move.panArrive, move.panSettled, segment.panAngle, move.panOvershoot);
-            arm(elevationMotion, f, move.start, move.elevationArrive, move.elevationSettled, segment.elevationAngle,
+            arm(panMotion, now, move.start, move.panArrive, move.panSettled, segment.panAngle, move.panOvershoot);
+            arm(elevationMotion, now, move.start, move.elevationArrive, move.elevationSettled, segment.elevationAngle,
                 move.elevationOvershoot);
-            arm(cockMotion, f, move.start, move.cockArrive, move.cockSettled, segment.cockAngle, 0.0f);
+            arm(cockMotion, now, move.start, move.cockArrive, move.cockSettled, segment.cockAngle, 0.0f);
             ++nextMove;
         }
 
         const auto drift = [&](float amplitude, std::size_t periodFrames, float phase) {
-            return amplitude * std::sin(2.0f * std::numbers::pi_v<float> * static_cast<float>(f) /
+            return amplitude * std::sin(2.0f * std::numbers::pi_v<float> * static_cast<float>(now) /
                                             static_cast<float>(periodFrames) +
                                         phase);
         };
 
         if (self.pan) {
-            track.panBytes[f] = angleToByte(
-                *self.pan, evaluateAxis(panMotion, f) + drift(options.panDriftDegrees, panDriftFrames, panDriftPhase));
+            track.panBytes[f] =
+                angleToByte(*self.pan, evaluateAxis(panMotion, now) +
+                                           drift(options.panDriftDegrees, panDriftFrames, panDriftPhase));
         }
         if (self.elevation) {
             track.elevationBytes[f] = angleToByte(
-                *self.elevation, evaluateAxis(elevationMotion, f) +
+                *self.elevation, evaluateAxis(elevationMotion, now) +
                                      drift(options.elevationDriftDegrees, elevationDriftFrames, elevationDriftPhase));
         }
         if (self.cock) {
             // No drift on the cock — a wandering head tilt looks like a fault,
             // not like life.
-            track.cockBytes[f] = angleToByte(*self.cock, evaluateAxis(cockMotion, f));
+            track.cockBytes[f] = angleToByte(*self.cock, evaluateAxis(cockMotion, now));
         }
+    }
+
+    if (streamedTurn) {
+        // Hand the next turn everything it needs to keep going as if the
+        // scene had never been cut: in-flight sweeps, the favoured side, the
+        // drift, and the session frame the next turn opens on.
+        continuity->primed = true;
+        continuity->preferredCockSide = preferredCockSide;
+        continuity->panDriftPhase = panDriftPhase;
+        continuity->elevationDriftPhase = elevationDriftPhase;
+        continuity->panDriftFrames = panDriftFrames;
+        continuity->elevationDriftFrames = elevationDriftFrames;
+        continuity->frameBase = base + totalFrames;
+        continuity->pan = panMotion;
+        continuity->elevation = elevationMotion;
+        continuity->cock = cockMotion;
     }
 
     return track;
