@@ -872,6 +872,139 @@ TEST(GazeTrackTest, AlwaysIgnoringTurnsLeavesTheHeadPut) {
 }
 
 // ---------------------------------------------------------------------------
+// GazeContinuity — a streamed dialog renders one turn at a time (issue #186).
+// Threading the continuity through consecutive calls has to make the sequence
+// behave like one scene: no reset to the audience pose at every sentence, no
+// settle-home between sentences, and a sweep that straddles a turn boundary
+// keeps going.
+// ---------------------------------------------------------------------------
+
+TEST(GazeContinuityTest, NullContinuityIsByteIdenticalToTheWholeSceneRender) {
+    const auto self = creatureA();
+    std::mt19937 rngA(11);
+    std::mt19937 rngB(11);
+    const auto whole = buildGazeTrack(self, {creatureB()}, twoTurnScene(), 300, 20, rngA);
+    const auto sameCall = buildGazeTrack(self, {creatureB()}, twoTurnScene(), 300, 20, rngB, GazeOptions{}, nullptr);
+    EXPECT_EQ(whole.panBytes, sameCall.panBytes);
+    EXPECT_EQ(whole.elevationBytes, sameCall.elevationBytes);
+    EXPECT_EQ(whole.cockBytes, sameCall.cockBytes);
+}
+
+TEST(GazeContinuityTest, FirstTurnPrimesTheStructAndAdvancesTheFrameBase) {
+    const auto self = creatureA();
+    std::mt19937 rng(11);
+    GazeContinuity continuity;
+    EXPECT_FALSE(continuity.primed);
+    const auto turn =
+        buildGazeTrack(self, {creatureB()}, {SpeakerSpan{0, 150, "B"}}, 150, 20, rng, GazeOptions{}, &continuity);
+    ASSERT_EQ(turn.panBytes.size(), 150u);
+    EXPECT_TRUE(continuity.primed);
+    EXPECT_EQ(continuity.frameBase, 150u);
+
+    const auto second =
+        buildGazeTrack(self, {creatureB()}, {SpeakerSpan{0, 100, "B"}}, 100, 20, rng, GazeOptions{}, &continuity);
+    ASSERT_EQ(second.panBytes.size(), 100u);
+    EXPECT_EQ(continuity.frameBase, 250u);
+}
+
+TEST(GazeContinuityTest, AStreamedTurnDoesNotSettleHomeAtItsEnd) {
+    // The whole-scene render winds the head home before the track ends; a
+    // streamed turn must hold its target, because the next sentence is coming.
+    const auto self = creatureA();
+    GazeOptions options;
+    options.ignoreTurnChance = 0.0f;
+    options.neutralReturnHoldMs = 500;
+    const std::vector<SpeakerSpan> scene{SpeakerSpan{0, 400, "B"}};
+    const int neutral = angleToByte(*self.pan, self.pan->centre());
+
+    std::mt19937 rngWhole(5);
+    const auto whole = buildGazeTrack(self, {creatureB()}, scene, 400, 20, rngWhole, options);
+    ASSERT_LT(std::abs(static_cast<int>(whole.panBytes[399]) - neutral), 12) << "whole-scene render settles";
+
+    std::mt19937 rngTurn(5);
+    GazeContinuity continuity;
+    const auto turn = buildGazeTrack(self, {creatureB()}, scene, 400, 20, rngTurn, options, &continuity);
+    ASSERT_EQ(turn.panBytes.size(), 400u);
+    const int towardB = turn.panBytes[200];
+    ASSERT_GT(std::abs(towardB - neutral), 20) << "fixture needs B well off centre";
+    EXPECT_GT(std::abs(static_cast<int>(turn.panBytes[399]) - neutral), 12)
+        << "a streamed turn must still be looking at B when it ends";
+}
+
+TEST(GazeContinuityTest, TheNextTurnOpensWhereTheLastOneEnded) {
+    // No snap back to the audience pose at a turn boundary: frame 0 of turn 2
+    // is within a frame's worth of motion of the last frame of turn 1.
+    const auto self = creatureA();
+    std::mt19937 rng(9);
+    GazeOptions options;
+    options.ignoreTurnChance = 0.0f;
+    GazeContinuity continuity;
+    const auto first =
+        buildGazeTrack(self, {creatureB()}, {SpeakerSpan{0, 200, "B"}}, 200, 20, rng, options, &continuity);
+    const auto second =
+        buildGazeTrack(self, {creatureB()}, {SpeakerSpan{0, 200, "B"}}, 200, 20, rng, options, &continuity);
+    ASSERT_EQ(first.panBytes.size(), 200u);
+    ASSERT_EQ(second.panBytes.size(), 200u);
+    EXPECT_LE(std::abs(static_cast<int>(second.panBytes[0]) - static_cast<int>(first.panBytes[199])), 6)
+        << "pan jumped across the turn boundary";
+    EXPECT_LE(std::abs(static_cast<int>(second.elevationBytes[0]) - static_cast<int>(first.elevationBytes[199])), 6)
+        << "elevation jumped across the turn boundary";
+    EXPECT_LE(std::abs(static_cast<int>(second.cockBytes[0]) - static_cast<int>(first.cockBytes[199])), 6)
+        << "cock jumped across the turn boundary";
+}
+
+TEST(GazeContinuityTest, ASweepStraddlingATurnBoundaryKeepsGoing) {
+    // A very short first turn: the reaction delay alone (>= 150 ms) eats most
+    // of it, so the sweep toward B is still in flight when the turn ends. The
+    // second turn (same speaker) must carry the sweep on and arrive at B,
+    // not stall the head and restart with a fresh reaction.
+    const auto self = creatureA();
+    std::mt19937 rng(3);
+    GazeOptions options;
+    options.ignoreTurnChance = 0.0f;
+    GazeContinuity continuity;
+    const auto first =
+        buildGazeTrack(self, {creatureB()}, {SpeakerSpan{0, 10, "B"}}, 10, 20, rng, options, &continuity);
+    ASSERT_EQ(first.panBytes.size(), 10u);
+    const auto second =
+        buildGazeTrack(self, {creatureB()}, {SpeakerSpan{0, 200, "B"}}, 200, 20, rng, options, &continuity);
+    ASSERT_EQ(second.panBytes.size(), 200u);
+
+    // Where a whole-scene head ends up looking at B, ignoring the tail settle.
+    std::mt19937 rngWhole(3);
+    GazeOptions holdForever = options;
+    holdForever.neutralReturnHoldMs = 1000000;
+    const auto whole = buildGazeTrack(self, {creatureB()}, {SpeakerSpan{0, 210, "B"}}, 400, 20, rngWhole, holdForever);
+    const int atB = whole.panBytes[150];
+    const int neutral = angleToByte(*self.pan, self.pan->centre());
+    ASSERT_GT(std::abs(atB - neutral), 20) << "fixture needs B well off centre";
+
+    EXPECT_LE(std::abs(static_cast<int>(second.panBytes[150]) - atB), 12) << "the second turn should have arrived at B";
+    for (std::size_t f = 1; f < 200; ++f) {
+        EXPECT_LE(std::abs(static_cast<int>(second.panBytes[f]) - static_cast<int>(second.panBytes[f - 1])), 12)
+            << "frame " << f << " jumped mid-sweep";
+    }
+}
+
+TEST(GazeContinuityTest, ASpeakerTurnAimsAtTheAudienceThenAListenerTurnAimsAtTheSpeaker) {
+    // Two turns, alternating floor: A speaks (plays to the house), then B
+    // speaks (A watches B). Both aims are visible in A's pan stream.
+    const auto self = creatureA();
+    std::mt19937 rng(21);
+    GazeOptions options;
+    options.ignoreTurnChance = 0.0f;
+    GazeContinuity continuity;
+    const auto speaking =
+        buildGazeTrack(self, {creatureB()}, {SpeakerSpan{0, 150, "A"}}, 150, 20, rng, options, &continuity);
+    const auto listening =
+        buildGazeTrack(self, {creatureB()}, {SpeakerSpan{0, 200, "B"}}, 200, 20, rng, options, &continuity);
+    ASSERT_EQ(speaking.panBytes.size(), 150u);
+    ASSERT_EQ(listening.panBytes.size(), 200u);
+    EXPECT_GT(std::abs(static_cast<int>(listening.panBytes[199]) - static_cast<int>(speaking.panBytes[149])), 20)
+        << "A should have turned from the audience toward B";
+}
+
+// ---------------------------------------------------------------------------
 // normalizeDegrees — shared with the stage parser, and easy to get wrong at
 // the wrap points.
 // ---------------------------------------------------------------------------

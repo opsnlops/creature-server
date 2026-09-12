@@ -789,6 +789,8 @@ add_executable(creature-server-test
         tests/server/voice/VoiceClient_test.cpp
         tests/server/voice/SpeechTrackBuilder_test.cpp
         src/server/voice/SpeechTrackBuilder.cpp
+        tests/server/voice/TurnConcat_test.cpp
+        src/server/voice/TurnConcat.cpp
         tests/server/voice/DialogAnimation_test.cpp
         src/server/voice/DialogAnimation.cpp
         tests/server/voice/DialogPipeline_chunkTurns_test.cpp
@@ -855,6 +857,7 @@ add_executable(creature-server-test
         tests/api/AnimationRequests_test.cpp
         tests/api/DebugResponses_test.cpp
         tests/api/StreamingAdHocContracts_test.cpp
+        tests/api/DialogStreamContracts_test.cpp
         tests/api/DialogContracts_test.cpp
         tests/api/VoiceContracts_test.cpp
         src/model/PlaylistStatus.cpp

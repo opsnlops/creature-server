@@ -90,6 +90,34 @@ TEST(StreamingAdHocContracts, ExchangeResponseOmitsStoragePathAndAbsentFinishTim
     EXPECT_EQ(json["parts"][0]["animation_id"], "abcdef12-3456-4abc-8def-1234567890ac");
     EXPECT_FALSE(json.contains("sound_file"));
     EXPECT_FALSE(json.contains("finished_at"));
+    EXPECT_FALSE(json.contains("stage_id"));
+    // A single-creature record (pre-#186) still answers "who took part" and
+    // "who said this part": the exchange's one creature.
+    ASSERT_EQ(json["participants"].size(), 1u);
+    EXPECT_EQ(json["participants"][0]["creature_id"], "abcdef12-3456-4abc-8def-1234567890ab");
+    EXPECT_EQ(json["participants"][0]["creature_name"], "Beaky");
+    EXPECT_EQ(json["parts"][0]["creature_id"], "abcdef12-3456-4abc-8def-1234567890ab");
+    EXPECT_EQ(json["parts"][0]["creature_name"], "Beaky");
+}
+
+TEST(StreamingAdHocContracts, ExchangeResponseCarriesTheWholeCastOfAStreamedDialog) {
+    AdHocExchange exchange;
+    exchange.session_id = "abcdef12-3456-4abc-8def-1234567890ab";
+    exchange.creature_id = CREATURE_ID;
+    exchange.creature_name = "Beaky";
+    exchange.stage_id = "ABCDEF12-3456-4ABC-8DEF-1234567890AD";
+    exchange.participants = {{CREATURE_ID, "Beaky", 3}, {"abcdef12-3456-4abc-8def-1234567890ae", "Mango", 5}};
+    exchange.parts = {
+        {1, "abcdef12-3456-4abc-8def-1234567890ac", "Hello", 250, CREATURE_ID, "Beaky"},
+        {2, "abcdef12-3456-4abc-8def-1234567890af", "Hi", 300, "abcdef12-3456-4abc-8def-1234567890ae", "Mango"}};
+
+    const auto json = adHocExchangeResponseToJson(exchange, "2026-08-30T12:00:00Z", std::nullopt);
+    EXPECT_EQ(json["stage_id"], "abcdef12-3456-4abc-8def-1234567890ad");
+    ASSERT_EQ(json["participants"].size(), 2u);
+    EXPECT_EQ(json["participants"][1]["creature_name"], "Mango");
+    EXPECT_EQ(json["participants"][1]["audio_channel"], 5);
+    EXPECT_EQ(json["parts"][1]["creature_id"], "abcdef12-3456-4abc-8def-1234567890ae");
+    EXPECT_EQ(json["parts"][1]["creature_name"], "Mango");
 }
 
 } // namespace

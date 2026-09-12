@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -323,6 +324,120 @@ TEST(SpeechTrackBuilder, CockHandoverIsEasedRatherThanSnapped) {
 
     // ...but by the end of the fade it has arrived.
     EXPECT_EQ(decode(result.getValue()->track.frames[7])[1], 0xF0);
+}
+
+// =============================================================================
+// Streamed-turn continuity (issue #186). A multi-creature dialog renders each
+// turn as its own track; the next turn needs to know where this one left the
+// body so it can carry on (same role) or ease across (role changed).
+// =============================================================================
+TEST(SpeechTrackBuilder, LastBodyFrameIsThePreMouthBodyPose) {
+    std::vector<uint8_t> mouth = {0x05, 0x05, 0x05};
+    auto input = baseInput(mouth, /*mouthSlot=*/1, /*totalFrames=*/3);
+
+    auto result = buildSpeechTrack(input);
+
+    ASSERT_TRUE(result.isSuccess());
+    // Frame 2 cycled in C; the reported body frame is C *without* the mouth
+    // byte at slot 1, which the emitted frame does carry.
+    EXPECT_EQ(result.getValue()->lastBodyFrame, baseFramesABC()[2]);
+    EXPECT_EQ(decode(result.getValue()->track.frames[2])[1], 0x05);
+}
+
+TEST(SpeechTrackBuilder, IdleEndOffsetContinuesTheIdleLoop) {
+    // Listener track: every frame silent, cycling a 2-frame idle loop from
+    // phase 1 for 5 frames → lands on (1 + 5) % 2 = 0.
+    static const std::vector<std::vector<uint8_t>> kIdle{
+        {0x11, 0x11, 0x11, 0x11, 0x11, 0x11},
+        {0x22, 0x22, 0x22, 0x22, 0x22, 0x22},
+    };
+    std::vector<uint8_t> mouth(5, 0);
+    auto input = baseInput(mouth, /*mouthSlot=*/1, /*totalFrames=*/5);
+    SpeechTrackOptions options;
+    options.dialogIdleMode = true;
+    options.idleFrames = kIdle;
+    options.idleStartOffset = 1;
+    options.crossfadeFrames = 0;
+
+    auto result = buildSpeechTrack(input, options);
+
+    ASSERT_TRUE(result.isSuccess());
+    EXPECT_TRUE(result.getValue()->idleFramesUsed);
+    EXPECT_EQ(result.getValue()->speakingFrameCount, 0u);
+    EXPECT_EQ(decode(result.getValue()->track.frames[0])[0], 0x22);
+    EXPECT_EQ(decode(result.getValue()->track.frames[4])[0], 0x22);
+    EXPECT_EQ(result.getValue()->idleEndOffset, 0u);
+    EXPECT_EQ(result.getValue()->endOffset, 0u); // speech counter never advanced
+}
+
+TEST(SpeechTrackBuilder, NoEntryFadeLeavesFrameZeroUntouched) {
+    std::vector<uint8_t> mouth = {0x05, 0x05, 0x05};
+    auto input = baseInput(mouth, /*mouthSlot=*/5, /*totalFrames=*/3);
+
+    auto plain = buildSpeechTrack(input);
+    SpeechTrackOptions options; // entryFadeFrom empty, entryFadeFrames default
+    auto same = buildSpeechTrack(input, options);
+
+    ASSERT_TRUE(plain.isSuccess());
+    ASSERT_TRUE(same.isSuccess());
+    EXPECT_EQ(plain.getValue()->track.frames, same.getValue()->track.frames);
+    EXPECT_EQ(decode(same.getValue()->track.frames[0])[0], 0xAA);
+}
+
+TEST(SpeechTrackBuilder, EntryFadeEasesFromThePreviousTurnsPose) {
+    // Previous turn ended on all-zero; this turn's loop is A,B,C. With a
+    // 2-frame entry fade, frame 0 is 1/3 of the way to A, frame 1 is 2/3 of
+    // the way to B, frame 2 is C exactly.
+    const std::vector<uint8_t> previous(6, 0x00);
+    std::vector<uint8_t> mouth(3, 0);
+    auto input = baseInput(mouth, /*mouthSlot=*/5, /*totalFrames=*/3);
+    SpeechTrackOptions options;
+    options.entryFadeFrom = previous;
+    options.entryFadeFrames = 2;
+
+    auto result = buildSpeechTrack(input, options);
+
+    ASSERT_TRUE(result.isSuccess());
+    const auto f0 = decode(result.getValue()->track.frames[0])[0];
+    const auto f1 = decode(result.getValue()->track.frames[1])[0];
+    const auto f2 = decode(result.getValue()->track.frames[2])[0];
+    EXPECT_EQ(f0, static_cast<uint8_t>(std::lround(0xAA / 3.0)));
+    EXPECT_EQ(f1, static_cast<uint8_t>(std::lround(0xBB * 2.0 / 3.0)));
+    EXPECT_EQ(f2, 0xCC);
+    // The reported last body frame is the blended one that was emitted.
+    EXPECT_EQ(result.getValue()->lastBodyFrame, baseFramesABC()[2]);
+}
+
+TEST(SpeechTrackBuilder, EntryFadeWithWrongWidthIsIgnored) {
+    const std::vector<uint8_t> previous(4, 0x00); // loop is 6 wide
+    std::vector<uint8_t> mouth(3, 0);
+    auto input = baseInput(mouth, /*mouthSlot=*/5, /*totalFrames=*/3);
+    SpeechTrackOptions options;
+    options.entryFadeFrom = previous;
+
+    auto result = buildSpeechTrack(input, options);
+
+    ASSERT_TRUE(result.isSuccess());
+    EXPECT_EQ(decode(result.getValue()->track.frames[0])[0], 0xAA);
+}
+
+TEST(SpeechTrackBuilder, EntryFadeAppliesInDialogIdleModeToo) {
+    // A listener whose previous turn was spoken: frozen on baseFrames[0]
+    // (no idle loop) but eased in from where the speech loop left it.
+    const std::vector<uint8_t> previous(6, 0x00);
+    std::vector<uint8_t> mouth(4, 0);
+    auto input = baseInput(mouth, /*mouthSlot=*/5, /*totalFrames=*/4);
+    SpeechTrackOptions options;
+    options.dialogIdleMode = true;
+    options.entryFadeFrom = previous;
+    options.entryFadeFrames = 1;
+
+    auto result = buildSpeechTrack(input, options);
+
+    ASSERT_TRUE(result.isSuccess());
+    EXPECT_EQ(decode(result.getValue()->track.frames[0])[0], static_cast<uint8_t>(std::lround(0xAA / 2.0)));
+    EXPECT_EQ(decode(result.getValue()->track.frames[1])[0], 0xAA);
+    EXPECT_EQ(decode(result.getValue()->track.frames[3])[0], 0xAA);
 }
 
 } // namespace creatures::voice
