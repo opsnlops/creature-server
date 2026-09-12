@@ -219,6 +219,25 @@ TEST(AnimationRoundTripTest, ParsesFrameDataWithoutReferencingATemporaryTrack) {
     EXPECT_EQ(result.getValue()->tracks[0].frames, json["tracks"][0]["frames"].get<std::vector<std::string>>());
 }
 
+TEST(AnimationRoundTripTest, AdHocAcceptsItsAbsoluteTempWavButNoLegacyFields) {
+    // Issue #188: an ad-hoc animation's sound_file is the absolute path of its
+    // temp WAV. That must pass, while the legacy persistence-only fields must
+    // still be rejected — this is an insert of a freshly rendered object.
+    auto json = makeValidAnimationJson();
+    json["metadata"]["sound_file"] = "/tmp/creature-adhoc/00000000-0000-4000-8000-000000000001/s1.wav";
+    const auto accepted = animationFromJson(json, AnimationJsonSource::AdHoc);
+    ASSERT_TRUE(accepted.isSuccess()) << (accepted.getError() ? accepted.getError()->getMessage() : "parse failed");
+    EXPECT_EQ(accepted.getValue()->metadata.sound_file,
+              "/tmp/creature-adhoc/00000000-0000-4000-8000-000000000001/s1.wav");
+    EXPECT_FALSE(animationFromJson(json, AnimationJsonSource::Api).isSuccess());
+
+    auto legacyAnimation = makeAnimation();
+    legacyAnimation.tracks.push_back(makeCreatureTrack(legacyAnimation.id));
+    const auto legacy = makeLegacyPersistenceJson(legacyAnimation);
+    ASSERT_TRUE(animationFromJson(legacy, AnimationJsonSource::Persistence).isSuccess());
+    EXPECT_FALSE(animationFromJson(legacy, AnimationJsonSource::AdHoc).isSuccess());
+}
+
 TEST(AnimationRoundTripTest, ApiRejectsSoundFilesOutsideTheSoundLibrary) {
     for (const auto *unsafePath : {"/private/secret.wav", "../../secret.wav", "dialog/../secret.wav"}) {
         auto json = makeValidAnimationJson();
