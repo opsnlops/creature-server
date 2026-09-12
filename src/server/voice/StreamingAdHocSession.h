@@ -33,6 +33,10 @@ inline constexpr std::size_t MAX_GLOBAL_STREAMING_AD_HOC_RENDERS = 128;
 inline constexpr auto STREAMING_AD_HOC_IDLE_TIMEOUT = std::chrono::minutes(10);
 inline constexpr auto STREAMING_AD_HOC_ABSOLUTE_TIMEOUT = std::chrono::minutes(30);
 inline constexpr auto STREAMING_AD_HOC_CLAIM_GRACE = std::chrono::seconds(5);
+/// Silence prepended to every streamed sentence, in 48 kHz samples (issue
+/// #190). 200 ms: long enough for the receiver to lock onto the new RTP
+/// generation before the first syllable, and a natural beat between speakers.
+inline constexpr std::size_t STREAMING_SENTENCE_LEAD_IN_SAMPLES = 48000 / 5;
 /// Most creatures one streamed dialog can seat (issue #186). Mirrors the
 /// dialog job's per-scene voice cap.
 inline constexpr std::size_t MAX_STREAMING_DIALOG_PARTICIPANTS = 8;
