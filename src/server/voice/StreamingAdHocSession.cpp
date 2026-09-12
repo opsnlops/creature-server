@@ -650,7 +650,24 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
                 resolveFailedSentence(sentenceIndex, previous);
                 return Result<RenderedTurn>{ttsResult.getError().value()};
             }
-            const auto tts = ttsResult.getValue().value();
+            auto tts = ttsResult.getValue().value();
+
+            // 1b. A short silent lead-in on every sentence (issue #190). Two
+            // things want it: the receiver takes a moment to lock onto each
+            // new RTP generation and was eating the first syllable once #189
+            // closed the gap between sentences; and a beat before a bird
+            // answers reads as listening, where a hard splice reads as a cue
+            // being hit. The alignment shifts with the audio so lip sync stays
+            // exact, and the stitched exchange keeps the same breaths.
+            {
+                const std::size_t leadInBytes = STREAMING_SENTENCE_LEAD_IN_SAMPLES * 2; // S16 mono
+                tts.audioData.insert(tts.audioData.begin(), leadInBytes, 0);
+                const double leadInMs = static_cast<double>(STREAMING_SENTENCE_LEAD_IN_SAMPLES) * 1000.0 / 48000.0;
+                for (auto &timing : tts.charTimings) {
+                    timing.startTimeMs += leadInMs;
+                }
+                tts.audioDurationSeconds += leadInMs / 1000.0;
+            }
 
             // 2. Wrap raw PCM into a 17-channel WAV (in-process; previously
             // ffmpeg via AudioConverter::convertMp3ToWav). See issue #12.
