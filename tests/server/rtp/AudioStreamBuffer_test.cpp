@@ -4,6 +4,7 @@
 // audio). The disk cache is deliberately NOT enabled — AudioCache has its own
 // suite — so these tests exercise the encode path plus the memo.
 
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -15,6 +16,7 @@
 
 #include "server/config.h"
 #include "server/rtp/AudioStreamBuffer.h"
+#include "server/voice/PcmWavWriter.h"
 
 namespace creatures::rtp {
 namespace {
@@ -79,6 +81,52 @@ class AudioStreamBufferTest : public ::testing::Test {
 
 // 500 ms = 24,000 sample frames = 50 ten-ms Opus frames per channel.
 constexpr std::size_t HALF_SECOND_FRAMES = 24000;
+
+// Issue #195: the streaming path encodes from the mono PCM it already holds
+// instead of re-reading the 17-channel file. Playback later loads the FILE,
+// so the two must agree frame for frame.
+TEST_F(AudioStreamBufferTest, MonoPcmEncodeMatchesLoadingTheFileItWasWrittenTo) {
+    std::vector<int16_t> mono(HALF_SECOND_FRAMES);
+    for (std::size_t i = 0; i < mono.size(); ++i) {
+        mono[i] = static_cast<int16_t>(8000.0 * std::sin(static_cast<double>(i) * 0.05));
+    }
+    const auto path = wavPath("mono.wav");
+    const auto pathForFile = wavPath("mono-file.wav");
+    const std::vector<uint8_t> pcmBytes(reinterpret_cast<const uint8_t *>(mono.data()),
+                                        reinterpret_cast<const uint8_t *>(mono.data()) + mono.size() * 2);
+    ASSERT_TRUE(creatures::voice::writePcmToMultichannelWav(pcmBytes, path, 3, 48000).isSuccess());
+    ASSERT_TRUE(creatures::voice::writePcmToMultichannelWav(pcmBytes, pathForFile, 3, 48000).isSuccess());
+
+    auto fromPcm = AudioStreamBuffer::loadFromMonoPcm(path.string(), mono, 3);
+    auto fromFile = AudioStreamBuffer::loadFromWavFile(pathForFile.string());
+    ASSERT_NE(fromPcm, nullptr);
+    ASSERT_NE(fromFile, nullptr);
+    ASSERT_EQ(fromPcm->getFrameCount(), 50U);
+    ASSERT_EQ(fromFile->getFrameCount(), 50U);
+    for (uint8_t channel = 0; channel < RTP_STREAMING_CHANNELS; ++channel) {
+        for (std::size_t frame = 0; frame < 50; ++frame) {
+            ASSERT_EQ(fromPcm->getEncodedFrame(channel, frame), fromFile->getEncodedFrame(channel, frame))
+                << "channel " << int(channel) << " frame " << frame;
+        }
+    }
+    EXPECT_EQ(fromPcm->approximateBytes(), fromFile->approximateBytes());
+
+    // The memo is keyed by the file: loading the same path again shares the
+    // PCM-built buffer rather than reading the file.
+    auto again = AudioStreamBuffer::loadFromWavFile(path.string());
+    EXPECT_EQ(again.get(), fromPcm.get());
+}
+
+TEST_F(AudioStreamBufferTest, MonoPcmEncodeRejectsBadInput) {
+    std::vector<int16_t> mono(HALF_SECOND_FRAMES, 0);
+    const auto path = wavPath("bad.wav");
+    const std::vector<uint8_t> pcmBytes(mono.size() * 2, 0);
+    ASSERT_TRUE(creatures::voice::writePcmToMultichannelWav(pcmBytes, path, 1, 48000).isSuccess());
+    EXPECT_EQ(AudioStreamBuffer::loadFromMonoPcm(path.string(), mono, 0), nullptr);
+    EXPECT_EQ(AudioStreamBuffer::loadFromMonoPcm(path.string(), mono, 18), nullptr);
+    std::vector<int16_t> tooShort(RTP_SAMPLES - 1, 0);
+    EXPECT_EQ(AudioStreamBuffer::loadFromMonoPcm(path.string(), tooShort, 1), nullptr);
+}
 
 TEST_F(AudioStreamBufferTest, LoadsAndEncodesA17ChannelWav) {
     const auto path = wavPath("clip.wav");

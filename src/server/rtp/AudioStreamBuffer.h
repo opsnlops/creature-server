@@ -9,7 +9,9 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -38,6 +40,19 @@ class AudioStreamBuffer {
     static std::shared_ptr<AudioStreamBuffer> loadFromWavFile(const std::string &audioFilePath,
                                                               std::shared_ptr<OperationSpan> parentSpan = nullptr,
                                                               RetentionIntent retention = RetentionIntent::Retain);
+
+    /// Factory method for streamed speech (issue #195): build the buffer for
+    /// `wavPath` from the mono PCM the server just wrote into it, instead of
+    /// reading the 17-channel file back. `wavPath` must already exist with
+    /// exactly this audio on `audioChannel` (1-based): it is the memo and
+    /// disk-cache identity, so a later loadFromWavFile(wavPath) — playback —
+    /// finds the same encoded frames. The 16 silent lanes are encoded once
+    /// and shared; the result is byte-identical to loading the file.
+    static std::shared_ptr<AudioStreamBuffer> loadFromMonoPcm(const std::string &wavPath,
+                                                              std::span<const int16_t> monoSamples,
+                                                              uint16_t audioChannel,
+                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr,
+                                                              RetentionIntent retention = RetentionIntent::OneShot);
 
     /// Set the audio cache instance to use for caching encoded files
     static void setAudioCacheInstance(std::shared_ptr<util::AudioCache> audioCacheInstance);
@@ -76,6 +91,22 @@ class AudioStreamBuffer {
   private:
     AudioStreamBuffer() = default;
     Result<size_t> loadWaveFile(const std::string &audioFilePath, std::shared_ptr<OperationSpan> parentSpan);
+
+    /// The memo + fingerprint envelope shared by every factory: serialize
+    /// loads of one file, share an unchanged file's buffer, and memoize the
+    /// result. `load` fills a fresh buffer and returns its frame count.
+    static std::shared_ptr<AudioStreamBuffer>
+    memoizedLoad(const std::string &audioFilePath, RetentionIntent retention,
+                 const std::function<Result<size_t>(AudioStreamBuffer &)> &load);
+
+    /// Encode mono PCM onto one lane, silence on the rest (issue #195).
+    Result<size_t> encodeMonoPcm(std::span<const int16_t> monoSamples, uint16_t audioChannel,
+                                 std::shared_ptr<OperationSpan> parentSpan);
+
+    /// encodeMonoPcm, then publish to the disk cache under `wavPath` exactly
+    /// as a file load would, so playback's cache lookup hits.
+    Result<size_t> encodeMonoPcmWithCaching(const std::string &wavPath, std::span<const int16_t> monoSamples,
+                                            uint16_t audioChannel, std::shared_ptr<OperationSpan> parentSpan);
 
     /// Load from cache if available, otherwise encode and cache
     Result<size_t> loadWithCaching(const std::string &audioFilePath, std::shared_ptr<OperationSpan> parentSpan);
