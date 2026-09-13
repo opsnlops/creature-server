@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <span>
 #include <unordered_map>
 
 #include <base64.hpp>
@@ -679,12 +680,18 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
             if (pcmSpan)
                 pcmSpan->setSuccess();
 
-            // 3. Opus encoding (parallel across channels)
-            // Prewarm only — the buffer is discarded here and this sentence's temp
-            // path is never loaded again, so it must not consume the retention
-            // budget that keeps show audio warm (issue #93).
-            creatures::rtp::AudioStreamBuffer::loadFromWavFile(
-                wavPath.string(), sentenceSpan, creatures::rtp::AudioStreamBuffer::RetentionIntent::OneShot);
+            // 3. Opus encoding, straight from the PCM still in hand — no
+            // re-reading the 17-channel file we just wrote, and the silent
+            // lanes encoded once (issue #195). Prewarm only — the buffer is
+            // discarded here and this sentence's temp path is never loaded
+            // again, so it must not consume the retention budget that keeps
+            // show audio warm (issue #93). Playback finds the encoded frames
+            // in the disk cache under the same path, exactly as before.
+            creatures::rtp::AudioStreamBuffer::loadFromMonoPcm(
+                wavPath.string(),
+                std::span<const int16_t>(reinterpret_cast<const int16_t *>(tts.audioData.data()),
+                                         tts.audioData.size() / 2),
+                speaker.audioChannel, sentenceSpan, creatures::rtp::AudioStreamBuffer::RetentionIntent::OneShot);
 
             // 4. Build animation frames
             size_t targetFrames = std::max<size_t>(
