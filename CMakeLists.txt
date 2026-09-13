@@ -568,6 +568,8 @@ add_executable(creature-server
         src/util/loggingUtils.h
         src/util/Result.cpp
         src/util/Result.h
+        src/util/ThreadPriority.cpp
+        src/util/ThreadPriority.h
         src/util/uuidUtils.cpp
         src/util/uuidUtils.h
         src/util/UuidValidation.h
@@ -815,6 +817,8 @@ add_executable(creature-server-test
         tests/server/audio/LocalAudioPlaybackCoordinator_test.cpp
         tests/server/rtp/AudioLoadExecutor_test.cpp
         tests/server/rtp/AudioStreamBuffer_test.cpp
+        src/util/ThreadPriority.cpp
+        tests/util/ThreadPriority_test.cpp
         src/server/rtp/AudioStreamBuffer.cpp
         tests/server/rtp/BoundedCommandQueue_test.cpp
         tests/server/rtp/OpusPriming_test.cpp

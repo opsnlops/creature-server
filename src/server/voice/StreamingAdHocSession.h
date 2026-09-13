@@ -19,6 +19,7 @@
 #include "model/Creature.h"
 #include "model/Stage.h"
 #include "server/namespace-stuffs.h"
+#include "server/rtp/AudioStreamBuffer.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
@@ -178,6 +179,10 @@ class StreamingAdHocSession {
         Animation animation;
         uint64_t audioSamples{0}; // mono samples at 48 kHz, for the stitched track sizing
         std::string requestId;    // ElevenLabs request id, for provenance
+        // The encoded audio, held so playback finds it in the memo instead of
+        // the disk cache (issue #197). Null in travel mode, where the disk
+        // cache is used as before.
+        std::shared_ptr<creatures::rtp::AudioStreamBuffer> audioBuffer;
     };
 
     void touchClientActivity();
@@ -241,6 +246,9 @@ class StreamingAdHocSession {
         std::string requestId;
         uint64_t audioSamples{0};
         std::vector<Track> tracks; // kept only for dialog sessions, for the stitched animation
+        // Keeps the memo entry alive until the chain has played this turn
+        // (a queued turn loads its audio only when it reaches the front).
+        std::shared_ptr<creatures::rtp::AudioStreamBuffer> audioBuffer;
     };
     std::vector<SentenceOutcome> sentenceOutcomes_;
 
@@ -270,6 +278,14 @@ class StreamingAdHocSession {
     std::thread playbackThread_;
     std::atomic<bool> finished_{false}; // Signals: no more sentences coming
     std::atomic<bool> cancelled_{false};
+
+    // Disk-cache publishes deferred until after each turn was scheduled
+    // (issue #197): low-priority threads, joined before the session goes.
+    std::mutex cachePublishMutex_;
+    std::vector<std::thread> cachePublishThreads_;
+    void publishAudioCacheInBackground(std::shared_ptr<creatures::rtp::AudioStreamBuffer> audioBuffer,
+                                       std::string wavPath, std::shared_ptr<OperationSpan> parentSpan);
+    void joinCachePublishes();
 
     // Continuity chain: each turn waits for the previous turn's snapshot
     // before building, so body motion, idle phase, prosody and head aiming
