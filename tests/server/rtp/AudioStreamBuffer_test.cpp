@@ -117,6 +117,31 @@ TEST_F(AudioStreamBufferTest, MonoPcmEncodeMatchesLoadingTheFileItWasWrittenTo) 
     EXPECT_EQ(again.get(), fromPcm.get());
 }
 
+// Issue #197: a buffer built without publishing can be published later, and
+// the file it names must still be what it was encoded from.
+TEST_F(AudioStreamBufferTest, DeferredDiskCachePublishVerifiesTheFile) {
+    std::vector<int16_t> mono(HALF_SECOND_FRAMES, 1234);
+    const auto path = wavPath("deferred.wav");
+    const std::vector<uint8_t> pcmBytes(reinterpret_cast<const uint8_t *>(mono.data()),
+                                        reinterpret_cast<const uint8_t *>(mono.data()) + mono.size() * 2);
+    ASSERT_TRUE(creatures::voice::writePcmToMultichannelWav(pcmBytes, path, 2, 48000).isSuccess());
+
+    auto buffer =
+        AudioStreamBuffer::loadFromMonoPcm(path.string(), mono, 2, nullptr, AudioStreamBuffer::RetentionIntent::OneShot,
+                                           AudioStreamBuffer::DiskCache::Skip);
+    ASSERT_NE(buffer, nullptr);
+    EXPECT_EQ(buffer->getFrameCount(), 50U);
+
+    // Publishing is a no-op success without a cache instance in this test
+    // process, and must never throw.
+    EXPECT_TRUE(buffer->publishToDiskCache(path.string()).isSuccess());
+
+    // Holding the buffer keeps the memo entry alive: playback's file load
+    // shares it instead of reading the WAV.
+    auto again = AudioStreamBuffer::loadFromWavFile(path.string());
+    EXPECT_EQ(again.get(), buffer.get());
+}
+
 TEST_F(AudioStreamBufferTest, MonoPcmEncodeRejectsBadInput) {
     std::vector<int16_t> mono(HALF_SECOND_FRAMES, 0);
     const auto path = wavPath("bad.wav");

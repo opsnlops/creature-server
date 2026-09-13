@@ -32,6 +32,7 @@
 #include "server/storage/Storage.h"
 #include "server/voice/SpeechTrackBuilder.h"
 #include "util/Slugify.h"
+#include "util/ThreadPriority.h"
 #include "util/cache.h"
 #include "util/helpers.h"
 #include "util/uuidUtils.h"
@@ -118,6 +119,7 @@ StreamingAdHocSession::~StreamingAdHocSession() {
     if (playbackThread_.joinable()) {
         playbackThread_.join();
     }
+    joinCachePublishes();
 
     debug("StreamingAdHocSession destroyed: session={}", sessionId_);
     if (span_) {
@@ -140,6 +142,41 @@ StreamingAdHocSession::~StreamingAdHocSession() {
 }
 
 void StreamingAdHocSession::touchClientActivity() { lastClientActivityNs_ = monotonicNowNs(); }
+
+void StreamingAdHocSession::publishAudioCacheInBackground(
+    std::shared_ptr<creatures::rtp::AudioStreamBuffer> audioBuffer, std::string wavPath,
+    std::shared_ptr<OperationSpan> parentSpan) {
+    // The turn is scheduled; the cache write can take its time. It keeps a
+    // later playback of this sentence's WAV (the exchange list, the console)
+    // on the fast path, which is why it is still done at all (issue #197).
+    std::lock_guard<std::mutex> lock(cachePublishMutex_);
+    cachePublishThreads_.emplace_back(
+        [audioBuffer = std::move(audioBuffer), wavPath = std::move(wavPath), parentSpan = std::move(parentSpan)] {
+            util::lowerCurrentThreadPriority();
+            auto span = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                       "StreamingAdHocSession.publishAudioCache", parentSpan)
+                                                 : nullptr;
+            auto result = audioBuffer->publishToDiskCache(wavPath, span);
+            if (!result.isSuccess()) {
+                warn("Deferred audio cache publish for {} failed: {}", wavPath, result.getError()->getMessage());
+            } else if (span) {
+                span->setSuccess();
+            }
+        });
+}
+
+void StreamingAdHocSession::joinCachePublishes() {
+    std::vector<std::thread> threads;
+    {
+        std::lock_guard<std::mutex> lock(cachePublishMutex_);
+        threads.swap(cachePublishThreads_);
+    }
+    for (auto &thread : threads) {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+}
 
 bool StreamingAdHocSession::tryRenewClientLease(std::chrono::steady_clock::time_point now) {
     std::lock_guard<std::mutex> lock(stateMutex_);
@@ -659,39 +696,52 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
             std::filesystem::create_directories(tempDir);
 
             auto wavPath = tempDir / fmt::format("s{}.wav", sentenceIndex);
-            auto pcmSpan =
-                creatures::observability
-                    ? creatures::observability->createChildOperationSpan("StreamingAdHocSession.wrapPcm", sentenceSpan)
-                    : nullptr;
-            if (pcmSpan) {
-                pcmSpan->setAttribute("audio.input.bytes", static_cast<int64_t>(tts.audioData.size()));
-                pcmSpan->setAttribute("audio.channel", static_cast<int64_t>(speaker.audioChannel));
-                pcmSpan->setAttribute("audio.sample.rate", static_cast<int64_t>(48000));
+            {
+                // Scoped so the span measures the write alone; it used to
+                // stay open across the encode and report both as one number.
+                auto pcmSpan = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                                              "StreamingAdHocSession.wrapPcm", sentenceSpan)
+                                                        : nullptr;
+                if (pcmSpan) {
+                    pcmSpan->setAttribute("audio.input.bytes", static_cast<int64_t>(tts.audioData.size()));
+                    pcmSpan->setAttribute("audio.channel", static_cast<int64_t>(speaker.audioChannel));
+                    pcmSpan->setAttribute("audio.sample.rate", static_cast<int64_t>(48000));
+                }
+                auto convertResult = writePcmToMultichannelWav(tts.audioData, wavPath, speaker.audioChannel, 48000);
+                if (!convertResult.isSuccess()) {
+                    const auto failure = convertResult.getError().value();
+                    lifecycleFailed_.store(true);
+                    recordSpanError(pcmSpan, failure.getMessage(), "PcmWavWriteFailed", failure.getCode());
+                    recordSpanError(sentenceSpan, failure.getMessage(), "PcmWavWriteFailed", failure.getCode());
+                    resolveFailedSentence(sentenceIndex, previous);
+                    return Result<RenderedTurn>{convertResult.getError().value()};
+                }
+                if (pcmSpan)
+                    pcmSpan->setSuccess();
             }
-            auto convertResult = writePcmToMultichannelWav(tts.audioData, wavPath, speaker.audioChannel, 48000);
-            if (!convertResult.isSuccess()) {
-                const auto failure = convertResult.getError().value();
-                lifecycleFailed_.store(true);
-                recordSpanError(pcmSpan, failure.getMessage(), "PcmWavWriteFailed", failure.getCode());
-                recordSpanError(sentenceSpan, failure.getMessage(), "PcmWavWriteFailed", failure.getCode());
-                resolveFailedSentence(sentenceIndex, previous);
-                return Result<RenderedTurn>{convertResult.getError().value()};
-            }
-            if (pcmSpan)
-                pcmSpan->setSuccess();
 
             // 3. Opus encoding, straight from the PCM still in hand — no
             // re-reading the 17-channel file we just wrote, and the silent
-            // lanes encoded once (issue #195). Prewarm only — the buffer is
-            // discarded here and this sentence's temp path is never loaded
-            // again, so it must not consume the retention budget that keeps
-            // show audio warm (issue #93). Playback finds the encoded frames
-            // in the disk cache under the same path, exactly as before.
-            creatures::rtp::AudioStreamBuffer::loadFromMonoPcm(
+            // lanes encoded once (issue #195). Never charged to the retention
+            // budget that keeps show audio warm (issue #93): on the mainstage
+            // the session itself holds the buffer until the turn has played,
+            // so playback finds it in the memo and the disk cache is skipped
+            // (issue #197); in travel mode the buffer is discarded here and
+            // playback loads it from the disk cache, exactly as before.
+            const bool holdInMemory = creatures::config && !creatures::config->getTravelMode();
+            auto audioBuffer = creatures::rtp::AudioStreamBuffer::loadFromMonoPcm(
                 wavPath.string(),
                 std::span<const int16_t>(reinterpret_cast<const int16_t *>(tts.audioData.data()),
                                          tts.audioData.size() / 2),
-                speaker.audioChannel, sentenceSpan, creatures::rtp::AudioStreamBuffer::RetentionIntent::OneShot);
+                speaker.audioChannel, sentenceSpan, creatures::rtp::AudioStreamBuffer::RetentionIntent::OneShot,
+                holdInMemory ? creatures::rtp::AudioStreamBuffer::DiskCache::Skip
+                             : creatures::rtp::AudioStreamBuffer::DiskCache::Publish);
+            if (!holdInMemory) {
+                audioBuffer.reset();
+            }
+            if (sentenceSpan) {
+                sentenceSpan->setAttribute("audio.held_in_memory", holdInMemory && audioBuffer != nullptr);
+            }
 
             // 4. Build animation frames
             size_t targetFrames = std::max<size_t>(
@@ -881,6 +931,7 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
             // S16 mono: two bytes per sample.
             rendered.audioSamples = static_cast<uint64_t>(tts.audioData.size() / 2);
             rendered.requestId = tts.requestId;
+            rendered.audioBuffer = std::move(audioBuffer);
             return rendered;
         } catch (const std::exception &exception) {
             lifecycleFailed_.store(true);
@@ -1096,12 +1147,19 @@ void StreamingAdHocSession::playbackThreadFunc() {
             else
                 lastAnimationId = animation.id;
 
+            // The turn is on its way; now the encoded frames can go to the
+            // disk cache without anyone waiting on them (issue #197).
+            if (rendered.audioBuffer) {
+                publishAudioCacheInBackground(rendered.audioBuffer, animation.metadata.sound_file, sentenceSpan);
+            }
+
             SentenceOutcome outcome;
             outcome.success = dispatched;
             if (dispatched) {
                 outcome.animationId = animation.id;
                 outcome.requestId = rendered.requestId;
                 outcome.audioSamples = rendered.audioSamples;
+                outcome.audioBuffer = std::move(rendered.audioBuffer);
                 // The stitched exchange animation (#186) needs every turn's
                 // frames; a plain ad-hoc stream doesn't build one, so don't
                 // hold a copy of every sentence for it.
@@ -1192,6 +1250,7 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish(std::shared_ptr<Requ
     if (playbackThread_.joinable()) {
         playbackThread_.join();
     }
+    joinCachePublishes();
 
     // No invalidations fired here — each sentence's publishAdHocAnimation above
     // already invalidates AdHocAnimationList + AdHocSoundList as the chunk lands.

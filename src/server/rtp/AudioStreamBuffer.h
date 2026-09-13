@@ -48,11 +48,25 @@ class AudioStreamBuffer {
     /// disk-cache identity, so a later loadFromWavFile(wavPath) — playback —
     /// finds the same encoded frames. The 16 silent lanes are encoded once
     /// and shared; the result is byte-identical to loading the file.
-    static std::shared_ptr<AudioStreamBuffer> loadFromMonoPcm(const std::string &wavPath,
-                                                              std::span<const int16_t> monoSamples,
-                                                              uint16_t audioChannel,
-                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr,
-                                                              RetentionIntent retention = RetentionIntent::OneShot);
+    ///
+    /// `diskCache` controls whether the encoded frames are also published to
+    /// the on-disk audio cache (issue #197). A caller that keeps the returned
+    /// buffer alive until playback doesn't need that: playback finds the same
+    /// buffer through the memo, and the 5 MB fingerprint hash plus the cache
+    /// write were the largest remaining cost on the streaming hot path.
+    enum class DiskCache { Publish, Skip };
+    static std::shared_ptr<AudioStreamBuffer>
+    loadFromMonoPcm(const std::string &wavPath, std::span<const int16_t> monoSamples, uint16_t audioChannel,
+                    std::shared_ptr<OperationSpan> parentSpan = nullptr,
+                    RetentionIntent retention = RetentionIntent::OneShot, DiskCache diskCache = DiskCache::Publish);
+
+    /// Publish this buffer's encoded frames to the on-disk audio cache under
+    /// `wavPath`, exactly as a cache-miss file load would (issue #197). For a
+    /// buffer built with DiskCache::Skip, call this once playback has been
+    /// scheduled — off the hot path, from a low-priority thread — so a later
+    /// playback of the same file still gets its cache hit. Fingerprints the
+    /// file first; a mismatch (file rewritten meanwhile) refuses to publish.
+    Result<void> publishToDiskCache(const std::string &wavPath, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /// Set the audio cache instance to use for caching encoded files
     static void setAudioCacheInstance(std::shared_ptr<util::AudioCache> audioCacheInstance);
