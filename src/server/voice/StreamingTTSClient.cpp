@@ -890,6 +890,7 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(const std::str
     long httpCode = 0;
     const CURLcode res = call.perform(httpCode);
     result.requestId = call.requestId();
+    call.recordTimings(span);
 
     if (auto err = checkResponse<StreamingTTSResult>(res, httpCode, "ElevenLabs REST TTS", kNoBodyForLog, span)) {
         return *err;

@@ -261,6 +261,7 @@ Result<DialogResult> DialogClient::generateDialog(const std::string &apiKey, con
     long httpCode = 0;
     const CURLcode res = call.perform(httpCode);
     result.requestId = call.requestId();
+    call.recordTimings(span);
 
     if (auto err = checkResponse<DialogResult>(res, httpCode, "ElevenLabs dialog", respBuf, span)) {
         return *err;
@@ -447,6 +448,7 @@ Result<ForcedAlignmentResult> DialogClient::forcedAlignment(const std::string &a
 
     long httpCode = 0;
     const CURLcode res = call.perform(httpCode);
+    call.recordTimings(span);
 
     if (auto err = checkResponse<ForcedAlignmentResult>(res, httpCode, "ElevenLabs forced-alignment", respBuf, span)) {
         return *err;

@@ -791,6 +791,7 @@ add_executable(creature-server-test
         src/server/voice/SpeechTrackBuilder.cpp
         tests/server/voice/TurnConcat_test.cpp
         tests/server/voice/StreamingTTSClient_duration_test.cpp
+        tests/server/voice/ElevenLabsHttp_test.cpp
         src/server/voice/TurnConcat.cpp
         tests/server/voice/DialogAnimation_test.cpp
         src/server/voice/DialogAnimation.cpp
