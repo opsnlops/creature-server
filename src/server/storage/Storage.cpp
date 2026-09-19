@@ -299,6 +299,19 @@ Result<void> deleteDialogScript(const scriptId_t &scriptId, std::shared_ptr<Oper
         CacheType::DialogScriptList);
 }
 
+Result<creatures::MusicPiece> publishMusicPiece(const creatures::MusicPiece &piece,
+                                                std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "publishMusicPiece", [&] { return creatures::db->upsertMusicPiece(piece, parentSpan); },
+        CacheType::MusicPieceList);
+}
+
+Result<void> deleteMusicPiece(const std::string &pieceId, std::shared_ptr<OperationSpan> parentSpan) {
+    return runPublisher(
+        "deleteMusicPiece", [&] { return creatures::db->deleteMusicPiece(pieceId, parentSpan); },
+        CacheType::MusicPieceList);
+}
+
 Result<creatures::Storyboard> publishStoryboard(const std::string &storyboardJson,
                                                 std::shared_ptr<OperationSpan> parentSpan) {
     return runPublisher(

@@ -108,6 +108,9 @@ TEST(IxmlReaderExtract, RoundTripsMusic200ControlsThroughIxmlAndJson) {
     music.finetuneId = "ft_abc";
     music.finetuneStrength = 0.75;
     music.storedForInpainting = true;
+    music.sectionsJson = R"([{"text":"[Intro]","duration_ms":8000}])";
+    music.pieceId = "piece-1";
+    music.baseVersionId = "version-0";
     music.forceInstrumental = false;
     music.requestJson = R"({"composition_plan":{"chunks":[]}})";
     music.compositionPlanJson = R"({"chunks":[]})";
@@ -123,6 +126,9 @@ TEST(IxmlReaderExtract, RoundTripsMusic200ControlsThroughIxmlAndJson) {
     EXPECT_DOUBLE_EQ(fromIxml.music->finetuneStrength.value(), 0.75);
     EXPECT_TRUE(fromIxml.music->storedForInpainting);
     EXPECT_FALSE(fromIxml.music->forceInstrumental);
+    EXPECT_EQ(fromIxml.music->sectionsJson, music.sectionsJson);
+    EXPECT_EQ(fromIxml.music->pieceId, "piece-1");
+    EXPECT_EQ(fromIxml.music->baseVersionId, "version-0");
 
     const auto fromJson = wavProvenanceFromJson(wavProvenanceToJson(p));
     ASSERT_TRUE(fromJson.music.has_value());

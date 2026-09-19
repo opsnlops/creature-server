@@ -1,10 +1,13 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 /// Neutral model of an ElevenLabs Music generation request (#200).
@@ -104,6 +107,167 @@ struct MusicCompositionPlan {
 
     bool operator==(const MusicCompositionPlan &) const = default;
 };
+
+/// A piece's editable section (#202): a generation chunk with no audio
+/// reference and no conditioning. What the console shows as chips and what a
+/// refinement starts from — the plan actually sent may audio-reference some
+/// of these, and that form loses the section's content.
+struct MusicSection {
+    std::string text;
+    int64_t durationMs{0};
+    std::vector<std::string> positiveStyles;
+    std::vector<std::string> negativeStyles;
+    std::string contextAdherence = "high";
+
+    bool operator==(const MusicSection &) const = default;
+};
+
+inline int64_t musicSectionsTotalMs(const std::vector<MusicSection> &sections) {
+    int64_t total = 0;
+    for (const auto &section : sections) {
+        total += section.durationMs;
+    }
+    return total;
+}
+
+inline nlohmann::json musicSectionToJson(const MusicSection &section) {
+    return {{"text", section.text},
+            {"duration_ms", section.durationMs},
+            {"positive_styles", section.positiveStyles},
+            {"negative_styles", section.negativeStyles},
+            {"context_adherence", section.contextAdherence}};
+}
+
+inline nlohmann::json musicSectionsToJson(const std::vector<MusicSection> &sections) {
+    auto json = nlohmann::json::array();
+    for (const auto &section : sections) {
+        json.push_back(musicSectionToJson(section));
+    }
+    return json;
+}
+
+/// The version a refinement starts from: its editable sections and the
+/// ElevenLabs song they were rendered as.
+struct MusicBaseVersion {
+    std::string songId;
+    std::vector<MusicSection> sections;
+};
+
+/// ElevenLabs caps a conditioning reference at 30 s.
+inline constexpr int64_t kMaxMusicConditioningMs = 30000;
+
+/// The refinement builder (#202): turn editable sections into the plan to
+/// send. Sections in `keep` must be unchanged from the base at the same
+/// index (content AND duration) and become audio-ref chunks over the base's
+/// cumulative span; everything else is regenerated, conditioned on the base's
+/// span at that index when there is one. Pure so it can be unit-tested; the
+/// contract parser validates shapes, this validates the keep set.
+struct MusicSectionsPlanError {
+    std::string message;
+};
+
+inline std::variant<MusicCompositionPlan, MusicSectionsPlanError>
+buildMusicSectionsPlan(const std::vector<MusicSection> &sections, const std::optional<MusicBaseVersion> &base,
+                       const std::vector<std::size_t> &keep, const std::string &conditionStrength) {
+    MusicCompositionPlan plan;
+    std::vector<int64_t> baseStarts;
+    if (base) {
+        int64_t cursor = 0;
+        for (const auto &section : base->sections) {
+            baseStarts.push_back(cursor);
+            cursor += section.durationMs;
+        }
+    }
+    const auto isKept = [&](std::size_t index) { return std::find(keep.begin(), keep.end(), index) != keep.end(); };
+    for (std::size_t index = 0; index < sections.size(); ++index) {
+        const auto &section = sections[index];
+        const bool hasBase = base && index < base->sections.size();
+        if (isKept(index)) {
+            if (!base) {
+                return MusicSectionsPlanError{fmt::format("keep[{}] requires base_version_id", index)};
+            }
+            if (!hasBase) {
+                return MusicSectionsPlanError{
+                    fmt::format("sections[{}] is marked keep but the base version has no section {}", index, index)};
+            }
+            const auto &baseSection = base->sections[index];
+            if (baseSection != section) {
+                const char *what = baseSection.durationMs != section.durationMs           ? "duration_ms"
+                                   : baseSection.text != section.text                     ? "text"
+                                   : baseSection.positiveStyles != section.positiveStyles ? "positive_styles"
+                                   : baseSection.negativeStyles != section.negativeStyles ? "negative_styles"
+                                                                                          : "context_adherence";
+                return MusicSectionsPlanError{
+                    fmt::format("sections[{}] is marked keep but its {} differs from the base version", index, what)};
+            }
+            MusicPlanChunk chunk;
+            chunk.audioRef = MusicAudioRange{base->songId, baseStarts[index], baseStarts[index] + section.durationMs};
+            plan.chunks.push_back(std::move(chunk));
+            continue;
+        }
+        MusicPlanChunk chunk;
+        chunk.text = section.text;
+        chunk.durationMs = section.durationMs;
+        chunk.positiveStyles = section.positiveStyles;
+        chunk.negativeStyles = section.negativeStyles;
+        chunk.contextAdherence = section.contextAdherence;
+        if (hasBase) {
+            const auto start = baseStarts[index];
+            const auto end =
+                std::min<int64_t>(start + base->sections[index].durationMs, start + kMaxMusicConditioningMs);
+            if (end - start >= kMinMusicChunkDurationMs) {
+                chunk.conditioningRef = MusicAudioRange{base->songId, start, end};
+                chunk.conditionStrength = conditionStrength;
+            }
+        }
+        plan.chunks.push_back(std::move(chunk));
+    }
+    return plan;
+}
+
+/// Which proposed sections differ from a base version, by index. Sections
+/// beyond the base are changed by definition; a shorter proposal simply
+/// drops the base's tail (nothing to keep there).
+struct MusicSectionsDiff {
+    std::vector<std::size_t> changed;
+    std::vector<std::size_t> kept;
+};
+
+inline MusicSectionsDiff diffMusicSections(const std::vector<MusicSection> &base,
+                                           const std::vector<MusicSection> &proposed) {
+    MusicSectionsDiff diff;
+    for (std::size_t index = 0; index < proposed.size(); ++index) {
+        if (index < base.size() && base[index] == proposed[index]) {
+            diff.kept.push_back(index);
+        } else {
+            diff.changed.push_back(index);
+        }
+    }
+    return diff;
+}
+
+/// Strip an ElevenLabs plan chunk down to its editable section fields.
+/// The planner emits explicit nulls for conditioning and may echo audio-ref
+/// chunks back; neither belongs in a section. Returns null for a chunk that
+/// has no generation content at all (an audio-ref), so callers can reject it.
+inline nlohmann::json planChunkToSectionJson(const nlohmann::json &chunk) {
+    if (!chunk.is_object() || !chunk.contains("text")) {
+        return nullptr;
+    }
+    nlohmann::json section{{"text", chunk.value("text", "")}, {"duration_ms", chunk.value("duration_ms", 0)}};
+    if (chunk.contains("positive_styles") && chunk["positive_styles"].is_array()) {
+        section["positive_styles"] = chunk["positive_styles"];
+    } else {
+        section["positive_styles"] = nlohmann::json::array();
+    }
+    if (chunk.contains("negative_styles") && chunk["negative_styles"].is_array()) {
+        section["negative_styles"] = chunk["negative_styles"];
+    }
+    if (chunk.contains("context_adherence") && chunk["context_adherence"].is_string()) {
+        section["context_adherence"] = chunk["context_adherence"];
+    }
+    return section;
+}
 
 /// Everything a `POST /v1/music/detailed` call can be told. Exactly one of
 /// `prompt` / `compositionPlan` is populated; the prompt-only and plan-only

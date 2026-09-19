@@ -77,4 +77,9 @@ std::string bgmExportBasename(const std::string &scriptTitle, const std::string 
            generationId.substr(0, std::min<std::size_t>(12, generationId.size()));
 }
 
+std::string musicExportBasename(const std::string &pieceTitle, const std::string &generationId) {
+    return slugify(pieceTitle, 48, "music") + "--" +
+           generationId.substr(0, std::min<std::size_t>(12, generationId.size()));
+}
+
 } // namespace creatures::util
