@@ -895,9 +895,12 @@ inline nlohmann::json dialogPreviewLookupResponseToJson(const DialogPreviewLooku
     auto generations = nlohmann::json::array();
     for (const auto &generation : response.generations)
         generations.push_back({{"generation_id", generation.generationId}, {"created_at", generation.createdAt}});
-    return {{"cache_key", response.cacheKey},
-            {"generations", std::move(generations)},
-            {"latest_generation_id", response.latestGenerationId}};
+    nlohmann::json json{{"cache_key", response.cacheKey}, {"generations", std::move(generations)}};
+    // Omitted, not empty, when nothing is cached (#204) — per the codec
+    // conventions, and the console decodes it as optional.
+    if (!response.latestGenerationId.empty())
+        json["latest_generation_id"] = response.latestGenerationId;
+    return json;
 }
 
 inline nlohmann::json dialogScriptValidationResponseToJson(const DialogScriptValidationResponse &response) {
