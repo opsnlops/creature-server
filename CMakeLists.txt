@@ -463,6 +463,7 @@ file(GLOB serverFiles CONFIGURE_DEPENDS
         src/server/logging/*
         src/server/metrics/*
         src/server/playlist/*
+        src/server/music/*
         src/server/script/*
         src/server/stage/*
         src/server/storage/*
@@ -751,6 +752,7 @@ add_executable(creature-server-test
         tests/model/Animation_test.cpp
         tests/model/AnimationMetadata_test.cpp
         tests/model/DialogScript_test.cpp
+        tests/model/MusicPiece_test.cpp
         tests/model/Track_dual_id_test.cpp
         tests/model/Animation_roundtrip_test.cpp
         tests/model/AdHocExchange_test.cpp
@@ -790,6 +792,7 @@ add_executable(creature-server-test
         tests/server/FakeWebsocketUtils.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
         tests/server/voice/MusicClient_test.cpp
+        tests/server/voice/MusicTypes_test.cpp
         tests/server/voice/MusicGenerationCache_test.cpp
         src/server/voice/MusicGenerationCache.cpp
         tests/server/voice/VoiceClient_test.cpp
@@ -878,6 +881,7 @@ add_executable(creature-server-test
         src/model/Creature.cpp
         src/model/DmxFixture.cpp
         src/model/DialogScript.cpp
+        src/model/MusicPiece.cpp
         src/model/Input.cpp
         src/model/StreamFrame.cpp
         src/model/VirtualStatusLights.cpp

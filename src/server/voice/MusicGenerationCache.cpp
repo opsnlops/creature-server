@@ -113,8 +113,9 @@ Result<std::filesystem::path> candidatePath(const std::string &generationId, con
 
 Result<CachedMusicGeneration> saveMusicGeneration(const CachedMusicGeneration &generation,
                                                   const std::vector<uint8_t> &monoPcm) {
-    if (!isUuidShape(generation.generationId) || !isUuidShape(generation.scriptId) || monoPcm.empty() ||
-        !generation.provenance.music || generation.provenance.music->requestJson.empty()) {
+    // scriptId is empty for a library (dialog-free) candidate (#202).
+    if (!isUuidShape(generation.generationId) || (!generation.scriptId.empty() && !isUuidShape(generation.scriptId)) ||
+        monoPcm.empty() || !generation.provenance.music || generation.provenance.music->requestJson.empty()) {
         return Result<CachedMusicGeneration>{
             ServerError(ServerError::InvalidData, "music generation cache input is incomplete")};
     }
@@ -195,7 +196,8 @@ Result<CachedMusicGeneration> loadMusicGeneration(const std::string &generationI
         // (#200) has none, its recipe is the plan in the provenance.
         const bool planMode =
             generation.provenance.music && generation.provenance.music->requestKind == "composition_plan";
-        if (generation.generationId != generationId || !isUuidShape(generation.scriptId) ||
+        if (generation.generationId != generationId ||
+            (!generation.scriptId.empty() && !isUuidShape(generation.scriptId)) ||
             (generation.prompt.empty() && !planMode) || !generation.provenance.music ||
             generation.provenance.music->musicGenerationId != generation.generationId) {
             return Result<CachedMusicGeneration>{

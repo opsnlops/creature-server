@@ -13,6 +13,7 @@
 #include "model/Creature.h"
 #include "model/DialogScript.h"
 #include "model/DmxFixture.h"
+#include "model/MusicPiece.h"
 #include "model/Playlist.h"
 #include "model/Stage.h"
 #include "model/Storyboard.h"
@@ -227,6 +228,14 @@ struct StoragePath {
 // deleteDialogScript + CacheType::DialogScriptList
 [[nodiscard]] Result<void> deleteDialogScript(const scriptId_t &scriptId,
                                               std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// upsertMusicPiece + CacheType::MusicPieceList (#202)
+[[nodiscard]] Result<creatures::MusicPiece> publishMusicPiece(const creatures::MusicPiece &piece,
+                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+// deleteMusicPiece + CacheType::MusicPieceList
+[[nodiscard]] Result<void> deleteMusicPiece(const std::string &pieceId,
+                                            std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
 // upsertStoryboard + CacheType::StoryboardList
 [[nodiscard]] Result<creatures::Storyboard> publishStoryboard(const std::string &storyboardJson,

@@ -142,6 +142,9 @@ SoundRenditionService::Comments SoundRenditionService::provenanceTags(const crea
         if (music.finetuneStrength)
             add("MUSIC_FINETUNE_STRENGTH", fmt::format("{}", *music.finetuneStrength));
         add("MUSIC_STORED_FOR_INPAINTING", music.storedForInpainting ? "true" : "false");
+        add("MUSIC_PIECE_ID", music.pieceId);
+        add("MUSIC_BASE_VERSION_ID", music.baseVersionId);
+        add("MUSIC_SECTIONS_JSON", music.sectionsJson);
         add("SOURCE_DIALOG_DURATION_MS", std::to_string(music.sourceDialogDurationMs));
         add("MUSIC_DURATION_EXTENSION_MS", std::to_string(music.durationExtensionMs));
         add("MUSIC_LENGTH_MS", std::to_string(music.musicLengthMs));

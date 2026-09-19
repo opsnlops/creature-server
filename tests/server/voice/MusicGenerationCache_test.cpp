@@ -77,6 +77,25 @@ TEST_F(MusicGenerationCacheTest, PlanModeTakeWithoutPromptRoundTrips) {
     EXPECT_EQ(generation.provenance.music->songId, "song-1");
 }
 
+/// #202: a library candidate is composed against no dialog, so it has no
+/// script id. The loader must accept empty (and still reject garbage).
+TEST_F(MusicGenerationCacheTest, DialogFreeCandidateHasNoScriptId) {
+    const std::string id = "6f0f6c4e-9a3b-4c6d-8e1f-2a3b4c5d6e73";
+    created_.push_back(id);
+    auto generation = candidate(id, "composition_plan", "");
+    generation.scriptId.clear();
+    generation.provenance.music->pieceId = "piece-1";
+    auto saved = creatures::voice::saveMusicGeneration(generation, pcm_);
+    ASSERT_TRUE(saved.isSuccess()) << saved.getError()->getMessage();
+    auto loaded = creatures::voice::loadMusicGeneration(id);
+    ASSERT_TRUE(loaded.isSuccess()) << loaded.getError()->getMessage();
+    EXPECT_TRUE(loaded.getValue()->scriptId.empty());
+    EXPECT_EQ(loaded.getValue()->provenance.music->pieceId, "piece-1");
+
+    generation.scriptId = "not-a-uuid";
+    EXPECT_FALSE(creatures::voice::saveMusicGeneration(generation, pcm_).isSuccess());
+}
+
 TEST_F(MusicGenerationCacheTest, PromptModeTakeStillRequiresItsPrompt) {
     const std::string id = "6f0f6c4e-9a3b-4c6d-8e1f-2a3b4c5d6e71";
     created_.push_back(id);

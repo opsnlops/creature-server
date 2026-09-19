@@ -182,6 +182,20 @@ Result<void> Database::deleteDialogScript(const scriptId_t & /*scriptId*/,
     return Result<void>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
 }
 
+Result<creatures::MusicPiece> Database::upsertMusicPiece(const creatures::MusicPiece &piece,
+                                                         const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
+    if (g_pretendSuccess)
+        return Result<creatures::MusicPiece>{piece};
+    return Result<creatures::MusicPiece>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
+}
+
+Result<void> Database::deleteMusicPiece(const std::string & /*pieceId*/,
+                                        const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
+    if (g_pretendSuccess)
+        return Result<void>{};
+    return Result<void>{ServerError(ServerError::InvalidData, "FakeDatabase stub")};
+}
+
 Result<creatures::Storyboard> Database::upsertStoryboard(const std::string & /*storyboardJson*/,
                                                          const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
     if (g_pretendSuccess)
