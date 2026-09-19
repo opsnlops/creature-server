@@ -52,6 +52,14 @@ MP3 is a preview/share transport only. It is never accepted as show input.
 }
 ```
 
+> **#200 (3.47.0):** this body still works unchanged. It now defaults to
+> `model_id: music_v2_5`, and the same endpoint accepts `model_id`,
+> `force_instrumental`, `finetune_id`/`finetune_strength`, `store_for_inpainting`,
+> and a `composition_plan` + `seed` alternative to `prompt`. The job result gains
+> `model_id`, `song_id`, `request_kind`, `composition_plan`, and the other knobs.
+> New helper routes: `POST …/music/plan`, `GET …/music/generated/{id}/recipe`,
+> `GET …/music/finetunes`. Full contract in `200-music-controls-plan.md`.
+
 The request validates the script UUID, 64-character lowercase cache key, generation
 UUID, prompt length, generation mode, and cached dialog take before returning
 `202 JobCreatedDto`. `duration_extension_ms` defaults to zero and must be between

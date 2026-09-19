@@ -56,6 +56,46 @@ std::string nowIso8601() {
     return output.str();
 }
 
+/// Exact length of a cached 48 kHz mono take.
+int64_t cachedDialogLengthMs(std::size_t pcmBytes) {
+    return static_cast<int64_t>((pcmBytes / sizeof(int16_t)) * 1000ULL / 48000ULL);
+}
+
+nlohmann::json parseStoredJson(const std::string &text) {
+    if (text.empty()) {
+        return nlohmann::json::object();
+    }
+    try {
+        return nlohmann::json::parse(text);
+    } catch (const std::exception &) {
+        return nlohmann::json::object();
+    }
+}
+
+/// The console-facing recipe is derived from provenance, never from the
+/// request, so the job result and the later recipe endpoint can't disagree.
+api::DialogMusicRecipe recipeFromProvenance(const voice::MusicWavProvenance &music) {
+    api::DialogMusicRecipe recipe;
+    recipe.modelId = music.modelId;
+    recipe.songId = music.songId;
+    // Pre-#200 takes have no requestKind; they were all prompt mode.
+    recipe.requestKind = music.requestKind.empty() ? "prompt" : music.requestKind;
+    recipe.prompt = music.prompt;
+    if (recipe.requestKind == "prompt") {
+        recipe.generationMode = music.generationMode;
+        recipe.forceInstrumental = music.forceInstrumental;
+    }
+    recipe.seed = music.seed;
+    if (!music.finetuneId.empty()) {
+        recipe.finetuneId = music.finetuneId;
+        recipe.finetuneStrength = music.finetuneStrength;
+    }
+    recipe.storedForInpainting = music.storedForInpainting;
+    recipe.compositionPlan = parseStoredJson(music.compositionPlanJson);
+    recipe.songMetadata = parseStoredJson(music.songMetadataJson);
+    return recipe;
+}
+
 struct DialogMusicContext {
     std::vector<voice::DialogInput> inputs;
     std::unordered_map<std::string, std::string> names;
@@ -105,21 +145,37 @@ Result<api::DialogMusicGenerationResult> DialogMusicService::generate(const api:
     const std::string &prompt = request.prompt;
     const std::string &mode = request.generationMode;
     const int64_t durationExtensionMs = request.durationExtensionMs;
+    const bool planMode = request.isPlanMode();
     if (span) {
         span->setAttribute("job.id", jobId);
         span->setAttribute("dialog.script_id", scriptId);
         span->setAttribute("dialog.generation_id", dialogGenerationId);
         span->setAttribute("dialog.cache_key", cacheKey);
-        span->setAttribute("music.generation_mode", mode);
-        span->setAttribute("music.prompt_length", static_cast<int64_t>(prompt.size()));
-        span->setAttribute("music.duration_extension_ms", durationExtensionMs);
+        span->setAttribute("music.request_kind", planMode ? "composition_plan" : "prompt");
+        span->setAttribute("music.model_id", request.modelId);
+        span->setAttribute("music.store_for_inpainting", request.storeForInpainting);
+        span->setAttribute("music.finetune_present", request.finetuneId.has_value());
+        if (planMode) {
+            span->setAttribute("music.chunk_count", static_cast<int64_t>(request.compositionPlan->chunks.size()));
+            span->setAttribute("music.seed_present", request.seed.has_value());
+        } else {
+            span->setAttribute("music.generation_mode", mode);
+            span->setAttribute("music.prompt_length", static_cast<int64_t>(prompt.size()));
+            span->setAttribute("music.duration_extension_ms", durationExtensionMs);
+            span->setAttribute("music.force_instrumental", request.forceInstrumental);
+        }
     }
+    // The contract parser is the authority on shape; this only guards the
+    // invariants the rest of this function leans on.
+    const bool promptShapeOk = !planMode && !prompt.empty() && prompt.size() <= voice::kMaxMusicPromptBytes &&
+                               durationExtensionMs >= 0 && durationExtensionMs <= voice::kMaxMusicDurationExtensionMs &&
+                               voice::isSupportedMusicGenerationMode(mode);
+    const bool planShapeOk = planMode && !request.compositionPlan->chunks.empty() &&
+                             request.compositionPlan->chunks.size() <= voice::kMaxMusicPlanChunks;
     if (!isUuidShape(scriptId) || !isUuidShape(dialogGenerationId) || cacheKey.size() != 64 ||
         !std::all_of(cacheKey.begin(), cacheKey.end(),
                      [](unsigned char c) { return std::isxdigit(c) && !std::isupper(c); }) ||
-        prompt.empty() || prompt.size() > voice::kMaxMusicPromptBytes || durationExtensionMs < 0 ||
-        durationExtensionMs > voice::kMaxMusicDurationExtensionMs ||
-        (mode != "track" && mode != "loop" && mode != "ambience")) {
+        !voice::isSupportedMusicModelId(request.modelId) || !(promptShapeOk || planShapeOk)) {
         return fail(ServerError(ServerError::InvalidData, "dialog music request failed validation"), "InvalidData");
     }
     if (!creatures::db || !creatures::config) {
@@ -146,27 +202,49 @@ Result<api::DialogMusicGenerationResult> DialogMusicService::generate(const api:
     if (!dialogGeneration.isSuccess()) {
         return fail(dialogGeneration.getError().value(), "DialogGenerationLoadError");
     }
-    const auto dialogPcmBytes = dialogGeneration.getValue().value().audioPcm.size();
-    const auto exactLengthMs = static_cast<int64_t>((dialogPcmBytes / sizeof(int16_t)) * 1000ULL / 48000ULL);
-    const auto requestLengthMs = std::max<int64_t>(voice::kMinMusicLengthMs, exactLengthMs + durationExtensionMs);
+    const auto exactLengthMs = cachedDialogLengthMs(dialogGeneration.getValue().value().audioPcm.size());
+    // Prompt mode: the server sizes the request from the take. Plan mode: the
+    // console owns the timeline, but it must still cover the speech.
+    const auto requestLengthMs = planMode
+                                     ? request.compositionPlan->totalDurationMs()
+                                     : std::max<int64_t>(voice::kMinMusicLengthMs, exactLengthMs + durationExtensionMs);
     if (requestLengthMs > voice::kMaxMusicLengthMs) {
         return fail(ServerError(ServerError::InvalidData, "dialog is longer than ElevenLabs Music's 10-minute limit"),
+                    "InvalidData");
+    }
+    if (planMode && requestLengthMs < exactLengthMs) {
+        return fail(ServerError(ServerError::InvalidData,
+                                fmt::format("composition plan totals {} ms but the dialog take is {} ms; the music "
+                                            "must cover the speech",
+                                            requestLengthMs, exactLengthMs)),
                     "InvalidData");
     }
 
     const auto generationId = util::generateUUID();
     if (span) {
         span->setAttribute("music.generation_id", generationId);
-        span->setAttribute("music.model_id", "music_v2");
         span->setAttribute("music.output_format", "pcm_48000");
         span->setAttribute("dialog.duration_ms", exactLengthMs);
-        span->setAttribute("music.duration_extension_ms", durationExtensionMs);
         span->setAttribute("music.length_ms", requestLengthMs);
     }
+    voice::MusicGenerationRequest upstream;
+    upstream.modelId = request.modelId;
+    upstream.finetuneId = request.finetuneId;
+    upstream.finetuneStrength = request.finetuneStrength;
+    upstream.storeForInpainting = request.storeForInpainting;
+    if (planMode) {
+        upstream.compositionPlan = request.compositionPlan;
+        upstream.seed = request.seed;
+    } else {
+        upstream.prompt = prompt;
+        upstream.musicLengthMs = requestLengthMs;
+        upstream.generationMode = mode;
+        upstream.forceInstrumental = request.forceInstrumental;
+    }
     voice::MusicClient client;
-    auto generated = client.generateInstrumental(
-        creatures::config->getVoiceApiKey(), prompt, requestLengthMs, mode, span,
-        {jobId, generationId, dialogGenerationId, scriptId, exactLengthMs, durationExtensionMs});
+    auto generated = client.generate(
+        creatures::config->getVoiceApiKey(), upstream, span,
+        {jobId, generationId, dialogGenerationId, scriptId, exactLengthMs, planMode ? 0 : durationExtensionMs});
     if (!generated.isSuccess()) {
         return fail(generated.getError().value(), "ElevenLabsGenerationError");
     }
@@ -185,16 +263,22 @@ Result<api::DialogMusicGenerationResult> DialogMusicService::generate(const api:
     voice::MusicWavProvenance recipe;
     recipe.provider = "ElevenLabs";
     recipe.endpoint = "POST /v1/music/detailed?output_format=pcm_48000";
-    recipe.modelId = "music_v2";
+    recipe.modelId = request.modelId;
     recipe.outputFormat = "pcm_48000";
     recipe.sourceChannels = music.sourceChannels;
     recipe.channelTransform = music.sourceChannels == 2 ? "stereo_to_mono_average" : "none";
-    recipe.generationMode = mode;
+    recipe.generationMode = planMode ? std::string{} : mode;
     recipe.prompt = prompt;
     recipe.sourceDialogDurationMs = exactLengthMs;
-    recipe.durationExtensionMs = durationExtensionMs;
+    recipe.durationExtensionMs = planMode ? 0 : durationExtensionMs;
     recipe.musicLengthMs = requestLengthMs;
-    recipe.forceInstrumental = true;
+    recipe.forceInstrumental = planMode ? false : request.forceInstrumental;
+    recipe.requestKind = upstream.requestKind();
+    recipe.seed = planMode ? request.seed : std::nullopt;
+    recipe.finetuneId = request.finetuneId.value_or("");
+    recipe.finetuneStrength =
+        request.finetuneId ? std::optional<double>{request.finetuneStrength.value_or(1.0)} : std::nullopt;
+    recipe.storedForInpainting = request.storeForInpainting;
     recipe.requestJson = music.request.dump();
     recipe.responseMetadataJson = music.responseMetadata.dump();
     recipe.compositionPlanJson = music.compositionPlan.dump();
@@ -214,9 +298,10 @@ Result<api::DialogMusicGenerationResult> DialogMusicService::generate(const api:
     candidate.scriptId = script.id;
     candidate.title = script.title;
     candidate.prompt = prompt;
-    candidate.generationMode = mode;
+    candidate.generationMode = planMode ? std::string{} : mode;
     candidate.durationSeconds = static_cast<double>(music.audioPcm.size() / sizeof(int16_t)) / 48000.0;
     candidate.provenance = std::move(provenance);
+    const auto resultRecipe = recipeFromProvenance(*candidate.provenance.music);
     auto saved = voice::saveMusicGeneration(candidate, music.audioPcm);
     if (!saved.isSuccess()) {
         return fail(saved.getError().value(), "MusicCacheWriteError");
@@ -227,9 +312,10 @@ Result<api::DialogMusicGenerationResult> DialogMusicService::generate(const api:
         fmt::format("/api/v1/animation/dialog/music/generated/{}.mp3", generationId),
         candidate.durationSeconds,
         exactLengthMs,
-        durationExtensionMs,
+        planMode ? 0 : durationExtensionMs,
         requestLengthMs,
-        prompt};
+        prompt,
+        resultRecipe};
     if (span) {
         span->setAttribute("music.generation_id", generationId);
         span->setAttribute("music.pcm_bytes", static_cast<int64_t>(music.audioPcm.size()));
@@ -314,6 +400,115 @@ DialogMusicService::backfillMusicSourceFromPromotedFile(const std::string &gener
         span->setSuccess();
     }
     return PromotionResult{buildResult()};
+}
+
+Result<api::DialogMusicPlanResult> DialogMusicService::plan(const api::DialogMusicPlanRequest &request,
+                                                            std::shared_ptr<RequestSpan> parentSpan) const {
+    auto span = creatures::observability
+                    ? creatures::observability->createChildOperationSpan("DialogMusicService.plan", parentSpan)
+                    : nullptr;
+    using PlanResult = Result<api::DialogMusicPlanResult>;
+    const auto fail = [&span](ServerError error, const std::string &type = "DialogMusicPlanError") {
+        recordSpanError(span, error.getMessage(), type, error.getCode());
+        return PlanResult{std::move(error)};
+    };
+    if (span) {
+        span->setAttribute("dialog.generation_id", request.dialogGenerationId);
+        span->setAttribute("dialog.cache_key", request.dialogCacheKey);
+        span->setAttribute("music.model_id", request.modelId);
+        span->setAttribute("music.prompt_length", static_cast<int64_t>(request.prompt.size()));
+        span->setAttribute("music.duration_extension_ms", request.durationExtensionMs);
+        span->setAttribute("music.source_plan_present", request.sourceCompositionPlan.has_value());
+    }
+    if (!creatures::config) {
+        return fail(ServerError(ServerError::InternalError, "dialog music dependencies are unavailable"),
+                    "DependencyUnavailable");
+    }
+    auto dialogGeneration = voice::loadGeneration(request.dialogCacheKey, request.dialogGenerationId);
+    if (!dialogGeneration.isSuccess()) {
+        return fail(dialogGeneration.getError().value(), "DialogGenerationLoadError");
+    }
+    const auto exactLengthMs = cachedDialogLengthMs(dialogGeneration.getValue().value().audioPcm.size());
+    const auto requestLengthMs =
+        std::max<int64_t>(voice::kMinMusicLengthMs, exactLengthMs + request.durationExtensionMs);
+    if (requestLengthMs > voice::kMaxMusicLengthMs) {
+        return fail(ServerError(ServerError::InvalidData, "dialog is longer than ElevenLabs Music's 10-minute limit"),
+                    "InvalidData");
+    }
+    if (span) {
+        span->setAttribute("dialog.duration_ms", exactLengthMs);
+        span->setAttribute("music.length_ms", requestLengthMs);
+    }
+    voice::MusicClient client;
+    auto planned = client.generatePlan(
+        creatures::config->getVoiceApiKey(), request.prompt, requestLengthMs, request.modelId,
+        request.sourceCompositionPlan ? voice::musicCompositionPlanToJson(*request.sourceCompositionPlan)
+                                      : nlohmann::json(nullptr),
+        span);
+    if (!planned.isSuccess()) {
+        return fail(planned.getError().value(), "ElevenLabsPlanError");
+    }
+    api::DialogMusicPlanResult result{request.modelId, requestLengthMs, exactLengthMs, request.durationExtensionMs,
+                                      std::move(planned.getValue().value().compositionPlan)};
+    if (span) {
+        span->setAttribute("music.chunk_count", static_cast<int64_t>(result.compositionPlan["chunks"].size()));
+        span->setSuccess();
+    }
+    return PlanResult{std::move(result)};
+}
+
+Result<api::DialogMusicRecipe> DialogMusicService::recipe(const std::string &generationId,
+                                                          std::shared_ptr<RequestSpan> parentSpan) const {
+    auto span = creatures::observability
+                    ? creatures::observability->createChildOperationSpan("DialogMusicService.recipe", parentSpan)
+                    : nullptr;
+    using RecipeResult = Result<api::DialogMusicRecipe>;
+    if (span) {
+        span->setAttribute("music.generation_id", generationId);
+    }
+    auto generation = voice::loadMusicGeneration(generationId);
+    if (!generation.isSuccess()) {
+        recordSpanError(span, generation.getError().value().getMessage(), "MusicGenerationLoadError",
+                        generation.getError().value().getCode());
+        return RecipeResult{generation.getError().value()};
+    }
+    const auto cached = generation.getValue().value();
+    const auto &music = cached.provenance.music;
+    if (!music) {
+        recordSpanError(span, "music generation has no provenance", "MusicProvenanceMissing", ServerError::NotFound);
+        return RecipeResult{ServerError(ServerError::NotFound, "music generation has no provenance")};
+    }
+    auto result = recipeFromProvenance(*music);
+    if (span) {
+        span->setAttribute("music.request_kind", result.requestKind);
+        span->setAttribute("music.model_id", result.modelId);
+        span->setSuccess();
+    }
+    return RecipeResult{std::move(result)};
+}
+
+Result<std::vector<voice::MusicFinetune>>
+DialogMusicService::listFinetunes(std::shared_ptr<RequestSpan> parentSpan) const {
+    auto span = creatures::observability
+                    ? creatures::observability->createChildOperationSpan("DialogMusicService.listFinetunes", parentSpan)
+                    : nullptr;
+    using ListResult = Result<std::vector<voice::MusicFinetune>>;
+    if (!creatures::config) {
+        recordSpanError(span, "dialog music dependencies are unavailable", "DependencyUnavailable",
+                        ServerError::InternalError);
+        return ListResult{ServerError(ServerError::InternalError, "dialog music dependencies are unavailable")};
+    }
+    voice::MusicClient client;
+    auto listed = client.listFinetunes(creatures::config->getVoiceApiKey(), span);
+    if (!listed.isSuccess()) {
+        recordSpanError(span, listed.getError().value().getMessage(), "ElevenLabsFinetuneListError",
+                        listed.getError().value().getCode());
+        return listed;
+    }
+    if (span) {
+        span->setSuccess();
+    }
+    return listed;
 }
 
 Result<api::DialogMusicPromotionResult> DialogMusicService::promote(const std::string &generationId,

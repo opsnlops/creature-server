@@ -182,6 +182,15 @@ WavProvenance parseIxmlProvenance(const std::string &document) {
             music.musicLengthMs = std::strtoll(duration->c_str(), nullptr, 10);
         }
         music.forceInstrumental = extractIxmlField(document, "FORCE_INSTRUMENTAL").value_or("") == "true";
+        music.requestKind = extractIxmlField(document, "REQUEST_KIND").value_or("");
+        if (const auto seed = extractIxmlField(document, "SEED"); seed && !seed->empty()) {
+            music.seed = std::strtoll(seed->c_str(), nullptr, 10);
+        }
+        music.finetuneId = extractIxmlField(document, "FINETUNE_ID").value_or("");
+        if (const auto strength = extractIxmlField(document, "FINETUNE_STRENGTH"); strength && !strength->empty()) {
+            music.finetuneStrength = std::strtod(strength->c_str(), nullptr);
+        }
+        music.storedForInpainting = extractIxmlField(document, "STORED_FOR_INPAINTING").value_or("") == "true";
         music.requestJson = extractIxmlField(document, "REQUEST_JSON").value_or("");
         music.responseMetadataJson = extractIxmlField(document, "RESPONSE_METADATA_JSON").value_or("");
         music.compositionPlanJson = extractIxmlField(document, "COMPOSITION_PLAN_JSON").value_or("");

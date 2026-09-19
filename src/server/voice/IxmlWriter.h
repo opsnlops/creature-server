@@ -91,6 +91,13 @@ struct MusicWavProvenance {
     int64_t durationExtensionMs{0};
     int64_t musicLengthMs{0};
     bool forceInstrumental{true};
+    // #200 generation controls. requestJson still carries the whole upstream
+    // body; these are the discrete knobs worth querying without parsing it.
+    std::string requestKind; // "prompt" | "composition_plan"
+    std::optional<int64_t> seed;
+    std::string finetuneId;
+    std::optional<double> finetuneStrength;
+    bool storedForInpainting{false};
     std::string requestJson;
     std::string responseMetadataJson;
     std::string compositionPlanJson;
