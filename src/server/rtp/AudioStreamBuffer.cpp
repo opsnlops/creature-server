@@ -296,9 +296,9 @@ std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromMonoPcm(const std:
                                                                       std::span<const int16_t> monoSamples,
                                                                       uint16_t audioChannel,
                                                                       std::shared_ptr<OperationSpan> parentSpan,
-                                                                      RetentionIntent retention) {
+                                                                      RetentionIntent retention, DiskCache diskCache) {
     return memoizedLoad(wavPath, retention, [&](AudioStreamBuffer &buf) {
-        if (sharedAudioCacheInstance_) {
+        if (sharedAudioCacheInstance_ && diskCache == DiskCache::Publish) {
             return buf.encodeMonoPcmWithCaching(wavPath, monoSamples, audioChannel, parentSpan);
         }
         return buf.encodeMonoPcm(monoSamples, audioChannel, parentSpan);
@@ -392,10 +392,6 @@ Result<size_t> AudioStreamBuffer::encodeMonoPcmWithCaching(const std::string &wa
         span->setAttribute("file_path", wavPath);
     }
 
-    // The fingerprint the verifying save checks against — taken before the
-    // encode, exactly as loadWithCaching does for a file read (issue #93).
-    auto expectedSourceInfo = sharedAudioCacheInstance_->getSourceFileInfo(wavPath);
-
     std::lock_guard encodingJobLock(encodingJobMutex());
 
     auto encodeResult = encodeMonoPcm(monoSamples, audioChannel, span);
@@ -406,29 +402,67 @@ Result<size_t> AudioStreamBuffer::encodeMonoPcmWithCaching(const std::string &wa
         return encodeResult;
     }
 
-    if (!expectedSourceInfo.isSuccess()) {
-        warn("Skipping audio cache save for {}: {}", wavPath, expectedSourceInfo.getError()->getMessage());
-        if (span) {
-            span->setAttribute("cache_result", "miss_uncached");
-            span->setSuccess();
-        }
-        return encodeResult;
-    }
-
-    auto cacheResult = sharedAudioCacheInstance_->saveToCache(wavPath, numberOfFramesPerChannel_, encodedOpusFrames_,
-                                                              expectedSourceInfo.getValue().value(), span);
-    if (cacheResult.isSuccess()) {
-        if (span) {
-            span->setAttribute("cache_result", "stored");
-            span->setAttribute("cached_frames", static_cast<int64_t>(numberOfFramesPerChannel_));
-        }
-    } else {
-        warn("Failed to cache audio data for {}: {}", wavPath, cacheResult.getError()->getMessage());
-    }
+    // Best-effort, as for a file load: the audio plays whether or not the
+    // cache write lands.
+    static_cast<void>(publishToDiskCache(wavPath, span));
     if (span) {
         span->setSuccess();
     }
     return encodeResult;
+}
+
+Result<void> AudioStreamBuffer::publishToDiskCache(const std::string &wavPath,
+                                                   std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = observability
+                    ? observability->createChildOperationSpan("AudioStreamBuffer.publishToDiskCache", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("file_path", wavPath);
+        span->setAttribute("frames_per_channel", static_cast<int64_t>(numberOfFramesPerChannel_));
+    }
+    if (!sharedAudioCacheInstance_) {
+        if (span) {
+            span->setAttribute("cache_result", "no_cache");
+            span->setSuccess();
+        }
+        return Result<void>{};
+    }
+    if (numberOfFramesPerChannel_ == 0) {
+        const std::string message = "Nothing encoded to publish";
+        if (span) {
+            span->setError(message);
+        }
+        return Result<void>{ServerError(ServerError::InvalidData, message)};
+    }
+
+    // The fingerprint the verifying save checks against (issue #93): the
+    // file on disk must still be the audio these frames were encoded from.
+    auto expectedSourceInfo = sharedAudioCacheInstance_->getSourceFileInfo(wavPath);
+    if (!expectedSourceInfo.isSuccess()) {
+        warn("Skipping audio cache save for {}: {}", wavPath, expectedSourceInfo.getError()->getMessage());
+        if (span) {
+            span->setAttribute("cache_result", "miss_uncached");
+            span->setError(expectedSourceInfo.getError()->getMessage());
+        }
+        return Result<void>{expectedSourceInfo.getError().value()};
+    }
+
+    auto cacheResult = sharedAudioCacheInstance_->saveToCache(wavPath, numberOfFramesPerChannel_, encodedOpusFrames_,
+                                                              expectedSourceInfo.getValue().value(), span);
+    if (!cacheResult.isSuccess()) {
+        warn("Failed to cache audio data for {}: {}", wavPath, cacheResult.getError()->getMessage());
+        if (span) {
+            span->setAttribute("cache_result", "failed");
+            span->setError(cacheResult.getError()->getMessage());
+        }
+        return cacheResult;
+    }
+    if (span) {
+        span->setAttribute("cache_result", "stored");
+        span->setAttribute("cached_frames", static_cast<int64_t>(numberOfFramesPerChannel_));
+        span->setSuccess();
+    }
+    return Result<void>{};
 }
 
 void AudioStreamBuffer::setMemoRetainBytes(std::size_t bytes) {
