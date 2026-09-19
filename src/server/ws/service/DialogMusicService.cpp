@@ -1,5 +1,7 @@
 #include "server/ws/service/DialogMusicService.h"
 
+#include "server/ws/service/MusicService.h"
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -42,58 +44,9 @@ int64_t nowMillis() {
         .count();
 }
 
-std::string nowIso8601() {
-    const auto now = std::chrono::system_clock::now();
-    const auto time = std::chrono::system_clock::to_time_t(now);
-    std::tm utc{};
-#if defined(_WIN32)
-    gmtime_s(&utc, &time);
-#else
-    gmtime_r(&time, &utc);
-#endif
-    std::ostringstream output;
-    output << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
-    return output.str();
-}
-
 /// Exact length of a cached 48 kHz mono take.
 int64_t cachedDialogLengthMs(std::size_t pcmBytes) {
     return static_cast<int64_t>((pcmBytes / sizeof(int16_t)) * 1000ULL / 48000ULL);
-}
-
-nlohmann::json parseStoredJson(const std::string &text) {
-    if (text.empty()) {
-        return nlohmann::json::object();
-    }
-    try {
-        return nlohmann::json::parse(text);
-    } catch (const std::exception &) {
-        return nlohmann::json::object();
-    }
-}
-
-/// The console-facing recipe is derived from provenance, never from the
-/// request, so the job result and the later recipe endpoint can't disagree.
-api::DialogMusicRecipe recipeFromProvenance(const voice::MusicWavProvenance &music) {
-    api::DialogMusicRecipe recipe;
-    recipe.modelId = music.modelId;
-    recipe.songId = music.songId;
-    // Pre-#200 takes have no requestKind; they were all prompt mode.
-    recipe.requestKind = music.requestKind.empty() ? "prompt" : music.requestKind;
-    recipe.prompt = music.prompt;
-    if (recipe.requestKind == "prompt") {
-        recipe.generationMode = music.generationMode;
-        recipe.forceInstrumental = music.forceInstrumental;
-    }
-    recipe.seed = music.seed;
-    if (!music.finetuneId.empty()) {
-        recipe.finetuneId = music.finetuneId;
-        recipe.finetuneStrength = music.finetuneStrength;
-    }
-    recipe.storedForInpainting = music.storedForInpainting;
-    recipe.compositionPlan = parseStoredJson(music.compositionPlanJson);
-    recipe.songMetadata = parseStoredJson(music.songMetadataJson);
-    return recipe;
 }
 
 /// The take music is composed against. The console composes only against
@@ -244,10 +197,7 @@ Result<api::DialogMusicGenerationResult> DialogMusicService::generate(const api:
 
     const auto generationId = util::generateUUID();
     if (span) {
-        span->setAttribute("music.generation_id", generationId);
-        span->setAttribute("music.output_format", "pcm_48000");
         span->setAttribute("dialog.duration_ms", exactLengthMs);
-        span->setAttribute("music.length_ms", requestLengthMs);
     }
     voice::MusicGenerationRequest upstream;
     upstream.modelId = request.modelId;
@@ -263,87 +213,23 @@ Result<api::DialogMusicGenerationResult> DialogMusicService::generate(const api:
         upstream.generationMode = mode;
         upstream.forceInstrumental = request.forceInstrumental;
     }
-    voice::MusicClient client;
-    auto generated = client.generate(
-        creatures::config->getVoiceApiKey(), upstream, span,
-        {jobId, generationId, dialogGenerationId, scriptId, exactLengthMs, planMode ? 0 : durationExtensionMs});
-    if (!generated.isSuccess()) {
-        return fail(generated.getError().value(), "ElevenLabsGenerationError");
-    }
-    auto music = generated.getValue().value();
-    voice::WavProvenance provenance;
-    provenance.fileUid = generationId;
-    provenance.take = generationId;
-    provenance.circled = false;
-    provenance.sourceScriptId = script.id;
-    provenance.title = script.title;
-    provenance.generationIds = {generationId};
-    provenance.tracks = {{1, "BGM"}};
+    MusicComposeContext composeContext;
+    composeContext.generationId = generationId;
+    composeContext.title = script.title;
+    composeContext.scriptId = script.id;
     for (const auto &turn : script.turns) {
-        provenance.script.push_back({context.names.at(turn.creature_id), turn.text});
+        composeContext.scriptLines.push_back({context.names.at(turn.creature_id), turn.text});
     }
-    voice::MusicWavProvenance recipe;
-    recipe.provider = "ElevenLabs";
-    recipe.endpoint = "POST /v1/music/detailed?output_format=pcm_48000";
-    recipe.modelId = request.modelId;
-    recipe.outputFormat = "pcm_48000";
-    recipe.sourceChannels = music.sourceChannels;
-    recipe.channelTransform = music.sourceChannels == 2 ? "stereo_to_mono_average" : "none";
-    recipe.generationMode = planMode ? std::string{} : mode;
-    recipe.prompt = prompt;
-    recipe.sourceDialogDurationMs = exactLengthMs;
-    recipe.durationExtensionMs = planMode ? 0 : durationExtensionMs;
-    recipe.musicLengthMs = requestLengthMs;
-    recipe.forceInstrumental = planMode ? false : request.forceInstrumental;
-    recipe.requestKind = upstream.requestKind();
-    recipe.seed = planMode ? request.seed : std::nullopt;
-    recipe.finetuneId = request.finetuneId.value_or("");
-    recipe.finetuneStrength =
-        request.finetuneId ? std::optional<double>{request.finetuneStrength.value_or(1.0)} : std::nullopt;
-    recipe.storedForInpainting = request.storeForInpainting;
-    recipe.requestJson = music.request.dump();
-    recipe.responseMetadataJson = music.responseMetadata.dump();
-    recipe.compositionPlanJson = music.compositionPlan.dump();
-    recipe.songMetadataJson = music.songMetadata.dump();
-    recipe.songId = music.songId;
-    recipe.requestId = music.requestId;
-    recipe.generatedAt = nowIso8601();
-    recipe.musicGenerationId = generationId;
-    recipe.sourceDialogGenerationId = dialogGenerationId;
-    recipe.sourceDialogCacheKey = cacheKey;
-    recipe.sourceScriptUpdatedAt = script.updated_at;
-    recipe.pcmSha256 = util::sha256Hex(std::span<const uint8_t>(music.audioPcm));
-    provenance.music = std::move(recipe);
-
-    voice::CachedMusicGeneration candidate;
-    candidate.generationId = generationId;
-    candidate.scriptId = script.id;
-    candidate.title = script.title;
-    candidate.prompt = prompt;
-    candidate.generationMode = planMode ? std::string{} : mode;
-    candidate.durationSeconds = static_cast<double>(music.audioPcm.size() / sizeof(int16_t)) / 48000.0;
-    candidate.provenance = std::move(provenance);
-    const auto resultRecipe = recipeFromProvenance(*candidate.provenance.music);
-    auto saved = voice::saveMusicGeneration(candidate, music.audioPcm);
-    if (!saved.isSuccess()) {
-        return fail(saved.getError().value(), "MusicCacheWriteError");
-    }
-
-    api::DialogMusicGenerationResult result{
-        generationId,
-        fmt::format("/api/v1/animation/dialog/music/generated/{}.mp3", generationId),
-        candidate.durationSeconds,
-        exactLengthMs,
-        planMode ? 0 : durationExtensionMs,
-        requestLengthMs,
-        prompt,
-        resultRecipe};
-    if (span) {
-        span->setAttribute("music.generation_id", generationId);
-        span->setAttribute("music.pcm_bytes", static_cast<int64_t>(music.audioPcm.size()));
-        span->setSuccess();
-    }
-    return Result<api::DialogMusicGenerationResult>{std::move(result)};
+    composeContext.sourceDialogGenerationId = dialogGenerationId;
+    composeContext.sourceDialogCacheKey = cacheKey;
+    composeContext.sourceScriptUpdatedAt = script.updated_at;
+    composeContext.sourceDialogDurationMs = exactLengthMs;
+    composeContext.durationExtensionMs = durationExtensionMs;
+    composeContext.mp3UrlPrefix = "/api/v1/animation/dialog/music/generated/";
+    MusicService music;
+    return music.compose(
+        upstream, composeContext,
+        {jobId, generationId, dialogGenerationId, scriptId, exactLengthMs, planMode ? 0 : durationExtensionMs}, span);
 }
 
 Result<api::DialogMusicPromotionResult>
@@ -500,7 +386,7 @@ Result<api::DialogMusicRecipe> DialogMusicService::recipe(const std::string &gen
         recordSpanError(span, "music generation has no provenance", "MusicProvenanceMissing", ServerError::NotFound);
         return RecipeResult{ServerError(ServerError::NotFound, "music generation has no provenance")};
     }
-    auto result = recipeFromProvenance(*music);
+    auto result = MusicService::recipeFromProvenance(*music);
     if (span) {
         span->setAttribute("music.request_kind", result.requestKind);
         span->setAttribute("music.model_id", result.modelId);
@@ -687,50 +573,13 @@ Result<api::DialogMusicPromotionResult> DialogMusicService::promote(const std::s
         if (!fileSizeError)
             publicationSpan->setAttribute("sound.input_bytes", static_cast<int64_t>(sourceBytes));
     }
-    const auto failPublication = [&](ServerError error, const std::string &type) {
-        recordSpanError(publicationSpan, error.getMessage(), type, error.getCode());
-        return fail(std::move(error), type);
-    };
-
-    auto mono = audio::loadWavAsMono(candidate.wavPath.string());
-    if (!mono.isSuccess() || mono.getValue().value().sampleRate != 48000) {
-        return failPublication(ServerError(ServerError::InvalidData, "music candidate is not a 48 kHz PCM WAV"),
-                               "InvalidAudioFormat");
-    }
-    const auto monoAudio = mono.getValue().value();
-    const auto &samples = monoAudio.samples;
-    std::vector<uint8_t> pcm(samples.size() * sizeof(int16_t));
-    std::memcpy(pcm.data(), samples.data(), pcm.size());
-    if (util::sha256Hex(std::span<const uint8_t>(pcm)) != provenance.music->pcmSha256) {
-        return failPublication(
-            ServerError(ServerError::InvalidData, "music candidate PCM checksum does not match provenance"),
-            "ChecksumMismatch");
-    }
-    const auto acceptedWav = voice::wrapMonoPcmAsWav(pcm, 48000, &provenance);
     const auto filename = util::bgmExportBasename(script.title, provenance.music->prompt, generationId) + ".wav";
-    auto write =
-        storage::writeSoundFile(storage::Persistence::Permanent, filename, acceptedWav, std::string("dialog/music"));
-    if (!write.isSuccess()) {
-        return failPublication(write.getError().value(), "PermanentWavWriteError");
+    auto wavPublished =
+        MusicService::publishCandidateWav(candidate, provenance, filename, "dialog/music", publicationSpan);
+    if (!wavPublished.isSuccess()) {
+        return fail(wavPublished.getError().value(), "AcceptedWavPublishError");
     }
-    const auto permanentPath = write.getValue().value();
-    const auto verifyXml = voice::readIxmlChunk(permanentPath.absolute);
-    const auto verified = verifyXml ? voice::parseIxmlProvenance(*verifyXml) : voice::WavProvenance{};
-    if (!verified.music || verified.music->musicGenerationId != generationId ||
-        verified.music->requestJson != provenance.music->requestJson) {
-        std::error_code ignored;
-        std::filesystem::remove(permanentPath.absolute, ignored);
-        return failPublication(
-            ServerError(ServerError::InternalError, "promoted music provenance could not be read back"),
-            "ProvenanceReadbackError");
-    }
-    if (publicationSpan) {
-        publicationSpan->setAttribute("music.checksum_verified", true);
-        publicationSpan->setAttribute("music.provenance_verified", true);
-        publicationSpan->setAttribute("sound.output_bytes", static_cast<int64_t>(acceptedWav.size()));
-        publicationSpan->setAttribute("sound.file_hash", util::sha256Hex(permanentPath.forMetadata));
-        publicationSpan->setSuccess();
-    }
+    const auto permanentPath = wavPublished.getValue().value();
 
     // Carry the composition source onto the accepted block (#136). It comes from
     // the candidate's embedded iXML, which this function has already checksum-
@@ -762,7 +611,6 @@ Result<api::DialogMusicPromotionResult> DialogMusicService::promote(const std::s
     if (span) {
         span->setAttribute("sound.file_hash", util::sha256Hex(permanentPath.forMetadata));
         span->setAttribute("sound.file_extension", permanentPath.absolute.extension().string());
-        span->setAttribute("music.pcm_samples", static_cast<int64_t>(samples.size()));
         span->setSuccess();
     }
     return Result<api::DialogMusicPromotionResult>{std::move(result)};

@@ -615,6 +615,7 @@ add_executable(creature-server
         src/server/ws/service/DialogPreviewService.cpp
         src/server/ws/service/DialogMusicService.h
         src/server/ws/service/DialogMusicService.cpp
+        src/server/ws/service/MusicService.cpp
         src/server/ws/service/SoundRenditionService.h
         src/server/ws/service/SoundRenditionService.cpp
         src/server/ws/service/DmxFixtureService.h
@@ -872,6 +873,7 @@ add_executable(creature-server-test
         tests/api/StreamingAdHocContracts_test.cpp
         tests/api/DialogStreamContracts_test.cpp
         tests/api/DialogContracts_test.cpp
+        tests/api/MusicContracts_test.cpp
         tests/api/VoiceContracts_test.cpp
         src/model/PlaylistStatus.cpp
         src/model/Notice.cpp

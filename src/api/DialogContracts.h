@@ -107,6 +107,12 @@ struct DialogMusicRecipe {
     bool storedForInpainting = false;
     nlohmann::json compositionPlan; // the plan ElevenLabs actually used
     nlohmann::json songMetadata;
+    // #202 library: the editable sections this take was composed from, the
+    // piece it refines and the version it kept sections from. Empty unless
+    // the take is library work.
+    nlohmann::json sections;
+    std::string pieceId;
+    std::string baseVersionId;
 };
 
 struct DialogMusicGenerationResult {
@@ -509,6 +515,86 @@ inline Result<voice::MusicCompositionPlan> musicCompositionPlanFromJson(const nl
 
 } // namespace detail
 
+namespace detail {
+
+/// The ElevenLabs knobs shared by the dialog-bound and library (#202) music
+/// requests, plus the authoring-mode exclusivity rules. Fills `target` and
+/// returns the first error. Callers reject unknown fields themselves so each
+/// contract's allowed set stays explicit; `promptModeAllowed` lets the
+/// library request add a third mode without prompt-mode fields.
+inline Result<void> parseMusicKnobs(const nlohmann::json &json, std::string_view path, DialogMusicRequest &target,
+                                    bool promptRequired) {
+    auto prompt = json_codec::optionalString(json, path, "prompt", voice::kMaxMusicPromptBytes);
+    auto mode = json_codec::optionalString(json, path, "generation_mode", 16, false, true);
+    auto modelId = json_codec::optionalString(json, path, "model_id", 32, false, true);
+    auto forceInstrumental = json_codec::optionalBool(json, path, "force_instrumental", true);
+    auto finetuneId =
+        json_codec::optionalString(json, path, "finetune_id", voice::kMaxMusicFinetuneIdBytes, false, true);
+    auto finetuneStrength = json_codec::optionalFiniteDouble(
+        json, path, "finetune_strength", voice::kMinMusicFinetuneStrength, voice::kMaxMusicFinetuneStrength, true);
+    auto storeForInpainting = json_codec::optionalBool(json, path, "store_for_inpainting", true);
+    auto seed = json_codec::optionalInt64(json, path, "seed", 0, voice::kMaxMusicSeed, true);
+    for (const auto *r : {&prompt, &mode, &modelId, &finetuneId}) {
+        if (!r->isSuccess())
+            return Result<void>{r->getError().value()};
+    }
+    if (!forceInstrumental.isSuccess())
+        return Result<void>{forceInstrumental.getError().value()};
+    if (!finetuneStrength.isSuccess())
+        return Result<void>{finetuneStrength.getError().value()};
+    if (!storeForInpainting.isSuccess())
+        return Result<void>{storeForInpainting.getError().value()};
+    if (!seed.isSuccess())
+        return Result<void>{seed.getError().value()};
+    target.prompt = prompt.getValue().value().value_or("");
+    target.generationMode = mode.getValue().value().value_or("track");
+    target.modelId = modelId.getValue().value().value_or(voice::kDefaultMusicModelId);
+    target.forceInstrumental = forceInstrumental.getValue().value().value_or(true);
+    target.finetuneId = finetuneId.getValue().value();
+    target.finetuneStrength = finetuneStrength.getValue().value();
+    target.storeForInpainting = storeForInpainting.getValue().value().value_or(true);
+    target.seed = seed.getValue().value();
+    if (json.contains("composition_plan")) {
+        auto plan = musicCompositionPlanFromJson(json["composition_plan"], std::string(path) + ".composition_plan");
+        if (!plan.isSuccess())
+            return Result<void>{plan.getError().value()};
+        target.compositionPlan = plan.getValue().value();
+    }
+    const auto invalid = [&](std::string message) {
+        return Result<void>{ServerError(ServerError::InvalidData, fmt::format("{}{}", path, message))};
+    };
+    if (!voice::isSupportedMusicModelId(target.modelId))
+        return invalid(".model_id must be 'music_v2' or 'music_v2_5'");
+    if (target.finetuneStrength && !target.finetuneId)
+        return invalid(".finetune_strength requires finetune_id");
+    // Exactly one authoring mode. ElevenLabs rejects the cross-mode fields
+    // outright, and its 4xx body never reaches the console (see
+    // docs/200-music-controls-plan.md), so say precisely which field is wrong.
+    if (target.isPlanMode()) {
+        if (!target.prompt.empty())
+            return invalid(".prompt cannot be combined with composition_plan");
+        if (json.contains("duration_extension_ms"))
+            return invalid(".duration_extension_ms only applies to prompt mode; the plan sets the length");
+        if (json.contains("music_length_ms"))
+            return invalid(".music_length_ms only applies to prompt mode; the plan sets the length");
+        if (json.contains("generation_mode"))
+            return invalid(".generation_mode only applies to prompt mode");
+        if (json.contains("force_instrumental"))
+            return invalid(".force_instrumental only applies to prompt mode; leave a chunk's text free "
+                           "of lyrics for an instrumental section");
+    } else if (promptRequired || !target.prompt.empty()) {
+        if (target.prompt.empty())
+            return invalid(" requires either prompt or composition_plan");
+        if (target.seed)
+            return invalid(".seed only applies to composition_plan mode");
+        if (!voice::isSupportedMusicGenerationMode(target.generationMode))
+            return invalid(".generation_mode must be 'track', 'loop', or 'ambience'");
+    }
+    return Result<void>{};
+}
+
+} // namespace detail
+
 inline Result<DialogMusicRequest> dialogMusicRequestFromJson(const nlohmann::json &json) {
     constexpr std::string_view path = "dialog music request";
     auto fields = json_codec::rejectUnknownFields(json, path,
@@ -521,62 +607,21 @@ inline Result<DialogMusicRequest> dialogMusicRequestFromJson(const nlohmann::jso
     auto scriptId = json_codec::requiredString(json, path, "script_id", 64);
     auto cacheKey = json_codec::requiredString(json, path, "dialog_cache_key", 64);
     auto generationId = json_codec::requiredString(json, path, "dialog_generation_id", 64);
-    auto prompt = json_codec::optionalString(json, path, "prompt", voice::kMaxMusicPromptBytes);
     auto duration =
         json_codec::optionalInt64(json, path, "duration_extension_ms", 0, voice::kMaxMusicDurationExtensionMs, true);
-    auto mode = json_codec::optionalString(json, path, "generation_mode", 16, false, true);
-    auto modelId = json_codec::optionalString(json, path, "model_id", 32, false, true);
-    auto forceInstrumental = json_codec::optionalBool(json, path, "force_instrumental", true);
-    auto finetuneId =
-        json_codec::optionalString(json, path, "finetune_id", voice::kMaxMusicFinetuneIdBytes, false, true);
-    auto finetuneStrength = json_codec::optionalFiniteDouble(
-        json, path, "finetune_strength", voice::kMinMusicFinetuneStrength, voice::kMaxMusicFinetuneStrength, true);
-    auto storeForInpainting = json_codec::optionalBool(json, path, "store_for_inpainting", true);
-    auto seed = json_codec::optionalInt64(json, path, "seed", 0, voice::kMaxMusicSeed, true);
     if (!scriptId.isSuccess())
         return Result<DialogMusicRequest>{scriptId.getError().value()};
     if (!cacheKey.isSuccess())
         return Result<DialogMusicRequest>{cacheKey.getError().value()};
     if (!generationId.isSuccess())
         return Result<DialogMusicRequest>{generationId.getError().value()};
-    if (!prompt.isSuccess())
-        return Result<DialogMusicRequest>{prompt.getError().value()};
     if (!duration.isSuccess())
         return Result<DialogMusicRequest>{duration.getError().value()};
-    if (!mode.isSuccess())
-        return Result<DialogMusicRequest>{mode.getError().value()};
-    if (!modelId.isSuccess())
-        return Result<DialogMusicRequest>{modelId.getError().value()};
-    if (!forceInstrumental.isSuccess())
-        return Result<DialogMusicRequest>{forceInstrumental.getError().value()};
-    if (!finetuneId.isSuccess())
-        return Result<DialogMusicRequest>{finetuneId.getError().value()};
-    if (!finetuneStrength.isSuccess())
-        return Result<DialogMusicRequest>{finetuneStrength.getError().value()};
-    if (!storeForInpainting.isSuccess())
-        return Result<DialogMusicRequest>{storeForInpainting.getError().value()};
-    if (!seed.isSuccess())
-        return Result<DialogMusicRequest>{seed.getError().value()};
     DialogMusicRequest request;
     request.scriptId = scriptId.getValue().value();
     request.dialogCacheKey = cacheKey.getValue().value();
     request.dialogGenerationId = generationId.getValue().value();
-    request.prompt = prompt.getValue().value().value_or("");
     request.durationExtensionMs = duration.getValue().value().value_or(0);
-    request.generationMode = mode.getValue().value().value_or("track");
-    request.modelId = modelId.getValue().value().value_or(voice::kDefaultMusicModelId);
-    request.forceInstrumental = forceInstrumental.getValue().value().value_or(true);
-    request.finetuneId = finetuneId.getValue().value();
-    request.finetuneStrength = finetuneStrength.getValue().value();
-    request.storeForInpainting = storeForInpainting.getValue().value().value_or(true);
-    request.seed = seed.getValue().value();
-    if (json.contains("composition_plan")) {
-        auto plan =
-            detail::musicCompositionPlanFromJson(json["composition_plan"], std::string(path) + ".composition_plan");
-        if (!plan.isSuccess())
-            return Result<DialogMusicRequest>{plan.getError().value()};
-        request.compositionPlan = plan.getValue().value();
-    }
     if (!isUuidShape(request.scriptId))
         return json_codec::invalid<DialogMusicRequest>("dialog music request.script_id must be a UUID");
     if (!isLowercaseSha256(request.dialogCacheKey))
@@ -584,39 +629,8 @@ inline Result<DialogMusicRequest> dialogMusicRequestFromJson(const nlohmann::jso
             "dialog music request.dialog_cache_key must be a 64-character lowercase hex sha256");
     if (!isUuidShape(request.dialogGenerationId))
         return json_codec::invalid<DialogMusicRequest>("dialog music request.dialog_generation_id must be a UUID");
-    if (!voice::isSupportedMusicModelId(request.modelId))
-        return json_codec::invalid<DialogMusicRequest>(
-            "dialog music request.model_id must be 'music_v2' or 'music_v2_5'");
-    if (request.finetuneStrength && !request.finetuneId)
-        return json_codec::invalid<DialogMusicRequest>("dialog music request.finetune_strength requires finetune_id");
-    // Exactly one authoring mode. ElevenLabs rejects the cross-mode fields
-    // outright, and its 4xx body never reaches the console (see
-    // docs/200-music-controls-plan.md), so say precisely which field is wrong.
-    if (request.isPlanMode()) {
-        if (!request.prompt.empty())
-            return json_codec::invalid<DialogMusicRequest>(
-                "dialog music request.prompt cannot be combined with composition_plan");
-        if (json.contains("duration_extension_ms"))
-            return json_codec::invalid<DialogMusicRequest>(
-                "dialog music request.duration_extension_ms only applies to prompt mode; the plan sets the length");
-        if (json.contains("generation_mode"))
-            return json_codec::invalid<DialogMusicRequest>(
-                "dialog music request.generation_mode only applies to prompt mode");
-        if (json.contains("force_instrumental"))
-            return json_codec::invalid<DialogMusicRequest>(
-                "dialog music request.force_instrumental only applies to prompt mode; leave a chunk's text free "
-                "of lyrics for an instrumental section");
-    } else {
-        if (request.prompt.empty())
-            return json_codec::invalid<DialogMusicRequest>(
-                "dialog music request requires either prompt or composition_plan");
-        if (request.seed)
-            return json_codec::invalid<DialogMusicRequest>(
-                "dialog music request.seed only applies to composition_plan mode");
-        if (!voice::isSupportedMusicGenerationMode(request.generationMode))
-            return json_codec::invalid<DialogMusicRequest>(
-                "dialog music request.generation_mode must be 'track', 'loop', or 'ambience'");
-    }
+    if (auto knobs = detail::parseMusicKnobs(json, path, request, true); !knobs.isSuccess())
+        return Result<DialogMusicRequest>{knobs.getError().value()};
     return Result<DialogMusicRequest>{std::move(request)};
 }
 
@@ -784,6 +798,12 @@ inline nlohmann::json dialogMusicRecipeToJson(const DialogMusicRecipe &recipe) {
         json["finetune_id"] = *recipe.finetuneId;
     if (recipe.finetuneStrength)
         json["finetune_strength"] = *recipe.finetuneStrength;
+    if (recipe.sections.is_array() && !recipe.sections.empty())
+        json["sections"] = recipe.sections;
+    if (!recipe.pieceId.empty())
+        json["piece_id"] = recipe.pieceId;
+    if (!recipe.baseVersionId.empty())
+        json["base_version_id"] = recipe.baseVersionId;
     return json;
 }
 
