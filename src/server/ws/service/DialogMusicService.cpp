@@ -704,8 +704,14 @@ Result<api::DialogMusicPromotionResult> DialogMusicService::promote(const std::s
     script.updated_at = nowMillis();
     auto published = storage::publishDialogScript(dialogScriptToJson(script).dump(), span);
     if (!published.isSuccess()) {
-        std::error_code ignored;
-        std::filesystem::remove(permanentPath.absolute, ignored);
+        // The permanent WAV is already on disk; take it back so a failed
+        // publish leaves no orphan. Make that visible in the trace — the
+        // publishAcceptedWav span alone reads as success.
+        std::error_code removeError;
+        const bool removed = std::filesystem::remove(permanentPath.absolute, removeError);
+        if (span) {
+            span->setAttribute("promotion.rolled_back", removed && !removeError);
+        }
         return fail(published.getError().value(), "DialogScriptPublishError");
     }
 

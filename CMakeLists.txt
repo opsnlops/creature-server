@@ -779,6 +779,8 @@ add_executable(creature-server-test
         tests/server/ws/RequestBodyDrain_test.cpp
         src/server/ws/RequestBodyDrain.cpp
         tests/server/storyboard/StoryboardParse_test.cpp
+        tests/server/script/DialogScriptParse_test.cpp
+        src/server/script/helpers.cpp
         tests/server/storage/Storage_test.cpp
         tests/server/storage/StoragePublishers_test.cpp
         src/server/storage/Storage.cpp
