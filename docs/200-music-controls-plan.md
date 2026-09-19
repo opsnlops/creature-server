@@ -188,6 +188,26 @@ built; the "Open decisions" stand as chosen.
 - After deploy: prompt-mode take on prod → plan-mode take that
   audio-references it → recipe endpoint → promote → render on channel 17.
 
+## Promotion rules (changed in 3.47.3)
+
+Found on prod: promoting take A made take B un-promotable ("dialog changed")
+because the #110 guard compared the candidate's recorded `updated_at` with the
+script's, and promotion itself bumps `updated_at` — as does a title or stage
+edit. The console had already removed the same rule from its own freshness
+check for the same reason (`DialogPreviewPanel.swift`, `DialogMusicCandidate`).
+
+Promote now requires exactly what the console's `matches()` requires: the
+candidate's `source_dialog_cache_key` + `source_dialog_generation_id` equal the
+script's **accepted voice**. That is the real #136 invariant (music is fitted
+to one performance) and it also catches music composed against a non-accepted
+preview, which `updated_at` never did. The current-turns cache-key check stays.
+Errors: `NoAcceptedVoice`, `StaleDialogRevision`, `MissingCompositionSource`.
+
+Related: generate and plan now read the dialog take from the durable
+accepted-take store first (#146), then the ephemeral cache. Reading only the
+cache meant any script whose acceptance predated the last cron sweep could not
+get music at all (`DialogCache: no generation … on disk`).
+
 ## Open decisions (flag, not block)
 
 - `store_for_inpainting` default `true` means ElevenLabs retains every take on

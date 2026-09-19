@@ -96,6 +96,28 @@ api::DialogMusicRecipe recipeFromProvenance(const voice::MusicWavProvenance &mus
     return recipe;
 }
 
+/// The take music is composed against. The console composes only against
+/// the ACCEPTED voice, which lives in the durable store (#146) — the
+/// ephemeral cache copy is swept by cron, so reading only the cache made
+/// music impossible for any script whose acceptance was more than a sweep
+/// old. Cache second, so a not-yet-accepted preview still works for
+/// experiments.
+Result<voice::CachedGeneration> loadDialogTake(const std::string &cacheKey, const std::string &generationId,
+                                               const std::shared_ptr<OperationSpan> &span) {
+    auto accepted = voice::loadAcceptedGeneration(cacheKey, generationId);
+    if (accepted.isSuccess()) {
+        if (span) {
+            span->setAttribute("dialog.take_source", "accepted_store");
+        }
+        return accepted;
+    }
+    auto cached = voice::loadGeneration(cacheKey, generationId);
+    if (span) {
+        span->setAttribute("dialog.take_source", cached.isSuccess() ? "generation_cache" : "missing");
+    }
+    return cached;
+}
+
 struct DialogMusicContext {
     std::vector<voice::DialogInput> inputs;
     std::unordered_map<std::string, std::string> names;
@@ -198,7 +220,7 @@ Result<api::DialogMusicGenerationResult> DialogMusicService::generate(const api:
         return fail(ServerError(ServerError::InvalidData, "dialog cache key does not match the current saved script"),
                     "DialogCacheMismatch");
     }
-    auto dialogGeneration = voice::loadGeneration(cacheKey, dialogGenerationId);
+    auto dialogGeneration = loadDialogTake(cacheKey, dialogGenerationId, span);
     if (!dialogGeneration.isSuccess()) {
         return fail(dialogGeneration.getError().value(), "DialogGenerationLoadError");
     }
@@ -424,7 +446,7 @@ Result<api::DialogMusicPlanResult> DialogMusicService::plan(const api::DialogMus
         return fail(ServerError(ServerError::InternalError, "dialog music dependencies are unavailable"),
                     "DependencyUnavailable");
     }
-    auto dialogGeneration = voice::loadGeneration(request.dialogCacheKey, request.dialogGenerationId);
+    auto dialogGeneration = loadDialogTake(request.dialogCacheKey, request.dialogGenerationId, span);
     if (!dialogGeneration.isSuccess()) {
         return fail(dialogGeneration.getError().value(), "DialogGenerationLoadError");
     }
@@ -610,10 +632,29 @@ Result<api::DialogMusicPromotionResult> DialogMusicService::promote(const std::s
         return fail(ServerError(ServerError::InvalidData, "music candidate provenance failed verification"),
                     "ProvenanceVerificationError");
     }
-    if (provenance.music->sourceDialogCacheKey.empty() ||
-        provenance.music->sourceScriptUpdatedAt != script.updated_at) {
+    // Music is fitted to one performance, so it must have been composed
+    // against the take that will actually render: the script's accepted
+    // voice (#136). This replaces the old `updated_at` equality, which also
+    // fired on title/stage edits and on promoting a sibling take — the same
+    // false positive the console already removed from its own freshness
+    // rule (#200). Cache-key + generation id is exactly the console's rule.
+    if (provenance.music->sourceDialogCacheKey.empty() || provenance.music->sourceDialogGenerationId.empty()) {
         return fail(ServerError(ServerError::InvalidData,
-                                "dialog changed after this music take was generated; generate a new take"),
+                                "music take does not record which voice take it was composed against; generate a "
+                                "new take"),
+                    "MissingCompositionSource");
+    }
+    if (!script.accepted_voice) {
+        return fail(ServerError(ServerError::InvalidData,
+                                "accept a voice take before promoting music; music is fitted to the accepted "
+                                "performance"),
+                    "NoAcceptedVoice");
+    }
+    if (provenance.music->sourceDialogGenerationId != script.accepted_voice->generation_id ||
+        provenance.music->sourceDialogCacheKey != script.accepted_voice->dialog_cache_key) {
+        return fail(ServerError(ServerError::InvalidData,
+                                "this music was composed against a different voice take than the script's "
+                                "accepted one; generate a new take"),
                     "StaleDialogRevision");
     }
     auto currentContext = loadDialogMusicContext(script, span);
