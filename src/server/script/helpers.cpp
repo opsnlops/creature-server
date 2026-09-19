@@ -175,12 +175,18 @@ Result<creatures::DialogScript> Database::dialogScriptFromJson(json scriptJson,
             if (!musicJson.is_object()) {
                 return invalidScriptData<DialogScript>(span, "Dialog script 'background_music' must be an object");
             }
-            for (const char *field : {"sound_file", "generation_id", "prompt"}) {
+            for (const char *field : {"sound_file", "generation_id"}) {
                 if (!musicJson.contains(field) || !musicJson[field].is_string() ||
                     musicJson[field].get<std::string>().empty()) {
                     return invalidScriptData<DialogScript>(
                         span, fmt::format("Dialog script 'background_music.{}' must be a non-empty string", field));
                 }
+            }
+            // A composition-plan take (#200) has no prompt; its recipe lives in
+            // the promoted WAV's provenance. Empty is allowed, wrong type is not.
+            if (!musicJson.contains("prompt") || !musicJson["prompt"].is_string()) {
+                return invalidScriptData<DialogScript>(span,
+                                                       "Dialog script 'background_music.prompt' must be a string");
             }
             DialogBackgroundMusic music;
             music.sound_file = musicJson["sound_file"].get<std::string>();

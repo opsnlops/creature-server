@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <fmt/format.h>
+
 #include "server/audio/MonoWavDownmixer.h"
 #include "server/audio/Mp3Writer.h"
 #include "server/audio/OggOpusWriter.h"
@@ -133,6 +135,13 @@ SoundRenditionService::Comments SoundRenditionService::provenanceTags(const crea
         }
         add("MUSIC_CHANNEL_TRANSFORM", music.channelTransform);
         add("MUSIC_GENERATION_MODE", music.generationMode);
+        add("MUSIC_REQUEST_KIND", music.requestKind);
+        if (music.seed)
+            add("MUSIC_SEED", std::to_string(*music.seed));
+        add("MUSIC_FINETUNE_ID", music.finetuneId);
+        if (music.finetuneStrength)
+            add("MUSIC_FINETUNE_STRENGTH", fmt::format("{}", *music.finetuneStrength));
+        add("MUSIC_STORED_FOR_INPAINTING", music.storedForInpainting ? "true" : "false");
         add("SOURCE_DIALOG_DURATION_MS", std::to_string(music.sourceDialogDurationMs));
         add("MUSIC_DURATION_EXTENSION_MS", std::to_string(music.durationExtensionMs));
         add("MUSIC_LENGTH_MS", std::to_string(music.musicLengthMs));

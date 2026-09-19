@@ -13,6 +13,7 @@
 
 #include "api/DialogContracts.h"
 #include "api/JobResponses.h"
+#include "api/JsonResponse.h"
 #include "model/DialogScript.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
@@ -54,10 +55,12 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
 
   public:
     ENDPOINT_INFO(submitDialogMusic) {
-        info->summary = "Generate instrumental background music for an exact cached dialog take";
+        info->summary = "Generate background music for an exact cached dialog take";
         info->description =
             "Returns a job id. Progress/completion arrive through the existing job WebSocket; the "
-            "completion result contains an immutable MP3 preview URL. The 48 kHz WAV stays server-side.";
+            "completion result contains an immutable MP3 preview URL. The 48 kHz WAV stays server-side. "
+            "Send either `prompt` (server sizes the request from the take) or `composition_plan` (console owns "
+            "the timeline; chunks may reference a previous take's `song_id`). See docs/200-music-controls-plan.md.";
         info->addTag("Multi-character Dialog");
         info->addResponse<oatpp::String>(Status::CODE_202, "application/json; charset=utf-8");
         info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
@@ -98,9 +101,20 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
                     span->setAttribute("dialog.script_id", canonicalUuid(musicRequest.scriptId));
                     span->setAttribute("dialog.generation_id", canonicalUuid(musicRequest.dialogGenerationId));
                     span->setAttribute("dialog.cache_key", musicRequest.dialogCacheKey);
-                    span->setAttribute("music.generation_mode", musicRequest.generationMode);
-                    span->setAttribute("music.prompt_length", static_cast<int64_t>(musicRequest.prompt.size()));
-                    span->setAttribute("music.duration_extension_ms", musicRequest.durationExtensionMs);
+                    span->setAttribute("music.model_id", musicRequest.modelId);
+                    span->setAttribute("music.request_kind", musicRequest.isPlanMode() ? "composition_plan" : "prompt");
+                    span->setAttribute("music.store_for_inpainting", musicRequest.storeForInpainting);
+                    span->setAttribute("music.finetune_present", musicRequest.finetuneId.has_value());
+                    if (musicRequest.isPlanMode()) {
+                        span->setAttribute("music.chunk_count",
+                                           static_cast<int64_t>(musicRequest.compositionPlan->chunks.size()));
+                        span->setAttribute("music.seed_present", musicRequest.seed.has_value());
+                    } else {
+                        span->setAttribute("music.generation_mode", musicRequest.generationMode);
+                        span->setAttribute("music.prompt_length", static_cast<int64_t>(musicRequest.prompt.size()));
+                        span->setAttribute("music.duration_extension_ms", musicRequest.durationExtensionMs);
+                        span->setAttribute("music.force_instrumental", musicRequest.forceInstrumental);
+                    }
                 }
                 const auto details = api::dialogMusicRequestToJson(musicRequest).dump();
                 const auto admission = creatures::jobWorker->tryCreateAndQueueMusicJob(details, span);
@@ -255,6 +269,116 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
                                }
                                return jsonResponse(span, Status::CODE_200,
                                                    api::dialogMusicPromotionResultToJson(promoted.getValue().value()));
+                           });
+    }
+
+    ENDPOINT_INFO(planDialogMusic) {
+        info->summary = "Draft an editable composition plan sized to a cached dialog take";
+        info->description =
+            "Synchronous proxy for ElevenLabs `POST /v1/music/plan`. The plan's total length is the take's exact "
+            "length plus `duration_extension_ms`, so it can be edited and submitted as `composition_plan` "
+            "unchanged.";
+        info->addTag("Multi-character Dialog");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/animation/dialog/music/plan", planDialogMusic,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "POST /api/v1/animation/dialog/music/plan", "POST", "api/v1/animation/dialog/music/plan", "planDialogMusic",
+            "DialogMusicController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                const auto body = readRequestBodyLimited(request, api::MAX_DIALOG_REQUEST_BYTES, span);
+                const auto parseSpan = creatures::observability
+                                           ? creatures::observability->createChildOperationSpan(
+                                                 "DialogMusicController.parseDialogMusicPlanRequest", span)
+                                           : nullptr;
+                if (parseSpan)
+                    parseSpan->setAttribute("validation.contract", "dialog.music.plan");
+                const auto json = JsonParser::parseApiJsonString(body, "dialog music plan request", parseSpan);
+                if (!json.isSuccess()) {
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    return bailFromServerError(span, json.getError().value());
+                }
+                const auto parsed = api::dialogMusicPlanRequestFromJson(json.getValue().value());
+                if (!parsed.isSuccess()) {
+                    const auto error = parsed.getError().value();
+                    if (parseSpan)
+                        parseSpan->setAttribute("validation.result", "rejected");
+                    recordSpanError(parseSpan, error.getMessage(), "InvalidDialogMusicPlanRequest", error.getCode());
+                    return bailFromServerError(span, error);
+                }
+                if (parseSpan) {
+                    parseSpan->setAttribute("validation.result", "accepted");
+                    parseSpan->setSuccess();
+                }
+                const auto planRequest = parsed.getValue().value();
+                if (span) {
+                    span->setAttribute("dialog.generation_id", canonicalUuid(planRequest.dialogGenerationId));
+                    span->setAttribute("dialog.cache_key", planRequest.dialogCacheKey);
+                    span->setAttribute("music.model_id", planRequest.modelId);
+                    span->setAttribute("music.prompt_length", static_cast<int64_t>(planRequest.prompt.size()));
+                }
+                auto planned = musicService_.plan(planRequest, span);
+                if (!planned.isSuccess())
+                    return bailFromServerError(span, planned.getError().value());
+                if (span)
+                    span->setHttpStatus(200);
+                return jsonResponse(span, Status::CODE_200,
+                                    api::dialogMusicPlanResultToJson(planned.getValue().value()));
+            });
+    }
+
+    ENDPOINT_INFO(getGeneratedMusicRecipe) {
+        info->summary = "Get the generation controls a cached music take was made with";
+        info->description = "Includes ElevenLabs `song_id` and the composition plan actually used, so the console can "
+                            "audio-reference or edit this take in its next request. 404 once the candidate has aged "
+                            "out of the cache.";
+        info->addTag("Multi-character Dialog");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/animation/dialog/music/generated/{generationId}/recipe", getGeneratedMusicRecipe,
+             PATH(String, generationId), REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "GET /api/v1/animation/dialog/music/generated/{generationId}/recipe", "GET",
+            "api/v1/animation/dialog/music/generated/{generationId}/recipe", "getGeneratedMusicRecipe",
+            "DialogMusicController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                const std::string id = generationId ? std::string(*generationId) : std::string{};
+                if (!isUuidShape(id))
+                    return bailHttp(span, Status::CODE_400, "music generation id must be a UUID");
+                if (span)
+                    span->setAttribute("music.generation_id", id);
+                auto recipe = musicService_.recipe(id, span);
+                if (!recipe.isSuccess())
+                    return bailFromServerError(span, recipe.getError().value());
+                if (span)
+                    span->setHttpStatus(200);
+                return jsonResponse(span, Status::CODE_200, api::dialogMusicRecipeToJson(recipe.getValue().value()));
+            });
+    }
+
+    ENDPOINT_INFO(listMusicFinetunes) {
+        info->summary = "List the ElevenLabs Music finetunes available to this account";
+        info->addTag("Multi-character Dialog");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+    }
+    ENDPOINT("GET", "api/v1/animation/dialog/music/finetunes", listMusicFinetunes,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("GET /api/v1/animation/dialog/music/finetunes", "GET",
+                           "api/v1/animation/dialog/music/finetunes", "listMusicFinetunes", "DialogMusicController",
+                           request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                               auto finetunes = musicService_.listFinetunes(span);
+                               if (!finetunes.isSuccess())
+                                   return bailFromServerError(span, finetunes.getError().value());
+                               if (span) {
+                                   span->setAttribute("music.finetune_count",
+                                                      static_cast<int64_t>(finetunes.getValue().value().size()));
+                                   span->setHttpStatus(200);
+                               }
+                               return jsonResponse(
+                                   span, Status::CODE_200,
+                                   api::listResponseToJson(finetunes.getValue().value(), api::musicFinetuneToJson));
                            });
     }
 };

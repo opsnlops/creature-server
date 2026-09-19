@@ -191,8 +191,13 @@ Result<CachedMusicGeneration> loadMusicGeneration(const std::string &generationI
         generation.durationSeconds = metadata.value("duration_seconds", 0.0);
         generation.provenance = wavProvenanceFromJson(metadata.value("provenance", nlohmann::json::object()));
         generation.wavPath = wavPath.getValue().value();
-        if (generation.generationId != generationId || !isUuidShape(generation.scriptId) || generation.prompt.empty() ||
-            !generation.provenance.music || generation.provenance.music->musicGenerationId != generation.generationId) {
+        // A prompt-mode take must carry its prompt; a composition-plan take
+        // (#200) has none, its recipe is the plan in the provenance.
+        const bool planMode =
+            generation.provenance.music && generation.provenance.music->requestKind == "composition_plan";
+        if (generation.generationId != generationId || !isUuidShape(generation.scriptId) ||
+            (generation.prompt.empty() && !planMode) || !generation.provenance.music ||
+            generation.provenance.music->musicGenerationId != generation.generationId) {
             return Result<CachedMusicGeneration>{
                 ServerError(ServerError::InvalidData, "music generation metadata failed validation")};
         }

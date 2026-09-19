@@ -273,6 +273,12 @@ class Database {
     static Result<creatures::Storyboard> parseStoryboardJson(json storyboardJson,
                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
+    /// Parse + validate a DialogScript JSON document without persisting. Public so
+    /// the parser's rules (e.g. an accepted composition-plan take has no prompt,
+    /// #200) can be pinned by tests without a database.
+    static Result<creatures::DialogScript> dialogScriptFromJson(json scriptJson,
+                                                                std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
     /// Transitional wrapper around the framework-neutral Track codec.
     static Result<creatures::Track> parseTrackJson(json trackJson);
 
@@ -356,9 +362,6 @@ class Database {
 
     static Result<creatures::DmxFixture> fixtureFromJson(json fixtureJson,
                                                          std::shared_ptr<OperationSpan> parentSpan = nullptr);
-
-    static Result<creatures::DialogScript> dialogScriptFromJson(json scriptJson,
-                                                                std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     static Result<creatures::Stage> stageFromJson(json stageJson, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 

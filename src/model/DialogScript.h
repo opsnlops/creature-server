@@ -56,7 +56,7 @@ struct AcceptedVoice {
 struct DialogBackgroundMusic {
     std::string sound_file;                  // permanent, relative-to-sounds WAV path
     std::string generation_id;               // accepted server-side music generation UUID
-    std::string prompt;                      // exact ElevenLabs prompt used for the accepted take
+    std::string prompt;                      // exact ElevenLabs prompt; empty for a composition-plan take (#200)
     int64_t accepted_at{0};                  // wall-clock milliseconds since epoch
     std::string source_dialog_generation_id; // voice take this was composed against
     std::string source_dialog_cache_key;     // sha256 of the turns at composition time
