@@ -120,6 +120,25 @@ Result<DialogAssembled> loadAssembledTakeFromPromotedFile(const std::string &sou
     if (assembled.totalSamples == 0) {
         return TakeResult{ServerError(ServerError::InvalidData, fmt::format("promoted take '{}' is empty", soundFile))};
     }
+    // A render's timeline runs to the end of its music, so a prior render
+    // read back as the take carries a silent creature-lane tail. The
+    // assembled timeline was tightened to the last spoken sample, so any
+    // trailing all-lane silence can only be that tail; drop it.
+    std::size_t lastSound = 0;
+    for (const auto &lane : assembled.perCreature) {
+        for (std::size_t i = lane.pcm.size(); i > lastSound; --i) {
+            if (lane.pcm[i - 1] != 0) {
+                lastSound = i;
+                break;
+            }
+        }
+    }
+    if (lastSound > 0 && lastSound < assembled.totalSamples) {
+        for (auto &lane : assembled.perCreature) {
+            lane.pcm.resize(lastSound);
+        }
+        assembled.totalSamples = lastSound;
+    }
     return TakeResult{std::move(assembled)};
 }
 

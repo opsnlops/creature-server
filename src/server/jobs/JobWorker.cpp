@@ -1225,6 +1225,49 @@ struct DialogJobCreature {
 /// Lazy-loaded shared TextToViseme. The CMU dict is multi-MB; one load per
 /// process is enough — every dialog job reuses it. Guarded by the local mutex
 /// so the first concurrent jobs don't both pay the load cost.
+/// Fourth source for an accepted take (#208): a finished render of the same
+/// take. A promoted voice file from before the server embedded timing in
+/// take exports has lanes but no LIPSYNC/WORD_ALIGNMENT — yet every render
+/// made from it does, and names the take in GENERATION_IDS. Same lanes,
+/// same timeline, plus the timing; the loader reads either kind.
+Result<voice::DialogAssembled> loadAssembledTakeFromPriorRender(const std::string &scriptId,
+                                                                const std::string &generationId,
+                                                                const std::vector<voice::PromotedTakeLane> &lanes,
+                                                                std::string &sourceFile,
+                                                                const std::shared_ptr<OperationSpan> &span) {
+    using TakeResult = Result<voice::DialogAssembled>;
+    if (!creatures::db || scriptId.empty()) {
+        return TakeResult{ServerError(ServerError::NotFound, "no prior render to read the take from")};
+    }
+    auto listed = creatures::db->listAnimations(creatures::SortBy::name, span);
+    if (!listed.isSuccess()) {
+        return TakeResult{listed.getError().value()};
+    }
+    const auto animations = listed.getValue().value();
+    std::string lastError = "no permanent render of this script names the accepted take";
+    for (const auto &animation : animations) {
+        if (animation.source_script_id != scriptId || animation.sound_file.empty()) {
+            continue;
+        }
+        const auto ixml = voice::readIxmlChunk(storage::resolveSoundPath(animation.sound_file));
+        if (!ixml) {
+            continue;
+        }
+        const auto provenance = voice::parseIxmlProvenance(*ixml);
+        if (std::find(provenance.generationIds.begin(), provenance.generationIds.end(), generationId) ==
+            provenance.generationIds.end()) {
+            continue;
+        }
+        auto take = voice::loadAssembledTakeFromPromotedFile(animation.sound_file, lanes);
+        if (take.isSuccess()) {
+            sourceFile = animation.sound_file;
+            return take;
+        }
+        lastError = take.getError().value().getMessage();
+    }
+    return TakeResult{ServerError(ServerError::NotFound, lastError)};
+}
+
 std::shared_ptr<voice::TextToViseme> getDialogTextToViseme() {
     static std::mutex mu;
     static std::shared_ptr<voice::TextToViseme> instance;
@@ -2041,13 +2084,26 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                     lanes.push_back({c.audioChannel, c.voiceId});
                 }
                 auto promoted = voice::loadAssembledTakeFromPromotedFile(acceptedVoiceSoundFile, lanes);
+                std::string takeSource = "promoted_file";
+                std::string takeFile = acceptedVoiceSoundFile;
+                if (!promoted.isSuccess()) {
+                    // The promoted file may predate embedded timing; a render
+                    // made from the same take has it.
+                    auto prior = loadAssembledTakeFromPriorRender(sourceScriptId, effectiveGenerationId, lanes,
+                                                                  takeFile, chunkSpan);
+                    if (prior.isSuccess()) {
+                        promoted = prior;
+                        takeSource = "prior_render";
+                    }
+                }
                 if (promoted.isSuccess()) {
                     if (chunkSpan) {
-                        chunkSpan->setAttribute("dialog.take_source", "promoted_file");
+                        chunkSpan->setAttribute("dialog.take_source", takeSource);
+                        chunkSpan->setAttribute("dialog.take_source_file", takeFile);
                         chunkSpan->setAttribute("dialog.cache_hit", true);
                     }
-                    info("Dialog job {}: chunk {} using the promoted accepted take {} ({})", jobState.jobId, ci,
-                         effectiveGenerationId, acceptedVoiceSoundFile);
+                    info("Dialog job {}: chunk {} using accepted take {} from {} ({})", jobState.jobId, ci,
+                         effectiveGenerationId, takeSource, takeFile);
                     generationIds.push_back(effectiveGenerationId);
                     assembledChunks.push_back(promoted.getValue().value());
                     updateProgress(0.55f);

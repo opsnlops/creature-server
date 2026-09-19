@@ -126,3 +126,32 @@ TEST_F(PromotedTakeTest, RefusesAFileWithNoTimingRatherThanRenderStillFaced) {
     EXPECT_FALSE(
         creatures::voice::loadAssembledTakeFromPromotedFile("dialog/voice/missing.wav", {{1, "v"}}).isSuccess());
 }
+
+/// A prior render of the take reads back the same way — and its music tail
+/// (silent creature lanes past the last spoken sample) is dropped so the
+/// rebuilt take is the tightened timeline again.
+TEST_F(PromotedTakeTest, ReadsAPriorRenderAndDropsItsMusicTail) {
+    creatures::voice::DialogAssembled original;
+    original.sampleRate = 48000;
+    original.totalSamples = 2400;
+    creatures::voice::DialogPerCreature beaky;
+    beaky.voiceId = "voice-beaky";
+    beaky.pcm = ramp(2400, 5);
+    beaky.pcm.back() = 123; // make sure the last spoken sample is non-zero
+    original.perCreature = {beaky};
+    creatures::voice::WavProvenance provenance;
+    provenance.fileUid = "render-1";
+    provenance.generationIds = {"9e7bcff9-bb5d-4c8e-8eff-48513b8d7479"};
+    provenance.tracks = {{1, "Beaky"}, {17, "BGM"}};
+    provenance.lipsync = {{1, "Beaky", {{0.00, 0.05, "C"}}}};
+    const std::vector<int16_t> music(9600, 1000); // 0.2 s of BGM: the render runs 4x longer than the speech
+    const auto path = root_ / "dialog" / "render-with-music.wav";
+    auto written = creatures::voice::writeDialogWav(original, {{"voice-beaky", 1}}, path, nullptr, &provenance, music);
+    ASSERT_TRUE(written.isSuccess()) << written.getError()->getMessage();
+
+    auto loaded =
+        creatures::voice::loadAssembledTakeFromPromotedFile("dialog/render-with-music.wav", {{1, "voice-beaky"}});
+    ASSERT_TRUE(loaded.isSuccess()) << loaded.getError()->getMessage();
+    EXPECT_EQ(loaded.getValue()->totalSamples, 2400u);
+    EXPECT_EQ(loaded.getValue()->perCreature[0].pcm, beaky.pcm);
+}
