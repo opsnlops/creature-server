@@ -21,6 +21,7 @@
 #include "server/voice/MusicGenerationCache.h"
 #include "server/ws/controller/ControllerUtils.h"
 #include "server/ws/controller/HttpResponseHelpers.h"
+#include "server/ws/controller/MusicCandidateMp3.h"
 #include "server/ws/service/DialogMusicService.h"
 #include "server/ws/service/SoundRenditionService.h"
 #include "util/JsonParser.h"
@@ -159,76 +160,12 @@ class DialogMusicController : public oatpp::web::server::api::ApiController,
                     return bailHttp(span, Status::CODE_400, "music generation id must be a UUID");
                 if (span)
                     span->setAttribute("music.generation_id", value);
-                auto generation = voice::loadMusicGeneration(value);
-                if (!generation.isSuccess())
-                    return bailFromServerError(span, generation.getError().value());
-                auto renditionSpan =
-                    creatures::observability->createChildOperationSpan("SoundRenditionService.renderWav", span);
-                if (renditionSpan) {
-                    renditionSpan->setAttribute("music.generation_id", value);
-                    renditionSpan->setAttribute("rendition.format", "mp3");
-                    renditionSpan->setAttribute("sound.source", "music_generation_cache");
-                    renditionSpan->setAttribute("sound.file_hash",
-                                                util::sha256Hex(generation.getValue().value().wavPath.string()));
-                }
-                SoundRendition rendered;
-                {
-                    // Immutable candidate URLs share one atomic on-disk MP3.
-                    // Serializing cache misses prevents concurrent refreshes
-                    // from multiplying encoder CPU and memory.
-                    const std::scoped_lock renditionLock(renditionMutex_);
-                    auto cached = voice::loadMusicMp3(value);
-                    if (!cached.isSuccess()) {
-                        recordSpanError(renditionSpan, cached.getError().value().getMessage(), "RenditionCacheError",
-                                        cached.getError().value().getCode());
-                        return bailFromServerError(span, cached.getError().value());
-                    }
-                    auto cachedBytes = cached.getValue().value();
-                    if (cachedBytes) {
-                        rendered.bytes = std::move(*cachedBytes);
-                        rendered.mimeType = "audio/mpeg";
-                        rendered.extension = ".mp3";
-                        if (renditionSpan) {
-                            renditionSpan->setAttribute("cache.hit", true);
-                            renditionSpan->setAttribute("cache.outcome", "hit");
-                            renditionSpan->setAttribute("encoding.performed", false);
-                        }
-                    } else {
-                        if (renditionSpan) {
-                            std::error_code fileSizeError;
-                            const auto inputBytes =
-                                std::filesystem::file_size(generation.getValue().value().wavPath, fileSizeError);
-                            if (!fileSizeError)
-                                renditionSpan->setAttribute("encoding.input_bytes", static_cast<int64_t>(inputBytes));
-                        }
-                        auto rendition = renditionService_.renderWav(generation.getValue().value().wavPath,
-                                                                     SoundRenditionFormat::Mp3);
-                        if (!rendition.isSuccess()) {
-                            recordSpanError(renditionSpan, rendition.getError().value().getMessage(), "RenditionError",
-                                            rendition.getError().value().getCode());
-                            return bailFromServerError(span, rendition.getError().value());
-                        }
-                        rendered = rendition.getValue().value();
-                        auto savedMp3 = voice::saveMusicMp3(value, rendered.bytes);
-                        if (!savedMp3.isSuccess()) {
-                            recordSpanError(renditionSpan, savedMp3.getError().value().getMessage(),
-                                            "RenditionCacheError", savedMp3.getError().value().getCode());
-                            return bailFromServerError(span, savedMp3.getError().value());
-                        }
-                        if (renditionSpan) {
-                            renditionSpan->setAttribute("cache.hit", false);
-                            renditionSpan->setAttribute("cache.outcome", "miss");
-                            renditionSpan->setAttribute("encoding.performed", true);
-                        }
-                    }
-                }
-                if (renditionSpan) {
-                    renditionSpan->setAttribute("rendition.output_bytes", static_cast<int64_t>(rendered.bytes.size()));
-                    renditionSpan->setSuccess();
-                }
-                const auto downloadName = util::bgmExportBasename(generation.getValue().value().title,
-                                                                  generation.getValue().value().prompt, value) +
-                                          ".mp3";
+                auto rendition = renderMusicCandidateMp3(value, renditionService_, renditionMutex_, span);
+                if (!rendition.isSuccess())
+                    return bailFromServerError(span, rendition.getError().value());
+                const auto rendered = rendition.getValue().value();
+                const auto downloadName =
+                    util::bgmExportBasename(rendered.generation.title, rendered.generation.prompt, value) + ".mp3";
                 auto response = ResponseFactory::createResponse(
                     Status::CODE_200, oatpp::String(reinterpret_cast<const char *>(rendered.bytes.data()),
                                                     static_cast<v_buff_size>(rendered.bytes.size())));

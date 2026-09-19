@@ -63,8 +63,10 @@ class JobWorker : public creatures::StoppableThread {
 
     /// Atomically reserve one of the two music slots, create the JobState, and
     /// queue it on the dedicated worker. Full admission retains no details.
-    [[nodiscard]] QueueAdmission
-    tryCreateAndQueueMusicJob(const std::string &details, std::shared_ptr<creatures::RequestSpan> parentSpan = nullptr);
+    /// `type` is DialogMusic or Music (#202); both share the 2-slot queue.
+    [[nodiscard]] QueueAdmission tryCreateAndQueueMusicJob(const std::string &details,
+                                                           std::shared_ptr<creatures::RequestSpan> parentSpan = nullptr,
+                                                           JobType type = JobType::DialogMusic);
 
   protected:
     /**
@@ -162,6 +164,7 @@ class JobWorker : public creatures::StoppableThread {
 
     /// Generate and cache an instrumental ElevenLabs Music take for a dialog.
     void handleDialogMusicJob(JobState &jobState);
+    void handleMusicJob(JobState &jobState);
 
     /**
      * Single-voice TTS of text into a permanent sound file.
