@@ -87,7 +87,10 @@ Exactly one of:
 `duration_extension_ms`, `generation_mode`, `force_instrumental` are prompt-only;
 `seed` is plan-only (ElevenLabs rejects it with `prompt`). A chunk is an
 audio-reference chunk when it has `song_id`, a generation chunk when it has
-`text`; never both. Plan total must be ≥ the dialog take's length and ≤ 600000 ms
+`text`; never both. The whole plan's canonical JSON must be ≤ 128 KB (the
+per-field limits alone allow ~800 KB, and the take's provenance embeds the plan
+three times inside a 1 MiB iXML chunk). Plan total must be ≥ the dialog take's
+length and ≤ 600000 ms
 (the server derives the take length exactly as before; a plan shorter than the
 dialog is a validation error so the BGM always covers the speech).
 

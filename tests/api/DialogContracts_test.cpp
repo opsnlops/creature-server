@@ -272,6 +272,20 @@ TEST(DialogContracts, Music200_RejectsCrossModeFieldsAndBadChunks) {
     for (int i = 0; i < 6; ++i)
         tooLong.push_back(generationChunk(120000));
     EXPECT_NE(messageOf(planOf(tooLong)).find("must be 3000-600000 ms"), std::string::npos);
+
+    // Every per-field limit respected, but the whole plan would not fit in the
+    // take's provenance (stored three times inside a 1 MiB iXML chunk).
+    nlohmann::json tooBig = nlohmann::json::array();
+    for (int i = 0; i < 30; ++i) {
+        auto fat = generationChunk(5000);
+        fat["text"] = std::string(6000, 'x');
+        fat["positive_styles"] = nlohmann::json::array();
+        for (int j = 0; j < 50; ++j)
+            fat["positive_styles"].push_back(std::string(200, 'y'));
+        tooBig.push_back(fat);
+    }
+    EXPECT_NE(messageOf(planOf(tooBig)).find("serializes to"), std::string::npos);
+    EXPECT_NE(messageOf(planOf(tooBig)).find("maximum is 131072"), std::string::npos);
 }
 
 /// The request is stored as job details and re-parsed by the worker, so the

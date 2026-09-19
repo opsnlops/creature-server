@@ -29,6 +29,14 @@ inline constexpr std::size_t kMaxMusicChunkTextBytes = 6132;
 inline constexpr std::size_t kMaxMusicStyles = 50;
 inline constexpr std::size_t kMaxMusicStyleBytes = 200;
 inline constexpr std::size_t kMaxMusicSongIdBytes = 100;
+/// Cap on the whole plan's canonical JSON. The per-field limits above allow a
+/// ~800 KB plan, and provenance stores the plan three times (upstream
+/// request, upstream response metadata, plan) inside a WAV iXML chunk whose
+/// reader stops at 1 MiB and a cache sidecar capped at 2 MB — so a maximal
+/// plan could be generated but never loaded or promoted. 128 KB × 3, plus
+/// XML-escaping growth, stays comfortably under both caps and is still ~10×
+/// any plan the ElevenLabs planner produces.
+inline constexpr std::size_t kMaxMusicPlanJsonBytes = 128 * 1024;
 inline constexpr int64_t kMaxMusicSeed = 2147483647;
 inline constexpr std::size_t kMaxMusicFinetuneIdBytes = 100;
 inline constexpr double kMinMusicFinetuneStrength = 0.0;

@@ -499,6 +499,11 @@ inline Result<voice::MusicCompositionPlan> musicCompositionPlanFromJson(const nl
         return json_codec::invalid<voice::MusicCompositionPlan>(fmt::format("{}.chunks total {} ms; must be {}-{} ms",
                                                                             path, total, voice::kMinMusicLengthMs,
                                                                             voice::kMaxMusicLengthMs));
+    // Whole-plan size: see kMaxMusicPlanJsonBytes for why the per-field
+    // limits alone aren't enough (the plan is embedded in the take's iXML).
+    if (const auto bytes = voice::musicCompositionPlanToJson(plan).dump().size(); bytes > voice::kMaxMusicPlanJsonBytes)
+        return json_codec::invalid<voice::MusicCompositionPlan>(
+            fmt::format("{} serializes to {} bytes; maximum is {}", path, bytes, voice::kMaxMusicPlanJsonBytes));
     return PlanResult{std::move(plan)};
 }
 
@@ -792,8 +797,9 @@ inline nlohmann::json dialogMusicGenerationResultToJson(const DialogMusicGenerat
                         {"duration_extension_ms", result.durationExtensionMs},
                         {"requested_music_length_ms", result.requestedMusicLengthMs},
                         {"prompt", result.prompt}};
+    // The recipe only carries "prompt" when non-empty, so the legacy key set
+    // above survives update() untouched in plan mode.
     json.update(dialogMusicRecipeToJson(result.recipe));
-    json["prompt"] = result.prompt; // keep the legacy key even when empty (plan mode)
     return json;
 }
 
