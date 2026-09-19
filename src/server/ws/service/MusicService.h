@@ -74,6 +74,16 @@ class MusicService {
                               std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
     Result<void> remove(const std::string &pieceId, std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
 
+    /// What generate() sends upstream and records, given the request and the
+    /// piece it refines (nullptr for a piece-less request). Pure, so the base
+    /// version resolution and the sections builder are testable without
+    /// ElevenLabs or Mongo.
+    struct Prepared {
+        voice::MusicGenerationRequest upstream;
+        MusicComposeContext context;
+    };
+    static Result<Prepared> prepare(const api::MusicGenerateRequest &request, const MusicPiece *piece);
+
     /// The console-facing recipe, derived from provenance so the job result
     /// and the recipe endpoint can never disagree.
     static api::DialogMusicRecipe recipeFromProvenance(const voice::MusicWavProvenance &music);

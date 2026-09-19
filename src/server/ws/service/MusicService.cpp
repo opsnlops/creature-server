@@ -222,6 +222,64 @@ Result<api::DialogMusicGenerationResult> MusicService::compose(const voice::Musi
     return ComposeResult{std::move(result)};
 }
 
+Result<MusicService::Prepared> MusicService::prepare(const api::MusicGenerateRequest &request,
+                                                     const MusicPiece *piece) {
+    using PrepareResult = Result<Prepared>;
+    Prepared prepared;
+    auto &context = prepared.context;
+    auto &upstream = prepared.upstream;
+    context.generationId = util::generateUUID();
+    context.pieceId = request.pieceId;
+    context.mp3UrlPrefix = "/api/v1/music/generated/";
+
+    std::optional<voice::MusicBaseVersion> base;
+    if (!request.pieceId.empty()) {
+        if (!piece) {
+            return PrepareResult{ServerError(ServerError::NotFound, "music piece not found")};
+        }
+        context.title = piece->title;
+        if (!request.baseVersionId.empty()) {
+            const auto *version = piece->findVersion(request.baseVersionId);
+            if (!version) {
+                return PrepareResult{
+                    ServerError(ServerError::InvalidData,
+                                fmt::format("piece {} has no version {}", request.pieceId, request.baseVersionId))};
+            }
+            if (version->song_id.empty()) {
+                return PrepareResult{ServerError(ServerError::InvalidData,
+                                                 "the base version has no ElevenLabs song id, so its sections cannot "
+                                                 "be kept or conditioned on; generate without base_version_id")};
+            }
+            base = voice::MusicBaseVersion{version->song_id, version->sections};
+            context.baseVersionId = request.baseVersionId;
+        }
+    }
+
+    upstream.modelId = request.modelId;
+    upstream.finetuneId = request.finetuneId;
+    upstream.finetuneStrength = request.finetuneStrength;
+    upstream.storeForInpainting = request.storeForInpainting;
+    if (request.isSectionsMode()) {
+        auto built = voice::buildMusicSectionsPlan(*request.sections, base, request.keep, request.conditionStrength);
+        if (std::holds_alternative<voice::MusicSectionsPlanError>(built)) {
+            return PrepareResult{
+                ServerError(ServerError::InvalidData, std::get<voice::MusicSectionsPlanError>(built).message)};
+        }
+        upstream.compositionPlan = std::get<voice::MusicCompositionPlan>(built);
+        upstream.seed = request.seed;
+        context.sections = request.sections;
+    } else if (request.isPlanMode()) {
+        upstream.compositionPlan = request.compositionPlan;
+        upstream.seed = request.seed;
+    } else {
+        upstream.prompt = request.prompt;
+        upstream.musicLengthMs = request.musicLengthMs;
+        upstream.generationMode = request.generationMode;
+        upstream.forceInstrumental = request.forceInstrumental;
+    }
+    return PrepareResult{std::move(prepared)};
+}
+
 Result<api::DialogMusicGenerationResult> MusicService::generate(const api::MusicGenerateRequest &request,
                                                                 std::shared_ptr<OperationSpan> parentSpan,
                                                                 const std::string &jobId) const {
@@ -242,64 +300,26 @@ Result<api::DialogMusicGenerationResult> MusicService::generate(const api::Music
         return fail(ServerError(ServerError::InternalError, "music dependencies are unavailable"),
                     "DependencyUnavailable");
     }
-    MusicComposeContext context;
-    context.generationId = util::generateUUID();
-    context.pieceId = request.pieceId;
-    context.mp3UrlPrefix = "/api/v1/music/generated/";
-
-    std::optional<voice::MusicBaseVersion> base;
+    // Copy the piece out of the Result: getValue() returns the optional by
+    // value, and a pointer into that temporary dangled on prod (3.48.1).
+    std::optional<MusicPiece> piece;
     if (!request.pieceId.empty()) {
-        auto piece = creatures::db->getMusicPiece(request.pieceId, span);
-        if (!piece.isSuccess()) {
-            return fail(piece.getError().value(), "MusicPieceLookupError");
+        auto loaded = creatures::db->getMusicPiece(request.pieceId, span);
+        if (!loaded.isSuccess()) {
+            return fail(loaded.getError().value(), "MusicPieceLookupError");
         }
-        context.title = piece.getValue()->title;
-        if (!request.baseVersionId.empty()) {
-            const auto *version = piece.getValue()->findVersion(request.baseVersionId);
-            if (!version) {
-                return fail(ServerError(ServerError::InvalidData, fmt::format("piece {} has no version {}",
-                                                                              request.pieceId, request.baseVersionId)),
-                            "MusicVersionNotFound");
-            }
-            if (version->song_id.empty()) {
-                return fail(ServerError(ServerError::InvalidData,
-                                        "the base version has no ElevenLabs song id, so its sections cannot be "
-                                        "kept or conditioned on; generate without base_version_id"),
-                            "MusicBaseVersionUnusable");
-            }
-            base = voice::MusicBaseVersion{version->song_id, version->sections};
-            context.baseVersionId = request.baseVersionId;
-        }
+        piece = loaded.getValue().value();
     }
-
-    voice::MusicGenerationRequest upstream;
-    upstream.modelId = request.modelId;
-    upstream.finetuneId = request.finetuneId;
-    upstream.finetuneStrength = request.finetuneStrength;
-    upstream.storeForInpainting = request.storeForInpainting;
-    if (request.isSectionsMode()) {
-        auto built = voice::buildMusicSectionsPlan(*request.sections, base, request.keep, request.conditionStrength);
-        if (std::holds_alternative<voice::MusicSectionsPlanError>(built)) {
-            return fail(ServerError(ServerError::InvalidData, std::get<voice::MusicSectionsPlanError>(built).message),
-                        "MusicSectionsPlanError");
-        }
-        upstream.compositionPlan = std::get<voice::MusicCompositionPlan>(built);
-        upstream.seed = request.seed;
-        context.sections = request.sections;
-        if (span) {
-            span->setAttribute("music.section_count", static_cast<int64_t>(request.sections->size()));
-            span->setAttribute("music.kept_count", static_cast<int64_t>(request.keep.size()));
-        }
-    } else if (request.isPlanMode()) {
-        upstream.compositionPlan = request.compositionPlan;
-        upstream.seed = request.seed;
-    } else {
-        upstream.prompt = request.prompt;
-        upstream.musicLengthMs = request.musicLengthMs;
-        upstream.generationMode = request.generationMode;
-        upstream.forceInstrumental = request.forceInstrumental;
+    auto prepared = prepare(request, piece ? &*piece : nullptr);
+    if (!prepared.isSuccess()) {
+        return fail(prepared.getError().value(), "MusicSectionsPlanError");
     }
-    return compose(upstream, context, {jobId, context.generationId, {}, {}, 0, 0}, span);
+    const auto ready = prepared.getValue().value();
+    if (span && request.sections) {
+        span->setAttribute("music.section_count", static_cast<int64_t>(request.sections->size()));
+        span->setAttribute("music.kept_count", static_cast<int64_t>(request.keep.size()));
+    }
+    return compose(ready.upstream, ready.context, {jobId, ready.context.generationId, {}, {}, 0, 0}, span);
 }
 
 Result<storage::StoragePath> MusicService::publishCandidateWav(const voice::CachedMusicGeneration &candidate,

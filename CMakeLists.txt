@@ -779,6 +779,8 @@ add_executable(creature-server-test
         tests/server/ws/MessageHandlerBoundary_test.cpp
         tests/server/ws/SoundRenditionService_test.cpp
         src/server/ws/service/SoundRenditionService.cpp
+        tests/server/ws/MusicService_prepare_test.cpp
+        src/server/ws/service/MusicService.cpp
         tests/server/ws/ErrorHandler_test.cpp
         src/server/ws/ErrorHandler.cpp
         tests/server/ws/RequestBodyDrain_test.cpp
