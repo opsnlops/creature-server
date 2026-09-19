@@ -96,6 +96,21 @@ TEST_F(MusicGenerationCacheTest, DialogFreeCandidateHasNoScriptId) {
     EXPECT_FALSE(creatures::voice::saveMusicGeneration(generation, pcm_).isSuccess());
 }
 
+/// #202 regression: a sections-mode take has no prompt either. The 3.47.0
+/// fix only exempted composition_plan, and prod rejected every library
+/// candidate (found on prod, 3.48.0).
+TEST_F(MusicGenerationCacheTest, SectionsModeTakeWithoutPromptRoundTrips) {
+    const std::string id = "6f0f6c4e-9a3b-4c6d-8e1f-2a3b4c5d6e74";
+    created_.push_back(id);
+    auto generation = candidate(id, "sections", "");
+    generation.scriptId.clear();
+    generation.provenance.music->sectionsJson = R"([{"text":"[Intro]","duration_ms":8000,"positive_styles":["a"]}])";
+    ASSERT_TRUE(creatures::voice::saveMusicGeneration(generation, pcm_).isSuccess());
+    auto loaded = creatures::voice::loadMusicGeneration(id);
+    ASSERT_TRUE(loaded.isSuccess()) << loaded.getError()->getMessage();
+    EXPECT_EQ(loaded.getValue()->provenance.music->requestKind, "sections");
+}
+
 TEST_F(MusicGenerationCacheTest, PromptModeTakeStillRequiresItsPrompt) {
     const std::string id = "6f0f6c4e-9a3b-4c6d-8e1f-2a3b4c5d6e71";
     created_.push_back(id);
