@@ -28,6 +28,11 @@ struct PromotedTakeLane {
 /// named lane without lip-sync cues just renders with a closed mouth, which
 /// is what the original render did. Fails when the file has no timing at
 /// all rather than producing a silent-faced render.
+///
+/// Works on any 17-channel dialog WAV the server wrote — a promoted voice
+/// take or a finished render of the same take (whose provenance names the
+/// take in GENERATION_IDS). Trailing all-lane silence is dropped, since a
+/// render's timeline runs to the end of its music.
 Result<DialogAssembled> loadAssembledTakeFromPromotedFile(const std::string &soundFile,
                                                           const std::vector<PromotedTakeLane> &lanes);
 
