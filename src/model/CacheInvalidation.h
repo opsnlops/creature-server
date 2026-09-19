@@ -22,6 +22,7 @@ enum class CacheType {
     AdHocExchangeList,
     Fixture,
     DialogScriptList,
+    MusicPieceList,
     StoryboardList,
     StageList,
     Unknown,

@@ -18,6 +18,7 @@
 #include <nlohmann/json.hpp>
 
 #include "api/DialogContracts.h"
+#include "api/MusicContracts.h"
 #include "api/VoiceContracts.h"
 #include "model/Animation.h"
 #include "model/Stage.h"
@@ -42,6 +43,7 @@
 #include "server/voice/IxmlReader.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/MusicClient.h"
+#include "server/voice/PromotedTake.h"
 #include "server/voice/RhubarbData.h"
 #include "server/voice/ScriptCacheKey.h"
 #include "server/voice/SoundDataProcessor.h"
@@ -52,6 +54,7 @@
 #include "server/voice/WavFileReader.h"
 #include "server/ws/service/DialogMusicService.h"
 #include "server/ws/service/DialogPreviewService.h"
+#include "server/ws/service/MusicService.h"
 #include "server/ws/service/VoiceService.h"
 
 #include "util/ObservabilityManager.h"
@@ -229,19 +232,20 @@ JobWorker::QueueAdmission JobWorker::tryCreateAndQueueJob(JobType type, const st
 }
 
 JobWorker::QueueAdmission JobWorker::tryCreateAndQueueMusicJob(const std::string &details,
-                                                               std::shared_ptr<creatures::RequestSpan> parentSpan) {
+                                                               std::shared_ptr<creatures::RequestSpan> parentSpan,
+                                                               JobType type) {
     auto current = musicJobsInFlight_.load(std::memory_order_relaxed);
     while (current < kMaxMusicJobsInFlight) {
         if (musicJobsInFlight_.compare_exchange_weak(current, current + 1, std::memory_order_acq_rel,
                                                      std::memory_order_relaxed)) {
             if (parentSpan) {
-                parentSpan->setAttribute("admission.scope", "dialog.music");
+                parentSpan->setAttribute("admission.scope", type == JobType::Music ? "music" : "dialog.music");
                 parentSpan->setAttribute("admission.limit", static_cast<int64_t>(kMaxMusicJobsInFlight));
                 parentSpan->setAttribute("admission.in_flight", static_cast<int64_t>(current + 1));
             }
             std::string jobId;
             try {
-                jobId = jobManager_->createJob(JobType::DialogMusic, details, parentSpan);
+                jobId = jobManager_->createJob(type, details, parentSpan);
             } catch (...) {
                 musicJobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
                 if (parentSpan)
@@ -373,6 +377,10 @@ void JobWorker::processJob(const std::string &jobId) {
             info("Handling job {} as DialogMusic type", jobId);
             handleDialogMusicJob(jobState);
             break;
+        case JobType::Music:
+            info("Handling job {} as Music type", jobId);
+            handleMusicJob(jobState);
+            break;
         case JobType::StageRerender:
             handleStageRerenderJob(jobState);
             break;
@@ -443,6 +451,59 @@ void JobWorker::handleDialogMusicJob(JobState &jobState) {
     if (!generated.isSuccess()) {
         const auto error = generated.getError().value();
         return failJob(error.getMessage(), "DialogMusicGenerationError", error.getCode(), "generate");
+    }
+    jobManager_->updateJobProgress(jobState.jobId, 1.0f);
+    broadcastProgress();
+    jobManager_->completeJob(jobState.jobId,
+                             api::dialogMusicGenerationResultToJson(generated.getValue().value()).dump());
+    if (jobState.span)
+        jobState.span->setSuccess();
+    broadcastCompletion();
+}
+
+/// Library music generation (#202): the dialog music job without the
+/// dialog. Same progress/completion messages, same result shape.
+void JobWorker::handleMusicJob(JobState &jobState) {
+    const auto broadcastProgress = [this, &jobState] {
+        if (auto state = jobManager_->getJob(jobState.jobId)) {
+            auto result = broadcastJobProgressToAllClients(*state);
+            if (!result.isSuccess())
+                warn("Failed to broadcast music job progress: {}", result.getError()->getMessage());
+        }
+    };
+    const auto broadcastCompletion = [this, &jobState] {
+        if (auto state = jobManager_->getJob(jobState.jobId)) {
+            auto result = broadcastJobCompleteToAllClients(*state);
+            if (!result.isSuccess())
+                warn("Failed to broadcast music job completion: {}", result.getError()->getMessage());
+        }
+    };
+    const auto failJob = [&](const std::string &message, const std::string &type, ServerError::Code code,
+                             const std::string &stage) {
+        recordSpanError(jobState.span, message, type, code);
+        if (jobState.span)
+            jobState.span->setAttribute("job.failure_stage", stage);
+        jobManager_->failJob(jobState.jobId, message);
+        broadcastCompletion();
+    };
+
+    auto jsonResult = api::parseContractJson(jobState.details, "music job details");
+    if (!jsonResult.isSuccess())
+        return failJob(jsonResult.getError().value().getMessage(), "InvalidData", ServerError::InvalidData,
+                       "deserialize");
+    auto requestResult = api::musicGenerateRequestFromJson(jsonResult.getValue().value());
+    if (!requestResult.isSuccess())
+        return failJob(requestResult.getError().value().getMessage(), "InvalidData", ServerError::InvalidData,
+                       "deserialize");
+    const auto request = requestResult.getValue().value();
+    jobManager_->updateJobProgress(jobState.jobId, 0.05f);
+    broadcastProgress();
+
+    ws::MusicService service;
+    auto generated = service.generate(request, jobState.span, jobState.jobId);
+    if (!generated.isSuccess()) {
+        const auto error = generated.getError().value();
+        return failJob(error.getMessage(), "MusicGenerationError", error.getCode(), "generate");
     }
     jobManager_->updateJobProgress(jobState.jobId, 1.0f);
     broadcastProgress();
@@ -1164,6 +1225,49 @@ struct DialogJobCreature {
 /// Lazy-loaded shared TextToViseme. The CMU dict is multi-MB; one load per
 /// process is enough — every dialog job reuses it. Guarded by the local mutex
 /// so the first concurrent jobs don't both pay the load cost.
+/// Fourth source for an accepted take (#208): a finished render of the same
+/// take. A promoted voice file from before the server embedded timing in
+/// take exports has lanes but no LIPSYNC/WORD_ALIGNMENT — yet every render
+/// made from it does, and names the take in GENERATION_IDS. Same lanes,
+/// same timeline, plus the timing; the loader reads either kind.
+Result<voice::DialogAssembled> loadAssembledTakeFromPriorRender(const std::string &scriptId,
+                                                                const std::string &generationId,
+                                                                const std::vector<voice::PromotedTakeLane> &lanes,
+                                                                std::string &sourceFile,
+                                                                const std::shared_ptr<OperationSpan> &span) {
+    using TakeResult = Result<voice::DialogAssembled>;
+    if (!creatures::db || scriptId.empty()) {
+        return TakeResult{ServerError(ServerError::NotFound, "no prior render to read the take from")};
+    }
+    auto listed = creatures::db->listAnimations(creatures::SortBy::name, span);
+    if (!listed.isSuccess()) {
+        return TakeResult{listed.getError().value()};
+    }
+    const auto animations = listed.getValue().value();
+    std::string lastError = "no permanent render of this script names the accepted take";
+    for (const auto &animation : animations) {
+        if (animation.source_script_id != scriptId || animation.sound_file.empty()) {
+            continue;
+        }
+        const auto ixml = voice::readIxmlChunk(storage::resolveSoundPath(animation.sound_file));
+        if (!ixml) {
+            continue;
+        }
+        const auto provenance = voice::parseIxmlProvenance(*ixml);
+        if (std::find(provenance.generationIds.begin(), provenance.generationIds.end(), generationId) ==
+            provenance.generationIds.end()) {
+            continue;
+        }
+        auto take = voice::loadAssembledTakeFromPromotedFile(animation.sound_file, lanes);
+        if (take.isSuccess()) {
+            sourceFile = animation.sound_file;
+            return take;
+        }
+        lastError = take.getError().value().getMessage();
+    }
+    return TakeResult{ServerError(ServerError::NotFound, lastError)};
+}
+
 std::shared_ptr<voice::TextToViseme> getDialogTextToViseme() {
     static std::mutex mu;
     static std::shared_ptr<voice::TextToViseme> instance;
@@ -1641,6 +1745,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     std::string scriptStageId;             // the script's own stage binding, if it has one (#128)
     std::string scriptTitle;               // the script's own title, used when the request doesn't give one
     std::string acceptedVoiceGenerationId; // the script's accepted take, if any (#131)
+    std::string acceptedVoiceSoundFile;    // its promoted 17-channel WAV — the last-resort source (#208)
     std::vector<creatures::DialogScriptTurn> sourceScriptTurns;
     std::optional<creatures::DialogBackgroundMusic> backgroundMusic;
     if (hasScriptId) {
@@ -1671,6 +1776,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         scriptTitle = script.title;
         if (script.accepted_voice) {
             acceptedVoiceGenerationId = script.accepted_voice->generation_id;
+            acceptedVoiceSoundFile = script.accepted_voice->sound_file;
         }
     } else {
         rawTurns.reserve(request.turns.size());
@@ -1968,14 +2074,55 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                 loadResult = voice::loadGeneration(cacheKey, effectiveGenerationId);
             }
             if (!loadResult.isSuccess() && renderingAcceptedTake) {
+                // Third source (#208): the promoted 17-channel WAV itself. An
+                // acceptance from before the durable store existed is in
+                // neither store, but that file is this render's own output —
+                // lanes plus mouth cues and word timing in its iXML — so it
+                // comes back as a finished DialogAssembled, no re-slicing.
+                std::vector<voice::PromotedTakeLane> lanes;
+                for (const auto &c : creaturesCache) {
+                    lanes.push_back({c.audioChannel, c.voiceId});
+                }
+                auto promoted = voice::loadAssembledTakeFromPromotedFile(acceptedVoiceSoundFile, lanes);
+                std::string takeSource = "promoted_file";
+                std::string takeFile = acceptedVoiceSoundFile;
+                if (!promoted.isSuccess()) {
+                    // The promoted file may predate embedded timing; a render
+                    // made from the same take has it.
+                    auto prior = loadAssembledTakeFromPriorRender(sourceScriptId, effectiveGenerationId, lanes,
+                                                                  takeFile, chunkSpan);
+                    if (prior.isSuccess()) {
+                        promoted = prior;
+                        takeSource = "prior_render";
+                    }
+                }
+                if (promoted.isSuccess()) {
+                    if (chunkSpan) {
+                        chunkSpan->setAttribute("dialog.take_source", takeSource);
+                        chunkSpan->setAttribute("dialog.take_source_file", takeFile);
+                        chunkSpan->setAttribute("dialog.cache_hit", true);
+                    }
+                    info("Dialog job {}: chunk {} using accepted take {} from {} ({})", jobState.jobId, ci,
+                         effectiveGenerationId, takeSource, takeFile);
+                    generationIds.push_back(effectiveGenerationId);
+                    assembledChunks.push_back(promoted.getValue().value());
+                    updateProgress(0.55f);
+                    continue;
+                }
                 // Never regenerate behind the user's back. They auditioned and
                 // accepted a specific performance; silently producing a
                 // different one is the exact failure the accepted-take feature
                 // exists to prevent, and it costs money doing it.
                 return failJob(fmt::format(
-                    "the script's accepted voice take {} could not be loaded ({}). Refusing to regenerate audio, "
-                    "which would produce a different performance — re-accept a take for this script.",
-                    effectiveGenerationId, loadResult.getError().value().getMessage()));
+                    "the script's accepted voice take {} could not be loaded ({}; promoted file: {}). Refusing to "
+                    "regenerate audio, which would produce a different performance — re-accept a take for this "
+                    "script.",
+                    effectiveGenerationId, loadResult.getError().value().getMessage(),
+                    promoted.getError().value().getMessage()));
+            }
+            if (loadResult.isSuccess() && chunkSpan) {
+                chunkSpan->setAttribute("dialog.take_source",
+                                        renderingAcceptedTake ? "accepted_store_or_cache" : "generation_cache");
             }
             if (loadResult.isSuccess()) {
                 auto gen = loadResult.getValue().value();
@@ -2218,7 +2365,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             voice::DialogLipsyncTrack lt;
             lt.channel = it->second.first;
             lt.name = it->second.second;
-            for (const auto &cue : viseme->charTimingsToMouthCues(pc.mouth)) {
+            for (const auto &cue : voice::mouthCuesFor(pc, *viseme)) {
                 lt.cues.push_back({cue.start, cue.end, cue.value});
             }
             if (!lt.cues.empty()) {
@@ -2391,7 +2538,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         RhubarbSoundData snd;
         snd.metadata.duration = static_cast<double>(showTimelineSamples) / static_cast<double>(assembled.sampleRate);
         snd.metadata.soundFile = wavPath.filename().string();
-        snd.mouthCues = viseme->charTimingsToMouthCues(pc.mouth);
+        snd.mouthCues = voice::mouthCuesFor(pc, *viseme);
         auto mouthBytes = soundProc.processSoundData(snd, *msPerFrame, totalFrames);
 
         voice::CreatureTrackInput cti;

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 #include "server/voice/IxmlTimedTokens.h"
@@ -160,6 +161,18 @@ std::string buildIxml(const WavProvenance &provenance, int totalChannels) {
         field("DURATION_EXTENSION_MS", std::to_string(music.durationExtensionMs));
         field("MUSIC_LENGTH_MS", std::to_string(music.musicLengthMs));
         field("FORCE_INSTRUMENTAL", music.forceInstrumental ? "true" : "false");
+        field("REQUEST_KIND", music.requestKind);
+        if (music.seed) {
+            field("SEED", std::to_string(*music.seed));
+        }
+        field("FINETUNE_ID", music.finetuneId);
+        if (music.finetuneStrength) {
+            field("FINETUNE_STRENGTH", fmt::format("{}", *music.finetuneStrength));
+        }
+        field("STORED_FOR_INPAINTING", music.storedForInpainting ? "true" : "false");
+        field("SECTIONS_JSON", music.sectionsJson);
+        field("PIECE_ID", music.pieceId);
+        field("BASE_VERSION_ID", music.baseVersionId);
         field("REQUEST_JSON", music.requestJson);
         field("RESPONSE_METADATA_JSON", music.responseMetadataJson);
         field("COMPOSITION_PLAN_JSON", music.compositionPlanJson);
@@ -275,6 +288,12 @@ nlohmann::json wavProvenanceToJson(const WavProvenance &p) {
                       {"duration_extension_ms", m.durationExtensionMs},
                       {"music_length_ms", m.musicLengthMs},
                       {"force_instrumental", m.forceInstrumental},
+                      {"request_kind", m.requestKind},
+                      {"finetune_id", m.finetuneId},
+                      {"stored_for_inpainting", m.storedForInpainting},
+                      {"sections_json", m.sectionsJson},
+                      {"piece_id", m.pieceId},
+                      {"base_version_id", m.baseVersionId},
                       {"request_json", m.requestJson},
                       {"response_metadata_json", m.responseMetadataJson},
                       {"composition_plan_json", m.compositionPlanJson},
@@ -287,6 +306,12 @@ nlohmann::json wavProvenanceToJson(const WavProvenance &p) {
                       {"source_dialog_cache_key", m.sourceDialogCacheKey},
                       {"source_script_updated_at", m.sourceScriptUpdatedAt},
                       {"pcm_sha256", m.pcmSha256}};
+        if (m.seed) {
+            j["music"]["seed"] = *m.seed;
+        }
+        if (m.finetuneStrength) {
+            j["music"]["finetune_strength"] = *m.finetuneStrength;
+        }
     }
     return j;
 }
@@ -355,6 +380,18 @@ WavProvenance wavProvenanceFromJson(const nlohmann::json &j) {
         music.durationExtensionMs = m.value("duration_extension_ms", int64_t{0});
         music.musicLengthMs = m.value("music_length_ms", int64_t{0});
         music.forceInstrumental = m.value("force_instrumental", true);
+        music.requestKind = m.value("request_kind", std::string{});
+        if (m.contains("seed") && m["seed"].is_number_integer()) {
+            music.seed = m["seed"].get<int64_t>();
+        }
+        music.finetuneId = m.value("finetune_id", std::string{});
+        if (m.contains("finetune_strength") && m["finetune_strength"].is_number()) {
+            music.finetuneStrength = m["finetune_strength"].get<double>();
+        }
+        music.storedForInpainting = m.value("stored_for_inpainting", false);
+        music.sectionsJson = m.value("sections_json", std::string{});
+        music.pieceId = m.value("piece_id", std::string{});
+        music.baseVersionId = m.value("base_version_id", std::string{});
         music.requestJson = m.value("request_json", std::string{});
         music.responseMetadataJson = m.value("response_metadata_json", std::string{});
         music.compositionPlanJson = m.value("composition_plan_json", std::string{});

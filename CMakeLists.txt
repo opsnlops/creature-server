@@ -509,6 +509,7 @@ file(GLOB serverFiles CONFIGURE_DEPENDS
         src/server/logging/*
         src/server/metrics/*
         src/server/playlist/*
+        src/server/music/*
         src/server/script/*
         src/server/stage/*
         src/server/storage/*
@@ -619,6 +620,8 @@ add_executable(creature-server
         src/util/loggingUtils.h
         src/util/Result.cpp
         src/util/Result.h
+        src/util/ThreadPriority.cpp
+        src/util/ThreadPriority.h
         src/util/uuidUtils.cpp
         src/util/uuidUtils.h
         src/util/UuidValidation.h
@@ -663,6 +666,7 @@ add_executable(creature-server
         src/server/ws/service/DialogPreviewService.cpp
         src/server/ws/service/DialogMusicService.h
         src/server/ws/service/DialogMusicService.cpp
+        src/server/ws/service/MusicService.cpp
         src/server/ws/service/SoundRenditionService.h
         src/server/ws/service/SoundRenditionService.cpp
         src/server/ws/service/DmxFixtureService.h
@@ -864,6 +868,7 @@ add_executable(creature-server-test
         tests/model/Animation_test.cpp
         tests/model/AnimationMetadata_test.cpp
         tests/model/DialogScript_test.cpp
+        tests/model/MusicPiece_test.cpp
         tests/model/Track_dual_id_test.cpp
         tests/model/Animation_roundtrip_test.cpp
         tests/model/AdHocExchange_test.cpp
@@ -889,11 +894,15 @@ add_executable(creature-server-test
         tests/server/ws/MessageHandlerBoundary_test.cpp
         tests/server/ws/SoundRenditionService_test.cpp
         src/server/ws/service/SoundRenditionService.cpp
+        tests/server/ws/MusicService_prepare_test.cpp
+        src/server/ws/service/MusicService.cpp
         tests/server/ws/ErrorHandler_test.cpp
         src/server/ws/ErrorHandler.cpp
         tests/server/ws/RequestBodyDrain_test.cpp
         src/server/ws/RequestBodyDrain.cpp
         tests/server/storyboard/StoryboardParse_test.cpp
+        tests/server/script/DialogScriptParse_test.cpp
+        src/server/script/helpers.cpp
         tests/server/storage/Storage_test.cpp
         tests/server/storage/StoragePublishers_test.cpp
         tests/server/config/MongoUri_test.cpp
@@ -914,15 +923,25 @@ add_executable(creature-server-test
         tests/server/FakeWebsocketUtils.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
         tests/server/voice/MusicClient_test.cpp
+        tests/server/voice/MusicTypes_test.cpp
+        tests/server/voice/MusicGenerationCache_test.cpp
+        src/server/voice/MusicGenerationCache.cpp
         tests/server/voice/VoiceClient_test.cpp
         tests/server/voice/SpeechTrackBuilder_test.cpp
         src/server/voice/SpeechTrackBuilder.cpp
+        tests/server/voice/TurnConcat_test.cpp
+        tests/server/voice/StreamingTTSClient_duration_test.cpp
+        tests/server/voice/ElevenLabsHttp_test.cpp
+        src/server/voice/TurnConcat.cpp
         tests/server/voice/DialogAnimation_test.cpp
         src/server/voice/DialogAnimation.cpp
         tests/server/voice/DialogPipeline_chunkTurns_test.cpp
         tests/server/voice/DialogPipeline_assembleChunk_test.cpp
         tests/server/voice/DialogPipeline_concatChunks_test.cpp
         tests/server/voice/DialogWav_test.cpp
+        tests/server/voice/PromotedTake_test.cpp
+        src/server/voice/PromotedTake.cpp
+        src/server/voice/TextToViseme.cpp
         tests/server/voice/PcmWavWriter_test.cpp
         tests/server/voice/IxmlWriter_test.cpp
         tests/server/voice/IxmlReader_test.cpp
@@ -939,6 +958,8 @@ add_executable(creature-server-test
         tests/server/audio/LocalAudioPlaybackCoordinator_test.cpp
         tests/server/rtp/AudioLoadExecutor_test.cpp
         tests/server/rtp/AudioStreamBuffer_test.cpp
+        src/util/ThreadPriority.cpp
+        tests/util/ThreadPriority_test.cpp
         src/server/rtp/AudioStreamBuffer.cpp
         tests/server/rtp/BoundedCommandQueue_test.cpp
         tests/server/rtp/OpusPriming_test.cpp
@@ -983,7 +1004,9 @@ add_executable(creature-server-test
         tests/api/AnimationRequests_test.cpp
         tests/api/DebugResponses_test.cpp
         tests/api/StreamingAdHocContracts_test.cpp
+        tests/api/DialogStreamContracts_test.cpp
         tests/api/DialogContracts_test.cpp
+        tests/api/MusicContracts_test.cpp
         tests/api/VoiceContracts_test.cpp
         src/model/PlaylistStatus.cpp
         src/model/Notice.cpp
@@ -993,6 +1016,7 @@ add_executable(creature-server-test
         src/model/Creature.cpp
         src/model/DmxFixture.cpp
         src/model/DialogScript.cpp
+        src/model/MusicPiece.cpp
         src/model/Input.cpp
         src/model/StreamFrame.cpp
         src/model/VirtualStatusLights.cpp

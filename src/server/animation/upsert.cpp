@@ -401,7 +401,11 @@ Result<void> Database::insertAdHocAnimation(const creatures::Animation &animatio
     try {
         auto animationJson = animationToJson(animation);
         auto jsonString = animationJson.dump();
-        auto validated = animationFromJson(animationJson);
+        // An ad-hoc animation's sound_file is the ABSOLUTE path of its temp
+        // WAV, so the API's "relative path in the sound library" rule must
+        // not apply here — it silently dropped every streaming sentence and
+        // failed every ad-hoc job from 3.4x until issue #188.
+        auto validated = animationFromJson(animationJson, AnimationJsonSource::AdHoc);
         if (!validated.isSuccess()) {
             auto err = validated.getError().value();
             recordSpanError(dbSpan, err.getMessage(), "InvalidData", err.getCode());

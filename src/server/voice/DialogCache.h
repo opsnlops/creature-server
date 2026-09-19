@@ -96,6 +96,17 @@ Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::
 /// auto-cleaned, and rendered from here.
 Result<CachedGeneration> loadAcceptedGeneration(const std::string &cacheKey, const std::string &generationId);
 
+/// Rebuild a take's LENGTH from a script's PROMOTED accepted-voice WAV
+/// (#206) — the third and last place a take can live. An acceptance made
+/// before the durable store existed (#146) is in neither store, but its
+/// promoted 17-channel 48 kHz WAV (`accepted_voice.sound_file`, relative to
+/// the permanent root) has exactly the take's frame count. `audioPcm` here
+/// is a mono DOWNMIX of that file, so its sample count is right and its
+/// content is not the original mono take: music generation only measures
+/// it. Renders must not use this — they rebuild the real lanes with
+/// loadAssembledTakeFromPromotedFile (#208).
+Result<CachedGeneration> loadGenerationFromPromotedFile(const std::string &soundFile, const std::string &generationId);
+
 /// Cheap existence check for both durable files. Unlike
 /// loadAcceptedGeneration, this never reads the potentially huge PCM payload.
 bool acceptedGenerationExists(const std::string &cacheKey, const std::string &generationId);

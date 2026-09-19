@@ -6,6 +6,7 @@
 #include <string>
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include "server/voice/IxmlReader.h"
 #include "server/voice/IxmlWriter.h"
@@ -19,6 +20,8 @@ using creatures::voice::parseIxmlTrackList;
 using creatures::voice::parseIxmlWordAlignment;
 using creatures::voice::readIxmlChunk;
 using creatures::voice::WavProvenance;
+using creatures::voice::wavProvenanceFromJson;
+using creatures::voice::wavProvenanceToJson;
 
 TEST(IxmlReaderExtract, ReturnsInnerTextOfATag) {
     const std::string xml = "<USER><SOURCE_SCRIPT_ID>abc-123</SOURCE_SCRIPT_ID></USER>";
@@ -90,6 +93,69 @@ TEST(IxmlReaderExtract, RoundTripsMusicProvenance) {
     EXPECT_EQ(parsed.music->responseMetadataJson, music.responseMetadataJson);
     EXPECT_EQ(parsed.music->compositionPlanJson, music.compositionPlanJson);
     EXPECT_EQ(parsed.music->pcmSha256, music.pcmSha256);
+}
+
+/// #200 generation controls survive both the iXML chunk and the JSON sidecar,
+/// with absent optionals staying absent (a missing seed must not read as 0).
+TEST(IxmlReaderExtract, RoundTripsMusic200ControlsThroughIxmlAndJson) {
+    WavProvenance p;
+    p.fileUid = "file-2";
+    creatures::voice::MusicWavProvenance music;
+    music.provider = "ElevenLabs";
+    music.modelId = "music_v2_5";
+    music.requestKind = "composition_plan";
+    music.seed = 4242;
+    music.finetuneId = "ft_abc";
+    music.finetuneStrength = 0.75;
+    music.storedForInpainting = true;
+    music.sectionsJson = R"([{"text":"[Intro]","duration_ms":8000}])";
+    music.pieceId = "piece-1";
+    music.baseVersionId = "version-0";
+    music.forceInstrumental = false;
+    music.requestJson = R"({"composition_plan":{"chunks":[]}})";
+    music.compositionPlanJson = R"({"chunks":[]})";
+    music.musicGenerationId = "file-2";
+    p.music = music;
+
+    const auto fromIxml = parseIxmlProvenance(buildIxml(p));
+    ASSERT_TRUE(fromIxml.music.has_value());
+    EXPECT_EQ(fromIxml.music->modelId, "music_v2_5");
+    EXPECT_EQ(fromIxml.music->requestKind, "composition_plan");
+    EXPECT_EQ(fromIxml.music->seed.value(), 4242);
+    EXPECT_EQ(fromIxml.music->finetuneId, "ft_abc");
+    EXPECT_DOUBLE_EQ(fromIxml.music->finetuneStrength.value(), 0.75);
+    EXPECT_TRUE(fromIxml.music->storedForInpainting);
+    EXPECT_FALSE(fromIxml.music->forceInstrumental);
+    EXPECT_EQ(fromIxml.music->sectionsJson, music.sectionsJson);
+    EXPECT_EQ(fromIxml.music->pieceId, "piece-1");
+    EXPECT_EQ(fromIxml.music->baseVersionId, "version-0");
+
+    const auto fromJson = wavProvenanceFromJson(wavProvenanceToJson(p));
+    ASSERT_TRUE(fromJson.music.has_value());
+    EXPECT_EQ(*fromJson.music, music);
+
+    // Prompt-mode take with none of the optionals set.
+    creatures::voice::MusicWavProvenance plain;
+    plain.requestKind = "prompt";
+    plain.requestJson = R"({"prompt":"x"})";
+    plain.musicGenerationId = "file-3";
+    p.music = plain;
+    const auto plainIxml = parseIxmlProvenance(buildIxml(p));
+    ASSERT_TRUE(plainIxml.music.has_value());
+    EXPECT_FALSE(plainIxml.music->seed.has_value());
+    EXPECT_FALSE(plainIxml.music->finetuneStrength.has_value());
+    EXPECT_TRUE(plainIxml.music->finetuneId.empty());
+    EXPECT_FALSE(plainIxml.music->storedForInpainting);
+    const auto plainJson = wavProvenanceFromJson(wavProvenanceToJson(p));
+    ASSERT_TRUE(plainJson.music.has_value());
+    EXPECT_FALSE(plainJson.music->seed.has_value());
+    EXPECT_FALSE(plainJson.music->finetuneStrength.has_value());
+    // A pre-#200 sidecar has no request_kind at all; readers treat that as prompt mode.
+    auto legacy = wavProvenanceToJson(p);
+    legacy["music"].erase("request_kind");
+    legacy["music"].erase("stored_for_inpainting");
+    EXPECT_TRUE(wavProvenanceFromJson(legacy).music->requestKind.empty());
+    EXPECT_FALSE(wavProvenanceFromJson(legacy).music->storedForInpainting);
 }
 
 TEST(IxmlReaderExtract, ReturnsNulloptForMissingTag) {

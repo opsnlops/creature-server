@@ -9,6 +9,7 @@
 //
 
 #include <filesystem>
+#include <functional>
 #include <future>
 #include <list>
 #include <mutex>
@@ -233,9 +234,9 @@ std::mutex &encodingJobMutex() {
 // Static cache instance shared across all AudioStreamBuffer instances
 std::shared_ptr<util::AudioCache> AudioStreamBuffer::sharedAudioCacheInstance_ = nullptr;
 
-std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWavFile(const std::string &audioFilePath,
-                                                                      std::shared_ptr<OperationSpan> parentSpan,
-                                                                      RetentionIntent retention) {
+std::shared_ptr<AudioStreamBuffer>
+AudioStreamBuffer::memoizedLoad(const std::string &audioFilePath, RetentionIntent retention,
+                                const std::function<Result<size_t>(AudioStreamBuffer &)> &load) {
     // One canonicalization shared by the load mutex and the memo, so the two
     // can never key the same file differently (issue #93 review).
     const auto canonicalKey = canonicalKeyFor(audioFilePath);
@@ -264,12 +265,7 @@ std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWavFile(const std:
     }
 
     auto buf = std::shared_ptr<AudioStreamBuffer>(new AudioStreamBuffer());
-
-    // Try cache-enabled loading first if cache is available
-    Result<size_t> loadResult = sharedAudioCacheInstance_
-                                    ? buf->loadWithCaching(audioFilePath, parentSpan)
-                                    : (debug("No audio cache available, loading directly from WAV file"),
-                                       buf->loadWaveFile(audioFilePath, parentSpan));
+    Result<size_t> loadResult = load(*buf);
 
     if (loadResult.isSuccess()) {
         debug("Successfully loaded audio buffer with {} frames", loadResult.getValue().value_or(0));
@@ -278,10 +274,195 @@ std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWavFile(const std:
                                evicted);
         }
         return buf;
-    } else {
-        error("Failed to load WAV file '{}': {}", audioFilePath, loadResult.getError()->getMessage());
-        return nullptr;
     }
+    error("Failed to load audio for '{}': {}", audioFilePath, loadResult.getError()->getMessage());
+    return nullptr;
+}
+
+std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromWavFile(const std::string &audioFilePath,
+                                                                      std::shared_ptr<OperationSpan> parentSpan,
+                                                                      RetentionIntent retention) {
+    return memoizedLoad(audioFilePath, retention, [&](AudioStreamBuffer &buf) {
+        // Try cache-enabled loading first if cache is available
+        if (sharedAudioCacheInstance_) {
+            return buf.loadWithCaching(audioFilePath, parentSpan);
+        }
+        debug("No audio cache available, loading directly from WAV file");
+        return buf.loadWaveFile(audioFilePath, parentSpan);
+    });
+}
+
+std::shared_ptr<AudioStreamBuffer> AudioStreamBuffer::loadFromMonoPcm(const std::string &wavPath,
+                                                                      std::span<const int16_t> monoSamples,
+                                                                      uint16_t audioChannel,
+                                                                      std::shared_ptr<OperationSpan> parentSpan,
+                                                                      RetentionIntent retention, DiskCache diskCache) {
+    return memoizedLoad(wavPath, retention, [&](AudioStreamBuffer &buf) {
+        if (sharedAudioCacheInstance_ && diskCache == DiskCache::Publish) {
+            return buf.encodeMonoPcmWithCaching(wavPath, monoSamples, audioChannel, parentSpan);
+        }
+        return buf.encodeMonoPcm(monoSamples, audioChannel, parentSpan);
+    });
+}
+
+Result<size_t> AudioStreamBuffer::encodeMonoPcm(std::span<const int16_t> monoSamples, uint16_t audioChannel,
+                                                std::shared_ptr<OperationSpan> parentSpan) {
+    const auto span = observability
+                          ? observability->createChildOperationSpan("AudioStreamBuffer.encodeMonoPcm", parentSpan)
+                          : nullptr;
+    if (span) {
+        span->setAttribute("audio.channel", static_cast<int64_t>(audioChannel));
+        span->setAttribute("audio.samples", static_cast<int64_t>(monoSamples.size()));
+    }
+    const auto fail = [&](ServerError::Code code, const std::string &message) {
+        error(message);
+        if (span) {
+            span->setError(message);
+        }
+        return Result<size_t>{ServerError(code, message)};
+    };
+
+    if (audioChannel == 0 || audioChannel > RTP_STREAMING_CHANNELS) {
+        return fail(ServerError::InvalidData, fmt::format("Audio channel {} is outside the RTP layout", audioChannel));
+    }
+    // Same truncation to whole 10 ms frames as a file load, so the two agree.
+    numberOfFramesPerChannel_ = monoSamples.size() / RTP_SAMPLES;
+    if (numberOfFramesPerChannel_ == 0) {
+        return fail(ServerError::InvalidData, fmt::format("PCM too short: {} samples, need at least {} for one frame",
+                                                          monoSamples.size(), RTP_SAMPLES));
+    }
+    if (numberOfFramesPerChannel_ > RTP_MAX_FRAMES_PER_CHANNEL) {
+        return fail(ServerError::InvalidData, fmt::format("PCM too long: {} frames per channel (maximum supported: {})",
+                                                          numberOfFramesPerChannel_, RTP_MAX_FRAMES_PER_CHANNEL));
+    }
+
+    try {
+        const uint8_t voiceIndex = static_cast<uint8_t>(audioChannel - 1);
+        // Every silent lane is the same input to a fresh, primed encoder, so
+        // encode it once and share the packets — the file path encodes the
+        // same zeros sixteen times over.
+        auto encodeLane = [this, span](const char *label, auto sampleAt) {
+            auto laneSpan = observability ? observability->createChildOperationSpan(
+                                                fmt::format("AudioStreamBuffer.encodeLane.{}", label), span)
+                                          : nullptr;
+            std::vector<std::vector<uint8_t>> frames(numberOfFramesPerChannel_);
+            opus::Encoder encoder;
+            static_cast<void>(opus::encodePrimingSequence(encoder));
+            std::array<int16_t, RTP_SAMPLES> frame{};
+            for (std::size_t frameIndex = 0; frameIndex < numberOfFramesPerChannel_; ++frameIndex) {
+                for (std::size_t s = 0; s < RTP_SAMPLES; ++s) {
+                    frame[s] = sampleAt(frameIndex * RTP_SAMPLES + s);
+                }
+                frames[frameIndex] = encoder.encode(frame.data());
+            }
+            if (laneSpan) {
+                laneSpan->setAttribute("frames", static_cast<int64_t>(numberOfFramesPerChannel_));
+                laneSpan->setSuccess();
+            }
+            return frames;
+        };
+        auto silentFuture = std::async(std::launch::async, [&] {
+            return encodeLane("silence", [](std::size_t) { return static_cast<int16_t>(0); });
+        });
+        auto voiceFrames = encodeLane("voice", [&](std::size_t index) { return monoSamples[index]; });
+        auto silentFrames = silentFuture.get();
+
+        for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+            encodedOpusFrames_[channelIndex] = channelIndex == voiceIndex ? voiceFrames : silentFrames;
+        }
+    } catch (const std::exception &e) {
+        return fail(ServerError::InternalError, fmt::format("Error while encoding PCM to Opus: {}", e.what()));
+    }
+
+    computeApproximateBytes();
+    if (span) {
+        span->setAttribute("frames_per_channel", static_cast<int64_t>(numberOfFramesPerChannel_));
+        span->setSuccess();
+    }
+    return Result<size_t>{numberOfFramesPerChannel_};
+}
+
+Result<size_t> AudioStreamBuffer::encodeMonoPcmWithCaching(const std::string &wavPath,
+                                                           std::span<const int16_t> monoSamples, uint16_t audioChannel,
+                                                           std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = observability
+                    ? observability->createChildOperationSpan("AudioStreamBuffer.encodeMonoPcmWithCaching", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("file_path", wavPath);
+    }
+
+    std::lock_guard encodingJobLock(encodingJobMutex());
+
+    auto encodeResult = encodeMonoPcm(monoSamples, audioChannel, span);
+    if (!encodeResult.isSuccess()) {
+        if (span) {
+            span->setError(encodeResult.getError()->getMessage());
+        }
+        return encodeResult;
+    }
+
+    // Best-effort, as for a file load: the audio plays whether or not the
+    // cache write lands.
+    static_cast<void>(publishToDiskCache(wavPath, span));
+    if (span) {
+        span->setSuccess();
+    }
+    return encodeResult;
+}
+
+Result<void> AudioStreamBuffer::publishToDiskCache(const std::string &wavPath,
+                                                   std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = observability
+                    ? observability->createChildOperationSpan("AudioStreamBuffer.publishToDiskCache", parentSpan)
+                    : nullptr;
+    if (span) {
+        span->setAttribute("file_path", wavPath);
+        span->setAttribute("frames_per_channel", static_cast<int64_t>(numberOfFramesPerChannel_));
+    }
+    if (!sharedAudioCacheInstance_) {
+        if (span) {
+            span->setAttribute("cache_result", "no_cache");
+            span->setSuccess();
+        }
+        return Result<void>{};
+    }
+    if (numberOfFramesPerChannel_ == 0) {
+        const std::string message = "Nothing encoded to publish";
+        if (span) {
+            span->setError(message);
+        }
+        return Result<void>{ServerError(ServerError::InvalidData, message)};
+    }
+
+    // The fingerprint the verifying save checks against (issue #93): the
+    // file on disk must still be the audio these frames were encoded from.
+    auto expectedSourceInfo = sharedAudioCacheInstance_->getSourceFileInfo(wavPath);
+    if (!expectedSourceInfo.isSuccess()) {
+        warn("Skipping audio cache save for {}: {}", wavPath, expectedSourceInfo.getError()->getMessage());
+        if (span) {
+            span->setAttribute("cache_result", "miss_uncached");
+            span->setError(expectedSourceInfo.getError()->getMessage());
+        }
+        return Result<void>{expectedSourceInfo.getError().value()};
+    }
+
+    auto cacheResult = sharedAudioCacheInstance_->saveToCache(wavPath, numberOfFramesPerChannel_, encodedOpusFrames_,
+                                                              expectedSourceInfo.getValue().value(), span);
+    if (!cacheResult.isSuccess()) {
+        warn("Failed to cache audio data for {}: {}", wavPath, cacheResult.getError()->getMessage());
+        if (span) {
+            span->setAttribute("cache_result", "failed");
+            span->setError(cacheResult.getError()->getMessage());
+        }
+        return cacheResult;
+    }
+    if (span) {
+        span->setAttribute("cache_result", "stored");
+        span->setAttribute("cached_frames", static_cast<int64_t>(numberOfFramesPerChannel_));
+        span->setSuccess();
+    }
+    return Result<void>{};
 }
 
 void AudioStreamBuffer::setMemoRetainBytes(std::size_t bytes) {

@@ -113,8 +113,9 @@ Result<std::filesystem::path> candidatePath(const std::string &generationId, con
 
 Result<CachedMusicGeneration> saveMusicGeneration(const CachedMusicGeneration &generation,
                                                   const std::vector<uint8_t> &monoPcm) {
-    if (!isUuidShape(generation.generationId) || !isUuidShape(generation.scriptId) || monoPcm.empty() ||
-        !generation.provenance.music || generation.provenance.music->requestJson.empty()) {
+    // scriptId is empty for a library (dialog-free) candidate (#202).
+    if (!isUuidShape(generation.generationId) || (!generation.scriptId.empty() && !isUuidShape(generation.scriptId)) ||
+        monoPcm.empty() || !generation.provenance.music || generation.provenance.music->requestJson.empty()) {
         return Result<CachedMusicGeneration>{
             ServerError(ServerError::InvalidData, "music generation cache input is incomplete")};
     }
@@ -191,8 +192,15 @@ Result<CachedMusicGeneration> loadMusicGeneration(const std::string &generationI
         generation.durationSeconds = metadata.value("duration_seconds", 0.0);
         generation.provenance = wavProvenanceFromJson(metadata.value("provenance", nlohmann::json::object()));
         generation.wavPath = wavPath.getValue().value();
-        if (generation.generationId != generationId || !isUuidShape(generation.scriptId) || generation.prompt.empty() ||
-            !generation.provenance.music || generation.provenance.music->musicGenerationId != generation.generationId) {
+        // Only a prompt-mode take carries a prompt. Plan-mode (#200) and
+        // sections-mode (#202) takes keep their recipe in the provenance
+        // instead; pre-#200 takes have no request_kind and were all prompts.
+        const bool promptMode = !generation.provenance.music || generation.provenance.music->requestKind.empty() ||
+                                generation.provenance.music->requestKind == "prompt";
+        if (generation.generationId != generationId ||
+            (!generation.scriptId.empty() && !isUuidShape(generation.scriptId)) ||
+            (generation.prompt.empty() && promptMode) || !generation.provenance.music ||
+            generation.provenance.music->musicGenerationId != generation.generationId) {
             return Result<CachedMusicGeneration>{
                 ServerError(ServerError::InvalidData, "music generation metadata failed validation")};
         }

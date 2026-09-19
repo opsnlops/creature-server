@@ -110,6 +110,23 @@ TEST_F(PublishersTest, DeleteDialogScriptFiresDialogScriptListOnSuccess) {
     EXPECT_EQ(log(), std::vector{CacheType::DialogScriptList});
 }
 
+TEST_F(PublishersTest, PublishMusicPieceFiresMusicPieceListOnSuccess) {
+    creatures::testing::setFakeDatabaseSucceeds(true);
+    auto r = publishMusicPiece(creatures::MusicPiece{});
+    EXPECT_TRUE(r.isSuccess());
+    EXPECT_EQ(log(), std::vector{CacheType::MusicPieceList});
+}
+
+TEST_F(PublishersTest, DeleteMusicPieceFiresMusicPieceListOnSuccessOnly) {
+    creatures::testing::setFakeDatabaseSucceeds(true);
+    auto r = deleteMusicPiece("some-piece-id");
+    EXPECT_TRUE(r.isSuccess());
+    EXPECT_EQ(log(), std::vector{CacheType::MusicPieceList});
+    creatures::testing::setFakeDatabaseSucceeds(false);
+    EXPECT_FALSE(deleteMusicPiece("nope").isSuccess());
+    EXPECT_EQ(log(), std::vector{CacheType::MusicPieceList}); // no second invalidation
+}
+
 TEST_F(PublishersTest, PublishStoryboardFiresStoryboardListOnSuccess) {
     creatures::testing::setFakeDatabaseSucceeds(true);
     auto r = publishStoryboard("{}");

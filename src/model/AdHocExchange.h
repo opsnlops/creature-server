@@ -13,6 +13,7 @@ namespace creatures {
 inline constexpr std::size_t MAX_AD_HOC_EXCHANGE_PARTS = 100;
 inline constexpr std::size_t MAX_AD_HOC_EXCHANGE_TEXT_BYTES = 32 * 1024;
 inline constexpr std::size_t MAX_AD_HOC_EXCHANGE_TRANSCRIPT_BYTES = 256 * 1024;
+inline constexpr std::size_t MAX_AD_HOC_EXCHANGE_PARTICIPANTS = 8;
 
 // Status values for an ad-hoc exchange (issue #150). Plain strings rather than
 // an enum — they go straight into Mongo and API responses, and clients treat them as
@@ -28,8 +29,22 @@ struct AdHocExchangePart {
     std::string animation_id;
     std::string text;
     uint64_t duration_ms{0};
+    // Who said it (issue #186). Empty on records written before streamed
+    // dialogs existed — those are single-creature, so the exchange's own
+    // creature_id/creature_name apply.
+    std::string creature_id;
+    std::string creature_name;
 
     bool operator==(const AdHocExchangePart &) const = default;
+};
+
+/// One creature taking part in a streamed dialog (issue #186).
+struct AdHocExchangeParticipant {
+    std::string creature_id;
+    std::string creature_name;
+    uint16_t audio_channel{0}; // 1-based lane in the 17-channel WAV
+
+    bool operator==(const AdHocExchangeParticipant &) const = default;
 };
 
 /// One completed (or in-flight) streaming ad-hoc session: everything a creature
@@ -38,8 +53,13 @@ struct AdHocExchangePart {
 /// ad-hoc animations it references.
 struct AdHocExchange {
     std::string session_id; // natural key; also the session directory name
+    // The first participant. Kept single-valued (and required) so every
+    // existing reader of the exchange list keeps decoding; `participants`
+    // carries the whole cast of a streamed dialog (issue #186).
     std::string creature_id;
     std::string creature_name;
+    std::vector<AdHocExchangeParticipant> participants; // empty on single-creature records written before #186
+    std::string stage_id;                               // stage the dialog was aimed on; empty when none was bound
     std::string status{EXCHANGE_STATUS_STREAMING};
     std::string title;      // "<creature> - <timestamp> - <slug>"; empty until finalized
     std::string transcript; // full text, empty until finalized

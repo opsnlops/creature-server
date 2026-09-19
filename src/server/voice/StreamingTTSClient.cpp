@@ -609,11 +609,7 @@ StreamingTTSClient::receiveAllFrames(const std::string &outputFormat, ProgressCa
     }
 
     // Estimate audio duration
-    if (outputFormat.find("pcm") != std::string::npos) {
-        result.audioDurationSeconds = static_cast<double>(result.audioData.size()) / 88200.0;
-    } else if (outputFormat.find("mp3") != std::string::npos) {
-        result.audioDurationSeconds = static_cast<double>(result.audioData.size()) / 24000.0;
-    }
+    result.audioDurationSeconds = estimateAudioSeconds(outputFormat, result.audioData.size());
 
     info("StreamingTTSClient COMPLETE: {} ws frames, {} audio chunks ({} bytes), "
          "{} alignment chunks ({} chars), est {:.2f}s",
@@ -894,6 +890,7 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(const std::str
     long httpCode = 0;
     const CURLcode res = call.perform(httpCode);
     result.requestId = call.requestId();
+    call.recordTimings(span);
 
     if (auto err = checkResponse<StreamingTTSResult>(res, httpCode, "ElevenLabs REST TTS", kNoBodyForLog, span)) {
         return *err;
@@ -906,11 +903,7 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeechREST(const std::str
     }
 
     // Estimate duration
-    if (outputFormat.find("mp3") != std::string::npos) {
-        result.audioDurationSeconds = static_cast<double>(result.audioData.size()) / 24000.0;
-    } else if (outputFormat.find("pcm") != std::string::npos) {
-        result.audioDurationSeconds = static_cast<double>(result.audioData.size()) / 88200.0;
-    }
+    result.audioDurationSeconds = estimateAudioSeconds(outputFormat, result.audioData.size());
 
     info("StreamingTTSClient REST complete: {} chunks, {} bytes audio, {} alignment chars, "
          "request_id={}, {:.2f}s estimated",

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <string>
@@ -18,6 +20,31 @@ namespace creatures::voice {
  * Contains the accumulated audio data and lip sync alignment cues
  * from an ElevenLabs WebSocket streaming session.
  */
+/// Seconds of audio in `bytes` of the requested ElevenLabs output format. PCM
+/// is 16-bit mono at the rate named in the format ("pcm_48000"); a fixed
+/// 44.1 kHz divisor here made every pcm_48000 sentence ~8.8% too long, which
+/// held the body moving in silence and delayed the next turn (issue #189).
+/// MP3 keeps the rough 24 kB/s estimate: nothing in the streaming path renders
+/// frames from it. Unknown formats estimate 0.
+inline double estimateAudioSeconds(const std::string &outputFormat, std::size_t bytes) {
+    if (outputFormat.rfind("pcm_", 0) == 0) {
+        unsigned long sampleRate = 0;
+        try {
+            sampleRate = std::stoul(outputFormat.substr(4));
+        } catch (const std::exception &) {
+            sampleRate = 0;
+        }
+        if (sampleRate == 0) {
+            return 0.0;
+        }
+        return static_cast<double>(bytes) / (static_cast<double>(sampleRate) * 2.0);
+    }
+    if (outputFormat.find("mp3") != std::string::npos) {
+        return static_cast<double>(bytes) / 24000.0;
+    }
+    return 0.0;
+}
+
 struct StreamingTTSResult {
     /// Raw audio data (PCM or MP3 depending on output format)
     std::vector<uint8_t> audioData;

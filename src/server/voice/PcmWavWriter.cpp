@@ -62,19 +62,21 @@ Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmDat
     file.write(reinterpret_cast<const char *>(&dataSizeU32), 4);
 
     // Interleaved samples: source on `audioChannel`, silence elsewhere.
+    // Assembled in memory and written once — the previous 17 two-byte
+    // writes per sample were four million calls for a five-second sentence,
+    // ~80 ms on the streaming hot path (issue #195).
     const uint16_t targetIdx = static_cast<uint16_t>(audioChannel - 1);
-    const int16_t silence = 0;
     const auto *monoPtr = reinterpret_cast<const int16_t *>(pcmData.data());
+    std::vector<int16_t> interleaved(monoSamples * totalChannels, 0);
     for (std::size_t i = 0; i < monoSamples; ++i) {
-        for (uint16_t ch = 0; ch < totalChannels; ++ch) {
-            if (ch == targetIdx) {
-                file.write(reinterpret_cast<const char *>(&monoPtr[i]), 2);
-            } else {
-                file.write(reinterpret_cast<const char *>(&silence), 2);
-            }
-        }
+        interleaved[i * totalChannels + targetIdx] = monoPtr[i];
     }
+    file.write(reinterpret_cast<const char *>(interleaved.data()), static_cast<std::streamsize>(dataSize));
     file.close();
+    if (!file) {
+        return Result<std::size_t>{
+            ServerError(ServerError::InternalError, fmt::format("Failed writing WAV file: {}", wavPath.string()))};
+    }
 
     const std::size_t totalSize = 44 + dataSize;
     debug("Wrote 17-channel WAV: {} samples on channel {}, {} bytes total", monoSamples, audioChannel, totalSize);

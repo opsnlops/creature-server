@@ -114,3 +114,9 @@ TEST(SlugifyDialogTitleTest, ProducesFilesystemSafeOutput) {
         }
     }
 }
+
+TEST(Slugify, MusicExportBasenameIsTitleSlugPlusIdTail) {
+    EXPECT_EQ(creatures::util::musicExportBasename("Algorithm Divine", "1989acb4-3314-455d-a10d-7314c8d5e024"),
+              "algorithm-divine--1989acb4-331");
+    EXPECT_EQ(creatures::util::musicExportBasename("", "1989acb4-3314-455d-a10d-7314c8d5e024"), "music--1989acb4-331");
+}

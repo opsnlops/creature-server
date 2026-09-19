@@ -44,6 +44,7 @@
 #define ADHOC_EXCHANGES_COLLECTION "adhoc_exchanges"
 #define FIXTURES_COLLECTION "fixtures"
 #define DIALOG_SCRIPTS_COLLECTION "dialog_scripts"
+#define MUSIC_PIECES_COLLECTION "music_pieces"
 #define STORYBOARDS_COLLECTION "storyboards"
 #define STAGES_COLLECTION "stages"
 

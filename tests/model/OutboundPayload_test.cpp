@@ -42,6 +42,12 @@ TEST(CacheInvalidationJson, PreservesCacheTypeMapping) {
     const auto unknown = cacheInvalidationFromJson({{"cache_type", "not-a-cache"}});
     ASSERT_TRUE(unknown.isSuccess()) << unknown.getError()->getMessage();
     EXPECT_EQ(unknown.getValue()->cache_type, CacheType::Unknown);
+    // #202: the music library list has its own invalidation kind.
+    EXPECT_EQ(cacheInvalidationToJson(CacheInvalidation{CacheType::MusicPieceList}),
+              (nlohmann::json{{"cache_type", "music-piece-list"}}));
+    const auto music = cacheInvalidationFromJson({{"cache_type", "music-piece-list"}});
+    ASSERT_TRUE(music.isSuccess()) << music.getError()->getMessage();
+    EXPECT_EQ(music.getValue()->cache_type, CacheType::MusicPieceList);
 }
 
 TEST(WebSocketEnvelopeJson, PreservesOutboundCommandAndPayloadShape) {

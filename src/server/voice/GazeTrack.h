@@ -255,6 +255,50 @@ buildSpeakerTimeline(const std::vector<std::string> &creatureIds,
                      const std::vector<std::span<const uint8_t>> &mouthBytesPerCreature, std::size_t totalFrames,
                      std::size_t gapToleranceFrames);
 
+/// Head state carried from one streamed turn to the next (issue #186).
+///
+/// buildGazeTrack plans a whole scene at once: it opens on an "aim at the
+/// audience" pose, draws the creature's favoured cock side and drift phase once,
+/// and winds the head home before the track ends. A streamed dialog renders one
+/// turn at a time, so calling it per turn would open every sentence from the
+/// audience pose and send every head home at the end of every sentence — the
+/// exact between-sentences twitch GazeOptions is written to avoid. Threading
+/// this struct through consecutive calls makes the sequence of turns plan like
+/// one scene: each call opens from where the last one left the head, keeps the
+/// once-per-scene draws, continues the drift, and skips the tail settle.
+///
+/// Frames inside a streamed session are numbered from the session's first
+/// frame, not the turn's, so a head sweep that starts near the end of one turn
+/// simply keeps going through the next — a short sentence must not stall a
+/// listener's head mid-turn and restart it with a fresh reaction delay.
+///
+/// Default-constructed = "nothing carried yet"; the first call primes it.
+struct GazeAxisMotion {
+    float held{0.0f};       // angle currently being held
+    std::size_t start{0};   // first frame of the sweep (session-absolute)
+    std::size_t arrive{0};  // frame the overshoot peak is reached
+    std::size_t settled{0}; // frame the target is finally held
+    float from{0.0f};       // angle at `start`
+    float target{0.0f};     // angle finally held
+    float peak{0.0f};       // target + overshoot
+    bool active{false};
+};
+
+struct GazeContinuity {
+    bool primed{false};
+    float preferredCockSide{1.0f};
+    float panDriftPhase{0.0f};
+    float elevationDriftPhase{0.0f};
+    std::size_t panDriftFrames{1};
+    std::size_t elevationDriftFrames{1};
+    // Frames rendered so far across the session: the next turn's frame 0.
+    std::size_t frameBase{0};
+    // Where each axis is, and where it is going, at the end of the last turn.
+    GazeAxisMotion pan;
+    GazeAxisMotion elevation;
+    GazeAxisMotion cock;
+};
+
 /// Build one creature's head-aiming byte streams.
 ///
 /// Gaze targets: a speaker plays to the audience — the listener at the origin —
@@ -266,8 +310,14 @@ buildSpeakerTimeline(const std::vector<std::string> &creatureIds,
 /// `rng` is taken by reference and consumed in a fixed order, so seeding it
 /// identically reproduces the result exactly. That is what makes re-rendering
 /// a scene against a moved stage change only the gaze and nothing else.
+///
+/// `continuity` is null for a whole-scene render (unchanged behavior). When
+/// given, the call is one turn of a streamed session: a primed struct supplies
+/// the opening pose and the per-scene draws, the end-of-scene settle is
+/// skipped, and the struct is updated with where the head ends up.
 [[nodiscard]] GazeTrack buildGazeTrack(const GazeGeometry &self, const std::vector<GazeGeometry> &others,
                                        const std::vector<SpeakerSpan> &timeline, std::size_t totalFrames,
-                                       uint32_t msPerFrame, std::mt19937 &rng, const GazeOptions &options = {});
+                                       uint32_t msPerFrame, std::mt19937 &rng, const GazeOptions &options = {},
+                                       GazeContinuity *continuity = nullptr);
 
 } // namespace creatures::voice

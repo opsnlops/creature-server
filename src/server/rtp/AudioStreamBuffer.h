@@ -9,7 +9,9 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -38,6 +40,33 @@ class AudioStreamBuffer {
     static std::shared_ptr<AudioStreamBuffer> loadFromWavFile(const std::string &audioFilePath,
                                                               std::shared_ptr<OperationSpan> parentSpan = nullptr,
                                                               RetentionIntent retention = RetentionIntent::Retain);
+
+    /// Factory method for streamed speech (issue #195): build the buffer for
+    /// `wavPath` from the mono PCM the server just wrote into it, instead of
+    /// reading the 17-channel file back. `wavPath` must already exist with
+    /// exactly this audio on `audioChannel` (1-based): it is the memo and
+    /// disk-cache identity, so a later loadFromWavFile(wavPath) — playback —
+    /// finds the same encoded frames. The 16 silent lanes are encoded once
+    /// and shared; the result is byte-identical to loading the file.
+    ///
+    /// `diskCache` controls whether the encoded frames are also published to
+    /// the on-disk audio cache (issue #197). A caller that keeps the returned
+    /// buffer alive until playback doesn't need that: playback finds the same
+    /// buffer through the memo, and the 5 MB fingerprint hash plus the cache
+    /// write were the largest remaining cost on the streaming hot path.
+    enum class DiskCache { Publish, Skip };
+    static std::shared_ptr<AudioStreamBuffer>
+    loadFromMonoPcm(const std::string &wavPath, std::span<const int16_t> monoSamples, uint16_t audioChannel,
+                    std::shared_ptr<OperationSpan> parentSpan = nullptr,
+                    RetentionIntent retention = RetentionIntent::OneShot, DiskCache diskCache = DiskCache::Publish);
+
+    /// Publish this buffer's encoded frames to the on-disk audio cache under
+    /// `wavPath`, exactly as a cache-miss file load would (issue #197). For a
+    /// buffer built with DiskCache::Skip, call this once playback has been
+    /// scheduled — off the hot path, from a low-priority thread — so a later
+    /// playback of the same file still gets its cache hit. Fingerprints the
+    /// file first; a mismatch (file rewritten meanwhile) refuses to publish.
+    Result<void> publishToDiskCache(const std::string &wavPath, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /// Set the audio cache instance to use for caching encoded files
     static void setAudioCacheInstance(std::shared_ptr<util::AudioCache> audioCacheInstance);
@@ -76,6 +105,22 @@ class AudioStreamBuffer {
   private:
     AudioStreamBuffer() = default;
     Result<size_t> loadWaveFile(const std::string &audioFilePath, std::shared_ptr<OperationSpan> parentSpan);
+
+    /// The memo + fingerprint envelope shared by every factory: serialize
+    /// loads of one file, share an unchanged file's buffer, and memoize the
+    /// result. `load` fills a fresh buffer and returns its frame count.
+    static std::shared_ptr<AudioStreamBuffer>
+    memoizedLoad(const std::string &audioFilePath, RetentionIntent retention,
+                 const std::function<Result<size_t>(AudioStreamBuffer &)> &load);
+
+    /// Encode mono PCM onto one lane, silence on the rest (issue #195).
+    Result<size_t> encodeMonoPcm(std::span<const int16_t> monoSamples, uint16_t audioChannel,
+                                 std::shared_ptr<OperationSpan> parentSpan);
+
+    /// encodeMonoPcm, then publish to the disk cache under `wavPath` exactly
+    /// as a file load would, so playback's cache lookup hits.
+    Result<size_t> encodeMonoPcmWithCaching(const std::string &wavPath, std::span<const int16_t> monoSamples,
+                                            uint16_t audioChannel, std::shared_ptr<OperationSpan> parentSpan);
 
     /// Load from cache if available, otherwise encode and cache
     Result<size_t> loadWithCaching(const std::string &audioFilePath, std::shared_ptr<OperationSpan> parentSpan);

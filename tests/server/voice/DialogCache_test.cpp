@@ -11,6 +11,7 @@
 #include "server/config/Configuration.h"
 #include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
+#include "server/voice/PcmWavWriter.h"
 
 using creatures::voice::acceptedGenerationExists;
 using creatures::voice::CachedGeneration;
@@ -419,4 +420,32 @@ TEST_F(AcceptedTakeTest, DurableStoreLivesUnderThePermanentSoundRoot) {
 
     const auto expected = permanentRoot_ / "dialog" / "voice-takes" / key / "gen-located.pcm";
     EXPECT_TRUE(std::filesystem::exists(expected)) << expected.string();
+}
+
+/// #206: a pre-#146 acceptance lives in neither store, but its promoted
+/// WAV is on disk under the permanent root. Music only needs the PCM.
+TEST_F(AcceptedTakeTest, LoadsATakeFromThePromotedAcceptedVoiceWav) {
+    // 48 kHz mono, 0.25 s of ramp, written where a promotion would put it.
+    std::vector<uint8_t> pcm(12000 * 2);
+    for (std::size_t i = 0; i < 12000; ++i) {
+        const auto v = static_cast<int16_t>((i % 2000) - 1000);
+        pcm[2 * i] = static_cast<uint8_t>(v & 0xff);
+        pcm[2 * i + 1] = static_cast<uint8_t>((static_cast<uint16_t>(v) >> 8) & 0xff);
+    }
+    const auto wav = creatures::voice::wrapMonoPcmAsWav(pcm, 48000, nullptr);
+    std::filesystem::create_directories(permanentRoot_ / "dialog" / "voice");
+    {
+        std::ofstream out(permanentRoot_ / "dialog" / "voice" / "old-scene-f90429d0.wav", std::ios::binary);
+        out.write(reinterpret_cast<const char *>(wav.data()), static_cast<std::streamsize>(wav.size()));
+    }
+
+    auto take = creatures::voice::loadGenerationFromPromotedFile("dialog/voice/old-scene-f90429d0.wav",
+                                                                 "f90429d0-244f-4a06-8aeb-20ddb504c974");
+    ASSERT_TRUE(take.isSuccess()) << take.getError()->getMessage();
+    EXPECT_EQ(take.getValue()->generationId, "f90429d0-244f-4a06-8aeb-20ddb504c974");
+    EXPECT_EQ(take.getValue()->audioPcm, pcm);
+    EXPECT_TRUE(take.getValue()->voiceSegments.empty()); // render must not use this path
+
+    EXPECT_FALSE(creatures::voice::loadGenerationFromPromotedFile("dialog/voice/nope.wav", "x").isSuccess());
+    EXPECT_FALSE(creatures::voice::loadGenerationFromPromotedFile("", "x").isSuccess());
 }

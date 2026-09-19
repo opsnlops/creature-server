@@ -451,7 +451,11 @@ curl -sS -X POST -H 'Content-Type: application/json' \
   -d '{ "turns": [...] }'
 ```
 
-Returns `200` with all cached generations newest-first, or `404` if nothing is cached for those turns:
+Returns `200` with all cached generations newest-first. When nothing is cached
+for those turns it is still `200` — `generations` is empty and
+`latest_generation_id` is omitted — because `cache_key` is deterministic from
+the turns and the console needs it to judge whether a script's accepted voice
+is still fresh even after the takes have aged out of the audition cache (#204):
 
 ```json
 {

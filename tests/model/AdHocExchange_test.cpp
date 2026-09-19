@@ -23,11 +23,71 @@ AdHocExchange makeExchange() {
     return exchange;
 }
 
+AdHocExchange makeDialogExchange() {
+    auto exchange = makeExchange();
+    exchange.stage_id = "20000000-0000-4000-8000-000000000001";
+    exchange.participants = {{"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "Beaky", 3},
+                             {"bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee", "Mango", 5}};
+    exchange.parts[0].creature_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    exchange.parts[0].creature_name = "Beaky";
+    exchange.parts[1].creature_id = "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    exchange.parts[1].creature_name = "Mango";
+    return exchange;
+}
+
 TEST(AdHocExchange, JsonRoundTripPreservesEverything) {
     const auto original = makeExchange();
     auto parsed = creatures::adHocExchangeFromJson(creatures::adHocExchangeToJson(original));
     ASSERT_TRUE(parsed.isSuccess());
     EXPECT_EQ(original, parsed.getValue().value());
+}
+
+TEST(AdHocExchange, SingleCreatureRecordsKeepTheirPreDialogShape) {
+    // Readers of the old shape (and the byte-for-byte record format) must not
+    // see the #186 fields unless a dialog actually wrote them.
+    const auto json = creatures::adHocExchangeToJson(makeExchange());
+    EXPECT_FALSE(json.contains("participants"));
+    EXPECT_FALSE(json.contains("stage_id"));
+    EXPECT_FALSE(json["parts"][0].contains("creature_id"));
+}
+
+TEST(AdHocExchange, DialogRoundTripPreservesCastStageAndSpeakers) {
+    const auto original = makeDialogExchange();
+    const auto json = creatures::adHocExchangeToJson(original);
+    ASSERT_EQ(json["participants"].size(), 2u);
+    EXPECT_EQ(json["stage_id"], "20000000-0000-4000-8000-000000000001");
+    EXPECT_EQ(json["parts"][1]["creature_name"], "Mango");
+    auto parsed = creatures::adHocExchangeFromJson(json);
+    ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
+    EXPECT_EQ(original, parsed.getValue().value());
+}
+
+TEST(AdHocExchange, RejectsMalformedDialogFields) {
+    const auto valid = creatures::adHocExchangeToJson(makeDialogExchange());
+
+    auto badStage = valid;
+    badStage["stage_id"] = "mainstage";
+    EXPECT_FALSE(creatures::adHocExchangeFromJson(badStage).isSuccess());
+
+    auto badParticipantId = valid;
+    badParticipantId["participants"][0]["creature_id"] = "beaky";
+    EXPECT_FALSE(creatures::adHocExchangeFromJson(badParticipantId).isSuccess());
+
+    auto unknownParticipantField = valid;
+    unknownParticipantField["participants"][0]["voice"] = "x";
+    EXPECT_FALSE(creatures::adHocExchangeFromJson(unknownParticipantField).isSuccess());
+
+    auto badPartSpeaker = valid;
+    badPartSpeaker["parts"][0]["creature_id"] = "beaky";
+    EXPECT_FALSE(creatures::adHocExchangeFromJson(badPartSpeaker).isSuccess());
+
+    auto tooManyParticipants = valid;
+    tooManyParticipants["participants"] = nlohmann::json::array();
+    for (std::size_t i = 0; i <= creatures::MAX_AD_HOC_EXCHANGE_PARTICIPANTS; ++i) {
+        tooManyParticipants["participants"].push_back(
+            {{"creature_id", "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"}, {"creature_name", "x"}, {"audio_channel", 1}});
+    }
+    EXPECT_FALSE(creatures::adHocExchangeFromJson(tooManyParticipants).isSuccess());
 }
 
 TEST(AdHocExchange, MissingOptionalFieldsDefaultSanely) {
