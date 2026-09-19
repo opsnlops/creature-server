@@ -18,6 +18,7 @@
 #include <nlohmann/json.hpp>
 
 #include "api/DialogContracts.h"
+#include "api/MusicContracts.h"
 #include "api/VoiceContracts.h"
 #include "model/Animation.h"
 #include "model/Stage.h"
@@ -52,6 +53,7 @@
 #include "server/voice/WavFileReader.h"
 #include "server/ws/service/DialogMusicService.h"
 #include "server/ws/service/DialogPreviewService.h"
+#include "server/ws/service/MusicService.h"
 #include "server/ws/service/VoiceService.h"
 
 #include "util/ObservabilityManager.h"
@@ -229,19 +231,20 @@ JobWorker::QueueAdmission JobWorker::tryCreateAndQueueJob(JobType type, const st
 }
 
 JobWorker::QueueAdmission JobWorker::tryCreateAndQueueMusicJob(const std::string &details,
-                                                               std::shared_ptr<creatures::RequestSpan> parentSpan) {
+                                                               std::shared_ptr<creatures::RequestSpan> parentSpan,
+                                                               JobType type) {
     auto current = musicJobsInFlight_.load(std::memory_order_relaxed);
     while (current < kMaxMusicJobsInFlight) {
         if (musicJobsInFlight_.compare_exchange_weak(current, current + 1, std::memory_order_acq_rel,
                                                      std::memory_order_relaxed)) {
             if (parentSpan) {
-                parentSpan->setAttribute("admission.scope", "dialog.music");
+                parentSpan->setAttribute("admission.scope", type == JobType::Music ? "music" : "dialog.music");
                 parentSpan->setAttribute("admission.limit", static_cast<int64_t>(kMaxMusicJobsInFlight));
                 parentSpan->setAttribute("admission.in_flight", static_cast<int64_t>(current + 1));
             }
             std::string jobId;
             try {
-                jobId = jobManager_->createJob(JobType::DialogMusic, details, parentSpan);
+                jobId = jobManager_->createJob(type, details, parentSpan);
             } catch (...) {
                 musicJobsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
                 if (parentSpan)
@@ -373,6 +376,10 @@ void JobWorker::processJob(const std::string &jobId) {
             info("Handling job {} as DialogMusic type", jobId);
             handleDialogMusicJob(jobState);
             break;
+        case JobType::Music:
+            info("Handling job {} as Music type", jobId);
+            handleMusicJob(jobState);
+            break;
         case JobType::StageRerender:
             handleStageRerenderJob(jobState);
             break;
@@ -443,6 +450,59 @@ void JobWorker::handleDialogMusicJob(JobState &jobState) {
     if (!generated.isSuccess()) {
         const auto error = generated.getError().value();
         return failJob(error.getMessage(), "DialogMusicGenerationError", error.getCode(), "generate");
+    }
+    jobManager_->updateJobProgress(jobState.jobId, 1.0f);
+    broadcastProgress();
+    jobManager_->completeJob(jobState.jobId,
+                             api::dialogMusicGenerationResultToJson(generated.getValue().value()).dump());
+    if (jobState.span)
+        jobState.span->setSuccess();
+    broadcastCompletion();
+}
+
+/// Library music generation (#202): the dialog music job without the
+/// dialog. Same progress/completion messages, same result shape.
+void JobWorker::handleMusicJob(JobState &jobState) {
+    const auto broadcastProgress = [this, &jobState] {
+        if (auto state = jobManager_->getJob(jobState.jobId)) {
+            auto result = broadcastJobProgressToAllClients(*state);
+            if (!result.isSuccess())
+                warn("Failed to broadcast music job progress: {}", result.getError()->getMessage());
+        }
+    };
+    const auto broadcastCompletion = [this, &jobState] {
+        if (auto state = jobManager_->getJob(jobState.jobId)) {
+            auto result = broadcastJobCompleteToAllClients(*state);
+            if (!result.isSuccess())
+                warn("Failed to broadcast music job completion: {}", result.getError()->getMessage());
+        }
+    };
+    const auto failJob = [&](const std::string &message, const std::string &type, ServerError::Code code,
+                             const std::string &stage) {
+        recordSpanError(jobState.span, message, type, code);
+        if (jobState.span)
+            jobState.span->setAttribute("job.failure_stage", stage);
+        jobManager_->failJob(jobState.jobId, message);
+        broadcastCompletion();
+    };
+
+    auto jsonResult = api::parseContractJson(jobState.details, "music job details");
+    if (!jsonResult.isSuccess())
+        return failJob(jsonResult.getError().value().getMessage(), "InvalidData", ServerError::InvalidData,
+                       "deserialize");
+    auto requestResult = api::musicGenerateRequestFromJson(jsonResult.getValue().value());
+    if (!requestResult.isSuccess())
+        return failJob(requestResult.getError().value().getMessage(), "InvalidData", ServerError::InvalidData,
+                       "deserialize");
+    const auto request = requestResult.getValue().value();
+    jobManager_->updateJobProgress(jobState.jobId, 0.05f);
+    broadcastProgress();
+
+    ws::MusicService service;
+    auto generated = service.generate(request, jobState.span, jobState.jobId);
+    if (!generated.isSuccess()) {
+        const auto error = generated.getError().value();
+        return failJob(error.getMessage(), "MusicGenerationError", error.getCode(), "generate");
     }
     jobManager_->updateJobProgress(jobState.jobId, 1.0f);
     broadcastProgress();

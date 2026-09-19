@@ -32,4 +32,9 @@ namespace creatures::util {
 [[nodiscard]] std::string bgmExportBasename(const std::string &scriptTitle, const std::string &prompt,
                                             const std::string &generationId);
 
+/// Library piece naming (#202): "{title slug}--{id12}". A piece's WAVs live
+/// under music/ and are named by the piece, not by a prompt (a refined
+/// version may have none).
+[[nodiscard]] std::string musicExportBasename(const std::string &pieceTitle, const std::string &generationId);
+
 } // namespace creatures::util

@@ -170,6 +170,9 @@ std::string buildIxml(const WavProvenance &provenance, int totalChannels) {
             field("FINETUNE_STRENGTH", fmt::format("{}", *music.finetuneStrength));
         }
         field("STORED_FOR_INPAINTING", music.storedForInpainting ? "true" : "false");
+        field("SECTIONS_JSON", music.sectionsJson);
+        field("PIECE_ID", music.pieceId);
+        field("BASE_VERSION_ID", music.baseVersionId);
         field("REQUEST_JSON", music.requestJson);
         field("RESPONSE_METADATA_JSON", music.responseMetadataJson);
         field("COMPOSITION_PLAN_JSON", music.compositionPlanJson);
@@ -288,6 +291,9 @@ nlohmann::json wavProvenanceToJson(const WavProvenance &p) {
                       {"request_kind", m.requestKind},
                       {"finetune_id", m.finetuneId},
                       {"stored_for_inpainting", m.storedForInpainting},
+                      {"sections_json", m.sectionsJson},
+                      {"piece_id", m.pieceId},
+                      {"base_version_id", m.baseVersionId},
                       {"request_json", m.requestJson},
                       {"response_metadata_json", m.responseMetadataJson},
                       {"composition_plan_json", m.compositionPlanJson},
@@ -383,6 +389,9 @@ WavProvenance wavProvenanceFromJson(const nlohmann::json &j) {
             music.finetuneStrength = m["finetune_strength"].get<double>();
         }
         music.storedForInpainting = m.value("stored_for_inpainting", false);
+        music.sectionsJson = m.value("sections_json", std::string{});
+        music.pieceId = m.value("piece_id", std::string{});
+        music.baseVersionId = m.value("base_version_id", std::string{});
         music.requestJson = m.value("request_json", std::string{});
         music.responseMetadataJson = m.value("response_metadata_json", std::string{});
         music.compositionPlanJson = m.value("composition_plan_json", std::string{});

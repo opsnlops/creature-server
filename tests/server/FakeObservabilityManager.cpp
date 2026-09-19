@@ -26,6 +26,11 @@ std::shared_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(co
     return std::make_shared<OperationSpan>(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span>());
 }
 
+std::shared_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(const std::string &,
+                                                                              std::shared_ptr<RequestSpan>) {
+    return std::make_shared<OperationSpan>(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span>());
+}
+
 std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std::string &, double) { return nullptr; }
 
 std::shared_ptr<SamplingSpan> ObservabilityManager::createSamplingSpan(const std::string &,

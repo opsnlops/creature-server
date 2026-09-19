@@ -26,6 +26,7 @@
 #include "controller/DmxFixtureController.h"
 #include "controller/JobController.h"
 #include "controller/MetricsController.h"
+#include "controller/MusicController.h"
 #include "controller/PlaylistController.h"
 #include "controller/SoundController.h"
 #include "controller/SpeechToTextController.h"
@@ -83,6 +84,7 @@ void App::run() {
     docEndpoints.append(router->addController(DialogStreamController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DialogController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DialogMusicController::createShared())->getEndpoints());
+    docEndpoints.append(router->addController(MusicController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DialogPreviewController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DialogScriptController::createShared())->getEndpoints());
     docEndpoints.append(router->addController(DialogVoiceController::createShared())->getEndpoints());

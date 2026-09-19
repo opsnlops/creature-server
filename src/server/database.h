@@ -33,6 +33,7 @@ using json = nlohmann::json;
 #include "model/Creature.h"
 #include "model/DialogScript.h"
 #include "model/DmxFixture.h"
+#include "model/MusicPiece.h"
 #include "model/Playlist.h"
 #include "model/SortBy.h"
 #include "model/Stage.h"
@@ -272,6 +273,17 @@ class Database {
     /// as opaque (object check only, no key introspection).
     static Result<creatures::Storyboard> parseStoryboardJson(json storyboardJson,
                                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    // Music library pieces (#202). Documents are the model's own JSON; the
+    // upsert takes the struct because the server assembles pieces itself.
+    Result<creatures::MusicPiece> getMusicPiece(const std::string &pieceId,
+                                                const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<std::vector<creatures::MusicPiece>>
+    listMusicPieces(const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<creatures::MusicPiece> upsertMusicPiece(const creatures::MusicPiece &piece,
+                                                   const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+    Result<void> deleteMusicPiece(const std::string &pieceId,
+                                  const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 
     /// Parse + validate a DialogScript JSON document without persisting. Public so
     /// the parser's rules (e.g. an accepted composition-plan take has no prompt,

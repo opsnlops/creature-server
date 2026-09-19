@@ -15,6 +15,7 @@ const std::string ADHOC_SOUND_CACHE_TYPE = "ad-hoc-sound-list";
 const std::string ADHOC_EXCHANGE_CACHE_TYPE = "ad-hoc-exchange-list";
 const std::string FIXTURE_CACHE_TYPE = "fixture";
 const std::string DIALOG_SCRIPT_LIST_CACHE_TYPE = "dialog-script-list";
+const std::string MUSIC_PIECE_LIST_CACHE_TYPE = "music-piece-list";
 const std::string STORYBOARD_LIST_CACHE_TYPE = "storyboard-list";
 const std::string STAGE_LIST_CACHE_TYPE = "stage-list";
 const std::string UNKNOWN_CACHE_TYPE = "unknown";
@@ -40,6 +41,8 @@ std::string toString(const CacheType type) {
         return FIXTURE_CACHE_TYPE;
     case CacheType::DialogScriptList:
         return DIALOG_SCRIPT_LIST_CACHE_TYPE;
+    case CacheType::MusicPieceList:
+        return MUSIC_PIECE_LIST_CACHE_TYPE;
     case CacheType::StoryboardList:
         return STORYBOARD_LIST_CACHE_TYPE;
     case CacheType::StageList:
@@ -69,6 +72,8 @@ CacheType cacheTypeFromString(const std::string &cacheTypeString) {
         return CacheType::Fixture;
     if (cacheTypeString == DIALOG_SCRIPT_LIST_CACHE_TYPE)
         return CacheType::DialogScriptList;
+    if (cacheTypeString == MUSIC_PIECE_LIST_CACHE_TYPE)
+        return CacheType::MusicPieceList;
     if (cacheTypeString == STORYBOARD_LIST_CACHE_TYPE)
         return CacheType::StoryboardList;
     if (cacheTypeString == STAGE_LIST_CACHE_TYPE)

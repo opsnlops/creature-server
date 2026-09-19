@@ -98,6 +98,12 @@ struct MusicWavProvenance {
     std::string finetuneId;
     std::optional<double> finetuneStrength;
     bool storedForInpainting{false};
+    // #202 library: the editable sections this take was composed from (JSON
+    // array of MusicSection), the piece it refines and the version it kept
+    // sections from. All empty for a take that isn't library work.
+    std::string sectionsJson;
+    std::string pieceId;
+    std::string baseVersionId;
     std::string requestJson;
     std::string responseMetadataJson;
     std::string compositionPlanJson;
