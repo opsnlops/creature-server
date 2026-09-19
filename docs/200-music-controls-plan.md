@@ -210,8 +210,11 @@ Related: generate and plan now read the dialog take from the durable
 accepted-take store first (#146), then the ephemeral cache, then — for an
 acceptance made before the durable store existed — the script's promoted
 `accepted_voice.sound_file` itself (#206; `dialog.take_source =
-"promoted_file"`). Music only needs the PCM, and that WAV is the same mono
-48 kHz take. Reading only the cache meant any script whose acceptance predated
+"promoted_file"`). That file is the promoted 17-channel render; music only
+needs its length. A **render** of such a script rebuilds the real per-creature
+lanes plus mouth cues and word timing from the same file's channels and iXML
+(#208, `voice::loadAssembledTakeFromPromotedFile`), so nothing is regenerated
+and nothing is still-faced. Reading only the cache meant any script whose acceptance predated
 the last cron sweep could not get music at all (`DialogCache: no generation …
 on disk`); reading only the two stores still excluded every pre-3.47 acceptance.
 
