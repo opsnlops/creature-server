@@ -124,9 +124,10 @@ The console shows the proposal, lets April tweak chips, then submits
 native editor also shows "Song composition has changed" before you press
 Generate, and generation costs credits.
 
-`POST /api/v1/music/plan` (dialog-free draft from a prompt + `music_length_ms`
-+ optional `source_composition_plan`) is the same proxy as the dialog one
-without the take lookup — useful for a brand-new piece.
+`POST /api/v1/music/plan` `{prompt, music_length_ms, model_id?,
+source_sections?}` → `{model_id, music_length_ms, sections, composition_plan}`
+is the same proxy as the dialog one without the take lookup, normalised to
+editable sections — the on-ramp for a brand-new piece.
 
 ### `POST /api/v1/music/generated/{generationId}/save`
 
@@ -198,11 +199,10 @@ piece, 200 new version).
 
 ## Phases
 
-- **Phase 1 (this PR):** generate (all three modes incl. the sections builder),
-  candidate aliases, save, pieces CRUD, `music-piece-list`, provenance fields.
-  This alone gives "edit chips / regenerate a section / keep the rest".
-- **Phase 2:** `/refine` (instruction → proposed sections + diff) and the
-  dialog-free `/plan`. Small once Phase 1's normaliser exists.
+- **Phase 1 + 2 (this PR, 3.48.0):** generate (all three modes incl. the
+  sections builder), candidate aliases, save, pieces CRUD, `music-piece-list`,
+  provenance fields, `/refine`, and the dialog-free `/plan` (which also
+  returns normalised `sections`).
 - **Phase 3 (console-led):** dialog-bound generate accepts sections mode +
   `piece_id`, so "use this piece under this dialog" is one request.
 

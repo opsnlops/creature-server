@@ -53,6 +53,36 @@ struct MusicPieceUpdateRequest {
     std::optional<std::string> currentVersionId;
 };
 
+/// `POST /api/v1/music/{id}/refine` — the instruction box.
+struct MusicRefineRequest {
+    std::string instruction;
+    std::string versionId; // defaults to the piece's current version
+};
+
+struct MusicRefineResult {
+    std::string baseVersionId;
+    std::string modelId;
+    int64_t musicLengthMs = 0;
+    std::vector<voice::MusicSection> sections;
+    voice::MusicSectionsDiff diff;
+    nlohmann::json compositionPlan; // what ElevenLabs proposed, verbatim
+};
+
+/// `POST /api/v1/music/plan` — a dialog-free draft from a prompt.
+struct MusicPlanRequest {
+    std::string prompt;
+    int64_t musicLengthMs = 0;
+    std::string modelId = voice::kDefaultMusicModelId;
+    std::optional<std::vector<voice::MusicSection>> sourceSections;
+};
+
+struct MusicPlanResult {
+    std::string modelId;
+    int64_t musicLengthMs = 0;
+    std::vector<voice::MusicSection> sections;
+    nlohmann::json compositionPlan;
+};
+
 inline constexpr std::size_t MAX_MUSIC_REQUEST_BYTES = MAX_DIALOG_REQUEST_BYTES;
 
 inline Result<MusicGenerateRequest> musicGenerateRequestFromJson(const nlohmann::json &json) {
@@ -238,6 +268,73 @@ inline Result<MusicPieceUpdateRequest> musicPieceUpdateRequestFromJson(const nlo
         return json_codec::invalid<MusicPieceUpdateRequest>(
             "music piece update request.current_version_id must be a UUID");
     return UpdateResult{std::move(request)};
+}
+
+inline Result<MusicRefineRequest> musicRefineRequestFromJson(const nlohmann::json &json) {
+    constexpr std::string_view path = "music refine request";
+    using RefineResult = Result<MusicRefineRequest>;
+    auto fields = json_codec::rejectUnknownFields(json, path, {"instruction", "version_id"});
+    if (!fields.isSuccess())
+        return RefineResult{fields.getError().value()};
+    auto instruction = json_codec::requiredString(json, path, "instruction", voice::kMaxMusicPromptBytes);
+    auto versionId = json_codec::optionalString(json, path, "version_id", 64, false, true);
+    if (!instruction.isSuccess())
+        return RefineResult{instruction.getError().value()};
+    if (!versionId.isSuccess())
+        return RefineResult{versionId.getError().value()};
+    MusicRefineRequest request{instruction.getValue().value(), versionId.getValue().value().value_or("")};
+    if (!request.versionId.empty() && !isUuidShape(request.versionId))
+        return json_codec::invalid<MusicRefineRequest>("music refine request.version_id must be a UUID");
+    return RefineResult{std::move(request)};
+}
+
+inline nlohmann::json musicRefineResultToJson(const MusicRefineResult &result) {
+    return {{"base_version_id", result.baseVersionId},
+            {"model_id", result.modelId},
+            {"music_length_ms", result.musicLengthMs},
+            {"sections", voice::musicSectionsToJson(result.sections)},
+            {"changed", result.diff.changed},
+            {"kept", result.diff.kept},
+            {"composition_plan", result.compositionPlan}};
+}
+
+inline Result<MusicPlanRequest> musicPlanRequestFromJson(const nlohmann::json &json) {
+    constexpr std::string_view path = "music plan request";
+    using PlanResult = Result<MusicPlanRequest>;
+    auto fields =
+        json_codec::rejectUnknownFields(json, path, {"prompt", "music_length_ms", "model_id", "source_sections"});
+    if (!fields.isSuccess())
+        return PlanResult{fields.getError().value()};
+    auto prompt = json_codec::requiredString(json, path, "prompt", voice::kMaxMusicPromptBytes);
+    auto length =
+        json_codec::requiredInt64(json, path, "music_length_ms", voice::kMinMusicLengthMs, voice::kMaxMusicLengthMs);
+    auto modelId = json_codec::optionalString(json, path, "model_id", 32, false, true);
+    if (!prompt.isSuccess())
+        return PlanResult{prompt.getError().value()};
+    if (!length.isSuccess())
+        return PlanResult{length.getError().value()};
+    if (!modelId.isSuccess())
+        return PlanResult{modelId.getError().value()};
+    MusicPlanRequest request;
+    request.prompt = prompt.getValue().value();
+    request.musicLengthMs = length.getValue().value();
+    request.modelId = modelId.getValue().value().value_or(voice::kDefaultMusicModelId);
+    if (!voice::isSupportedMusicModelId(request.modelId))
+        return json_codec::invalid<MusicPlanRequest>("music plan request.model_id must be 'music_v2' or 'music_v2_5'");
+    if (json.contains("source_sections")) {
+        auto sections = musicSectionsFromJson(json["source_sections"], std::string(path) + ".source_sections");
+        if (!sections.isSuccess())
+            return PlanResult{sections.getError().value()};
+        request.sourceSections = sections.getValue().value();
+    }
+    return PlanResult{std::move(request)};
+}
+
+inline nlohmann::json musicPlanResultToJson(const MusicPlanResult &result) {
+    return {{"model_id", result.modelId},
+            {"music_length_ms", result.musicLengthMs},
+            {"sections", voice::musicSectionsToJson(result.sections)},
+            {"composition_plan", result.compositionPlan}};
 }
 
 } // namespace creatures::api

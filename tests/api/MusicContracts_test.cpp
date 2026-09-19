@@ -159,4 +159,33 @@ TEST(MusicContracts, RecipeCarriesLibraryFieldsOnlyWhenSet) {
     EXPECT_EQ(json["base_version_id"], VERSION_ID);
 }
 
+TEST(MusicContracts, RefineAndPlanRequests) {
+    auto refine = musicRefineRequestFromJson({{"instruction", "add smooth synth pads"}});
+    ASSERT_TRUE(refine.isSuccess()) << refine.getError()->getMessage();
+    EXPECT_TRUE(refine.getValue()->versionId.empty());
+    EXPECT_FALSE(musicRefineRequestFromJson({{"instruction", ""}}).isSuccess());
+    EXPECT_FALSE(musicRefineRequestFromJson({{"instruction", "x"}, {"version_id", "nope"}}).isSuccess());
+
+    auto plan = musicPlanRequestFromJson({{"prompt", "playful chamber piece"}, {"music_length_ms", 60000}});
+    ASSERT_TRUE(plan.isSuccess()) << plan.getError()->getMessage();
+    EXPECT_EQ(plan.getValue()->modelId, "music_v2_5");
+    EXPECT_FALSE(musicPlanRequestFromJson({{"prompt", "x"}}).isSuccess()); // length required, no dialog to size from
+    auto sourced = musicPlanRequestFromJson(
+        {{"prompt", "x"}, {"music_length_ms", 5000}, {"source_sections", {section("[A]", 5000)}}});
+    ASSERT_TRUE(sourced.isSuccess()) << sourced.getError()->getMessage();
+    EXPECT_EQ(sourced.getValue()->sourceSections->size(), 1u);
+
+    MusicRefineResult result;
+    result.baseVersionId = VERSION_ID;
+    result.modelId = "music_v2_5";
+    result.musicLengthMs = 8000;
+    result.diff.changed = {1};
+    result.diff.kept = {0};
+    result.compositionPlan = {{"chunks", nlohmann::json::array()}};
+    const auto json = musicRefineResultToJson(result);
+    EXPECT_EQ(json["kept"], nlohmann::json::parse("[0]"));
+    EXPECT_EQ(json["changed"], nlohmann::json::parse("[1]"));
+    EXPECT_EQ(json["base_version_id"], VERSION_ID);
+}
+
 } // namespace creatures::api

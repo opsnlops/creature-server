@@ -58,6 +58,16 @@ class MusicService {
     Result<MusicPiece> save(const std::string &generationId, const api::MusicSaveRequest &request, bool &created,
                             std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
 
+    /// The instruction box (#202): ask ElevenLabs' planner to edit a
+    /// version's sections per `instruction`, and report which sections it
+    /// changed. Synchronous; no audio is generated.
+    Result<api::MusicRefineResult> refine(const std::string &pieceId, const api::MusicRefineRequest &request,
+                                          std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+
+    /// Dialog-free plan draft from a prompt, normalised to editable sections.
+    Result<api::MusicPlanResult> plan(const api::MusicPlanRequest &request,
+                                      std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+
     Result<std::vector<MusicPiece>> list(std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
     Result<MusicPiece> get(const std::string &pieceId, std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
     Result<MusicPiece> update(const std::string &pieceId, const api::MusicPieceUpdateRequest &request,

@@ -511,6 +511,137 @@ Result<MusicPiece> MusicService::save(const std::string &generationId, const api
     return stored;
 }
 
+namespace {
+
+/// ElevenLabs' planner output → editable sections, or why it can't be.
+Result<std::vector<voice::MusicSection>> sectionsFromPlan(const nlohmann::json &plan) {
+    using ListResult = Result<std::vector<voice::MusicSection>>;
+    if (!plan.is_object() || !plan.contains("chunks") || !plan["chunks"].is_array()) {
+        return ListResult{ServerError(ServerError::InternalError, "ElevenLabs returned a plan without chunks")};
+    }
+    auto sections = nlohmann::json::array();
+    for (const auto &chunk : plan["chunks"]) {
+        auto section = voice::planChunkToSectionJson(chunk);
+        if (section.is_null()) {
+            return ListResult{
+                ServerError(ServerError::InternalError, "ElevenLabs returned a plan chunk with no editable content")};
+        }
+        sections.push_back(std::move(section));
+    }
+    auto parsed = musicSectionsFromJson(sections, "ElevenLabs plan");
+    if (!parsed.isSuccess()) {
+        // Their limits and ours are the same document; a violation here is
+        // upstream misbehaviour, not a client error.
+        return ListResult{ServerError(ServerError::InternalError, parsed.getError().value().getMessage())};
+    }
+    return parsed;
+}
+
+} // namespace
+
+Result<api::MusicRefineResult> MusicService::refine(const std::string &pieceId, const api::MusicRefineRequest &request,
+                                                    std::shared_ptr<RequestSpan> parentSpan) const {
+    auto span = requestChildSpan("MusicService.refine", parentSpan);
+    using RefineResult = Result<api::MusicRefineResult>;
+    const auto fail = [&span](ServerError error, const std::string &type) {
+        recordSpanError(span, error.getMessage(), type, error.getCode());
+        return RefineResult{std::move(error)};
+    };
+    if (span) {
+        span->setAttribute("music.piece_id", pieceId);
+        span->setAttribute("music.instruction_length", static_cast<int64_t>(request.instruction.size()));
+    }
+    if (!creatures::db || !creatures::config) {
+        return fail(ServerError(ServerError::InternalError, "music dependencies are unavailable"),
+                    "DependencyUnavailable");
+    }
+    auto loaded = creatures::db->getMusicPiece(pieceId, span);
+    if (!loaded.isSuccess()) {
+        return fail(loaded.getError().value(), "MusicPieceLookupError");
+    }
+    const auto piece = loaded.getValue().value();
+    const auto *base = request.versionId.empty() ? piece.currentVersion() : piece.findVersion(request.versionId);
+    if (!base) {
+        return fail(ServerError(ServerError::InvalidData,
+                                fmt::format("piece {} has no version {}", pieceId,
+                                            request.versionId.empty() ? piece.current_version_id : request.versionId)),
+                    "MusicVersionNotFound");
+    }
+    const auto lengthMs = voice::musicSectionsTotalMs(base->sections);
+    const auto modelId = base->recipe.value("model_id", std::string(voice::kDefaultMusicModelId));
+    if (span) {
+        span->setAttribute("music.base_version_id", base->id);
+        span->setAttribute("music.model_id", modelId);
+        span->setAttribute("music.length_ms", lengthMs);
+    }
+    voice::MusicClient client;
+    nlohmann::json source{{"chunks", voice::musicSectionsToJson(base->sections)}};
+    auto planned =
+        client.generatePlan(creatures::config->getVoiceApiKey(), request.instruction, lengthMs, modelId, source, span);
+    if (!planned.isSuccess()) {
+        return fail(planned.getError().value(), "ElevenLabsPlanError");
+    }
+    auto sections = sectionsFromPlan(planned.getValue()->compositionPlan);
+    if (!sections.isSuccess()) {
+        return fail(sections.getError().value(), "PlanNormalisationError");
+    }
+    api::MusicRefineResult result;
+    result.baseVersionId = base->id;
+    result.modelId = modelId;
+    result.musicLengthMs = voice::musicSectionsTotalMs(sections.getValue().value());
+    result.sections = sections.getValue().value();
+    result.diff = voice::diffMusicSections(base->sections, result.sections);
+    result.compositionPlan = planned.getValue()->compositionPlan;
+    if (span) {
+        span->setAttribute("music.section_count", static_cast<int64_t>(result.sections.size()));
+        span->setAttribute("music.changed_count", static_cast<int64_t>(result.diff.changed.size()));
+        span->setAttribute("music.kept_count", static_cast<int64_t>(result.diff.kept.size()));
+        span->setSuccess();
+    }
+    return RefineResult{std::move(result)};
+}
+
+Result<api::MusicPlanResult> MusicService::plan(const api::MusicPlanRequest &request,
+                                                std::shared_ptr<RequestSpan> parentSpan) const {
+    auto span = requestChildSpan("MusicService.plan", parentSpan);
+    using PlanResult = Result<api::MusicPlanResult>;
+    const auto fail = [&span](ServerError error, const std::string &type) {
+        recordSpanError(span, error.getMessage(), type, error.getCode());
+        return PlanResult{std::move(error)};
+    };
+    if (span) {
+        span->setAttribute("music.model_id", request.modelId);
+        span->setAttribute("music.length_ms", request.musicLengthMs);
+        span->setAttribute("music.prompt_length", static_cast<int64_t>(request.prompt.size()));
+        span->setAttribute("music.source_plan_present", request.sourceSections.has_value());
+    }
+    if (!creatures::config) {
+        return fail(ServerError(ServerError::InternalError, "music dependencies are unavailable"),
+                    "DependencyUnavailable");
+    }
+    voice::MusicClient client;
+    nlohmann::json source = nullptr;
+    if (request.sourceSections) {
+        source = {{"chunks", voice::musicSectionsToJson(*request.sourceSections)}};
+    }
+    auto planned = client.generatePlan(creatures::config->getVoiceApiKey(), request.prompt, request.musicLengthMs,
+                                       request.modelId, source, span);
+    if (!planned.isSuccess()) {
+        return fail(planned.getError().value(), "ElevenLabsPlanError");
+    }
+    auto sections = sectionsFromPlan(planned.getValue()->compositionPlan);
+    if (!sections.isSuccess()) {
+        return fail(sections.getError().value(), "PlanNormalisationError");
+    }
+    api::MusicPlanResult result{request.modelId, voice::musicSectionsTotalMs(sections.getValue().value()),
+                                sections.getValue().value(), planned.getValue()->compositionPlan};
+    if (span) {
+        span->setAttribute("music.section_count", static_cast<int64_t>(result.sections.size()));
+        span->setSuccess();
+    }
+    return PlanResult{std::move(result)};
+}
+
 Result<std::vector<MusicPiece>> MusicService::list(std::shared_ptr<RequestSpan> parentSpan) const {
     auto span = requestChildSpan("MusicService.list", parentSpan);
     using ListResult = Result<std::vector<MusicPiece>>;

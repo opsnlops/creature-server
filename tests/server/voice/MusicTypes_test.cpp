@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include "server/voice/MusicTypes.h"
 
@@ -114,4 +115,31 @@ TEST(MusicSectionsPlan, SkipsConditioningOnTooShortBaseSpans) {
     const auto plan = planOf(buildMusicSectionsPlan(sections, tiny, {}, "medium"));
     ASSERT_EQ(plan.chunks.size(), 1u);
     EXPECT_FALSE(plan.chunks[0].conditioningRef.has_value());
+}
+
+TEST(MusicSectionsDiff, ReportsChangedAndKeptByIndex) {
+    const auto original = base().sections;
+    auto proposed = original;
+    proposed[1].negativeStyles = {"drums", "vocals"};
+    proposed.push_back(section("[Coda]", 4000));
+    const auto diff = creatures::voice::diffMusicSections(original, proposed);
+    EXPECT_EQ(diff.kept, (std::vector<std::size_t>{0, 2}));
+    EXPECT_EQ(diff.changed, (std::vector<std::size_t>{1, 3}));
+
+    // Shorter proposal: the dropped tail is simply not there to keep.
+    const auto shorter = creatures::voice::diffMusicSections(original, {original[0]});
+    EXPECT_EQ(shorter.kept, (std::vector<std::size_t>{0}));
+    EXPECT_TRUE(shorter.changed.empty());
+}
+
+TEST(MusicSectionsDiff, NormalisesPlannerChunksToSections) {
+    const auto chunk = nlohmann::json::parse(R"({"text":"[Tease]","duration_ms":6000,
+        "positive_styles":["a"],"negative_styles":["b"],"context_adherence":"high",
+        "conditioning_ref":null,"condition_strength":null})");
+    const auto section = creatures::voice::planChunkToSectionJson(chunk);
+    EXPECT_EQ(section, nlohmann::json::parse(R"({"text":"[Tease]","duration_ms":6000,
+        "positive_styles":["a"],"negative_styles":["b"],"context_adherence":"high"})"));
+    EXPECT_TRUE(creatures::voice::planChunkToSectionJson(
+                    nlohmann::json::parse(R"({"song_id":"s","range":{"start_ms":0,"end_ms":5000}})"))
+                    .is_null());
 }

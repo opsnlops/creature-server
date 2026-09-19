@@ -250,6 +250,64 @@ class MusicController : public oatpp::web::server::api::ApiController, public Ht
                            });
     }
 
+    ENDPOINT_INFO(refineMusicPiece) {
+        info->summary = "Ask the AI to refine a piece: an instruction in, proposed sections and a diff out";
+        info->description =
+            "Synchronous and generates no audio. Sends the version's editable sections and the instruction to "
+            "ElevenLabs' planner and reports which sections it changed, so the console can show the proposal and "
+            "then generate in sections mode with `keep` = `kept`.";
+        info->addTag("Music Library");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_404, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/music/{pieceId}/refine", refineMusicPiece, PATH(String, pieceId),
+             REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint(
+            "POST /api/v1/music/{pieceId}/refine", "POST", "api/v1/music/{pieceId}/refine", "refineMusicPiece",
+            "MusicController", request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                const std::string id = pieceId ? std::string(*pieceId) : std::string{};
+                if (!isUuidShape(id))
+                    return bailHttp(span, Status::CODE_400, "music piece id must be a UUID");
+                if (span)
+                    span->setAttribute("music.piece_id", id);
+                std::shared_ptr<OutgoingResponse> failure;
+                auto parsed = parseBody(request, "music.refine", "music refine request",
+                                        api::musicRefineRequestFromJson, span, failure);
+                if (!parsed)
+                    return failure;
+                auto refined = musicService_.refine(id, *parsed, span);
+                if (!refined.isSuccess())
+                    return bailFromServerError(span, refined.getError().value());
+                if (span)
+                    span->setHttpStatus(200);
+                return jsonResponse(span, Status::CODE_200, api::musicRefineResultToJson(refined.getValue().value()));
+            });
+    }
+
+    ENDPOINT_INFO(planMusic) {
+        info->summary = "Draft editable sections for a new piece from a prompt and a length";
+        info->addTag("Music Library");
+        info->addResponse<oatpp::String>(Status::CODE_200, "application/json; charset=utf-8");
+        info->addResponse<oatpp::String>(Status::CODE_400, "application/json; charset=utf-8");
+    }
+    ENDPOINT("POST", "api/v1/music/plan", planMusic, REQUEST(std::shared_ptr<IncomingRequest>, request)) {
+        return runEndpoint("POST /api/v1/music/plan", "POST", "api/v1/music/plan", "planMusic", "MusicController",
+                           request, [&](const auto &span) -> std::shared_ptr<OutgoingResponse> {
+                               std::shared_ptr<OutgoingResponse> failure;
+                               auto parsed = parseBody(request, "music.plan", "music plan request",
+                                                       api::musicPlanRequestFromJson, span, failure);
+                               if (!parsed)
+                                   return failure;
+                               auto planned = musicService_.plan(*parsed, span);
+                               if (!planned.isSuccess())
+                                   return bailFromServerError(span, planned.getError().value());
+                               if (span)
+                                   span->setHttpStatus(200);
+                               return jsonResponse(span, Status::CODE_200,
+                                                   api::musicPlanResultToJson(planned.getValue().value()));
+                           });
+    }
+
     ENDPOINT_INFO(listMusicPieces) {
         info->summary = "List the music library, newest first";
         info->addTag("Music Library");

@@ -225,6 +225,50 @@ buildMusicSectionsPlan(const std::vector<MusicSection> &sections, const std::opt
     return plan;
 }
 
+/// Which proposed sections differ from a base version, by index. Sections
+/// beyond the base are changed by definition; a shorter proposal simply
+/// drops the base's tail (nothing to keep there).
+struct MusicSectionsDiff {
+    std::vector<std::size_t> changed;
+    std::vector<std::size_t> kept;
+};
+
+inline MusicSectionsDiff diffMusicSections(const std::vector<MusicSection> &base,
+                                           const std::vector<MusicSection> &proposed) {
+    MusicSectionsDiff diff;
+    for (std::size_t index = 0; index < proposed.size(); ++index) {
+        if (index < base.size() && base[index] == proposed[index]) {
+            diff.kept.push_back(index);
+        } else {
+            diff.changed.push_back(index);
+        }
+    }
+    return diff;
+}
+
+/// Strip an ElevenLabs plan chunk down to its editable section fields.
+/// The planner emits explicit nulls for conditioning and may echo audio-ref
+/// chunks back; neither belongs in a section. Returns null for a chunk that
+/// has no generation content at all (an audio-ref), so callers can reject it.
+inline nlohmann::json planChunkToSectionJson(const nlohmann::json &chunk) {
+    if (!chunk.is_object() || !chunk.contains("text")) {
+        return nullptr;
+    }
+    nlohmann::json section{{"text", chunk.value("text", "")}, {"duration_ms", chunk.value("duration_ms", 0)}};
+    if (chunk.contains("positive_styles") && chunk["positive_styles"].is_array()) {
+        section["positive_styles"] = chunk["positive_styles"];
+    } else {
+        section["positive_styles"] = nlohmann::json::array();
+    }
+    if (chunk.contains("negative_styles") && chunk["negative_styles"].is_array()) {
+        section["negative_styles"] = chunk["negative_styles"];
+    }
+    if (chunk.contains("context_adherence") && chunk["context_adherence"].is_string()) {
+        section["context_adherence"] = chunk["context_adherence"];
+    }
+    return section;
+}
+
 /// Everything a `POST /v1/music/detailed` call can be told. Exactly one of
 /// `prompt` / `compositionPlan` is populated; the prompt-only and plan-only
 /// fields are documented in docs/200-music-controls-plan.md.
