@@ -2,11 +2,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "DialogClient.h"
 #include "IxmlWriter.h" // DialogWordTiming — per-word timing carried through the pipeline (#56 Part 2)
+#include "RhubarbData.h"
 #include "TextToViseme.h"
 #include "util/Result.h"
 
@@ -77,7 +79,23 @@ struct DialogPerCreature {
     /// Feeds the iXML <WORD_ALIGNMENT> block for word-at-timestamp lookups in the
     /// editor (issue #56, Part 2).
     std::vector<DialogWordTiming> words;
+
+    /// Mouth cues already derived from `mouth` (#208). Set when this lane was
+    /// rebuilt from a promoted 17-channel WAV, whose iXML carries the cues
+    /// but not the per-character timing they came from. When present it is
+    /// the truth; `mouth` is empty. Use mouthCuesFor() rather than reading
+    /// either field directly.
+    std::optional<std::vector<RhubarbMouthCue>> mouthCues;
 };
+
+/// The one way to get a lane's mouth cues: pre-baked when the lane came from
+/// a promoted file, otherwise derived from its per-character timing.
+inline std::vector<RhubarbMouthCue> mouthCuesFor(const DialogPerCreature &lane, const TextToViseme &viseme) {
+    if (lane.mouthCues) {
+        return *lane.mouthCues;
+    }
+    return viseme.charTimingsToMouthCues(lane.mouth);
+}
 
 /// Result of assembling one or more chunks: per-creature mono PCM + mouth
 /// timing, all on a single shared tightened timeline.

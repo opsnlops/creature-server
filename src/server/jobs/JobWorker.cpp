@@ -43,6 +43,7 @@
 #include "server/voice/IxmlReader.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/MusicClient.h"
+#include "server/voice/PromotedTake.h"
 #include "server/voice/RhubarbData.h"
 #include "server/voice/ScriptCacheKey.h"
 #include "server/voice/SoundDataProcessor.h"
@@ -1701,6 +1702,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
     std::string scriptStageId;             // the script's own stage binding, if it has one (#128)
     std::string scriptTitle;               // the script's own title, used when the request doesn't give one
     std::string acceptedVoiceGenerationId; // the script's accepted take, if any (#131)
+    std::string acceptedVoiceSoundFile;    // its promoted 17-channel WAV — the last-resort source (#208)
     std::vector<creatures::DialogScriptTurn> sourceScriptTurns;
     std::optional<creatures::DialogBackgroundMusic> backgroundMusic;
     if (hasScriptId) {
@@ -1731,6 +1733,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         scriptTitle = script.title;
         if (script.accepted_voice) {
             acceptedVoiceGenerationId = script.accepted_voice->generation_id;
+            acceptedVoiceSoundFile = script.accepted_voice->sound_file;
         }
     } else {
         rawTurns.reserve(request.turns.size());
@@ -2028,14 +2031,42 @@ void JobWorker::handleDialogJob(JobState &jobState) {
                 loadResult = voice::loadGeneration(cacheKey, effectiveGenerationId);
             }
             if (!loadResult.isSuccess() && renderingAcceptedTake) {
+                // Third source (#208): the promoted 17-channel WAV itself. An
+                // acceptance from before the durable store existed is in
+                // neither store, but that file is this render's own output —
+                // lanes plus mouth cues and word timing in its iXML — so it
+                // comes back as a finished DialogAssembled, no re-slicing.
+                std::vector<voice::PromotedTakeLane> lanes;
+                for (const auto &c : creaturesCache) {
+                    lanes.push_back({c.audioChannel, c.voiceId});
+                }
+                auto promoted = voice::loadAssembledTakeFromPromotedFile(acceptedVoiceSoundFile, lanes);
+                if (promoted.isSuccess()) {
+                    if (chunkSpan) {
+                        chunkSpan->setAttribute("dialog.take_source", "promoted_file");
+                        chunkSpan->setAttribute("dialog.cache_hit", true);
+                    }
+                    info("Dialog job {}: chunk {} using the promoted accepted take {} ({})", jobState.jobId, ci,
+                         effectiveGenerationId, acceptedVoiceSoundFile);
+                    generationIds.push_back(effectiveGenerationId);
+                    assembledChunks.push_back(promoted.getValue().value());
+                    updateProgress(0.55f);
+                    continue;
+                }
                 // Never regenerate behind the user's back. They auditioned and
                 // accepted a specific performance; silently producing a
                 // different one is the exact failure the accepted-take feature
                 // exists to prevent, and it costs money doing it.
                 return failJob(fmt::format(
-                    "the script's accepted voice take {} could not be loaded ({}). Refusing to regenerate audio, "
-                    "which would produce a different performance — re-accept a take for this script.",
-                    effectiveGenerationId, loadResult.getError().value().getMessage()));
+                    "the script's accepted voice take {} could not be loaded ({}; promoted file: {}). Refusing to "
+                    "regenerate audio, which would produce a different performance — re-accept a take for this "
+                    "script.",
+                    effectiveGenerationId, loadResult.getError().value().getMessage(),
+                    promoted.getError().value().getMessage()));
+            }
+            if (loadResult.isSuccess() && chunkSpan) {
+                chunkSpan->setAttribute("dialog.take_source",
+                                        renderingAcceptedTake ? "accepted_store_or_cache" : "generation_cache");
             }
             if (loadResult.isSuccess()) {
                 auto gen = loadResult.getValue().value();
@@ -2278,7 +2309,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
             voice::DialogLipsyncTrack lt;
             lt.channel = it->second.first;
             lt.name = it->second.second;
-            for (const auto &cue : viseme->charTimingsToMouthCues(pc.mouth)) {
+            for (const auto &cue : voice::mouthCuesFor(pc, *viseme)) {
                 lt.cues.push_back({cue.start, cue.end, cue.value});
             }
             if (!lt.cues.empty()) {
@@ -2451,7 +2482,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         RhubarbSoundData snd;
         snd.metadata.duration = static_cast<double>(showTimelineSamples) / static_cast<double>(assembled.sampleRate);
         snd.metadata.soundFile = wavPath.filename().string();
-        snd.mouthCues = viseme->charTimingsToMouthCues(pc.mouth);
+        snd.mouthCues = voice::mouthCuesFor(pc, *viseme);
         auto mouthBytes = soundProc.processSoundData(snd, *msPerFrame, totalFrames);
 
         voice::CreatureTrackInput cti;
