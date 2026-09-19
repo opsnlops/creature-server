@@ -61,8 +61,9 @@ struct MusicAudioRange {
     bool operator==(const MusicAudioRange &) const = default;
 };
 
-/// One chunk of a composition plan. `audioRef` set → AudioRefChunk (copy that
-/// span of a prior take verbatim); otherwise a GenerationChunk.
+/// One chunk of a composition plan. `audioRef` set → AudioRefChunk (re-render
+/// that span of a prior take; close, not sample-exact); otherwise a
+/// GenerationChunk.
 struct MusicPlanChunk {
     std::optional<MusicAudioRange> audioRef;
 

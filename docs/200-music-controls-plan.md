@@ -27,8 +27,11 @@ inline), `duration_ms` 3000–120000, `positive_styles[≤50]`, `negative_styles
 `context_adherence` low/medium/high (default high), optional `conditioning_ref`
 `{song_id, range{start_ms,end_ms}}` + `condition_strength` low/medium/high/xhigh.
 
-Audio-reference chunk: `{song_id, range}` — copies that span of a previously
-generated song verbatim. This is how "keep 0:00–0:12, redo the rest" works.
+Audio-reference chunk: `{song_id, range}` — re-renders that span of a
+previously generated song. This is how "keep 0:00–0:12, redo the rest" works.
+Verified live 2026-09-18: the referenced span is strongly correlated with the
+source (0.38 vs ~0 for unrelated material) but **not byte-identical** — the
+model re-synthesizes it, so don't promise the console a sample-exact splice.
 The source must have been generated with `store_for_inpainting: true`.
 
 `POST /v1/music/plan` turns `prompt` + `music_length_ms` (+ optional
@@ -173,9 +176,17 @@ built; the "Open decisions" stand as chosen.
 - `MusicClient_test`: request-body builder for prompt and plan modes (no
   network), plan-response parsing, finetune-list parsing.
 - `IxmlWriter_test` / `IxmlReader_test`: new provenance fields round-trip.
-- Manual: generate a prompt-mode take on prod, then a plan-mode take that
-  audio-references its first 10 s, confirm the recipe endpoint returns the used
-  plan and that promotion + render still place it on channel 17.
+- Live against ElevenLabs (2026-09-18, before deploy): `/v1/music/plan` with
+  `model_id` → chunk plan (without it → v1 `sections` shape, confirming the
+  gotcha); plan output carries explicit `null` `conditioning_ref` /
+  `condition_strength`, which the parser now accepts as absent; plan-mode
+  generation with `seed` + `store_for_inpainting` → 200 with `song-id`;
+  a second generation audio-referencing that song plus `conditioning_ref` +
+  `condition_strength` → 200; prompt mode with `finetune_id` +
+  `finetune_strength` + `loop` + `force_instrumental=false` → 200;
+  `/v1/music/finetunes` → 45 public finetunes in the documented shape.
+- After deploy: prompt-mode take on prod → plan-mode take that
+  audio-references it → recipe endpoint → promote → render on channel 17.
 
 ## Open decisions (flag, not block)
 

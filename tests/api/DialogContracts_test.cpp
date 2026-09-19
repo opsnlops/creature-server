@@ -350,6 +350,35 @@ TEST(DialogContracts, Music200_GenerationResultKeepsLegacyKeysAndAddsRecipe) {
     EXPECT_FALSE(json.contains("finetune_id"));
 }
 
+/// A plan exactly as `POST /v1/music/plan` returned it on 2026-09-18 (Music
+/// 2.5) must be accepted unchanged: the console drafts, maybe edits, and
+/// submits. Note the explicit nulls ElevenLabs emits for conditioning.
+TEST(DialogContracts, Music200_AcceptsElevenLabsPlanOutputVerbatim) {
+    const auto elevenLabsPlan = nlohmann::json::parse(R"({"chunks":[
+        {"text":"[Tease]","duration_ms":6000,
+         "positive_styles":["74 BPM","playful pizzicato strings","instrumental underscore"],
+         "negative_styles":["drums","percussion"],
+         "context_adherence":"high","conditioning_ref":null,"condition_strength":null},
+        {"text":"[Reveal]","duration_ms":9000,
+         "positive_styles":["bolder strings"],"negative_styles":[],
+         "context_adherence":"high","conditioning_ref":null,"condition_strength":null}]})");
+    auto json = musicBase();
+    json["composition_plan"] = elevenLabsPlan;
+
+    const auto result = dialogMusicRequestFromJson(json);
+
+    ASSERT_TRUE(result.isSuccess()) << result.getError()->getMessage();
+    const auto plan = result.getValue()->compositionPlan.value();
+    ASSERT_EQ(plan.chunks.size(), 2u);
+    EXPECT_FALSE(plan.chunks[0].conditioningRef.has_value());
+    EXPECT_FALSE(plan.chunks[0].conditionStrength.has_value());
+    EXPECT_EQ(plan.totalDurationMs(), 15000);
+    // And what we send upstream omits the nulls rather than echoing them.
+    const auto upstream = creatures::voice::musicPlanChunkToJson(plan.chunks[0]);
+    EXPECT_FALSE(upstream.contains("conditioning_ref"));
+    EXPECT_FALSE(upstream.contains("condition_strength"));
+}
+
 TEST(DialogContracts, Music200_ParsesPlanRequest) {
     nlohmann::json json = {{"dialog_cache_key", std::string(64, 'a')},
                            {"dialog_generation_id", GENERATION_ID},

@@ -436,7 +436,10 @@ inline Result<voice::MusicPlanChunk> musicPlanChunkFromJson(const nlohmann::json
     auto positive = musicStyleListFromJson(json, path, "positive_styles", true);
     auto negative = musicStyleListFromJson(json, path, "negative_styles", false);
     auto adherence = json_codec::optionalString(json, path, "context_adherence", 16);
-    auto strength = json_codec::optionalString(json, path, "condition_strength", 16);
+    // ElevenLabs' own plan output carries explicit nulls for the two
+    // conditioning fields, and the console sends a drafted plan back as-is,
+    // so null is documented as "absent" here (json-codec-conventions.md).
+    auto strength = json_codec::optionalString(json, path, "condition_strength", 16, false, true);
     if (!text.isSuccess())
         return ChunkResult{text.getError().value()};
     if (!duration.isSuccess())
@@ -457,7 +460,7 @@ inline Result<voice::MusicPlanChunk> musicPlanChunkFromJson(const nlohmann::json
     if (!voice::isSupportedContextAdherence(chunk.contextAdherence))
         return json_codec::invalid<voice::MusicPlanChunk>(path +
                                                           ".context_adherence must be 'low', 'medium', or 'high'");
-    if (json.contains("conditioning_ref")) {
+    if (json.contains("conditioning_ref") && !json["conditioning_ref"].is_null()) {
         auto ref = musicAudioRangeFromJson(json["conditioning_ref"], path + ".conditioning_ref");
         if (!ref.isSuccess())
             return ChunkResult{ref.getError().value()};
