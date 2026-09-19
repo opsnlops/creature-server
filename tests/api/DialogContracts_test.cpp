@@ -497,6 +497,15 @@ TEST(DialogContracts, SerializesLookupAndValidationResponses) {
     EXPECT_EQ(lookupJson.at("generations").at(0).at("generation_id"), GENERATION_ID);
     EXPECT_EQ(lookupJson.at("latest_generation_id"), GENERATION_ID);
 
+    // #204: nothing cached is still a 200 with the deterministic key — the
+    // console needs it to judge acceptance freshness — and no latest id.
+    const DialogPreviewLookupResponse empty{std::string(64, 'c'), {}, {}};
+    const auto emptyJson = dialogPreviewLookupResponseToJson(empty);
+    EXPECT_EQ(emptyJson.at("cache_key"), std::string(64, 'c'));
+    EXPECT_TRUE(emptyJson.at("generations").is_array());
+    EXPECT_TRUE(emptyJson.at("generations").empty());
+    EXPECT_FALSE(emptyJson.contains("latest_generation_id"));
+
     DialogScriptValidationResponse validation;
     validation.valid = false;
     validation.turnCount = 2;

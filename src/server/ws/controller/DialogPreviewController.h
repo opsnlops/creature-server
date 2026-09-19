@@ -448,16 +448,16 @@ class DialogPreviewController : public oatpp::web::server::api::ApiController,
                 const auto cacheKey = creatures::voice::computeCacheKey(inputs);
                 const auto generations = creatures::voice::listGenerations(cacheKey);
 
-                if (generations.empty()) {
-                    if (span) {
-                        span->setAttribute("dialog.cache_key", cacheKey);
-                    }
-                    return bailHttp(span, Status::CODE_404, "no cached generations for these turns");
-                }
-
+                // An empty cache is a fact about the cache, not an error (#204).
+                // The key is deterministic from the turns and is what the
+                // console uses to judge whether the script's accepted voice is
+                // still fresh; a 404 here left it with no key and a false
+                // "acceptance predates the current turns" verdict once the
+                // takes aged out of the audition cache.
                 api::DialogPreviewLookupResponse response;
                 response.cacheKey = cacheKey;
-                response.latestGenerationId = generations.front().generationId;
+                if (!generations.empty())
+                    response.latestGenerationId = generations.front().generationId;
                 response.generations.reserve(generations.size());
                 for (const auto &g : generations) {
                     // ISO-8601 from the time_point.
