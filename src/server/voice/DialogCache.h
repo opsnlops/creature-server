@@ -96,6 +96,16 @@ Result<CachedGeneration> loadGeneration(const std::string &cacheKey, const std::
 /// auto-cleaned, and rendered from here.
 Result<CachedGeneration> loadAcceptedGeneration(const std::string &cacheKey, const std::string &generationId);
 
+/// Rebuild a take from a script's PROMOTED accepted-voice WAV (#206) — the
+/// third and last place a take can live. An acceptance made before the
+/// durable store existed (#146) is in neither store, but its promoted mono
+/// 48 kHz WAV (`accepted_voice.sound_file`, relative to the permanent root)
+/// holds the same PCM a cache entry does, which is all music generation
+/// needs. Only `generationId` and `audioPcm` are populated: there are no
+/// voice segments or alignment on a promoted file, so this must never feed
+/// the render path — it uses loadAcceptedGeneration.
+Result<CachedGeneration> loadGenerationFromPromotedFile(const std::string &soundFile, const std::string &generationId);
+
 /// Cheap existence check for both durable files. Unlike
 /// loadAcceptedGeneration, this never reads the potentially huge PCM payload.
 bool acceptedGenerationExists(const std::string &cacheKey, const std::string &generationId);

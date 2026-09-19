@@ -49,14 +49,36 @@ int64_t cachedDialogLengthMs(std::size_t pcmBytes) {
     return static_cast<int64_t>((pcmBytes / sizeof(int16_t)) * 1000ULL / 48000ULL);
 }
 
+/// Third source for a take (#206): the script's promoted accepted-voice
+/// WAV. An acceptance made before the durable store existed (#146) is in
+/// neither store, but its audio is still on disk as
+/// `accepted_voice.sound_file` — the same mono 48 kHz PCM a cache entry
+/// holds, which is all music needs (length + provenance). Without this,
+/// every pre-3.47 acceptance could never get music short of re-generating
+/// and re-accepting a performance April already has renders of.
+std::optional<voice::CachedGeneration> takeFromAcceptedVoice(const DialogScript &script, const std::string &cacheKey,
+                                                             const std::string &generationId) {
+    if (!script.accepted_voice || script.accepted_voice->generation_id != generationId ||
+        script.accepted_voice->dialog_cache_key != cacheKey) {
+        return std::nullopt;
+    }
+    auto take = voice::loadGenerationFromPromotedFile(script.accepted_voice->sound_file, generationId);
+    if (!take.isSuccess()) {
+        return std::nullopt;
+    }
+    return take.getValue().value();
+}
+
 /// The take music is composed against. The console composes only against
 /// the ACCEPTED voice, which lives in the durable store (#146) — the
 /// ephemeral cache copy is swept by cron, so reading only the cache made
 /// music impossible for any script whose acceptance was more than a sweep
 /// old. Cache second, so a not-yet-accepted preview still works for
-/// experiments.
+/// experiments. Promoted file third (#206), from `knownScript` when the
+/// caller has it, else from whichever script accepted this exact take.
 Result<voice::CachedGeneration> loadDialogTake(const std::string &cacheKey, const std::string &generationId,
-                                               const std::shared_ptr<OperationSpan> &span) {
+                                               const std::shared_ptr<OperationSpan> &span,
+                                               const DialogScript *knownScript = nullptr) {
     auto accepted = voice::loadAcceptedGeneration(cacheKey, generationId);
     if (accepted.isSuccess()) {
         if (span) {
@@ -65,8 +87,39 @@ Result<voice::CachedGeneration> loadDialogTake(const std::string &cacheKey, cons
         return accepted;
     }
     auto cached = voice::loadGeneration(cacheKey, generationId);
+    if (cached.isSuccess()) {
+        if (span) {
+            span->setAttribute("dialog.take_source", "generation_cache");
+        }
+        return cached;
+    }
+    if (knownScript) {
+        if (auto take = takeFromAcceptedVoice(*knownScript, cacheKey, generationId)) {
+            if (span) {
+                span->setAttribute("dialog.take_source", "promoted_file");
+            }
+            return Result<voice::CachedGeneration>{std::move(*take)};
+        }
+    } else if (creatures::db) {
+        // Only reached for a pre-#146 acceptance whose take is in neither
+        // store, so the scan is rare; it's the same lookup the #136 backfill
+        // does for promoted music.
+        auto scripts = creatures::db->listDialogScripts(span);
+        if (scripts.isSuccess()) {
+            const auto candidates = scripts.getValue().value();
+            for (const auto &script : candidates) {
+                if (auto take = takeFromAcceptedVoice(script, cacheKey, generationId)) {
+                    if (span) {
+                        span->setAttribute("dialog.take_source", "promoted_file");
+                        span->setAttribute("dialog.script_id", script.id);
+                    }
+                    return Result<voice::CachedGeneration>{std::move(*take)};
+                }
+            }
+        }
+    }
     if (span) {
-        span->setAttribute("dialog.take_source", cached.isSuccess() ? "generation_cache" : "missing");
+        span->setAttribute("dialog.take_source", "missing");
     }
     return cached;
 }
@@ -173,7 +226,7 @@ Result<api::DialogMusicGenerationResult> DialogMusicService::generate(const api:
         return fail(ServerError(ServerError::InvalidData, "dialog cache key does not match the current saved script"),
                     "DialogCacheMismatch");
     }
-    auto dialogGeneration = loadDialogTake(cacheKey, dialogGenerationId, span);
+    auto dialogGeneration = loadDialogTake(cacheKey, dialogGenerationId, span, &script);
     if (!dialogGeneration.isSuccess()) {
         return fail(dialogGeneration.getError().value(), "DialogGenerationLoadError");
     }
