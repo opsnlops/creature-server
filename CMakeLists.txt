@@ -786,6 +786,8 @@ add_executable(creature-server-test
         tests/server/FakeWebsocketUtils.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
         tests/server/voice/MusicClient_test.cpp
+        tests/server/voice/MusicGenerationCache_test.cpp
+        src/server/voice/MusicGenerationCache.cpp
         tests/server/voice/VoiceClient_test.cpp
         tests/server/voice/SpeechTrackBuilder_test.cpp
         src/server/voice/SpeechTrackBuilder.cpp
