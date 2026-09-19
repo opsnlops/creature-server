@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -12,6 +13,7 @@
 #include <string_view>
 #include <vector>
 
+#include "server/audio/MonoWavDownmixer.h"
 #include "server/namespace-stuffs.h"
 #include "server/storage/Storage.h"
 #include "util/Sha256.h"
@@ -575,6 +577,31 @@ Result<void> updateGenerationProvenance(const std::string &cacheKey, const std::
                                         fmt::format("DialogCache: rename {} → {} failed", jsonTmp, jsonFile.string()))};
     }
     return Result<void>{};
+}
+
+Result<CachedGeneration> loadGenerationFromPromotedFile(const std::string &soundFile, const std::string &generationId) {
+    using TakeResult = Result<CachedGeneration>;
+    if (soundFile.empty() || generationId.empty()) {
+        return TakeResult{
+            ServerError(ServerError::InvalidData, "promoted take needs a sound file and a generation id")};
+    }
+    const auto path = storage::resolveSoundPath(soundFile);
+    auto mono = audio::loadWavAsMono(path.string());
+    if (!mono.isSuccess()) {
+        return TakeResult{
+            ServerError(ServerError::NotFound, fmt::format("promoted take '{}' could not be read: {}", soundFile,
+                                                           mono.getError().value().getMessage()))};
+    }
+    const auto wav = mono.getValue().value();
+    if (wav.sampleRate != 48000 || wav.samples.empty()) {
+        return TakeResult{ServerError(ServerError::InvalidData,
+                                      fmt::format("promoted take '{}' is not a non-empty 48 kHz WAV", soundFile))};
+    }
+    CachedGeneration take;
+    take.generationId = generationId;
+    take.audioPcm.resize(wav.samples.size() * sizeof(int16_t));
+    std::memcpy(take.audioPcm.data(), wav.samples.data(), take.audioPcm.size());
+    return TakeResult{std::move(take)};
 }
 
 } // namespace creatures::voice

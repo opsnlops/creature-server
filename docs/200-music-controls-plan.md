@@ -207,9 +207,13 @@ preview, which `updated_at` never did. The current-turns cache-key check stays.
 Errors: `NoAcceptedVoice`, `StaleDialogRevision`, `MissingCompositionSource`.
 
 Related: generate and plan now read the dialog take from the durable
-accepted-take store first (#146), then the ephemeral cache. Reading only the
-cache meant any script whose acceptance predated the last cron sweep could not
-get music at all (`DialogCache: no generation … on disk`).
+accepted-take store first (#146), then the ephemeral cache, then — for an
+acceptance made before the durable store existed — the script's promoted
+`accepted_voice.sound_file` itself (#206; `dialog.take_source =
+"promoted_file"`). Music only needs the PCM, and that WAV is the same mono
+48 kHz take. Reading only the cache meant any script whose acceptance predated
+the last cron sweep could not get music at all (`DialogCache: no generation …
+on disk`); reading only the two stores still excluded every pre-3.47 acceptance.
 
 ## Open decisions (flag, not block)
 
