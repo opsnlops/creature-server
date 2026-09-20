@@ -463,13 +463,20 @@ message(STATUS "Using libmp3lame: ${MP3LAME_LIBRARIES}")
 #dir doesn't require editing this file (which would bust the Docker dep cache
 #per issue #18). Adding a brand-new src/server/X/ dir still needs a glob line.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/docs/transport-route-manifest.json")
-file(READ "${CMAKE_SOURCE_DIR}/docs/transport-route-manifest.json" ROUTE_MANIFEST_JSON)
-configure_file(
-        "${CMAKE_SOURCE_DIR}/cmake/TransportRouteManifest.h.in"
-        "${CMAKE_BINARY_DIR}/TransportRouteManifest.h"
-        @ONLY
+    "${CMAKE_SOURCE_DIR}/docs/transport-route-manifest.json"
+    "${CMAKE_SOURCE_DIR}/cmake/EmbedRouteManifest.cmake")
+# Embedded as a byte array rather than a string literal: the documented
+# manifest exceeds the literal length the standard guarantees.
+execute_process(
+        COMMAND ${CMAKE_COMMAND}
+            -DINPUT=${CMAKE_SOURCE_DIR}/docs/transport-route-manifest.json
+            -DOUTPUT=${CMAKE_BINARY_DIR}/TransportRouteManifest.h
+            -P ${CMAKE_SOURCE_DIR}/cmake/EmbedRouteManifest.cmake
+        RESULT_VARIABLE EMBED_MANIFEST_RESULT
 )
+if(NOT EMBED_MANIFEST_RESULT EQUAL 0)
+    message(FATAL_ERROR "Embedding the route manifest failed")
+endif()
 file(GLOB serverFiles CONFIGURE_DEPENDS
         src/util/*
         src/exception/*
