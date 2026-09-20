@@ -22,6 +22,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from pathlib import Path
 
 import transport_contract_test as contract
@@ -280,7 +281,7 @@ def check_websocket_trace(capture: otel_gate.OtlpCapture) -> None:
     require(attributes.get("trigger.span_id") == otel_gate.REMOTE_PARENT_ID, "upgrade span ID was not linked to the message")
 
 
-def differential_snapshot(server: ProductionServer) -> dict[tuple[str, str], tuple[int, dict[str, str], bytes]]:
+def differential_snapshot(server: ProductionServer) -> dict[tuple[str, ...], tuple[int, dict[str, str], bytes]]:
     cases = (
         ("GET", "/"),
         ("HEAD", "/"),
@@ -304,8 +305,71 @@ def differential_snapshot(server: ProductionServer) -> dict[tuple[str, str], tup
         ("GET", "/api/v1/fixture/not-a-uuid"),
         ("GET", "/__transport_differential_missing__"),
     )
+    # One deterministic mutating or validation case per ported controller.
+    # Every one fails before any database, filesystem, or upstream call, so
+    # the compared envelope ({code, status, message}) is stable and no gate
+    # run ever touches ElevenLabs. Keys carry a label so one path can appear
+    # with several bodies.
+    json_headers = {"Content-Type": "application/json"}
+    mutating_cases = (
+        ("POST", "/api/v1/music/plan", "invalid-json", b"{nope", json_headers),
+        ("POST", "/api/v1/music/plan", "empty-object", b"{}", json_headers),
+        ("GET", "/api/v1/music/not-a-uuid", "bad-id", None, None),
+        ("PUT", "/api/v1/music/not-a-uuid", "bad-id", b"{}", json_headers),
+        ("DELETE", "/api/v1/music/not-a-uuid", "bad-id", None, None),
+        ("GET", "/api/v1/music/generated/not-a-uuid/recipe", "bad-id", None, None),
+        ("GET", "/api/v1/music/generated/take.wav", "wrong-extension", None, None),
+        ("POST", "/api/v1/animation/dialog", "empty-object", b"{}", json_headers),
+        ("POST", "/api/v1/animation/dialog/voice/accept", "empty-object", b"{}", json_headers),
+        ("POST", "/api/v1/animation/dialog/preview/lookup", "no-turns", b'{"turns": []}', json_headers),
+        ("POST", "/api/v1/animation/dialog/preview/meta", "empty-object", b"{}", json_headers),
+        ("POST", "/api/v1/animation/dialog/preview/multichannel", "empty-object", b"{}", json_headers),
+        ("POST", "/api/v1/animation/dialog/script/validate", "invalid-json", b"{nope", json_headers),
+        ("POST", "/api/v1/animation/dialog/script/validate", "not-an-object", b"[]", json_headers),
+        ("GET", "/api/v1/animation/dialog/script/not-a-uuid", "bad-id", None, None),
+        ("POST", "/api/v1/animation/dialog-stream/turn", "empty-object", b"{}", json_headers),
+        ("POST", "/api/v1/animation/ad-hoc-stream/text", "empty-object", b"{}", json_headers),
+        ("GET", "/api/v1/animation/ad-hoc-stream/exchange/not-a-uuid", "bad-id", None, None),
+        ("GET", "/api/v1/animation/ad-hoc-stream/exchange/not-a-uuid/audio.wav", "bad-id", None, None),
+        ("POST", "/api/v1/animation/ad-hoc/play", "empty-object", b"{}", json_headers),
+        ("POST", "/api/v1/animation/interrupt", "empty-object", b"{}", json_headers),
+        ("GET", "/api/v1/animation/dialog/preview/audio/not-a-hash/take.wav", "bad-key", None, None),
+        ("GET", "/api/v1/animation/dialog/preview/share/not-a-hash/take.mp3", "bad-key", None, None),
+        ("GET", "/api/v1/sound/mp3/take.wav", "wrong-extension", None, None),
+        ("GET", "/api/v1/sound/shareable/take.wav", "wrong-extension", None, None),
+        ("GET", "/api/v1/sound/bad%20name.wav", "unsafe-name", None, None),
+        ("GET", "/api/v1/sound/provenance/bad%20name.wav", "unsafe-name", None, None),
+        ("GET", "/api/v1/sound/bad%20name.wav/metadata", "unsafe-name", None, None),
+        ("POST", "/api/v1/sound/generate-lipsync", "traversal", b'{"sound_file": "../x.wav"}', json_headers),
+        ("POST", "/api/v1/sound/generate-lipsync/upload?filename=take.mp3", "wrong-extension", b"RIFF",
+         {"Content-Type": "audio/wav"}),
+        ("POST", "/api/v1/stt/transcribe", "empty-body", b"", {"Content-Type": "application/octet-stream"}),
+        ("POST", "/api/v1/stt/transcribe", "odd-length", b"abc", {"Content-Type": "application/octet-stream"}),
+        ("POST", "/api/v1/playlist/start", "empty-object", b"{}", json_headers),
+        ("GET", "/api/v1/playlist/id/not-a-uuid", "bad-id", None, None),
+        ("GET", "/api/v1/stage/not-a-uuid", "bad-id", None, None),
+        ("GET", "/api/v1/storyboard/not-a-uuid", "bad-id", None, None),
+        ("GET", "/api/v1/animation/not-a-uuid", "bad-id", None, None),
+        ("PUT", "/api/v1/fixture/not-a-uuid/universe", "bad-id", b"{}", json_headers),
+        ("PATCH", "/api/v1/creature/not-a-uuid/idle", "bad-id", b"{}", json_headers),
+        ("GET", "/api/v1/job/not-a-uuid", "bad-id", None, None),
+    )
     compared_headers = ("content-type", "content-length", "location")
-    snapshot: dict[tuple[str, str], tuple[int, dict[str, str], bytes]] = {}
+    snapshot: dict[tuple[str, ...], tuple[int, dict[str, str], bytes]] = {}
+    for method, path, label, body, headers in mutating_cases:
+        status, response_headers, raw = contract.http_request(server.config, method, path, body=body, headers=headers)
+        selected_headers = {name: response_headers[name] for name in ("content-type", "location") if name in response_headers}
+        try:
+            envelope = json.loads(raw) if raw else {}
+        except ValueError:
+            envelope = {"_raw": raw.decode("utf-8", "replace")}
+        if path.endswith("/dialog/script/validate"):
+            normalized = json.dumps(envelope, sort_keys=True).encode()
+        else:
+            normalized = json.dumps(
+                {name: envelope.get(name) for name in ("code", "status", "message")}, sort_keys=True
+            ).encode()
+        snapshot[(method, path, label)] = (status, selected_headers, normalized)
     for method, path in cases:
         status, headers, body = contract.http_request(server.config, method, path)
         selected_headers = {name: headers[name] for name in compared_headers if name in headers}
@@ -336,14 +400,14 @@ def differential_snapshot(server: ProductionServer) -> dict[tuple[str, str], tup
 
 
 def check_differential_parity(
-    uwebsockets: dict[tuple[str, str], tuple[int, dict[str, str], bytes]],
-    oatpp: dict[tuple[str, str], tuple[int, dict[str, str], bytes]],
+    uwebsockets: dict[tuple[str, ...], tuple[int, dict[str, str], bytes]],
+    oatpp: dict[tuple[str, ...], tuple[int, dict[str, str], bytes]],
 ) -> None:
     require(uwebsockets.keys() == oatpp.keys(), "transport differential case sets do not match")
     mismatches = []
     for case in uwebsockets:
         if uwebsockets[case] != oatpp[case]:
-            mismatches.append(f"{case[0]} {case[1]}: uWS={uwebsockets[case]!r}; oat++={oatpp[case]!r}")
+            mismatches.append(f"{' '.join(case)}: uWS={uwebsockets[case]!r}; oat++={oatpp[case]!r}")
     require(not mismatches, "transport differential mismatch:\n" + "\n".join(mismatches))
 
 
@@ -510,6 +574,7 @@ def main() -> int:
         return 0
     except BaseException as error:
         print(f"FAIL: {error}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         for server in servers:
             print(f"--- {server.transport} server log tail ---", file=sys.stderr)
             print(server.logs()[-12000:], file=sys.stderr)

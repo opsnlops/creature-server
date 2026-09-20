@@ -32,7 +32,7 @@ PreparedResponse failure(const ServerError &error, const std::shared_ptr<Operati
 PreparedResponse listSounds(const bool adHoc, const std::shared_ptr<OperationSpan> &span) {
     ws::SoundService service;
     if (adHoc) {
-        const auto result = service.getAdHocSounds();
+        const auto result = service.getAdHocSounds(span);
         if (!result.isSuccess())
             return failure(result.getError().value(), span);
         if (span)
@@ -40,7 +40,7 @@ PreparedResponse listSounds(const bool adHoc, const std::shared_ptr<OperationSpa
         return PreparedResponse::json(
             200, api::jsonToString(api::listResponseToJson(result.getValue().value(), api::adHocSoundEntryToJson)));
     }
-    const auto result = service.getAllSounds();
+    const auto result = service.getAllSounds(span);
     if (!result.isSuccess())
         return failure(result.getError().value(), span);
     if (span)
@@ -57,7 +57,7 @@ PreparedResponse playSound(const std::string &body, const std::shared_ptr<Operat
     if (!parsed.isSuccess())
         return failure(parsed.getError().value(), span);
     ws::SoundService service;
-    const auto result = service.playSound(parsed.getValue()->fileName);
+    const auto result = service.playSound(parsed.getValue()->fileName, span);
     if (!result.isSuccess())
         return failure(result.getError().value(), span);
     if (span)
@@ -67,7 +67,7 @@ PreparedResponse playSound(const std::string &body, const std::shared_ptr<Operat
 
 PreparedResponse listVoices(const std::shared_ptr<OperationSpan> &span) {
     ws::VoiceService service;
-    const auto result = service.getAllVoices();
+    const auto result = service.getAllVoices(span);
     if (!result.isSuccess())
         return failure(result.getError().value(), span);
     if (span)
@@ -78,7 +78,7 @@ PreparedResponse listVoices(const std::shared_ptr<OperationSpan> &span) {
 
 PreparedResponse voiceSubscription(const std::shared_ptr<OperationSpan> &span) {
     ws::VoiceService service;
-    const auto result = service.getSubscriptionStatus();
+    const auto result = service.getSubscriptionStatus(span);
     if (!result.isSuccess())
         return failure(result.getError().value(), span);
     if (span)
@@ -94,8 +94,8 @@ PreparedResponse createVoiceFile(const std::string &body, const std::shared_ptr<
     if (!parsed.isSuccess())
         return failure(parsed.getError().value(), span);
     const auto request = parsed.getValue().value();
-    const auto jobId =
-        creatures::jobManager->createJob(jobs::JobType::VoiceFile, api::makeSoundFileRequestToJson(request).dump());
+    const auto jobId = creatures::jobManager->createJob(jobs::JobType::VoiceFile,
+                                                        api::makeSoundFileRequestToJson(request).dump(), span);
     creatures::jobWorker->queueJob(jobId);
     if (span)
         span->setSuccess();

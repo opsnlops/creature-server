@@ -11,7 +11,7 @@ namespace creatures ::ws {
 
 class MetricsService {
   public:
-    Result<SystemCountersSnapshot> getCounters(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<SystemCountersSnapshot> getCounters(SpanParent parentSpan = nullptr);
     Result<SystemCountersSnapshot> getCountersFromOperation(std::shared_ptr<OperationSpan> parentSpan);
 
   private:

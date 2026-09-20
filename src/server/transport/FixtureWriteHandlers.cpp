@@ -78,11 +78,11 @@ PreparedResponse upsertFixture(const std::string &body, const std::shared_ptr<Op
     if (requestSpan) {
         requestSpan->setAttribute("request.body_size", static_cast<int64_t>(body.size()));
     }
-    return fixtureResponse(creatures::ws::DmxFixtureService::upsertFixture(body), requestSpan);
+    return fixtureResponse(creatures::ws::DmxFixtureService::upsertFixture(body, requestSpan), requestSpan);
 }
 
 PreparedResponse validateFixture(const std::string &body, const std::shared_ptr<OperationSpan> &requestSpan) {
-    const auto result = creatures::ws::DmxFixtureService::validateFixtureConfig(body);
+    const auto result = creatures::ws::DmxFixtureService::validateFixtureConfig(body, requestSpan);
     if (requestSpan) {
         requestSpan->setSuccess();
     }
@@ -96,7 +96,7 @@ PreparedResponse deleteFixture(const fixtureId_t &fixtureId, const std::shared_p
     if (!isUuidShape(fixtureId)) {
         return invalidFixtureId(requestSpan);
     }
-    const auto result = creatures::ws::DmxFixtureService::deleteFixture(fixtureId);
+    const auto result = creatures::ws::DmxFixtureService::deleteFixture(fixtureId, requestSpan);
     if (!result.isSuccess()) {
         return errorResponse(result.getError().value(), requestSpan);
     }
@@ -132,8 +132,9 @@ PreparedResponse setFixtureUniverse(const fixtureId_t &fixtureId, const std::str
     if (requestSpan) {
         requestSpan->setAttribute("fixture.universe", static_cast<int64_t>(parsed.getValue()->universe));
     }
-    return fixtureResponse(creatures::ws::DmxFixtureService::setFixtureUniverse(fixtureId, parsed.getValue()->universe),
-                           requestSpan);
+    return fixtureResponse(
+        creatures::ws::DmxFixtureService::setFixtureUniverse(fixtureId, parsed.getValue()->universe, requestSpan),
+        requestSpan);
 }
 
 PreparedResponse clearFixtureUniverse(const fixtureId_t &fixtureId, const std::shared_ptr<OperationSpan> &requestSpan) {
@@ -143,7 +144,8 @@ PreparedResponse clearFixtureUniverse(const fixtureId_t &fixtureId, const std::s
     if (!isUuidShape(fixtureId)) {
         return invalidFixtureId(requestSpan);
     }
-    return fixtureResponse(creatures::ws::DmxFixtureService::setFixtureUniverse(fixtureId, std::nullopt), requestSpan);
+    return fixtureResponse(creatures::ws::DmxFixtureService::setFixtureUniverse(fixtureId, std::nullopt, requestSpan),
+                           requestSpan);
 }
 
 PreparedResponse triggerFixturePattern(const fixtureId_t &fixtureId, const std::string &patternId,
@@ -176,9 +178,9 @@ PreparedResponse triggerFixturePattern(const fixtureId_t &fixtureId, const std::
     if (parseSpan) {
         parseSpan->setSuccess();
     }
-    return fixtureResponse(
-        creatures::ws::DmxFixtureService::triggerPattern(fixtureId, patternId, parsed.getValue()->stopAfterMs),
-        requestSpan);
+    return fixtureResponse(creatures::ws::DmxFixtureService::triggerPattern(
+                               fixtureId, patternId, parsed.getValue()->stopAfterMs, requestSpan),
+                           requestSpan);
 }
 
 PreparedResponse previewFixturePattern(const fixtureId_t &fixtureId, const std::string &body,
@@ -209,8 +211,9 @@ PreparedResponse previewFixturePattern(const fixtureId_t &fixtureId, const std::
     for (const auto &value : parsed.values) {
         values.emplace_back(value.channel, value.value);
     }
-    return fixtureResponse(creatures::ws::DmxFixtureService::previewPattern(
-                               fixtureId, values, parsed.fadeInMs, parsed.fadeOutMs, parsed.holdMs, parsed.stopAfterMs),
+    return fixtureResponse(creatures::ws::DmxFixtureService::previewPattern(fixtureId, values, parsed.fadeInMs,
+                                                                            parsed.fadeOutMs, parsed.holdMs,
+                                                                            parsed.stopAfterMs, requestSpan),
                            requestSpan);
 }
 
@@ -242,8 +245,9 @@ PreparedResponse setFixtureLive(const fixtureId_t &fixtureId, const std::string 
     for (const auto &value : parsed.values) {
         values.emplace_back(value.channel, value.value);
     }
-    return fixtureResponse(creatures::ws::DmxFixtureService::setFixtureLive(fixtureId, values, parsed.timeoutMs),
-                           requestSpan);
+    return fixtureResponse(
+        creatures::ws::DmxFixtureService::setFixtureLive(fixtureId, values, parsed.timeoutMs, requestSpan),
+        requestSpan);
 }
 
 } // namespace creatures::transport

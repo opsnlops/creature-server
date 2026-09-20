@@ -19,4 +19,6 @@ PreparedResponse playAnimation(const std::string &body, const std::shared_ptr<Op
 PreparedResponse regenerateAnimationLipSync(const std::string &body, const std::shared_ptr<OperationSpan> &span);
 PreparedResponse createAdHocAnimation(const std::string &body, bool autoPlay,
                                       const std::shared_ptr<OperationSpan> &span);
+PreparedResponse interruptAnimation(const std::string &body, const std::shared_ptr<OperationSpan> &span);
+PreparedResponse playPreparedAdHocAnimation(const std::string &body, const std::shared_ptr<OperationSpan> &span);
 } // namespace creatures::transport

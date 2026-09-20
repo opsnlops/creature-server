@@ -7,42 +7,36 @@
 
 #include "api/FixtureResponses.h"
 #include "model/DmxFixture.h"
-
-namespace creatures {
-class RequestSpan;
-class OperationSpan;
-} // namespace creatures
+#include "util/ObservabilityManager.h"
 
 namespace creatures ::ws {
 
 class DmxFixtureService {
 
   public:
-    static Result<std::vector<DmxFixture>> getAllFixtures(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<std::vector<DmxFixture>> getAllFixtures(SpanParent parentSpan = nullptr);
     static Result<std::vector<DmxFixture>> getAllFixturesFromOperation(std::shared_ptr<OperationSpan> parentSpan);
 
-    static Result<DmxFixture> getFixture(const fixtureId_t &fixtureId,
-                                         std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<DmxFixture> getFixture(const fixtureId_t &fixtureId, SpanParent parentSpan = nullptr);
     static Result<DmxFixture> getFixtureFromOperation(const fixtureId_t &fixtureId,
                                                       std::shared_ptr<OperationSpan> parentSpan);
 
-    static Result<DmxFixture> upsertFixture(const std::string &jsonFixture,
-                                            std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<DmxFixture> upsertFixture(const std::string &jsonFixture, SpanParent parentSpan = nullptr);
 
-    static Result<void> deleteFixture(const fixtureId_t &fixtureId, std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<void> deleteFixture(const fixtureId_t &fixtureId, SpanParent parentSpan = nullptr);
 
     /**
      * Persist a universe assignment for a fixture and update the runtime map.
      * @param universe nullopt clears the assignment.
      */
     static Result<DmxFixture> setFixtureUniverse(const fixtureId_t &fixtureId, std::optional<universe_t> universe,
-                                                 std::shared_ptr<RequestSpan> parentSpan = nullptr);
+                                                 SpanParent parentSpan = nullptr);
 
     /**
      * Validate a fixture config payload without persisting it.
      */
-    static api::FixtureConfigValidationResponse
-    validateFixtureConfig(const std::string &jsonFixture, std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static api::FixtureConfigValidationResponse validateFixtureConfig(const std::string &jsonFixture,
+                                                                      SpanParent parentSpan = nullptr);
 
     /**
      * Trigger a pattern on a fixture, bypassing the binding match. Useful for ad-hoc UI control
@@ -52,8 +46,7 @@ class DmxFixtureService {
      *                    is told to stop after `*stopAfterMs` milliseconds (fade-out then starts).
      */
     static Result<DmxFixture> triggerPattern(const fixtureId_t &fixtureId, const std::string &patternId,
-                                             std::optional<uint32_t> stopAfterMs,
-                                             std::shared_ptr<RequestSpan> parentSpan = nullptr);
+                                             std::optional<uint32_t> stopAfterMs, SpanParent parentSpan = nullptr);
 
     /**
      * Fire a one-shot pattern that is NOT persisted. The pattern is built from the call
@@ -73,8 +66,7 @@ class DmxFixtureService {
     static Result<DmxFixture> previewPattern(const fixtureId_t &fixtureId,
                                              const std::vector<std::pair<std::string, uint8_t>> &values,
                                              uint32_t fadeInMs, uint32_t fadeOutMs, uint32_t holdMs,
-                                             std::optional<uint32_t> stopAfterMs,
-                                             std::shared_ptr<RequestSpan> parentSpan = nullptr);
+                                             std::optional<uint32_t> stopAfterMs, SpanParent parentSpan = nullptr);
 
     /**
      * Drive a fixture's channels directly with raw DMX values. Used by slider UIs; the
@@ -88,7 +80,7 @@ class DmxFixtureService {
      */
     static Result<DmxFixture> setFixtureLive(const fixtureId_t &fixtureId,
                                              const std::vector<std::pair<std::string, uint8_t>> &channelValues,
-                                             uint32_t timeoutMs, std::shared_ptr<RequestSpan> parentSpan = nullptr);
+                                             uint32_t timeoutMs, SpanParent parentSpan = nullptr);
 
     /**
      * Load all persisted fixtures into the cache and rebuild `fixtureUniverseMap` from each fixture's

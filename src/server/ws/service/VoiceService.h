@@ -6,12 +6,8 @@
 
 #include "api/VoiceContracts.h"
 #include "server/voice/VoiceClient.h"
+#include "util/ObservabilityManager.h"
 #include "util/Result.h"
-
-namespace creatures {
-class OperationSpan;
-class RequestSpan;
-} // namespace creatures
 
 namespace creatures::ws {
 
@@ -20,8 +16,8 @@ class VoiceService {
     explicit VoiceService(std::shared_ptr<voice::VoiceClient> voiceClient = nullptr)
         : voiceClient_(std::move(voiceClient)) {}
 
-    Result<std::vector<voice::Voice>> getAllVoices(std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
-    Result<voice::Subscription> getSubscriptionStatus(std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+    Result<std::vector<voice::Voice>> getAllVoices(SpanParent parentSpan = nullptr) const;
+    Result<voice::Subscription> getSubscriptionStatus(SpanParent parentSpan = nullptr) const;
     Result<voice::CreatureSpeechResponse>
     generateCreatureSpeech(const api::MakeSoundFileRequest &request,
                            std::shared_ptr<OperationSpan> parentSpan = nullptr) const;

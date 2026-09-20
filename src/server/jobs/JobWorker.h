@@ -8,6 +8,7 @@
 #include "blockingconcurrentqueue.h"
 
 #include "JobManager.h"
+#include "util/ObservabilityManager.h"
 #include "util/StoppableThread.h"
 
 namespace creatures::jobs {
@@ -59,13 +60,13 @@ class JobWorker : public creatures::StoppableThread {
     /// Atomically reserve bounded general-worker capacity, create the JobState,
     /// and queue it. A full queue creates no JobState and retains no details.
     [[nodiscard]] QueueAdmission tryCreateAndQueueJob(JobType type, const std::string &details,
-                                                      std::shared_ptr<creatures::RequestSpan> parentSpan = nullptr);
+                                                      creatures::SpanParent parentSpan = nullptr);
 
     /// Atomically reserve one of the two music slots, create the JobState, and
     /// queue it on the dedicated worker. Full admission retains no details.
     /// `type` is DialogMusic or Music (#202); both share the 2-slot queue.
     [[nodiscard]] QueueAdmission tryCreateAndQueueMusicJob(const std::string &details,
-                                                           std::shared_ptr<creatures::RequestSpan> parentSpan = nullptr,
+                                                           creatures::SpanParent parentSpan = nullptr,
                                                            JobType type = JobType::DialogMusic);
 
   protected:

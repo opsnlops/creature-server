@@ -286,7 +286,7 @@ PreparedResponse rerenderStage(const std::string &stageId, const std::string &bo
                               span);
     }
     nlohmann::json details{{"animation_ids", animationIds}, {"stage_id", stage.id}};
-    const auto jobId = creatures::jobManager->createJob(jobs::JobType::StageRerender, details.dump());
+    const auto jobId = creatures::jobManager->createJob(jobs::JobType::StageRerender, details.dump(), span);
     creatures::jobWorker->queueJob(jobId);
     if (operation) {
         operation->setSuccess();
@@ -323,7 +323,7 @@ PreparedResponse rerenderAnimation(const std::string &animationId, const std::st
         return statusResponse(400, "stage_id must be a UUID", span);
     }
     nlohmann::json details{{"animation_ids", nlohmann::json::array({animationId})}, {"stage_id", stageId}};
-    const auto jobId = creatures::jobManager->createJob(jobs::JobType::StageRerender, details.dump());
+    const auto jobId = creatures::jobManager->createJob(jobs::JobType::StageRerender, details.dump(), span);
     creatures::jobWorker->queueJob(jobId);
     if (span) {
         span->setAttribute("animation.id", animationId);

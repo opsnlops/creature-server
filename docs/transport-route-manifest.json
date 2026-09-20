@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_framework": "oatpp",
-  "explicit_route_count": 109,
+  "explicit_route_count": 125,
   "routes": [
     {
       "method": "GET",
@@ -138,8 +138,36 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/animation/dialog-stream/finish",
+      "handler": "finishDialogStream",
+      "controller": "DialogStreamController",
+      "source": "src/server/ws/controller/DialogStreamController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog-stream/start",
+      "handler": "startDialogStream",
+      "controller": "DialogStreamController",
+      "source": "src/server/ws/controller/DialogStreamController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog-stream/turn",
+      "handler": "addDialogStreamTurn",
+      "controller": "DialogStreamController",
+      "source": "src/server/ws/controller/DialogStreamController.h"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/animation/dialog/music",
       "handler": "submitDialogMusic",
+      "controller": "DialogMusicController",
+      "source": "src/server/ws/controller/DialogMusicController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/dialog/music/finetunes",
+      "handler": "listMusicFinetunes",
       "controller": "DialogMusicController",
       "source": "src/server/ws/controller/DialogMusicController.h"
     },
@@ -154,6 +182,20 @@
       "method": "POST",
       "path": "/api/v1/animation/dialog/music/generated/{generationId}/promote",
       "handler": "promoteGeneratedMusic",
+      "controller": "DialogMusicController",
+      "source": "src/server/ws/controller/DialogMusicController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/animation/dialog/music/generated/{generationId}/recipe",
+      "handler": "getGeneratedMusicRecipe",
+      "controller": "DialogMusicController",
+      "source": "src/server/ws/controller/DialogMusicController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/animation/dialog/music/plan",
+      "handler": "planDialogMusic",
       "controller": "DialogMusicController",
       "source": "src/server/ws/controller/DialogMusicController.h"
     },
@@ -520,6 +562,76 @@
       "handler": "counters",
       "controller": "MetricsController",
       "source": "src/server/ws/controller/MetricsController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/music",
+      "handler": "listMusicPieces",
+      "controller": "MusicController",
+      "source": "src/server/ws/controller/MusicController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/music/generate",
+      "handler": "generateMusic",
+      "controller": "MusicController",
+      "source": "src/server/ws/controller/MusicController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/music/generated/{filename}",
+      "handler": "getMusicCandidateMp3",
+      "controller": "MusicController",
+      "source": "src/server/ws/controller/MusicController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/music/generated/{generationId}/recipe",
+      "handler": "getMusicCandidateRecipe",
+      "controller": "MusicController",
+      "source": "src/server/ws/controller/MusicController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/music/generated/{generationId}/save",
+      "handler": "saveMusicCandidate",
+      "controller": "MusicController",
+      "source": "src/server/ws/controller/MusicController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/music/plan",
+      "handler": "planMusic",
+      "controller": "MusicController",
+      "source": "src/server/ws/controller/MusicController.h"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/music/{pieceId}",
+      "handler": "deleteMusicPiece",
+      "controller": "MusicController",
+      "source": "src/server/ws/controller/MusicController.h"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/music/{pieceId}",
+      "handler": "getMusicPiece",
+      "controller": "MusicController",
+      "source": "src/server/ws/controller/MusicController.h"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/music/{pieceId}",
+      "handler": "updateMusicPiece",
+      "controller": "MusicController",
+      "source": "src/server/ws/controller/MusicController.h"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/music/{pieceId}/refine",
+      "handler": "refineMusicPiece",
+      "controller": "MusicController",
+      "source": "src/server/ws/controller/MusicController.h"
     },
     {
       "method": "GET",

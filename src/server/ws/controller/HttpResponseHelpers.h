@@ -120,6 +120,14 @@ template <typename Self> class HttpResponseHelpers {
     template <typename SpanT>
     std::shared_ptr<HttpOutgoingResponse> preparedResponse(const SpanT &span,
                                                            const transport::PreparedResponse &prepared) {
+        if (prepared.file.has_value()) {
+            // Streamed files are a uWS response shape; an oat++ route that
+            // needs one must keep using FileBody. Fail loudly rather than
+            // serve a 200 with an empty body.
+            return bailHttp(span, HttpStatus(500, "Internal Server Error"),
+                            "File responses are not supported on the oat++ transport", nullptr,
+                            "UnsupportedResponseShape");
+        }
         auto response = static_cast<Self *>(this)->createResponse(
             HttpStatus(prepared.statusCode, statusReasonForCode(prepared.statusCode)), prepared.body.c_str());
         if (!prepared.contentType.empty()) {
@@ -129,7 +137,7 @@ template <typename Self> class HttpResponseHelpers {
             response->putHeader(header.name.c_str(), header.value.c_str());
         }
         if (span) {
-            span->setAttribute("http.response.body.size", static_cast<int64_t>(prepared.body.size()));
+            span->setAttribute("http.response.body.size", static_cast<int64_t>(prepared.contentLength()));
             if (!prepared.contentType.empty()) {
                 span->setAttribute("http.response.content_type", prepared.contentType);
             }

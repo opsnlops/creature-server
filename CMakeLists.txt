@@ -848,6 +848,18 @@ if(CREATURE_RUN_UWS_LIVE_GATE)
         LABELS "transport;uwebsockets;live"
         RUN_SERIAL TRUE
     )
+    add_test(
+        NAME uwebsockets-file-stream-live-gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tests/transport/uwebsockets_file_stream_gate_test.py
+            --server $<TARGET_FILE:creature-server>
+            --network-device ${CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE}
+    )
+    set_tests_properties(uwebsockets-file-stream-live-gate PROPERTIES
+        TIMEOUT 60
+        LABELS "transport;uwebsockets;live"
+        RUN_SERIAL TRUE
+    )
 endif()
 
 if (EXISTS ${CMAKE_SOURCE_DIR}/tests/server/TestGlobals.cpp)

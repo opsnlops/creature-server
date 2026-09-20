@@ -31,7 +31,13 @@ void Watchdog::start() {
 }
 
 void Watchdog::shutdown() {
-    StoppableThread::shutdown();
+    {
+        // Hold the sleep mutex across the store so run() cannot evaluate the
+        // wait predicate, miss the flag, and then block past this notify for
+        // a whole watchdog period.
+        const std::lock_guard lock(sleepMutex);
+        StoppableThread::shutdown();
+    }
     sleepCondition.notify_all();
     join();
 }

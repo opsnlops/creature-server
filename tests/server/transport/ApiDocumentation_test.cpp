@@ -13,14 +13,14 @@ TEST(ApiDocumentation, ProducesAParseableOpenApiCatalog) {
     EXPECT_TRUE(document.at("paths").contains("/api/v1/health"));
     EXPECT_TRUE(document.at("paths").contains("/api/docs"));
     EXPECT_TRUE(document.at("paths").contains("/api/openapi.json"));
-    EXPECT_EQ(document.at("paths").size(), 92);
+    EXPECT_EQ(document.at("paths").size(), 106);
 
     std::size_t operationCount = 0;
     for (const auto &[path, operations] : document.at("paths").items()) {
         static_cast<void>(path);
         operationCount += operations.size();
     }
-    EXPECT_EQ(operationCount, 109);
+    EXPECT_EQ(operationCount, 125);
 }
 
 TEST(ApiDocumentation, BrowserIsSelfContainedAndUsesTheLocalCatalog) {

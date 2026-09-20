@@ -82,7 +82,7 @@ Result<DmxFixture> getFixtureWithSpan(const fixtureId_t &fixtureId, const std::s
 
 } // namespace
 
-Result<std::vector<DmxFixture>> DmxFixtureService::getAllFixtures(std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::vector<DmxFixture>> DmxFixtureService::getAllFixtures(SpanParent parentSpan) {
     auto span =
         observability ? observability->createOperationSpan("DmxFixtureService.getAllFixtures", parentSpan) : nullptr;
 
@@ -96,8 +96,7 @@ DmxFixtureService::getAllFixturesFromOperation(std::shared_ptr<OperationSpan> pa
     return getAllFixturesWithSpan(span);
 }
 
-Result<DmxFixture> DmxFixtureService::getFixture(const fixtureId_t &fixtureId,
-                                                 std::shared_ptr<RequestSpan> parentSpan) {
+Result<DmxFixture> DmxFixtureService::getFixture(const fixtureId_t &fixtureId, SpanParent parentSpan) {
     auto span =
         observability ? observability->createOperationSpan("DmxFixtureService.getFixture", parentSpan) : nullptr;
     return getFixtureWithSpan(fixtureId, span);

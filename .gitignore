@@ -12,3 +12,7 @@ __pycache__/
 externals/build/
 externals/install/
 data/
+
+# Editor swap files
+*.swp
+*.swo

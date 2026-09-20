@@ -56,23 +56,22 @@ class MusicService {
     /// Promote a candidate into the library as a new piece or a new version.
     /// `created` is set when a piece was created (201) rather than extended.
     Result<MusicPiece> save(const std::string &generationId, const api::MusicSaveRequest &request, bool &created,
-                            std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+                            SpanParent parentSpan = nullptr) const;
 
     /// The instruction box (#202): ask ElevenLabs' planner to edit a
     /// version's sections per `instruction`, and report which sections it
     /// changed. Synchronous; no audio is generated.
     Result<api::MusicRefineResult> refine(const std::string &pieceId, const api::MusicRefineRequest &request,
-                                          std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+                                          SpanParent parentSpan = nullptr) const;
 
     /// Dialog-free plan draft from a prompt, normalised to editable sections.
-    Result<api::MusicPlanResult> plan(const api::MusicPlanRequest &request,
-                                      std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+    Result<api::MusicPlanResult> plan(const api::MusicPlanRequest &request, SpanParent parentSpan = nullptr) const;
 
-    Result<std::vector<MusicPiece>> list(std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
-    Result<MusicPiece> get(const std::string &pieceId, std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+    Result<std::vector<MusicPiece>> list(SpanParent parentSpan = nullptr) const;
+    Result<MusicPiece> get(const std::string &pieceId, SpanParent parentSpan = nullptr) const;
     Result<MusicPiece> update(const std::string &pieceId, const api::MusicPieceUpdateRequest &request,
-                              std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
-    Result<void> remove(const std::string &pieceId, std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+                              SpanParent parentSpan = nullptr) const;
+    Result<void> remove(const std::string &pieceId, SpanParent parentSpan = nullptr) const;
 
     /// What generate() sends upstream and records, given the request and the
     /// piece it refines (nullptr for a piece-less request). Pure, so the base

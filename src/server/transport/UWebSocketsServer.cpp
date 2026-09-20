@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -31,8 +32,11 @@
 #include "Version.h"
 #include "api/AnimationRequests.h"
 #include "api/CreatureRequests.h"
+#include "api/DialogContracts.h"
+#include "api/DialogStreamContracts.h"
 #include "api/FixtureRequests.h"
 #include "api/JsonResponse.h"
+#include "api/MusicContracts.h"
 #include "api/PlaylistRequests.h"
 #include "api/SoundRequests.h"
 #include "api/VoiceContracts.h"
@@ -47,14 +51,20 @@
 #include "server/transport/ApiDocumentation.h"
 #include "server/transport/ApplicationExecutor.h"
 #include "server/transport/CreatureReadHandlers.h"
+#include "server/transport/DialogHandlers.h"
+#include "server/transport/DialogScriptHandlers.h"
+#include "server/transport/DialogStreamHandlers.h"
 #include "server/transport/DocumentHandlers.h"
 #include "server/transport/FixtureReadHandlers.h"
 #include "server/transport/FixtureWriteHandlers.h"
 #include "server/transport/HttpTypes.h"
+#include "server/transport/MediaFileHandlers.h"
 #include "server/transport/MediaHandlers.h"
+#include "server/transport/MusicHandlers.h"
 #include "server/transport/OperationalHandlers.h"
 #include "server/transport/PlaylistHandlers.h"
 #include "server/transport/RequestRegistry.h"
+#include "server/transport/UploadHandlers.h"
 #include "server/ws/dto/websocket/MessageTypes.h"
 #include "server/ws/messaging/MessageProcessor.h"
 #include "server/ws/service/MetricsService.h"
@@ -76,6 +86,13 @@ namespace {
 constexpr std::size_t UNEXPECTED_BODY_LIMIT = 1024 * 1024;
 constexpr std::size_t APPLICATION_WORKER_COUNT = 4;
 constexpr std::size_t APPLICATION_QUEUE_LIMIT = 8;
+// File streaming: one read in flight per response, so the read queue is
+// bounded by the connection limit (passed in at construction).
+constexpr std::size_t FILE_CHUNK_BYTES = 256 * 1024;
+constexpr std::size_t FILE_WORKER_COUNT = 2;
+// Never trust an advertised Content-Length for allocation: a client can
+// announce a route's full limit (1 GiB for uploads) and then send nothing.
+constexpr std::size_t BODY_RESERVE_CAP_BYTES = 64 * 1024;
 constexpr std::size_t WEBSOCKET_INBOUND_MESSAGE_LIMIT = 64 * 1024;
 constexpr std::size_t WEBSOCKET_CONNECTION_MAILBOX_LIMIT = 16;
 constexpr std::size_t WEBSOCKET_BACKPRESSURE_LIMIT = 256 * 1024;
@@ -329,8 +346,212 @@ PreparedResponse produceResponse(ResponseProducer &producer,
 void writePreparedResponse(uWS::HttpResponse<false> *response, PreparedResponse prepared, bool headOnly,
                            const std::shared_ptr<creatures::RequestSpan> &span, bool closeConnection = false);
 
+struct FileStreamContext {
+    RequestToken token;
+    std::string path;
+    std::uint64_t size{0};
+    // Loop-owned: the file offset the current chunk starts at, its length,
+    // and whether a read is outstanding.
+    std::uint64_t chunkStart{0};
+    std::size_t chunkLength{0};
+    bool readInFlight{false};
+    // One buffer per stream, allocated once. The file worker fills it while
+    // `readInFlight` is true and the loop reads it otherwise; the hand-off in
+    // each direction goes through LoopDispatcher, which is the synchronisation.
+    std::vector<char> buffer;
+    // Touched only by the file worker, and only while a read is in flight.
+    std::ifstream stream;
+};
+
+/**
+ * Streams a FilePayload to the client in bounded chunks. The loop never reads
+ * the file: every chunk is read on a small dedicated executor and posted back,
+ * so a slow disk (or a FIFO masquerading as a WAV) cannot stall the loop. The
+ * request stays in the RequestRegistry until the last byte is accepted by the
+ * socket, so a client disconnect cancels it the same way as any response.
+ */
+class FileStreamer {
+  public:
+    /**
+     * `maximumStreams` bounds the read queue. Each stream has at most one
+     * read outstanding, so a queue as large as the connection limit can never
+     * overflow and an admitted stream is never torn down for lack of a slot.
+     */
+    FileStreamer(RequestRegistry &registry, LoopDispatcher &dispatcher, const std::size_t maximumStreams)
+        : registry_(registry), dispatcher_(dispatcher), executor_(FILE_WORKER_COUNT, maximumStreams) {
+        registry_.setFileStreamStarter(
+            [this](const RequestToken token, const PreparedResponse &prepared) { begin(token, prepared); });
+    }
+    ~FileStreamer() { registry_.setFileStreamStarter({}); }
+
+    void requestStop() { executor_.requestStop(); }
+    void join() { executor_.join(); }
+
+    /** Loop thread only. The response must still be registered under `token`. */
+    void begin(const RequestToken token, const PreparedResponse &prepared) {
+        const auto registered = registry_.peek(token);
+        if (!registered.has_value()) {
+            return;
+        }
+        auto *response = static_cast<uWS::HttpResponse<false> *>(registered->response);
+        auto context = std::make_shared<FileStreamContext>();
+        context->token = token;
+        context->path = prepared.file->path;
+        context->size = prepared.file->size;
+        context->buffer.resize(static_cast<std::size_t>(std::min<std::uint64_t>(FILE_CHUNK_BYTES, context->size)));
+        if (const auto span = registry_.span(token)) {
+            span->setAttribute("http.response.body.size", static_cast<int64_t>(context->size));
+            if (!prepared.contentType.empty()) {
+                span->setAttribute("http.response.content_type", prepared.contentType);
+            }
+            span->setAttribute("transport.response.mode", "file_stream");
+        }
+        response->cork([response, &prepared] {
+            response->writeStatus(statusLine(prepared.statusCode));
+            if (!prepared.contentType.empty()) {
+                response->writeHeader("Content-Type", prepared.contentType);
+            }
+            for (const auto &header : prepared.headers) {
+                response->writeHeader(header.name, header.value);
+            }
+        });
+        response->onWritable([this, context](uintmax_t) -> bool {
+            const auto registered = registry_.peek(context->token);
+            if (!registered.has_value() || context->readInFlight) {
+                // Nothing to write right now; let uWS drain what it has.
+                return true;
+            }
+            return writeChunk(context, static_cast<uWS::HttpResponse<false> *>(registered->response));
+        });
+        requestChunk(context);
+    }
+
+  private:
+    void requestChunk(const std::shared_ptr<FileStreamContext> &context) {
+        context->readInFlight = true;
+        const auto offset = context->chunkStart;
+        const auto length = static_cast<std::size_t>(std::min<std::uint64_t>(FILE_CHUNK_BYTES, context->size - offset));
+        const bool accepted = executor_.trySubmit([this, context, offset, length](const std::stop_token stopToken) {
+            const bool failed = !readChunk(*context, offset, length);
+            if (stopToken.stop_requested()) {
+                return;
+            }
+            dispatcher_.post([this, context, length, failed] { onChunk(context, length, failed); });
+        });
+        if (!accepted) {
+            // Unreachable while the queue bound equals the connection bound;
+            // kept so a future misconfiguration fails loudly rather than hangs.
+            fail(context, "file_read_rejected", "File read queue is saturated");
+        }
+    }
+
+    /** File worker only. Fills the first `length` bytes of the context buffer. */
+    static bool readChunk(FileStreamContext &context, const std::uint64_t offset, const std::size_t length) {
+        if (!context.stream.is_open()) {
+            context.stream.open(context.path, std::ios::binary);
+            if (!context.stream) {
+                return false;
+            }
+        }
+        context.stream.clear();
+        context.stream.seekg(static_cast<std::streamoff>(offset));
+        if (!context.stream) {
+            return false;
+        }
+        context.stream.read(context.buffer.data(), static_cast<std::streamsize>(length));
+        // A short read means the file shrank underneath us or the disk failed;
+        // either way the advertised Content-Length can no longer be honoured.
+        return context.stream.gcount() == static_cast<std::streamsize>(length);
+    }
+
+    void onChunk(const std::shared_ptr<FileStreamContext> &context, const std::size_t length, const bool failed) {
+        context->readInFlight = false;
+        const auto registered = registry_.peek(context->token);
+        if (!registered.has_value()) {
+            return; // the client went away; the abort was already recorded
+        }
+        if (failed) {
+            fail(context, "file_read_failed", "Unable to read the file while streaming it");
+            return;
+        }
+        context->chunkLength = length;
+        writeChunk(context, static_cast<uWS::HttpResponse<false> *>(registered->response));
+    }
+
+    /** Returns false only when the socket is backpressured mid-chunk. */
+    bool writeChunk(const std::shared_ptr<FileStreamContext> &context, uWS::HttpResponse<false> *response) {
+        const auto written = response->getWriteOffset();
+        const auto within = written >= context->chunkStart ? written - context->chunkStart : 0;
+        if (within >= context->chunkLength) {
+            return true; // spurious writable event; nothing of this chunk is pending
+        }
+        std::string_view remaining(context->buffer.data(), context->chunkLength);
+        remaining.remove_prefix(static_cast<std::size_t>(within));
+        bool ok = false;
+        bool done = false;
+        response->cork([&] { std::tie(ok, done) = response->tryEnd(remaining, context->size); });
+        if (done) {
+            complete(context);
+            return true;
+        }
+        if (ok) {
+            context->chunkStart += context->chunkLength;
+            context->chunkLength = 0;
+            requestChunk(context);
+            return true;
+        }
+        return false;
+    }
+
+    void complete(const std::shared_ptr<FileStreamContext> &context) {
+        const auto registered = registry_.take(context->token);
+        if (!registered.has_value()) {
+            return;
+        }
+        if (registered->span) {
+            registered->span->setAttribute("transport.outcome", "response_completed");
+            registered->span->setHttpStatus(200);
+        }
+    }
+
+    void fail(const std::shared_ptr<FileStreamContext> &context, const std::string &outcome,
+              const std::string &message) {
+        const auto registered = registry_.take(context->token);
+        if (!registered.has_value()) {
+            return;
+        }
+        spdlog::warn("File stream of {} failed at byte {}: {}", context->path, context->chunkStart, message);
+        if (registered->span) {
+            registered->span->setAttribute("transport.outcome", outcome);
+            registered->span->setAttribute("error.type", outcome);
+            registered->span->setAttribute("error.message", message);
+            registered->span->setError(message);
+        }
+        // Headers are already on the wire, so the only honest signal left is a
+        // truncated transfer: close the socket.
+        static_cast<uWS::HttpResponse<false> *>(registered->response)->close();
+    }
+
+    RequestRegistry &registry_;
+    LoopDispatcher &dispatcher_;
+    ApplicationExecutor executor_; // last member: joined before anything above goes away
+};
+
 void completeRegisteredResponse(RequestRegistry &registry, const RequestToken token, PreparedResponse prepared,
                                 const bool closeConnection = false) {
+    if (prepared.file.has_value() && prepared.file->size > 0) {
+        const auto registered = registry.peek(token);
+        if (!registered.has_value()) {
+            return;
+        }
+        if (!registered->headOnly) {
+            if (registry.hasFileStreamStarter()) {
+                registry.startFileStream(token, prepared);
+                return;
+            }
+            prepared = statusResponse(500, "File streaming is unavailable");
+        }
+    }
     auto registered = registry.take(token);
     if (!registered.has_value()) {
         return;
@@ -427,7 +648,7 @@ std::shared_ptr<creatures::RequestSpan> createRequestSpan(uWS::HttpResponse<fals
 void writePreparedResponse(uWS::HttpResponse<false> *response, PreparedResponse prepared, const bool headOnly,
                            const std::shared_ptr<creatures::RequestSpan> &span, const bool closeConnection) {
     if (span) {
-        span->setAttribute("http.response.body.size", static_cast<int64_t>(prepared.body.size()));
+        span->setAttribute("http.response.body.size", static_cast<int64_t>(prepared.contentLength()));
         if (!prepared.contentType.empty()) {
             span->setAttribute("http.response.content_type", prepared.contentType);
         }
@@ -449,7 +670,7 @@ void writePreparedResponse(uWS::HttpResponse<false> *response, PreparedResponse 
             response->writeHeader(header.name, header.value);
         }
         if (headOnly) {
-            response->endWithoutBody(prepared.body.size(), closeConnection);
+            response->endWithoutBody(static_cast<std::size_t>(prepared.contentLength()), closeConnection);
         } else {
             response->end(prepared.body, closeConnection);
         }
@@ -566,7 +787,7 @@ void runBodyRoute(uWS::HttpResponse<false> *response, uWS::HttpRequest *request,
         return;
     }
     if (contentLength.has_value()) {
-        state->body.reserve(contentLength.value());
+        state->body.reserve(std::min<std::size_t>(contentLength.value(), BODY_RESERVE_CAP_BYTES));
     }
 
     auto dispatch = [state, producer = std::move(producer), &registry, &executor, &dispatcher]() mutable {
@@ -723,6 +944,7 @@ void UWebSocketsServer::run() {
         ApplicationExecutor applicationExecutor(APPLICATION_WORKER_COUNT, APPLICATION_QUEUE_LIMIT);
         ConnectionAdmission admission(maximumConnections_, maximumConnectionsPerPeer_);
         RequestRegistry requestRegistry;
+        FileStreamer fileStreamer(requestRegistry, dispatcher, maximumConnections_);
         uWS::App app;
         auto websocketMessageProcessor = std::make_shared<creatures::ws::MessageProcessor>(spdlog::default_logger());
         std::unordered_map<uint64_t, CreatureWebSocket *> webSockets;
@@ -791,10 +1013,11 @@ void UWebSocketsServer::run() {
             std::lock_guard lock(lifecycleMutex_);
             loop_ = loop;
             app_ = &app;
-            shutdownAction_ = [&admission, &applicationExecutor, &requestRegistry, &dispatcher, &app,
+            shutdownAction_ = [&admission, &applicationExecutor, &fileStreamer, &requestRegistry, &dispatcher, &app,
                                &websocketBroadcastThread] {
                 admission.beginShutdown();
                 applicationExecutor.requestStop();
+                fileStreamer.requestStop();
                 websocketBroadcastThread.request_stop();
                 auto cancelled = requestRegistry.cancelAll("shutdown_cancelled", "Server is shutting down", 503);
                 for (auto &request : cancelled) {
@@ -1481,6 +1704,503 @@ void UWebSocketsServer::run() {
                          "DebugController", false, [](const auto &span) { return sendDebugPlaylistUpdate(span); },
                          requestRegistry, &applicationExecutor, &dispatcher);
                  })
+            .get("/api/v1/animation/dialog/script",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/dialog/script", "listDialogScripts",
+                         "DialogScriptController", false, [](const auto &span) { return listDialogScripts(span); },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/animation/dialog/script/:scriptId",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string scriptId(request->getParameter("scriptId"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/dialog/script/{scriptId}", "getDialogScript",
+                         "DialogScriptController", false,
+                         [scriptId](const auto &span) { return getDialogScript(scriptId, span); }, requestRegistry,
+                         &applicationExecutor, &dispatcher);
+                 })
+            .post("/api/v1/animation/dialog/script",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog/script", "createDialogScript",
+                          "DialogScriptController", api::MAX_DIALOG_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) { return createDialogScript(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .put("/api/v1/animation/dialog/script/:scriptId",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string scriptId(request->getParameter("scriptId"));
+                     runBodyRoute(
+                         response, request, "PUT", "/api/v1/animation/dialog/script/{scriptId}", "updateDialogScript",
+                         "DialogScriptController", api::MAX_DIALOG_REQUEST_BYTES,
+                         [scriptId](const std::string &body, const auto &span) {
+                             return updateDialogScript(scriptId, body, span);
+                         },
+                         requestRegistry, applicationExecutor, dispatcher);
+                 })
+            .post("/api/v1/animation/dialog/script/validate",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog/script/validate", "validateDialogScript",
+                          "DialogScriptController", api::MAX_DIALOG_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) { return validateDialogScript(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .del("/api/v1/animation/dialog/script/:scriptId/music",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string scriptId(request->getParameter("scriptId"));
+                     runBodylessRoute(
+                         response, request, "DELETE", "/api/v1/animation/dialog/script/{scriptId}/music",
+                         "clearDialogBackgroundMusic", "DialogScriptController", false,
+                         [scriptId](const auto &span) { return clearDialogMusic(scriptId, span); }, requestRegistry,
+                         &applicationExecutor, &dispatcher);
+                 })
+            .del("/api/v1/animation/dialog/script/:scriptId/voice",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string scriptId(request->getParameter("scriptId"));
+                     runBodylessRoute(
+                         response, request, "DELETE", "/api/v1/animation/dialog/script/{scriptId}/voice",
+                         "clearAcceptedVoice", "DialogScriptController", false,
+                         [scriptId](const auto &span) { return clearDialogVoice(scriptId, span); }, requestRegistry,
+                         &applicationExecutor, &dispatcher);
+                 })
+            .del("/api/v1/animation/dialog/script/:scriptId",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string scriptId(request->getParameter("scriptId"));
+                     runBodylessRoute(
+                         response, request, "DELETE", "/api/v1/animation/dialog/script/{scriptId}",
+                         "deleteDialogScript", "DialogScriptController", false,
+                         [scriptId](const auto &span) { return deleteDialogScript(scriptId, span); }, requestRegistry,
+                         &applicationExecutor, &dispatcher);
+                 })
+            .post("/api/v1/animation/dialog-stream/start",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog-stream/start", "startDialogStream",
+                          "DialogStreamController", api::MAX_STREAMING_AD_HOC_CONTROL_BODY_BYTES,
+                          [](const std::string &body, const auto &span) { return startDialogStream(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/dialog-stream/turn",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog-stream/turn", "addDialogStreamTurn",
+                          "DialogStreamController", api::MAX_STREAMING_AD_HOC_TEXT_BODY_BYTES,
+                          [](const std::string &body, const auto &span) { return addDialogStreamTurn(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/dialog-stream/finish",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog-stream/finish", "finishDialogStream",
+                          "DialogStreamController", api::MAX_STREAMING_AD_HOC_CONTROL_BODY_BYTES,
+                          [](const std::string &body, const auto &span) { return finishDialogStream(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/ad-hoc-stream/start",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/ad-hoc-stream/start", "startStreamingAdHoc",
+                          "StreamingAdHocController", api::MAX_STREAMING_AD_HOC_CONTROL_BODY_BYTES,
+                          [](const std::string &body, const auto &span) { return startStreamingAdHoc(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/ad-hoc-stream/text",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/ad-hoc-stream/text", "addStreamingAdHocText",
+                          "StreamingAdHocController", api::MAX_STREAMING_AD_HOC_TEXT_BODY_BYTES,
+                          [](const std::string &body, const auto &span) { return addStreamingAdHocText(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/ad-hoc-stream/finish",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/ad-hoc-stream/finish", "finishStreamingAdHoc",
+                          "StreamingAdHocController", api::MAX_STREAMING_AD_HOC_CONTROL_BODY_BYTES,
+                          [](const std::string &body, const auto &span) { return finishStreamingAdHoc(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/interrupt",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/interrupt", "interruptAnimation",
+                          "AnimationController", api::MAX_ANIMATION_CONTROL_REQUEST_BODY_BYTES,
+                          [](const std::string &body, const auto &span) { return interruptAnimation(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/ad-hoc/play",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/ad-hoc/play", "playPreparedAdHocAnimation",
+                          "AnimationController", api::MAX_ANIMATION_CONTROL_REQUEST_BODY_BYTES,
+                          [](const std::string &body, const auto &span) {
+                              return playPreparedAdHocAnimation(body, span);
+                          },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .get("/api/v1/animation/ad-hoc-stream/exchanges",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string limit(request->getQuery("limit"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/ad-hoc-stream/exchanges", "listExchanges",
+                         "StreamingAdHocController", false,
+                         [limit](const auto &span) { return listStreamingAdHocExchanges(limit, span); },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/animation/ad-hoc-stream/exchange/:sessionId",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string sessionId(request->getParameter("sessionId"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}",
+                         "getExchange", "StreamingAdHocController", false,
+                         [sessionId](const auto &span) { return getStreamingAdHocExchange(sessionId, span); },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/sound/mp3/:filename",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string filename(request->getParameter("filename"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/sound/mp3/{filename}", "getSoundMp3", "SoundController",
+                         false,
+                         [filename](const auto &span) {
+                             return renderSoundRendition(filename, ws::SoundRenditionFormat::Mp3, span);
+                         },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/sound/shareable/:filename",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string filename(request->getParameter("filename"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/sound/shareable/{filename}", "getShareableSound",
+                         "SoundController", false,
+                         [filename](const auto &span) {
+                             return renderSoundRendition(filename, ws::SoundRenditionFormat::OggOpus, span);
+                         },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/sound/provenance/:filename",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string filename(request->getParameter("filename"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/sound/provenance/{filename}", "getSoundProvenance",
+                         "SoundController", false,
+                         [filename](const auto &span) { return getSoundProvenance(filename, span); }, requestRegistry,
+                         &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/sound/ad-hoc/:filename",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string filename(request->getParameter("filename"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/sound/ad-hoc/{filename}", "getAdHocSound",
+                         "SoundController", false,
+                         [filename](const auto &span) { return getAdHocSoundFile(filename, span); }, requestRegistry,
+                         &applicationExecutor, &dispatcher);
+                 })
+            .head("/api/v1/sound/ad-hoc/:filename",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      const std::string filename(request->getParameter("filename"));
+                      runBodylessRoute(
+                          response, request, "HEAD", "/api/v1/sound/ad-hoc/{filename}", "getAdHocSound",
+                          "SoundController", true,
+                          [filename](const auto &span) { return getAdHocSoundFile(filename, span); }, requestRegistry,
+                          &applicationExecutor, &dispatcher);
+                  })
+            .get("/api/v1/sound/:filename/metadata",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string filename(request->getParameter("filename"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/sound/{filename}/metadata", "getSoundMetadata",
+                         "SoundController", false,
+                         [filename](const auto &span) { return getSoundMetadata(filename, span); }, requestRegistry,
+                         &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/sound/:filename",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string filename(request->getParameter("filename"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/sound/{filename}", "getSound", "SoundController", false,
+                         [filename](const auto &span) { return getSoundFile(filename, span); }, requestRegistry,
+                         &applicationExecutor, &dispatcher);
+                 })
+            .head("/api/v1/sound/:filename",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      const std::string filename(request->getParameter("filename"));
+                      runBodylessRoute(
+                          response, request, "HEAD", "/api/v1/sound/{filename}", "getSound", "SoundController", true,
+                          [filename](const auto &span) { return getSoundFile(filename, span); }, requestRegistry,
+                          &applicationExecutor, &dispatcher);
+                  })
+            .get("/api/v1/animation/ad-hoc-stream/exchange/:sessionId/audio.wav",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string sessionId(request->getParameter("sessionId"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.wav",
+                         "getExchangeAudioWav", "StreamingAdHocController", false,
+                         [sessionId](const auto &span) {
+                             return getExchangeAudio(sessionId, ExchangeAudioFormat::Wav, span);
+                         },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/animation/ad-hoc-stream/exchange/:sessionId/audio.mp3",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string sessionId(request->getParameter("sessionId"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.mp3",
+                         "getExchangeAudioMp3", "StreamingAdHocController", false,
+                         [sessionId](const auto &span) {
+                             return getExchangeAudio(sessionId, ExchangeAudioFormat::Mp3, span);
+                         },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/animation/ad-hoc-stream/exchange/:sessionId/audio.ogg",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string sessionId(request->getParameter("sessionId"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.ogg",
+                         "getExchangeAudioOgg", "StreamingAdHocController", false,
+                         [sessionId](const auto &span) {
+                             return getExchangeAudio(sessionId, ExchangeAudioFormat::OggOpus, span);
+                         },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/animation/dialog/preview/audio/:cache_key/:filename",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string cacheKey(request->getParameter("cache_key"));
+                     const std::string filename(request->getParameter("filename"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/dialog/preview/audio/{cache_key}/{filename}",
+                         "getPreviewAudio", "DialogPreviewController", false,
+                         [cacheKey, filename](const auto &span) {
+                             return getDialogPreviewAudio(cacheKey, filename, span);
+                         },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/animation/dialog/preview/share/:cache_key/:filename",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string cacheKey(request->getParameter("cache_key"));
+                     const std::string filename(request->getParameter("filename"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/dialog/preview/share/{cache_key}/{filename}",
+                         "getPreviewShareable", "DialogPreviewController", false,
+                         [cacheKey, filename](const auto &span) {
+                             return getDialogPreviewShareable(cacheKey, filename, span);
+                         },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/animation/dialog/music/generated/:filename",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string filename(request->getParameter("filename"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/dialog/music/generated/{filename}",
+                         "getGeneratedMusicMp3", "DialogMusicController", false,
+                         [filename](const auto &span) { return getGeneratedMusicMp3(filename, true, span); },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/music/generated/:filename",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string filename(request->getParameter("filename"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/music/generated/{filename}", "getMusicCandidateMp3",
+                         "MusicController", false,
+                         [filename](const auto &span) { return getGeneratedMusicMp3(filename, false, span); },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .post("/api/v1/music/generate",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/music/generate", "generateMusic", "MusicController",
+                          api::MAX_MUSIC_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) { return generateMusic(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/music/plan",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/music/plan", "planMusic", "MusicController",
+                          api::MAX_MUSIC_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) { return planMusic(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .get("/api/v1/music",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/music", "listMusicPieces", "MusicController", false,
+                         [](const auto &span) { return listMusicPieces(span); }, requestRegistry, &applicationExecutor,
+                         &dispatcher);
+                 })
+            .get("/api/v1/music/generated/:generationId/recipe",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string generationId(request->getParameter("generationId"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/music/generated/{generationId}/recipe",
+                         "getMusicCandidateRecipe", "MusicController", false,
+                         [generationId](const auto &span) { return getMusicCandidateRecipe(generationId, span); },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .post("/api/v1/music/generated/:generationId/save",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      const std::string generationId(request->getParameter("generationId"));
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/music/generated/{generationId}/save",
+                          "saveMusicCandidate", "MusicController", api::MAX_MUSIC_REQUEST_BYTES,
+                          [generationId](const std::string &body, const auto &span) {
+                              return saveMusicCandidate(generationId, body, span);
+                          },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .get("/api/v1/music/:pieceId",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string pieceId(request->getParameter("pieceId"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/music/{pieceId}", "getMusicPiece", "MusicController", false,
+                         [pieceId](const auto &span) { return getMusicPiece(pieceId, span); }, requestRegistry,
+                         &applicationExecutor, &dispatcher);
+                 })
+            .put("/api/v1/music/:pieceId",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string pieceId(request->getParameter("pieceId"));
+                     runBodyRoute(
+                         response, request, "PUT", "/api/v1/music/{pieceId}", "updateMusicPiece", "MusicController",
+                         api::MAX_MUSIC_REQUEST_BYTES,
+                         [pieceId](const std::string &body, const auto &span) {
+                             return updateMusicPiece(pieceId, body, span);
+                         },
+                         requestRegistry, applicationExecutor, dispatcher);
+                 })
+            .del("/api/v1/music/:pieceId",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string pieceId(request->getParameter("pieceId"));
+                     runBodylessRoute(
+                         response, request, "DELETE", "/api/v1/music/{pieceId}", "deleteMusicPiece", "MusicController",
+                         false, [pieceId](const auto &span) { return deleteMusicPiece(pieceId, span); },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .post("/api/v1/music/:pieceId/refine",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      const std::string pieceId(request->getParameter("pieceId"));
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/music/{pieceId}/refine", "refineMusicPiece",
+                          "MusicController", api::MAX_MUSIC_REQUEST_BYTES,
+                          [pieceId](const std::string &body, const auto &span) {
+                              return refineMusicPiece(pieceId, body, span);
+                          },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/dialog/music",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog/music", "submitDialogMusic",
+                          "DialogMusicController", api::MAX_DIALOG_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) { return submitDialogMusic(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/dialog/music/plan",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog/music/plan", "planDialogMusic",
+                          "DialogMusicController", api::MAX_DIALOG_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) { return planDialogMusic(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .get("/api/v1/animation/dialog/music/finetunes",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/dialog/music/finetunes", "listMusicFinetunes",
+                         "DialogMusicController", false, [](const auto &span) { return listMusicFinetunes(span); },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .get("/api/v1/animation/dialog/music/generated/:generationId/recipe",
+                 [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                     const std::string generationId(request->getParameter("generationId"));
+                     runBodylessRoute(
+                         response, request, "GET", "/api/v1/animation/dialog/music/generated/{generationId}/recipe",
+                         "getGeneratedMusicRecipe", "DialogMusicController", false,
+                         [generationId](const auto &span) { return getMusicCandidateRecipe(generationId, span); },
+                         requestRegistry, &applicationExecutor, &dispatcher);
+                 })
+            .post("/api/v1/animation/dialog/music/generated/:generationId/promote",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      const std::string generationId(request->getParameter("generationId"));
+                      runBodylessRoute(
+                          response, request, "POST", "/api/v1/animation/dialog/music/generated/{generationId}/promote",
+                          "promoteGeneratedMusic", "DialogMusicController", false,
+                          [generationId](const auto &span) { return promoteGeneratedMusic(generationId, span); },
+                          requestRegistry, &applicationExecutor, &dispatcher);
+                  })
+            .post("/api/v1/animation/dialog",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog", "submitDialog", "DialogController",
+                          api::MAX_DIALOG_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) { return submitDialog(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/dialog/voice/accept",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog/voice/accept", "acceptVoiceTake",
+                          "DialogVoiceController", api::MAX_DIALOG_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) { return acceptVoiceTake(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/dialog/preview/lookup",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog/preview/lookup", "lookupPreview",
+                          "DialogPreviewController", api::MAX_DIALOG_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) { return lookupDialogPreview(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/dialog/preview/meta",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog/preview/meta", "submitPreviewMeta",
+                          "DialogPreviewController", api::MAX_DIALOG_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) { return submitDialogPreviewMeta(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/animation/dialog/preview/multichannel",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/animation/dialog/preview/multichannel",
+                          "submitPreviewMultichannel", "DialogPreviewController", api::MAX_DIALOG_REQUEST_BYTES,
+                          [](const std::string &body, const auto &span) {
+                              return submitDialogPreviewMultichannel(body, span);
+                          },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/sound/generate-lipsync",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/sound/generate-lipsync", "generateLipSync",
+                          "SoundController", api::MAX_SOUND_CONTROL_REQUEST_BODY_BYTES,
+                          [](const std::string &body, const auto &span) { return generateLipSync(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/sound/generate-lipsync/upload",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      // Raw WAV bytes, not JSON: the transport only bounds and
+                      // collects the body; the worker writes it to a temp file.
+                      const std::string filename(request->getQuery("filename"));
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/sound/generate-lipsync/upload",
+                          "generateLipSyncFromUpload", "SoundController", api::MAX_SOUND_UPLOAD_BODY_BYTES,
+                          [filename](const std::string &body, const auto &span) {
+                              return generateLipSyncFromUpload(filename, body, span);
+                          },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
+            .post("/api/v1/stt/transcribe",
+                  [&applicationExecutor, &dispatcher, &requestRegistry](auto *response, auto *request) {
+                      // Raw float32 PCM, not JSON.
+                      runBodyRoute(
+                          response, request, "POST", "/api/v1/stt/transcribe", "transcribeAudio",
+                          "SpeechToTextController", api::MAX_SPEECH_TO_TEXT_BODY_BYTES,
+                          [](const std::string &body, const auto &span) { return transcribeAudio(body, span); },
+                          requestRegistry, applicationExecutor, dispatcher);
+                  })
             .ws<WebSocketSession>(
                 "/api/v1/websocket",
                 {.compression = uWS::DISABLED,
@@ -1653,6 +2373,7 @@ void UWebSocketsServer::run() {
         // This also covers an unexpected loop exit that did not pass through
         // shutdownAction_: cancel loop-owned requests before joining workers.
         applicationExecutor.requestStop();
+        fileStreamer.requestStop();
         auto cancelled = requestRegistry.cancelAll("shutdown_cancelled", "Transport loop stopped", 503);
         for (auto &request : cancelled) {
             if (request.response != nullptr) {
@@ -1665,6 +2386,7 @@ void UWebSocketsServer::run() {
             websocketBroadcastThread.join();
         }
         applicationExecutor.join();
+        fileStreamer.join();
 
         {
             std::lock_guard lock(lifecycleMutex_);

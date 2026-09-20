@@ -113,8 +113,8 @@ PreparedResponse setCreatureIdle(const creatureId_t &creatureId, const std::stri
         parseSpan->setSuccess();
     }
 
-    const auto result = creatures::ws::CreatureService::setIdleEnabled(creatureId, toggleResult.getValue()->enabled,
-                                                                       nullptr, requestSpan);
+    const auto result =
+        creatures::ws::CreatureService::setIdleEnabled(creatureId, toggleResult.getValue()->enabled, requestSpan);
     if (!result.isSuccess()) {
         return errorResponse(result.getError().value(), requestSpan);
     }
@@ -125,7 +125,7 @@ PreparedResponse setCreatureIdle(const creatureId_t &creatureId, const std::stri
 }
 
 PreparedResponse upsertCreature(const std::string &body, const std::shared_ptr<OperationSpan> &requestSpan) {
-    const auto result = creatures::ws::CreatureService::upsertCreature(body, nullptr, requestSpan);
+    const auto result = creatures::ws::CreatureService::upsertCreature(body, requestSpan);
     if (!result.isSuccess()) {
         return errorResponse(result.getError().value(), requestSpan);
     }
@@ -139,7 +139,7 @@ PreparedResponse upsertCreature(const std::string &body, const std::shared_ptr<O
 }
 
 PreparedResponse validateCreature(const std::string &body, const std::shared_ptr<OperationSpan> &requestSpan) {
-    const auto result = creatures::ws::CreatureService::validateCreatureConfig(body, nullptr, requestSpan);
+    const auto result = creatures::ws::CreatureService::validateCreatureConfig(body, requestSpan);
     if (requestSpan) {
         requestSpan->setSuccess();
     }
@@ -169,7 +169,7 @@ PreparedResponse registerCreature(const std::string &body, const std::shared_ptr
         requestSpan->setAttribute("creature.config.size", static_cast<int64_t>(registration.creatureConfig.size()));
     }
     const auto result = creatures::ws::CreatureService::registerCreature(registration.creatureConfig,
-                                                                         registration.universe, nullptr, requestSpan);
+                                                                         registration.universe, requestSpan);
     if (!result.isSuccess()) {
         return errorResponse(result.getError().value(), requestSpan);
     }

@@ -77,7 +77,7 @@ std::shared_ptr<OperationSpan> childSpan(const char *name, const std::shared_ptr
     return creatures::observability ? creatures::observability->createChildOperationSpan(name, parent) : nullptr;
 }
 
-std::shared_ptr<OperationSpan> requestChildSpan(const char *name, const std::shared_ptr<RequestSpan> &parent) {
+std::shared_ptr<OperationSpan> requestChildSpan(const char *name, const SpanParent &parent) {
     return creatures::observability ? creatures::observability->createChildOperationSpan(name, parent) : nullptr;
 }
 
@@ -379,7 +379,7 @@ Result<storage::StoragePath> MusicService::publishCandidateWav(const voice::Cach
 }
 
 Result<MusicPiece> MusicService::save(const std::string &generationId, const api::MusicSaveRequest &request,
-                                      bool &created, std::shared_ptr<RequestSpan> parentSpan) const {
+                                      bool &created, SpanParent parentSpan) const {
     auto span = requestChildSpan("MusicService.save", parentSpan);
     using SaveResult = Result<MusicPiece>;
     const auto fail = [&span](ServerError error, const std::string &type = "MusicSaveError") {
@@ -560,7 +560,7 @@ Result<std::vector<voice::MusicSection>> sectionsFromPlan(const nlohmann::json &
 } // namespace
 
 Result<api::MusicRefineResult> MusicService::refine(const std::string &pieceId, const api::MusicRefineRequest &request,
-                                                    std::shared_ptr<RequestSpan> parentSpan) const {
+                                                    SpanParent parentSpan) const {
     auto span = requestChildSpan("MusicService.refine", parentSpan);
     using RefineResult = Result<api::MusicRefineResult>;
     const auto fail = [&span](ServerError error, const std::string &type) {
@@ -621,8 +621,7 @@ Result<api::MusicRefineResult> MusicService::refine(const std::string &pieceId, 
     return RefineResult{std::move(result)};
 }
 
-Result<api::MusicPlanResult> MusicService::plan(const api::MusicPlanRequest &request,
-                                                std::shared_ptr<RequestSpan> parentSpan) const {
+Result<api::MusicPlanResult> MusicService::plan(const api::MusicPlanRequest &request, SpanParent parentSpan) const {
     auto span = requestChildSpan("MusicService.plan", parentSpan);
     using PlanResult = Result<api::MusicPlanResult>;
     const auto fail = [&span](ServerError error, const std::string &type) {
@@ -662,7 +661,7 @@ Result<api::MusicPlanResult> MusicService::plan(const api::MusicPlanRequest &req
     return PlanResult{std::move(result)};
 }
 
-Result<std::vector<MusicPiece>> MusicService::list(std::shared_ptr<RequestSpan> parentSpan) const {
+Result<std::vector<MusicPiece>> MusicService::list(SpanParent parentSpan) const {
     auto span = requestChildSpan("MusicService.list", parentSpan);
     using ListResult = Result<std::vector<MusicPiece>>;
     if (!creatures::db) {
@@ -682,7 +681,7 @@ Result<std::vector<MusicPiece>> MusicService::list(std::shared_ptr<RequestSpan> 
     return pieces;
 }
 
-Result<MusicPiece> MusicService::get(const std::string &pieceId, std::shared_ptr<RequestSpan> parentSpan) const {
+Result<MusicPiece> MusicService::get(const std::string &pieceId, SpanParent parentSpan) const {
     auto span = requestChildSpan("MusicService.get", parentSpan);
     if (span)
         span->setAttribute("music.piece_id", pieceId);
@@ -702,7 +701,7 @@ Result<MusicPiece> MusicService::get(const std::string &pieceId, std::shared_ptr
 }
 
 Result<MusicPiece> MusicService::update(const std::string &pieceId, const api::MusicPieceUpdateRequest &request,
-                                        std::shared_ptr<RequestSpan> parentSpan) const {
+                                        SpanParent parentSpan) const {
     auto span = requestChildSpan("MusicService.update", parentSpan);
     using UpdateResult = Result<MusicPiece>;
     const auto fail = [&span](ServerError error, const std::string &type) {
@@ -741,7 +740,7 @@ Result<MusicPiece> MusicService::update(const std::string &pieceId, const api::M
     return stored;
 }
 
-Result<void> MusicService::remove(const std::string &pieceId, std::shared_ptr<RequestSpan> parentSpan) const {
+Result<void> MusicService::remove(const std::string &pieceId, SpanParent parentSpan) const {
     auto span = requestChildSpan("MusicService.remove", parentSpan);
     if (span)
         span->setAttribute("music.piece_id", pieceId);

@@ -24,6 +24,15 @@ std::shared_ptr<RequestSpan> RequestRegistry::span(const RequestToken token) con
     return found->second.request.span;
 }
 
+std::optional<RegisteredRequest> RequestRegistry::peek(const RequestToken token) const {
+    assertOwner();
+    const auto found = requests_.find(token.id);
+    if (found == requests_.end() || found->second.generation != token.generation) {
+        return std::nullopt;
+    }
+    return found->second.request;
+}
+
 std::optional<RegisteredRequest> RequestRegistry::take(const RequestToken token) {
     assertOwner();
     const auto found = requests_.find(token.id);
@@ -58,6 +67,17 @@ std::vector<RegisteredRequest> RequestRegistry::cancelAll(const std::string &out
     }
     requests_.clear();
     return cancelled;
+}
+
+void RequestRegistry::setFileStreamStarter(FileStreamStarter starter) {
+    assertOwner();
+    fileStreamStarter_ = std::move(starter);
+}
+
+void RequestRegistry::startFileStream(const RequestToken token, const PreparedResponse &prepared) const {
+    assertOwner();
+    assert(fileStreamStarter_);
+    fileStreamStarter_(token, prepared);
 }
 
 std::size_t RequestRegistry::size() const {

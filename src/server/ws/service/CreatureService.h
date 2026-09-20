@@ -11,24 +11,18 @@
 #include "model/Creature.h"
 #include "server/runtime/Activity.h"
 #include "server/runtime/RuntimeSnapshot.h"
+#include "util/ObservabilityManager.h"
 #include "util/Result.h"
-
-namespace creatures {
-class RequestSpan;
-class OperationSpan;
-} // namespace creatures
 
 namespace creatures ::ws {
 
 class CreatureService {
   public:
-    static Result<std::vector<api::CreatureResponse>>
-    getAllCreatures(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<std::vector<api::CreatureResponse>> getAllCreatures(SpanParent parentSpan = nullptr);
     static Result<std::vector<api::CreatureResponse>>
     getAllCreaturesFromOperation(std::shared_ptr<OperationSpan> parentSpan);
 
-    static Result<api::CreatureResponse> getCreature(const creatureId_t &creatureId,
-                                                     std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    static Result<api::CreatureResponse> getCreature(const creatureId_t &creatureId, SpanParent parentSpan = nullptr);
     static Result<api::CreatureResponse> getCreatureFromOperation(const creatureId_t &creatureId,
                                                                   std::shared_ptr<OperationSpan> parentSpan);
 
@@ -40,8 +34,7 @@ class CreatureService {
      * @return the creature that was created or updated in the standard form
      */
     static Result<api::CreatureResponse> upsertCreature(const std::string &jsonCreature,
-                                                        std::shared_ptr<RequestSpan> parentSpan = nullptr,
-                                                        std::shared_ptr<OperationSpan> parentOperationSpan = nullptr);
+                                                        SpanParent parentSpan = nullptr);
 
     /**
      * Register a creature with its universe assignment
@@ -54,15 +47,13 @@ class CreatureService {
      * @return the creature that was registered
      */
     static Result<api::CreatureResponse> registerCreature(const std::string &jsonCreature, universe_t universe,
-                                                          std::shared_ptr<RequestSpan> parentSpan = nullptr,
-                                                          std::shared_ptr<OperationSpan> parentOperationSpan = nullptr);
+                                                          SpanParent parentSpan = nullptr);
 
     /**
      * Toggle idle enabled/disabled for a creature (runtime only)
      */
     static Result<api::CreatureResponse> setIdleEnabled(const creatureId_t &creatureId, bool enabled,
-                                                        std::shared_ptr<RequestSpan> parentSpan = nullptr,
-                                                        std::shared_ptr<OperationSpan> parentOperationSpan = nullptr);
+                                                        SpanParent parentSpan = nullptr);
 
     /**
      * Update runtime activity state for creatures (runtime only)
@@ -129,9 +120,8 @@ class CreatureService {
     /**
      * Validate a creature config document without persisting it.
      */
-    static api::CreatureConfigValidationResponse
-    validateCreatureConfig(const std::string &jsonCreature, std::shared_ptr<RequestSpan> parentSpan = nullptr,
-                           std::shared_ptr<OperationSpan> parentOperationSpan = nullptr);
+    static api::CreatureConfigValidationResponse validateCreatureConfig(const std::string &jsonCreature,
+                                                                        SpanParent parentSpan = nullptr);
 
     /**
      * Register a creature as under live streaming control (runtime-only).

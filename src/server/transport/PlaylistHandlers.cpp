@@ -64,7 +64,7 @@ std::shared_ptr<OperationSpan> parseSpan(const std::string &name, const std::sha
 } // namespace
 
 PreparedResponse listPlaylists(const std::shared_ptr<OperationSpan> &span) {
-    return resultResponse(creatures::ws::PlaylistService::getAllPlaylists(), span,
+    return resultResponse(creatures::ws::PlaylistService::getAllPlaylists(span), span,
                           [](const auto &playlists) { return api::listResponseToJson(playlists, playlistToJson); });
 }
 
@@ -75,12 +75,12 @@ PreparedResponse getPlaylist(const std::string &playlistId, const std::shared_pt
     if (!isUuidShape(playlistId)) {
         return errorResponse(ServerError(ServerError::InvalidData, "playlistId must be a UUID"), span);
     }
-    return resultResponse(creatures::ws::PlaylistService::getPlaylist(playlistId), span,
+    return resultResponse(creatures::ws::PlaylistService::getPlaylist(playlistId, span), span,
                           [](const auto &playlist) { return playlistToJson(playlist); });
 }
 
 PreparedResponse upsertPlaylist(const std::string &body, const std::shared_ptr<OperationSpan> &span) {
-    return resultResponse(creatures::ws::PlaylistService::upsertPlaylist(body), span,
+    return resultResponse(creatures::ws::PlaylistService::upsertPlaylist(body, span), span,
                           [](const auto &playlist) { return playlistToJson(playlist); });
 }
 
@@ -102,7 +102,7 @@ PreparedResponse startPlaylist(const std::string &body, const std::shared_ptr<Op
         span->setAttribute("playlist.id", parsed.playlistId);
         span->setAttribute("playlist.universe", static_cast<int64_t>(parsed.universe));
     }
-    return resultResponse(creatures::ws::PlaylistService::startPlaylist(parsed.universe, parsed.playlistId), span,
+    return resultResponse(creatures::ws::PlaylistService::startPlaylist(parsed.universe, parsed.playlistId, span), span,
                           [](const auto &status) { return api::statusResponseToJson(status); });
 }
 
@@ -123,7 +123,7 @@ PreparedResponse stopPlaylist(const std::string &body, const std::shared_ptr<Ope
     if (span) {
         span->setAttribute("playlist.universe", static_cast<int64_t>(universe));
     }
-    return resultResponse(creatures::ws::PlaylistService::stopPlaylist(universe), span,
+    return resultResponse(creatures::ws::PlaylistService::stopPlaylist(universe, span), span,
                           [](const auto &status) { return api::statusResponseToJson(status); });
 }
 
@@ -137,12 +137,12 @@ PreparedResponse getPlaylistStatus(const std::string &universeText, const std::s
     if (span) {
         span->setAttribute("playlist.universe", static_cast<int64_t>(universe));
     }
-    return resultResponse(creatures::ws::PlaylistService::playlistStatus(universe), span,
+    return resultResponse(creatures::ws::PlaylistService::playlistStatus(universe, span), span,
                           [](const auto &status) { return playlistStatusToJson(status); });
 }
 
 PreparedResponse listPlaylistStatuses(const std::shared_ptr<OperationSpan> &span) {
-    return resultResponse(creatures::ws::PlaylistService::getAllPlaylistStatuses(), span,
+    return resultResponse(creatures::ws::PlaylistService::getAllPlaylistStatuses(span), span,
                           [](const auto &statuses) { return api::listResponseToJson(statuses, playlistStatusToJson); });
 }
 

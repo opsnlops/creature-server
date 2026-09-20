@@ -102,7 +102,7 @@ class SessionManager {
      */
     Result<std::shared_ptr<PlaybackSession>> interrupt(universe_t universe, const Animation &interruptAnimation,
                                                        bool shouldResumePlaylist = false,
-                                                       std::shared_ptr<RequestSpan> parentSpan = nullptr,
+                                                       SpanParent parentSpan = nullptr,
                                                        const std::string &chainId = {});
 
     /**
@@ -119,7 +119,7 @@ class SessionManager {
      */
     Result<std::shared_ptr<PlaybackSession>> interruptIdleOnly(universe_t universe, const Animation &interruptAnimation,
                                                                const std::vector<creatureId_t> &creatureIds,
-                                                               std::shared_ptr<RequestSpan> parentSpan = nullptr);
+                                                               SpanParent parentSpan = nullptr);
 
     /**
      * Resume playlist playback after an interrupt

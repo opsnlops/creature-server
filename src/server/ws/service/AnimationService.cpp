@@ -46,7 +46,7 @@ template <typename T> Result<T> fail(const ServerError &error, const std::shared
 
 } // namespace
 
-Result<std::vector<AnimationMetadata>> AnimationService::listAllAnimations(std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::vector<AnimationMetadata>> AnimationService::listAllAnimations(SpanParent parentSpan) {
     auto span = observability->createOperationSpan("AnimationService.listAllAnimations", std::move(parentSpan));
     if (span) {
         span->setAttribute("service", "AnimationService");
@@ -65,8 +65,7 @@ Result<std::vector<AnimationMetadata>> AnimationService::listAllAnimations(std::
     return Result<std::vector<AnimationMetadata>>{metadata};
 }
 
-Result<std::vector<AdHocAnimationSummary>>
-AnimationService::listAdHocAnimations(std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::vector<AdHocAnimationSummary>> AnimationService::listAdHocAnimations(SpanParent parentSpan) {
     auto span = observability->createOperationSpan("AnimationService.listAdHocAnimations", std::move(parentSpan));
     if (span) {
         span->setAttribute("service", "AnimationService");
@@ -90,8 +89,7 @@ AnimationService::listAdHocAnimations(std::shared_ptr<RequestSpan> parentSpan) {
     return Result<std::vector<AdHocAnimationSummary>>{summaries};
 }
 
-Result<Animation> AnimationService::getAnimation(const std::string &animationId,
-                                                 std::shared_ptr<RequestSpan> parentSpan) {
+Result<Animation> AnimationService::getAnimation(const std::string &animationId, SpanParent parentSpan) {
     auto span = observability->createOperationSpan("AnimationService.getAnimation", std::move(parentSpan));
     if (span) {
         span->setAttribute("service", "AnimationService");
@@ -115,8 +113,7 @@ Result<Animation> AnimationService::getAnimation(const std::string &animationId,
     return Result<Animation>{animation};
 }
 
-Result<Animation> AnimationService::getAdHocAnimation(const std::string &animationId,
-                                                      std::shared_ptr<RequestSpan> parentSpan) {
+Result<Animation> AnimationService::getAdHocAnimation(const std::string &animationId, SpanParent parentSpan) {
     auto span = observability->createOperationSpan("AnimationService.getAdHocAnimation", std::move(parentSpan));
     if (span) {
         span->setAttribute("service", "AnimationService");
@@ -140,8 +137,7 @@ Result<Animation> AnimationService::getAdHocAnimation(const std::string &animati
     return Result<Animation>{animation};
 }
 
-Result<Animation> AnimationService::upsertAnimation(const std::string &animationJson,
-                                                    std::shared_ptr<RequestSpan> parentSpan) {
+Result<Animation> AnimationService::upsertAnimation(const std::string &animationJson, SpanParent parentSpan) {
     auto span = observability->createOperationSpan("AnimationService.upsertAnimation", std::move(parentSpan));
     if (span) {
         span->setAttribute("service", "AnimationService");
@@ -166,8 +162,7 @@ Result<Animation> AnimationService::upsertAnimation(const std::string &animation
     return Result<Animation>{animation};
 }
 
-Result<void> AnimationService::deleteAnimation(const std::string &animationId,
-                                               std::shared_ptr<RequestSpan> parentSpan) {
+Result<void> AnimationService::deleteAnimation(const std::string &animationId, SpanParent parentSpan) {
     auto span = observability->createOperationSpan("AnimationService.deleteAnimation", std::move(parentSpan));
     if (span) {
         span->setAttribute("service", "AnimationService");
@@ -184,8 +179,7 @@ Result<void> AnimationService::deleteAnimation(const std::string &animationId,
 }
 
 Result<PlayAnimationResult> AnimationService::playStoredAnimation(const std::string &animationId, universe_t universe,
-                                                                  const std::string &reason,
-                                                                  std::shared_ptr<RequestSpan> parentSpan) {
+                                                                  const std::string &reason, SpanParent parentSpan) {
     auto span = observability->createOperationSpan("AnimationService.playStoredAnimation", std::move(parentSpan));
     if (span) {
         span->setAttribute("service", "AnimationService");

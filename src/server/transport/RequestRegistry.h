@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -9,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "server/transport/HttpTypes.h"
 #include "util/ObservabilityManager.h"
 
 namespace creatures::transport {
@@ -36,11 +38,24 @@ class RequestRegistry {
 
     RequestToken add(void *response, std::shared_ptr<RequestSpan> span, bool headOnly);
     [[nodiscard]] std::shared_ptr<RequestSpan> span(RequestToken token) const;
+    /** Copy of a live registration without removing it; streamed responses stay registered until they finish. */
+    [[nodiscard]] std::optional<RegisteredRequest> peek(RequestToken token) const;
     std::optional<RegisteredRequest> take(RequestToken token);
     bool abort(RequestToken token, const std::string &outcome, const std::string &message, int statusCode);
     std::vector<RegisteredRequest> cancelAll(const std::string &outcome, const std::string &message, int statusCode);
 
     [[nodiscard]] std::size_t size() const;
+
+    /**
+     * The loop's file streamer, when one is running. A registered response
+     * whose PreparedResponse carries a file is handed here and stays
+     * registered until the stream finishes; without a starter such a
+     * response cannot be served.
+     */
+    using FileStreamStarter = std::function<void(RequestToken, const PreparedResponse &)>;
+    void setFileStreamStarter(FileStreamStarter starter);
+    [[nodiscard]] bool hasFileStreamStarter() const { return static_cast<bool>(fileStreamStarter_); }
+    void startFileStream(RequestToken token, const PreparedResponse &prepared) const;
 
   private:
     struct State {
@@ -55,6 +70,7 @@ class RequestRegistry {
     std::thread::id owner_;
     uint64_t nextId_{1};
     std::unordered_map<uint64_t, State> requests_;
+    FileStreamStarter fileStreamStarter_;
 };
 
 } // namespace creatures::transport

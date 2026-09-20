@@ -121,8 +121,7 @@ struct AutoStopEvent : creatures::EventBase<AutoStopEvent> {
 
 namespace creatures ::ws {
 
-Result<DmxFixture> DmxFixtureService::upsertFixture(const std::string &jsonFixture,
-                                                    std::shared_ptr<RequestSpan> parentSpan) {
+Result<DmxFixture> DmxFixtureService::upsertFixture(const std::string &jsonFixture, SpanParent parentSpan) {
 
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.upsertFixture", parentSpan)
@@ -206,7 +205,7 @@ Result<DmxFixture> DmxFixtureService::upsertFixture(const std::string &jsonFixtu
     return Result<DmxFixture>{fixture};
 }
 
-Result<void> DmxFixtureService::deleteFixture(const fixtureId_t &fixtureId, std::shared_ptr<RequestSpan> parentSpan) {
+Result<void> DmxFixtureService::deleteFixture(const fixtureId_t &fixtureId, SpanParent parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.deleteFixture", parentSpan)
                     : nullptr;
@@ -239,8 +238,7 @@ Result<void> DmxFixtureService::deleteFixture(const fixtureId_t &fixtureId, std:
 }
 
 Result<DmxFixture> DmxFixtureService::setFixtureUniverse(const fixtureId_t &fixtureId,
-                                                         std::optional<universe_t> universe,
-                                                         std::shared_ptr<RequestSpan> parentSpan) {
+                                                         std::optional<universe_t> universe, SpanParent parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.setFixtureUniverse", parentSpan)
                     : nullptr;
@@ -300,7 +298,7 @@ Result<DmxFixture> DmxFixtureService::setFixtureUniverse(const fixtureId_t &fixt
 }
 
 api::FixtureConfigValidationResponse DmxFixtureService::validateFixtureConfig(const std::string &jsonFixture,
-                                                                              std::shared_ptr<RequestSpan> parentSpan) {
+                                                                              SpanParent parentSpan) {
 
     auto span =
         creatures::observability
@@ -377,8 +375,7 @@ api::FixtureConfigValidationResponse DmxFixtureService::validateFixtureConfig(co
 }
 
 Result<DmxFixture> DmxFixtureService::triggerPattern(const fixtureId_t &fixtureId, const std::string &patternId,
-                                                     std::optional<uint32_t> stopAfterMs,
-                                                     std::shared_ptr<RequestSpan> parentSpan) {
+                                                     std::optional<uint32_t> stopAfterMs, SpanParent parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.triggerPattern", parentSpan)
                     : nullptr;
@@ -481,8 +478,7 @@ Result<DmxFixture> DmxFixtureService::triggerPattern(const fixtureId_t &fixtureI
 Result<DmxFixture> DmxFixtureService::previewPattern(const fixtureId_t &fixtureId,
                                                      const std::vector<std::pair<std::string, uint8_t>> &values,
                                                      uint32_t fadeInMs, uint32_t fadeOutMs, uint32_t holdMs,
-                                                     std::optional<uint32_t> stopAfterMs,
-                                                     std::shared_ptr<RequestSpan> parentSpan) {
+                                                     std::optional<uint32_t> stopAfterMs, SpanParent parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.previewPattern", parentSpan)
                     : nullptr;
@@ -613,7 +609,7 @@ Result<DmxFixture> DmxFixtureService::previewPattern(const fixtureId_t &fixtureI
 
 Result<DmxFixture> DmxFixtureService::setFixtureLive(const fixtureId_t &fixtureId,
                                                      const std::vector<std::pair<std::string, uint8_t>> &channelValues,
-                                                     uint32_t timeoutMs, std::shared_ptr<RequestSpan> parentSpan) {
+                                                     uint32_t timeoutMs, SpanParent parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DmxFixtureService.setFixtureLive", parentSpan)
                     : nullptr;
