@@ -26,7 +26,7 @@ jobs:
 
       # docker/build-push-action + GHA cache. Combined with the split-stage
       # Dockerfile (deps in a stable layer that only invalidates on
-      # CMakeLists.txt / cmake/ / lib/ / externals/ / build_oatpp.sh
+      # CMakeLists.txt / cmake/ / lib/
       # changes), typical source-change PRs reuse cached layers and rebuild
       # in ~2 min instead of ~15. Scope is per-OS so amd64 + arm64 matrix
       # don't trample each other. See issue #13.

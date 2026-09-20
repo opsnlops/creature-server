@@ -1,7 +1,5 @@
 #include "UWebSocketsServer.h"
 
-#ifdef CREATURE_HAS_UWEBSOCKETS_TRANSPORT
-
 #include <App.h>
 
 #include <algorithm>
@@ -2417,5 +2415,3 @@ void UWebSocketsServer::run() {
 }
 
 } // namespace creatures::transport
-
-#endif

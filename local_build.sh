@@ -4,10 +4,6 @@ set -euo pipefail
 
 echo "Starting local build"
 
-if [[ -x "./build_oatpp.sh" ]]; then
-  ./build_oatpp.sh
-fi
-
 if [[ -f "build/CMakeCache.txt" ]]; then
   if ! grep -q "CMAKE_GENERATOR:INTERNAL=Ninja" "build/CMakeCache.txt"; then
     echo "Cleaning build directory for Ninja generator"

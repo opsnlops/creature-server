@@ -34,17 +34,16 @@ RUN apt update && apt install -y \
 ENV CC=clang-19
 ENV CXX=clang++-19
 
-# ---- Phase 1: build oatpp + all FetchContent dependencies in a layer that
-# only invalidates when CMakeLists.txt / cmake/ / lib/ / externals/ / the
-# oatpp build script change. The heavy compile (Mongo C/C++ driver, OTel,
+# ---- Phase 1: build all FetchContent dependencies in a layer that only
+# invalidates when CMakeLists.txt / cmake/ / lib/ change. The heavy compile
+# (Mongo C/C++ driver, OTel, uWebSockets,
 # whisper, opus, uvgrtp, googletest, fmt, spdlog) lands here and gets reused
 # by every subsequent build that doesn't change those inputs. See issue #13.
 
 RUN mkdir -p /build/creature-server
 COPY cmake/ /build/creature-server/cmake
 COPY lib/ /build/creature-server/lib
-COPY externals/ /build/creature-server/externals
-COPY LICENSE README.md CMakeLists.txt build_oatpp.sh /build/creature-server/
+COPY LICENSE README.md CMakeLists.txt /build/creature-server/
 COPY docs/transport-route-manifest.json /build/creature-server/docs/transport-route-manifest.json
 COPY scripts/transport-route-manifest.py /build/creature-server/scripts/transport-route-manifest.py
 
@@ -64,9 +63,6 @@ RUN if [ ! -f /build/creature-server/lib/base64/include/base64.hpp ]; then \
         git clone https://github.com/tobiaslocker/base64.git /build/creature-server/lib/base64; \
     fi
 
-# Build oatpp into externals/install.
-RUN cd /build/creature-server/ && ./build_oatpp.sh
-
 # Configure CMake. file(GLOB serverFiles src/...) returns an empty list at
 # this stage (src/ doesn't exist yet) but configure succeeds — add_executable
 # doesn't check source-file existence, only the build does. We're not going
@@ -79,8 +75,7 @@ RUN cd /build/creature-server && \
 
 # Pre-compile every heavy FetchContent dep via the deps_only umbrella target
 # (defined in CMakeLists.txt). This is the ~15 minute step today; with this
-# layer cached it only re-runs when CMakeLists / cmake / lib / externals /
-# build_oatpp.sh change.
+# layer cached it only re-runs when CMakeLists / cmake / lib change.
 RUN cd /build/creature-server/build && ninja -j8 deps_only
 
 # ---- Phase 2: copy our source + build the final binary. Only this layer
@@ -116,7 +111,7 @@ RUN cd /build/creature-server/build && cpack -G DEB && cp *.deb /package
 
 # Validate the exact filesystem payload that will be deployed. The smoke gate
 # extracts the package, checks its runtime links and notices, then boots the
-# packaged binary with default uWebSockets and explicit oat++ rollback.
+# packaged binary and runs the production gate against it.
 RUN python3 /build/creature-server/tests/transport/debian_package_smoke_test.py \
         --package /package/creature-server_*.deb \
         --network-device lo

@@ -4,7 +4,7 @@
 Launches the real ``creature-server`` executable against a temporary sounds
 directory and checks that ``GET /api/v1/sound/{filename}`` streams a large WAV
 byte-for-byte, that HEAD agrees with GET, that path-safety and not-found
-responses keep their oat++ shape, and that a client that aborts or reads
+responses keep their recorded shape, and that a client that aborts or reads
 slowly mid-stream never stalls the loop or crashes the server.
 
 Usage:
@@ -239,7 +239,7 @@ def main() -> int:
     if not executable.is_file():
         parser.error(f"server executable not found: {executable}")
 
-    server = ProductionServer(executable, arguments.network_device, "uwebsockets")
+    server = ProductionServer(executable, arguments.network_device)
     try:
         big = pseudo_random_bytes(BIG_SOUND_BYTES, b"creature-file-stream-gate")
         small = pseudo_random_bytes(SMALL_SOUND_BYTES, b"creature-file-stream-small")

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Black-box transport contract for Creature Server.
 
-The suite intentionally uses only Python's standard library. It can exercise
-the current oat++ server and future transport spikes without importing or
-linking either implementation.
+The suite intentionally uses only Python's standard library, so it exercises
+the running server as a client would, without importing or linking the
+implementation.
 """
 
 from __future__ import annotations

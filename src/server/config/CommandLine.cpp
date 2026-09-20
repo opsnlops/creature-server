@@ -50,11 +50,6 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .default_value(environmentToString(DB_URI_ENV, DEFAULT_DB_URI))
         .nargs(1);
 
-    program.add_argument("--http-transport")
-        .help("HTTP/WebSocket transport: 'uwebsockets' (default) or 'oatpp' (rollback)")
-        .default_value(environmentToString(HTTP_TRANSPORT_ENV, DEFAULT_HTTP_TRANSPORT))
-        .nargs(1);
-
     program.add_argument("--http-max-connections")
         .help("maximum simultaneous HTTP and WebSocket connections")
         .default_value(environmentToInt(HTTP_MAX_CONNECTIONS_ENV, DEFAULT_HTTP_MAX_CONNECTIONS))
@@ -267,19 +262,6 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     }
 
     debug("Parsing the command line options");
-
-    auto httpTransport = program.get<std::string>("--http-transport");
-    std::transform(httpTransport.begin(), httpTransport.end(), httpTransport.begin(),
-                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
-    if (httpTransport == "oatpp") {
-        config->setHttpTransport(Configuration::HttpTransport::Oatpp);
-    } else if (httpTransport == "uwebsockets") {
-        config->setHttpTransport(Configuration::HttpTransport::UWebSockets);
-    } else {
-        critical("--http-transport must be 'oatpp' or 'uwebsockets'");
-        std::exit(1);
-    }
-    debug("HTTP transport set to {}", httpTransport);
 
     const auto httpMaxConnections = program.get<int>("--http-max-connections");
     const auto httpMaxConnectionsPerPeer = program.get<int>("--http-max-connections-per-peer");
