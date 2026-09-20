@@ -22,17 +22,17 @@
     "status": 404
   },
   "GET /api/docs": {
-    "body": "sha256:3b2fdf5ba0a9b97dba31edd4630097f82e3d57cf793b2472543e9f6c8975d12d",
+    "body": "sha256:2b82bc1a6909cd03c38000806399296be0b6808b235bc18a7ed6101ce32df858",
     "headers": {
-      "content-length": "5176",
+      "content-length": "6285",
       "content-type": "text/html; charset=utf-8"
     },
     "status": 200
   },
   "GET /api/docs/": {
-    "body": "sha256:3b2fdf5ba0a9b97dba31edd4630097f82e3d57cf793b2472543e9f6c8975d12d",
+    "body": "sha256:2b82bc1a6909cd03c38000806399296be0b6808b235bc18a7ed6101ce32df858",
     "headers": {
-      "content-length": "5176",
+      "content-length": "6285",
       "content-type": "text/html; charset=utf-8"
     },
     "status": 200
@@ -240,7 +240,7 @@
   "HEAD /api/docs": {
     "body": "",
     "headers": {
-      "content-length": "5176",
+      "content-length": "6285",
       "content-type": "text/html; charset=utf-8"
     },
     "status": 200
@@ -248,7 +248,7 @@
   "HEAD /api/docs/": {
     "body": "",
     "headers": {
-      "content-length": "5176",
+      "content-length": "6285",
       "content-type": "text/html; charset=utf-8"
     },
     "status": 200

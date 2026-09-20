@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -31,8 +32,9 @@ std::string operationId(const json &route) {
     return result;
 }
 
-json pathParameters(const std::string &path) {
+json pathParameters(const std::string &path, const json &route) {
     json parameters = json::array();
+    const json descriptions = route.value("path_params", json::object());
     std::size_t cursor = 0;
     while ((cursor = path.find('{', cursor)) != std::string::npos) {
         const auto end = path.find('}', cursor + 1);
@@ -40,10 +42,83 @@ json pathParameters(const std::string &path) {
             break;
         }
         const auto name = path.substr(cursor + 1, end - cursor - 1);
-        parameters.push_back({{"name", name}, {"in", "path"}, {"required", true}, {"schema", {{"type", "string"}}}});
+        json parameter = {{"name", name}, {"in", "path"}, {"required", true}, {"schema", {{"type", "string"}}}};
+        if (descriptions.contains(name)) {
+            parameter["description"] = descriptions.at(name);
+        }
+        parameters.push_back(std::move(parameter));
         cursor = end + 1;
     }
+    const json queries = route.value("query_params", json::array());
+    for (const auto &query : queries) {
+        json parameter = {{"name", query.at("name")},
+                          {"in", "query"},
+                          {"required", query.value("required", false)},
+                          {"schema", {{"type", "string"}}}};
+        if (query.contains("default")) {
+            parameter["schema"]["default"] = query.at("default");
+        }
+        if (query.contains("description")) {
+            parameter["description"] = query.at("description");
+        }
+        parameters.push_back(std::move(parameter));
+    }
     return parameters;
+}
+
+/// Manifest `path_params` notes that name a logical parameter rather than a
+/// path segment (for example generation_id inside {filename}) still belong
+/// in the operation description.
+std::string describe(const std::string &path, const json &route) {
+    std::string description = route.value("description", std::string{});
+    // Bind before iterating: items() on a temporary would dangle.
+    const json notes = route.value("path_params", json::object());
+    for (const auto &[name, note] : notes.items()) {
+        if (path.find("{" + name + "}") != std::string::npos) {
+            continue;
+        }
+        if (!description.empty()) {
+            description += "\n\n";
+        }
+        description += name + ": " + note.get<std::string>();
+    }
+    return description;
+}
+
+json responses(const json &route) {
+    json result = json::object();
+    const json declared = route.value("responses", json::object());
+    for (const auto &[code, contentTypes] : declared.items()) {
+        json content = json::object();
+        for (const auto &contentType : contentTypes) {
+            content[contentType.get<std::string>()] = json::object();
+        }
+        const int status = std::stoi(code);
+        std::string description = status < 300 ? "Successful response" : status < 500 ? "Client error" : "Server error";
+        if (status == 202) {
+            description = "Accepted; a job id is returned and progress arrives over the WebSocket";
+        } else if (status == 404) {
+            description = "Not found";
+        } else if (status == 413) {
+            description = "Request body exceeds this route's limit";
+        } else if (status == 429) {
+            description = "Queue is full; try again shortly";
+        } else if (status == 503) {
+            description = "Server is saturated or shutting down";
+        }
+        result[code] = {{"description", description}, {"content", std::move(content)}};
+    }
+    if (result.empty()) {
+        result["200"] = {{"description", "Successful response"}};
+    }
+    if (!result.contains("413") &&
+        (route.at("method") == "POST" || route.at("method") == "PUT" || route.at("method") == "PATCH")) {
+        result["413"] = {{"description", "Request body exceeds this route's limit"}};
+    }
+    if (!result.contains("503")) {
+        result["503"] = {{"description", "Server is saturated or shutting down"}};
+    }
+    return result;
 }
 
 json buildOpenApiDocument() {
@@ -67,24 +142,33 @@ json buildOpenApiDocument() {
         std::transform(normalizedMethod.begin(), normalizedMethod.end(), normalizedMethod.begin(),
                        [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
         const auto path = route.at("path").get<std::string>();
-        const auto tag = tagForController(route.at("controller").get<std::string>());
-        ++tagCounts[tag];
+        json tags = route.value("tags", json::array());
+        if (tags.empty()) {
+            tags.push_back(tagForController(route.at("controller").get<std::string>()));
+        }
+        for (const auto &tag : tags) {
+            ++tagCounts[tag.get<std::string>()];
+        }
 
-        json operation = {
-            {"operationId", operationId(route)},
-            {"summary", route.at("handler")},
-            {"tags", json::array({tag})},
-            {"responses",
-             {{"200", {{"description", "Successful response"}}}, {"default", {{"description", "Error response"}}}}}};
-        auto parameters = pathParameters(path);
+        json operation = {{"operationId", operationId(route)},
+                          {"summary", route.value("summary", route.at("handler").get<std::string>())},
+                          {"tags", tags},
+                          {"responses", responses(route)}};
+        const auto description = describe(path, route);
+        if (!description.empty()) {
+            operation["description"] = description;
+        }
+        auto parameters = pathParameters(path, route);
         if (!parameters.empty()) {
             operation["parameters"] = std::move(parameters);
         }
         if (method == "POST" || method == "PUT" || method == "PATCH") {
-            operation["requestBody"] = {
-                {"required", false},
-                {"content",
-                 {{"application/json", {{"schema", {{"type", "object"}, {"additionalProperties", true}}}}}}}};
+            const json body = route.value("request_body", json::object());
+            const auto contentType = body.value("content_type", std::string("application/json"));
+            json schema = contentType == "application/json" ? json{{"type", "object"}, {"additionalProperties", true}}
+                                                            : json{{"type", "string"}, {"format", "binary"}};
+            operation["requestBody"] = {{"required", body.value("required", false)},
+                                        {"content", {{contentType, {{"schema", std::move(schema)}}}}}};
         }
         document["paths"][path][normalizedMethod] = std::move(operation);
     }
@@ -125,6 +209,7 @@ std::string_view apiBrowserHtml() {
     code{font-size:14px}.summary{margin-left:auto;color:var(--muted)}.workbench{border-top:1px solid var(--line);padding:14px}
     .params{display:grid;grid-template-columns:160px 1fr;gap:8px;align-items:center}.params input{width:100%}textarea{width:100%;min-height:100px;margin-top:10px;font-family:ui-monospace,monospace}
     button{margin-top:10px;background:var(--accent);border:0;color:#071310;font-weight:800;cursor:pointer}.result{white-space:pre-wrap;overflow:auto;max-height:420px;background:#0b0e12;padding:12px;border-radius:7px;margin-top:10px}.hidden{display:none}
+    .description{margin:0 0 10px;color:var(--text);white-space:pre-wrap}.responses{margin:0 0 12px;color:var(--muted);font-size:13px}
     a{color:var(--accent)}@media(max-width:650px){.summary{display:none}.params{grid-template-columns:1fr}main{padding:12px}}
   </style>
 </head>
@@ -138,11 +223,14 @@ function endpoint(path,method,op){
   const box=el('details','endpoint');box.dataset.search=(method+' '+path+' '+(op.summary||'')).toLowerCase();
   const head=el('summary');head.append(el('span','method '+method.toUpperCase(),method.toUpperCase()));head.append(el('code','',path));head.append(el('span','summary',op.summary||op.operationId));box.append(head);
   const work=el('div','workbench'),params=el('div','params');
-  for(const p of op.parameters||[]){const label=el('label','',p.name);const input=el('input');input.dataset.param=p.name;input.placeholder=p.in;params.append(label,input)}work.append(params);
-  let body;if(['post','put','patch'].includes(method)){body=el('textarea');body.placeholder='JSON request body (optional)';work.append(body)}
+  if(op.description){work.append(el('p','description',op.description))}
+  const codes=Object.entries(op.responses||{}).map(([c,r])=>c+' '+(r.description||'')+(r.content?' ('+Object.keys(r.content).join(', ')+')':'')).join(' · ');if(codes)work.append(el('p','responses',codes));
+  for(const p of op.parameters||[]){const label=el('label','',p.name+(p.in==='query'?' (query)':''));if(p.description)label.title=p.description;const input=el('input');input.dataset.param=p.name;input.dataset.where=p.in;input.placeholder=p.description||p.in;if(p.schema&&p.schema.default!==undefined)input.value=p.schema.default;params.append(label,input)}work.append(params);
+  let body;const bodyType=op.requestBody&&Object.keys(op.requestBody.content||{})[0];const jsonBody=!bodyType||bodyType==='application/json';
+  if(['post','put','patch'].includes(method)){body=el('textarea');body.placeholder=jsonBody?('JSON request body'+(op.requestBody&&op.requestBody.required?' (required)':' (optional)')):('This route takes a raw '+bodyType+' body; send it with a client, not from here');if(!jsonBody)body.disabled=true;work.append(body)}
   const send=el('button','',method==='get'?'Send request':'Send '+method.toUpperCase()+' request');const result=el('pre','result hidden');
-  send.onclick=async()=>{let url=path;for(const input of params.querySelectorAll('input'))url=url.replace('{'+input.dataset.param+'}',encodeURIComponent(input.value));result.classList.remove('hidden');result.textContent='Loading…';
-    const init={method:method.toUpperCase(),headers:{Accept:'application/json'}};if(body&&body.value.trim()){init.headers['Content-Type']='application/json';init.body=body.value}
+  send.onclick=async()=>{let url=path;const query=new URLSearchParams();for(const input of params.querySelectorAll('input')){if(input.dataset.where==='query'){if(input.value!=='')query.append(input.dataset.param,input.value)}else{url=url.replace('{'+input.dataset.param+'}',encodeURIComponent(input.value))}}if([...query].length)url+='?'+query;result.classList.remove('hidden');result.textContent='Loading…';
+    const init={method:method.toUpperCase(),headers:{Accept:'application/json'}};if(body&&!body.disabled&&body.value.trim()){init.headers['Content-Type']='application/json';init.body=body.value}
     try{const response=await fetch(url,init),text=await response.text();let pretty=text;try{pretty=JSON.stringify(JSON.parse(text),null,2)}catch{}result.textContent=response.status+' '+response.statusText+'\n\n'+pretty}catch(error){result.textContent='Request failed: '+error}}
   work.append(send,result);box.append(work);return box;
 }

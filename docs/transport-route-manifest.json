@@ -1,5 +1,5 @@
 {
-  "description": "Frozen public HTTP and WebSocket route surface served by UWebSocketsServer.cpp.",
+  "description": "Frozen public HTTP and WebSocket route surface served by UWebSocketsServer.cpp. Documentation fields feed /api/openapi.json and the API browser.",
   "route_count": 125,
   "routes": [
     {
@@ -7,875 +7,2997 @@
       "path": "/",
       "handler": "root",
       "controller": "StaticController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Server identification page",
+      "description": "A small HTML page naming the server and its version, with links to the API browser and health check.",
+      "tags": [
+        "System"
+      ],
+      "responses": {
+        "200": [
+          "text/html; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/docs",
       "handler": "apiDocs",
       "controller": "StaticController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Interactive API browser",
+      "description": "A self-contained page that lists every route from /api/openapi.json, grouped by tag, and lets you send requests to this server from the browser.",
+      "tags": [
+        "System"
+      ],
+      "responses": {
+        "200": [
+          "text/html; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/openapi.json",
       "handler": "openApi",
       "controller": "StaticController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "OpenAPI 3.1 document for this server",
+      "description": "Generated at build time from the frozen route manifest; the version field matches the running server.",
+      "tags": [
+        "System"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation",
       "handler": "listAllAnimations",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List all of the animations",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation",
       "handler": "upsertAnimation",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Create or update an animation in the database",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "413": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/ad-hoc",
       "handler": "listAdHocAnimations",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List ad-hoc animations stored in the TTL collection",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/ad-hoc",
       "handler": "createAdHocAnimation",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Generate and play an ad-hoc speech animation",
+      "description": "Creates a job that synthesizes audio, generates lip sync, stores a temporary animation, and interrupts.",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": false
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}",
       "handler": "getExchange",
       "controller": "StreamingAdHocController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get one streamed ad-hoc exchange",
+      "tags": [
+        "Streaming Ad-Hoc Speech"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.mp3",
       "handler": "getExchangeAudioMp3",
       "controller": "StreamingAdHocController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Download a whole exchange as one fully-tagged MP3",
+      "tags": [
+        "Streaming Ad-Hoc Speech"
+      ],
+      "responses": {
+        "200": [
+          "audio/mpeg"
+        ],
+        "409": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.ogg",
       "handler": "getExchangeAudioOgg",
       "controller": "StreamingAdHocController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Download a whole exchange as one tagged Ogg/Opus file",
+      "tags": [
+        "Streaming Ad-Hoc Speech"
+      ],
+      "responses": {
+        "200": [
+          "audio/ogg"
+        ],
+        "409": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.wav",
       "handler": "getExchangeAudioWav",
       "controller": "StreamingAdHocController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Download a whole exchange as the stitched 17-channel WAV",
+      "tags": [
+        "Streaming Ad-Hoc Speech"
+      ],
+      "responses": {
+        "200": [
+          "audio/wav"
+        ],
+        "409": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/ad-hoc-stream/exchanges",
       "handler": "listExchanges",
       "controller": "StreamingAdHocController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List streamed ad-hoc exchanges, newest first",
+      "description": "One exchange per streaming session, including in-flight ones (status 'streaming'). TTL'd with the ad-hoc artifacts they reference.",
+      "tags": [
+        "Streaming Ad-Hoc Speech"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/ad-hoc-stream/finish",
       "handler": "finishStreamingAdHoc",
       "controller": "StreamingAdHocController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Finish a streaming session and trigger playback",
+      "description": "Sends all accumulated text to ElevenLabs, generates lip sync, builds animation, and plays it.",
+      "tags": [
+        "Streaming Ad-Hoc Speech"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/ad-hoc-stream/start",
       "handler": "startStreamingAdHoc",
       "controller": "StreamingAdHocController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Start a streaming ad-hoc speech session",
+      "description": "Creates a session that accumulates text chunks from the agent. Call /text to add sentences, then /finish to synthesize and play.",
+      "tags": [
+        "Streaming Ad-Hoc Speech"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/ad-hoc-stream/text",
       "handler": "addStreamingAdHocText",
       "controller": "StreamingAdHocController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Add a text chunk to a streaming session",
+      "description": "Adds a sentence or text fragment to the session's speech buffer.",
+      "tags": [
+        "Streaming Ad-Hoc Speech"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/ad-hoc/play",
       "handler": "playPreparedAdHocAnimation",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Play a prepared ad-hoc animation",
+      "description": "Loads an ad-hoc animation from the TTL cache and interrupts the current universe without regenerating.",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "409": [
+          "application/json; charset=utf-8"
+        ],
+        "422": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/ad-hoc/prepare",
       "handler": "prepareAdHocAnimation",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Prepare an ad-hoc speech animation without playing it",
+      "description": "Creates the same ad-hoc speech job pipeline but skips the final playback. Use the play endpoint later.",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "422": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": false
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/ad-hoc/{animationId}",
       "handler": "getAdHocAnimation",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get an ad-hoc animation by id",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "animationId": "Ad-hoc animation ID"
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog",
       "handler": "submitDialog",
       "controller": "DialogController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Submit a multi-character dialog scene for assembly (async job)",
+      "description": "Generates a multi-character dialog scene end-to-end: ElevenLabs Text-to-Dialogue + forced alignment + per-creature slicing + 17-channel WAV + multi-track Animation. Returns 202 with a job_id; the worker runs the rest asynchronously and publishes progress + completion over the WebSocket job-progress stream. Filter for the returned job_id to follow this scene's job.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog-stream/finish",
       "handler": "finishDialogStream",
       "controller": "DialogStreamController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Finish a streaming dialog and stitch the exchange",
+      "description": "Waits for every queued turn to play, stitches the exchange into one WAV and one ad-hoc animation carrying every participant's track, and records the exchange.",
+      "tags": [
+        "Streaming Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog-stream/start",
       "handler": "startDialogStream",
       "controller": "DialogStreamController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Start a streaming dialog session for several creatures",
+      "description": "Creates a session with the given participants on a stage. Every creature listed is part of the exchange and must be registered on the same universe. Call /turn once per sentence, then /finish.",
+      "tags": [
+        "Streaming Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog-stream/turn",
       "handler": "addDialogStreamTurn",
       "controller": "DialogStreamController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Add one creature's turn to a streaming dialog",
+      "description": "One sentence (or short turn) spoken by one participant. Synthesized in that creature's voice, queued and played in arrival order; turns for different creatures may interleave.",
+      "tags": [
+        "Streaming Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog/music",
       "handler": "submitDialogMusic",
       "controller": "DialogMusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Generate background music for an exact cached dialog take",
+      "description": "Returns a job id. Progress/completion arrive through the existing job WebSocket; the completion result contains an immutable MP3 preview URL. The 48 kHz WAV stays server-side. Send either `prompt` (server sizes the request from the take) or `composition_plan` (console owns the timeline; chunks may reference a previous take's `song_id`). See docs/200-music-controls-plan.md.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "429": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/dialog/music/finetunes",
       "handler": "listMusicFinetunes",
       "controller": "DialogMusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List the ElevenLabs Music finetunes available to this account",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/dialog/music/generated/{filename}",
       "handler": "getGeneratedMusicMp3",
       "controller": "DialogMusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get an immutable MP3 audition rendition of a generated music take",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "audio/mpeg"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog/music/generated/{generationId}/promote",
       "handler": "promoteGeneratedMusic",
       "controller": "DialogMusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Promote a generated take to a permanent provenance-bearing WAV and attach it to its dialog",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": false
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/dialog/music/generated/{generationId}/recipe",
       "handler": "getGeneratedMusicRecipe",
       "controller": "DialogMusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get the generation controls a cached music take was made with",
+      "description": "Includes ElevenLabs `song_id` and the composition plan actually used, so the console can audio-reference or edit this take in its next request. 404 once the candidate has aged out of the cache.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog/music/plan",
       "handler": "planDialogMusic",
       "controller": "DialogMusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Draft an editable composition plan sized to a cached dialog take",
+      "description": "Synchronous proxy for ElevenLabs `POST /v1/music/plan`. The plan's total length is the take's exact length plus `duration_extension_ms`, so it can be edited and submitted as `composition_plan` unchanged.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/dialog/preview/audio/{cache_key}/{filename}",
       "handler": "getPreviewAudio",
       "controller": "DialogPreviewController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Stream the mono WAV for a cached dialog generation",
+      "description": "Reads the cached mono PCM for {cache_key}/{generation_id}, wraps it in a 44-byte PCM WAV header on the fly, and streams audio/wav back. URL is built from the audio_url field of a /preview/meta response. 404 if the generation isn't cached (never existed or has been cron-swept).",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "audio/wav"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "cache_key": "Hex sha256 of the turns; from /preview/meta or /preview/lookup.",
+        "generation_id": "UUID of the specific take; from /preview/meta or /lookup."
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog/preview/lookup",
       "handler": "lookupPreview",
       "controller": "DialogPreviewController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Check what dialog generations are cached for a given input",
+      "description": "Cheap cache-lookup endpoint — does no audio work. Returns the list of cached generations (newest first) for the given turns, or 404 if nothing is cached. UI can use this to badge the 'Make Animation' button as fast (cached) vs slow (will hit ElevenLabs).",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog/preview/meta",
       "handler": "submitPreviewMeta",
       "controller": "DialogPreviewController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Generate (or load) a dialog preview and return its metadata + audio URL",
+      "description": "Returns small JSON: cache_key, generation_id, cached flag, audio_url (GET this for the mono WAV ready for an <audio> element), audio_format, sample_rate, duration_seconds, voice_segments, and forced-alignment word/char timings. Generates fresh via ElevenLabs if no cache hit (or regenerate=true); reuses the latest cached take by default; loads a specific take if generation_id is set (404 if expired).",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog/preview/multichannel",
       "handler": "submitPreviewMultichannel",
       "controller": "DialogPreviewController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Generate (or load) a dialog preview and return the assembled 17-channel WAV",
+      "description": "Same cache semantics as /preview/meta (use generation_id / regenerate flags the same way). Returns audio/wav bytes — the 17-channel WAV the show would play. Suitable for downloading into Audacity (or any 17-channel-aware tool) for inspection. Each creature's audio appears in its `audio_channel` lane; all other lanes are silent.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/dialog/preview/share/{cache_key}/{filename}",
       "handler": "getPreviewShareable",
       "controller": "DialogPreviewController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Download a shareable MP3 or Ogg/Opus version of a cached dialog generation",
+      "description": "Encodes the cached mono PCM for {cache_key}/{generation_id} to a shareable rendition (mono, 128 kbps) for sharing. The trailing extension of the last path segment picks the format: '.mp3' → audio/mpeg (plays in Slack + AVFoundation; issue #58), '.ogg' (or no extension) → audio/ogg. URL is built from the cache_key/generation_id of a /preview/meta response. 404 if the generation isn't cached (never existed or has been cron-swept).",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "audio/mpeg",
+          "audio/ogg"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "cache_key": "Hex sha256 of the turns; from /preview/meta or /preview/lookup.",
+        "generation_id": "UUID of the specific take; from /preview/meta or /lookup."
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/dialog/script",
       "handler": "listDialogScripts",
       "controller": "DialogScriptController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List all saved dialog scripts (newest first by updated_at)",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog/script",
       "handler": "createDialogScript",
       "controller": "DialogScriptController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Create a new saved dialog script",
+      "description": "Server generates the script's UUID and stamps created_at + updated_at. Returns the stored script with its new id.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "201": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog/script/validate",
       "handler": "validateDialogScript",
       "controller": "DialogScriptController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Validate a dialog script payload without saving it",
+      "description": "Shape-only check: parses the JSON, runs the same field-level validation the upsert path uses, and soft-checks that every turn's creature_id exists. Returns 200 with valid=true or valid=false + error_messages — never throws, so the client can render inline form errors without exception handling. id, created_at, and updated_at are tolerated if present (the client may send a round-tripped script response) but are not required.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "DELETE",
       "path": "/api/v1/animation/dialog/script/{scriptId}",
       "handler": "deleteDialogScript",
       "controller": "DialogScriptController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Delete a saved dialog script",
+      "description": "Animations rendered from this script aren't touched — they carry a CoW snapshot of the turns in their metadata, so they remain playable and traceable.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "scriptId": "DialogScript UUID"
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/dialog/script/{scriptId}",
       "handler": "getDialogScript",
       "controller": "DialogScriptController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Fetch one saved dialog script by id",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "scriptId": "DialogScript UUID"
+      }
     },
     {
       "method": "PUT",
       "path": "/api/v1/animation/dialog/script/{scriptId}",
       "handler": "updateDialogScript",
       "controller": "DialogScriptController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Update (replace) an existing dialog script",
+      "description": "Body replaces the script's title/notes/turns; id comes from the URL. created_at is preserved from the existing record; updated_at gets bumped to now. Returns 404 if no script with that id exists.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "scriptId": "DialogScript UUID"
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "DELETE",
       "path": "/api/v1/animation/dialog/script/{scriptId}/music",
       "handler": "clearDialogBackgroundMusic",
       "controller": "DialogScriptController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Clear the accepted background music from a saved dialog script",
+      "description": "Detaches the accepted background-music reference so future renders are dialog-only. The permanent WAV/MP3 assets are retained, and the updated script is returned.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "scriptId": "DialogScript UUID"
+      }
     },
     {
       "method": "DELETE",
       "path": "/api/v1/animation/dialog/script/{scriptId}/voice",
       "handler": "clearAcceptedVoice",
       "controller": "DialogScriptController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Clear the script's accepted voice take",
+      "description": "Un-accepts the chosen take (#131). The promoted audio is DEMOTED back to the ad-hoc bucket, which restarts its 24h TTL and gives a change-your-mind window before the sweep reclaims it.\n\nIdempotent: clearing a script that has no acceptance returns the script unchanged without bumping updated_at or broadcasting.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "scriptId": "Dialog script UUID"
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/dialog/voice/accept",
       "handler": "acceptVoiceTake",
       "controller": "DialogVoiceController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Accept a voice take for a dialog script",
+      "description": "Records an explicit, script-level choice of voice take and promotes its audio out of the 24h-TTL ad-hoc bucket into the permanent sounds tree, so the script can reference it indefinitely.\\n\\n`dialog_cache_key` must match sha256 of the script's CURRENT turns. Accepting a take auditioned against turns that have since been edited is rejected rather than stored as immediately-stale.\\n\\nAccepting when a take is already accepted replaces it, demoting the previous audio back to ad-hoc (its TTL restarts). The sounds directory holds at most one take per script.\\n\\nUsually returns 200 with the updated script. Returns 202 with a job_id when the take's audio has to be assembled first — a take generated before the server wrote exports at generation time, or one whose ad-hoc file has been swept. The job's completion result is the same script body the 200 returns. No ElevenLabs call is made either way; the take's performance never changes.",
+      "tags": [
+        "Multi-character Dialog"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/generate-lipsync",
       "handler": "generateLipSyncForAnimation",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Generate lip sync for an animation",
+      "description": "Queues a background job to derive per-creature lip sync from the animation's multitrack audio.",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "422": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/interrupt",
       "handler": "interruptAnimation",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Interrupt current playback with a new animation (for interactive Zoom meetings!)",
+      "description": "Cancels the current session on the universe and plays the given animation instead.",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/play",
       "handler": "playStoredAnimation",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Play one animation out of the database on a given universe",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "DELETE",
       "path": "/api/v1/animation/{animationId}",
       "handler": "deleteAnimation",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Delete an animation and all of its tracks",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "animationId": "Animation ID"
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/animation/{animationId}",
       "handler": "getAnimation",
       "controller": "AnimationController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get an animation by id",
+      "tags": [
+        "Animations"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "animationId": "Animation ID in the form of a UUID"
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/animation/{animationId}/rerender",
       "handler": "rerenderAnimation",
       "controller": "StageController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Re-render one animation's motion against a stage",
+      "description": "Motion only — the existing audio is reused untouched and no speech is regenerated.\n\nBody: {\"stage_id\": \"...\"} to aim against a different stage than the one this animation was rendered with; omit it to rebuild against its own recorded stage. Note this OVERWRITES the animation in place. To keep both a mainstage and a travel rendition, render the script twice with different stage_ids instead — animations are keyed by (script, stage), so the two coexist.\n\nReturns 202 with a job_id.",
+      "tags": [
+        "Stages"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "animationId": "Animation UUID"
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/creature",
       "handler": "getAllCreatures",
       "controller": "CreatureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get all of the creatures",
+      "tags": [
+        "Creatures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/creature",
       "handler": "upsertCreature",
       "controller": "CreatureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Upload or update a creature's JSON configuration",
+      "description": "Accepts raw creature JSON and upserts it to the database. All required fields must be present in the JSON (id, name, channel_offset, audio_channel, mouth_slot).",
+      "tags": [
+        "Creatures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "413": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/creature/register",
       "handler": "registerCreature",
       "controller": "CreatureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Register a creature with its universe assignment",
+      "description": "Called by controllers when they start up to register a creature and its current universe. The creature config from the controller's JSON file is the source of truth and will be upserted to the database. The universe assignment is stored in runtime memory only.",
+      "tags": [
+        "Creatures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "413": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/creature/validate",
       "handler": "validateCreatureConfig",
       "controller": "CreatureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Validate a creature configuration payload",
+      "tags": [
+        "Creatures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "413": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/creature/{creatureId}",
       "handler": "getCreature",
       "controller": "CreatureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get one creature by id",
+      "tags": [
+        "Creatures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "creatureId": "Creature ID in the form of an UUID"
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/creature/{creatureId}/export",
       "handler": "exportCreature",
       "controller": "CreatureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Export a creature's raw stored JSON config (disaster recovery)",
+      "description": "Returns the creature's configuration exactly as stored in the database, with Mongo's internal _id stripped, so it can be dropped back onto a replaced controller's JSON file or re-POSTed to /api/v1/creature. Bypasses the DTO serializer so every stored field survives the round trip — use this to recover a creature config when its controller's Pi is lost.",
+      "tags": [
+        "Creatures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "creatureId": "Creature ID in the form of an UUID"
+      }
     },
     {
       "method": "PATCH",
       "path": "/api/v1/creature/{creatureId}/idle",
       "handler": "setIdleEnabled",
       "controller": "CreatureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Enable or disable idle loop for a creature (runtime-only)",
+      "tags": [
+        "Creatures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/cache-invalidate/ad-hoc-animation-list",
       "handler": "invalidate_adhoc_animation_list",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Sends a message to all clients to invalidate their ad-hoc-animation-list cache",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/cache-invalidate/ad-hoc-sound-list",
       "handler": "invalidate_adhoc_sound_list",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Sends a message to all clients to invalidate their ad-hoc-sound-list cache",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/cache-invalidate/animation",
       "handler": "invalidate_animation",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Sends a message to all clients to invalidate their animation cache",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/cache-invalidate/creature",
       "handler": "invalidate_creature",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Sends a message to all clients to invalidate their creature cache",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/cache-invalidate/dialog-script-list",
       "handler": "invalidate_dialog_script_list",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Sends a message to all clients to invalidate their dialog-script-list cache",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/cache-invalidate/fixture",
       "handler": "invalidate_fixture",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Sends a message to all clients to invalidate their fixture cache",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/cache-invalidate/playlist",
       "handler": "invalidate_playlist",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Sends a message to all clients to invalidate their playlist cache",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/cache-invalidate/sound-list",
       "handler": "invalidate_sound_list",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Sends a message to all clients to invalidate their sound-list cache",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/cache-invalidate/stage-list",
       "handler": "invalidate_stage_list",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Sends a message to all clients to invalidate their stage-list cache",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/cache-invalidate/storyboard-list",
       "handler": "invalidate_storyboard_list",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Sends a message to all clients to invalidate their storyboard-list cache",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/debug/cache/audio/prune",
       "handler": "prune_audio_cache",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Reclaim Opus cache entries that can never be used again",
+      "description": "The on-disk Opus cache is keyed by a hash of each sound's canonical path, so MOVING or deleting a sound orphans its cache entry permanently — no other operation reclaims it. This removes orphaned entries, entries left incomplete by a crashed save, abandoned temporary files, and lock files whose directory is gone.\n\nDefaults to a DRY RUN: pass dry_run=false to actually delete. Intended as a creature-cli maintenance command. Distinct from /cache-invalidate/*, which never deletes anything (issue #166).",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "query_params": [
+        {
+          "name": "dry_run",
+          "required": false,
+          "default": "true",
+          "description": "When true (default), report what would be removed without deleting."
+        }
+      ],
+      "request_body": {
+        "content_type": "application/json",
+        "required": false
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/debug/playlist/update",
       "handler": "test_playlist_updates",
       "controller": "DebugController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Tests the ability to send a playlist update",
+      "tags": [
+        "Debug"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/fixture",
       "handler": "getAllFixtures",
       "controller": "DmxFixtureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List all DMX fixtures",
+      "tags": [
+        "Fixtures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/fixture",
       "handler": "upsertFixture",
       "controller": "DmxFixtureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Create or update a DMX fixture",
+      "description": "Accepts raw fixture JSON and upserts it to the database. Required fields: id, name, type, channel_offset, channels.",
+      "tags": [
+        "Fixtures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/fixture/validate",
       "handler": "validateFixtureConfig",
       "controller": "DmxFixtureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Validate a fixture config payload without saving",
+      "tags": [
+        "Fixtures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "DELETE",
       "path": "/api/v1/fixture/{fixtureId}",
       "handler": "deleteFixture",
       "controller": "DmxFixtureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Delete a DMX fixture",
+      "tags": [
+        "Fixtures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "fixtureId": "Fixture UUID"
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/fixture/{fixtureId}",
       "handler": "getFixture",
       "controller": "DmxFixtureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get one DMX fixture by id",
+      "tags": [
+        "Fixtures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "fixtureId": "Fixture UUID"
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/fixture/{fixtureId}/live",
       "handler": "setFixtureLive",
       "controller": "DmxFixtureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Drive a fixture's channels directly with raw DMX values (slider UI)",
+      "description": "Bypasses patterns and bindings to write per-channel values straight to DMX. Useful for slider-driven tuning in the Creature Console. The active pattern (if any) is cancelled immediately on first live call. The server holds the values until `timeout_ms` elapses, then blacks out the fixture's channels. New patterns cannot start on this fixture until the live session expires. Channels not named in `values` hold their previous live value (or default to 0 on the first call).",
+      "tags": [
+        "Fixtures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "fixtureId": "Fixture UUID"
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/fixture/{fixtureId}/pattern/preview",
       "handler": "previewFixturePattern",
       "controller": "DmxFixtureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Fire an ephemeral, not-persisted pattern (editor preview)",
+      "description": "Same runner path as `triggerFixturePattern`, but the pattern is built from the request body instead of looked up by id. Intended for the Creature Console pattern editor's Fire button so unsaved edits can be previewed without an upsert round-trip. The fixture must have an assigned universe. Live control preempts: if a live session is active for this fixture, the preview is refused with a 400.",
+      "tags": [
+        "Fixtures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "fixtureId": "Fixture UUID"
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger",
       "handler": "triggerFixturePattern",
       "controller": "DmxFixtureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Manually trigger a fixture pattern (bypasses binding match)",
+      "description": "Fires the pattern directly. Useful for ad-hoc UI control and testing. The fixture must have an assigned universe (`PUT /api/v1/fixture/{id}/universe`).",
+      "tags": [
+        "Fixtures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "fixtureId": "Fixture UUID",
+        "patternId": "Pattern UUID (must exist on the fixture)"
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "DELETE",
       "path": "/api/v1/fixture/{fixtureId}/universe",
       "handler": "clearFixtureUniverse",
       "controller": "DmxFixtureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Clear a fixture's DMX universe assignment",
+      "tags": [
+        "Fixtures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "fixtureId": "Fixture UUID"
+      }
     },
     {
       "method": "PUT",
       "path": "/api/v1/fixture/{fixtureId}/universe",
       "handler": "setFixtureUniverse",
       "controller": "DmxFixtureController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Assign a fixture's DMX universe (persisted)",
+      "description": "Sets the fixture's `assigned_universe` field in MongoDB and mirrors it to the runtime lookup map. Survives server restart.",
+      "tags": [
+        "Fixtures"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "fixtureId": "Fixture UUID"
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/health",
       "handler": "health",
       "controller": "StaticController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Returns OK if the server is healthy",
+      "tags": [
+        "System"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/job/{jobId}",
       "handler": "getJob",
       "controller": "JobController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get the current state of a background job",
+      "description": "Returns the JobState (job_id, job_type, status, progress, result, details) for a job created by one of the async endpoints. Primarily for polling clients (e.g. the CLI). 404 if the job id is unknown (never existed or already cleaned up).",
+      "tags": [
+        "Jobs"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "jobId": "UUID returned when the background job was submitted."
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/metric/counters",
       "handler": "counters",
       "controller": "MetricsController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Gets all of the system counters",
+      "tags": [
+        "Metrics"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/music",
       "handler": "listMusicPieces",
       "controller": "MusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List the music library, newest first",
+      "tags": [
+        "Music Library"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/music/generate",
       "handler": "generateMusic",
       "controller": "MusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Generate a piece of music that is not bound to a dialog",
+      "description": "Returns a job id; progress/completion arrive on the job WebSocket. Prompt mode needs `music_length_ms`; plan mode sends `composition_plan`; sections mode sends editable `sections` and optionally keeps some of them from a piece's version (`piece_id` + `base_version_id` + `keep`), which is how a piece is refined without throwing the rest away. See docs/music-library-plan.md.",
+      "tags": [
+        "Music Library"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "429": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": false
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/music/generated/{filename}",
       "handler": "getMusicCandidateMp3",
       "controller": "MusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get the immutable MP3 audition rendition of a music candidate",
+      "tags": [
+        "Music Library"
+      ],
+      "responses": {
+        "200": [
+          "audio/mpeg"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/music/generated/{generationId}/recipe",
       "handler": "getMusicCandidateRecipe",
       "controller": "MusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get the generation controls a music candidate was made with",
+      "tags": [
+        "Music Library"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/music/generated/{generationId}/save",
       "handler": "saveMusicCandidate",
       "controller": "MusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Save a music candidate to the library as a new piece or a new version of a piece",
+      "description": "Copies the candidate's WAV under music/ with its provenance and records the version. Idempotent for a candidate that is already a version of the piece.",
+      "tags": [
+        "Music Library"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "201": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": false
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/music/plan",
       "handler": "planMusic",
       "controller": "MusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Draft editable sections for a new piece from a prompt and a length",
+      "tags": [
+        "Music Library"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": false
+      }
     },
     {
       "method": "DELETE",
       "path": "/api/v1/music/{pieceId}",
       "handler": "deleteMusicPiece",
       "controller": "MusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Delete a piece from the library (its WAVs are retained)",
+      "tags": [
+        "Music Library"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/music/{pieceId}",
       "handler": "getMusicPiece",
       "controller": "MusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get one music piece with all its versions",
+      "tags": [
+        "Music Library"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "PUT",
       "path": "/api/v1/music/{pieceId}",
       "handler": "updateMusicPiece",
       "controller": "MusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Rename a piece, edit its notes, or choose which version is current",
+      "tags": [
+        "Music Library"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": false
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/music/{pieceId}/refine",
       "handler": "refineMusicPiece",
       "controller": "MusicController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Ask the AI to refine a piece: an instruction in, proposed sections and a diff out",
+      "description": "Synchronous and generates no audio. Sends the version's editable sections and the instruction to ElevenLabs' planner and reports which sections it changed, so the console can show the proposal and then generate in sections mode with `keep` = `kept`.",
+      "tags": [
+        "Music Library"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": false
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/playlist",
       "handler": "getAllPlaylists",
       "controller": "PlaylistController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get all playlists",
+      "tags": [
+        "Playlists"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/playlist",
       "handler": "upsertPlaylist",
       "controller": "PlaylistController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Create or update a playlist",
+      "tags": [
+        "Playlists"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "413": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/playlist/id/{playlistId}",
       "handler": "getPlaylist",
       "controller": "PlaylistController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get a playlist by ID",
+      "tags": [
+        "Playlists"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "playlistId": "Playlist ID in UUID form"
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/playlist/start",
       "handler": "startPlaylist",
       "controller": "PlaylistController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Start a playlist",
+      "tags": [
+        "Playlists"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/playlist/status",
       "handler": "getAllPlaylistStatuses",
       "controller": "PlaylistController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get all playlist statuses",
+      "tags": [
+        "Playlists"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/playlist/status/{universe}",
       "handler": "playlistStatus",
       "controller": "PlaylistController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Get a universe's playlist status",
+      "tags": [
+        "Playlists"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/playlist/stop",
       "handler": "stopPlaylist",
       "controller": "PlaylistController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Stop a playlist",
+      "tags": [
+        "Playlists"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/sound",
       "handler": "getAllSounds",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Lists all of the sound files",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/sound/ad-hoc",
       "handler": "getAdHocSounds",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List ad-hoc/generated sound files",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/sound/ad-hoc/{filename}",
       "handler": "getAdHocSound",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Retrieve an ad-hoc generated sound file",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "200": [
+          "audio/wav"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/sound/generate-lipsync",
       "handler": "generateLipSync",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Generate lip sync data for a sound file using Rhubarb Lip Sync (async job)",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/sound/generate-lipsync/upload",
       "handler": "generateLipSyncFromUpload",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Generate lip sync data by uploading a WAV file",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "query_params": [
+        {
+          "name": "filename",
+          "required": false
+        }
+      ],
+      "request_body": {
+        "content_type": "audio/wav",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/sound/mp3/{filename}",
       "handler": "getSoundMp3",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Encode a stored sound to MP3 for playback and sharing (downmixed to mono)",
+      "description": "Addressed as '{stem}.mp3' so the URL's trailing extension honestly matches the audio/mpeg body — URL-extension-sensitive players (AVFoundation) can stream it directly. The server strips the '.mp3' and resolves the source WAV '{stem}.wav' (permanent store first, with a recursive basename search so dialog/ renders resolve — #46, then the ad-hoc store). Multi-channel WAVs are downmixed to mono before encoding. MP3 plays natively in AVFoundation (in-app + progressive streaming), Slack, and every browser (issue #57).",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "200": [
+          "audio/mpeg"
+        ],
+        "403": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "422": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/sound/play",
       "handler": "playSound",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Queue up a sound to play on the next frame",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "409": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/sound/provenance/{filename}",
       "handler": "getSoundProvenance",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Return the embedded iXML provenance of a dialog sound file",
+      "description": "Dialog renders carry an iXML chunk with the source script id, generation ids, channel/track layout, and the full rendered script text (issue #47). Returns the raw iXML (BWFXML) document. 404 if the sound has no embedded provenance.",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "200": [
+          "application/xml"
+        ],
+        "403": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/sound/shareable/{filename}",
       "handler": "getShareableSound",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Encode a stored sound to Ogg/Opus for sharing (downmixed to mono)",
+      "description": "Addressed as '{stem}.ogg' so the URL's trailing extension matches the audio/ogg body (mirrors the MP3 endpoint). The server strips the '.ogg' and resolves the source WAV '{stem}.wav' (permanent store first, with a recursive basename search so dialog/ renders resolve — #46, then the ad-hoc store). Multi-channel WAVs are downmixed to mono before encoding. The response is cacheable (immutable), same as the MP3 rendition.",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "200": [
+          "audio/ogg"
+        ],
+        "403": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "422": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/sound/{filename}",
       "handler": "getSound",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Retrieve a sound file",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "200": [
+          "audio/mpeg",
+          "audio/ogg",
+          "audio/wav",
+          "application/octet-stream"
+        ],
+        "403": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/sound/{filename}/metadata",
       "handler": "getSoundMetadata",
       "controller": "SoundController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Structured dialog metadata for one stored sound (issue #56)",
+      "description": "Returns full sound metadata, including the heavy per-track mouth cues and word timings parsed from the embedded iXML. The sound LIST (GET /api/v1/sound) omits those arrays to stay light; the console fetches this per-sound for the animation it's editing. Empty structured fields for plain sounds and pre-dialog-pipeline renders.",
+      "tags": [
+        "Sounds"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "403": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/stage",
       "handler": "listStages",
       "controller": "StageController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List all stages (newest first by updated_at)",
+      "description": "Returns {count, items: [Stage...]}, newest first. Console-owned fields on each stage are preserved verbatim.",
+      "tags": [
+        "Stages"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/stage",
       "handler": "createStage",
       "controller": "StageController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Create a new stage",
+      "description": "Server generates the stage's UUID and stamps created_at + updated_at. Any client-supplied `id`/`created_at`/`updated_at` is ignored. Placements need a creature_id plus x/y/z in metres (listener at the origin, +/-5 m) and yaw in degrees.",
+      "tags": [
+        "Stages"
+      ],
+      "responses": {
+        "201": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "DELETE",
       "path": "/api/v1/stage/{stageId}",
       "handler": "deleteStage",
       "controller": "StageController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Delete a stage",
+      "tags": [
+        "Stages"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "stageId": "Stage UUID"
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/stage/{stageId}",
       "handler": "getStage",
       "controller": "StageController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Fetch one stage by id",
+      "tags": [
+        "Stages"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "stageId": "Stage UUID"
+      }
     },
     {
       "method": "PUT",
       "path": "/api/v1/stage/{stageId}",
       "handler": "updateStage",
       "controller": "StageController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Update (replace) an existing stage",
+      "description": "Body replaces the stage's title/notes/placements/audio; id comes from the URL. created_at is preserved from the existing record; updated_at gets bumped to now, which is what marks animations rendered against this stage as stale. Returns 404 if no stage with that id exists.",
+      "tags": [
+        "Stages"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "stageId": "Stage UUID"
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/stage/{stageId}/animations",
       "handler": "listStageAnimations",
       "controller": "StageController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List the animations rendered against this stage",
+      "description": "Returns {count, stale_count, items:[{animation_id, title, source_script_id, source_stage_updated_at, stale}]}, most out-of-date first. An animation is `stale` when it was rendered against an older version of this stage than the one currently stored — move a creature and every animation built on that stage becomes stale until it is re-rendered.",
+      "tags": [
+        "Stages"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "stageId": "Stage UUID"
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/stage/{stageId}/rerender",
       "handler": "rerenderStage",
       "controller": "StageController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Re-render the animations built on this stage against its current geometry",
+      "description": "Rebuilds each animation's MOTION only — the existing audio is reused untouched, and no speech is regenerated. That is a correctness requirement, not an optimisation: the dialogue model is nondeterministic and exposes no seed, so regenerating audio because a creature moved would change the performance itself.\n\nBecause each animation records the loops its creatures drew and the seed its gaze timing came from, a re-render against an UNCHANGED stage reproduces the animation exactly, and a re-render after moving a creature changes only the head-aiming bytes.\n\nBody: {\"stale_only\": true} to skip animations already current with this stage. Returns 202 with a job_id; listen for job-progress and job-complete.",
+      "tags": [
+        "Stages"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "stageId": "Stage UUID"
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/storyboard",
       "handler": "listStoryboards",
       "controller": "StoryboardController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "List all storyboards (newest first by updated_at)",
+      "description": "Returns {count, items: [Storyboard...]}. Each storyboard's `tiles[].action` is preserved verbatim — see creature-console/docs/storyboard-server-contract.md for the action shapes.",
+      "tags": [
+        "Storyboards"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/storyboard",
       "handler": "createStoryboard",
       "controller": "StoryboardController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Create a new storyboard",
+      "description": "Server generates the storyboard's UUID and stamps created_at + updated_at. Any client-supplied `id`/`created_at`/`updated_at` is ignored. `tiles[].action` is stored verbatim — see creature-console/docs/storyboard-server-contract.md.",
+      "tags": [
+        "Storyboards"
+      ],
+      "responses": {
+        "201": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "DELETE",
       "path": "/api/v1/storyboard/{storyboardId}",
       "handler": "deleteStoryboard",
       "controller": "StoryboardController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Delete a storyboard",
+      "tags": [
+        "Storyboards"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "storyboardId": "Storyboard UUID"
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/storyboard/{storyboardId}",
       "handler": "getStoryboard",
       "controller": "StoryboardController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Fetch one storyboard by id",
+      "tags": [
+        "Storyboards"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "storyboardId": "Storyboard UUID"
+      }
     },
     {
       "method": "PUT",
       "path": "/api/v1/storyboard/{storyboardId}",
       "handler": "updateStoryboard",
       "controller": "StoryboardController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Update (replace) an existing storyboard",
+      "description": "Body replaces the storyboard's title/notes/tiles; id comes from the URL. created_at is preserved from the existing record; updated_at gets bumped to now. Returns 404 if no storyboard with that id exists.",
+      "tags": [
+        "Storyboards"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "path_params": {
+        "storyboardId": "Storyboard UUID"
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/stt/transcribe",
       "handler": "transcribeAudio",
       "controller": "SpeechToTextController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Transcribe 16kHz mono float32 PCM audio to text",
+      "description": "Accepts raw 16kHz mono float32 PCM audio as the request body. Returns the transcribed text. Used by creature-listener to offload STT from the Pi to the server's faster CPU.",
+      "tags": [
+        "Speech-to-Text"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/octet-stream",
+        "required": true
+      }
     },
     {
       "method": "POST",
       "path": "/api/v1/voice",
       "handler": "makeSoundFile",
       "controller": "VoiceController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Create a sound file for a creature based on the text given (async job)",
+      "description": "Single-voice TTS of the given text. Long text can outlive a 60s HTTP timeout, so this returns 202 with a job_id; the worker generates the sound file asynchronously and publishes progress + completion over the WebSocket job-progress stream. The completion result is the CreatureSpeechResponse JSON the sync path used to return.",
+      "tags": [
+        "Voice"
+      ],
+      "responses": {
+        "202": [
+          "application/json; charset=utf-8"
+        ],
+        "400": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      },
+      "request_body": {
+        "content_type": "application/json",
+        "required": true
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/voice/list-available",
       "handler": "getAllVoices",
       "controller": "VoiceController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Lists all of the voices files",
+      "tags": [
+        "Voice"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/voice/subscription",
       "handler": "getSubscriptionStatus",
       "controller": "VoiceController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "Returns the status of our subscription to the voice API",
+      "tags": [
+        "Voice"
+      ],
+      "responses": {
+        "200": [
+          "application/json; charset=utf-8"
+        ],
+        "404": [
+          "application/json; charset=utf-8"
+        ],
+        "500": [
+          "application/json; charset=utf-8"
+        ]
+      }
     },
     {
       "method": "GET",
       "path": "/api/v1/websocket",
       "handler": "websocket",
       "controller": "WebSocketController",
-      "source": "src/server/transport/UWebSocketsServer.cpp"
+      "source": "src/server/transport/UWebSocketsServer.cpp",
+      "summary": "WebSocket endpoint for the console and creatures",
+      "description": "Upgrade here for the bidirectional message stream: creature registration and sensor reports inbound; playlist, animation, job, notice, and cache-invalidation broadcasts outbound. Messages are JSON envelopes with a command and a payload.",
+      "tags": [
+        "WebSocket"
+      ],
+      "responses": {
+        "101": []
+      }
     }
   ]
 }
