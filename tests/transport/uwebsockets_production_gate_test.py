@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Black-box lifecycle gate for the production uWebSockets transport.
 
+Response shapes are compared against ``transport_contract_expected.json``,
+recorded with ``--record`` from a server whose responses had been verified
+identical to the retired oat++ transport. Re-record deliberately when a route
+changes; the diff of that file is the review surface.
+
 This launches the real ``creature-server`` executable in headless RTP mode.
 MongoDB deliberately points at an unused loopback port so fixture reads exercise
 the production executor, Mongo deadlines, request registry, and shutdown path.
@@ -35,7 +40,7 @@ REQUEST_COUNT = 32
 
 
 class ProductionServer:
-    def __init__(self, executable: Path, network_device: str, transport: str | None) -> None:
+    def __init__(self, executable: Path, network_device: str) -> None:
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             self.port = reservation.getsockname()[1]
@@ -68,8 +73,6 @@ class ProductionServer:
                 "--lip-sync-engine",
                 "rhubarb",
             ]
-        if transport is not None:
-            command[1:1] = ["--http-transport", transport]
         self.process = subprocess.Popen(
             command,
             env=environment,
@@ -78,7 +81,7 @@ class ProductionServer:
             text=True,
         )
         self.config = contract.parse_base_url(f"http://127.0.0.1:{self.port}", False)
-        self.transport = transport or "default"
+        self.transport = "uwebsockets"
         self._wait_until_ready()
 
     def logs(self) -> str:
@@ -281,7 +284,10 @@ def check_websocket_trace(capture: otel_gate.OtlpCapture) -> None:
     require(attributes.get("trigger.span_id") == otel_gate.REMOTE_PARENT_ID, "upgrade span ID was not linked to the message")
 
 
-def differential_snapshot(server: ProductionServer) -> dict[tuple[str, ...], tuple[int, dict[str, str], bytes]]:
+EXPECTED_PATH = Path(__file__).with_name("transport_contract_expected.json")
+
+
+def contract_snapshot(server: ProductionServer) -> dict[str, dict[str, object]]:
     cases = (
         ("GET", "/"),
         ("HEAD", "/"),
@@ -355,7 +361,7 @@ def differential_snapshot(server: ProductionServer) -> dict[tuple[str, ...], tup
         ("GET", "/api/v1/job/not-a-uuid", "bad-id", None, None),
     )
     compared_headers = ("content-type", "content-length", "location")
-    snapshot: dict[tuple[str, ...], tuple[int, dict[str, str], bytes]] = {}
+    snapshot: dict[str, dict[str, object]] = {}
     for method, path, label, body, headers in mutating_cases:
         status, response_headers, raw = contract.http_request(server.config, method, path, body=body, headers=headers)
         selected_headers = {name: response_headers[name] for name in ("content-type", "location") if name in response_headers}
@@ -369,7 +375,7 @@ def differential_snapshot(server: ProductionServer) -> dict[tuple[str, ...], tup
             normalized = json.dumps(
                 {name: envelope.get(name) for name in ("code", "status", "message")}, sort_keys=True
             ).encode()
-        snapshot[(method, path, label)] = (status, selected_headers, normalized)
+        snapshot[f"{method} {path} [{label}]"] = {"status": status, "headers": selected_headers, "body": normalized.decode()}
     for method, path in cases:
         status, headers, body = contract.http_request(server.config, method, path)
         selected_headers = {name: headers[name] for name in compared_headers if name in headers}
@@ -391,24 +397,33 @@ def differential_snapshot(server: ProductionServer) -> dict[tuple[str, ...], tup
             normalized_body = json.dumps(
                 {name: envelope.get(name) for name in ("code", "status")}, sort_keys=True
             ).encode()
-        snapshot[(method, path)] = (
-            status,
-            selected_headers,
-            normalized_body,
-        )
+        elif path == "/api/openapi.json":
+            # The document embeds the version; compare the route surface only.
+            selected_headers.pop("content-length", None)
+            document = json.loads(body) if body else {}
+            operations = sorted(
+                f"{verb.upper()} {route}" for route, verbs in document.get("paths", {}).items() for verb in verbs
+            )
+            normalized_body = json.dumps(operations).encode()
+        elif method == "GET" and path in {"/", "/api/docs", "/api/docs/"}:
+            # Static pages: a digest keeps the expectation file small; an
+            # intentional page edit shows up as one changed hash.
+            normalized_body = ("sha256:" + hashlib.sha256(body).hexdigest()).encode()
+        snapshot[f"{method} {path}"] = {"status": status, "headers": selected_headers, "body": normalized_body.decode()}
     return snapshot
 
 
-def check_differential_parity(
-    uwebsockets: dict[tuple[str, ...], tuple[int, dict[str, str], bytes]],
-    oatpp: dict[tuple[str, ...], tuple[int, dict[str, str], bytes]],
-) -> None:
-    require(uwebsockets.keys() == oatpp.keys(), "transport differential case sets do not match")
-    mismatches = []
-    for case in uwebsockets:
-        if uwebsockets[case] != oatpp[case]:
-            mismatches.append(f"{' '.join(case)}: uWS={uwebsockets[case]!r}; oat++={oatpp[case]!r}")
-    require(not mismatches, "transport differential mismatch:\n" + "\n".join(mismatches))
+def check_contract_snapshot(actual: dict[str, dict[str, object]]) -> None:
+    require(EXPECTED_PATH.is_file(), f"missing {EXPECTED_PATH.name}; record it with --record")
+    expected = json.loads(EXPECTED_PATH.read_text(encoding="utf-8"))
+    require(actual.keys() == expected.keys(), "transport contract case sets do not match the recorded file")
+    mismatches = [
+        f"{case}: actual={actual[case]!r}; expected={expected[case]!r}" for case in actual if actual[case] != expected[case]
+    ]
+    require(
+        not mismatches,
+        "transport contract mismatch (re-record with --record if the change is intended):\n" + "\n".join(mismatches),
+    )
 
 
 def check_dead_mongo_deadline(server: ProductionServer) -> None:
@@ -552,6 +567,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server", required=True, type=Path)
     parser.add_argument("--network-device", required=True, help="loopback network interface name (for example lo0 or lo)")
+    parser.add_argument("--record", action="store_true", help="rewrite transport_contract_expected.json from this server")
     arguments = parser.parse_args()
     executable = arguments.server.resolve()
     if not executable.is_file():
@@ -563,9 +579,7 @@ def main() -> int:
     receiver_thread = threading.Thread(target=receiver.serve_forever, daemon=True)
     receiver_thread.start()
     try:
-        # No selector here: this is the deployable-binary assertion that the
-        # process now boots uWebSockets by default.
-        uwebsockets = ProductionServer(executable, arguments.network_device, None)
+        uwebsockets = ProductionServer(executable, arguments.network_device)
         servers.append(uwebsockets)
         check_websocket_contract(uwebsockets, require_message_limit=True)
         check_websocket_trace(capture)
@@ -577,14 +591,19 @@ def main() -> int:
         check_disconnect_is_safe(uwebsockets)
         check_static_contract(uwebsockets)
         check_dead_mongo_deadline(uwebsockets)
-        uwebsockets_snapshot = differential_snapshot(uwebsockets)
+        snapshot = contract_snapshot(uwebsockets)
+        if arguments.record:
+            EXPECTED_PATH.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            print(f"recorded {len(snapshot)} cases to {EXPECTED_PATH}")
+        else:
+            check_contract_snapshot(snapshot)
         regular_uwebsockets_shutdown = uwebsockets.stop(timeout=2.0)
         require(
             regular_uwebsockets_shutdown < 2.0,
             f"uWebSockets shutdown exceeded two seconds ({regular_uwebsockets_shutdown:.3f}s)",
         )
 
-        shutdown_server = ProductionServer(executable, arguments.network_device, "uwebsockets")
+        shutdown_server = ProductionServer(executable, arguments.network_device)
         servers.append(shutdown_server)
         uwebsockets_shutdown = check_shutdown_with_inflight_mongo(shutdown_server)
         require(
@@ -592,16 +611,10 @@ def main() -> int:
             f"uWebSockets shutdown exceeded the two-second budget ({uwebsockets_shutdown:.3f}s)",
         )
 
-        oatpp = ProductionServer(executable, arguments.network_device, "oatpp")
-        servers.append(oatpp)
-        check_websocket_contract(oatpp, require_message_limit=False)
-        oatpp_snapshot = differential_snapshot(oatpp)
-        check_differential_parity(uwebsockets_snapshot, oatpp_snapshot)
         print(
-            "PASS: default uWebSockets/explicit oat++ rollback differential, WebSocket ordering/tracing, "
-            "API browser, dead-Mongo deadline, disconnect, saturation isolation, and "
-            f"shutdown (uWS {uwebsockets_shutdown:.3f}s; "
-            "oat++ oracle terminated after snapshot)"
+            f"PASS: {len(snapshot)} recorded-contract cases, WebSocket ordering/tracing, API browser, "
+            "dead-Mongo deadline, disconnect, saturation isolation, and "
+            f"shutdown ({uwebsockets_shutdown:.3f}s)"
         )
         return 0
     except BaseException as error:

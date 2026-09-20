@@ -1,0 +1,439 @@
+{
+  "DELETE /api/v1/music/not-a-uuid [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"music piece id must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /": {
+    "body": "sha256:e8b1bf08139f60c736b15d573e60d416eb0c7a687bb59cf11aeb421e3fa05b87",
+    "headers": {
+      "content-length": "215",
+      "content-type": "text/html"
+    },
+    "status": 200
+  },
+  "GET /__transport_differential_missing__": {
+    "body": "{\"code\": 404, \"status\": \"not_found\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 404
+  },
+  "GET /api/docs": {
+    "body": "sha256:3b2fdf5ba0a9b97dba31edd4630097f82e3d57cf793b2472543e9f6c8975d12d",
+    "headers": {
+      "content-length": "5176",
+      "content-type": "text/html; charset=utf-8"
+    },
+    "status": 200
+  },
+  "GET /api/docs/": {
+    "body": "sha256:3b2fdf5ba0a9b97dba31edd4630097f82e3d57cf793b2472543e9f6c8975d12d",
+    "headers": {
+      "content-length": "5176",
+      "content-type": "text/html; charset=utf-8"
+    },
+    "status": 200
+  },
+  "GET /api/openapi.json": {
+    "body": "[\"DELETE /api/v1/animation/dialog/script/{scriptId}\", \"DELETE /api/v1/animation/dialog/script/{scriptId}/music\", \"DELETE /api/v1/animation/dialog/script/{scriptId}/voice\", \"DELETE /api/v1/animation/{animationId}\", \"DELETE /api/v1/fixture/{fixtureId}\", \"DELETE /api/v1/fixture/{fixtureId}/universe\", \"DELETE /api/v1/music/{pieceId}\", \"DELETE /api/v1/stage/{stageId}\", \"DELETE /api/v1/storyboard/{storyboardId}\", \"GET /\", \"GET /api/docs\", \"GET /api/openapi.json\", \"GET /api/v1/animation\", \"GET /api/v1/animation/ad-hoc\", \"GET /api/v1/animation/ad-hoc-stream/exchange/{sessionId}\", \"GET /api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.mp3\", \"GET /api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.ogg\", \"GET /api/v1/animation/ad-hoc-stream/exchange/{sessionId}/audio.wav\", \"GET /api/v1/animation/ad-hoc-stream/exchanges\", \"GET /api/v1/animation/ad-hoc/{animationId}\", \"GET /api/v1/animation/dialog/music/finetunes\", \"GET /api/v1/animation/dialog/music/generated/{filename}\", \"GET /api/v1/animation/dialog/music/generated/{generationId}/recipe\", \"GET /api/v1/animation/dialog/preview/audio/{cache_key}/{filename}\", \"GET /api/v1/animation/dialog/preview/share/{cache_key}/{filename}\", \"GET /api/v1/animation/dialog/script\", \"GET /api/v1/animation/dialog/script/{scriptId}\", \"GET /api/v1/animation/{animationId}\", \"GET /api/v1/creature\", \"GET /api/v1/creature/{creatureId}\", \"GET /api/v1/creature/{creatureId}/export\", \"GET /api/v1/debug/cache-invalidate/ad-hoc-animation-list\", \"GET /api/v1/debug/cache-invalidate/ad-hoc-sound-list\", \"GET /api/v1/debug/cache-invalidate/animation\", \"GET /api/v1/debug/cache-invalidate/creature\", \"GET /api/v1/debug/cache-invalidate/dialog-script-list\", \"GET /api/v1/debug/cache-invalidate/fixture\", \"GET /api/v1/debug/cache-invalidate/playlist\", \"GET /api/v1/debug/cache-invalidate/sound-list\", \"GET /api/v1/debug/cache-invalidate/stage-list\", \"GET /api/v1/debug/cache-invalidate/storyboard-list\", \"GET /api/v1/debug/playlist/update\", \"GET /api/v1/fixture\", \"GET /api/v1/fixture/{fixtureId}\", \"GET /api/v1/health\", \"GET /api/v1/job/{jobId}\", \"GET /api/v1/metric/counters\", \"GET /api/v1/music\", \"GET /api/v1/music/generated/{filename}\", \"GET /api/v1/music/generated/{generationId}/recipe\", \"GET /api/v1/music/{pieceId}\", \"GET /api/v1/playlist\", \"GET /api/v1/playlist/id/{playlistId}\", \"GET /api/v1/playlist/status\", \"GET /api/v1/playlist/status/{universe}\", \"GET /api/v1/sound\", \"GET /api/v1/sound/ad-hoc\", \"GET /api/v1/sound/ad-hoc/{filename}\", \"GET /api/v1/sound/mp3/{filename}\", \"GET /api/v1/sound/provenance/{filename}\", \"GET /api/v1/sound/shareable/{filename}\", \"GET /api/v1/sound/{filename}\", \"GET /api/v1/sound/{filename}/metadata\", \"GET /api/v1/stage\", \"GET /api/v1/stage/{stageId}\", \"GET /api/v1/stage/{stageId}/animations\", \"GET /api/v1/storyboard\", \"GET /api/v1/storyboard/{storyboardId}\", \"GET /api/v1/voice/list-available\", \"GET /api/v1/voice/subscription\", \"GET /api/v1/websocket\", \"PATCH /api/v1/creature/{creatureId}/idle\", \"POST /api/v1/animation\", \"POST /api/v1/animation/ad-hoc\", \"POST /api/v1/animation/ad-hoc-stream/finish\", \"POST /api/v1/animation/ad-hoc-stream/start\", \"POST /api/v1/animation/ad-hoc-stream/text\", \"POST /api/v1/animation/ad-hoc/play\", \"POST /api/v1/animation/ad-hoc/prepare\", \"POST /api/v1/animation/dialog\", \"POST /api/v1/animation/dialog-stream/finish\", \"POST /api/v1/animation/dialog-stream/start\", \"POST /api/v1/animation/dialog-stream/turn\", \"POST /api/v1/animation/dialog/music\", \"POST /api/v1/animation/dialog/music/generated/{generationId}/promote\", \"POST /api/v1/animation/dialog/music/plan\", \"POST /api/v1/animation/dialog/preview/lookup\", \"POST /api/v1/animation/dialog/preview/meta\", \"POST /api/v1/animation/dialog/preview/multichannel\", \"POST /api/v1/animation/dialog/script\", \"POST /api/v1/animation/dialog/script/validate\", \"POST /api/v1/animation/dialog/voice/accept\", \"POST /api/v1/animation/generate-lipsync\", \"POST /api/v1/animation/interrupt\", \"POST /api/v1/animation/play\", \"POST /api/v1/animation/{animationId}/rerender\", \"POST /api/v1/creature\", \"POST /api/v1/creature/register\", \"POST /api/v1/creature/validate\", \"POST /api/v1/debug/cache/audio/prune\", \"POST /api/v1/fixture\", \"POST /api/v1/fixture/validate\", \"POST /api/v1/fixture/{fixtureId}/live\", \"POST /api/v1/fixture/{fixtureId}/pattern/preview\", \"POST /api/v1/fixture/{fixtureId}/pattern/{patternId}/trigger\", \"POST /api/v1/music/generate\", \"POST /api/v1/music/generated/{generationId}/save\", \"POST /api/v1/music/plan\", \"POST /api/v1/music/{pieceId}/refine\", \"POST /api/v1/playlist\", \"POST /api/v1/playlist/start\", \"POST /api/v1/playlist/stop\", \"POST /api/v1/sound/generate-lipsync\", \"POST /api/v1/sound/generate-lipsync/upload\", \"POST /api/v1/sound/play\", \"POST /api/v1/stage\", \"POST /api/v1/stage/{stageId}/rerender\", \"POST /api/v1/storyboard\", \"POST /api/v1/stt/transcribe\", \"POST /api/v1/voice\", \"PUT /api/v1/animation/dialog/script/{scriptId}\", \"PUT /api/v1/fixture/{fixtureId}/universe\", \"PUT /api/v1/music/{pieceId}\", \"PUT /api/v1/stage/{stageId}\", \"PUT /api/v1/storyboard/{storyboardId}\"]",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 200
+  },
+  "GET /api/v1/animation/ad-hoc-stream/exchange/not-a-uuid [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"sessionId must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/animation/ad-hoc-stream/exchange/not-a-uuid/audio.wav [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"sessionId must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/animation/dialog/preview/audio/not-a-hash/take.wav [bad-key]": {
+    "body": "{\"code\": 400, \"message\": \"cache_key must be a 64-character lowercase hex sha256\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/animation/dialog/preview/share/not-a-hash/take.mp3 [bad-key]": {
+    "body": "{\"code\": 400, \"message\": \"cache_key must be a 64-character lowercase hex sha256\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/animation/dialog/script/not-a-uuid [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"scriptId must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/animation/not-a-uuid [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"animationId must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/creature": {
+    "body": "{\"code\": 500, \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 500
+  },
+  "GET /api/v1/creature/8e3a4b5c-1d2f-4e6a-9b0c-7f8e9d0a1b2c": {
+    "body": "{\"code\": 500, \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 500
+  },
+  "GET /api/v1/creature/not-a-uuid": {
+    "body": "{\"code\":400,\"message\":\"creatureId must be a UUID\",\"status\":\"error\"}",
+    "headers": {
+      "content-length": "67",
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/fixture": {
+    "body": "{\"code\": 500, \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 500
+  },
+  "GET /api/v1/fixture/8e3a4b5c-1d2f-4e6a-9b0c-7f8e9d0a1b2c": {
+    "body": "{\"code\": 500, \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 500
+  },
+  "GET /api/v1/fixture/not-a-uuid": {
+    "body": "{\"code\":400,\"message\":\"fixtureId must be a UUID\",\"status\":\"error\"}",
+    "headers": {
+      "content-length": "66",
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/health": {
+    "body": "{\"code\":200,\"message\":\"Server is operational\",\"status\":\"ok\"}",
+    "headers": {
+      "content-length": "60",
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 200
+  },
+  "GET /api/v1/job/not-a-uuid [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"jobId must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/metric/counters": {
+    "body": "{\"animationsPlayed\": \"int\", \"dmxEventsProcessed\": \"int\", \"eventsProcessed\": \"int\", \"framesStreamed\": \"int\", \"localAudioPlaybacksAccepted\": \"int\", \"localAudioPlaybacksActive\": \"int\", \"localAudioPlaybacksCompleted\": \"int\", \"localAudioPlaybacksFailed\": \"int\", \"localAudioPlaybacksQueued\": \"int\", \"localAudioPlaybacksRejected\": \"int\", \"localAudioPlaybacksReplaced\": \"int\", \"localAudioPlaybacksStopped\": \"int\", \"localAudioPlaybacksTimedOut\": \"int\", \"playlistStatusRequests\": \"int\", \"playlistsEventsProcessed\": \"int\", \"playlistsStarted\": \"int\", \"playlistsStopped\": \"int\", \"restRequestsProcessed\": \"int\", \"rtcpReportsSent\": \"int\", \"rtcpSendFailures\": \"int\", \"rtpAudioLoadersActive\": \"int\", \"rtpAudioLoadsAccepted\": \"int\", \"rtpAudioLoadsCancelled\": \"int\", \"rtpAudioLoadsCompleted\": \"int\", \"rtpAudioLoadsFailed\": \"int\", \"rtpAudioLoadsQueued\": \"int\", \"rtpAudioLoadsRejected\": \"int\", \"rtpCircuitBreakerTrips\": \"int\", \"rtpEncoderResets\": \"int\", \"rtpEventsProcessed\": \"int\", \"rtpSendFailures\": \"int\", \"rtpSendFailuresSuppressed\": \"int\", \"rtpSendRecoveries\": \"int\", \"soundFilesServed\": \"int\", \"soundsPlayed\": \"int\", \"totalFrames\": \"int\", \"websocketConnectionsProcessed\": \"int\", \"websocketMessagesReceived\": \"int\", \"websocketMessagesSent\": \"int\", \"websocketPingsSent\": \"int\", \"websocketPongsReceived\": \"int\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 200
+  },
+  "GET /api/v1/music/generated/not-a-uuid/recipe [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"music generation id must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/music/generated/take.wav [wrong-extension]": {
+    "body": "{\"code\": 422, \"message\": \"generated music URLs must end in .mp3\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 422
+  },
+  "GET /api/v1/music/not-a-uuid [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"music piece id must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/playlist/id/not-a-uuid [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"playlistId must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/sound/bad%20name.wav [unsafe-name]": {
+    "body": "{\"code\": 403, \"message\": \"Invalid filename: Contains unsafe characters.\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 403
+  },
+  "GET /api/v1/sound/bad%20name.wav/metadata [unsafe-name]": {
+    "body": "{\"code\": 403, \"message\": \"Invalid filename: Contains unsafe characters.\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 403
+  },
+  "GET /api/v1/sound/mp3/take.wav [wrong-extension]": {
+    "body": "{\"code\": 422, \"message\": \"mp3 renditions are addressed as '{name}.mp3', not 'take.wav'. Request the source's basename with a .mp3 extension.\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 422
+  },
+  "GET /api/v1/sound/provenance/bad%20name.wav [unsafe-name]": {
+    "body": "{\"code\": 403, \"message\": \"Invalid filename: Contains unsafe characters.\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 403
+  },
+  "GET /api/v1/sound/shareable/take.wav [wrong-extension]": {
+    "body": "{\"code\": 422, \"message\": \"ogg renditions are addressed as '{name}.ogg', not 'take.wav'. Request the source's basename with a .ogg extension.\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 422
+  },
+  "GET /api/v1/stage/not-a-uuid [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"stageId must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "GET /api/v1/storyboard/not-a-uuid [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"storyboardId must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "HEAD /": {
+    "body": "",
+    "headers": {
+      "content-length": "215",
+      "content-type": "text/html"
+    },
+    "status": 200
+  },
+  "HEAD /api/docs": {
+    "body": "",
+    "headers": {
+      "content-length": "5176",
+      "content-type": "text/html; charset=utf-8"
+    },
+    "status": 200
+  },
+  "HEAD /api/docs/": {
+    "body": "",
+    "headers": {
+      "content-length": "5176",
+      "content-type": "text/html; charset=utf-8"
+    },
+    "status": 200
+  },
+  "HEAD /api/openapi.json": {
+    "body": "[]",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 200
+  },
+  "HEAD /api/v1/creature": {
+    "body": "{\"code\": null, \"status\": null}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 500
+  },
+  "HEAD /api/v1/fixture": {
+    "body": "{\"code\": null, \"status\": null}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 500
+  },
+  "HEAD /api/v1/health": {
+    "body": "",
+    "headers": {
+      "content-length": "60",
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 200
+  },
+  "HEAD /api/v1/metric/counters": {
+    "body": "{}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 200
+  },
+  "PATCH /api/v1/creature/not-a-uuid/idle [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"creatureId must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/animation/ad-hoc-stream/text [empty-object]": {
+    "body": "{\"code\": 400, \"message\": \"streaming ad-hoc text request.session_id is required\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/animation/ad-hoc/play [empty-object]": {
+    "body": "{\"code\": 400, \"message\": \"ad-hoc animation trigger request.animation_id is required\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/animation/dialog [empty-object]": {
+    "body": "{\"code\": 400, \"message\": \"dialog request.persistence is required\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/animation/dialog-stream/turn [empty-object]": {
+    "body": "{\"code\": 400, \"message\": \"dialog stream turn request.session_id is required\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/animation/dialog/preview/lookup [no-turns]": {
+    "body": "{\"code\": 400, \"message\": \"dialog preview lookup request.turns must not be empty\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/animation/dialog/preview/meta [empty-object]": {
+    "body": "{\"code\": 400, \"message\": \"dialog preview request.turns is required\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/animation/dialog/preview/multichannel [empty-object]": {
+    "body": "{\"code\": 400, \"message\": \"dialog preview request.turns is required\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/animation/dialog/script/validate [invalid-json]": {
+    "body": "{\"error_messages\": [\"Invalid JSON: [json.exception.parse_error.101] parse error at line 1, column 3: syntax error while parsing object key - invalid literal; last read: '{no'; expected string literal\"], \"missing_creature_ids\": [], \"turn_count\": 0, \"valid\": false}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 200
+  },
+  "POST /api/v1/animation/dialog/script/validate [not-an-object]": {
+    "body": "{\"error_messages\": [\"request body must be a JSON object\"], \"missing_creature_ids\": [], \"turn_count\": 0, \"valid\": false}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 200
+  },
+  "POST /api/v1/animation/dialog/voice/accept [empty-object]": {
+    "body": "{\"code\": 400, \"message\": \"accept voice take request.script_id is required\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/animation/interrupt [empty-object]": {
+    "body": "{\"code\": 400, \"message\": \"animation interrupt request.animation_id is required\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/music/plan [empty-object]": {
+    "body": "{\"code\": 400, \"message\": \"music plan request.prompt is required\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/music/plan [invalid-json]": {
+    "body": "{\"code\": 400, \"message\": \"Invalid JSON for music plan request at byte 3\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/playlist/start [empty-object]": {
+    "body": "{\"code\": 400, \"message\": \"playlist start request.playlist_id is required\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/sound/generate-lipsync [traversal]": {
+    "body": "{\"code\": 400, \"message\": \"lip sync request.sound_file must be a safe filename without path components\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/sound/generate-lipsync/upload?filename=take.mp3 [wrong-extension]": {
+    "body": "{\"code\": 422, \"message\": \"Only .wav files are supported for lip sync generation.\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 422
+  },
+  "POST /api/v1/stt/transcribe [empty-body]": {
+    "body": "{\"code\": 400, \"message\": \"Request body is empty \\u2014 send raw 16kHz mono float32 PCM audio\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "POST /api/v1/stt/transcribe [odd-length]": {
+    "body": "{\"code\": 400, \"message\": \"Body size is not a multiple of 4 bytes (expected float32 PCM)\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "PUT /api/v1/fixture/not-a-uuid/universe [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"fixtureId must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  },
+  "PUT /api/v1/music/not-a-uuid [bad-id]": {
+    "body": "{\"code\": 400, \"message\": \"music piece id must be a UUID\", \"status\": \"error\"}",
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "status": 400
+  }
+}

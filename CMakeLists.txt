@@ -22,7 +22,6 @@ project(creature-server
         LANGUAGES C CXX)
 
 option(CREATURE_BUILD_UWS_OTEL_GATE "Build the uWebSockets OTel/Mongo integration gate" OFF)
-option(CREATURE_ENABLE_UWS_TRANSPORT "Build the opt-in production uWebSockets migration transport" ON)
 option(CREATURE_RUN_UWS_LIVE_GATE "Register the production uWebSockets black-box lifecycle gate" OFF)
 set(CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE "" CACHE STRING
     "Loopback interface name used by the production uWebSockets live gate (for example lo0 or lo)")
@@ -112,7 +111,7 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-if(CREATURE_ENABLE_UWS_TRANSPORT OR CREATURE_BUILD_UWS_OTEL_GATE)
+if(TRUE) # uWebSockets is the only HTTP/WebSocket transport
     FetchContent_Declare(
         uwebsockets
         GIT_REPOSITORY https://github.com/uNetworking/uWebSockets.git
@@ -364,19 +363,6 @@ set(OPENTELEMETRY_BUILD_SHARED_LIBS OFF CACHE BOOL "Build OpenTelemetry as stati
 
 FetchContent_MakeAvailable(opentelemetry-cpp)
 
-#Use the oatpp that we've already made
-find_package(oatpp           REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
-find_package(oatpp-swagger   REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
-find_package(oatpp-websocket REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-websocket-1.3.0)
-
-set(oatpp_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/externals/install/include/oatpp-1.3.0/")
-message(STATUS "oatpp_INCLUDE_DIRS: ${oatpp_INCLUDE_DIRS}")
-
-add_definitions(
-        ## define path to swagger-ui static resources folder
-        -DOATPP_SWAGGER_RES_PATH="${oatpp-swagger_INCLUDE_DIRS}/../bin/oatpp-swagger/res"
-)
-
 #... and our own libraries
 add_subdirectory(lib/e131_service)
 
@@ -424,15 +410,6 @@ set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
 #Set up a concurrent queue
 set(MOODYCAMEL_DIR "${CMAKE_SOURCE_DIR}/lib/concurrentqueue")
 
-#
-#If we're on macOS, use the local copy of the Swagger UI. On Linux, use the one from the
-#package that we installed.
-#
-if(APPLE)
-    add_definitions(-DSWAGGER_UI_PATH="${CMAKE_SOURCE_DIR}/externals/build/oatpp-swagger-prefix/src/oatpp-swagger/res/")
-else()
-    add_definitions(-DSWAGGER_UI_PATH="/usr/share/creature-server/swagger-ui/")
-endif()
 
 # Native low-latency audio output. RTP mode does not initialize these devices,
 # but local/travel builds use the same ALSA/CoreAudio shape as the controller.
@@ -551,13 +528,12 @@ include_directories(
         ${miniaudio_SOURCE_DIR}
         ${MOODYCAMEL_DIR}
         ${LIBBASE64_DIR}/include
-        ${oatpp_INCLUDE_DIRS}
         PRIVATE ${CMAKE_BINARY_DIR}
 )
 
 # Skip the executable + test target definitions when src/ + tests/ aren't
 # present. Lets the Dockerfile do a Phase 1 cmake configure with empty src/
-# (only cmake/ + lib/ + externals/ + CMakeLists.txt + build_oatpp.sh COPYed)
+# (only cmake/ + lib/ + CMakeLists.txt COPYed)
 # to pre-build the deps_only umbrella target in a cacheable layer. Phase 2
 # COPYs src/ + tests/ and re-runs cmake — these blocks then activate and
 # the real build happens against already-compiled deps. See issue #13.
@@ -628,25 +604,6 @@ add_executable(creature-server
         src/util/websocketUtils.h
         src/util/websocketUtils.cpp
 
-        src/server/ws/AppComponent.h
-        src/server/ws/App.h
-        src/server/ws/App.cpp
-
-
-        src/server/ws/ErrorHandler.cpp
-        src/server/ws/ErrorHandler.h
-
-        src/server/ws/RequestBodyDrain.cpp
-        src/server/ws/RequestBodyDrain.h
-
-        src/server/ws/controller/CreatureController.h
-        src/server/ws/controller/DebugController.h
-        src/server/ws/controller/DmxFixtureController.h
-        src/server/ws/controller/MetricsController.h
-        src/server/ws/controller/SoundController.h
-        src/server/ws/controller/StaticController.h
-        src/server/ws/controller/WebSocketController.h
-
         src/server/ws/dto/websocket/MessageTypes.h
         src/server/ws/dto/websocket/MessageTypes.cpp
 
@@ -681,10 +638,6 @@ add_executable(creature-server
         src/server/ws/service/VoiceService.h
         src/server/ws/service/VoiceService.cpp
 
-        src/server/ws/websocket/ClientCafe.h
-        src/server/ws/websocket/ClientConnection.h
-        src/server/ws/websocket/ClientCafe.cpp
-        src/server/ws/websocket/ClientConnection.cpp
         src/server/ws/messaging/SensorReportHandler.h
         src/server/ws/messaging/SensorReportHandler.cpp
 
@@ -716,10 +669,6 @@ add_executable(creature-server
         src/server/rtp/RtpClockMapping.h
 )
 
-target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
-if(CREATURE_ENABLE_UWS_TRANSPORT)
-    target_compile_definitions(creature-server PRIVATE CREATURE_HAS_UWEBSOCKETS_TRANSPORT)
-endif()
 add_dependencies(creature-server check-neutral-framework-boundary)
 if(ALSA_FOUND)
     target_compile_definitions(creature-server PRIVATE CREATURE_HAS_ALSA=1)
@@ -739,9 +688,6 @@ target_link_libraries(creature-server
         PRIVATE ${UUID_LIBRARIES}
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
-        oatpp::oatpp
-        oatpp::oatpp-swagger
-        oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         mongocxx::mongocxx
         bsoncxx::bsoncxx
@@ -767,7 +713,7 @@ target_link_libraries(creature-server
         ${MONGO_SYSTEM_LIBS}
         ${AUDIO_PLATFORM_LIBRARIES}
 )
-if(CREATURE_ENABLE_UWS_TRANSPORT)
+if(TRUE)
     target_link_libraries(creature-server PRIVATE creature_uwebsockets)
 endif()
 
@@ -803,7 +749,7 @@ if(Python3_Interpreter_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/transport-ro
             ${CMAKE_SOURCE_DIR}/scripts/transport-route-manifest.py
             --source-root ${CMAKE_SOURCE_DIR}
             --check
-        COMMENT "Checking the frozen oat++ transport route manifest"
+        COMMENT "Checking the frozen transport route manifest"
         VERBATIM
     )
     if(TARGET creature-server)
@@ -826,9 +772,6 @@ if(Python3_Interpreter_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/tests/transport/tran
     )
 endif()
 if(CREATURE_RUN_UWS_LIVE_GATE)
-    if(NOT CREATURE_ENABLE_UWS_TRANSPORT)
-        message(FATAL_ERROR "CREATURE_RUN_UWS_LIVE_GATE requires CREATURE_ENABLE_UWS_TRANSPORT")
-    endif()
     if(NOT Python3_Interpreter_FOUND)
         message(FATAL_ERROR "CREATURE_RUN_UWS_LIVE_GATE requires Python 3")
     endif()
@@ -902,16 +845,11 @@ add_executable(creature-server-test
         tests/server/ws/CreatureService_streaming_test.cpp
         tests/server/ws/CreatureService_activityOwnership_test.cpp
         tests/server/ws/CreatureService_validate_test.cpp
-        tests/server/ws/HttpResponseHelpers_test.cpp
         tests/server/ws/MessageHandlerBoundary_test.cpp
         tests/server/ws/SoundRenditionService_test.cpp
         src/server/ws/service/SoundRenditionService.cpp
         tests/server/ws/MusicService_prepare_test.cpp
         src/server/ws/service/MusicService.cpp
-        tests/server/ws/ErrorHandler_test.cpp
-        src/server/ws/ErrorHandler.cpp
-        tests/server/ws/RequestBodyDrain_test.cpp
-        src/server/ws/RequestBodyDrain.cpp
         tests/server/storyboard/StoryboardParse_test.cpp
         tests/server/script/DialogScriptParse_test.cpp
         src/server/script/helpers.cpp
@@ -919,7 +857,6 @@ add_executable(creature-server-test
         tests/server/storage/StoragePublishers_test.cpp
         tests/server/config/MongoUri_test.cpp
         src/server/config/MongoUri.cpp
-        tests/server/config/HttpTransport_test.cpp
         tests/server/transport/ApiDocumentation_test.cpp
         src/server/transport/ApiDocumentation.cpp
         tests/server/transport/ApplicationExecutor_test.cpp
@@ -1062,9 +999,6 @@ target_link_libraries(creature-server-test
         PRIVATE ${UUID_LIBRARIES}
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
-        oatpp::oatpp
-        oatpp::oatpp-swagger
-        oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         mongocxx::mongocxx
         bsoncxx::bsoncxx

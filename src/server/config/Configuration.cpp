@@ -23,10 +23,6 @@ std::string Configuration::getMongoURI() const { return this->mongoURI; }
 
 void Configuration::setMongoURI(std::string _mongoURI) { this->mongoURI = mongo::normalizeUri(_mongoURI); }
 
-Configuration::HttpTransport Configuration::getHttpTransport() const { return this->httpTransport; }
-
-void Configuration::setHttpTransport(const HttpTransport _httpTransport) { this->httpTransport = _httpTransport; }
-
 uint32_t Configuration::getHttpMaxConnections() const { return this->httpMaxConnections; }
 
 void Configuration::setHttpMaxConnections(const uint32_t _maximum) { this->httpMaxConnections = _maximum; }

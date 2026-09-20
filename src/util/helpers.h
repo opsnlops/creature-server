@@ -68,10 +68,9 @@ bsoncxx::document::value stringVectorToBson(const std::vector<std::string> &vect
 ///
 /// `nlohmann::json::value(key, fallback)` only falls back when the key is
 /// *absent* — a key that's present holding `null` throws `type_error.302`.
-/// oatpp serializes unset `String` DTO fields as explicit `null`s, so anything
-/// that round-trips through our own REST API (GET an animation, POST it back)
-/// arrives with nulls where the writer had nothing. Treat those the same as
-/// absent. See issue #117.
+/// The old oat++ DTO layer serialized unset string fields as explicit `null`s,
+/// and documents written back through that API still carry them. Treat those
+/// the same as absent. See issue #117.
 ///
 /// A present, non-null, non-string value still throws — that's a genuinely
 /// malformed request and the caller's `json::exception` handler turns it into
