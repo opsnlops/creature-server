@@ -5,7 +5,9 @@ The manifest (docs/transport-route-manifest.json) is the contract for the
 server's public route surface: it feeds /api/openapi.json and the API browser,
 and CMake's --check target fails the build when the routes registered in
 UWebSocketsServer.cpp drift from it. Regenerate with --write only when a route
-is deliberately added or removed, and review the manifest diff.
+is deliberately added or removed, and review the manifest diff. Documentation
+fields (summary, description, tags, responses, path_params, query_params,
+request_body) live in the manifest and survive --write; edit them there.
 
 HEAD registrations and trailing-slash aliases are not part of the manifest.
 """
@@ -75,10 +77,26 @@ def collect_routes(source_root: pathlib.Path) -> list[dict[str, object]]:
     return routes
 
 
-def render_manifest(source_root: pathlib.Path) -> str:
+DOCUMENTATION_FIELDS = ("summary", "description", "tags", "responses", "path_params", "query_params", "request_body")
+
+
+def render_manifest(source_root: pathlib.Path, existing: dict[str, object] | None) -> str:
+    """Registrations define the route set; documentation fields are carried
+    over from the existing manifest, so --write never discards hand-written
+    summaries, descriptions, tags, responses, or parameter notes."""
     routes = collect_routes(source_root)
+    documented: dict[tuple[str, str], dict[str, object]] = {}
+    if existing:
+        for route in existing.get("routes", []):  # type: ignore[union-attr]
+            documented[(str(route["method"]), str(route["path"]))] = route  # type: ignore[index]
+    for route in routes:
+        previous = documented.get((str(route["method"]), str(route["path"])), {})
+        for field in DOCUMENTATION_FIELDS:
+            if field in previous:
+                route[field] = previous[field]
     document = {
-        "description": "Frozen public HTTP and WebSocket route surface served by UWebSocketsServer.cpp.",
+        "description": "Frozen public HTTP and WebSocket route surface served by UWebSocketsServer.cpp. "
+        "Documentation fields feed /api/openapi.json and the API browser.",
         "route_count": len(routes),
         "routes": routes,
     }
@@ -105,8 +123,13 @@ def main() -> int:
     manifest = arguments.manifest
     if not manifest.is_absolute():
         manifest = source_root / manifest
+    existing_document: dict[str, object] | None = None
     try:
-        rendered = render_manifest(source_root)
+        existing_document = json.loads(manifest.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        existing_document = None
+    try:
+        rendered = render_manifest(source_root, existing_document)
     except (OSError, ValueError) as error:
         print(f"route manifest generation failed: {error}", file=sys.stderr)
         return 1
