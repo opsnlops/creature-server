@@ -28,17 +28,15 @@ struct PlayAnimationResult {
 /// transport serialization belong to the controller adapter.
 class AnimationService {
   public:
-    Result<std::vector<AnimationMetadata>> listAllAnimations(std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    Result<std::vector<AdHocAnimationSummary>> listAdHocAnimations(std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    Result<Animation> getAnimation(const std::string &animationId, std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    Result<Animation> getAdHocAnimation(const std::string &animationId,
-                                        std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    Result<Animation> upsertAnimation(const std::string &animationJson,
-                                      std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    Result<void> deleteAnimation(const std::string &animationId, std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<std::vector<AnimationMetadata>> listAllAnimations(SpanParent parentSpan = nullptr);
+    Result<std::vector<AdHocAnimationSummary>> listAdHocAnimations(SpanParent parentSpan = nullptr);
+    Result<Animation> getAnimation(const std::string &animationId, SpanParent parentSpan = nullptr);
+    Result<Animation> getAdHocAnimation(const std::string &animationId, SpanParent parentSpan = nullptr);
+    Result<Animation> upsertAnimation(const std::string &animationJson, SpanParent parentSpan = nullptr);
+    Result<void> deleteAnimation(const std::string &animationId, SpanParent parentSpan = nullptr);
     Result<PlayAnimationResult> playStoredAnimation(const std::string &animationId, universe_t universe,
                                                     const std::string &reason = "play",
-                                                    std::shared_ptr<RequestSpan> parentSpan = nullptr);
+                                                    SpanParent parentSpan = nullptr);
 };
 
 } // namespace creatures::ws

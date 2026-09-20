@@ -64,7 +64,8 @@ Result<json> Database::getAnimationJson(const animationId_t &animationId,
         recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
         return Result<json>{err};
     }
-    auto collection = collectionResult.getValue().value();
+    auto collectionLease = collectionResult.getValue().value();
+    auto &collection = collectionLease->collection();
 
     std::shared_ptr<OperationSpan> mongoSpan;
     try {
@@ -72,7 +73,9 @@ Result<json> Database::getAnimationJson(const animationId_t &animationId,
 
         bsoncxx::builder::stream::document filter_builder;
         filter_builder << "id" << animationId;
-        auto maybe_result = collection.find_one(filter_builder.view());
+        mongocxx::options::find readOptions;
+        mongo::applyOperationDeadline(readOptions);
+        auto maybe_result = collection.find_one(filter_builder.view(), readOptions);
         if (mongoSpan)
             mongoSpan->setSuccess();
 
@@ -235,7 +238,8 @@ Database::findAnimationIdBySourceScriptId(const std::string &scriptId, const std
             dbSpan->setError(err.getMessage());
         return Result<std::optional<animationId_t>>{err};
     }
-    auto collection = collectionResult.getValue().value();
+    auto collectionLease = collectionResult.getValue().value();
+    auto &collection = collectionLease->collection();
 
     try {
         // Project just `id` — we don't need the (potentially large) tracks blob
@@ -260,6 +264,7 @@ Database::findAnimationIdBySourceScriptId(const std::string &scriptId, const std
         auto projection = bsoncxx::builder::stream::document{} << "id" << 1 << "_id" << 0
                                                                << bsoncxx::builder::stream::finalize;
         mongocxx::options::find opts;
+        mongo::applyOperationDeadline(opts);
         opts.projection(projection.view());
 
         auto maybe = collection.find_one(filter.view(), opts);
@@ -333,7 +338,8 @@ Database::listAnimationsBySourceStageId(const std::string &stageId, int64_t stag
         recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
         return Result<std::vector<StageAnimationRef>>{err};
     }
-    auto collection = collectionResult.getValue().value();
+    auto collectionLease = collectionResult.getValue().value();
+    auto &collection = collectionLease->collection();
 
     try {
         // Project only the provenance we need. Animation documents carry every
@@ -346,6 +352,7 @@ Database::listAnimationsBySourceStageId(const std::string &stageId, int64_t stag
                                                                << "metadata.source_stage_updated_at" << 1 << "_id" << 0
                                                                << bsoncxx::builder::stream::finalize;
         mongocxx::options::find opts;
+        mongo::applyOperationDeadline(opts);
         opts.projection(projection.view());
 
         auto cursor = collection.find(filter.view(), opts);
@@ -428,12 +435,15 @@ Result<int64_t> Database::countAnimationsBySoundFile(const std::string &soundFil
         recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
         return Result<int64_t>{err};
     }
-    auto collection = collectionResult.getValue().value();
+    auto collectionLease = collectionResult.getValue().value();
+    auto &collection = collectionLease->collection();
 
     try {
         auto filter = bsoncxx::builder::stream::document{} << "metadata.sound_file" << soundFile
                                                            << bsoncxx::builder::stream::finalize;
-        const auto count = static_cast<int64_t>(collection.count_documents(filter.view()));
+        mongocxx::options::count countOptions;
+        mongo::applyOperationDeadline(countOptions);
+        const auto count = static_cast<int64_t>(collection.count_documents(filter.view(), countOptions));
         if (dbSpan) {
             dbSpan->setAttribute("animations.count", count);
             dbSpan->setSuccess();
@@ -475,7 +485,8 @@ Database::findAnimationSoundInfoBySoundFile(const std::string &soundFileBasename
         recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
         return InfoResult{err};
     }
-    auto collection = collectionResult.getValue().value();
+    auto collectionLease = collectionResult.getValue().value();
+    auto &collection = collectionLease->collection();
 
     try {
         // metadata.sound_file may be a bare basename or a relative path like
@@ -496,6 +507,7 @@ Database::findAnimationSoundInfoBySoundFile(const std::string &soundFileBasename
         auto projection = bsoncxx::builder::stream::document{} << "metadata.title" << 1 << "tracks.creature_id" << 1
                                                                << "_id" << 0 << bsoncxx::builder::stream::finalize;
         mongocxx::options::find opts;
+        mongo::applyOperationDeadline(opts);
         opts.projection(projection.view());
 
         auto maybe = collection.find_one(filter.view(), opts);

@@ -89,7 +89,8 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
             warn(errorMessage);
             return Result<DmxFixture>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
         if (collectionSpan)
             collectionSpan->setSuccess();
 
@@ -111,7 +112,9 @@ Result<creatures::DmxFixture> Database::upsertFixture(const std::string &fixture
         // backfill has to reach the bytes we store — so it runs BEFORE the JSON is
         // serialized below, and the preserved universe is written back explicitly.
         if (!fixture.assigned_universe.has_value()) {
-            auto existingDoc = collection.find_one(filter_builder.view());
+            mongocxx::options::find readOptions;
+            mongo::applyOperationDeadline(readOptions);
+            auto existingDoc = collection.find_one(filter_builder.view(), readOptions);
             if (existingDoc) {
                 auto element = existingDoc->view()["assigned_universe"];
                 if (element && element.type() == bsoncxx::type::k_int64) {
@@ -228,7 +231,8 @@ Result<void> Database::setFixtureUniverse(const fixtureId_t &fixtureId, std::opt
             recordSpanError(span, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("setFixtureUniverse.mongoQuery", span);
         bsoncxx::builder::stream::document filter_builder;
@@ -301,7 +305,8 @@ Result<void> Database::deleteFixture(const fixtureId_t &fixtureId, const std::sh
             recordSpanError(span, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("deleteFixture.mongoQuery", span);
         bsoncxx::builder::stream::document filter_builder;

@@ -64,7 +64,8 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
         recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
         return Result<json>{err};
     }
-    auto collection = collectionResult.getValue().value();
+    auto collectionLease = collectionResult.getValue().value();
+    auto &collection = collectionLease->collection();
 
     std::shared_ptr<OperationSpan> mongoSpan;
     try {
@@ -73,6 +74,7 @@ Result<json> Database::getPlaylistJson(const playlistId_t &playlistId,
         const auto idPattern = fmt::format("^{}$", canonicalId);
         auto filter = document{} << "id" << bsoncxx::types::b_regex{idPattern, "i"} << finalize;
         mongocxx::options::find options;
+        mongo::applyOperationDeadline(options);
         options.limit(2);
         auto cursor = collection.find(filter.view(), options);
         std::optional<bsoncxx::document::value> maybeResult;

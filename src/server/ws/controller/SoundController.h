@@ -267,7 +267,7 @@ class SoundController : public oatpp::web::server::api::ApiController, public Ht
                 }
                 if (parseSpan)
                     parseSpan->setSuccess();
-                const auto &fileName = parsed.getValue()->fileName;
+                const auto fileName = parsed.getValue()->fileName;
                 if (span)
                     span->setAttribute("audio.file.name", audio::sanitizeForLogging(fileName));
                 const auto result = m_soundService.playSound(fileName, span);

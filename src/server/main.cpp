@@ -36,6 +36,7 @@
 #include "server/config.h"
 #include "server/config/CommandLine.h"
 #include "server/config/Configuration.h"
+#include "server/config/MongoUri.h"
 #include "server/database.h"
 #include "server/eventloop/eventloop.h"
 #include "server/eventloop/events/types.h"
@@ -62,8 +63,9 @@
 #include "util/websocketUtils.h"
 #include "watchdog/Watchdog.h"
 
+#include "server/transport/TransportFactory.h"
+#include "server/transport/TransportServer.h"
 #include "server/voice/LipSyncProcessor.h"
-#include "server/ws/App.h"
 
 using creatures::Database;
 using creatures::EventLoop;
@@ -288,7 +290,7 @@ int main(const int argc, char **argv) {
 
     // Fire up the Mongo client
     std::string mongoURI = creatures::config->getMongoURI();
-    debug("MongoDB URI: {}", mongoURI);
+    debug("MongoDB URI: {}", creatures::mongo::redactUri(mongoURI));
 
     // Start up the database
     mongocxx::instance instance{}; // Make sure the client is ready to go
@@ -525,7 +527,7 @@ int main(const int argc, char **argv) {
     watchdog->start();
 
     // Start the web server
-    auto webServer = std::make_shared<creatures::ws::App>();
+    auto webServer = creatures::transport::createTransportServer(*creatures::config);
     webServer->start();
 
     // Seed the metric send task
@@ -534,7 +536,10 @@ int main(const int argc, char **argv) {
 
     // Wait for the signal handler to know when to stop
     while (creatures::serverShouldRun.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        // Keep signal-to-shutdown latency below the transport's two-second
+        // dead-Mongo budget. This is the main thread, not the sacred 1 ms
+        // creature event loop.
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     // Now that we're back in a normal execution context, log the signal
@@ -554,24 +559,28 @@ int main(const int argc, char **argv) {
 
     info("starting shutdown process");
 
-    // Inform all currently connected clients we're stopping and then wait a second
-    // to make sure that it goes out!
+    // Give connected clients a brief opportunity to observe the notice before
+    // transport admission closes. A full second here consumed half of the
+    // dead-Mongo shutdown budget without providing a delivery guarantee.
     creatures::broadcastNoticeToAllClients("Server is shutting down");
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // Tell the E131Server to stop
     creatures::e131Server->shutdown();
 
-    // Tell the watchdog to stop
-    watchdog->shutdown();
-
-    // Stop the websocket server FIRST (before event loop)
-    // This prevents web server threads from trying to use the event loop after it's destroyed
+    // Stop transport admission and join its request workers before tearing down
+    // the remaining Mongo users or any shared application service.
     webServer->shutdown();
+
+    // Tell the watchdog to stop. Its in-flight Mongo health check is bounded by
+    // the normalized URI deadlines and joins before the pool is destroyed.
+    watchdog->shutdown();
+    watchdog.reset();
 
     // Stop the job worker
     info("Stopping job worker...");
     creatures::jobWorker->shutdown();
+    creatures::jobWorker->join();
     debug("JobWorker stopped");
 
     // Loader jobs retain event-loop, session-manager, and RTP-server handles.
@@ -597,17 +606,19 @@ int main(const int argc, char **argv) {
 
     // Halt the event loop
     creatures::eventLoop->shutdown();
+    creatures::eventLoop->join();
+
+    // All request, job, watchdog, and event-loop work that can reach MongoDB
+    // has stopped. Release the pool before the mongocxx instance leaves scope.
+    creatures::db.reset();
+    debug("MongoDB connection pool stopped");
 
     // Cleanup the RTP server
     creatures::rtpServer.reset(); // implicit cleanup
 
     creatures::gpioPins->serverOnline(false);
     creatures::statusLights->shutdown();
-
-    // This most likely isn't needed, but given that there's so many threads
-    // running, I figure it's a good thing to do.
-    debug("waiting for a few seconds to let everyone clean up");
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    creatures::statusLights->join();
 
     std::cout << "Bye! 🖖🏻" << std::endl;
     std::exit(EXIT_SUCCESS);

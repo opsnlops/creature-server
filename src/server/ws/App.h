@@ -8,6 +8,7 @@
 #include <oatpp/network/Server.hpp>
 
 #include "server/database.h"
+#include "server/transport/TransportServer.h"
 #include "util/StoppableThread.h"
 
 #include "AppComponent.h"
@@ -16,13 +17,13 @@
 
 namespace creatures ::ws {
 
-class App : public StoppableThread {
+class App : public StoppableThread, public transport::TransportServer {
   public:
     App();
     ~App();
 
     void start() override;
-    void shutdown();
+    void shutdown() override;
 
   protected:
     void run() override;

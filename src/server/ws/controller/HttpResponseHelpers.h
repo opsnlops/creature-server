@@ -9,6 +9,7 @@
 #include <oatpp/web/protocol/http/outgoing/Response.hpp>
 
 #include "api/JsonResponse.h"
+#include "server/transport/HttpTypes.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
@@ -113,6 +114,38 @@ template <typename Self> class HttpResponseHelpers {
         return serializedJsonResponse(status, serialization.bytes);
     }
 
+    // Adapt a completed framework-neutral endpoint response to oat++ while both
+    // transports coexist. The endpoint handler owns status/body semantics; this
+    // layer only performs the final socket-framework conversion.
+    template <typename SpanT>
+    std::shared_ptr<HttpOutgoingResponse> preparedResponse(const SpanT &span,
+                                                           const transport::PreparedResponse &prepared) {
+        if (prepared.file.has_value()) {
+            // Streamed files are a uWS response shape; an oat++ route that
+            // needs one must keep using FileBody. Fail loudly rather than
+            // serve a 200 with an empty body.
+            return bailHttp(span, HttpStatus(500, "Internal Server Error"),
+                            "File responses are not supported on the oat++ transport", nullptr,
+                            "UnsupportedResponseShape");
+        }
+        auto response = static_cast<Self *>(this)->createResponse(
+            HttpStatus(prepared.statusCode, statusReasonForCode(prepared.statusCode)), prepared.body.c_str());
+        if (!prepared.contentType.empty()) {
+            response->putHeader("Content-Type", prepared.contentType.c_str());
+        }
+        for (const auto &header : prepared.headers) {
+            response->putHeader(header.name.c_str(), header.value.c_str());
+        }
+        if (span) {
+            span->setAttribute("http.response.body.size", static_cast<int64_t>(prepared.contentLength()));
+            if (!prepared.contentType.empty()) {
+                span->setAttribute("http.response.content_type", prepared.contentType);
+            }
+            span->setHttpStatus(prepared.statusCode);
+        }
+        return response;
+    }
+
   private:
     std::shared_ptr<HttpOutgoingResponse> serializedJsonResponse(const HttpStatus &status,
                                                                  const std::string &serialized) {
@@ -156,8 +189,12 @@ template <typename Self> class HttpResponseHelpers {
             return "Not Found";
         case 409:
             return "Conflict";
+        case 413:
+            return "Payload Too Large";
         case 500:
             return "Internal Server Error";
+        case 503:
+            return "Service Unavailable";
         default:
             return "Unknown";
         }

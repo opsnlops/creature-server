@@ -6,6 +6,7 @@
 
 #include "spdlog/spdlog.h"
 
+#include "server/config/MongoUri.h"
 #include "server/database.h"
 
 #include <bsoncxx/builder/stream/document.hpp>
@@ -17,8 +18,8 @@
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
-#include "util/Result.h"
 #include "util/JsonParser.h"
+#include "util/Result.h"
 
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
@@ -26,11 +27,17 @@ using bsoncxx::builder::stream::document;
 
 namespace creatures {
 
-Database::Database(const std::string &mongoURI_) : mongoURI(mongoURI_), mongoPool(mongocxx::uri{mongoURI_}) {
-    info("starting up database connection for {}. Database name {} will be used", mongoURI_, DB_NAME);
+Database::CollectionLease::CollectionLease(mongocxx::pool::entry client_, const std::string &collectionName)
+    : client(std::move(client_)), collectionHandle((*client)[DB_NAME][collectionName]) {}
+
+mongocxx::collection &Database::CollectionLease::collection() { return collectionHandle; }
+
+Database::Database(const std::string &mongoURI_)
+    : mongoURI(mongo::normalizeUri(mongoURI_)), mongoPool(mongocxx::uri{mongoURI}) {
+    info("starting up database connection for {}. Database name {} will be used", mongo::redactUri(mongoURI), DB_NAME);
 }
 
-Result<mongocxx::collection> Database::getCollection(const std::string &collectionName) {
+Result<std::shared_ptr<Database::CollectionLease>> Database::getCollection(const std::string &collectionName) {
 
     debug("getting a handle to collection {}", collectionName);
 
@@ -38,22 +45,22 @@ Result<mongocxx::collection> Database::getCollection(const std::string &collecti
     if (!serverPingable.load()) {
         const std::string errorMessage = "Unable to get a collection because the server is not pingable";
         critical(errorMessage);
-        return Result<mongocxx::collection>{ServerError(ServerError::DatabaseError, errorMessage)};
+        return Result<std::shared_ptr<CollectionLease>>{ServerError(ServerError::DatabaseError, errorMessage)};
     }
 
     // Acquire a MongoDB client from the pool
     try {
-        thread_local auto client = mongoPool.acquire();
-        return (*client)[DB_NAME][collectionName];
+        auto lease = std::make_shared<CollectionLease>(mongoPool.acquire(), collectionName);
+        return Result<std::shared_ptr<CollectionLease>>{lease};
     } catch (const std::exception &e) {
         const std::string errorMessage =
             fmt::format("Internal error while getting the collection '{}': {}", collectionName, e.what());
         critical(errorMessage);
-        return Result<mongocxx::collection>{ServerError(ServerError::DatabaseError, errorMessage)};
+        return Result<std::shared_ptr<CollectionLease>>{ServerError(ServerError::DatabaseError, errorMessage)};
     } catch (...) {
         const std::string errorMessage = fmt::format("Unknown error while getting the collection '{}'", collectionName);
         critical(errorMessage);
-        return Result<mongocxx::collection>{ServerError(ServerError::DatabaseError, errorMessage)};
+        return Result<std::shared_ptr<CollectionLease>>{ServerError(ServerError::DatabaseError, errorMessage)};
     }
 }
 
@@ -121,7 +128,8 @@ Result<void> Database::ensureAdHocAnimationIndexes(uint32_t ttlHours) {
         if (!collectionResult.isSuccess()) {
             return Result<void>{collectionResult.getError().value()};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         bsoncxx::builder::stream::document ttlIndex;
         ttlIndex << "created_at" << 1;

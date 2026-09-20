@@ -100,7 +100,8 @@ Result<creatures::DialogScript> Database::upsertDialogScript(const std::string &
             warn(errorMessage);
             return Result<DialogScript>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
         if (collectionSpan)
             collectionSpan->setSuccess();
 
@@ -192,7 +193,8 @@ Result<void> Database::deleteDialogScript(const scriptId_t &scriptId,
             recordSpanError(span, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("deleteDialogScript.mongoQuery", span);
         bsoncxx::builder::stream::document filter_builder;

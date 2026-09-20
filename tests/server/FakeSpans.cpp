@@ -14,6 +14,8 @@ void RequestSpan::setAttribute(const std::string & /*key*/, const std::string & 
 void RequestSpan::setAttribute(const std::string & /*key*/, int64_t /*value*/) {}
 void RequestSpan::setAttribute(const std::string & /*key*/, bool /*value*/) {}
 
+void RequestSpan::setError(const std::string & /*errorMessage*/) { statusSet_ = true; }
+
 void RequestSpan::recordException(const std::exception & /*ex*/) {}
 
 OperationSpan::OperationSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span)

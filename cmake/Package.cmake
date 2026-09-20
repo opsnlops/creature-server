@@ -46,4 +46,15 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/externals/build/oatpp-swagger-prefix/src/o
         DESTINATION /usr/share/creature-server/swagger-ui
 )
 
+if(CREATURE_ENABLE_UWS_TRANSPORT)
+    install(FILES ${uwebsockets_SOURCE_DIR}/LICENSE
+            DESTINATION share/doc/creature-server
+            RENAME uWebSockets.LICENSE
+            COMPONENT creature-server)
+    install(FILES ${uwebsockets_SOURCE_DIR}/uSockets/LICENSE
+            DESTINATION share/doc/creature-server
+            RENAME uSockets.LICENSE
+            COMPONENT creature-server)
+endif()
+
 include(CPack)

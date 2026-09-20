@@ -79,7 +79,7 @@ int64_t monotonicNowNs(std::chrono::steady_clock::time_point now = std::chrono::
 // --- StreamingAdHocSession ---
 
 StreamingAdHocSession::StreamingAdHocSession(const std::string &sessionId, StreamingSessionConfig config,
-                                             std::shared_ptr<RequestSpan> parentSpan)
+                                             SpanParent parentSpan)
     : sessionId_(sessionId), config_(std::move(config)) {
 
     createdAtNs_ = monotonicNowNs();
@@ -539,7 +539,7 @@ Result<void> StreamingAdHocSession::start() {
     return Result<void>{};
 }
 
-Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared_ptr<RequestSpan> triggerSpan) {
+Result<void> StreamingAdHocSession::addText(const std::string &text, SpanParent triggerSpan) {
     if (participants_.size() != 1) {
         return Result<void>{
             ServerError(ServerError::Conflict, "This session has several participants; send turns with a creature_id")};
@@ -548,7 +548,7 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, std::shared
 }
 
 Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const std::string &text,
-                                            std::shared_ptr<RequestSpan> triggerSpan) {
+                                            SpanParent triggerSpan) {
     std::lock_guard<std::mutex> stateLock(stateMutex_);
     if (finished_.load()) {
         return Result<void>{ServerError(ServerError::Conflict, "Streaming session is already finishing")};
@@ -1182,7 +1182,7 @@ void StreamingAdHocSession::playbackThreadFunc() {
     info("Playback thread finished for session {} (last animation: {})", sessionId_, lastAnimationId);
 }
 
-Result<StreamingFinishResult> StreamingAdHocSession::finish(std::shared_ptr<RequestSpan> triggerSpan) {
+Result<StreamingFinishResult> StreamingAdHocSession::finish(SpanParent triggerSpan) {
     auto finishSpan =
         creatures::observability
             ? creatures::observability->createOperationSpan("StreamingAdHocSession.finish", std::move(triggerSpan))
@@ -1490,8 +1490,7 @@ StreamingAdHocSessionManager &StreamingAdHocSessionManager::instance() {
 }
 
 Result<std::shared_ptr<StreamingAdHocSession>>
-StreamingAdHocSessionManager::createSession(const std::string &creatureId, bool resumePlaylist,
-                                            std::shared_ptr<RequestSpan> parentSpan) {
+StreamingAdHocSessionManager::createSession(const std::string &creatureId, bool resumePlaylist, SpanParent parentSpan) {
     StreamingSessionConfig config;
     config.creatureIds = {creatureId};
     config.resumePlaylist = resumePlaylist;
@@ -1499,7 +1498,7 @@ StreamingAdHocSessionManager::createSession(const std::string &creatureId, bool 
 }
 
 Result<std::shared_ptr<StreamingAdHocSession>>
-StreamingAdHocSessionManager::createSession(StreamingSessionConfig config, std::shared_ptr<RequestSpan> parentSpan) {
+StreamingAdHocSessionManager::createSession(StreamingSessionConfig config, SpanParent parentSpan) {
     std::vector<std::shared_ptr<StreamingAdHocSession>> expiredSessions;
     std::lock_guard<std::mutex> lock(mutex_);
     const auto now = std::chrono::steady_clock::now();

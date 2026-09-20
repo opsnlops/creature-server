@@ -67,10 +67,12 @@ Result<std::vector<creatures::DmxFixture>> Database::getAllFixtures(const std::s
             recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<std::vector<DmxFixture>>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("getAllFixtures.mongoQuery", dbSpan);
         mongocxx::options::find opts;
+        mongo::applyOperationDeadline(opts);
         opts.sort(sort_doc.view());
         mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
 

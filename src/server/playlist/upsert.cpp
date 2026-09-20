@@ -103,7 +103,8 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
             recordSpanError(upsertSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<creatures::Playlist>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
         if (collectionSpan)
             collectionSpan->setSuccess();
 
@@ -116,6 +117,7 @@ Result<creatures::Playlist> Database::upsertPlaylist(const std::string &playlist
                                                                         << bsoncxx::types::b_regex{idPattern, "i"}
                                                                         << bsoncxx::builder::stream::finalize;
         mongocxx::options::find compatibilityOptions;
+        mongo::applyOperationDeadline(compatibilityOptions);
         compatibilityOptions.limit(2);
         bool foundStoredId = false;
         for (const auto &candidate : collection.find(compatibilityFilter.view(), compatibilityOptions)) {

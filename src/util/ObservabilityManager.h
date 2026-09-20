@@ -31,6 +31,7 @@ namespace creatures {
 // Forward declarations
 class RequestSpan;
 class OperationSpan;
+class SpanParent;
 class SamplingSpan;
 
 /**
@@ -109,6 +110,17 @@ class ObservabilityManager {
      */
     std::shared_ptr<OperationSpan> createChildOperationSpan(const std::string &operationName,
                                                             std::shared_ptr<RequestSpan> parentSpan);
+
+    /**
+     * Transport-neutral variants. A SpanParent carries whichever span the caller
+     * has (an oat++ RequestSpan or a uWS OperationSpan), so service APIs can be
+     * called from either transport without a cast. An empty parent starts a
+     * root span, as the typed overloads do.
+     */
+    std::shared_ptr<OperationSpan> createOperationSpan(const std::string &operationName, const SpanParent &parent);
+    std::shared_ptr<OperationSpan> createChildOperationSpan(const std::string &operationName, const SpanParent &parent);
+    std::shared_ptr<OperationSpan> createLinkedOperationSpan(const std::string &operationName,
+                                                             const SpanParent &parent);
 
     /**
      * Create a sampling span that only exports traces under certain conditions
@@ -367,6 +379,64 @@ class OperationSpan {
     opentelemetry::context::Context context_;
     bool statusSet_;
     bool ended_ = false;
+};
+
+/**
+ * The parent for a span that either transport may create. oat++ handlers hold
+ * a RequestSpan; uWS application workers hold the OperationSpan that wraps
+ * their request. Service and session APIs take this by value, so both compile
+ * without a cross-framework cast, and `->` forwards the few attribute calls a
+ * service makes on its caller's span. Empty means "no parent": a root span.
+ */
+class SpanParent {
+  public:
+    SpanParent() = default;
+    SpanParent(std::nullptr_t) {}
+    SpanParent(std::shared_ptr<RequestSpan> span) : request_(std::move(span)) {}
+    SpanParent(std::shared_ptr<OperationSpan> span) : operation_(std::move(span)) {}
+
+    explicit operator bool() const { return request_ != nullptr || operation_ != nullptr; }
+    [[nodiscard]] const std::shared_ptr<RequestSpan> &request() const { return request_; }
+    [[nodiscard]] const std::shared_ptr<OperationSpan> &operation() const { return operation_; }
+
+    /** Lets `parentSpan->setAttribute(...)` read the same as it did with a shared_ptr. */
+    const SpanParent *operator->() const { return this; }
+
+    template <typename Value> void setAttribute(const std::string &key, Value &&value) const {
+        if (request_) {
+            request_->setAttribute(key, std::forward<Value>(value));
+        } else if (operation_) {
+            operation_->setAttribute(key, std::forward<Value>(value));
+        }
+    }
+    void setError(const std::string &message) const {
+        if (request_) {
+            request_->setError(message);
+        } else if (operation_) {
+            operation_->setError(message);
+        }
+    }
+    void recordException(const std::exception &ex) const {
+        if (request_) {
+            request_->recordException(ex);
+        } else if (operation_) {
+            operation_->recordException(ex);
+        }
+    }
+    /** The OpenTelemetry span behind whichever side is set, or null. */
+    [[nodiscard]] opentelemetry::trace::Span *getSpan() const {
+        if (request_) {
+            return request_->getSpan();
+        }
+        if (operation_) {
+            return operation_->getSpan();
+        }
+        return nullptr;
+    }
+
+  private:
+    std::shared_ptr<RequestSpan> request_;
+    std::shared_ptr<OperationSpan> operation_;
 };
 
 /**
