@@ -433,37 +433,69 @@ def check_disconnect_is_safe(server: ProductionServer) -> None:
     require(code == 200, "server did not survive a disconnect during Mongo work")
 
 
+SATURATION_TONE = "saturation-tone.wav"
+
+
+def write_saturation_tone(directory: Path, seconds: int = 20, rate: int = 48000) -> None:
+    """A mono sine WAV whose MP3 rendition costs a few hundred ms of worker CPU."""
+    import math
+    import struct
+    import wave
+
+    with wave.open(str(directory / SATURATION_TONE), "wb") as tone:
+        tone.setnchannels(1)
+        tone.setsampwidth(2)
+        tone.setframerate(rate)
+        frames = bytearray()
+        for index in range(rate * seconds):
+            frames += struct.pack("<h", int(12000 * math.sin(2 * math.pi * 440 * index / rate)))
+        tone.writeframes(bytes(frames))
+
+
 def check_saturation_isolated_from_loop(server: ProductionServer) -> None:
+    # The flood must be work the application executor cannot short-circuit.
+    # A dead-Mongo read is not: the watchdog pings Mongo at startup, marks it
+    # unpingable after one bounded failure, and every database route then
+    # fails in microseconds, so whether the flood saturates anything depends
+    # on beating that first ping. Encoding an MP3 rendition is CPU-bound on
+    # the worker regardless of the database, so the queue bound always bites.
+    write_saturation_tone(Path(server.sounds.name))
+    rendition_path = "/api/v1/sound/mp3/" + SATURATION_TONE.replace(".wav", ".mp3")
     start = threading.Event()
 
-    def fixture_read(index: int, wait_for_start: bool = True) -> int:
-        if wait_for_start:
-            start.wait()
-        headers = {"traceparent": otel_gate.TRACEPARENT} if index == 0 else None
+    def traced_fixture_read() -> int:
         code, _, _ = contract.http_request(
-            server.config, "GET", f"/api/v1/fixture/{FIXTURE_ID}", headers=headers
+            server.config, "GET", f"/api/v1/fixture/{FIXTURE_ID}", headers={"traceparent": otel_gate.TRACEPARENT}
         )
+        return code
+
+    def rendition(_: int) -> int:
+        start.wait()
+        code, _, _ = contract.http_request(server.config, "GET", rendition_path, max_response_bytes=8 * 1024 * 1024)
         return code
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=REQUEST_COUNT) as callers:
         # Admit the traced request before opening the floodgate so it exercises
         # the full service/DB path rather than becoming one of the expected 503s.
-        traced = callers.submit(fixture_read, 0, False)
+        traced = callers.submit(traced_fixture_read)
         time.sleep(0.03)
-        futures = [traced, *[callers.submit(fixture_read, index) for index in range(1, REQUEST_COUNT)]]
+        futures = [callers.submit(rendition, index) for index in range(1, REQUEST_COUNT)]
         start.set()
         time.sleep(0.08)
         health_started = time.monotonic()
         health_code, _, _ = contract.http_request(server.config, "GET", "/api/v1/health")
         health_elapsed = time.monotonic() - health_started
-        statuses = [future.result(timeout=4.0) for future in futures]
+        traced_status = traced.result(timeout=4.0)
+        statuses = [future.result(timeout=30.0) for future in futures]
 
     require(health_code == 200, "health failed while the application executor was saturated")
-    require(health_elapsed < 0.2, f"Mongo work stalled the transport loop ({health_elapsed:.3f}s)")
+    require(health_elapsed < 0.2, f"application work stalled the transport loop ({health_elapsed:.3f}s)")
+    require(traced_status in {500, 503}, f"traced dead-Mongo read returned {traced_status}")
     require(503 in statuses, "bounded application queue did not reject overload")
-    require(set(statuses).issubset({500, 503}), f"unexpected overload statuses: {sorted(set(statuses))}")
+    require(200 in statuses, "no rendition was admitted while the executor was saturated")
+    require(set(statuses).issubset({200, 503}), f"unexpected overload statuses: {sorted(set(statuses))}")
     final_health, _, _ = contract.http_request(server.config, "GET", "/api/v1/health")
-    require(final_health == 200, "server did not recover after the Mongo saturation workload")
+    require(final_health == 200, "server did not recover after the saturation workload")
 
 
 def check_trace_hierarchy(capture: otel_gate.OtlpCapture) -> None:
