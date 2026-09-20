@@ -201,6 +201,36 @@ def read_text_payload(
     return payload
 
 
+PER_PEER_LIMIT = 48  # matches --http-max-connections-per-peer above
+
+
+def check_websocket_upgrades_release_admission(server: ProductionServer) -> None:
+    """Regression for #216: a WebSocket upgrade must give its admission slot
+    back when it closes. Behind a reverse proxy every client is one peer, so
+    a leaked slot per upgrade locks the whole proxied API out once the
+    per-peer limit is reached. Open and close more sockets than the limit
+    from this one address, in batches well under it, then prove both a plain
+    request and a fresh upgrade are still admitted."""
+    batch = PER_PEER_LIMIT // 4
+    rounds = (PER_PEER_LIMIT // batch) + 2  # comfortably past the limit in total
+    for _ in range(rounds):
+        sockets = [open_websocket(server) for _ in range(batch)]
+        for connection, _ in sockets:
+            connection.close()
+        time.sleep(0.05)
+    deadline = time.monotonic() + 3.0
+    while True:
+        try:
+            code, _, _ = contract.http_request(server.config, "GET", "/api/v1/health")
+            break
+        except (ConnectionError, OSError) as error:
+            require(time.monotonic() < deadline, f"admission never recovered after upgrades closed: {error}")
+            time.sleep(0.05)
+    require(code == 200, f"health returned {code} after {rounds * batch} upgrades from one peer")
+    connection, _ = open_websocket(server)
+    connection.close()
+
+
 def check_websocket_contract(server: ProductionServer, *, require_message_limit: bool) -> None:
     malformed, malformed_reader = open_websocket(server)
     try:
@@ -582,6 +612,7 @@ def main() -> int:
         uwebsockets = ProductionServer(executable, arguments.network_device)
         servers.append(uwebsockets)
         check_websocket_contract(uwebsockets, require_message_limit=True)
+        check_websocket_upgrades_release_admission(uwebsockets)
         check_websocket_trace(capture)
         # Saturation must be the first Mongo workload: the watchdog marks Mongo
         # unpingable after its first bounded failure, after which reads
@@ -612,7 +643,7 @@ def main() -> int:
         )
 
         print(
-            f"PASS: {len(snapshot)} recorded-contract cases, WebSocket ordering/tracing, API browser, "
+            f"PASS: {len(snapshot)} recorded-contract cases, WebSocket ordering/tracing/admission release, API browser, "
             "dead-Mongo deadline, disconnect, saturation isolation, and "
             f"shutdown ({uwebsockets_shutdown:.3f}s)"
         )

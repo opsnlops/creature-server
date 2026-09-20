@@ -117,6 +117,8 @@ struct PendingWebSocketMessage {
 
 struct WebSocketSession {
     uint64_t connectionId{0};
+    std::string peer;
+    void *upgradedFrom{nullptr};
     uint64_t nextSequence{0};
     bool processing{false};
     std::deque<PendingWebSocketMessage> mailbox;
@@ -207,11 +209,49 @@ class ConnectionAdmission {
 
     void beginShutdown() { accepting_ = false; }
 
+    /**
+     * A WebSocket upgrade moves the socket out of the HTTP context, so the
+     * HTTP close filter never fires for it and `closed()` would leak the slot
+     * for the life of the process. The WebSocket close handler calls this
+     * instead, keyed by peer because the HttpResponse pointer is gone.
+     * Behind a reverse proxy every client shares one peer address, so a leak
+     * here locks the whole proxied API out once it reaches the per-peer limit.
+     */
+    void releaseUpgraded(uWS::HttpResponse<false> *response, const std::string &peer) {
+        const auto connection = connections_.find(response);
+        if (connection != connections_.end()) {
+            // The pointer was reused by uWS for the WebSocket; drop the HTTP
+            // record so a later HTTP close on a recycled address cannot
+            // double-release, then account for the upgraded connection.
+            const bool admitted = connection->second.admitted;
+            connections_.erase(connection);
+            if (admitted) {
+                release(peer);
+            }
+            return;
+        }
+        release(peer);
+    }
+
   private:
     struct Connection {
         std::string peer;
         bool admitted{false};
     };
+
+    void release(const std::string &peer) {
+        if (activeConnections_ > 0) {
+            --activeConnections_;
+        }
+        const auto peerIterator = connectionsPerPeer_.find(peer);
+        if (peerIterator != connectionsPerPeer_.end()) {
+            if (peerIterator->second > 1) {
+                --peerIterator->second;
+            } else {
+                connectionsPerPeer_.erase(peerIterator);
+            }
+        }
+    }
 
     void opened(uWS::HttpResponse<false> *response) {
         std::string peer(response->getRemoteAddressAsText());
@@ -239,17 +279,7 @@ class ConnectionAdmission {
             return;
         }
         if (connection->second.admitted) {
-            if (activeConnections_ > 0) {
-                --activeConnections_;
-            }
-            const auto peer = connectionsPerPeer_.find(connection->second.peer);
-            if (peer != connectionsPerPeer_.end()) {
-                if (peer->second > 1) {
-                    --peer->second;
-                } else {
-                    connectionsPerPeer_.erase(peer);
-                }
-            }
+            release(connection->second.peer);
         }
         connections_.erase(connection);
     }
@@ -2222,6 +2252,11 @@ void UWebSocketsServer::run() {
 
                          WebSocketSession session;
                          session.connectionId = nextWebSocketConnectionId++;
+                         session.peer = std::string(response->getRemoteAddressAsText());
+                         if (session.peer.empty()) {
+                             session.peer = "unknown";
+                         }
+                         session.upgradedFrom = response;
                          session.triggerTraceId = triggerTraceId;
                          session.triggerSpanId = triggerSpanId;
                          response->template upgrade<WebSocketSession>(
@@ -2284,13 +2319,18 @@ void UWebSocketsServer::run() {
                                        webSocket->getUserData()->connectionId);
                      },
                  .close =
-                     [&webSockets, &websocketConnectionCount](CreatureWebSocket *webSocket, const int code,
-                                                              const std::string_view message) {
-                         const auto connectionId = webSocket->getUserData()->connectionId;
+                     [&webSockets, &websocketConnectionCount, &admission](CreatureWebSocket *webSocket, const int code,
+                                                                          const std::string_view message) {
+                         auto *session = webSocket->getUserData();
+                         const auto connectionId = session->connectionId;
                          webSockets.erase(connectionId);
                          if (websocketConnectionCount > 0) {
                              --websocketConnectionCount;
                          }
+                         // The HTTP close filter will not fire for an upgraded
+                         // socket; give its admission slot back here (#216).
+                         admission.releaseUpgraded(static_cast<uWS::HttpResponse<false> *>(session->upgradedFrom),
+                                                   session->peer);
                          spdlog::info("uWebSockets client {} disconnected (code={}, message={})", connectionId, code,
                                       message);
                      }})
