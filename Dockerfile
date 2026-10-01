@@ -73,10 +73,15 @@ RUN cd /build/creature-server && \
           -DCMAKE_BUILD_TYPE=Release \
           ..
 
+# Parallel compile jobs for both ninja steps. 8 suits the GHA runners; a
+# local build can pass all of Docker's CPUs, e.g.
+#   --build-arg NINJA_JOBS=$(docker info --format '{{.NCPU}}')
+ARG NINJA_JOBS=8
+
 # Pre-compile every heavy FetchContent dep via the deps_only umbrella target
 # (defined in CMakeLists.txt). This is the ~15 minute step today; with this
 # layer cached it only re-runs when CMakeLists / cmake / lib change.
-RUN cd /build/creature-server/build && ninja -j8 deps_only
+RUN cd /build/creature-server/build && ninja -j${NINJA_JOBS} deps_only
 
 # ---- Phase 2: copy our source + build the final binary. Only this layer
 # re-runs on a typical "I changed a .cpp file" PR.
@@ -94,7 +99,7 @@ COPY VERSION.txt /build/creature-server/
 # against the now-populated src/ tree. (Without this, ninja would still see
 # the empty-src configuration from Phase 1.) Configure is fast — a few seconds
 # — once the FetchContent sources are already populated.
-RUN cd /build/creature-server/build && cmake .. && ninja -j8
+RUN cd /build/creature-server/build && cmake .. && ninja -j${NINJA_JOBS}
 
 # CPack package export for Linux validation from a macOS host. This is a build
 # artifact stage, not a runtime image; production installs the resulting .deb.
