@@ -82,6 +82,8 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/mongodb/mongo-c-driver.git
   GIT_TAG        1.30.4
   GIT_SHALLOW    TRUE
+  # CMake 4.4 rejects a bogus try_compile flag in libmongoc; see the script
+  PATCH_COMMAND  ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/PatchMongoCDriver.cmake
   EXCLUDE_FROM_ALL   # keep the driver's install() rules (headers, .a, cmake configs, .pc) out of our .deb
 )
 
@@ -456,7 +458,12 @@ if(NOT MP3LAME_LIBRARIES)
 endif()
 # Resolve the parent include dir ourselves so <lame/lame.h> works regardless of
 # whether lame.pc points -I at include/ (Debian) or include/lame/ (Homebrew).
-find_path(MP3LAME_INCLUDE_DIRS lame/lame.h)
+# Its own variable: pkg_check_modules already set MP3LAME_INCLUDE_DIRS, and
+# find_path skips the search when its result variable is already set.
+find_path(MP3LAME_PARENT_INCLUDE_DIR lame/lame.h HINTS ${MP3LAME_INCLUDEDIR})
+if(NOT MP3LAME_PARENT_INCLUDE_DIR)
+    message(FATAL_ERROR "lame/lame.h not found — install libmp3lame-dev (Debian) or lame (Homebrew)")
+endif()
 message(STATUS "Using libmp3lame: ${MP3LAME_LIBRARIES}")
 
 #Our source files. CONFIGURE_DEPENDS so adding a new .cpp in an existing
@@ -531,7 +538,7 @@ include_directories(
         util/
         ${UUID_INCLUDE_DIRS}
         ${argparse_SOURCE_DIR}/include
-        ${MP3LAME_INCLUDE_DIRS}
+        ${MP3LAME_PARENT_INCLUDE_DIR}
         ${miniaudio_SOURCE_DIR}
         ${MOODYCAMEL_DIR}
         ${LIBBASE64_DIR}/include
