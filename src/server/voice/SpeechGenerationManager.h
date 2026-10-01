@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -29,6 +30,10 @@ struct SpeechGenerationRequest {
     std::filesystem::path outputDirectory;
     std::shared_ptr<OperationSpan> parentSpan{nullptr};
     std::shared_ptr<VoiceClient> voiceClient{nullptr};
+    /// Render with this model instead of the creature's voice.model_id. The
+    /// creature's model is the fast one tuned for ad-hoc speech; pre-rendered
+    /// voice files ask for the expressive model so audio tags are performed.
+    std::optional<std::string> modelIdOverride;
 };
 
 struct SpeechGenerationResult {

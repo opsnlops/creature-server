@@ -16,6 +16,7 @@
 #include "server/audio/MonoWavDownmixer.h"
 #include "server/namespace-stuffs.h"
 #include "server/storage/Storage.h"
+#include "server/voice/ElevenLabsModels.h"
 #include "util/Sha256.h"
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -225,7 +226,7 @@ std::string computeCacheKey(const std::vector<DialogInput> &turns) {
     for (const auto &t : turns) {
         arr.push_back({{"v", t.voiceId}, {"t", t.text}});
     }
-    std::string serialized = "eleven_v3|" + arr.dump();
+    std::string serialized = std::string(kExpressiveModelId) + "|" + arr.dump();
     return util::sha256Hex(serialized);
 }
 

@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 
 #include "ElevenLabsHttp.h"
+#include "ElevenLabsModels.h"
 #include "server/namespace-stuffs.h"
 #include "util/ObservabilityManager.h"
 
@@ -219,12 +220,12 @@ Result<DialogResult> DialogClient::generateDialog(const std::string &apiKey, con
         }
     }
 
-    // Build the request body. Text-to-dialogue is eleven_v3-only (other models
-    // are rejected by the server with HTTP 400 "does not support dialogue"). The
-    // ad-hoc single-character path BLOCKLISTS eleven_v3; we deliberately bypass
-    // that here — it's the whole point of this method.
+    // Build the request body. Text-to-dialogue only takes the v3/v4 families (the
+    // fast models are rejected with HTTP 400 "does not support dialogue"). Those
+    // are too slow for the ad-hoc paths, which refuse them, but dialog is
+    // rendered ahead of time and wants v4's performed audio tags (issue #220).
     nlohmann::json body;
-    body["model_id"] = "eleven_v3";
+    body["model_id"] = kExpressiveModelId;
     auto inputsArr = nlohmann::json::array();
     for (const auto &in : inputs) {
         inputsArr.push_back({{"voice_id", in.voiceId}, {"text", in.text}});
@@ -254,7 +255,7 @@ Result<DialogResult> DialogClient::generateDialog(const std::string &apiKey, con
     curl_easy_setopt(call.handle(), CURLOPT_POSTFIELDSIZE, static_cast<long>(bodyStr.size()));
     curl_easy_setopt(call.handle(), CURLOPT_WRITEFUNCTION, &appendToString);
     curl_easy_setopt(call.handle(), CURLOPT_WRITEDATA, &respBuf);
-    // Dialog is slow — eleven_v3 with forced-alignment downstream is the bottleneck.
+    // Dialog is slow — generation plus forced alignment downstream is the bottleneck.
     // 90s gives headroom for ~2000-char scenes without leaving the call open forever.
     curl_easy_setopt(call.handle(), CURLOPT_TIMEOUT, 90L);
 
@@ -303,8 +304,9 @@ Result<DialogResult> DialogClient::generateDialog(const std::string &apiKey, con
     }
 
     // alignment.characters → kept for downstream sanity checks. The TIMES in
-    // alignment are broken on eleven_v3 (confirmed empirically) — we don't expose
-    // them on the result and we won't use them. Real timing comes from forcedAlignment().
+    // alignment were broken on eleven_v3 (confirmed empirically); eleven_v4's
+    // track forced alignment closely (issue #220), but timing still comes from
+    // forcedAlignment() until that's proven across real scripts.
     if (json.contains("alignment") && json["alignment"].is_object()) {
         const auto &al = json["alignment"];
         if (al.contains("characters") && al["characters"].is_array()) {

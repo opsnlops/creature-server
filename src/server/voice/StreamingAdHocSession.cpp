@@ -30,6 +30,8 @@
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/storage/Storage.h"
+#include "server/voice/DialogClient.h"
+#include "server/voice/ElevenLabsModels.h"
 #include "server/voice/SpeechTrackBuilder.h"
 #include "util/Slugify.h"
 #include "util/ThreadPriority.h"
@@ -311,10 +313,6 @@ Result<void> StreamingAdHocSession::start() {
     renderSeed_ = static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     std::mt19937 rng(static_cast<uint32_t>(renderSeed_));
 
-    // Streaming needs a model that serves audio as it renders.
-    static const std::vector<std::string> nonStreamingModels = {"eleven_v3", "eleven_multilingual_v2",
-                                                                "eleven_monolingual_v1", "eleven_multilingual_v1"};
-
     participants_.clear();
     participants_.reserve(config_.creatureIds.size());
     std::unordered_map<uint16_t, std::string> channelOwner;
@@ -360,17 +358,15 @@ Result<void> StreamingAdHocSession::start() {
                         "InvalidVoiceConfig");
         }
 
-        // Validate model supports streaming
-        for (const auto &blocked : nonStreamingModels) {
-            if (participant.modelId == blocked) {
-                // Name the creature: in a cast of several this is the whole
-                // diagnosis, and the world only sees the message.
-                return fail(ServerError(ServerError::InvalidData,
-                                        fmt::format("{}'s voice model '{}' does not support streaming; use a "
-                                                    "streaming-capable model such as eleven_turbo_v2_5",
-                                                    participant.name, participant.modelId)),
-                            "UnsupportedVoiceModel");
-            }
+        // Ad-hoc speech needs a model fast enough to keep up with the conversation.
+        if (!supportsAdHocSpeech(participant.modelId)) {
+            // Name the creature: in a cast of several this is the whole
+            // diagnosis, and the world only sees the message.
+            return fail(ServerError(ServerError::InvalidData,
+                                    fmt::format("{}'s voice model '{}' is too slow for streaming ad-hoc speech; use "
+                                                "a fast model such as {}",
+                                                participant.name, participant.modelId, kRecommendedAdHocModelId)),
+                        "UnsupportedVoiceModel");
         }
 
         // Two creatures on one audio lane would talk over each other in the
@@ -547,7 +543,7 @@ Result<void> StreamingAdHocSession::addText(const std::string &text, SpanParent 
     return addTurn(participants_.front().creatureId, text, std::move(triggerSpan));
 }
 
-Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const std::string &text,
+Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const std::string &rawText,
                                             SpanParent triggerSpan) {
     std::lock_guard<std::mutex> stateLock(stateMutex_);
     if (finished_.load()) {
@@ -567,10 +563,18 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
         return Result<void>{ServerError(ServerError::InvalidData,
                                         fmt::format("Creature {} is not a participant in this session", creatureId))};
     }
-    if (text.empty() || text.size() > MAX_STREAMING_AD_HOC_CHUNK_TEXT_BYTES) {
+    if (rawText.empty() || rawText.size() > MAX_STREAMING_AD_HOC_CHUNK_TEXT_BYTES) {
         return Result<void>{ServerError(ServerError::InvalidData,
                                         fmt::format("Streaming text chunk must contain between 1 and {} bytes",
                                                     MAX_STREAMING_AD_HOC_CHUNK_TEXT_BYTES))};
+    }
+    // Ad-hoc voices use the fast models, which read "[laughs]" aloud instead of
+    // laughing. Everything downstream (TTS, transcript, provenance) sees only the
+    // spoken words.
+    const std::string text = DialogClient::stripTags(rawText);
+    if (text.empty()) {
+        return Result<void>{
+            ServerError(ServerError::InvalidData, "Streaming text chunk contains only audio tags, no spoken words")};
     }
     if (static_cast<std::size_t>(chunksReceived_.load()) >= MAX_STREAMING_AD_HOC_CHUNKS) {
         return Result<void>{

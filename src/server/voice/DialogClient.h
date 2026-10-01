@@ -51,10 +51,10 @@ struct DialogInput {
 
 /// One contiguous run of a single speaker in the mixed dialog audio.
 ///
-/// On eleven_v3 the times in voice_segments[] are unreliable (the whole alignment is
-/// crammed into a tiny window — confirmed empirically). The CHARACTER INDEX ranges,
-/// however, are intact and contiguous. We carry the times for completeness/debugging
-/// but real timing must come from a follow-up forced-alignment call.
+/// On eleven_v3 the times in voice_segments[] were unreliable (the whole alignment
+/// was crammed into a tiny window — confirmed empirically). The CHARACTER INDEX
+/// ranges, however, are intact and contiguous. We carry the times for
+/// completeness/debugging; real timing comes from a follow-up forced-alignment call.
 struct DialogVoiceSegment {
     std::string voiceId;
     /// First character (inclusive) and one-past-last character (exclusive) into the
@@ -63,7 +63,7 @@ struct DialogVoiceSegment {
     std::size_t characterEndIndex = 0;
     /// Index into the original `inputs[]` array.
     std::size_t dialogInputIndex = 0;
-    /// Reported times — DO NOT TRUST on eleven_v3; kept for diagnostics.
+    /// Reported times — diagnostics only; timing comes from forced alignment.
     double startTimeSeconds = 0.0;
     double endTimeSeconds = 0.0;
 };
@@ -125,13 +125,12 @@ struct ForcedAlignmentResult {
  * Wraps two endpoints used together to produce per-character dialog with
  * per-character timing:
  *
- * - **Text-to-Dialogue** (`/v1/text-to-dialogue/with-timestamps`, `eleven_v3`):
+ * - **Text-to-Dialogue** (`/v1/text-to-dialogue/with-timestamps`, `eleven_v4`):
  *   joint generation of N voices into a single mixed-down audio stream, with
- *   speaker / character-index ranges. Returns reliable speaker→text mapping
- *   but the timestamps on v3 are broken.
+ *   speaker / character-index ranges. Returns reliable speaker→text mapping.
  * - **Forced Alignment** (`/v1/forced-alignment`, multipart): real per-word /
- *   per-character timing for a given (audio, transcript). Used to rescue v3
- *   dialog audio whose own timestamps are unreliable.
+ *   per-character timing for a given (audio, transcript). Originally needed to
+ *   rescue v3 dialog audio whose own timestamps were broken.
  *
  * Stateless — every call is a fresh HTTPS request via libcurl.
  */
@@ -151,16 +150,14 @@ class DialogClient {
      * Generate multi-character dialog via the ElevenLabs Text-to-Dialogue API.
      *
      * Endpoint: POST /v1/text-to-dialogue/with-timestamps?output_format={format}
-     * Model is fixed to eleven_v3 — turbo/multilingual are server-rejected for
-     * this endpoint with HTTP 400 "does not support dialogue". This deliberately
-     * bypasses the eleven_v3 blocklist applied to the ad-hoc single-character
-     * path in StreamingTTSClient.
+     * Model is kExpressiveModelId (eleven_v4) — the fast models are
+     * server-rejected for this endpoint with HTTP 400 "does not support
+     * dialogue", and the ad-hoc paths refuse the v3/v4 families as too slow.
      *
      * Returns the single mixed-down audio and voice_segments. Per-creature
      * isolation is the caller's job (slice the mixdown by turn). The
-     * voice_segments' character index ranges are reliable on v3; the times are
-     * NOT — call forcedAlignment() with the tag-stripped transcript to get
-     * real timing.
+     * voice_segments' character index ranges are reliable; take timing from
+     * forcedAlignment() with the tag-stripped transcript.
      *
      * @param apiKey ElevenLabs API key
      * @param inputs Ordered list of turns ({voice_id, text}); text may contain [tags]
@@ -175,8 +172,8 @@ class DialogClient {
      * Forced alignment of a transcript against an audio file.
      *
      * Endpoint: POST /v1/forced-alignment (multipart: file=audio, text=transcript).
-     * Returns per-character and per-word timestamps plus a loss score. Used to
-     * rescue timing for eleven_v3 dialog audio (whose own timestamps are broken).
+     * Returns per-character and per-word timestamps plus a loss score. Used for
+     * dialog timing (eleven_v3's own timestamps were broken).
      *
      * @param apiKey ElevenLabs API key
      * @param audio Audio bytes (WAV; same audio you got back from generateDialog)

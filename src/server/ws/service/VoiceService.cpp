@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "server/config/Configuration.h"
+#include "server/voice/ElevenLabsModels.h"
 #include "server/voice/SpeechGenerationManager.h"
 #include "util/ObservabilityManager.h"
 
@@ -102,6 +103,7 @@ VoiceService::generateCreatureSpeech(const api::MakeSoundFileRequest &request,
     helperRequest.outputDirectory = std::filesystem::path(creatures::config->getSoundFileLocation());
     helperRequest.parentSpan = speechSpan;
     helperRequest.voiceClient = client.getValue().value();
+    helperRequest.modelIdOverride = voice::kExpressiveModelId;
 
     auto result = voice::SpeechGenerationManager::generate(helperRequest);
     if (!result.isSuccess()) {
