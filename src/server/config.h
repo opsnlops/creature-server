@@ -36,6 +36,10 @@
 #define DEFAULT_HTTP_MAX_CONNECTIONS_PER_PEER 64
 #define DB_NAME "creature_server"
 #define CREATURES_COLLECTION "creatures"
+// Database-owned runtime state on the creature document, not controller
+// configuration: the universe we last saw this creature playing on. Stripped
+// before strict config parsing, the same way _id is (issue #231).
+#define CREATURE_LAST_KNOWN_UNIVERSE_FIELD "last_known_universe"
 #define ANIMATIONS_COLLECTION "animations"
 #define PLAYLISTS_COLLECTION "playlists"
 #define ADHOC_ANIMATIONS_COLLECTION "adhoc_animations"

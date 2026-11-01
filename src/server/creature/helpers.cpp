@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 
 #include "exception/exception.h"
+#include "server/config.h"
 #include "server/database.h"
 #include "util/ObservabilityManager.h"
 
@@ -48,8 +49,14 @@ Result<Creature> Database::parseCreatureJson(json creatureJson, std::shared_ptr<
 }
 
 Result<Creature> Database::creatureFromStoredJson(json creatureJson, std::shared_ptr<OperationSpan> parentSpan) {
-    if (creatureJson.is_object())
+    if (creatureJson.is_object()) {
         creatureJson.erase("_id");
+        // Where we last saw this creature playing. Database-owned runtime
+        // state, like _id — the controller's JSON is still the only source of
+        // truth for configuration, so strict parsing must not see it
+        // (issue #231).
+        creatureJson.erase(CREATURE_LAST_KNOWN_UNIVERSE_FIELD);
+    }
     return creatureFromJson(std::move(creatureJson), std::move(parentSpan));
 }
 
