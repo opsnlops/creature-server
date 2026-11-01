@@ -25,7 +25,7 @@ WorkingDirectory=/tmp
 # still wins for a one-off experiment.
 #
 # SECRETS come from the environment file, NOT from this unit. Unit files are
-# world-readable under /lib/systemd/system, so an API key in ExecStart is
+# world-readable under /usr/lib/systemd/system, so an API key in ExecStart is
 # readable by every user on the box. Put VOICE_API_KEY and HONEYCOMB_API_KEY in
 # /etc/default/creature-server, which can be mode 0600.
 EnvironmentFile=-/etc/default/creature-server
