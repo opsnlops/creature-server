@@ -118,6 +118,12 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .default_value(environmentToString(SOUND_FILE_LOCATION_ENV, DEFAULT_SOUND_FILE_LOCATION))
         .nargs(1);
 
+    program.add_argument("--audio-cache-dir")
+        .help("where to keep the Opus packet cache; defaults to a hidden directory inside the sounds location. "
+              "Point this at local disk to keep the cache off slow or backed-up network storage (issue #235)")
+        .default_value(environmentToString(AUDIO_CACHE_DIR_ENV, DEFAULT_AUDIO_CACHE_DIR))
+        .nargs(1);
+
     program.add_argument("-n", "--network-device")
         .help("network device to use")
         .default_value(environmentToString(NETWORK_DEVICE_NAME_ENV, DEFAULT_NETWORK_DEVICE_NAME))
@@ -447,6 +453,16 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     if (!soundsLocation.empty()) {
         config->setSoundFileLocation(soundsLocation);
         debug("set our sound file location to {}", soundsLocation);
+    }
+
+    // Empty means "use the default location", so unlike most settings an
+    // empty value here is meaningful rather than skipped.
+    auto audioCacheDir = program.get<std::string>("--audio-cache-dir");
+    config->setAudioCacheDir(audioCacheDir);
+    if (audioCacheDir.empty()) {
+        debug("audio cache location: default (inside the sounds location)");
+    } else {
+        info("audio cache location set to {}", audioCacheDir);
     }
 
     auto voiceApiKey = program.get<std::string>("-v");
