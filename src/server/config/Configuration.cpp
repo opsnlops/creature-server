@@ -76,10 +76,6 @@ bool Configuration::getTravelMode() const { return this->travelMode; }
 
 void Configuration::setTravelMode(const bool _travelMode) { this->travelMode = _travelMode; }
 
-bool Configuration::getRtpFragmentPackets() const { return this->rtpFragmentPackets; }
-
-void Configuration::setRtpFragmentPackets(const bool _fragmentPackets) { this->rtpFragmentPackets = _fragmentPackets; }
-
 uint32_t Configuration::getRtpAudioLoadWorkers() const { return this->rtpAudioLoadWorkers; }
 
 void Configuration::setRtpAudioLoadWorkers(const uint32_t _workers) { this->rtpAudioLoadWorkers = _workers; }

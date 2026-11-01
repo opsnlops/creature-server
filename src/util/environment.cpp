@@ -5,12 +5,22 @@
 
 namespace creatures {
 
+bool environmentSet(const char *variable) {
+    const char *valueString = std::getenv(variable);
+    return valueString != nullptr && valueString[0] != '\0';
+}
+
 int environmentToInt(const char *variable, int defaultValue) {
     trace("converting {} to an int from the environment (default is {})", variable, defaultValue);
 
     int value;
     const char *valueString = std::getenv(variable);
-    if (valueString != nullptr) {
+    // Empty is UNSET, not malformed. std::stoi("") throws, so this used to log
+    // "<var> is not an int?" for a bare `FOO=` line — which the packaged
+    // /etc/default/creature-server makes easy to leave behind when uncommenting
+    // a setting. environmentToString and environmentToUnsignedLongLong already
+    // treated empty this way (issue #242).
+    if (valueString != nullptr && valueString[0] != '\0') {
 
         try {
 
@@ -80,7 +90,8 @@ double environmentToDouble(const char *variable, double defaultValue) {
 
     double value;
     const char *valueString = std::getenv(variable);
-    if (valueString != nullptr) {
+    // Empty is UNSET, same as the rest of this family (issue #242).
+    if (valueString != nullptr && valueString[0] != '\0') {
 
         try {
 

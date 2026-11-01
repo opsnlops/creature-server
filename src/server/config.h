@@ -114,8 +114,6 @@
 #define DEFAULT_EVENT_LOOP_TRACE_SAMPLING 0.0005 // 0.05% = 5 in 10000 frames
 
 // RTP Fragmentation - useful for WiFi and networks without jumbo frame support
-#define RTP_FRAGMENT_PACKETS_ENV "RTP_FRAGMENT_PACKETS"
-#define DEFAULT_RTP_FRAGMENT_PACKETS 0 // Disabled by default (assume jumbo frames)
 
 // Cooperative animation RTP audio loader. Main production servers have enough
 // CPU/RAM to keep several cache-hit loads resident; cache-miss encoding still

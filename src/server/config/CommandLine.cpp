@@ -229,11 +229,6 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .scan<'i', int>()
         .nargs(1);
 
-    program.add_argument("--rtp-fragment")
-        .help("enable RTP packet fragmentation for standard MTU networks (WiFi, etc.)")
-        .default_value(environmentToInt(RTP_FRAGMENT_PACKETS_ENV, DEFAULT_RTP_FRAGMENT_PACKETS) == 1)
-        .implicit_value(true);
-
     program.add_argument("--rtp-audio-load-workers")
         .help("fixed worker count for cooperative RTP WAV/cache loads")
         .default_value(environmentToInt(RTP_AUDIO_LOAD_WORKERS_ENV, DEFAULT_RTP_AUDIO_LOAD_WORKERS))
@@ -352,7 +347,13 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     std::transform(configuredAudioMode.begin(), configuredAudioMode.end(), configuredAudioMode.begin(),
                    [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
     if (configuredAudioMode != "rtp" && configuredAudioMode != "local") {
-        critical("{} must be 'rtp' or 'local'", AUDIO_MODE_ENV);
+        // Name every place it could have come from, and quote what we got. This
+        // used to name only AUDIO_MODE, which sent anyone with a bad audio_mode
+        // in the config file looking at an environment variable they had never
+        // set (issue #242).
+        critical("audio mode must be 'rtp' or 'local', but got '{}' (from the config file's audio_mode, {}, or the "
+                 "built-in default)",
+                 configuredAudioMode, AUDIO_MODE_ENV);
         std::exit(1);
     }
     if (travelMode) {
@@ -373,14 +374,13 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         debug("using RTP audio streaming");
     }
 
-    // RTP fragmentation setting
-    auto rtpFragment = program.get<bool>("--rtp-fragment");
-    config->setRtpFragmentPackets(rtpFragment);
-    debug("RTP packet fragmentation: {}", rtpFragment ? "enabled" : "disabled");
-
     auto rtpAudioLoadWorkers = program.get<int>("--rtp-audio-load-workers");
+    // environmentSet, not just getenv != nullptr: an empty RTP_AUDIO_LOAD_WORKERS=
+    // used to count as an override here while the parser rejected it, so a
+    // travel Pi silently got the mainstage worker count AND an error log. The
+    // two checks have to agree on what "set" means (issue #242).
     const bool rtpAudioLoadWorkersOverridden =
-        program.is_used("--rtp-audio-load-workers") || std::getenv(RTP_AUDIO_LOAD_WORKERS_ENV) != nullptr;
+        program.is_used("--rtp-audio-load-workers") || environmentSet(RTP_AUDIO_LOAD_WORKERS_ENV);
     if (travelMode && !rtpAudioLoadWorkersOverridden) {
         // Travel mode currently forces local audio, but keep its effective
         // default safe for the Pi if that restriction changes later.

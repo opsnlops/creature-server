@@ -79,7 +79,6 @@ class Configuration {
     bool getTravelMode() const;
 
     /** @return True if RTP packets should be fragmented for standard MTU networks */
-    bool getRtpFragmentPackets() const;
 
     /** @return Number of fixed workers used for cooperative RTP audio loads */
     uint32_t getRtpAudioLoadWorkers() const;
@@ -174,7 +173,6 @@ class Configuration {
     void setTravelMode(bool _travelMode);
 
     /** @param _fragmentPackets Whether to enable RTP packet fragmentation */
-    void setRtpFragmentPackets(bool _fragmentPackets);
 
     /** @param _workers Fixed cooperative RTP audio loader worker count */
     void setRtpAudioLoadWorkers(uint32_t _workers);
@@ -243,7 +241,6 @@ class Configuration {
     bool travelMode = DEFAULT_TRAVEL_MODE;
 
     /** Whether to fragment RTP packets for standard MTU networks (WiFi, etc.) */
-    bool rtpFragmentPackets = DEFAULT_RTP_FRAGMENT_PACKETS;
 
     /** Fixed workers for cooperative RTP WAV reads/cache loads */
     uint32_t rtpAudioLoadWorkers = DEFAULT_RTP_AUDIO_LOAD_WORKERS;

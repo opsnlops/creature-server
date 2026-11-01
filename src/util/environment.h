@@ -5,6 +5,17 @@
 
 namespace creatures {
 
+/**
+ * Is this variable set to an actual value?
+ *
+ * Empty counts as UNSET, which is what the rest of this family treats it as,
+ * and what a systemd EnvironmentFile line of `FOO=` means in practice. Exists
+ * because callers used to ask `getenv(...) != nullptr` and disagree with the
+ * parsers about it — an empty RTP_AUDIO_LOAD_WORKERS= looked like an operator
+ * override to the caller while the parser rejected the value (issue #242).
+ */
+bool environmentSet(const char *variable);
+
 // Environment helps
 int environmentToInt(const char *variable, int defaultValue);
 int environmentToInt(const char *variable, const char *defaultValue);
