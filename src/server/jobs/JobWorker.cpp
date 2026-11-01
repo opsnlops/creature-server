@@ -1960,9 +1960,12 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         for (const auto &c : creaturesCache) {
             autoplayCreatures.push_back(c.creatureId);
         }
-        auto universeResult = creatures::resolveCommonUniverse(autoplayCreatures);
+        auto universeResult = creatures::resolvePlaybackUniverse(autoplayCreatures);
         if (!universeResult.isSuccess()) {
             return failJob(fmt::format("autoplay requested but {}", universeResult.getError().value().getMessage()));
+        }
+        if (const auto absent = universeResult.getValue()->unregistered; !absent.empty() && jobState.span) {
+            jobState.span->setAttribute("dialog.creatures.absent", static_cast<int64_t>(absent.size()));
         }
     }
     if (jobState.span) {

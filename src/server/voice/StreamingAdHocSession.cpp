@@ -443,13 +443,21 @@ Result<void> StreamingAdHocSession::start() {
         participants_.push_back(std::move(participant));
     }
 
-    // Look up universe for playback: every participant has to be registered
-    // on the same one, because a turn is one animation on one universe.
-    auto universeResult = creatures::resolveCommonUniverse(config_.creatureIds);
+    // Which universe to play into. Resolved from the participants that ARE
+    // registered: a turn is one animation on one universe, but a participant
+    // whose controller is off is still in the scene — its audio is a channel
+    // in the room mix, so only its motion is missing (issue #233).
+    auto universeResult = creatures::resolvePlaybackUniverse(config_.creatureIds);
     if (!universeResult.isSuccess()) {
         return fail(universeResult.getError().value(), "CreatureUniverseMissing");
     }
-    universe_ = universeResult.getValue().value();
+    const auto playbackUniverse = universeResult.getValue().value();
+    universe_ = playbackUniverse.universe;
+    if (!playbackUniverse.unregistered.empty() && startSpan) {
+        startSpan->setAttribute("dialog.creatures.absent", static_cast<int64_t>(playbackUniverse.unregistered.size()));
+        startSpan->setAttribute("dialog.creatures.absent_ids",
+                                creatures::joinStrings(playbackUniverse.unregistered, ","));
+    }
 
     // Stage binding (#119). A dialog insists on one (#186): the birds have to
     // look at each other, so an unplaced participant is a configuration error
