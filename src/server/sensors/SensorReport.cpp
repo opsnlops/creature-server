@@ -64,13 +64,18 @@ Result<PowerSensorReading> powerReadingFromJson(const nlohmann::json &json, std:
 
 Result<DynamixelSensorReading> dynamixelReadingFromJson(const nlohmann::json &json, std::string_view path) {
     auto fields = json_codec::rejectUnknownFields(
-        json, path, {"dxl_id", "temperature_f", "present_load", "voltage_mv", "voltage_v", "present_position"});
+        json, path,
+        {"dxl_id", "temperature_f", "present_load", "voltage_mv", "voltage_v", "present_position", "online"});
     auto id = json_codec::requiredUnsigned<uint32_t>(json, path, "dxl_id", 253);
     auto temperature = json_codec::optionalFiniteDouble(json, path, "temperature_f", -100.0, 500.0, true);
     auto presentLoad = json_codec::optionalInt64(json, path, "present_load", INT32_MIN, INT32_MAX, true);
     auto voltage = json_codec::optionalFiniteDouble(json, path, "voltage_v", 0.0, 100.0, true);
     auto voltageMillivolts = json_codec::optionalInt64(json, path, "voltage_mv", 0, 100000, true);
     auto position = json_codec::optionalInt64(json, path, "present_position", 0, 4095, true);
+    // Absent means "firmware older than the online flag", and the controller
+    // defaults that case to true as well — so an upgrade cannot silently mark
+    // a healthy bus offline (issue #229).
+    auto online = json_codec::optionalBool(json, path, "online", true);
     if (!fields.isSuccess())
         return forwardError<DynamixelSensorReading>(fields);
     if (!id.isSuccess())
@@ -85,6 +90,8 @@ Result<DynamixelSensorReading> dynamixelReadingFromJson(const nlohmann::json &js
         return forwardError<DynamixelSensorReading>(voltageMillivolts);
     if (!position.isSuccess())
         return forwardError<DynamixelSensorReading>(position);
+    if (!online.isSuccess())
+        return forwardError<DynamixelSensorReading>(online);
     const auto positionValue = position.getValue().value();
     return Result<DynamixelSensorReading>{
         DynamixelSensorReading{.dxlId = id.getValue().value(),
@@ -93,6 +100,7 @@ Result<DynamixelSensorReading> dynamixelReadingFromJson(const nlohmann::json &js
                                .voltageV = voltage.getValue().value().value_or(0.0),
                                .presentPosition = static_cast<int32_t>(positionValue.value_or(0)),
                                .hasPosition = positionValue.has_value(),
+                               .online = online.getValue().value().value_or(true),
                                .lastUpdate = {}}};
 }
 

@@ -44,6 +44,13 @@ struct DynamixelSensorReading {
     double voltageV;         // Input voltage in volts
     int32_t presentPosition; // Raw encoder position (0-4095 for XC430-class servos)
     bool hasPosition;        // False on older firmware that omits present_position
+    // Did the servo answer on the bus this cycle? The firmware reports EVERY
+    // configured servo every time and clears this flag for ones it did not
+    // hear from, so a silent servo is visibly absent instead of frozen at its
+    // last good reading. Such a reading carries zeros in every other field,
+    // which say nothing about how hot or loaded the servo was — so anything
+    // consuming these values must check this first (issue #229).
+    bool online;
     std::chrono::system_clock::time_point lastUpdate;
 };
 

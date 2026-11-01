@@ -215,6 +215,11 @@ class ObservabilityManager {
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> dynamixelLoadGauge_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> dynamixelVoltageGauge_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> dynamixelPositionGauge_;
+    // 1 when the servo answered on the bus, 0 when it did not. Carried as
+    // its own series because the other gauges are SKIPPED for an offline
+    // servo, and an absent series alone cannot say whether the servo is
+    // offline or the controller stopped reporting at all (issue #229).
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> dynamixelOnlineGauge_;
 
     bool initialized_;
 
