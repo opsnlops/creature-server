@@ -3,6 +3,7 @@
 //
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <filesystem>
 #include <locale>
@@ -30,6 +31,7 @@
 #include "Version.h"
 #include "model/PlaylistStatus.h"
 #include "server/animation/SessionManager.h"
+#include "server/audio/AudioCacheMaintenance.h"
 #include "server/audio/LocalAudioPlaybackCoordinator.h"
 #include "server/audio/NativeAudioPlaybackService.h"
 #include "server/audio/SoundPathResolver.h"
@@ -144,6 +146,11 @@ std::shared_ptr<audio::NativeAudioPlaybackService> nativeAudioPlaybackService;
 
 // Audio cache for pre-encoded Opus files
 std::shared_ptr<util::AudioCache> audioCache;
+
+// Background prune that keeps the on-disk Opus cache from growing forever
+// (issue #225). Held globally so the manual debug endpoint can preview against
+// the same policy the automatic sweep applies.
+std::shared_ptr<audio::AudioCacheMaintenance> audioCacheMaintenance;
 
 // Basename → canonical-path indexes over the two sound stores (issue #94).
 // Request threads look up here instead of walking the tree; Storage marks
@@ -492,10 +499,23 @@ int main(const int argc, char **argv) {
         auto stats = creatures::audioCache->getStats();
         debug("Audio cache stats: {} cached files, {} hits, {} misses", stats.totalCachedFiles, stats.cacheHits,
               stats.cacheMisses);
+
+        // Nothing ever pruned this cache in production — see issue #225 — so
+        // it grew without bound inside the permanent sound root. The sweep
+        // runs on its own thread (never the 1 ms event loop) and its first
+        // pass is delayed, so startup never waits on a disk walk.
+        const auto prunePolicy = creatures::util::AudioCache::PrunePolicy::forHost(creatures::config->getTravelMode());
+        const auto pruneIntervalHours = creatures::environmentToUnsignedLongLong(
+            AUDIO_CACHE_PRUNE_INTERVAL_HOURS_ENV, DEFAULT_AUDIO_CACHE_PRUNE_INTERVAL_HOURS);
+        creatures::audioCacheMaintenance = std::make_shared<creatures::audio::AudioCacheMaintenance>(
+            creatures::audioCache, prunePolicy, std::chrono::seconds(AUDIO_CACHE_PRUNE_STARTUP_DELAY_SECONDS),
+            std::chrono::seconds(pruneIntervalHours * 3600ULL));
+        creatures::audioCacheMaintenance->start();
     } catch (const std::exception &e) {
         error("Failed to initialize audio cache: {}", e.what());
         warn("Audio will be encoded without caching (slower performance)");
         creatures::audioCache = nullptr;
+        creatures::audioCacheMaintenance = nullptr;
         creatures::rtp::AudioStreamBuffer::setAudioCacheInstance(nullptr);
     }
 
@@ -564,6 +584,12 @@ int main(const int argc, char **argv) {
 
     // Tell the watchdog to stop
     watchdog->shutdown();
+
+    // Ask the cache sweep to stop early: an in-flight prune abandons itself
+    // between entries, so this never adds to shutdown time.
+    if (creatures::audioCacheMaintenance) {
+        creatures::audioCacheMaintenance->shutdown();
+    }
 
     // Stop the websocket server FIRST (before event loop)
     // This prevents web server threads from trying to use the event loop after it's destroyed

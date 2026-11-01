@@ -7,6 +7,7 @@
 #include <oatpp/web/server/api/ApiController.hpp>
 
 #include "api/DebugResponses.h"
+#include "server/audio/AudioCacheMaintenance.h"
 #include "server/audio/SoundPathResolver.h"
 #include "server/config.h"
 #include "server/metrics/counters.h"
@@ -25,10 +26,11 @@ namespace creatures {
 extern std::shared_ptr<creatures::audio::SoundStoreIndex> permanentSoundIndex;
 extern std::shared_ptr<creatures::audio::SoundStoreIndex> adHocSoundIndex;
 extern std::shared_ptr<creatures::util::AudioCache> audioCache;
+extern std::shared_ptr<creatures::audio::AudioCacheMaintenance> audioCacheMaintenance;
 extern std::shared_ptr<ObservabilityManager> observability;
 } // namespace creatures
 
-namespace creatures ::ws {
+namespace creatures::ws {
 
 class DebugController : public oatpp::web::server::api::ApiController, public HttpResponseHelpers<DebugController> {
   public:
@@ -193,6 +195,10 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
             "sound orphans its cache entry permanently — no other operation reclaims it. This removes orphaned "
             "entries, entries left incomplete by a crashed save, abandoned temporary files, and lock files whose "
             "directory is gone.\n\n"
+            "Applies the SAME policy the automatic background sweep uses (issue #225), so this is also how you "
+            "preview that sweep: on top of the unusable entries above, it drops entries nothing has read in longer "
+            "than AUDIO_CACHE_MAX_IDLE_DAYS, then evicts least-recently-read entries until the cache fits "
+            "AUDIO_CACHE_MAX_BYTES.\n\n"
             "Defaults to a DRY RUN: pass dry_run=false to actually delete. Intended as a creature-cli maintenance "
             "command. Distinct from /cache-invalidate/*, which never deletes anything (issue #166).";
         info->addTag("Debug");
@@ -216,7 +222,12 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
                     creatures::observability
                         ? creatures::observability->createOperationSpan("DebugController.pruneAudioCache", span)
                         : nullptr;
-                auto pruneResult = creatures::audioCache->pruneOrphanedEntries(isDryRun, pruneSpan);
+                // Preview and apply what the background sweep actually does
+                // (issue #225). Falling back to an orphan-only policy keeps
+                // this endpoint working even if the sweep failed to start.
+                const auto policy = creatures::audioCacheMaintenance ? creatures::audioCacheMaintenance->policy()
+                                                                     : creatures::util::AudioCache::PrunePolicy{};
+                auto pruneResult = creatures::audioCache->prune(policy, isDryRun, pruneSpan);
                 if (!pruneResult.isSuccess()) {
                     const auto error = pruneResult.getError().value();
                     recordSpanError(pruneSpan, error.getMessage(), "AudioCachePruneFailure", error.getCode());
@@ -231,9 +242,19 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
                     creatures::rtp::AudioStreamBuffer::clearMemo();
                 }
 
-                const api::AudioCachePruneResponse response{
-                    report.dryRun,         report.entriesScanned,    report.orphanedEntries, report.incompleteEntries,
-                    report.temporaryFiles, report.orphanedLockFiles, report.bytesReclaimed,  report.removed};
+                const api::AudioCachePruneResponse response{.dryRun = report.dryRun,
+                                                            .entriesScanned = report.entriesScanned,
+                                                            .orphanedEntries = report.orphanedEntries,
+                                                            .incompleteEntries = report.incompleteEntries,
+                                                            .temporaryFiles = report.temporaryFiles,
+                                                            .orphanedLockFiles = report.orphanedLockFiles,
+                                                            .idleEntries = report.idleEntries,
+                                                            .oversizeEntries = report.oversizeEntries,
+                                                            .skippedEntries = report.skippedEntries,
+                                                            .bytesReclaimed = report.bytesReclaimed,
+                                                            .bytesRetained = report.bytesRetained,
+                                                            .aborted = report.aborted,
+                                                            .removed = report.removed};
 
                 info("Audio cache prune via API ({}): {} orphaned, {} incomplete, {} bytes",
                      isDryRun ? "dry run" : "applied", report.orphanedEntries, report.incompleteEntries,
@@ -246,8 +267,12 @@ class DebugController : public oatpp::web::server::api::ApiController, public Ht
                     pruneSpan->setAttribute("cache.temporary_files", static_cast<int64_t>(report.temporaryFiles));
                     pruneSpan->setAttribute("cache.orphaned_lock_files",
                                             static_cast<int64_t>(report.orphanedLockFiles));
+                    pruneSpan->setAttribute("cache.idle_entries", static_cast<int64_t>(report.idleEntries));
+                    pruneSpan->setAttribute("cache.oversize_entries", static_cast<int64_t>(report.oversizeEntries));
+                    pruneSpan->setAttribute("cache.skipped_entries", static_cast<int64_t>(report.skippedEntries));
                     pruneSpan->setAttribute("cache.removed.count", static_cast<int64_t>(report.removed.size()));
                     pruneSpan->setAttribute("cache.bytes_reclaimed", static_cast<int64_t>(report.bytesReclaimed));
+                    pruneSpan->setAttribute("cache.bytes_retained", static_cast<int64_t>(report.bytesRetained));
                     pruneSpan->setSuccess();
                 }
                 if (span)

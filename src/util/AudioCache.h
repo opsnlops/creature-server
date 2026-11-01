@@ -5,9 +5,12 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -105,6 +108,51 @@ class AudioCache {
     Result<void> clearCache(const std::string &sourceFilePath);
 
     /**
+     * @brief How aggressively a prune pass reclaims space (issue #225).
+     *
+     * The unusable tiers — orphaned, incomplete, abandoned temporaries, stale
+     * lock files — are ALWAYS reclaimed; nothing can read them, so there is
+     * no policy to make. These two knobs govern the tiers that discard cache
+     * entries which would still work, trading a future re-encode for disk:
+     *
+     *  - `maxIdleAge`: drop entries not read in longer than this.
+     *  - `maxTotalBytes`: hold the surviving set under a ceiling, evicting
+     *    least-recently-read first.
+     *
+     * An unset/zero value disables that tier, which is why the default
+     * constructed policy is exactly the historical orphan-only behavior.
+     *
+     * Deleting a usable entry only costs a cache miss (a slow re-encode), the
+     * same thing that happens the first time any sound plays — so the policy
+     * is tuned to be conservative rather than tidy. See config.h for how the
+     * production defaults are chosen and why travel mode differs.
+     */
+    struct PrunePolicy {
+        /// Entries not read in longer than this are evicted. Unset = keep forever.
+        std::optional<std::chrono::seconds> maxIdleAge{};
+
+        /// Ceiling on the retained cache, in bytes. 0 = unbounded.
+        std::uintmax_t maxTotalBytes{0};
+
+        /// Checked between entries so a long sweep can be abandoned at
+        /// shutdown instead of delaying it. Unset = run to completion.
+        std::function<bool()> abortRequested{};
+
+        /**
+         * @brief The policy this host should run with.
+         *
+         * Reads AUDIO_CACHE_MAX_IDLE_DAYS / AUDIO_CACHE_MAX_BYTES, falling
+         * back to the mode-appropriate defaults in config.h. Resolved ONCE at
+         * startup rather than per sweep, so the policy in the logs is the
+         * policy in effect.
+         */
+        static PrunePolicy forHost(bool travelMode);
+
+        /// Human-readable summary, for the startup log line.
+        std::string describe() const;
+    };
+
+    /**
      * @brief What a prune pass found and (unless dry-run) removed.
      */
     struct PruneReport {
@@ -113,8 +161,13 @@ class AudioCache {
         std::size_t incompleteEntries{0}; // no completion marker (crashed save)
         std::size_t temporaryFiles{0};    // abandoned *.tmp.<pid>.<n>
         std::size_t orphanedLockFiles{0}; // .lock whose cache directory is gone
+        std::size_t idleEntries{0};       // usable, but unread past maxIdleAge
+        std::size_t oversizeEntries{0};   // usable, evicted LRU to fit maxTotalBytes
+        std::size_t skippedEntries{0};    // candidate that raced a read, or lock unavailable
         std::uintmax_t bytesReclaimed{0};
+        std::uintmax_t bytesRetained{0}; // size of the cache the pass left behind
         bool dryRun{true};
+        bool aborted{false}; // shutdown interrupted the sweep
         // Bounded sample of what was (or would be) removed, for the operator.
         std::vector<std::string> removed;
     };
@@ -137,6 +190,27 @@ class AudioCache {
      *               describes what would have been.
      */
     Result<PruneReport> pruneOrphanedEntries(bool dryRun = true, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+
+    /**
+     * @brief Prune under an explicit policy (issue #225).
+     *
+     * Does everything pruneOrphanedEntries() does, then — if the policy asks
+     * for them — evicts entries that are still usable but idle, and finally
+     * trims the survivors to a byte ceiling least-recently-read first.
+     *
+     * Safe to call concurrently with playback. Every deletion is taken under
+     * this key's process-local mutex AND its sibling advisory lock file; an
+     * entry whose lock cannot be acquired is skipped, never deleted, because
+     * losing a race here means tearing audio out from under a live show. The
+     * idle and size tiers sample last-use times before sorting, so each
+     * deletion re-reads the entry's last-use marker under the lock and backs
+     * out if the entry has been read since it was sampled.
+     *
+     * Must NOT be called from the 1 ms event loop thread: it walks the cache
+     * directory and stats every channel file.
+     */
+    Result<PruneReport> prune(const PrunePolicy &policy, bool dryRun = true,
+                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
      * @brief Get cache statistics
@@ -186,6 +260,26 @@ class AudioCache {
      * why this split exists (issue #93 review).
      */
     Result<void> clearCacheLocked(const std::string &sourceFilePath);
+
+    /**
+     * Record that an entry is being read, by touching the mtime of its
+     * `.complete` marker (issue #225).
+     *
+     * There is no access time to lean on: `atime` is unusable on `noatime` /
+     * `relatime` mounts, which is most of them. The marker already exists per
+     * entry, so re-using its mtime as "last read" costs one utimensat per
+     * cache hit and adds no new files. Entries written before this existed
+     * simply start from their save time, which is a fine approximation.
+     *
+     * Called as soon as a read is ABOUT to begin, not when it finishes, so an
+     * in-flight load already looks recently-used to a concurrent prune even
+     * if the advisory lock were somehow bypassed.
+     */
+    void markEntryRead(const std::string &cacheDirectory) const;
+
+    /// Last-read time of an entry, from its `.complete` marker. Falls back to
+    /// the directory's own mtime if the marker cannot be statted.
+    std::optional<std::filesystem::file_time_type> lastReadTime(const std::filesystem::path &cacheDirectory) const;
 
     /// Read ONLY the metadata header of a cache channel file to recover the
     /// source path it was built from. Cheap: the header is a few hundred bytes
