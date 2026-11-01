@@ -539,8 +539,26 @@ int main(const int argc, char **argv) {
     creatures::e131Server->init(creatures::config->getNetworkDevice(), version, creatures::config->getTravelMode());
     creatures::e131Server->start();
 
-    // TODO: Remove this, this is just for debugging. Universe 1000 is "production."
-    // creatures::e131Server->createUniverse(1000);
+    // Re-learn where each creature was last playing (issue #231). The runtime
+    // creature/universe map is filled only by POST /api/v1/creature/register,
+    // which controllers call at THEIR startup — so without this a server
+    // restart forgets every assignment until each controller happens to
+    // restart, and a dialog whose participant is powered off (or simply hasn't
+    // re-registered) is refused even though its audio belongs in the room
+    // regardless. A creature taken down for maintenance is still assigned to
+    // the universe it was last seen on.
+    if (creatures::db && creatures::creatureUniverseMap) {
+        auto rememberedResult = creatures::db->getCreatureLastKnownUniverses();
+        if (rememberedResult.isSuccess()) {
+            const auto remembered = rememberedResult.getValue().value();
+            for (const auto &[creatureId, universe] : remembered) {
+                creatures::creatureUniverseMap->put(creatureId, universe);
+            }
+            info("Restored {} creature/universe assignment(s) from the last run", remembered.size());
+        } else {
+            warn("Could not restore creature/universe assignments: {}", rememberedResult.getError()->getMessage());
+        }
+    }
 
     // Fire up the watchdog
     auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);

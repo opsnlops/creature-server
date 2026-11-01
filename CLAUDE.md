@@ -240,7 +240,11 @@ To run only one arch (e.g. amd64-only because that's all the server needs right 
 - `src/server/main.cpp` - Added creatureUniverseMap initialization
 
 **Key Architectural Principle:**
-Controller's JSON file = source of truth for creature config. Database is just a cache. Universe is runtime-only state, not persisted.
+Controller's JSON file = source of truth for creature config. Database is just a cache.
+
+Universe assignment used to be runtime-only state that was deliberately never persisted. **That changed in 3.50.7 (issue #231).** It made sense when playback was occasional and a controller restart was the natural time to re-establish everything; it stopped making sense once Creature World started driving dozens or more ad-hoc animations a day, because a server deploy would then forget where every creature plays and refuse dialogs until each controller happened to restart on its own.
+
+The last known universe is now remembered on the creature document as `last_known_universe` and restored into `creatureUniverseMap` at startup. It is **database-owned runtime state, not configuration**: `creatureFromStoredJson` strips it before strict config parsing exactly as it strips `_id`, so the controller's JSON remains the only source of truth for config. A creature taken down for maintenance is still assigned to the universe it was last seen on.
 
 ## Common Tasks
 

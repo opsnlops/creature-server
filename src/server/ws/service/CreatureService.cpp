@@ -45,7 +45,7 @@ extern std::shared_ptr<ObjectCache<creatureId_t, Creature>> creatureCache;
 extern FixtureActivityHook fixtureActivityHook;
 } // namespace creatures
 
-namespace creatures ::ws {
+namespace creatures::ws {
 
 namespace {
 
@@ -487,6 +487,20 @@ Result<api::CreatureResponse> CreatureService::registerCreature(const std::strin
 
     const std::string creatureId = response.creature.id;
     creatures::creatureUniverseMap->put(creatureId, universe);
+
+    // Remember it across restarts (issue #231). The in-memory map alone is
+    // filled only here, and controllers call this at THEIR startup — so a
+    // server restart used to forget where every creature plays, and a dialog
+    // with a participant that hadn't re-registered was refused outright.
+    // Best effort: failing to remember must not fail the registration, since
+    // the runtime map is already correct for this boot.
+    if (creatures::db) {
+        if (auto remembered = creatures::db->setCreatureLastKnownUniverse(creatureId, universe, serviceSpan);
+            !remembered.isSuccess()) {
+            warn("Registered creature {} on universe {} but could not remember it: {}", creatureId, universe,
+                 remembered.getError()->getMessage());
+        }
+    }
     if (logger)
         logger->info("Registered creature '{}' (id: {}) on universe {}", response.creature.name, creatureId, universe);
 
