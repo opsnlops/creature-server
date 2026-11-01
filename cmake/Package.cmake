@@ -52,6 +52,26 @@ set(CPACK_DEBIAN_PACKAGE_MAINTAINER "April White <april@opsnlops.io>")
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
         "${CMAKE_CURRENT_SOURCE_DIR}/scripts/debian/postinst;${CMAKE_CURRENT_SOURCE_DIR}/scripts/debian/postrm;${CMAKE_CURRENT_SOURCE_DIR}/scripts/debian/conffiles")
 
+# The systemd units, shipped the way creature-world ships its own
+# (debian/creature-world.service -> usr/lib/systemd/system/). Version-controlled
+# here so the deployment description lives with the code (issue #240).
+#
+# NOT conffiles, deliberately. A unit under /usr/lib/systemd/system is
+# package-managed, and systemd gives /etc/systemd/system precedence over it --
+# so a host with a hand-installed unit there keeps winning until that copy is
+# removed, and local changes belong in a drop-in under
+# /etc/systemd/system/creature-server.service.d/ rather than by editing this.
+# That is also the safe migration path: installing this package cannot change
+# what a host is currently running.
+#
+# Both units ship. They are two deployments of the same binary and only the
+# enabled one runs, so the travel unit is inert on the mainstage host and vice
+# versa.
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/scripts/systemd/creature-server.service
+               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/systemd/creature-server-travel.service
+        DESTINATION usr/lib/systemd/system
+        COMPONENT creature-server)
+
 # The packaged configuration. Version-controlled in this repo so the production
 # settings live with the code rather than only in a unit file, matching how
 # creature-world ships /etc/creature/world.json from the Swift monorepo.

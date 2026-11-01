@@ -44,6 +44,16 @@ case "$1" in
         # secrets, and an unwritable cache silently costs performance.
         chown "$SVC_USER:$SVC_GROUP" "$CACHE_DIR"
         chmod 2775 "$CACHE_DIR"
+
+        # Pick up unit changes. Deliberately NOT enable or start: whether this
+        # host runs the mainstage unit, the travel one, or neither is the
+        # operator's decision, and starting a server on a live show host
+        # because a package was installed would be rude. A host already
+        # running a hand-installed unit from /etc/systemd/system is unaffected
+        # -- systemd gives that precedence (issue #240).
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
         ;;
     abort-upgrade|abort-remove|abort-deconfigure)
         ;;

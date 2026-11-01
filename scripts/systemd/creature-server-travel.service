@@ -43,7 +43,7 @@ SupplementaryGroups=audio
 # Baked-in defaults for this host; /etc/default/creature-server overrides them.
 #
 # Secrets go in that file and NEVER in this unit — unit files are world-readable
-# under /lib/systemd/system. Set VOICE_API_KEY (ElevenLabs) and HONEYCOMB_API_KEY
+# under /usr/lib/systemd/system. Set VOICE_API_KEY (ElevenLabs) and HONEYCOMB_API_KEY
 # there; the server reads both from the environment. Without VOICE_API_KEY the
 # server still runs and stage re-renders still work — only fresh dialog
 # generation needs it.
