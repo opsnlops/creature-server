@@ -57,7 +57,24 @@ class AudioCache {
         std::size_t approximateBytes{0};
     };
 
-    AudioCache(const std::string &soundDirectory);
+    /**
+     * @param soundDirectory the sound library root.
+     * @param cacheRootOverride where to keep encoded packets. Empty (the
+     *        default) means the historical location, a `.opus_cache` directory
+     *        inside the sound library. Otherwise the cache root is
+     *        `<cacheRootOverride>/<hostname>`.
+     *
+     * Passed in rather than read from the environment here so the choice is
+     * explicit and unit-testable; main.cpp reads AUDIO_CACHE_DIR (issue #235).
+     *
+     * An override is REFUSED, with the default used instead, when it would
+     * place the cache somewhere the sound-store walkers would descend into —
+     * that would re-create issue #223, where 17 files per sound in the walk
+     * path made GET /api/v1/sound take 50-66 s. An override that exists but
+     * cannot be written also falls back, because a mistyped setting should not
+     * cost caching entirely.
+     */
+    AudioCache(const std::string &soundDirectory, const std::string &cacheRootOverride = "");
     ~AudioCache() = default;
 
     /**
@@ -222,6 +239,11 @@ class AudioCache {
         std::size_t cacheMisses;
     };
     CacheStats getStats() const;
+
+    /// Where encoded packets are actually being kept, after any override was
+    /// validated. Lets the operator see the resolved path, and lets tests
+    /// assert on the fallback behaviour (issue #235).
+    const std::string &cacheDirectory() const { return cacheDirectory_; }
 
   private:
     std::string soundDirectory_;

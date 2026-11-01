@@ -249,6 +249,18 @@ static constexpr std::size_t RTP_MAX_ENCODED_TOTAL_BYTES =
 // season of material warm. Same split as the in-memory memo budget above.
 //
 // Either env var set to 0 disables that tier.
+// Where the on-disk Opus cache lives (issue #235). Unset keeps the historical
+// behaviour: a hostname-scoped `.opus_cache` INSIDE the sound library. Set, the
+// cache root becomes <AUDIO_CACHE_DIR>/<hostname>.
+//
+// Worth moving because the cache is derived, regenerable, hostname-scoped data:
+// nothing reads another host's entries and nothing needs it restored from a
+// backup, so storing it on the sound library's slow, nightly-backed-up network
+// volume pays that volume's cost on the cache's hot path and collects none of
+// its benefits.
+#define AUDIO_CACHE_DIR_ENV "AUDIO_CACHE_DIR"
+#define DEFAULT_AUDIO_CACHE_DIR ""
+
 #define AUDIO_CACHE_MAX_IDLE_DAYS_ENV "AUDIO_CACHE_MAX_IDLE_DAYS"
 #define DEFAULT_AUDIO_CACHE_MAX_IDLE_DAYS 90ULL
 #define DEFAULT_AUDIO_CACHE_MAX_IDLE_DAYS_TRAVEL 21ULL
