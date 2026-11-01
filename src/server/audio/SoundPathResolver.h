@@ -33,6 +33,21 @@ namespace creatures::audio {
 /// for one-shot callers (dialog re-render recovery).
 std::optional<std::string> resolveSoundInRoot(const std::filesystem::path &root, const std::string &filename);
 
+/// Should a recursive walk of a sound store root refuse to descend into
+/// `directory`?
+///
+/// True for any dot-directory, which covers the Opus packet cache that
+/// AudioCache keeps *inside* the permanent sound root
+/// (`.opus_cache/<hostname>/<entry>/chNN.opus`, 17 files per cached sound).
+/// That cache is never pruned automatically, so a walk that descends into it
+/// grows without bound: the sound list endpoint spent ~50 s per call stat-ing
+/// files it then discarded, holding an oatpp worker thread the whole time and
+/// starving unrelated requests (issue #223).
+///
+/// Every recursive walk rooted at a sound store must consult this and call
+/// `disable_recursion_pending()` on a match.
+bool isSkippedSoundDirectory(const std::filesystem::path &directory);
+
 /// Is `filename` a safe bare basename for the sound stores?
 ///
 /// Enforces (issue #94): non-empty, at most 255 bytes, well-formed UTF-8, no
