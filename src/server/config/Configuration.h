@@ -62,6 +62,16 @@ class Configuration {
     /** @return Directory path where sound files are stored */
     std::string getSoundFileLocation() const;
 
+    /**
+     * @return Where the on-disk Opus cache is kept, or empty for the default
+     *         (a hostname-scoped `.opus_cache` inside the sound library).
+     *
+     * Worth pointing elsewhere on the main server: the sound library lives on
+     * a nightly-backed-up network volume whose benefits the cache cannot use,
+     * while its slow seeks land on the cache's hot path (issue #235).
+     */
+    std::string getAudioCacheDir() const;
+
     /** @return Current audio mode (local playback or RTP streaming) */
     AudioMode getAudioMode() const;
 
@@ -138,6 +148,9 @@ class Configuration {
 
     /** @param _soundFileLocation Directory path for sound files */
     void setSoundFileLocation(std::string _soundFileLocation);
+
+    /** @param _audioCacheDir Directory for the Opus cache, or empty for the default */
+    void setAudioCacheDir(std::string _audioCacheDir);
 
     /** @param _networkDevice Network interface device ID */
     void setNetworkDevice(uint16_t _networkDevice);
@@ -220,6 +233,7 @@ class Configuration {
 
     /** Directory path where sound files are stored */
     std::string soundFileLocation = DEFAULT_SOUND_FILE_LOCATION;
+    std::string audioCacheDir = DEFAULT_AUDIO_CACHE_DIR;
 
     /** Audio mode for playback */
     /** Workshop/default mode is RTP; local output is an explicit or travel-mode opt-in. */

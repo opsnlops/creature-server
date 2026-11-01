@@ -1,0 +1,31 @@
+#!/bin/sh
+# Remove the Opus packet cache on purge (issue #235).
+set -e
+
+CACHE_DIR=/var/cache/creature-server
+
+case "$1" in
+    purge)
+        # Only on purge, never on remove: an upgrade or plain remove should
+        # leave the cache alone so a reinstall doesn't re-encode the whole
+        # library. On purge the package is gone for good, and this is
+        # regenerable data with no value of its own.
+        rm -rf "$CACHE_DIR"
+
+        # The creature-server user and group are deliberately NOT removed.
+        # Debian Policy advises against deleting system accounts on purge: a
+        # recycled UID would silently inherit ownership of anything the old
+        # account still owns elsewhere on the system. Remove it by hand if you
+        # really mean to.
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+    *)
+        echo "postrm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

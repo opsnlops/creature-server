@@ -23,6 +23,7 @@
 #include "server/audio/AudioOutput.h"
 #include "server/audio/NativeAudioConfig.h"
 #include "server/config.h"
+#include "server/config/ConfigFile.h"
 #include "server/config/MongoUri.h"
 #include "server/namespace-stuffs.h"
 #include "util/environment.h"
@@ -34,11 +35,65 @@
 
 namespace creatures {
 
+namespace {
+
+/**
+ * Find --config in argv before argparse runs.
+ *
+ * Chicken-and-egg: the config file supplies the DEFAULTS argparse falls back
+ * on, so it has to be read before the parser is built — but the path to it
+ * comes from the command line. A small scan up front is the usual way out.
+ *
+ * Returns the path and whether it was given explicitly. An explicit path must
+ * exist; the default one is read only if it happens to be there, so a dev build
+ * with no /etc/creature needs no flag and no file.
+ */
+struct ConfigFileChoice {
+    std::string path{DEFAULT_CONFIG_FILE_PATH};
+    bool explicitlyGiven{false};
+};
+
+ConfigFileChoice findConfigFileArgument(int argc, char **argv) {
+    ConfigFileChoice choice;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg{argv[i]};
+        if (arg == "--config" && i + 1 < argc) {
+            choice.path = argv[i + 1];
+            choice.explicitlyGiven = true;
+        } else if (arg.rfind("--config=", 0) == 0) {
+            choice.path = arg.substr(std::string("--config=").size());
+            choice.explicitlyGiven = true;
+        }
+    }
+    return choice;
+}
+
+} // namespace
+
 std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **argv) {
 
     auto config = std::make_shared<Configuration>();
 
+    // The bottom layer of configuration: file < environment < command line.
+    const auto configChoice = findConfigFileArgument(argc, argv);
+    auto fileResult = ConfigFile::load(configChoice.path, configChoice.explicitlyGiven);
+    if (!fileResult.isSuccess()) {
+        critical(fileResult.getError()->getMessage());
+        std::exit(1);
+    }
+    const auto configFile = fileResult.getValue().value();
+    if (!configFile.sourcePath().empty()) {
+        info("reading configuration from {}", configFile.sourcePath());
+    }
+
     argparse::ArgumentParser program("creature-server", getVersion());
+
+    program.add_argument("--config")
+        .help(fmt::format("JSON configuration file, read before the environment and the rest of the command line "
+                          "(both of which override it). Defaults to {} when that file exists",
+                          DEFAULT_CONFIG_FILE_PATH))
+        .default_value(std::string{DEFAULT_CONFIG_FILE_PATH})
+        .nargs(1);
 
     program.add_argument("-g", "--use-gpio")
         .help("use the GPIO pins? (RPI only!)")
@@ -47,7 +102,7 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     program.add_argument("-d", "--mongodb-uri")
         .help("MongoDB URI to use")
-        .default_value(environmentToString(DB_URI_ENV, DEFAULT_DB_URI))
+        .default_value(environmentToString(DB_URI_ENV, configFile.stringOr("mongodb_uri", DEFAULT_DB_URI)))
         .nargs(1);
 
     program.add_argument("--http-max-connections")
@@ -103,7 +158,7 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     program.add_argument("-c", "--sound-channels")
         .help("number of sound channels to use")
-        .default_value(environmentToInt(SOUND_CHANNELS_ENV, DEFAULT_SOUND_CHANNELS))
+        .default_value(environmentToInt(SOUND_CHANNELS_ENV, configFile.intOr("sound_channels", DEFAULT_SOUND_CHANNELS)))
         .nargs(1)
         .scan<'i', int>();
 
@@ -115,12 +170,21 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     program.add_argument("-l", "--sounds-location")
         .help("location on the file system of the sound files")
-        .default_value(environmentToString(SOUND_FILE_LOCATION_ENV, DEFAULT_SOUND_FILE_LOCATION))
+        .default_value(environmentToString(SOUND_FILE_LOCATION_ENV,
+                                           configFile.stringOr("sounds_location", DEFAULT_SOUND_FILE_LOCATION)))
+        .nargs(1);
+
+    program.add_argument("--audio-cache-dir")
+        .help("where to keep the Opus packet cache; defaults to a hidden directory inside the sounds location. "
+              "Point this at local disk to keep the cache off slow or backed-up network storage (issue #235)")
+        .default_value(
+            environmentToString(AUDIO_CACHE_DIR_ENV, configFile.stringOr("audio_cache_dir", DEFAULT_AUDIO_CACHE_DIR)))
         .nargs(1);
 
     program.add_argument("-n", "--network-device")
         .help("network device to use")
-        .default_value(environmentToString(NETWORK_DEVICE_NAME_ENV, DEFAULT_NETWORK_DEVICE_NAME))
+        .default_value(environmentToString(NETWORK_DEVICE_NAME_ENV,
+                                           configFile.stringOr("network_device", DEFAULT_NETWORK_DEVICE_NAME)))
         .nargs(1);
 
     program.add_argument("-v", "--voice-api-key")
@@ -283,7 +347,8 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     const bool travelMode = program.get<bool>("--travel-mode");
     const bool explicitLocalAudio = program.get<bool>("--local-audio");
     const bool explicitRtpAudio = program.get<bool>("--rtp-audio");
-    std::string configuredAudioMode = environmentToString(AUDIO_MODE_ENV, DEFAULT_AUDIO_MODE);
+    std::string configuredAudioMode =
+        environmentToString(AUDIO_MODE_ENV, configFile.stringOr("audio_mode", DEFAULT_AUDIO_MODE));
     std::transform(configuredAudioMode.begin(), configuredAudioMode.end(), configuredAudioMode.begin(),
                    [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
     if (configuredAudioMode != "rtp" && configuredAudioMode != "local") {
@@ -447,6 +512,16 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     if (!soundsLocation.empty()) {
         config->setSoundFileLocation(soundsLocation);
         debug("set our sound file location to {}", soundsLocation);
+    }
+
+    // Empty means "use the default location", so unlike most settings an
+    // empty value here is meaningful rather than skipped.
+    auto audioCacheDir = program.get<std::string>("--audio-cache-dir");
+    config->setAudioCacheDir(audioCacheDir);
+    if (audioCacheDir.empty()) {
+        debug("audio cache location: default (inside the sounds location)");
+    } else {
+        info("audio cache location set to {}", audioCacheDir);
     }
 
     auto voiceApiKey = program.get<std::string>("-v");

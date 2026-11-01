@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
@@ -784,6 +785,91 @@ TEST_F(AudioCacheTest, PolicyForHostHonorsEnvironmentOverridesAndZeroDisables) {
 
     ::unsetenv(AUDIO_CACHE_MAX_IDLE_DAYS_ENV);
     ::unsetenv(AUDIO_CACHE_MAX_BYTES_ENV);
+}
+
+// --- issue #235: where the cache lives ---
+
+TEST_F(AudioCacheTest, DefaultsToTheHistoricalLocationInsideTheSoundLibrary) {
+    AudioCache cache(root_.string());
+    const auto where = fs::path(cache.cacheDirectory());
+
+    EXPECT_EQ(where.parent_path().filename().string(), ".opus_cache");
+    EXPECT_EQ(where.parent_path().parent_path(), root_) << "an unset override must change nothing";
+}
+
+TEST_F(AudioCacheTest, HonoursAConfiguredCacheRootOutsideTheSoundLibrary) {
+    const auto elsewhere = fs::temp_directory_path() / ("audio-cache-elsewhere-" + std::to_string(::getpid()));
+    fs::create_directories(elsewhere);
+
+    AudioCache cache(root_.string(), elsewhere.string());
+    const auto where = fs::path(cache.cacheDirectory());
+
+    // <override>/<hostname> — the hostname scoping is kept, because two hosts
+    // must never share entries.
+    EXPECT_EQ(where.parent_path(), elsewhere);
+    EXPECT_FALSE(where.filename().empty());
+
+    // And it genuinely works from there.
+    const auto source = writeSource("relocated.wav", "relocated-source");
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x51)).isSuccess());
+    ASSERT_NE(cache.tryLoadFromCache(source.string()), nullptr);
+    EXPECT_FALSE(fs::exists(root_ / ".opus_cache")) << "nothing should have been written to the sound library";
+
+    std::error_code ec;
+    fs::remove_all(elsewhere, ec);
+}
+
+TEST_F(AudioCacheTest, RefusesACacheRootThatWouldPutItBackInTheSoundWalk) {
+    // The ONLY reason the default location is invisible to the sound-store
+    // walkers is that they skip dot-directories. A configured root inside the
+    // library without one would re-create issue #223 — 17 files per sound in
+    // the path of every GET /api/v1/sound, a 50-66 s stall — by configuration.
+    const auto unsafe = root_ / "packet-cache";
+
+    AudioCache cache(root_.string(), unsafe.string());
+    const auto where = fs::path(cache.cacheDirectory());
+
+    EXPECT_EQ(where.parent_path().filename().string(), ".opus_cache")
+        << "an unsafe override must fall back to the default, not be honoured";
+    EXPECT_FALSE(fs::exists(unsafe)) << "and must not create the directory it refused";
+}
+
+TEST_F(AudioCacheTest, ADotPrefixedRootInsideTheSoundLibraryIsFine) {
+    // Still inside the library, but the walkers skip it, so it is safe.
+    const auto safe = root_ / ".packets";
+
+    AudioCache cache(root_.string(), safe.string());
+
+    EXPECT_EQ(fs::path(cache.cacheDirectory()).parent_path(), safe);
+}
+
+TEST_F(AudioCacheTest, AnUnusableConfiguredRootFallsBackRatherThanLosingTheCache) {
+    // A mistyped setting should cost the faster location, not caching
+    // altogether: main.cpp turns a constructor throw into "no cache at all".
+    const auto unwritable = fs::temp_directory_path() / ("audio-cache-ro-" + std::to_string(::getpid()));
+    fs::create_directories(unwritable);
+    fs::permissions(unwritable, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+
+    std::unique_ptr<AudioCache> cache;
+    ASSERT_NO_THROW(cache = std::make_unique<AudioCache>(root_.string(), (unwritable / "nested").string()));
+
+    fs::permissions(unwritable, fs::perms::owner_all, fs::perm_options::replace);
+
+    ASSERT_NE(cache, nullptr);
+    EXPECT_EQ(fs::path(cache->cacheDirectory()).parent_path().filename().string(), ".opus_cache")
+        << "an unusable configured root must fall back to the working default";
+
+    const auto source = writeSource("fallback.wav", "fallback-source");
+    ASSERT_TRUE(save(*cache, source, makeAudioData(0x52)).isSuccess())
+        << "and the cache must still be usable afterwards";
+
+    // The resolved path is what callers and the startup log report, so it must
+    // say the default — claiming the configured location while sitting in the
+    // default one would send an operator looking in the wrong directory.
+    EXPECT_EQ(fs::path(cache->cacheDirectory()).parent_path(), root_ / ".opus_cache");
+
+    std::error_code ec;
+    fs::remove_all(unwritable, ec);
 }
 
 } // namespace

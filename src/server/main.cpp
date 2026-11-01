@@ -493,8 +493,13 @@ int main(const int argc, char **argv) {
 
     // Initialize audio cache for faster Opus encoding
     try {
-        creatures::audioCache =
-            std::make_shared<creatures::util::AudioCache>(creatures::config->getSoundFileLocation());
+        // Where the encoded packets live: --audio-cache-dir, or
+        // AUDIO_CACHE_DIR, or empty for the historical location inside the
+        // sound library (issue #235). The main server's library is on a
+        // nightly-backed-up network volume whose benefits the cache cannot
+        // use, so pointing this at local disk is the faster choice there.
+        creatures::audioCache = std::make_shared<creatures::util::AudioCache>(creatures::config->getSoundFileLocation(),
+                                                                              creatures::config->getAudioCacheDir());
         creatures::rtp::AudioStreamBuffer::setAudioCacheInstance(creatures::audioCache);
         info("Audio cache initialized for faster Opus encoding");
 

@@ -59,6 +59,49 @@ constexpr const char *CACHE_COMPLETE_MARKER = ".complete";
  * proceed unlocked — degraded to process-local exclusion, which is exactly
  * the behavior before this feature existed — and say so in the log.
  */
+/**
+ * Why a configured cache root must not be used, or nullopt if it is fine
+ * (issue #235).
+ *
+ * The only reason the default `.opus_cache` location is invisible to the
+ * sound-store walkers is that they skip dot-directories. A configured root
+ * inside the sound library WITHOUT a dot-prefixed component would put 17 files
+ * per cached sound back in the path of every sound listing — which is issue
+ * #223, a 50-66 s stall on GET /api/v1/sound, re-created by configuration.
+ *
+ * Compared lexically after weakly_canonical so it works for paths that do not
+ * exist yet, which the cache root usually does not on first run.
+ */
+std::optional<std::string> describeUnsafeCacheRoot(const std::string &cacheRoot, const std::string &soundRoot) {
+    std::error_code ec;
+    const auto canonicalCache = std::filesystem::weakly_canonical(cacheRoot, ec);
+    if (ec) {
+        return std::nullopt; // can't judge it; the writability check still will
+    }
+    std::error_code soundError;
+    const auto canonicalSound = std::filesystem::weakly_canonical(soundRoot, soundError);
+    if (soundError) {
+        return std::nullopt;
+    }
+
+    // Is the cache root at or beneath the sound library?
+    const auto relative = std::filesystem::relative(canonicalCache, canonicalSound, ec);
+    if (ec || relative.empty() || *relative.begin() == "..") {
+        return std::nullopt; // outside the sound library: nothing to worry about
+    }
+
+    for (const auto &component : relative) {
+        const auto name = component.string();
+        if (!name.empty() && name.front() == '.') {
+            return std::nullopt; // a dot component means the walkers skip it
+        }
+    }
+
+    return fmt::format("it is inside the sound library at {} with no dot-prefixed component, so every sound listing "
+                       "would walk the cache again (issue #223)",
+                       relative.string());
+}
+
 class ScopedFileLock {
   public:
     static constexpr auto ACQUIRE_TIMEOUT = std::chrono::seconds(5);
@@ -122,7 +165,8 @@ uint64_t stablePathHash(const std::string &value) {
 
 } // namespace
 
-AudioCache::AudioCache(const std::string &soundDirectory) : soundDirectory_(soundDirectory) {
+AudioCache::AudioCache(const std::string &soundDirectory, const std::string &cacheRootOverride)
+    : soundDirectory_(soundDirectory) {
 
     // Get hostname for per-machine cache isolation
     char hostname[256];
@@ -132,16 +176,40 @@ AudioCache::AudioCache(const std::string &soundDirectory) : soundDirectory_(soun
         hostname[sizeof(hostname) - 1] = '\0';
     }
 
-    // Create cache directory as a subdirectory of the sounds directory with hostname
-    cacheDirectory_ = std::filesystem::path(soundDirectory_) / ".opus_cache" / hostname;
+    // Historically the cache lived inside the sound library. That is still the
+    // default, so an unset AUDIO_CACHE_DIR changes nothing (issue #235).
+    const auto defaultRoot = std::filesystem::path(soundDirectory_) / ".opus_cache";
+    auto chosenRoot = defaultRoot;
 
-    // Ensure cache directory exists and is writable
+    if (!cacheRootOverride.empty()) {
+        if (const auto refusal = describeUnsafeCacheRoot(cacheRootOverride, soundDirectory_)) {
+            error("Refusing audio cache directory {}: {}. Using {} instead", cacheRootOverride, *refusal,
+                  defaultRoot.string());
+        } else {
+            chosenRoot = cacheRootOverride;
+        }
+    }
+
+    // Hostname scoping is load-bearing, not cosmetic: two hosts must never
+    // share entries, so it is applied whichever root was chosen.
+    cacheDirectory_ = (chosenRoot / hostname).string();
+
     auto result = ensureCacheDirectoryWritable();
+    if (!result.isSuccess() && chosenRoot != defaultRoot) {
+        // A mistyped setting should cost us the faster location, not caching
+        // altogether — main.cpp turns a throw here into "no cache at all".
+        warn("Audio cache directory {} is unusable ({}); falling back to {}", cacheDirectory_,
+             result.getError()->getMessage(), defaultRoot.string());
+        cacheDirectory_ = (defaultRoot / hostname).string();
+        chosenRoot = defaultRoot; // so the line logged below tells the truth
+        result = ensureCacheDirectoryWritable();
+    }
     if (!result.isSuccess()) {
         throw std::runtime_error(fmt::format("Failed to initialize audio cache: {}", result.getError()->getMessage()));
     }
 
-    debug("AudioCache initialized in directory: {} (hostname: {})", cacheDirectory_, hostname);
+    info("AudioCache initialized in directory: {} (hostname: {}){}", cacheDirectory_, hostname,
+         chosenRoot == defaultRoot ? "" : " [configured location]");
 }
 
 std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const std::string &sourceFilePath,

@@ -24,6 +24,22 @@ User=april
 Group=april
 SupplementaryGroups=audio
 
+# The package creates /var/cache/creature-server owned by the creature-server
+# system user, setgid and group-writable, so this unit can use it either by
+# running as that user or by having `april` joined to the creature-server group
+# (issue #235). ProtectSystem=strict still applies, so see ReadWritePaths below.
+#
+# Nothing points at it on this host, deliberately: the travel rig's big storage
+# IS /srv/sounds, so the cache belongs there. It matters on the main server,
+# where the sound library is a nightly-backed-up NAS on spinning disks and
+# regenerable packets have no business being on either.
+
+# This unit passes its settings as FLAGS, which beat the packaged
+# /etc/creature/server.json (precedence is file < environment < command line).
+# That is deliberate: the packaged config describes the MAINSTAGE host, and this
+# rig needs different values for most of it. Nothing here has to change when
+# that file does (issue #237).
+#
 # Baked-in defaults for this host; /etc/default/creature-server overrides them.
 #
 # Secrets go in that file and NEVER in this unit — unit files are world-readable
@@ -65,6 +81,12 @@ RestrictSUIDSGID=yes
 #
 #   /srv/sounds  rendered WAVs, .opus_cache/<hostname>, dialog/voice-takes
 #   /tmp         generation cache + job scratch, see the PrivateTmp note below
+#
+# The Opus cache is under /srv/sounds by default. If you move it with
+# --audio-cache-dir, the target has to be writable here too, or the server logs
+# that the directory is unusable and falls back to the default:
+#
+#   ReadWritePaths=/srv/sounds /tmp /var/cache/creature-server
 ReadWritePaths=/srv/sounds /tmp
 
 # PrivateTmp is deliberately OFF, unlike creature-audio-relay and

@@ -85,6 +85,19 @@ COPY src/ /build/creature-server/src
 COPY tests/ /build/creature-server/tests
 COPY run_linux_tests.sh /build/creature-server/run_linux_tests.sh
 
+# Debian packaging metadata: the maintainer scripts, the conffiles list, and the
+# packaged /etc files. Needed by cpack in the `package` stage below.
+#
+# Phase 2, NOT phase 1: these change independently of the heavy FetchContent
+# deps, so copying them up there would bust that cache every time a config
+# default or a postinst line changes (issue #18).
+#
+# Without this COPY, cpack's install() of the /etc files fails outright, and the
+# CONTROL_EXTRA maintainer scripts silently resolve to nothing — a package that
+# builds and installs while creating neither the service user nor the cache
+# directory (issues #235, #237).
+COPY scripts/debian/ /build/creature-server/scripts/debian
+
 # Real project version goes here, AFTER the deps_only layer is sealed. The
 # Phase 2 cmake reconfigure below re-reads VERSION.txt and applies it to
 # project() / Version.h / the .deb metadata. See issue #18.

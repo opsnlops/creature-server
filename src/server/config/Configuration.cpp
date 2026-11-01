@@ -60,6 +60,10 @@ void Configuration::setSoundChannels(const uint8_t _soundChannels) { this->sound
 
 std::string Configuration::getSoundFileLocation() const { return this->soundFileLocation; }
 
+std::string Configuration::getAudioCacheDir() const { return this->audioCacheDir; }
+
+void Configuration::setAudioCacheDir(std::string _audioCacheDir) { this->audioCacheDir = std::move(_audioCacheDir); }
+
 void Configuration::setSoundFileLocation(std::string _soundFileLocation) {
     this->soundFileLocation = std::move(_soundFileLocation);
 }

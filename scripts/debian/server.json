@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "Configuration for the mainstage creature-server. Shipped by the package and",
+    "version-controlled in the creature-server repo, so production settings live",
+    "with the code instead of only inside a systemd unit. Matches how",
+    "creature-world ships /etc/creature/world.json.",
+    "",
+    "This is a dpkg conffile: your edits survive package upgrades, and dpkg asks",
+    "before replacing it.",
+    "",
+    "Precedence is config file < environment < command line, so anything here can",
+    "be overridden for one run without editing the file.",
+    "",
+    "SECRETS DO NOT BELONG HERE. VOICE_API_KEY and HONEYCOMB_API_KEY go in",
+    "/etc/default/creature-server, which the unit reads as an EnvironmentFile."
+  ],
+
+  "mongodb_uri": "mongodb://127.0.0.1/?serverSelectionTimeoutMS=2000",
+
+  "sounds_location": "/mnt/creatures/sounds",
+
+  "audio_cache_dir": "/var/cache/creature-server",
+
+  "network_device": "enp5s0f0np0",
+
+  "audio_mode": "rtp",
+
+  "sound_channels": 2
+}

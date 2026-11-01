@@ -94,10 +94,17 @@ The creature's JSON configuration file **on the controller** is the source of tr
 | Aspect | Creature Configuration | Universe Assignment |
 |--------|----------------------|---------------------|
 | **What is it?** | Servo mappings, capabilities, physical characteristics | Which E1.31 universe the creature listens to |
-| **Storage** | Persisted to MongoDB (as cache) | Runtime memory only (`creatureUniverseMap`) |
+| **Storage** | Persisted to MongoDB (as cache) | `creatureUniverseMap` in memory, **plus** `last_known_universe` on the creature document |
 | **Source of Truth** | Controller's JSON config file | Controller's registration call |
-| **Lifetime** | Permanent (creature hardware config) | Ephemeral (exists only while controller is running) |
+| **Lifetime** | Permanent (creature hardware config) | Remembered across restarts since 3.50.7 (#231) |
 | **Changes When?** | Hardware modification | Controller moves to different network/setup |
+
+Universe assignment used to be purely ephemeral. It is not any more, and the distinction matters:
+
+- **Remembered** (#231, 3.50.7): registration writes `last_known_universe` to the creature document, and startup restores it into `creatureUniverseMap`. A server restart no longer forgets where each creature plays, and a creature taken down for maintenance is still assigned to the universe it was last seen on.
+- **Not required** (#234, 3.50.8): `resolvePlaybackUniverse` takes the universe from the participants that *are* registered and keeps the rest in the scene, reporting them as `unregistered`. A powered-off creature no longer refuses a whole dialog — its audio is a channel in the 17-channel room mix and plays regardless; only its motion is missing.
+
+Both are needed. Remembering alone cannot help a creature that was already off when the feature shipped, or one never powered on, because registration is the only thing that writes the memory.
 
 #### Required Creature Fields
 
@@ -430,7 +437,15 @@ Uses `moodycamel::ConcurrentQueue` for thread-safe message passing between compo
 
 ### Configuration
 
-Command-line arguments handled via argparse. Database connection and server configuration managed through environment variables and config classes.
+Three layers, lowest to highest precedence:
+
+1. **Config file** — `/etc/creature/server.json`, shipped by the Debian package and version-controlled at `scripts/debian/server.json`, matching how `creature-world` is configured. Read automatically when present; `--config <path>` overrides the location, and a path given that way must exist. Unknown keys are a startup error rather than silently ignored; keys beginning with `_` are comments, since JSON has none. The accepted keys are listed in one place, `ConfigFile::knownKeys()`.
+2. **Environment variables** — every setting has one, listed in `src/server/config.h`.
+3. **Command-line arguments** — argparse, so a flag always wins for a one-off run.
+
+Secrets (`VOICE_API_KEY`, `HONEYCOMB_API_KEY`) belong in `/etc/default/creature-server`, read by the unit as an `EnvironmentFile` — **never** in a unit file, which is world-readable under `/lib/systemd/system`, and never in the packaged config, which is version-controlled.
+
+Reference units live in `scripts/systemd/` (mainstage and travel). They are not installed by the package.
 
 ## Platform Notes
 
