@@ -40,9 +40,10 @@ std::optional<std::string> resolveSoundInRoot(const std::filesystem::path &root,
 /// AudioCache keeps *inside* the permanent sound root
 /// (`.opus_cache/<hostname>/<entry>/chNN.opus`, 17 files per cached sound).
 /// The sound list endpoint spent ~50 s per call stat-ing files it then
-/// discarded, holding a transport request worker the whole time and starving
-/// unrelated requests (issue #223). A background sweep now bounds that cache's
-/// size (issue #225), but it is still never something a sound walk should see.
+/// discarded, occupying one of the transport's four application workers the
+/// whole time and starving unrelated requests (issue #223). A background sweep
+/// now bounds that cache's size (issue #225), but it is still never something
+/// a sound walk should see.
 ///
 /// Every recursive walk rooted at a sound store must consult this and call
 /// `disable_recursion_pending()` on a match.
