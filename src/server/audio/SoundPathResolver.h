@@ -39,10 +39,10 @@ std::optional<std::string> resolveSoundInRoot(const std::filesystem::path &root,
 /// True for any dot-directory, which covers the Opus packet cache that
 /// AudioCache keeps *inside* the permanent sound root
 /// (`.opus_cache/<hostname>/<entry>/chNN.opus`, 17 files per cached sound).
-/// That cache is never pruned automatically, so a walk that descends into it
-/// grows without bound: the sound list endpoint spent ~50 s per call stat-ing
-/// files it then discarded, holding an oatpp worker thread the whole time and
-/// starving unrelated requests (issue #223).
+/// The sound list endpoint spent ~50 s per call stat-ing files it then
+/// discarded, holding a transport request worker the whole time and starving
+/// unrelated requests (issue #223). A background sweep now bounds that cache's
+/// size (issue #225), but it is still never something a sound walk should see.
 ///
 /// Every recursive walk rooted at a sound store must consult this and call
 /// `disable_recursion_pending()` on a match.

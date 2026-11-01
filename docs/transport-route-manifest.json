@@ -1548,7 +1548,7 @@
       "controller": "DebugController",
       "source": "src/server/transport/UWebSocketsServer.cpp",
       "summary": "Reclaim Opus cache entries that can never be used again",
-      "description": "The on-disk Opus cache is keyed by a hash of each sound's canonical path, so MOVING or deleting a sound orphans its cache entry permanently — no other operation reclaims it. This removes orphaned entries, entries left incomplete by a crashed save, abandoned temporary files, and lock files whose directory is gone.\n\nDefaults to a DRY RUN: pass dry_run=false to actually delete. Intended as a creature-cli maintenance command. Distinct from /cache-invalidate/*, which never deletes anything (issue #166).",
+      "description": "The on-disk Opus cache is keyed by a hash of each sound's canonical path, so MOVING or deleting a sound orphans its cache entry permanently — no other operation reclaims it. This removes orphaned entries, entries left incomplete by a crashed save, abandoned temporary files, and lock files whose directory is gone.\n\nApplies the SAME policy the automatic background sweep uses (issue #225), so this is also how you preview that sweep: on top of the unusable entries above, it drops entries nothing has read in longer than AUDIO_CACHE_MAX_IDLE_DAYS, then evicts least-recently-read entries until the cache fits AUDIO_CACHE_MAX_BYTES.\n\nDefaults to a DRY RUN: pass dry_run=false to actually delete. Intended as a creature-cli maintenance command. Distinct from /cache-invalidate/*, which never deletes anything (issue #166).",
       "tags": [
         "Debug"
       ],

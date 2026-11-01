@@ -9,6 +9,7 @@
 #include "api/JobResponses.h"
 #include "api/JsonResponse.h"
 #include "model/PlaylistStatus.h"
+#include "server/audio/AudioCacheMaintenance.h"
 #include "server/audio/SoundPathResolver.h"
 #include "server/config.h"
 #include "server/jobs/JobManager.h"
@@ -22,6 +23,7 @@ namespace creatures {
 extern std::shared_ptr<audio::SoundStoreIndex> permanentSoundIndex;
 extern std::shared_ptr<audio::SoundStoreIndex> adHocSoundIndex;
 extern std::shared_ptr<util::AudioCache> audioCache;
+extern std::shared_ptr<audio::AudioCacheMaintenance> audioCacheMaintenance;
 extern std::shared_ptr<jobs::JobManager> jobManager;
 extern std::shared_ptr<ObservabilityManager> observability;
 } // namespace creatures
@@ -142,7 +144,12 @@ PreparedResponse pruneAudioCache(const std::string &dryRun, const std::shared_pt
     auto pruneSpan = creatures::observability
                          ? creatures::observability->createChildOperationSpan("DebugController.pruneAudioCache", span)
                          : nullptr;
-    const auto result = creatures::audioCache->pruneOrphanedEntries(isDryRun, pruneSpan);
+    // Preview and apply what the background sweep actually does (issue #225).
+    // Falling back to an orphan-only policy keeps this endpoint working even
+    // if the sweep failed to start.
+    const auto policy = creatures::audioCacheMaintenance ? creatures::audioCacheMaintenance->policy()
+                                                         : creatures::util::AudioCache::PrunePolicy{};
+    const auto result = creatures::audioCache->prune(policy, isDryRun, pruneSpan);
     if (!result.isSuccess()) {
         const auto error = result.getError().value();
         recordSpanError(pruneSpan, error.getMessage(), "AudioCachePruneFailure", error.getCode());
@@ -152,14 +159,28 @@ PreparedResponse pruneAudioCache(const std::string &dryRun, const std::shared_pt
     if (!isDryRun && (report.orphanedEntries > 0 || report.incompleteEntries > 0)) {
         creatures::rtp::AudioStreamBuffer::clearMemo();
     }
-    const api::AudioCachePruneResponse response{
-        report.dryRun,         report.entriesScanned,    report.orphanedEntries, report.incompleteEntries,
-        report.temporaryFiles, report.orphanedLockFiles, report.bytesReclaimed,  report.removed};
+    const api::AudioCachePruneResponse response{.dryRun = report.dryRun,
+                                                .entriesScanned = report.entriesScanned,
+                                                .orphanedEntries = report.orphanedEntries,
+                                                .incompleteEntries = report.incompleteEntries,
+                                                .temporaryFiles = report.temporaryFiles,
+                                                .orphanedLockFiles = report.orphanedLockFiles,
+                                                .idleEntries = report.idleEntries,
+                                                .oversizeEntries = report.oversizeEntries,
+                                                .skippedEntries = report.skippedEntries,
+                                                .bytesReclaimed = report.bytesReclaimed,
+                                                .bytesRetained = report.bytesRetained,
+                                                .aborted = report.aborted,
+                                                .removed = report.removed};
     if (pruneSpan) {
         pruneSpan->setAttribute("cache.prune.dry_run", report.dryRun);
         pruneSpan->setAttribute("cache.entries_scanned", static_cast<int64_t>(report.entriesScanned));
+        pruneSpan->setAttribute("cache.idle_entries", static_cast<int64_t>(report.idleEntries));
+        pruneSpan->setAttribute("cache.oversize_entries", static_cast<int64_t>(report.oversizeEntries));
+        pruneSpan->setAttribute("cache.skipped_entries", static_cast<int64_t>(report.skippedEntries));
         pruneSpan->setAttribute("cache.removed.count", static_cast<int64_t>(report.removed.size()));
         pruneSpan->setAttribute("cache.bytes_reclaimed", static_cast<int64_t>(report.bytesReclaimed));
+        pruneSpan->setAttribute("cache.bytes_retained", static_cast<int64_t>(report.bytesRetained));
         pruneSpan->setSuccess();
     }
     if (span) {
