@@ -279,6 +279,10 @@ void ObservabilityManager::initializeMetricInstruments() {
     dynamixelPositionGauge_ = meter_->CreateDoubleGauge(
         "creature_server_dynamixel_position", "Current raw encoder position for each Dynamixel servo", "{ticks}");
 
+    dynamixelOnlineGauge_ =
+        meter_->CreateDoubleGauge("creature_server_dynamixel_online",
+                                  "1 when the Dynamixel servo answered on the bus, 0 when it did not", "{bool}");
+
     debug("All metric instruments initialized successfully");
 }
 
@@ -595,6 +599,21 @@ void ObservabilityManager::exportSensorMetrics(const std::shared_ptr<SensorDataC
             servoAttributes["creature.id"] = creatureId;
             servoAttributes["creature.name"] = dynamixelData.creatureName;
             servoAttributes["dxl.id"] = std::to_string(reading.dxlId);
+
+            // Whether the servo answered is always worth recording, and is the
+            // only series that stays present when it did not (issue #229).
+            if (dynamixelOnlineGauge_) {
+                dynamixelOnlineGauge_->Record(reading.online ? 1.0 : 0.0, servoAttributes);
+            }
+
+            // A servo that did not answer reports zeros in every other field.
+            // Recording those would show an absent servo as a cool, unloaded,
+            // unpowered one — which reads as a healthy bus rather than a
+            // missing servo. Same reasoning the position gauge below has always
+            // used for older firmware: no reading beats a misleading 0.
+            if (!reading.online) {
+                continue;
+            }
 
             if (dynamixelTemperatureGauge_) {
                 dynamixelTemperatureGauge_->Record(reading.temperatureF, servoAttributes);
