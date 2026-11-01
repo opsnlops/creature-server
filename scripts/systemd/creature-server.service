@@ -1,0 +1,47 @@
+[Unit]
+Description=Creature Server (mainstage)
+Documentation=https://github.com/opsnlops/creature-server
+After=network-online.target
+Wants=network-online.target
+
+# The sound library is an NFS mount on the NAS. Deliberately Wants= and not
+# Requires=: if the mount is late the server exits and Restart= brings it
+# straight back, which converges faster than expressing mount readiness here.
+Wants=mnt-creatures.mount
+After=mnt-creatures.mount
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=root
+WorkingDirectory=/tmp
+
+# Everything configurable lives in /etc/creature/server.json, shipped by the
+# package and version-controlled in this repo (issue #237). Change a setting
+# there and restart — no editing this unit, no daemon-reload.
+#
+# Precedence is config file < environment < command line, so a flag added below
+# still wins for a one-off experiment.
+#
+# SECRETS come from the environment file, NOT from this unit. Unit files are
+# world-readable under /lib/systemd/system, so an API key in ExecStart is
+# readable by every user on the box. Put VOICE_API_KEY and HONEYCOMB_API_KEY in
+# /etc/default/creature-server, which can be mode 0600.
+EnvironmentFile=-/etc/default/creature-server
+
+# --config is passed EXPLICITLY even though /etc/creature/server.json is also
+# the default path, because an explicit path must exist or the server refuses to
+# start. That is the safer failure here: without the config the sounds location
+# falls back to the relative default "sounds/", which under WorkingDirectory=/tmp
+# means /tmp/sounds — a server that comes up healthy and silent, with no audio
+# and no error. Failing loudly beats a show that starts with no sound.
+ExecStart=/usr/bin/creature-server \
+    --config /etc/creature/server.json \
+    $CREATURE_SERVER_EXTRA_ARGS
+
+# The event loop runs at 50 Hz and serves websockets to the Console.
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

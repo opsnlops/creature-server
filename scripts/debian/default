@@ -1,0 +1,18 @@
+# Creature Server environment. This file is a conffile: package upgrades preserve local edits.
+#
+# Secrets belong HERE and not in the systemd unit. Unit files are world-readable
+# under /lib/systemd/system, so an API key in ExecStart is readable by every user
+# on the box. This file can be mode 0600, owned by whoever runs the server.
+#
+# Everything else lives in /etc/creature/server.json.
+
+# ElevenLabs. Without it the server still runs and stage re-renders still work;
+# only fresh dialog and voice generation need it.
+#VOICE_API_KEY=
+
+# Honeycomb. Without it the server runs with console-only logging and exports no
+# traces, which is survivable but makes production problems much harder to see.
+#HONEYCOMB_API_KEY=
+
+# Any extra flags for one-off experiments, appended to ExecStart by the unit.
+#CREATURE_SERVER_EXTRA_ARGS=

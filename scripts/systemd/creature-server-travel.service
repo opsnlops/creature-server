@@ -34,6 +34,12 @@ SupplementaryGroups=audio
 # where the sound library is a nightly-backed-up NAS on spinning disks and
 # regenerable packets have no business being on either.
 
+# This unit passes its settings as FLAGS, which beat the packaged
+# /etc/creature/server.json (precedence is file < environment < command line).
+# That is deliberate: the packaged config describes the MAINSTAGE host, and this
+# rig needs different values for most of it. Nothing here has to change when
+# that file does (issue #237).
+#
 # Baked-in defaults for this host; /etc/default/creature-server overrides them.
 #
 # Secrets go in that file and NEVER in this unit — unit files are world-readable

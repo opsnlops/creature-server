@@ -258,6 +258,12 @@ static constexpr std::size_t RTP_MAX_ENCODED_TOTAL_BYTES =
 // backup, so storing it on the sound library's slow, nightly-backed-up network
 // volume pays that volume's cost on the cache's hot path and collects none of
 // its benefits.
+// Where the packaged JSON configuration lives (issue #237). Read before the
+// environment and the command line, both of which override it, so the file is
+// the base layer rather than an authority. Read only if present, so a dev build
+// with no /etc/creature needs neither the file nor the --config flag.
+#define DEFAULT_CONFIG_FILE_PATH "/etc/creature/server.json"
+
 #define AUDIO_CACHE_DIR_ENV "AUDIO_CACHE_DIR"
 #define DEFAULT_AUDIO_CACHE_DIR ""
 
