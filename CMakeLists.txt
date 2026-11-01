@@ -845,6 +845,8 @@ add_executable(creature-server-test
         src/model/Sound.cpp
         tests/runtime/Activity_test.cpp
         tests/server/animation/SessionManager_ownership_test.cpp
+        tests/server/creature/UniverseResolver_test.cpp
+        src/server/creature/UniverseResolver.cpp
         src/server/animation/SessionManager.cpp
         src/server/animation/PlaybackSession.cpp
         tests/fixture/FixturePatternRunner_test.cpp
