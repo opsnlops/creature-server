@@ -33,7 +33,7 @@ extern std::shared_ptr<Database> db;
 
 namespace fs = std::filesystem;
 
-namespace creatures ::ws {
+namespace creatures::ws {
 
 namespace {
 std::filesystem::path adHocRoot() { return std::filesystem::temp_directory_path() / "creature-adhoc"; }
@@ -174,8 +174,24 @@ Result<std::vector<Sound>> SoundService::getAllSounds(std::shared_ptr<RequestSpa
             // renders under dialog/ — are listed too (issue #46). The emitted
             // file_name stays the basename, which the resolver looks up by walking
             // the tree, so the client contract is unchanged.
-            for (const auto &entry : fs::recursive_directory_iterator(path)) {
+            //
+            // Dot-directories are pruned via the shared rule: AudioCache keeps its
+            // Opus packet cache inside this very root (17 files per cached sound,
+            // never pruned automatically), and descending into it cost ~50 s per
+            // call — stat-ing files that the extension filter below then discards.
+            // The HTTP layer dedicates a thread to each connection, so that walk
+            // held a worker for its full duration; a burst of list calls starved
+            // unrelated requests and made a 220 ms dialog render look like a 52 s
+            // one (issue #223).
+            auto iterator = fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied);
+            const auto end = fs::end(iterator);
+            for (auto it = fs::begin(iterator); it != end; ++it) {
+                const auto &entry = *it;
                 const auto &filepath = entry.path();
+                if (fs::is_directory(entry.status()) && creatures::audio::isSkippedSoundDirectory(filepath)) {
+                    it.disable_recursion_pending();
+                    continue;
+                }
                 if (fs::is_regular_file(entry.status())) {
                     std::string extension = filepath.extension().string();
                     if (acceptableExtensions.find(extension) != acceptableExtensions.end()) {

@@ -239,6 +239,37 @@ TEST_F(SoundPathResolverTest, IndexSkipsDotDirectories) {
     EXPECT_EQ(index.find("ch00.opus").status, IndexStatus::NotFound);
 }
 
+// --- the shared dot-directory rule (issue #223) ---
+
+TEST(SkippedSoundDirectory, MatchesDotDirectoriesOnly) {
+    EXPECT_TRUE(isSkippedSoundDirectory(".opus_cache"));
+    EXPECT_TRUE(isSkippedSoundDirectory("/sounds/.opus_cache"));
+    EXPECT_TRUE(isSkippedSoundDirectory("/sounds/.hidden"));
+
+    EXPECT_FALSE(isSkippedSoundDirectory("dialog"));
+    EXPECT_FALSE(isSkippedSoundDirectory("/sounds/dialog"));
+    EXPECT_FALSE(isSkippedSoundDirectory("/sounds/music.v2"));
+    EXPECT_FALSE(isSkippedSoundDirectory(""));
+}
+
+TEST_F(SoundPathResolverTest, ResolveDoesNotDescendIntoOpusCache) {
+    // AudioCache writes .opus_cache/<hostname>/<entry>/chNN.opus inside the
+    // permanent sound root. The fallback walk runs on a request thread, so it
+    // must prune that subtree instead of stat-ing every cached packet.
+    const auto cacheEntry = root_ / ".opus_cache" / "testhost" / "some-entry";
+    fs::create_directories(cacheEntry);
+    writeFile(cacheEntry / "ch00.opus");
+    // A cached file that shadows a real sound's basename must not win either.
+    writeFile(cacheEntry / "cached.wav");
+
+    EXPECT_FALSE(resolveSoundInRoot(root_, "ch00.opus").has_value());
+    EXPECT_FALSE(resolveSoundInRoot(root_, "cached.wav").has_value());
+
+    // Real sounds, including the dialog/ subdir from issue #46, still resolve.
+    EXPECT_TRUE(resolveSoundInRoot(root_, "hello.wav").has_value());
+    EXPECT_TRUE(resolveSoundInRoot(root_, dialogUuid_).has_value());
+}
+
 TEST_F(SoundPathResolverTest, IndexRejectsPathlikeQueries) {
     SoundStoreIndex index(root_);
     EXPECT_EQ(index.find((root_ / "hello.wav").string()).status, IndexStatus::NotFound);
