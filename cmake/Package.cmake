@@ -28,6 +28,19 @@ set(CPACK_DEBIAN_PACKAGE_RELEASE ${NOW})
 
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "April White <april@opsnlops.io>")
 
+# Maintainer scripts: create the creature-server system user and
+# /var/cache/creature-server on install, and remove the cache on purge
+# (issue #235). That is the FHS and Debian Policy location for
+# regenerable application data, which is exactly what the Opus packet cache is.
+#
+# These have to be maintainer scripts rather than install() calls, because
+# CPACK_PACKAGING_INSTALL_PREFIX below is /usr: an install() DESTINATION of
+# "/var/cache/..." would be packaged as "/usr/var/cache/...".
+#
+# They must stay executable in git, or dpkg refuses them.
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/debian/postinst;${CMAKE_CURRENT_SOURCE_DIR}/scripts/debian/postrm")
+
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 
@@ -36,7 +49,9 @@ set(CPACK_DEBIAN_PACKAGE_CONFLICTS "libmongoclient0, libmongoc-dev, libmongoc-1.
 # Note: CPACK_DEBIAN_PACKAGE_SHLIBDEPS is ON, so all linked libraries are auto-detected.
 # Only list runtime-only dependencies here (not direct library links).
 # - locales-all: For proper locale support
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "locales-all")
+# - adduser: postinst creates the creature-server system user (Policy 9.2.2
+#            requires depending on it rather than assuming it is present)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "locales-all, adduser")
 
 # rhubarb-lip-sync is optional: only needed when --lip-sync-engine=rhubarb (legacy fallback)
 # The default engine is now whisper.cpp (bundled in the package)

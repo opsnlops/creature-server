@@ -1,0 +1,58 @@
+#!/bin/sh
+# Create the service user and the Opus packet cache directory (issue #235).
+set -e
+
+CACHE_DIR=/var/cache/creature-server
+SVC_USER=creature-server
+SVC_GROUP=creature-server
+
+case "$1" in
+    configure)
+        # A proper system user, per Debian Policy 9.2.2: dynamically allocated
+        # from the system UID range, no home, no shell. Both checks are
+        # idempotent so reconfigure and upgrade are safe.
+        if ! getent group "$SVC_GROUP" >/dev/null; then
+            addgroup --system "$SVC_GROUP"
+        fi
+        if ! getent passwd "$SVC_USER" >/dev/null; then
+            adduser --system \
+                    --ingroup "$SVC_GROUP" \
+                    --no-create-home \
+                    --home /nonexistent \
+                    --shell /usr/sbin/nologin \
+                    --gecos "April's Creature Workshop server" \
+                    "$SVC_USER"
+        fi
+
+        # /var/cache/<package> is the FHS and Debian Policy home for
+        # regenerable application data, which is exactly what the Opus packet
+        # cache is: delete any of it and the server re-encodes on next play.
+        # Nothing here needs backing up, which is the point of moving it off
+        # the sound library.
+        #
+        # Created here rather than shipped in the .deb because
+        # CPACK_PACKAGING_INSTALL_PREFIX is /usr, so an install() destination
+        # of /var/cache/... would be packaged as /usr/var/cache/...
+        mkdir -p "$CACHE_DIR"
+
+        # setgid + group-writable, so the cache is usable BOTH by a unit running
+        # as creature-server and by an existing service user added to the
+        # creature-server group — without having to migrate ownership of the
+        # sound library. New entries inherit the group thanks to setgid.
+        #
+        # 2775 rather than something tighter because this is derived audio, not
+        # secrets, and an unwritable cache silently costs performance.
+        chown "$SVC_USER:$SVC_GROUP" "$CACHE_DIR"
+        chmod 2775 "$CACHE_DIR"
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0
