@@ -1,6 +1,9 @@
 
 #pragma once
 
+#include <condition_variable>
+#include <mutex>
+
 #include "spdlog/spdlog.h"
 
 #include "server/database.h"
@@ -19,9 +22,10 @@ class Watchdog final : public StoppableThread {
   public:
     explicit Watchdog(const std::shared_ptr<Database> &db_);
 
-    ~Watchdog() override { logger->info("Watchdog destroyed"); }
+    ~Watchdog() override;
 
     void start() override;
+    void shutdown();
 
   protected:
     void run() override;
@@ -31,6 +35,8 @@ class Watchdog final : public StoppableThread {
     std::shared_ptr<spdlog::logger> logger;
 
     std::shared_ptr<creatures::Database> db;
+    std::mutex sleepMutex;
+    std::condition_variable sleepCondition;
 };
 
 } // namespace creatures

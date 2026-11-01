@@ -188,7 +188,7 @@ void JobWorker::queueJob(const std::string &jobId) {
 }
 
 JobWorker::QueueAdmission JobWorker::tryCreateAndQueueJob(JobType type, const std::string &details,
-                                                          std::shared_ptr<creatures::RequestSpan> parentSpan) {
+                                                          creatures::SpanParent parentSpan) {
     auto current = jobsInFlight_.load(std::memory_order_relaxed);
     while (current < kMaxJobsInFlight) {
         if (jobsInFlight_.compare_exchange_weak(current, current + 1, std::memory_order_acq_rel,
@@ -232,8 +232,7 @@ JobWorker::QueueAdmission JobWorker::tryCreateAndQueueJob(JobType type, const st
 }
 
 JobWorker::QueueAdmission JobWorker::tryCreateAndQueueMusicJob(const std::string &details,
-                                                               std::shared_ptr<creatures::RequestSpan> parentSpan,
-                                                               JobType type) {
+                                                               creatures::SpanParent parentSpan, JobType type) {
     auto current = musicJobsInFlight_.load(std::memory_order_relaxed);
     while (current < kMaxMusicJobsInFlight) {
         if (musicJobsInFlight_.compare_exchange_weak(current, current + 1, std::memory_order_acq_rel,

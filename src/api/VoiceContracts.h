@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 #include <optional>
 #include <string>
 #include <string_view>
@@ -22,6 +24,10 @@ struct MakeSoundFileRequest {
     std::optional<std::string> title;
     std::string text;
 };
+
+/// Raw 16 kHz mono float32 PCM is 64 KiB per second; this admits a little
+/// over sixteen minutes, far past anything creature-listener sends.
+inline constexpr std::size_t MAX_SPEECH_TO_TEXT_BODY_BYTES = 64ULL * 1024ULL * 1024ULL;
 
 struct SpeechToTextResponse {
     std::string status;

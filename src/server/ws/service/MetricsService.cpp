@@ -14,10 +14,21 @@ extern std::shared_ptr<ObservabilityManager> observability;
 
 namespace creatures ::ws {
 
-Result<SystemCountersSnapshot> MetricsService::getCounters(std::shared_ptr<RequestSpan> parentSpan) {
+Result<SystemCountersSnapshot> MetricsService::getCounters(SpanParent parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("MetricsService.getCounters", std::move(parentSpan))
                     : nullptr;
+    return getCountersWithSpan(span);
+}
+
+Result<SystemCountersSnapshot> MetricsService::getCountersFromOperation(std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = creatures::observability
+                    ? creatures::observability->createChildOperationSpan("MetricsService.getCounters", parentSpan)
+                    : nullptr;
+    return getCountersWithSpan(span);
+}
+
+Result<SystemCountersSnapshot> MetricsService::getCountersWithSpan(const std::shared_ptr<OperationSpan> &span) {
     if (span) {
         span->setAttribute("service", "MetricsService");
         span->setAttribute("operation", "getCounters");

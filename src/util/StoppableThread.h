@@ -24,9 +24,14 @@ class StoppableThread {
 
     void shutdown() { stop_requested.store(true); }
 
+    void join() {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+
   protected:
-    virtual void
-    run() = 0; // This is the method that will be called when the thread starts
+    virtual void run() = 0; // This is the method that will be called when the thread starts
 
     std::atomic<bool> stop_requested;
 

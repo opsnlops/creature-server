@@ -21,6 +21,11 @@ project(creature-server
         HOMEPAGE_URL https://github.com/opsnlops/creature-server
         LANGUAGES C CXX)
 
+option(CREATURE_BUILD_UWS_OTEL_GATE "Build the uWebSockets OTel/Mongo integration gate" OFF)
+option(CREATURE_RUN_UWS_LIVE_GATE "Register the production uWebSockets black-box lifecycle gate" OFF)
+set(CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE "" CACHE STRING
+    "Loopback interface name used by the production uWebSockets live gate (for example lo0 or lo)")
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
@@ -43,6 +48,10 @@ add_custom_target(check-neutral-framework-boundary ALL
 set(PACKAGE_AUTHOR "April White")
 
 find_package(PkgConfig REQUIRED)
+# Resolve the imported OpenSSL targets before dependency subprojects populate
+# similarly named cache variables. The server links OpenSSL for audio-cache
+# hashing even though the LAN uWebSockets transport itself is built without TLS.
+find_package(OpenSSL REQUIRED)
 
 set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
 
@@ -73,6 +82,8 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/mongodb/mongo-c-driver.git
   GIT_TAG        1.30.4
   GIT_SHALLOW    TRUE
+  # CMake 4.4 rejects a bogus try_compile flag in libmongoc; see the script
+  PATCH_COMMAND  ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/PatchMongoCDriver.cmake
   EXCLUDE_FROM_ALL   # keep the driver's install() rules (headers, .a, cmake configs, .pc) out of our .deb
 )
 
@@ -101,6 +112,34 @@ endif()
 #This project uses threads
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
+
+if(TRUE) # uWebSockets is the only HTTP/WebSocket transport
+    FetchContent_Declare(
+        uwebsockets
+        GIT_REPOSITORY https://github.com/uNetworking/uWebSockets.git
+        GIT_TAG v20.79.0
+        GIT_SHALLOW TRUE
+        GIT_SUBMODULES uSockets
+        GIT_SUBMODULES_RECURSE FALSE
+    )
+    FetchContent_MakeAvailable(uwebsockets)
+
+    file(
+        GLOB USOCKETS_SOURCES CONFIGURE_DEPENDS
+        "${uwebsockets_SOURCE_DIR}/uSockets/src/*.c"
+        "${uwebsockets_SOURCE_DIR}/uSockets/src/eventing/*.c"
+        "${uwebsockets_SOURCE_DIR}/uSockets/src/crypto/*.c"
+        "${uwebsockets_SOURCE_DIR}/uSockets/src/io_uring/*.c"
+    )
+    add_library(uSockets STATIC ${USOCKETS_SOURCES})
+    target_include_directories(uSockets SYSTEM PUBLIC "${uwebsockets_SOURCE_DIR}/uSockets/src")
+    target_compile_definitions(uSockets PRIVATE LIBUS_NO_SSL)
+
+    add_library(creature_uwebsockets INTERFACE)
+    target_include_directories(creature_uwebsockets SYSTEM INTERFACE "${uwebsockets_SOURCE_DIR}/src")
+    target_compile_definitions(creature_uwebsockets INTERFACE UWS_NO_ZLIB)
+    target_link_libraries(creature_uwebsockets INTERFACE uSockets Threads::Threads)
+endif()
 
 #Why are UUIDs so hard in 2025 ?
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
@@ -326,19 +365,6 @@ set(OPENTELEMETRY_BUILD_SHARED_LIBS OFF CACHE BOOL "Build OpenTelemetry as stati
 
 FetchContent_MakeAvailable(opentelemetry-cpp)
 
-#Use the oatpp that we've already made
-find_package(oatpp           REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-1.3.0)
-find_package(oatpp-swagger   REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-swagger-1.3.0)
-find_package(oatpp-websocket REQUIRED PATHS ${CMAKE_SOURCE_DIR}/externals/install/lib/cmake/oatpp-websocket-1.3.0)
-
-set(oatpp_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/externals/install/include/oatpp-1.3.0/")
-message(STATUS "oatpp_INCLUDE_DIRS: ${oatpp_INCLUDE_DIRS}")
-
-add_definitions(
-        ## define path to swagger-ui static resources folder
-        -DOATPP_SWAGGER_RES_PATH="${oatpp-swagger_INCLUDE_DIRS}/../bin/oatpp-swagger/res"
-)
-
 #... and our own libraries
 add_subdirectory(lib/e131_service)
 
@@ -376,6 +402,9 @@ add_custom_target(deps_only DEPENDS
         gtest_main
         gmock_main
 )
+if(TARGET uSockets)
+    add_dependencies(deps_only uSockets)
+endif()
 
 #Set up a base64 encoder / decoder
 set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
@@ -383,15 +412,6 @@ set(LIBBASE64_DIR "${CMAKE_SOURCE_DIR}/lib/base64")
 #Set up a concurrent queue
 set(MOODYCAMEL_DIR "${CMAKE_SOURCE_DIR}/lib/concurrentqueue")
 
-#
-#If we're on macOS, use the local copy of the Swagger UI. On Linux, use the one from the
-#package that we installed.
-#
-if(APPLE)
-    add_definitions(-DSWAGGER_UI_PATH="${CMAKE_SOURCE_DIR}/externals/build/oatpp-swagger-prefix/src/oatpp-swagger/res/")
-else()
-    add_definitions(-DSWAGGER_UI_PATH="/usr/share/creature-server/swagger-ui/")
-endif()
 
 # Native low-latency audio output. RTP mode does not initialize these devices,
 # but local/travel builds use the same ALSA/CoreAudio shape as the controller.
@@ -414,9 +434,6 @@ elseif(APPLE)
 else()
     message(FATAL_ERROR "Native audio output is only implemented for Linux and macOS")
 endif()
-
-#OpenSSL for SHA - 256 hashing in audio cache
-find_package(OpenSSL REQUIRED)
 
 #libcurl for HTTP client(ElevenLabs REST API)
 find_package(CURL REQUIRED)
@@ -441,12 +458,32 @@ if(NOT MP3LAME_LIBRARIES)
 endif()
 # Resolve the parent include dir ourselves so <lame/lame.h> works regardless of
 # whether lame.pc points -I at include/ (Debian) or include/lame/ (Homebrew).
-find_path(MP3LAME_INCLUDE_DIRS lame/lame.h)
+# Its own variable: pkg_check_modules already set MP3LAME_INCLUDE_DIRS, and
+# find_path skips the search when its result variable is already set.
+find_path(MP3LAME_PARENT_INCLUDE_DIR lame/lame.h HINTS ${MP3LAME_INCLUDEDIR})
+if(NOT MP3LAME_PARENT_INCLUDE_DIR)
+    message(FATAL_ERROR "lame/lame.h not found — install libmp3lame-dev (Debian) or lame (Homebrew)")
+endif()
 message(STATUS "Using libmp3lame: ${MP3LAME_LIBRARIES}")
 
 #Our source files. CONFIGURE_DEPENDS so adding a new .cpp in an existing
 #dir doesn't require editing this file (which would bust the Docker dep cache
 #per issue #18). Adding a brand-new src/server/X/ dir still needs a glob line.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/docs/transport-route-manifest.json"
+    "${CMAKE_SOURCE_DIR}/cmake/EmbedRouteManifest.cmake")
+# Embedded as a byte array rather than a string literal: the documented
+# manifest exceeds the literal length the standard guarantees.
+execute_process(
+        COMMAND ${CMAKE_COMMAND}
+            -DINPUT=${CMAKE_SOURCE_DIR}/docs/transport-route-manifest.json
+            -DOUTPUT=${CMAKE_BINARY_DIR}/TransportRouteManifest.h
+            -P ${CMAKE_SOURCE_DIR}/cmake/EmbedRouteManifest.cmake
+        RESULT_VARIABLE EMBED_MANIFEST_RESULT
+)
+if(NOT EMBED_MANIFEST_RESULT EQUAL 0)
+    message(FATAL_ERROR "Embedding the route manifest failed")
+endif()
 file(GLOB serverFiles CONFIGURE_DEPENDS
         src/util/*
         src/exception/*
@@ -468,6 +505,7 @@ file(GLOB serverFiles CONFIGURE_DEPENDS
         src/server/stage/*
         src/server/storage/*
         src/server/storyboard/*
+        src/server/transport/*
         src/server/voice/*
         src/server/watchdog/*
         src/model/*
@@ -477,6 +515,10 @@ list(REMOVE_ITEM serverFiles
         "${CMAKE_SOURCE_DIR}/src/server/audio/CoreAudioOutput.cpp"
 )
 list(APPEND serverFiles ${AUDIO_PLATFORM_SOURCE})
+
+if(CREATURE_BUILD_UWS_OTEL_GATE)
+    add_subdirectory(spikes/uwebsockets-transport uwebsockets-otel-gate)
+endif()
 
 file(GLOB clientFiles
         src/client/*
@@ -496,17 +538,16 @@ include_directories(
         util/
         ${UUID_INCLUDE_DIRS}
         ${argparse_SOURCE_DIR}/include
-        ${MP3LAME_INCLUDE_DIRS}
+        ${MP3LAME_PARENT_INCLUDE_DIR}
         ${miniaudio_SOURCE_DIR}
         ${MOODYCAMEL_DIR}
         ${LIBBASE64_DIR}/include
-        ${oatpp_INCLUDE_DIRS}
         PRIVATE ${CMAKE_BINARY_DIR}
 )
 
 # Skip the executable + test target definitions when src/ + tests/ aren't
 # present. Lets the Dockerfile do a Phase 1 cmake configure with empty src/
-# (only cmake/ + lib/ + externals/ + CMakeLists.txt + build_oatpp.sh COPYed)
+# (only cmake/ + lib/ + CMakeLists.txt COPYed)
 # to pre-build the deps_only umbrella target in a cacheable layer. Phase 2
 # COPYs src/ + tests/ and re-runs cmake — these blocks then activate and
 # the real build happens against already-compiled deps. See issue #13.
@@ -577,25 +618,6 @@ add_executable(creature-server
         src/util/websocketUtils.h
         src/util/websocketUtils.cpp
 
-        src/server/ws/AppComponent.h
-        src/server/ws/App.h
-        src/server/ws/App.cpp
-
-
-        src/server/ws/ErrorHandler.cpp
-        src/server/ws/ErrorHandler.h
-
-        src/server/ws/RequestBodyDrain.cpp
-        src/server/ws/RequestBodyDrain.h
-
-        src/server/ws/controller/CreatureController.h
-        src/server/ws/controller/DebugController.h
-        src/server/ws/controller/DmxFixtureController.h
-        src/server/ws/controller/MetricsController.h
-        src/server/ws/controller/SoundController.h
-        src/server/ws/controller/StaticController.h
-        src/server/ws/controller/WebSocketController.h
-
         src/server/ws/dto/websocket/MessageTypes.h
         src/server/ws/dto/websocket/MessageTypes.cpp
 
@@ -620,6 +642,7 @@ add_executable(creature-server
         src/server/ws/service/SoundRenditionService.cpp
         src/server/ws/service/DmxFixtureService.h
         src/server/ws/service/DmxFixtureService.cpp
+        src/server/ws/service/DmxFixtureReadService.cpp
         src/server/ws/service/MetricsService.h
         src/server/ws/service/MetricsService.cpp
         src/server/ws/service/PlaylistService.h
@@ -629,10 +652,6 @@ add_executable(creature-server
         src/server/ws/service/VoiceService.h
         src/server/ws/service/VoiceService.cpp
 
-        src/server/ws/websocket/ClientCafe.h
-        src/server/ws/websocket/ClientConnection.h
-        src/server/ws/websocket/ClientCafe.cpp
-        src/server/ws/websocket/ClientConnection.cpp
         src/server/ws/messaging/SensorReportHandler.h
         src/server/ws/messaging/SensorReportHandler.cpp
 
@@ -664,7 +683,6 @@ add_executable(creature-server
         src/server/rtp/RtpClockMapping.h
 )
 
-target_compile_definitions(creature-server PRIVATE OATPP_THREAD_DISTRIBUTED)
 add_dependencies(creature-server check-neutral-framework-boundary)
 if(ALSA_FOUND)
     target_compile_definitions(creature-server PRIVATE CREATURE_HAS_ALSA=1)
@@ -684,9 +702,6 @@ target_link_libraries(creature-server
         PRIVATE ${UUID_LIBRARIES}
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
-        oatpp::oatpp
-        oatpp::oatpp-swagger
-        oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         mongocxx::mongocxx
         bsoncxx::bsoncxx
@@ -712,6 +727,9 @@ target_link_libraries(creature-server
         ${MONGO_SYSTEM_LIBS}
         ${AUDIO_PLATFORM_LIBRARIES}
 )
+if(TRUE)
+    target_link_libraries(creature-server PRIVATE creature_uwebsockets)
+endif()
 
 install(TARGETS creature-server
         COMPONENT creature-server
@@ -734,6 +752,72 @@ add_test(
         -DSOURCE_ROOT=${CMAKE_SOURCE_DIR}
         -P ${CMAKE_SOURCE_DIR}/cmake/CheckNeutralFrameworkBoundary.cmake
 )
+
+# The live transport contract targets an explicitly selected disposable server
+# and is therefore not run implicitly by CTest. Its protocol harness still has
+# always-safe self-tests so framing bugs in the oracle itself are caught.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/transport-route-manifest.py)
+    add_custom_target(check-transport-route-manifest ALL
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/scripts/transport-route-manifest.py
+            --source-root ${CMAKE_SOURCE_DIR}
+            --check
+        COMMENT "Checking the frozen transport route manifest"
+        VERBATIM
+    )
+    if(TARGET creature-server)
+        add_dependencies(creature-server check-transport-route-manifest)
+    endif()
+    add_test(
+        NAME transport-route-manifest
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/scripts/transport-route-manifest.py
+            --source-root ${CMAKE_SOURCE_DIR}
+            --check
+    )
+endif()
+if(Python3_Interpreter_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/tests/transport/transport_contract_test.py)
+    add_test(
+        NAME transport-contract-harness
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tests/transport/transport_contract_test.py
+            --self-test
+    )
+endif()
+if(CREATURE_RUN_UWS_LIVE_GATE)
+    if(NOT Python3_Interpreter_FOUND)
+        message(FATAL_ERROR "CREATURE_RUN_UWS_LIVE_GATE requires Python 3")
+    endif()
+    if(CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE STREQUAL "")
+        message(FATAL_ERROR
+            "Set CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE to the loopback interface name (lo0 on macOS, lo on Linux)")
+    endif()
+    add_test(
+        NAME uwebsockets-production-live-gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tests/transport/uwebsockets_production_gate_test.py
+            --server $<TARGET_FILE:creature-server>
+            --network-device ${CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE}
+    )
+    set_tests_properties(uwebsockets-production-live-gate PROPERTIES
+        TIMEOUT 30
+        LABELS "transport;uwebsockets;live"
+        RUN_SERIAL TRUE
+    )
+    add_test(
+        NAME uwebsockets-file-stream-live-gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tests/transport/uwebsockets_file_stream_gate_test.py
+            --server $<TARGET_FILE:creature-server>
+            --network-device ${CREATURE_UWS_LIVE_GATE_NETWORK_DEVICE}
+    )
+    set_tests_properties(uwebsockets-file-stream-live-gate PROPERTIES
+        TIMEOUT 60
+        LABELS "transport;uwebsockets;live"
+        RUN_SERIAL TRUE
+    )
+endif()
 
 if (EXISTS ${CMAKE_SOURCE_DIR}/tests/server/TestGlobals.cpp)
 
@@ -775,21 +859,28 @@ add_executable(creature-server-test
         tests/server/ws/CreatureService_streaming_test.cpp
         tests/server/ws/CreatureService_activityOwnership_test.cpp
         tests/server/ws/CreatureService_validate_test.cpp
-        tests/server/ws/HttpResponseHelpers_test.cpp
         tests/server/ws/MessageHandlerBoundary_test.cpp
         tests/server/ws/SoundRenditionService_test.cpp
         src/server/ws/service/SoundRenditionService.cpp
         tests/server/ws/MusicService_prepare_test.cpp
         src/server/ws/service/MusicService.cpp
-        tests/server/ws/ErrorHandler_test.cpp
-        src/server/ws/ErrorHandler.cpp
-        tests/server/ws/RequestBodyDrain_test.cpp
-        src/server/ws/RequestBodyDrain.cpp
         tests/server/storyboard/StoryboardParse_test.cpp
         tests/server/script/DialogScriptParse_test.cpp
         src/server/script/helpers.cpp
         tests/server/storage/Storage_test.cpp
         tests/server/storage/StoragePublishers_test.cpp
+        tests/server/config/MongoUri_test.cpp
+        src/server/config/MongoUri.cpp
+        tests/server/transport/ApiDocumentation_test.cpp
+        src/server/transport/ApiDocumentation.cpp
+        tests/server/transport/ApplicationExecutor_test.cpp
+        src/server/transport/ApplicationExecutor.cpp
+        tests/server/transport/CreatureReadHandlers_test.cpp
+        src/server/transport/CreatureReadHandlers.cpp
+        tests/server/transport/FixtureReadHandlers_test.cpp
+        src/server/transport/FixtureReadHandlers.cpp
+        tests/server/transport/RequestRegistry_test.cpp
+        src/server/transport/RequestRegistry.cpp
         src/server/storage/Storage.cpp
         src/server/config/Configuration.cpp
         tests/server/FakeWebsocketUtils.cpp
@@ -922,9 +1013,6 @@ target_link_libraries(creature-server-test
         PRIVATE ${UUID_LIBRARIES}
         spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
         fmt::fmt
-        oatpp::oatpp
-        oatpp::oatpp-swagger
-        oatpp::oatpp-websocket
         nlohmann_json::nlohmann_json
         mongocxx::mongocxx
         bsoncxx::bsoncxx

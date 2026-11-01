@@ -52,7 +52,8 @@ Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(const std::sh
             recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<std::vector<creatures::Playlist>>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("getAllPlaylists.mongoQuery", dbSpan);
         document query_doc{};
@@ -61,6 +62,7 @@ Result<std::vector<creatures::Playlist>> Database::getAllPlaylists(const std::sh
         sort_doc << "name" << 1;
 
         mongocxx::options::find findOptions{};
+        mongo::applyOperationDeadline(findOptions);
         findOptions.projection(projection_doc.view());
         findOptions.sort(sort_doc.view());
 

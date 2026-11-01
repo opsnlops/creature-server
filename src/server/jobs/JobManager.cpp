@@ -10,8 +10,7 @@ extern std::shared_ptr<ObservabilityManager> observability;
 
 namespace creatures::jobs {
 
-std::string JobManager::createJob(JobType type, const std::string &details,
-                                  std::shared_ptr<creatures::RequestSpan> parentSpan) {
+std::string JobManager::createJob(JobType type, const std::string &details, creatures::SpanParent parentSpan) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     std::string jobId = util::generateUUID();

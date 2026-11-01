@@ -364,7 +364,7 @@ DialogMusicService::backfillMusicSourceFromPromotedFile(const std::string &gener
 }
 
 Result<api::DialogMusicPlanResult> DialogMusicService::plan(const api::DialogMusicPlanRequest &request,
-                                                            std::shared_ptr<RequestSpan> parentSpan) const {
+                                                            SpanParent parentSpan) const {
     auto span = creatures::observability
                     ? creatures::observability->createChildOperationSpan("DialogMusicService.plan", parentSpan)
                     : nullptr;
@@ -419,7 +419,7 @@ Result<api::DialogMusicPlanResult> DialogMusicService::plan(const api::DialogMus
 }
 
 Result<api::DialogMusicRecipe> DialogMusicService::recipe(const std::string &generationId,
-                                                          std::shared_ptr<RequestSpan> parentSpan) const {
+                                                          SpanParent parentSpan) const {
     auto span = creatures::observability
                     ? creatures::observability->createChildOperationSpan("DialogMusicService.recipe", parentSpan)
                     : nullptr;
@@ -448,8 +448,7 @@ Result<api::DialogMusicRecipe> DialogMusicService::recipe(const std::string &gen
     return RecipeResult{std::move(result)};
 }
 
-Result<std::vector<voice::MusicFinetune>>
-DialogMusicService::listFinetunes(std::shared_ptr<RequestSpan> parentSpan) const {
+Result<std::vector<voice::MusicFinetune>> DialogMusicService::listFinetunes(SpanParent parentSpan) const {
     auto span = creatures::observability
                     ? creatures::observability->createChildOperationSpan("DialogMusicService.listFinetunes", parentSpan)
                     : nullptr;
@@ -473,7 +472,7 @@ DialogMusicService::listFinetunes(std::shared_ptr<RequestSpan> parentSpan) const
 }
 
 Result<api::DialogMusicPromotionResult> DialogMusicService::promote(const std::string &generationId,
-                                                                    std::shared_ptr<RequestSpan> parentSpan) const {
+                                                                    SpanParent parentSpan) const {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("DialogMusicService.promote", parentSpan)
                     : nullptr;

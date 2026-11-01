@@ -24,7 +24,7 @@ Result<std::shared_ptr<voice::VoiceClient>> VoiceService::resolveClient() const 
         std::make_shared<voice::VoiceClient>(creatures::config->getVoiceApiKey())};
 }
 
-Result<std::vector<voice::Voice>> VoiceService::getAllVoices(std::shared_ptr<RequestSpan> parentSpan) const {
+Result<std::vector<voice::Voice>> VoiceService::getAllVoices(SpanParent parentSpan) const {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("VoiceService.getAllVoices", std::move(parentSpan))
                     : nullptr;
@@ -48,7 +48,7 @@ Result<std::vector<voice::Voice>> VoiceService::getAllVoices(std::shared_ptr<Req
     return Result<std::vector<voice::Voice>>{std::move(voices)};
 }
 
-Result<voice::Subscription> VoiceService::getSubscriptionStatus(std::shared_ptr<RequestSpan> parentSpan) const {
+Result<voice::Subscription> VoiceService::getSubscriptionStatus(SpanParent parentSpan) const {
     auto span =
         creatures::observability
             ? creatures::observability->createOperationSpan("VoiceService.getSubscriptionStatus", std::move(parentSpan))

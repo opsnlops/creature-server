@@ -240,15 +240,10 @@ std::vector<std::pair<std::string, runtime::CreatureRuntimeSnapshot>> CreatureSe
     return snapshot;
 }
 
-Result<std::vector<api::CreatureResponse>> CreatureService::getAllCreatures(std::shared_ptr<RequestSpan> parentSpan) {
+namespace {
+
+Result<std::vector<api::CreatureResponse>> getAllCreaturesWithSpan(const std::shared_ptr<OperationSpan> &span) {
     auto logger = spdlog::default_logger();
-    if (!parentSpan) {
-        warn("no parent span provided for CreatureService.getAllCreatures, creating a root span");
-    }
-    auto span =
-        creatures::observability
-            ? creatures::observability->createOperationSpan("CreatureService.getAllCreatures", std::move(parentSpan))
-            : nullptr;
     if (span) {
         span->setAttribute("service", "CreatureService");
         span->setAttribute("operation", "getAllCreatures");
@@ -258,14 +253,16 @@ Result<std::vector<api::CreatureResponse>> CreatureService::getAllCreatures(std:
         recordSpanError(span, error.getMessage(), "InternalError", error.getCode());
         return Result<std::vector<api::CreatureResponse>>{error};
     }
-    if (logger)
+    if (logger) {
         logger->debug("CreatureService::getAllCreatures()");
+    }
 
     auto result = db->getAllCreatures(creatures::SortBy::name, true, span);
     if (!result.isSuccess()) {
         const auto error = result.getError().value();
-        if (logger)
+        if (logger) {
             logger->warn("{}", error.getMessage());
+        }
         recordSpanError(span, error.getMessage(), "CreatureLookupFailed", error.getCode());
         return Result<std::vector<api::CreatureResponse>>{error};
     }
@@ -274,8 +271,9 @@ Result<std::vector<api::CreatureResponse>> CreatureService::getAllCreatures(std:
     const auto creatures = result.getValue().value();
     responses.reserve(creatures.size());
     for (const auto &creature : creatures) {
-        if (logger)
+        if (logger) {
             logger->debug("Adding creature: {}", creature.id);
+        }
         responses.push_back({creature, getRuntimeSnapshot(creature.id)});
     }
     if (span) {
@@ -285,12 +283,9 @@ Result<std::vector<api::CreatureResponse>> CreatureService::getAllCreatures(std:
     return Result<std::vector<api::CreatureResponse>>{responses};
 }
 
-Result<api::CreatureResponse> CreatureService::getCreature(const creatureId_t &creatureId,
-                                                           std::shared_ptr<RequestSpan> parentSpan) {
+Result<api::CreatureResponse> getCreatureWithSpan(const creatureId_t &creatureId,
+                                                  const std::shared_ptr<OperationSpan> &span) {
     auto logger = spdlog::default_logger();
-    auto span = creatures::observability
-                    ? creatures::observability->createOperationSpan("CreatureService.getCreature", parentSpan)
-                    : nullptr;
     if (span) {
         span->setAttribute("service", "CreatureService");
         span->setAttribute("operation", "getCreature");
@@ -301,14 +296,16 @@ Result<api::CreatureResponse> CreatureService::getCreature(const creatureId_t &c
         recordSpanError(span, error.getMessage(), "InternalError", error.getCode());
         return Result<api::CreatureResponse>{error};
     }
-    if (logger)
+    if (logger) {
         logger->debug("CreatureService::getCreature({})", creatureId);
+    }
 
     auto result = db->getCreature(creatureId, span);
     if (!result.isSuccess()) {
         const auto error = result.getError().value();
-        if (logger)
+        if (logger) {
             logger->warn("{}", error.getMessage());
+        }
         recordSpanError(span, error.getMessage(), "CreatureLookupFailed", error.getCode());
         return Result<api::CreatureResponse>{error};
     }
@@ -320,17 +317,47 @@ Result<api::CreatureResponse> CreatureService::getCreature(const creatureId_t &c
     return Result<api::CreatureResponse>{{creature, getRuntimeSnapshot(creature.id)}};
 }
 
-Result<api::CreatureResponse> CreatureService::upsertCreature(const std::string &jsonCreature,
-                                                              std::shared_ptr<RequestSpan> parentSpan,
-                                                              std::shared_ptr<OperationSpan> parentOperationSpan) {
-    auto logger = spdlog::default_logger();
-    auto serviceSpan =
+} // namespace
+
+Result<std::vector<api::CreatureResponse>> CreatureService::getAllCreatures(SpanParent parentSpan) {
+    if (!parentSpan) {
+        warn("no parent span provided for CreatureService.getAllCreatures, creating a root span");
+    }
+    auto span =
         creatures::observability
-            ? (parentOperationSpan
-                   ? creatures::observability->createChildOperationSpan("CreatureService.upsertCreature",
-                                                                        parentOperationSpan)
-                   : creatures::observability->createOperationSpan("CreatureService.upsertCreature", parentSpan))
+            ? creatures::observability->createOperationSpan("CreatureService.getAllCreatures", std::move(parentSpan))
             : nullptr;
+    return getAllCreaturesWithSpan(span);
+}
+
+Result<std::vector<api::CreatureResponse>>
+CreatureService::getAllCreaturesFromOperation(std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = creatures::observability
+                    ? creatures::observability->createChildOperationSpan("CreatureService.getAllCreatures", parentSpan)
+                    : nullptr;
+    return getAllCreaturesWithSpan(span);
+}
+
+Result<api::CreatureResponse> CreatureService::getCreature(const creatureId_t &creatureId, SpanParent parentSpan) {
+    auto span = creatures::observability
+                    ? creatures::observability->createOperationSpan("CreatureService.getCreature", parentSpan)
+                    : nullptr;
+    return getCreatureWithSpan(creatureId, span);
+}
+
+Result<api::CreatureResponse> CreatureService::getCreatureFromOperation(const creatureId_t &creatureId,
+                                                                        std::shared_ptr<OperationSpan> parentSpan) {
+    auto span = creatures::observability
+                    ? creatures::observability->createChildOperationSpan("CreatureService.getCreature", parentSpan)
+                    : nullptr;
+    return getCreatureWithSpan(creatureId, span);
+}
+
+Result<api::CreatureResponse> CreatureService::upsertCreature(const std::string &jsonCreature, SpanParent parentSpan) {
+    auto logger = spdlog::default_logger();
+    auto serviceSpan = creatures::observability
+                           ? creatures::observability->createOperationSpan("CreatureService.upsertCreature", parentSpan)
+                           : nullptr;
     if (logger)
         logger->info("attempting to upsert a creature");
     if (serviceSpan) {
@@ -420,7 +447,7 @@ Result<api::CreatureResponse> CreatureService::upsertCreature(const std::string 
 }
 
 Result<api::CreatureResponse> CreatureService::registerCreature(const std::string &jsonCreature, universe_t universe,
-                                                                std::shared_ptr<RequestSpan> parentSpan) {
+                                                                SpanParent parentSpan) {
     auto logger = spdlog::default_logger();
     if (!parentSpan) {
         warn("no parent span provided for CreatureService.registerCreature, creating a root span");
@@ -450,7 +477,7 @@ Result<api::CreatureResponse> CreatureService::registerCreature(const std::strin
         return Result<api::CreatureResponse>{ServerError{ServerError::InvalidData, message}};
     }
 
-    auto creatureResult = upsertCreature(jsonCreature, nullptr, serviceSpan);
+    auto creatureResult = upsertCreature(jsonCreature, serviceSpan);
     if (!creatureResult.isSuccess()) {
         const auto error = creatureResult.getError().value();
         recordSpanError(serviceSpan, error.getMessage(), "CreatureUpsertFailed", error.getCode());
@@ -488,7 +515,7 @@ Result<api::CreatureResponse> CreatureService::registerCreature(const std::strin
 }
 
 Result<api::CreatureResponse> CreatureService::setIdleEnabled(const creatureId_t &creatureId, bool enabled,
-                                                              std::shared_ptr<RequestSpan> parentSpan) {
+                                                              SpanParent parentSpan) {
     auto logger = spdlog::default_logger();
     if (logger)
         logger->info("Setting idle {} for creature {}", enabled ? "enabled" : "disabled", creatureId);
@@ -839,7 +866,7 @@ bool CreatureService::startIdleIfNeeded(const creatureId_t &creatureId, std::sha
 }
 
 api::CreatureConfigValidationResponse CreatureService::validateCreatureConfig(const std::string &jsonCreature,
-                                                                              std::shared_ptr<RequestSpan> parentSpan) {
+                                                                              SpanParent parentSpan) {
     auto span =
         creatures::observability
             ? creatures::observability->createOperationSpan("CreatureService.validateCreatureConfig", parentSpan)

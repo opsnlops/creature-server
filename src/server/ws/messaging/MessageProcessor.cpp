@@ -46,10 +46,22 @@ MessageProcessor::MessageProcessor(std::shared_ptr<spdlog::logger> logger) : log
     logger_->info("{} message handler{} registered", handlers.size(), handlers.size() != 1 ? "s" : "");
 }
 
-void MessageProcessor::processIncomingMessage(const nlohmann::json &envelope, std::string_view message) {
+void MessageProcessor::processIncomingMessage(const nlohmann::json &envelope, std::string_view message,
+                                              const WebSocketMessageMetadata &metadata) {
     auto span = observability ? observability->createSamplingSpan("WebSocket.inbound", 0.0005) : nullptr;
     if (span) {
         span->setAttribute("websocket.message.size", static_cast<int64_t>(message.size()));
+        if (!metadata.transportFramework.empty()) {
+            span->setAttribute("transport.framework", metadata.transportFramework);
+        }
+        span->setAttribute("websocket.connection.id", static_cast<int64_t>(metadata.connectionId));
+        span->setAttribute("websocket.message.sequence", static_cast<int64_t>(metadata.sequence));
+        if (!metadata.triggerTraceId.empty()) {
+            span->setAttribute("trigger.trace_id", metadata.triggerTraceId);
+        }
+        if (!metadata.triggerSpanId.empty()) {
+            span->setAttribute("trigger.span_id", metadata.triggerSpanId);
+        }
     }
 
     const auto parsedEnvelope = api::webSocketEnvelopeFromJson(envelope);

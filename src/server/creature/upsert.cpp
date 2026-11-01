@@ -137,7 +137,8 @@ Result<creatures::Creature> Database::upsertCreature(const std::string &creature
             warn(errorMessage);
             return Result<creatures::Creature>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
         if (collectionSpan)
             collectionSpan->setSuccess();
 

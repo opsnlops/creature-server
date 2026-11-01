@@ -86,8 +86,7 @@ struct StreamingSessionConfig {
  */
 class StreamingAdHocSession {
   public:
-    StreamingAdHocSession(const std::string &sessionId, StreamingSessionConfig config,
-                          std::shared_ptr<RequestSpan> parentSpan);
+    StreamingAdHocSession(const std::string &sessionId, StreamingSessionConfig config, SpanParent parentSpan);
 
     ~StreamingAdHocSession();
 
@@ -105,7 +104,7 @@ class StreamingAdHocSession {
      * ad-hoc stream. Refused (Conflict) on a session with several
      * participants: those must say who is speaking via addTurn().
      */
-    Result<void> addText(const std::string &text, std::shared_ptr<RequestSpan> triggerSpan = nullptr);
+    Result<void> addText(const std::string &text, SpanParent triggerSpan = nullptr);
 
     /**
      * Add one turn: a sentence spoken by `creatureId`, which must be a
@@ -113,8 +112,7 @@ class StreamingAdHocSession {
      * background thread. On the first call, also spawns the playback thread
      * that will trigger interrupt() as soon as turn 1's TTS completes.
      */
-    Result<void> addTurn(const std::string &creatureId, const std::string &text,
-                         std::shared_ptr<RequestSpan> triggerSpan = nullptr);
+    Result<void> addTurn(const std::string &creatureId, const std::string &text, SpanParent triggerSpan = nullptr);
 
     /**
      * Signal that no more sentences are coming. Waits for the playback thread
@@ -122,7 +120,7 @@ class StreamingAdHocSession {
      * disk once that join returns), then stitches the parts into one exchange
      * WAV with iXML provenance and finalizes the exchange record (issue #150).
      */
-    Result<StreamingFinishResult> finish(std::shared_ptr<RequestSpan> triggerSpan = nullptr);
+    Result<StreamingFinishResult> finish(SpanParent triggerSpan = nullptr);
 
     [[nodiscard]] const std::string &getSessionId() const { return sessionId_; }
     [[nodiscard]] int getChunksReceived() const { return chunksReceived_.load(); }
@@ -305,11 +303,10 @@ class StreamingAdHocSessionManager {
 
     /// The classic single-creature ad-hoc stream.
     Result<std::shared_ptr<StreamingAdHocSession>> createSession(const std::string &creatureId, bool resumePlaylist,
-                                                                 std::shared_ptr<RequestSpan> parentSpan);
+                                                                 SpanParent parentSpan);
 
     /// Any session shape, including a streamed dialog (issue #186).
-    Result<std::shared_ptr<StreamingAdHocSession>> createSession(StreamingSessionConfig config,
-                                                                 std::shared_ptr<RequestSpan> parentSpan);
+    Result<std::shared_ptr<StreamingAdHocSession>> createSession(StreamingSessionConfig config, SpanParent parentSpan);
 
     std::shared_ptr<StreamingAdHocSession> getSession(const std::string &sessionId);
 

@@ -42,8 +42,15 @@ set(CPACK_DEBIAN_PACKAGE_DEPENDS "locales-all")
 # The default engine is now whisper.cpp (bundled in the package)
 set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "rhubarb-lip-sync")
 
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/externals/build/oatpp-swagger-prefix/src/oatpp-swagger/res/
-        DESTINATION /usr/share/creature-server/swagger-ui
-)
+if(TRUE) # uWebSockets license notices ship with every package
+    install(FILES ${uwebsockets_SOURCE_DIR}/LICENSE
+            DESTINATION share/doc/creature-server
+            RENAME uWebSockets.LICENSE
+            COMPONENT creature-server)
+    install(FILES ${uwebsockets_SOURCE_DIR}/uSockets/LICENSE
+            DESTINATION share/doc/creature-server
+            RENAME uSockets.LICENSE
+            COMPONENT creature-server)
+endif()
 
 include(CPack)

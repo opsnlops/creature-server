@@ -3,9 +3,16 @@
 bin/
 cmake-*/
 build/
+/build-*/
 package/
 out/
+__pycache__/
+*.py[cod]
 *.DS_Store
 externals/build/
 externals/install/
 data/
+
+# Editor swap files
+*.swp
+*.swo
