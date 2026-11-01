@@ -177,12 +177,14 @@ Result<std::vector<Sound>> SoundService::getAllSounds(SpanParent parentSpan) {
             //
             // Dot-directories are pruned via the shared rule: AudioCache keeps its
             // Opus packet cache inside this very root (17 files per cached sound,
-            // never pruned automatically), and descending into it cost ~50 s per
-            // call — stat-ing files that the extension filter below then discards.
-            // The HTTP layer dedicates a thread to each connection, so that walk
-            // held a worker for its full duration; a burst of list calls starved
-            // unrelated requests and made a 220 ms dialog render look like a 52 s
-            // one (issue #223).
+            // bounded since issue #225 but still not ours to walk), and descending
+            // into it cost ~50 s per call — stat-ing files that the extension
+            // filter below then discards. Application work runs on a small bounded
+            // executor (4 workers, 8 queued), so each walk held a worker for its
+            // full duration: five concurrent list calls wedged the whole API for
+            // ~a minute. A 220 ms dialog render came back after 52 s, and once the
+            // queue filled, further requests were rejected outright with a 503
+            // "Application work queue is full" (issue #223).
             auto iterator = fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied);
             const auto end = fs::end(iterator);
             for (auto it = fs::begin(iterator); it != end; ++it) {
