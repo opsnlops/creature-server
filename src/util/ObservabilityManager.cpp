@@ -909,6 +909,54 @@ std::shared_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(co
     return std::make_shared<OperationSpan>(span);
 }
 
+std::shared_ptr<OperationSpan> ObservabilityManager::createOperationSpan(const std::string &operationName,
+                                                                         const SpanParent &parent) {
+    if (parent.operation()) {
+        return createChildOperationSpan(operationName, parent.operation());
+    }
+    return createOperationSpan(operationName, parent.request());
+}
+
+std::shared_ptr<OperationSpan> ObservabilityManager::createChildOperationSpan(const std::string &operationName,
+                                                                              const SpanParent &parent) {
+    if (parent.operation()) {
+        return createChildOperationSpan(operationName, parent.operation());
+    }
+    return createChildOperationSpan(operationName, parent.request());
+}
+
+std::shared_ptr<OperationSpan> ObservabilityManager::createLinkedOperationSpan(const std::string &operationName,
+                                                                               const SpanParent &parent) {
+    if (parent.request()) {
+        return createLinkedOperationSpan(operationName, parent.request());
+    }
+    if (!initialized_) {
+        return nullptr;
+    }
+    if (!tracer_) {
+        critical("🚨 TRACER IS NULL! Cannot create linked operation span for: {}", operationName);
+        return nullptr;
+    }
+    auto *linked = parent.getSpan();
+    if (linked == nullptr) {
+        warn("No linked span provided for operation: {}, creating root span", operationName);
+        auto span = tracer_->StartSpan(operationName);
+        return span ? std::make_shared<OperationSpan>(span) : nullptr;
+    }
+    // Same shape as the RequestSpan variant: a child for the shared trace id,
+    // plus an explicit link for the "triggered by" relationship.
+    auto linkedContext = linked->GetContext();
+    auto options = opentelemetry::trace::StartSpanOptions{};
+    options.parent = linkedContext;
+    auto span = tracer_->StartSpan(operationName, options);
+    if (!span) {
+        critical("🚨 FAILED TO CREATE LINKED SPAN for: {}", operationName);
+        return nullptr;
+    }
+    span->AddLink(linkedContext, {});
+    return std::make_shared<OperationSpan>(span);
+}
+
 // RequestSpan implementation
 RequestSpan::RequestSpan(opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> span,
                          const std::string &httpMethod, const std::string &httpUrl)

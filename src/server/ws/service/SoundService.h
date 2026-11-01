@@ -8,11 +8,7 @@
 #include "api/JsonResponse.h"
 #include "api/SoundResponses.h"
 #include "model/Sound.h"
-
-namespace creatures {
-class OperationSpan;
-class RequestSpan;
-} // namespace creatures
+#include "util/ObservabilityManager.h"
 
 namespace creatures ::ws {
 
@@ -34,17 +30,14 @@ class SoundService {
     /// search so dialog/ renders resolve — #46), then the ad-hoc store. Returns
     /// std::nullopt if neither has it. The single owner of the store-precedence
     /// policy the rendition/provenance/metadata endpoints all share.
-    Result<std::optional<ResolvedSound>> resolveSoundPath(const std::string &filename,
-                                                          std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    Result<std::optional<ResolvedSound>> resolveSoundPath(const std::string &filename,
-                                                          std::shared_ptr<OperationSpan> parentSpan);
+    Result<std::optional<ResolvedSound>> resolveSoundPath(const std::string &filename, SpanParent parentSpan = nullptr);
 
     /// Build the full (heavy) structured metadata for one already-resolved
     /// sound file: size, sidecars, and all embedded iXML metadata including the
     /// per-track mouth cues and word timings. Backs GET /sound/{filename}/metadata
     /// (issue #56) — the sound LIST stays light and omits the heavy arrays.
     Result<Sound> buildSoundMetadata(const std::string &absolutePath, const std::string &filename,
-                                     std::shared_ptr<RequestSpan> parentSpan = nullptr);
+                                     SpanParent parentSpan = nullptr);
 
     /**
      * Play a sound file for testing
@@ -52,25 +45,22 @@ class SoundService {
      * @param soundFile
      * @return
      */
-    Result<api::StatusResponse> playSound(const std::string &soundFile,
-                                          std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<api::StatusResponse> playSound(const std::string &soundFile, SpanParent parentSpan = nullptr);
 
     /**
      * Get all of the sound files
      */
-    Result<std::vector<Sound>> getAllSounds(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<std::vector<Sound>> getAllSounds(SpanParent parentSpan = nullptr);
 
     /**
      * Get all ad-hoc generated sound files.
      */
-    Result<std::vector<api::AdHocSoundEntry>> getAdHocSounds(std::shared_ptr<RequestSpan> parentSpan = nullptr);
+    Result<std::vector<api::AdHocSoundEntry>> getAdHocSounds(SpanParent parentSpan = nullptr);
 
     /**
      * Resolve the absolute path for an ad-hoc sound filename.
      */
-    Result<std::string> resolveAdHocSoundPath(const std::string &filename,
-                                              std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    Result<std::string> resolveAdHocSoundPath(const std::string &filename, std::shared_ptr<OperationSpan> parentSpan);
+    Result<std::string> resolveAdHocSoundPath(const std::string &filename, SpanParent parentSpan = nullptr);
 
     /**
      * Resolve the absolute path for a permanent-store sound by basename.
@@ -79,10 +69,7 @@ class SoundService {
      * sounds living in subdirectories (e.g. dialog/ renders) resolve too (#46).
      * Returns NotFound if nothing matches, InvalidData for an unsafe filename.
      */
-    Result<std::string> resolvePermanentSoundPath(const std::string &filename,
-                                                  std::shared_ptr<RequestSpan> parentSpan = nullptr);
-    Result<std::string> resolvePermanentSoundPath(const std::string &filename,
-                                                  std::shared_ptr<OperationSpan> parentSpan);
+    Result<std::string> resolvePermanentSoundPath(const std::string &filename, SpanParent parentSpan = nullptr);
 };
 
 } // namespace creatures::ws

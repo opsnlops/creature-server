@@ -15,9 +15,6 @@ This project uses CMake with Ninja as the build generator and requires C++20. De
 ### Key Build Commands
 
 ```bash
-# Build oatpp dependencies first (required before main build)
-./build_oatpp.sh
-
 # Local debug build
 ./local_build.sh
 
@@ -42,7 +39,7 @@ ctest
 
 External dependencies are fetched automatically via FetchContent:
 - MongoDB C/C++ drivers (static linking)
-- oatpp web framework (pre-built in externals/)
+- uWebSockets for HTTP and WebSocket serving
 - spdlog for logging
 - OpenTelemetry for observability
 - ALSA (Linux) and CoreAudio (macOS) for native local/travel audio
@@ -56,7 +53,7 @@ External dependencies are fetched automatically via FetchContent:
 
 ### Core Components
 
-- **WebSocket Server** (`src/server/ws/`): oatpp-based REST API and WebSocket interface
+- **HTTP/WebSocket Transport** (`src/server/transport/`): uWebSockets server, route handlers, and the framework-neutral services in `src/server/ws/service/`
 - **Event Loop** (`src/server/eventloop/`): Main application event processing system
 - **Database Layer** (`src/server/database.cpp`): MongoDB integration for data persistence
 - **Animation System** (`src/server/animation/`): Animation playback and management

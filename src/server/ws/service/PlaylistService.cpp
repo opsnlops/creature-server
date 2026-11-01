@@ -42,7 +42,7 @@ PlaylistStatus stoppedStatus(universe_t universe) { return PlaylistStatus{univer
 
 } // namespace
 
-Result<std::vector<Playlist>> PlaylistService::getAllPlaylists(std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::vector<Playlist>> PlaylistService::getAllPlaylists(SpanParent parentSpan) {
     auto span =
         observability ? observability->createOperationSpan("PlaylistService.getAllPlaylists", parentSpan) : nullptr;
     if (span) {
@@ -67,7 +67,7 @@ Result<std::vector<Playlist>> PlaylistService::getAllPlaylists(std::shared_ptr<R
     return Result<std::vector<Playlist>>{playlists};
 }
 
-Result<Playlist> PlaylistService::getPlaylist(const playlistId_t &playlistId, std::shared_ptr<RequestSpan> parentSpan) {
+Result<Playlist> PlaylistService::getPlaylist(const playlistId_t &playlistId, SpanParent parentSpan) {
     auto span = observability ? observability->createOperationSpan("PlaylistService.getPlaylist", parentSpan) : nullptr;
     if (span) {
         span->setAttribute("service", "PlaylistService");
@@ -91,8 +91,7 @@ Result<Playlist> PlaylistService::getPlaylist(const playlistId_t &playlistId, st
     return Result<Playlist>{playlist};
 }
 
-Result<Playlist> PlaylistService::upsertPlaylist(const std::string &playlistJson,
-                                                 std::shared_ptr<RequestSpan> parentSpan) {
+Result<Playlist> PlaylistService::upsertPlaylist(const std::string &playlistJson, SpanParent parentSpan) {
     auto span =
         observability ? observability->createOperationSpan("PlaylistService.upsertPlaylist", parentSpan) : nullptr;
     if (span) {
@@ -134,7 +133,7 @@ Result<Playlist> PlaylistService::upsertPlaylist(const std::string &playlistJson
 }
 
 Result<api::StatusResponse> PlaylistService::startPlaylist(universe_t universe, const playlistId_t &playlistId,
-                                                           std::shared_ptr<RequestSpan> parentSpan) {
+                                                           SpanParent parentSpan) {
     auto span =
         observability ? observability->createOperationSpan("PlaylistService.startPlaylist", parentSpan) : nullptr;
     if (span) {
@@ -183,8 +182,7 @@ Result<api::StatusResponse> PlaylistService::startPlaylist(universe_t universe, 
     return Result<api::StatusResponse>{api::makeStatusResponse(200, "Started playback", api::STATUS_OK, sessionId)};
 }
 
-Result<api::StatusResponse> PlaylistService::stopPlaylist(universe_t universe,
-                                                          std::shared_ptr<RequestSpan> parentSpan) {
+Result<api::StatusResponse> PlaylistService::stopPlaylist(universe_t universe, SpanParent parentSpan) {
     auto span =
         observability ? observability->createOperationSpan("PlaylistService.stopPlaylist", parentSpan) : nullptr;
     if (span) {
@@ -206,7 +204,7 @@ Result<api::StatusResponse> PlaylistService::stopPlaylist(universe_t universe,
     return Result<api::StatusResponse>{api::makeStatusResponse(200, "Stopped playback", api::STATUS_OK, sessionId)};
 }
 
-Result<PlaylistStatus> PlaylistService::playlistStatus(universe_t universe, std::shared_ptr<RequestSpan> parentSpan) {
+Result<PlaylistStatus> PlaylistService::playlistStatus(universe_t universe, SpanParent parentSpan) {
     auto span =
         observability ? observability->createOperationSpan("PlaylistService.playlistStatus", parentSpan) : nullptr;
     if (span) {
@@ -220,7 +218,7 @@ Result<PlaylistStatus> PlaylistService::playlistStatus(universe_t universe, std:
     return Result<PlaylistStatus>{status.value_or(stoppedStatus(universe))};
 }
 
-Result<std::vector<PlaylistStatus>> PlaylistService::getAllPlaylistStatuses(std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::vector<PlaylistStatus>> PlaylistService::getAllPlaylistStatuses(SpanParent parentSpan) {
     auto span = observability ? observability->createOperationSpan("PlaylistService.getAllPlaylistStatuses", parentSpan)
                               : nullptr;
     if (span) {

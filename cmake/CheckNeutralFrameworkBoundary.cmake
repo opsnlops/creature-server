@@ -2,19 +2,14 @@ if(NOT DEFINED SOURCE_ROOT)
     message(FATAL_ERROR "SOURCE_ROOT is required")
 endif()
 
+# oat++ was removed in 3.50.0. Nothing under src/ or tests/ may mention it
+# again; the uWebSockets transport is the only HTTP/WebSocket implementation.
 set(NEUTRAL_ROOTS
-    "${SOURCE_ROOT}/src/api"
-    "${SOURCE_ROOT}/src/model"
-    "${SOURCE_ROOT}/src/server/voice"
-    "${SOURCE_ROOT}/src/server/ws/dto"
-    "${SOURCE_ROOT}/src/server/ws/messaging"
-    "${SOURCE_ROOT}/src/server/ws/service"
+    "${SOURCE_ROOT}/src"
+    "${SOURCE_ROOT}/tests"
 )
 
-set(NEUTRAL_FILES
-    "${SOURCE_ROOT}/src/server/jobs/JobWorker.cpp"
-    "${SOURCE_ROOT}/src/server/jobs/JobWorker.h"
-)
+set(NEUTRAL_FILES)
 
 foreach(ROOT IN LISTS NEUTRAL_ROOTS)
     file(GLOB_RECURSE ROOT_FILES LIST_DIRECTORIES false
@@ -24,6 +19,7 @@ foreach(ROOT IN LISTS NEUTRAL_ROOTS)
         "${ROOT}/*.h"
         "${ROOT}/*.hh"
         "${ROOT}/*.hpp"
+        "${ROOT}/*.py"
     )
     list(APPEND NEUTRAL_FILES ${ROOT_FILES})
 endforeach()
@@ -42,7 +38,7 @@ endforeach()
 if(VIOLATIONS)
     list(JOIN VIOLATIONS "\n  " FORMATTED_VIOLATIONS)
     message(FATAL_ERROR
-        "The framework-neutral boundary contains oat++ references:\n  ${FORMATTED_VIOLATIONS}"
+        "oat++ references found (the oat++ transport was removed in 3.50.0):\n  ${FORMATTED_VIOLATIONS}"
     )
 endif()
 

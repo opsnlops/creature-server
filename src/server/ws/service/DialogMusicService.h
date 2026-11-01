@@ -18,16 +18,15 @@ class DialogMusicService {
 
     /// Size a composition plan from a cached dialog take (#200).
     Result<api::DialogMusicPlanResult> plan(const api::DialogMusicPlanRequest &request,
-                                            std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+                                            SpanParent parentSpan = nullptr) const;
 
     /// The knobs a cached take was made with, for feeding it into the next one.
-    Result<api::DialogMusicRecipe> recipe(const std::string &generationId,
-                                          std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+    Result<api::DialogMusicRecipe> recipe(const std::string &generationId, SpanParent parentSpan = nullptr) const;
 
-    Result<std::vector<voice::MusicFinetune>> listFinetunes(std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+    Result<std::vector<voice::MusicFinetune>> listFinetunes(SpanParent parentSpan = nullptr) const;
 
     Result<api::DialogMusicPromotionResult> promote(const std::string &generationId,
-                                                    std::shared_ptr<RequestSpan> parentSpan = nullptr) const;
+                                                    SpanParent parentSpan = nullptr) const;
 
   private:
     /// Repair an already-accepted music block whose composition source was

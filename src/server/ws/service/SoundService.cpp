@@ -143,7 +143,7 @@ creatures::Sound buildSound(const fs::path &filepath, const std::string &filenam
 }
 } // namespace
 
-Result<std::vector<Sound>> SoundService::getAllSounds(std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::vector<Sound>> SoundService::getAllSounds(SpanParent parentSpan) {
     auto span = observability ? observability->createOperationSpan("SoundService.getAllSounds", parentSpan) : nullptr;
     auto logger = spdlog::default_logger();
 
@@ -243,7 +243,7 @@ Result<std::vector<Sound>> SoundService::getAllSounds(std::shared_ptr<RequestSpa
     return Result<std::vector<Sound>>{std::move(soundList)};
 }
 
-Result<std::vector<api::AdHocSoundEntry>> SoundService::getAdHocSounds(std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::vector<api::AdHocSoundEntry>> SoundService::getAdHocSounds(SpanParent parentSpan) {
     auto span = creatures::observability
                     ? creatures::observability->createOperationSpan("SoundService.getAdHocSounds", parentSpan)
                     : nullptr;
@@ -346,64 +346,35 @@ Result<std::string> resolvePermanent(const std::string &filename, const std::sha
     return *lookup.getValue().value();
 }
 
-Result<std::string> SoundService::resolveAdHocSoundPath(const std::string &filename,
-                                                        std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::string> SoundService::resolveAdHocSoundPath(const std::string &filename, SpanParent parentSpan) {
     auto span =
         observability ? observability->createOperationSpan("SoundService.resolveAdHocSoundPath", parentSpan) : nullptr;
     return resolveAdHoc(filename, span);
 }
 
-Result<std::string> SoundService::resolveAdHocSoundPath(const std::string &filename,
-                                                        std::shared_ptr<OperationSpan> parentSpan) {
-    auto span = observability
-                    ? observability->createChildOperationSpan("SoundService.resolveAdHocSoundPath", parentSpan)
-                    : nullptr;
-    return resolveAdHoc(filename, span);
-}
-
-Result<std::string> SoundService::resolvePermanentSoundPath(const std::string &filename,
-                                                            std::shared_ptr<RequestSpan> parentSpan) {
+Result<std::string> SoundService::resolvePermanentSoundPath(const std::string &filename, SpanParent parentSpan) {
     auto span = observability ? observability->createOperationSpan("SoundService.resolvePermanentSoundPath", parentSpan)
                               : nullptr;
     return resolvePermanent(filename, span);
 }
 
-Result<std::string> SoundService::resolvePermanentSoundPath(const std::string &filename,
-                                                            std::shared_ptr<OperationSpan> parentSpan) {
-    auto span = observability
-                    ? observability->createChildOperationSpan("SoundService.resolvePermanentSoundPath", parentSpan)
-                    : nullptr;
-    return resolvePermanent(filename, span);
-}
-
-template <typename SpanT>
-Result<std::optional<SoundService::ResolvedSound>> resolveAny(SoundService &service, const std::string &filename,
-                                                              const std::shared_ptr<SpanT> &parentSpan) {
-    auto permanent = service.resolvePermanentSoundPath(filename, parentSpan);
+Result<std::optional<SoundService::ResolvedSound>> SoundService::resolveSoundPath(const std::string &filename,
+                                                                                  SpanParent parentSpan) {
+    auto permanent = resolvePermanentSoundPath(filename, parentSpan);
     if (permanent.isSuccess())
-        return std::optional<SoundService::ResolvedSound>{{permanent.getValue().value(), true}};
+        return std::optional<ResolvedSound>{{permanent.getValue().value(), true}};
     if (permanent.getError()->getCode() != ServerError::NotFound)
         return permanent.getError().value();
-    auto adHoc = service.resolveAdHocSoundPath(filename, parentSpan);
+    auto adHoc = resolveAdHocSoundPath(filename, parentSpan);
     if (adHoc.isSuccess())
-        return std::optional<SoundService::ResolvedSound>{{adHoc.getValue().value(), false}};
+        return std::optional<ResolvedSound>{{adHoc.getValue().value(), false}};
     if (adHoc.getError()->getCode() != ServerError::NotFound)
         return adHoc.getError().value();
-    return std::optional<SoundService::ResolvedSound>{};
-}
-
-Result<std::optional<SoundService::ResolvedSound>>
-SoundService::resolveSoundPath(const std::string &filename, std::shared_ptr<RequestSpan> parentSpan) {
-    return resolveAny(*this, filename, parentSpan);
-}
-
-Result<std::optional<SoundService::ResolvedSound>>
-SoundService::resolveSoundPath(const std::string &filename, std::shared_ptr<OperationSpan> parentSpan) {
-    return resolveAny(*this, filename, parentSpan);
+    return std::optional<ResolvedSound>{};
 }
 
 Result<Sound> SoundService::buildSoundMetadata(const std::string &absolutePath, const std::string &filename,
-                                               std::shared_ptr<RequestSpan> parentSpan) {
+                                               SpanParent parentSpan) {
     auto span =
         observability ? observability->createOperationSpan("SoundService.buildSoundMetadata", parentSpan) : nullptr;
     uint32_t size = 0;
@@ -429,8 +400,7 @@ Result<Sound> SoundService::buildSoundMetadata(const std::string &absolutePath, 
  * the event loop. Local/travel playback goes straight to the one-slot audio
  * coordinator so HTTP floods cannot accumulate on the sacred 1 ms queue.
  */
-Result<api::StatusResponse> SoundService::playSound(const std::string &soundFile,
-                                                    std::shared_ptr<RequestSpan> parentSpan) {
+Result<api::StatusResponse> SoundService::playSound(const std::string &soundFile, SpanParent parentSpan) {
     auto logger = spdlog::default_logger();
     auto serviceSpan = creatures::observability
                            ? creatures::observability->createOperationSpan("SoundService.playSound", parentSpan)

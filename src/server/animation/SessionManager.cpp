@@ -228,9 +228,10 @@ bool SessionManager::registerSession(universe_t universe, std::shared_ptr<Playba
     return true;
 }
 
-Result<std::shared_ptr<PlaybackSession>>
-SessionManager::interrupt(universe_t universe, const Animation &interruptAnimation, bool shouldResumePlaylist,
-                          std::shared_ptr<RequestSpan> parentSpan, const std::string &chainId) {
+Result<std::shared_ptr<PlaybackSession>> SessionManager::interrupt(universe_t universe,
+                                                                   const Animation &interruptAnimation,
+                                                                   bool shouldResumePlaylist, SpanParent parentSpan,
+                                                                   const std::string &chainId) {
     auto span = observability ? observability->createOperationSpan("SessionManager.interrupt", parentSpan) : nullptr;
     if (span) {
         span->setAttribute("universe", static_cast<int64_t>(universe));
@@ -359,7 +360,7 @@ SessionManager::interrupt(universe_t universe, const Animation &interruptAnimati
 Result<std::shared_ptr<PlaybackSession>> SessionManager::interruptIdleOnly(universe_t universe,
                                                                            const Animation &interruptAnimation,
                                                                            const std::vector<creatureId_t> &creatureIds,
-                                                                           std::shared_ptr<RequestSpan> parentSpan) {
+                                                                           SpanParent parentSpan) {
     auto span =
         observability ? observability->createOperationSpan("SessionManager.interruptIdleOnly", parentSpan) : nullptr;
     if (span) {

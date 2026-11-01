@@ -63,14 +63,17 @@ Result<creatures::Storyboard> Database::getStoryboard(const storyboardId_t &stor
         recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
         return Result<Storyboard>{err};
     }
-    auto collection = collectionResult.getValue().value();
+    auto collectionLease = collectionResult.getValue().value();
+    auto &collection = collectionLease->collection();
 
     std::shared_ptr<OperationSpan> mongoSpan;
     try {
         mongoSpan = creatures::observability->createChildOperationSpan("getStoryboard.mongoQuery", dbSpan);
 
         auto query = document{} << "id" << storyboardId << finalize;
-        auto maybe_result = collection.find_one(query.view());
+        mongocxx::options::find readOptions;
+        mongo::applyOperationDeadline(readOptions);
+        auto maybe_result = collection.find_one(query.view(), readOptions);
         if (mongoSpan)
             mongoSpan->setSuccess();
 
@@ -175,10 +178,12 @@ Result<std::vector<creatures::Storyboard>> Database::listStoryboards(const std::
             recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<std::vector<Storyboard>>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("listStoryboards.mongoQuery", dbSpan);
         mongocxx::options::find opts;
+        mongo::applyOperationDeadline(opts);
         opts.sort(sort_doc.view());
         mongocxx::cursor cursor = collection.find(query_doc.view(), opts);
 

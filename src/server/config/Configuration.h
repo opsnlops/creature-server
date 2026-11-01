@@ -41,6 +41,9 @@ class Configuration {
     /** @return MongoDB connection URI string */
     std::string getMongoURI() const;
 
+    uint32_t getHttpMaxConnections() const;
+    uint32_t getHttpMaxConnectionsPerPeer() const;
+
     /** @return Stable exact native output device name, if configured. */
     std::optional<std::string> getSoundDeviceName() const;
     float getDialogGainDb() const;
@@ -115,6 +118,9 @@ class Configuration {
 
     /** @param _mongoURI MongoDB connection URI */
     void setMongoURI(std::string _mongoURI);
+
+    void setHttpMaxConnections(uint32_t _maximum);
+    void setHttpMaxConnectionsPerPeer(uint32_t _maximum);
 
     void setSoundDeviceName(std::string _soundDeviceName);
     void setDialogGainDb(float _dialogGainDb);
@@ -191,6 +197,9 @@ class Configuration {
 
     /** MongoDB connection URI, defaults to value in config.h */
     std::string mongoURI = DEFAULT_DB_URI;
+
+    uint32_t httpMaxConnections = DEFAULT_HTTP_MAX_CONNECTIONS;
+    uint32_t httpMaxConnectionsPerPeer = DEFAULT_HTTP_MAX_CONNECTIONS_PER_PEER;
 
     // Audio configuration
 

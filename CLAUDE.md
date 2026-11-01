@@ -91,19 +91,24 @@ void processCreature(const Creature& creature) {
 
 ## Project-Specific Patterns
 
-### Defensive Coding for DTOs
+### Route Handlers Return Values, Never Touch Sockets
 
-Always check for null DTOs after service calls:
+HTTP routes live in `src/server/transport/*Handlers.cpp` and return a
+`PreparedResponse`; they run on the bounded application executor, never on the
+uWS loop thread. Use the shared helpers in `transport/HandlerSupport.h`:
 ```cpp
-auto creatureDto = upsertCreature(jsonCreature, parentSpan);
-
-// Defensive check
-if (!creatureDto) {
-    std::string errorMessage = "Invalid creature configuration provided";
-    warn(errorMessage);
-    OATPP_ASSERT_HTTP(false, Status::CODE_400, errorMessage.c_str());
+PreparedResponse getThing(const std::string &id, const std::shared_ptr<OperationSpan> &span) {
+    if (!isUuidShape(id))
+        return errorStatus(400, "thing id must be a UUID", span, "InvalidThingId");
+    const auto result = ws::ThingService::get(id, span); // pass the span; never nullptr
+    if (!result.isSuccess())
+        return serverErrorStatus(result.getError().value(), span);
+    return PreparedResponse::json(200, api::jsonToString(thingToJson(result.getValue().value())));
 }
 ```
+Bodies are parsed with `parseBody(body, "contract.name", "what", api::xFromJson, span)`.
+Files are served with `PreparedResponse::fileStream(path, size, contentType)`;
+the loop streams them, so never read a whole file into the response.
 
 ### Span Handling
 
@@ -123,10 +128,10 @@ auto span = creatures::observability->createOperationSpan("Service.method", pare
 
 ```cpp
 // Client's fault (bad JSON, missing fields, etc.)
-OATPP_ASSERT_HTTP(false, Status::CODE_400, "Invalid creature configuration");
+return errorStatus(400, "Invalid creature configuration", span, "InvalidCreature");
 
 // Server's fault (null pointer we didn't expect, internal error)
-OATPP_ASSERT_HTTP(false, Status::CODE_500, "Database returned null");
+return errorStatus(500, "Database returned null", span, "MissingDependencies");
 ```
 
 ## Build Workflow
@@ -151,7 +156,6 @@ ninja
 
 ### Common Build Issues
 
-- **oatpp errors**: Run `./build_oatpp.sh` first
 - **Missing dependencies**: CMake FetchContent will download them automatically
 - **Linker warnings about duplicates**: Safe to ignore (known issue with how dependencies are linked)
 
@@ -240,23 +244,19 @@ Controller's JSON file = source of truth for creature config. Database is just a
 
 ## Common Tasks
 
-### Adding a New DTO
+### Adding a New API Contract
 
-1. Create file in `src/server/ws/dto/`
-2. Use oatpp macros: `DTO_INIT`, `DTO_FIELD`, `DTO_FIELD_INFO`
-3. Remember `#include OATPP_CODEGEN_BEGIN(DTO)` and `END`
-4. Add to controller as `BODY_DTO(Object<YourDto>, request)`
+1. Add the request/response struct and its `xFromJson` / `xToJson` functions in `src/api/`
+2. Reject unknown fields and validate UUIDs there, not in the handler
 
 ### Adding a New Endpoint
 
-1. Add to appropriate controller in `src/server/ws/controller/`
-2. Use `ENDPOINT_INFO` for API documentation
-3. Use `ENDPOINT` macro with HTTP method and path
-4. Create request span for observability
-5. Add HTTP attributes to span
-6. Call service layer method
-7. Handle exceptions with proper status codes
-8. Schedule cache invalidation if needed
+1. Write the handler in the matching `src/server/transport/*Handlers.cpp` (see the pattern above)
+2. Register it in `UWebSocketsServer.cpp` with `runBodyRoute` (has a body limit) or `runBodylessRoute`
+3. Regenerate the frozen manifest: `python3 scripts/transport-route-manifest.py --write`, review the diff
+4. Update the counts in `tests/server/transport/ApiDocumentation_test.cpp`
+5. Re-record the contract if a response shape changed: `uwebsockets_production_gate_test.py --record`
+6. Schedule cache invalidation if needed
 
 ### Modifying Data Models
 

@@ -65,7 +65,8 @@ Result<void> Database::ensureAdHocExchangeIndexes(uint32_t ttlHours) {
         if (!collectionResult.isSuccess()) {
             return Result<void>{collectionResult.getError().value()};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         document ttlIndex;
         ttlIndex << "created_at" << 1;
@@ -125,7 +126,8 @@ Result<void> Database::insertAdHocExchange(const creatures::AdHocExchange &excha
             recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("insertAdHocExchange.mongoQuery", dbSpan);
         auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(createdAt.time_since_epoch());
@@ -183,7 +185,8 @@ Result<void> Database::finalizeAdHocExchange(const creatures::AdHocExchange &exc
             recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("finalizeAdHocExchange.mongoQuery", dbSpan);
         auto filter = document{} << "session_id" << exchange.session_id << bsoncxx::builder::stream::finalize;
@@ -242,10 +245,12 @@ Result<std::vector<AdHocExchangeRecord>> Database::listAdHocExchanges(int limit,
             recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<std::vector<AdHocExchangeRecord>>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("listAdHocExchanges.mongoQuery", dbSpan);
         mongocxx::options::find options;
+        mongo::applyOperationDeadline(options);
         document sortDoc;
         sortDoc << "created_at" << -1;
         options.sort(sortDoc.view());
@@ -305,11 +310,14 @@ Result<AdHocExchangeRecord> Database::getAdHocExchange(const std::string &sessio
             recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<AdHocExchangeRecord>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("getAdHocExchange.mongoQuery", dbSpan);
         auto filter = document{} << "session_id" << sessionId << bsoncxx::builder::stream::finalize;
-        auto maybeDoc = collection.find_one(filter.view());
+        mongocxx::options::find readOptions;
+        mongo::applyOperationDeadline(readOptions);
+        auto maybeDoc = collection.find_one(filter.view(), readOptions);
         if (mongoSpan)
             mongoSpan->setSuccess();
 

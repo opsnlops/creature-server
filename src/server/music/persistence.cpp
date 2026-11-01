@@ -76,7 +76,8 @@ Result<MusicPiece> Database::getMusicPiece(const std::string &pieceId,
         recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
         return Result<MusicPiece>{err};
     }
-    auto collection = collectionResult.getValue().value();
+    auto collectionLease = collectionResult.getValue().value();
+    auto &collection = collectionLease->collection();
     std::shared_ptr<OperationSpan> mongoSpan;
     try {
         mongoSpan = creatures::observability->createChildOperationSpan("getMusicPiece.mongoQuery", dbSpan);
@@ -138,7 +139,8 @@ Result<std::vector<MusicPiece>> Database::listMusicPieces(const std::shared_ptr<
             recordSpanError(dbSpan, err.getMessage(), "DatabaseError", err.getCode());
             return ListResult{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
         auto mongoSpan = creatures::observability->createChildOperationSpan("listMusicPieces.mongoQuery", dbSpan);
         document sortDoc{};
         sortDoc << "updated_at" << -1; // newest-first, like scripts
@@ -227,7 +229,8 @@ Result<MusicPiece> Database::upsertMusicPiece(const MusicPiece &piece,
             recordSpanError(upsertSpan, err.getMessage(), "DatabaseError", err.getCode());
             return Result<MusicPiece>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
         auto mongoSpan = creatures::observability->createChildOperationSpan("upsertMusicPiece.mongoQuery", upsertSpan);
         document filter{};
         filter << "id" << piece.id;
@@ -274,7 +277,8 @@ Result<void> Database::deleteMusicPiece(const std::string &pieceId, const std::s
             recordSpanError(span, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
         auto mongoSpan = creatures::observability->createChildOperationSpan("deleteMusicPiece.mongoQuery", span);
         document filter{};
         filter << "id" << pieceId;

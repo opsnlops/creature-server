@@ -23,6 +23,7 @@
 #include "server/audio/AudioOutput.h"
 #include "server/audio/NativeAudioConfig.h"
 #include "server/config.h"
+#include "server/config/MongoUri.h"
 #include "server/namespace-stuffs.h"
 #include "util/environment.h"
 
@@ -47,6 +48,18 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     program.add_argument("-d", "--mongodb-uri")
         .help("MongoDB URI to use")
         .default_value(environmentToString(DB_URI_ENV, DEFAULT_DB_URI))
+        .nargs(1);
+
+    program.add_argument("--http-max-connections")
+        .help("maximum simultaneous HTTP and WebSocket connections")
+        .default_value(environmentToInt(HTTP_MAX_CONNECTIONS_ENV, DEFAULT_HTTP_MAX_CONNECTIONS))
+        .scan<'i', int>()
+        .nargs(1);
+
+    program.add_argument("--http-max-connections-per-peer")
+        .help("maximum simultaneous HTTP and WebSocket connections from one IP address")
+        .default_value(environmentToInt(HTTP_MAX_CONNECTIONS_PER_PEER_ENV, DEFAULT_HTTP_MAX_CONNECTIONS_PER_PEER))
+        .scan<'i', int>()
         .nargs(1);
 
     program.add_argument("--audio-device-name")
@@ -250,6 +263,21 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     debug("Parsing the command line options");
 
+    const auto httpMaxConnections = program.get<int>("--http-max-connections");
+    const auto httpMaxConnectionsPerPeer = program.get<int>("--http-max-connections-per-peer");
+    if (httpMaxConnections < 1 || httpMaxConnections > 65535) {
+        critical("--http-max-connections must be between 1 and 65535");
+        std::exit(1);
+    }
+    if (httpMaxConnectionsPerPeer < 1 || httpMaxConnectionsPerPeer > httpMaxConnections) {
+        critical("--http-max-connections-per-peer must be between 1 and --http-max-connections");
+        std::exit(1);
+    }
+    config->setHttpMaxConnections(static_cast<uint32_t>(httpMaxConnections));
+    config->setHttpMaxConnectionsPerPeer(static_cast<uint32_t>(httpMaxConnectionsPerPeer));
+    debug("HTTP connection admission configured with {} total and {} per peer", httpMaxConnections,
+          httpMaxConnectionsPerPeer);
+
     // The always-on workshop host defaults to RTP. Travel mode is the explicit
     // single-Pi deployment and always owns its ALSA output locally.
     const bool travelMode = program.get<bool>("--travel-mode");
@@ -344,10 +372,10 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     }
 
     auto mongoURI = program.get<std::string>("-d");
-    debug("read mongo URI {} from command line", mongoURI);
+    debug("read MongoDB URI {} from command line", mongo::redactUri(mongoURI));
     if (!mongoURI.empty()) {
         config->setMongoURI(mongoURI);
-        debug("set our mongo URI to {}", mongoURI);
+        debug("set MongoDB URI to {}", mongo::redactUri(config->getMongoURI()));
     }
 
     const auto soundDeviceName = program.get<std::string>("--audio-device-name");

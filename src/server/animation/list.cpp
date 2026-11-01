@@ -54,6 +54,7 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
         projection_doc << "tracks" << 0;
 
         mongocxx::options::find findOptions{};
+        mongo::applyOperationDeadline(findOptions);
         findOptions.projection(projection_doc.view());
         findOptions.sort(sort_doc.view());
 
@@ -66,7 +67,8 @@ Database::listAnimations(creatures::SortBy sortBy, const std::shared_ptr<Operati
             recordSpanError(dbSpan, errorMessage, "DatabaseError", err.getCode());
             return Result<std::vector<creatures::AnimationMetadata>>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("listAnimations.mongoQuery", dbSpan);
         mongocxx::cursor cursor = collection.find(query_doc.view(), findOptions);

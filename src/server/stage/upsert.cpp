@@ -104,7 +104,8 @@ Result<creatures::Stage> Database::upsertStage(const std::string &stageJson,
             warn(errorMessage);
             return Result<Stage>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
         if (collectionSpan)
             collectionSpan->setSuccess();
 
@@ -186,7 +187,8 @@ Result<void> Database::deleteStage(const stageId_t &stageId, const std::shared_p
             recordSpanError(span, err.getMessage(), "DatabaseError", err.getCode());
             return Result<void>{err};
         }
-        auto collection = collectionResult.getValue().value();
+        auto collectionLease = collectionResult.getValue().value();
+        auto &collection = collectionLease->collection();
 
         auto mongoSpan = creatures::observability->createChildOperationSpan("deleteStage.mongoQuery", span);
         bsoncxx::builder::stream::document filter_builder;
