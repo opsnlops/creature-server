@@ -887,6 +887,7 @@ add_executable(creature-server-test
         tests/server/storage/StoragePublishers_test.cpp
         tests/server/config/MongoUri_test.cpp
         tests/server/config/ConfigFile_test.cpp
+        tests/server/config/InterfaceIndex_test.cpp
         src/server/config/ConfigFile.cpp
         src/server/config/MongoUri.cpp
         tests/server/transport/ApiDocumentation_test.cpp

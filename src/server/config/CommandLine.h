@@ -15,7 +15,10 @@ class CommandLine {
   private:
     static void listSoundDevices();
     static void listNetworkDevices();
-    static uint8_t getInterfaceIndex(const std::string &interfaceName);
+    /// Resolve a NIC name to its OS interface index. uint16_t to match what
+    /// Configuration stores; an index too large to represent throws rather
+    /// than being truncated into a valid-looking one (issue #238).
+    static uint16_t getInterfaceIndex(const std::string &interfaceName);
     static std::string getVersion();
 };
 

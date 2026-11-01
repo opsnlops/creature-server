@@ -24,6 +24,7 @@
 #include "server/audio/NativeAudioConfig.h"
 #include "server/config.h"
 #include "server/config/ConfigFile.h"
+#include "server/config/InterfaceIndex.h"
 #include "server/config/MongoUri.h"
 #include "server/namespace-stuffs.h"
 #include "util/environment.h"
@@ -573,11 +574,17 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     // Try to convert the name to an index number
     try {
-        if (uint8_t networkDevice = getInterfaceIndex(networkDeviceName); networkDevice > 0) {
+        if (const uint16_t networkDevice = getInterfaceIndex(networkDeviceName); networkDevice > 0) {
             config->setNetworkDevice(networkDevice);
             debug("set our network device to {}", networkDevice);
         }
     } catch (const std::system_error &e) {
+        critical(e.what());
+        std::exit(1);
+    } catch (const std::out_of_range &e) {
+        // An index too large to store. Refusing to start is right: the
+        // alternative was binding multicast to whatever the truncated value
+        // happened to point at (issue #238).
         critical(e.what());
         std::exit(1);
     }
@@ -594,12 +601,11 @@ void CommandLine::listSoundDevices() { audio::listAudioOutputDevices(std::cout);
  * @param interfaceName the friendly name of an interface like "eth0" or "lo0"
  * @return the index of the interface, or throws if the interface can't be found
  */
-uint8_t CommandLine::getInterfaceIndex(const std::string &interfaceName) {
-    const uint8_t index = if_nametoindex(interfaceName.c_str());
-    if (index == 0) {
-        throw std::system_error(errno, std::generic_category(), "Failed to find interface: " + interfaceName);
-    }
-    return index;
+uint16_t CommandLine::getInterfaceIndex(const std::string &interfaceName) {
+    // if_nametoindex returns an unsigned int; keep it that wide until it has
+    // been checked, because assigning it to something narrower is exactly the
+    // bug this fixes (issue #238).
+    return narrowInterfaceIndex(if_nametoindex(interfaceName.c_str()), interfaceName);
 }
 
 void CommandLine::listNetworkDevices() {
