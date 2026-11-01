@@ -32,7 +32,16 @@ bool isInsideRoot(const fs::path &canonicalRoot, const fs::path &canonicalFile) 
 std::optional<std::string> findByBasename(const fs::path &canonicalRoot, const std::string &filename) {
     std::error_code ec;
     try {
-        for (const auto &entry : fs::recursive_directory_iterator(canonicalRoot)) {
+        auto iterator = fs::recursive_directory_iterator(canonicalRoot);
+        const auto end = fs::end(iterator);
+        for (auto it = fs::begin(iterator); it != end; ++it) {
+            const auto &entry = *it;
+            // Never descend into the Opus cache: this fallback walk runs on a
+            // request thread, and the cache dwarfs the sound store (issue #223).
+            if (entry.is_directory() && isSkippedSoundDirectory(entry.path())) {
+                it.disable_recursion_pending();
+                continue;
+            }
             if (!entry.is_regular_file()) {
                 continue;
             }
@@ -60,15 +69,14 @@ bool isBareBasename(const std::string &filename) {
            requested == requested.filename();
 }
 
-// Directories the index never descends into: any dot-directory — which covers
-// the Opus packet cache (`.opus_cache/<hostname>/...`) that AudioCache keeps
-// inside the permanent sound root.
-bool isSkippedDirectory(const fs::path &directory) {
+} // namespace
+
+// Declared in the header so every sound-store walker shares one definition
+// rather than re-deriving the rule (issue #223).
+bool isSkippedSoundDirectory(const fs::path &directory) {
     const auto name = directory.filename().string();
     return !name.empty() && name.front() == '.';
 }
-
-} // namespace
 
 std::optional<std::string> resolveSoundInRoot(const fs::path &root, const std::string &filename) {
     if (!isBareBasename(filename)) {
@@ -357,7 +365,7 @@ void SoundStoreIndex::rebuild() {
         const auto end = fs::end(iterator);
         for (auto it = fs::begin(iterator); it != end; ++it) {
             std::error_code entryError;
-            if (it->is_directory(entryError) && isSkippedDirectory(it->path())) {
+            if (it->is_directory(entryError) && isSkippedSoundDirectory(it->path())) {
                 it.disable_recursion_pending();
                 continue;
             }
