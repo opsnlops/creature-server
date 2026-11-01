@@ -868,6 +868,7 @@ add_executable(creature-server-test
         src/server/fixture/FixturePatternRunner.cpp
         tests/util/SetAttributeOverload_test.cpp
         tests/util/AudioCache_test.cpp
+        tests/util/Environment_test.cpp
         tests/util/Slugify_test.cpp
         tests/util/UuidValidation_test.cpp
         tests/server/ws/CreatureActivityMessage_test.cpp
