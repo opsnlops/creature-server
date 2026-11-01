@@ -50,9 +50,8 @@ void AudioCacheMaintenance::sweep() {
     // Its own root span, so every automatic run is visible. The absence of
     // this span over 30 days of production data is how the gap this class
     // closes stayed invisible (issue #225).
-    auto span = creatures::observability
-                    ? creatures::observability->createOperationSpan("AudioCacheMaintenance.sweep", nullptr)
-                    : nullptr;
+    auto span = creatures::observability ? creatures::observability->createOperationSpan("AudioCacheMaintenance.sweep")
+                                         : nullptr;
 
     auto result = cache_->prune(policy_, /*dryRun=*/false, span);
     if (!result.isSuccess()) {
