@@ -96,17 +96,18 @@
 #define EXPRESSIVE_VOICE_MODEL_ENV "EXPRESSIVE_VOICE_MODEL"
 #define DEFAULT_EXPRESSIVE_VOICE_MODEL "eleven_v4"
 
-// Routes AD-HOC speech through ElevenLabs' text-to-dialogue socket on this
-// model, which performs audio tags instead of pronouncing them (issue #248).
-// Empty — the default — keeps ad-hoc on the text-to-speech socket with each
-// creature's own voice.model_id, exactly as before.
+// The model every creature speaks ad-hoc with. Settled here rather than per
+// creature: it describes how we talk to ElevenLabs, not anything about a bird,
+// and keeping it per creature had already drifted into one deprecated model,
+// one that no ad-hoc socket serves at all, and one creature with none (#250).
 //
-// One setting rather than a flag plus a model, because the two cannot
-// disagree: the dialogue socket serves only the v3/v4 families and refuses
-// the fast models with 403, while the text-to-speech socket refuses v3/v4
-// with 400. The path follows the model.
-#define ADHOC_DIALOGUE_MODEL_ENV "ADHOC_DIALOGUE_MODEL"
-#define DEFAULT_ADHOC_DIALOGUE_MODEL ""
+// Its value also chooses the socket, because the two cannot disagree: the
+// text-to-dialogue socket serves only the v3/v4 families and refuses the fast
+// models with 403, while the text-to-speech socket refuses v3/v4 with 400. So
+// a tag-capable model means performed audio tags over the dialogue socket, and
+// anything else means the text-to-speech socket, as before (issue #248).
+#define ADHOC_VOICE_MODEL_ENV "ADHOC_VOICE_MODEL"
+#define DEFAULT_ADHOC_VOICE_MODEL "eleven_flash_v2_5"
 
 #define RHUBARB_BINARY_PATH_ENV "RHUBARB_BINARY_PATH"
 #define DEFAULT_RHUBARB_BINARY_PATH "/usr/bin/rhubarb"

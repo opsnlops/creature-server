@@ -19,11 +19,12 @@
     "speech is NOT this setting: each creature carries its own voice.model_id,",
     "which has to be one of the fast families.",
     "",
-    "adhoc_dialogue_model routes AD-HOC speech through the text-to-dialogue",
-    "socket on that model, so tags like [sighs] are performed rather than read",
-    "aloud. eleven_v4_turbo reaches first audio in about 140 ms, quicker than",
-    "the fast models manage on the text-to-speech socket. Empty keeps today's",
-    "behaviour."
+    "adhoc_voice_model is the model EVERY creature speaks ad-hoc with. It",
+    "replaces the old per-creature voice.model_id, which the server no longer",
+    "reads. Its value also picks the socket: a v4 model performs audio tags",
+    "like [sighs] over the text-to-dialogue socket and reaches first audio in",
+    "about 140 ms, while eleven_flash_v2_5 uses the text-to-speech socket as",
+    "before."
   ],
 
   "mongodb_uri": "mongodb://127.0.0.1/?serverSelectionTimeoutMS=2000",
@@ -40,5 +41,5 @@
 
   "expressive_voice_model": "eleven_v4",
 
-  "adhoc_dialogue_model": ""
+  "adhoc_voice_model": "eleven_flash_v2_5"
 }

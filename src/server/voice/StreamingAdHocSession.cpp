@@ -313,8 +313,11 @@ Result<void> StreamingAdHocSession::start() {
     renderSeed_ = static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     std::mt19937 rng(static_cast<uint32_t>(renderSeed_));
 
-    // Empty keeps ad-hoc on the text-to-speech socket, exactly as before.
-    const std::string dialogueModel = creatures::config ? creatures::config->getAdHocDialogueModel() : std::string{};
+    // One model for every creature (issue #250), and its value picks the
+    // socket: tag-capable means performed tags over the dialogue socket.
+    const std::string adHocModel =
+        creatures::config ? creatures::config->getAdHocVoiceModel() : std::string{DEFAULT_ADHOC_VOICE_MODEL};
+    const bool useDialogueSocket = supportsAudioTags(adHocModel);
 
     participants_.clear();
     participants_.reserve(config_.creatureIds.size());
@@ -348,7 +351,10 @@ Result<void> StreamingAdHocSession::start() {
             participant.audioChannel = participant.creatureJson.value("audio_channel", static_cast<uint16_t>(1));
             auto voiceConfig = participant.creatureJson["voice"];
             participant.voiceId = voiceConfig["voice_id"].get<std::string>();
-            participant.modelId = voiceConfig["model_id"].get<std::string>();
+            // Not from the creature any more: one server setting decides it
+            // (issue #250). Kept on the participant for spans and the iXML
+            // provenance, which still record what rendered the audio.
+            participant.modelId = adHocModel;
             participant.stability = voiceConfig["stability"].get<float>();
             participant.similarityBoost = voiceConfig["similarity_boost"].get<float>();
         } catch (const std::exception &e) {
@@ -359,21 +365,6 @@ Result<void> StreamingAdHocSession::start() {
             return fail(ServerError(ServerError::InvalidData,
                                     fmt::format("Bad voice config for creature {}: {}", creatureId, e.what())),
                         "InvalidVoiceConfig");
-        }
-
-        // Ad-hoc speech needs a model fast enough to keep up with the
-        // conversation — unless the dialogue socket is carrying this session,
-        // in which case the creature's own model_id is never used and the
-        // requirement does not apply (issue #248). That is what lets a
-        // creature configured for a non-streaming model speak ad-hoc at all.
-        if (dialogueModel.empty() && !supportsAdHocSpeech(participant.modelId)) {
-            // Name the creature: in a cast of several this is the whole
-            // diagnosis, and the world only sees the message.
-            return fail(ServerError(ServerError::InvalidData,
-                                    fmt::format("{}'s voice model '{}' is too slow for streaming ad-hoc speech; use "
-                                                "a fast model such as {}",
-                                                participant.name, participant.modelId, kRecommendedAdHocModelId)),
-                        "UnsupportedVoiceModel");
         }
 
         // Two creatures on one audio lane would talk over each other in the
@@ -448,7 +439,7 @@ Result<void> StreamingAdHocSession::start() {
 
     // The socket demands every voice up front and refuses any it was not told
     // about, so this can only happen once the cast is resolved.
-    if (!dialogueModel.empty()) {
+    if (useDialogueSocket) {
         std::vector<std::string> voiceIds;
         voiceIds.reserve(participants_.size());
         for (const auto &participant : participants_) {
@@ -456,7 +447,7 @@ Result<void> StreamingAdHocSession::start() {
         }
         auto client = std::make_unique<DialogueStreamClient>();
         auto connected =
-            client->connect(creatures::config->getVoiceApiKey(), voiceIds, dialogueModel, "pcm_48000", startSpan);
+            client->connect(creatures::config->getVoiceApiKey(), voiceIds, adHocModel, "pcm_48000", startSpan);
         if (!connected.isSuccess()) {
             // Deliberately fatal rather than a silent fall back to the
             // text-to-speech socket: the two produce audibly different
@@ -467,7 +458,7 @@ Result<void> StreamingAdHocSession::start() {
         dialogueClient_ = std::move(client);
         if (startSpan) {
             startSpan->setAttribute("dialogue.socket", true);
-            startSpan->setAttribute("dialogue.model", dialogueModel);
+            startSpan->setAttribute("dialogue.model", adHocModel);
         }
     }
 

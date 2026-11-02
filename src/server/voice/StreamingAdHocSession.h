@@ -255,8 +255,8 @@ class StreamingAdHocSession {
     TextToViseme textToViseme_;
 
     // One text-to-dialogue connection for the whole session, when
-    // adhoc_dialogue_model is configured; null means ad-hoc stays on the
-    // text-to-speech socket as before (issue #248). Held per session rather
+    // adhoc_voice_model names a tag-capable model; null means ad-hoc stays on
+    // the text-to-speech socket as before (issues #248, #250). Held per session rather
     // than per turn because every turn after the first renders with the
     // earlier ones in context, and a warm socket is what holds time to first
     // audio at ~140 ms. Only the render worker touches it, and it renders one

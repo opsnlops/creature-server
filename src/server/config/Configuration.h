@@ -103,14 +103,13 @@ class Configuration {
     std::string getExpressiveVoiceModel() const;
 
     /**
-     * @return ElevenLabs model for ad-hoc speech over the text-to-dialogue
-     *         socket, or empty to keep ad-hoc on the text-to-speech socket
-     *         with each creature's own voice.model_id (issue #248).
+     * @return ElevenLabs model for ad-hoc speech, for every creature.
      *
-     * When this is set, a creature's own model_id is unused for ad-hoc, and so
-     * is the fast-model requirement that goes with it.
+     * Replaces the old per-creature `voice.model_id`, which the server no
+     * longer reads (issue #250). A tag-capable value also selects the
+     * text-to-dialogue socket, so `[sighs]` is performed rather than spoken.
      */
-    std::string getAdHocDialogueModel() const;
+    std::string getAdHocVoiceModel() const;
 
     /** @return API key for Honeycomb observability service */
     std::string getHoneycombApiKey() const;
@@ -180,8 +179,8 @@ class Configuration {
     /** @param _expressiveVoiceModel ElevenLabs model for dialog and voice files */
     void setExpressiveVoiceModel(std::string _expressiveVoiceModel);
 
-    /** @param _adHocDialogueModel dialogue-socket model for ad-hoc, or empty for off */
-    void setAdHocDialogueModel(std::string _adHocDialogueModel);
+    /** @param _adHocVoiceModel ElevenLabs model for ad-hoc speech */
+    void setAdHocVoiceModel(std::string _adHocVoiceModel);
 
     /** @param _honeycombApiKey API key for Honeycomb observability service */
     void setHoneycombApiKey(std::string _honeycombApiKey);
@@ -287,8 +286,8 @@ class Configuration {
     /** ElevenLabs model for dialog and pre-rendered voice files */
     std::string expressiveVoiceModel = DEFAULT_EXPRESSIVE_VOICE_MODEL;
 
-    /** Dialogue-socket model for ad-hoc speech; empty means off */
-    std::string adHocDialogueModel = DEFAULT_ADHOC_DIALOGUE_MODEL;
+    /** ElevenLabs model every creature speaks ad-hoc with */
+    std::string adHocVoiceModel = DEFAULT_ADHOC_VOICE_MODEL;
 
     /** API key for Honeycomb observability service */
     std::string honeycombApiKey = DEFAULT_HONEYCOMB_API_KEY;

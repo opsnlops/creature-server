@@ -122,7 +122,10 @@ Result<SpeechGenerationResult> SpeechGenerationManager::generate(const SpeechGen
 
         try {
             speechRequest.voice_id = voiceConfig["voice_id"].get<std::string>();
-            speechRequest.model_id = voiceConfig["model_id"].get<std::string>();
+            // One server setting rather than the creature's own model (#250);
+            // voice files still override it with the expressive model below.
+            speechRequest.model_id =
+                creatures::config ? creatures::config->getAdHocVoiceModel() : std::string{DEFAULT_ADHOC_VOICE_MODEL};
             speechRequest.stability = voiceConfig["stability"].get<float>();
             speechRequest.similarity_boost = voiceConfig["similarity_boost"].get<float>();
             if (request.modelIdOverride) {

@@ -102,12 +102,37 @@ transparently. A reconnect loses the shared context — a quality regression, no
 an error — so it gets a span attribute and we watch how often it happens in
 production before deciding whether to keep a keepalive instead.
 
-### 4. Config switch, defaulting off
+### 4. One setting, server-side, defaulting to today's behaviour
 
-This path is used constantly, so it ships behind a setting and defaults to
-today's behaviour until it has run on real birds. Note that the fallback is the
-whole path, not just the model: Flash is refused on the dialogue socket with
-403, so there is no mixing the two.
+`adhoc_voice_model` is the model every creature speaks ad-hoc with, and its
+value also picks the socket: a tag-capable v4 model routes to text-to-dialogue,
+anything else to text-to-speech. One setting rather than a flag plus a model
+because the two cannot disagree — the dialogue socket refuses the fast models
+with 403 and the text-to-speech socket refuses v3/v4 with 400, so the path
+follows the model and a single value can never contradict itself.
+
+It defaults to `eleven_flash_v2_5`, which is what most creatures already used,
+so nothing changes until asked.
+
+This replaced the old per-creature `voice.model_id`, which the server no longer
+reads at all (issue #250). That block was never strictly validated — readers
+pull fields out of the raw JSON in a try/catch and only `voice_id` is required
+anywhere — so existing controller JSONs keep working untouched and can be
+cleaned up whenever convenient.
+
+Three consequences:
+
+- **Cobalt gains working ad-hoc speech.** It was configured for
+  `eleven_multilingual_v2`, which no ad-hoc socket serves, so every ad-hoc turn
+  for it failed. That model is now refused at startup with an explanation
+  instead of failing silently per turn.
+- Caroll and Dev Board 2 come off the deprecated `eleven_turbo_v2_5` without
+  anyone editing a controller.
+- The job-based ad-hoc path (`handleAdHocSpeechJob` →
+  `StreamingSpeechGenerationManager`) cannot use the v4 families on its
+  text-to-speech socket, so it declines early and lets its existing REST
+  fallback render the job. That fallback does serve v4 — verified against the
+  live API — so a v4 setting costs that path its streaming, not its output.
 
 ### 5. Leave prosody chaining alone for now
 

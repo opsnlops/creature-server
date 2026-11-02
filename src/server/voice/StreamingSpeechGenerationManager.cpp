@@ -96,20 +96,24 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
         // Extract voice config
         auto voiceConfig = creatureJson["voice"];
         std::string voiceId = voiceConfig["voice_id"].get<std::string>();
-        std::string modelId = voiceConfig["model_id"].get<std::string>();
+        const std::string modelId =
+            creatures::config ? creatures::config->getAdHocVoiceModel() : std::string{DEFAULT_ADHOC_VOICE_MODEL};
         float stability = voiceConfig["stability"].get<float>();
         float similarityBoost = voiceConfig["similarity_boost"].get<float>();
 
-        // The stream-input WebSocket rejects the v3/v4 and older multilingual models,
-        // so the creature's voice config must name a fast streaming model.
+        // The stream-input WebSocket rejects the v3/v4 families outright, so
+        // decline here rather than discovering an HTTP 400 at the socket. This
+        // is not a failure: the caller (handleAdHocSpeechJob) falls back to the
+        // REST path, which does serve v4 — so a v4 adhoc_voice_model costs this
+        // path its streaming, not its output (issue #250).
         if (!supportsAdHocSpeech(modelId)) {
-            std::string errorMsg = fmt::format("Creature '{}' is configured with model '{}' which does not support "
-                                               "WebSocket streaming. Change the creature's voice model to '{}' in the "
-                                               "creature config, then try again.",
-                                               request.creatureId, modelId, kRecommendedAdHocModelId);
-            warn(errorMsg);
+            std::string errorMsg =
+                fmt::format("adhoc_voice_model '{}' is not served by the text-to-speech WebSocket; the REST path "
+                            "will render this job instead",
+                            modelId);
+            debug(errorMsg);
             if (span) {
-                span->setError(errorMsg);
+                span->setAttribute("speech.declined_model", modelId);
             }
             return Result<StreamingSpeechResult>{ServerError(ServerError::InvalidData, errorMsg)};
         }
