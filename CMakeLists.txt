@@ -930,6 +930,7 @@ add_executable(creature-server-test
         src/server/config/Configuration.cpp
         tests/server/FakeWebsocketUtils.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
+        tests/server/voice/TurnText_test.cpp
         tests/server/voice/MusicClient_test.cpp
         tests/server/voice/MusicTypes_test.cpp
         tests/server/voice/MusicGenerationCache_test.cpp

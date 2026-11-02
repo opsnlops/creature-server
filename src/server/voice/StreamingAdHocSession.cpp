@@ -33,6 +33,7 @@
 #include "server/voice/DialogClient.h"
 #include "server/voice/ElevenLabsModels.h"
 #include "server/voice/SpeechTrackBuilder.h"
+#include "server/voice/TurnText.h"
 #include "util/Slugify.h"
 #include "util/ThreadPriority.h"
 #include "util/cache.h"
@@ -599,10 +600,14 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
                                         fmt::format("Streaming text chunk must contain between 1 and {} bytes",
                                                     MAX_STREAMING_AD_HOC_CHUNK_TEXT_BYTES))};
     }
-    // Ad-hoc voices use the fast models, which read "[laughs]" aloud instead of
-    // laughing. Everything downstream (TTS, transcript, provenance) sees only the
-    // spoken words.
-    const std::string text = DialogClient::stripTags(rawText);
+    // What ElevenLabs is asked to say, and what the server records. The
+    // dialogue socket performs inline tags like [sighs], so it is given the
+    // line as written; a fast model would read the tag aloud, so it gets the
+    // spoken words alone. Everything else downstream — transcript, animation
+    // title, exchange provenance — only ever sees the spoken words (#253).
+    const TurnText turnText = splitTurnText(rawText, dialogueClient_ != nullptr);
+    const std::string text = turnText.forRecord;
+    const std::string providerText = turnText.forProvider;
     if (text.empty()) {
         return Result<void>{
             ServerError(ServerError::InvalidData, "Streaming text chunk contains only audio tags, no spoken words")};
@@ -676,9 +681,13 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
         sentenceSpan->setAttribute("creature.id", speaker.creatureId);
         sentenceSpan->setAttribute("sentence.index", static_cast<int64_t>(sentenceIndex));
         sentenceSpan->setAttribute("sentence.length", static_cast<int64_t>(text.size()));
+        // True when this turn carries audio tags the model will act out, which
+        // is the difference between a sigh and the word "sighs" (#253).
+        sentenceSpan->setAttribute("sentence.tags_performed", providerText != text);
     }
 
-    std::packaged_task<Result<RenderedTurn>()> renderTask([this, text, sentenceIndex, speakerIndex, sentenceSpan,
+    std::packaged_task<Result<RenderedTurn>()> renderTask([this, text, providerText, sentenceIndex, speakerIndex,
+                                                           sentenceSpan,
                                                            renderReservation =
                                                                std::move(renderReservation)]() -> Result<RenderedTurn> {
         (void)renderReservation;
@@ -718,10 +727,11 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
             // untouched by which one rendered the turn (issue #248).
             StreamingTTSClient client;
             Result<StreamingTTSResult> ttsResult =
-                dialogueClient_ ? dialogueClient_->renderTurn(speaker.voiceId, text, sentenceSpan)
-                                : client.generateSpeechREST(creatures::config->getVoiceApiKey(), speaker.voiceId,
-                                                            speaker.modelId, text, "pcm_48000", speaker.stability,
-                                                            speaker.similarityBoost, prevIds, nullptr, sentenceSpan);
+                dialogueClient_
+                    ? dialogueClient_->renderTurn(speaker.voiceId, providerText, sentenceSpan)
+                    : client.generateSpeechREST(creatures::config->getVoiceApiKey(), speaker.voiceId, speaker.modelId,
+                                                providerText, "pcm_48000", speaker.stability, speaker.similarityBoost,
+                                                prevIds, nullptr, sentenceSpan);
             if (!ttsResult.isSuccess()) {
                 const auto failure = ttsResult.getError().value();
                 lifecycleFailed_.store(true);
@@ -925,7 +935,13 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
             }
 
             // 7. Build animation object
-            auto textSlug = util::slugify(tts.alignmentText.empty() ? text : tts.alignmentText, 40, "speech");
+            // The dialogue socket echoes the tags back in its alignment, and an
+            // animation called "sighs-fine-we-ll-try-again" is named after a
+            // cue nobody says. Strip them back out before slugifying; fall
+            // back to the recorded text if that leaves nothing (#253).
+            const std::string alignmentWords =
+                tts.alignmentText.empty() ? std::string{} : DialogClient::stripTags(tts.alignmentText);
+            auto textSlug = util::slugify(alignmentWords.empty() ? text : alignmentWords, 40, "speech");
             Animation animation = participants_.front().baseAnimation;
             animation.id = animationId;
             animation.metadata.animation_id = animation.id;

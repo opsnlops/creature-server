@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <iostream>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -98,6 +99,47 @@ TEST(DialogueStreamClientLive, RendersTurnsOverOneWarmSocket) {
         ASSERT_GE(firstTurn.charTimings[i].startTimeMs, firstTurn.charTimings[i - 1].startTimeMs)
             << "character timings go backwards at index " << i;
     }
+
+    // What the socket does with the tag's own characters, which decides whether
+    // the beak has to be held shut through the sigh (#253). Either shape is
+    // handled — charTimingsToMouthCues skips bracketed characters, and a hole
+    // in the timeline rests on its own — so this records which one arrived
+    // rather than demanding one. The mouth is checked against both in
+    // TurnText_test.
+    std::cerr << "[ tag wire ] alignment text: " << firstTurn.alignmentText << "\n";
+    const bool echoesTheTag = firstTurn.alignmentText.find("[sighs]") != std::string::npos;
+    std::cerr << "[ tag wire ] tag characters are " << (echoesTheTag ? "echoed in" : "absorbed before")
+              << " the alignment\n";
+    if (echoesTheTag) {
+        // Where the performance sits, which is the stretch the beak is held
+        // shut across. Printed rather than asserted: the beak rests either way,
+        // but a span that collapsed to nothing would mean the sigh had moved
+        // somewhere the alignment cannot see.
+        double tagStartMs = -1.0;
+        double tagEndMs = -1.0;
+        int depth = 0;
+        for (const auto &timing : firstTurn.charTimings) {
+            if (timing.character == '[') {
+                ++depth;
+                if (tagStartMs < 0.0)
+                    tagStartMs = timing.startTimeMs;
+            }
+            if (depth > 0)
+                tagEndMs = timing.startTimeMs + timing.durationMs;
+            if (timing.character == ']' && depth > 0)
+                --depth;
+        }
+        std::cerr << "[ tag wire ] tag span: " << tagStartMs << " ms -> " << tagEndMs << " ms of " << audioMs
+                  << " ms of audio\n";
+    }
+
+    // The sigh has to actually take time. A tag that was silently dropped
+    // would come back as the two sentences alone, and nothing else in this
+    // test can tell the difference.
+    const double words = static_cast<double>(firstTurn.alignmentText.size());
+    EXPECT_GT(firstTurn.audioDurationSeconds, words * 0.055)
+        << "only " << firstTurn.audioDurationSeconds << "s for " << words
+        << " characters; the tag looks dropped rather than performed";
 
     // A second turn on the SAME connection. This is what the whole design rests
     // on: the socket stays warm so later turns keep the earlier context, and
