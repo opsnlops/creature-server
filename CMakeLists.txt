@@ -940,6 +940,8 @@ add_executable(creature-server-test
         tests/server/voice/TurnConcat_test.cpp
         tests/server/voice/StreamingTTSClient_duration_test.cpp
         tests/server/voice/DialogueWire_test.cpp
+        tests/server/voice/DialogueStreamClient_live_test.cpp
+        src/server/voice/DialogueStreamClient.cpp
         tests/server/voice/ElevenLabsHttp_test.cpp
         tests/server/voice/ElevenLabsModels_test.cpp
         src/server/voice/ElevenLabsModels.cpp

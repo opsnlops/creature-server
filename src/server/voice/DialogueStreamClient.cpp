@@ -52,8 +52,14 @@ void DialogueStreamClient::close() {
     }
     // Dropped outside the lock: stop() joins IXWebSocket's thread, and that
     // thread takes the same mutex in onTextFrame().
+    //
+    // The callback is deliberately LEFT INSTALLED. ix::WebSocket's constructor
+    // registers a close handler that invokes the message callback without
+    // checking it (IXWebSocket.cpp:46), so clearing it first and then calling
+    // stop() throws std::bad_function_call on IXWebSocket's own thread and
+    // aborts the process. stop() joins that thread, so by the time it returns
+    // no further callback can run and leaving it set is safe.
     if (doomed) {
-        doomed->setOnMessageCallback(nullptr);
         doomed->stop();
     }
 }
@@ -211,8 +217,11 @@ void DialogueStreamClient::onTextFrame(const std::string &payload) {
 
 Result<StreamingTTSResult> DialogueStreamClient::renderTurn(const std::string &voiceId, const std::string &text,
                                                             std::shared_ptr<OperationSpan> parentSpan) {
-    auto span =
-        creatures::observability->createChildOperationSpan("DialogueStreamClient.renderTurn", std::move(parentSpan));
+    // Guarded: the test binary leaves the global null, and a live gate that
+    // crashed on a null observability would be worse than no gate at all.
+    auto span = creatures::observability ? creatures::observability->createChildOperationSpan(
+                                               "DialogueStreamClient.renderTurn", std::move(parentSpan))
+                                         : nullptr;
     if (span) {
         span->setAttribute("voice.id", voiceId);
         span->setAttribute("voice.model", modelId_);
