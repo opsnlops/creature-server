@@ -1,11 +1,13 @@
 #pragma once
 
 #include <algorithm>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -113,8 +115,11 @@ struct StreamingTTSResult {
  * 5. Server responds with interleaved binary audio chunks and JSON alignment data
  * 6. Connection closes when stream is complete
  *
- * This implementation uses OpenSSL for TLS and manual WebSocket framing
- * because the server's HTTP transport does not provide a reusable TLS client.
+ * Uses IXWebSocket, as the dialogue client and creature-controller do. It
+ * previously hand-rolled TLS and framing over OpenSSL because the transport of
+ * the day offered no reusable TLS client; that is no longer true, and roughly
+ * 450 lines of handshake, masking, fragment reassembly and ping/pong went away
+ * with it (issue #251).
  */
 /**
  * Pull one alignment object apart into character timings.
@@ -204,36 +209,19 @@ class StreamingTTSClient {
                                                   std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
   private:
-    struct SSLConnection;
-    std::unique_ptr<SSLConnection> conn_;
+    /// Called on IXWebSocket's thread for each frame of a stream.
+    void onFrame(const std::string &payload, bool binary);
 
-    /**
-     * Establish TLS connection and perform WebSocket handshake.
-     */
-    Result<void> connectWebSocket(const std::string &host, uint16_t port, const std::string &path,
-                                  const std::string &apiKey, std::shared_ptr<OperationSpan> parentSpan);
-
-    /**
-     * Send a WebSocket text frame.
-     */
-    Result<void> sendTextFrame(const std::string &text);
-
-    /**
-     * Send a WebSocket close frame.
-     */
-    void sendCloseFrame();
-
-    /**
-     * Receive and process all WebSocket frames until the connection closes.
-     * Accumulates audio data and alignment information.
-     */
-    Result<StreamingTTSResult> receiveAllFrames(const std::string &outputFormat, ProgressCallback progressCallback,
-                                                std::shared_ptr<OperationSpan> parentSpan);
-
-    /**
-     * Close the connection and free resources.
-     */
-    void disconnect();
+    // One sentence per connection, so this state belongs to the single
+    // generateSpeech() call in flight. IXWebSocket delivers frames on its own
+    // thread; the caller blocks on cv_ until that thread says the stream
+    // finished.
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    StreamingTTSResult pending_;
+    bool open_{false};
+    bool complete_{false};
+    std::string failure_;
 };
 
 } // namespace creatures::voice
