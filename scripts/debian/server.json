@@ -17,7 +17,13 @@
     "expressive_voice_model is the ElevenLabs model for dialog and pre-rendered",
     "voice files, which want performed audio tags more than low latency. Ad-hoc",
     "speech is NOT this setting: each creature carries its own voice.model_id,",
-    "which has to be one of the fast families."
+    "which has to be one of the fast families.",
+    "",
+    "adhoc_dialogue_model routes AD-HOC speech through the text-to-dialogue",
+    "socket on that model, so tags like [sighs] are performed rather than read",
+    "aloud. eleven_v4_turbo reaches first audio in about 140 ms, quicker than",
+    "the fast models manage on the text-to-speech socket. Empty keeps today's",
+    "behaviour."
   ],
 
   "mongodb_uri": "mongodb://127.0.0.1/?serverSelectionTimeoutMS=2000",
@@ -32,5 +38,7 @@
 
   "sound_channels": 2,
 
-  "expressive_voice_model": "eleven_v4"
+  "expressive_voice_model": "eleven_v4",
+
+  "adhoc_dialogue_model": ""
 }

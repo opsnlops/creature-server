@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "DialogueStreamClient.h"
 #include "GazeTrack.h"
 #include "StreamingTTSClient.h"
 #include "TextToViseme.h"
@@ -252,6 +253,15 @@ class StreamingAdHocSession {
 
     // TextToViseme (loaded once in start())
     TextToViseme textToViseme_;
+
+    // One text-to-dialogue connection for the whole session, when
+    // adhoc_dialogue_model is configured; null means ad-hoc stays on the
+    // text-to-speech socket as before (issue #248). Held per session rather
+    // than per turn because every turn after the first renders with the
+    // earlier ones in context, and a warm socket is what holds time to first
+    // audio at ~140 ms. Only the render worker touches it, and it renders one
+    // turn at a time, which is what the client requires.
+    std::unique_ptr<DialogueStreamClient> dialogueClient_;
 
     // Futures for in-flight sentence processing (TTS + build, one per sentence)
     // Each future produces a ready-to-play turn

@@ -102,6 +102,16 @@ class Configuration {
      */
     std::string getExpressiveVoiceModel() const;
 
+    /**
+     * @return ElevenLabs model for ad-hoc speech over the text-to-dialogue
+     *         socket, or empty to keep ad-hoc on the text-to-speech socket
+     *         with each creature's own voice.model_id (issue #248).
+     *
+     * When this is set, a creature's own model_id is unused for ad-hoc, and so
+     * is the fast-model requirement that goes with it.
+     */
+    std::string getAdHocDialogueModel() const;
+
     /** @return API key for Honeycomb observability service */
     std::string getHoneycombApiKey() const;
 
@@ -169,6 +179,9 @@ class Configuration {
 
     /** @param _expressiveVoiceModel ElevenLabs model for dialog and voice files */
     void setExpressiveVoiceModel(std::string _expressiveVoiceModel);
+
+    /** @param _adHocDialogueModel dialogue-socket model for ad-hoc, or empty for off */
+    void setAdHocDialogueModel(std::string _adHocDialogueModel);
 
     /** @param _honeycombApiKey API key for Honeycomb observability service */
     void setHoneycombApiKey(std::string _honeycombApiKey);
@@ -273,6 +286,9 @@ class Configuration {
 
     /** ElevenLabs model for dialog and pre-rendered voice files */
     std::string expressiveVoiceModel = DEFAULT_EXPRESSIVE_VOICE_MODEL;
+
+    /** Dialogue-socket model for ad-hoc speech; empty means off */
+    std::string adHocDialogueModel = DEFAULT_ADHOC_DIALOGUE_MODEL;
 
     /** API key for Honeycomb observability service */
     std::string honeycombApiKey = DEFAULT_HONEYCOMB_API_KEY;

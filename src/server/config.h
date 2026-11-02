@@ -96,6 +96,18 @@
 #define EXPRESSIVE_VOICE_MODEL_ENV "EXPRESSIVE_VOICE_MODEL"
 #define DEFAULT_EXPRESSIVE_VOICE_MODEL "eleven_v4"
 
+// Routes AD-HOC speech through ElevenLabs' text-to-dialogue socket on this
+// model, which performs audio tags instead of pronouncing them (issue #248).
+// Empty — the default — keeps ad-hoc on the text-to-speech socket with each
+// creature's own voice.model_id, exactly as before.
+//
+// One setting rather than a flag plus a model, because the two cannot
+// disagree: the dialogue socket serves only the v3/v4 families and refuses
+// the fast models with 403, while the text-to-speech socket refuses v3/v4
+// with 400. The path follows the model.
+#define ADHOC_DIALOGUE_MODEL_ENV "ADHOC_DIALOGUE_MODEL"
+#define DEFAULT_ADHOC_DIALOGUE_MODEL ""
+
 #define RHUBARB_BINARY_PATH_ENV "RHUBARB_BINARY_PATH"
 #define DEFAULT_RHUBARB_BINARY_PATH "/usr/bin/rhubarb"
 

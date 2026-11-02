@@ -313,6 +313,9 @@ Result<void> StreamingAdHocSession::start() {
     renderSeed_ = static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     std::mt19937 rng(static_cast<uint32_t>(renderSeed_));
 
+    // Empty keeps ad-hoc on the text-to-speech socket, exactly as before.
+    const std::string dialogueModel = creatures::config ? creatures::config->getAdHocDialogueModel() : std::string{};
+
     participants_.clear();
     participants_.reserve(config_.creatureIds.size());
     std::unordered_map<uint16_t, std::string> channelOwner;
@@ -358,8 +361,12 @@ Result<void> StreamingAdHocSession::start() {
                         "InvalidVoiceConfig");
         }
 
-        // Ad-hoc speech needs a model fast enough to keep up with the conversation.
-        if (!supportsAdHocSpeech(participant.modelId)) {
+        // Ad-hoc speech needs a model fast enough to keep up with the
+        // conversation — unless the dialogue socket is carrying this session,
+        // in which case the creature's own model_id is never used and the
+        // requirement does not apply (issue #248). That is what lets a
+        // creature configured for a non-streaming model speak ad-hoc at all.
+        if (dialogueModel.empty() && !supportsAdHocSpeech(participant.modelId)) {
             // Name the creature: in a cast of several this is the whole
             // diagnosis, and the world only sees the message.
             return fail(ServerError(ServerError::InvalidData,
@@ -437,6 +444,31 @@ Result<void> StreamingAdHocSession::start() {
         }
 
         participants_.push_back(std::move(participant));
+    }
+
+    // The socket demands every voice up front and refuses any it was not told
+    // about, so this can only happen once the cast is resolved.
+    if (!dialogueModel.empty()) {
+        std::vector<std::string> voiceIds;
+        voiceIds.reserve(participants_.size());
+        for (const auto &participant : participants_) {
+            voiceIds.push_back(participant.voiceId);
+        }
+        auto client = std::make_unique<DialogueStreamClient>();
+        auto connected =
+            client->connect(creatures::config->getVoiceApiKey(), voiceIds, dialogueModel, "pcm_48000", startSpan);
+        if (!connected.isSuccess()) {
+            // Deliberately fatal rather than a silent fall back to the
+            // text-to-speech socket: the two produce audibly different
+            // performances, and a session that quietly stopped performing its
+            // tags would be a puzzle to debug from the audio alone.
+            return fail(connected.getError().value(), "DialogueSocketUnavailable");
+        }
+        dialogueClient_ = std::move(client);
+        if (startSpan) {
+            startSpan->setAttribute("dialogue.socket", true);
+            startSpan->setAttribute("dialogue.model", dialogueModel);
+        }
     }
 
     // Which universe to play into. Resolved from the participants that ARE
@@ -687,12 +719,18 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
                 prevIds.push_back(speakerBefore.lastRequestId);
             }
 
-            StreamingTTSClient client;
             // Request raw mono 48 kHz S16 PCM directly (issue #12). The
             // 17-channel WAV is wrapped in-process below; no ffmpeg decode hop.
-            auto ttsResult = client.generateSpeechREST(creatures::config->getVoiceApiKey(), speaker.voiceId,
-                                                       speaker.modelId, text, "pcm_48000", speaker.stability,
-                                                       speaker.similarityBoost, prevIds, nullptr, sentenceSpan);
+            //
+            // Either socket hands back a StreamingTTSResult, so everything
+            // downstream — the WAV wrap, the visemes, the provenance — is
+            // untouched by which one rendered the turn (issue #248).
+            StreamingTTSClient client;
+            Result<StreamingTTSResult> ttsResult =
+                dialogueClient_ ? dialogueClient_->renderTurn(speaker.voiceId, text, sentenceSpan)
+                                : client.generateSpeechREST(creatures::config->getVoiceApiKey(), speaker.voiceId,
+                                                            speaker.modelId, text, "pcm_48000", speaker.stability,
+                                                            speaker.similarityBoost, prevIds, nullptr, sentenceSpan);
             if (!ttsResult.isSuccess()) {
                 const auto failure = ttsResult.getError().value();
                 lifecycleFailed_.store(true);
