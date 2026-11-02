@@ -1,13 +1,11 @@
 #pragma once
 
 #include <algorithm>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -189,29 +187,6 @@ class StreamingTTSClient {
     StreamingTTSClient &operator=(const StreamingTTSClient &) = delete;
 
     /**
-     * Generate speech via ElevenLabs WebSocket streaming API.
-     *
-     * Connects, sends text, accumulates audio + alignment data, returns result.
-     * This is a blocking call that completes when the stream finishes.
-     *
-     * @param apiKey ElevenLabs API key
-     * @param voiceId Voice ID to use
-     * @param modelId Model ID (e.g., "eleven_turbo_v2")
-     * @param text Full text to synthesize
-     * @param outputFormat Audio output format ("pcm_48000" or "mp3_44100_192")
-     * @param stability Voice stability parameter (0.0-1.0)
-     * @param similarityBoost Voice similarity boost parameter (0.0-1.0)
-     * @param progressCallback Optional progress callback
-     * @param parentSpan Optional observability span
-     * @return StreamingTTSResult with audio data and alignment cues
-     */
-    Result<StreamingTTSResult> generateSpeech(const std::string &apiKey, const std::string &voiceId,
-                                              const std::string &modelId, const std::string &text,
-                                              const std::string &outputFormat, float stability, float similarityBoost,
-                                              ProgressCallback progressCallback = nullptr,
-                                              std::shared_ptr<OperationSpan> parentSpan = nullptr);
-
-    /**
      * Generate speech via ElevenLabs REST streaming API with timestamps.
      *
      * Uses POST /v1/text-to-speech/{voice_id}/stream/with-timestamps which
@@ -226,23 +201,6 @@ class StreamingTTSClient {
                                                   const std::vector<std::string> &previousRequestIds = {},
                                                   ProgressCallback progressCallback = nullptr,
                                                   std::shared_ptr<OperationSpan> parentSpan = nullptr);
-
-  private:
-    /// Called on IXWebSocket's thread for each frame of a stream.
-    void onFrame(const std::string &payload, bool binary);
-
-    // One sentence per connection, so this state belongs to the single
-    // generateSpeech() call in flight. IXWebSocket delivers frames on its own
-    // thread; the caller blocks on cv_ until that thread says the stream
-    // finished.
-    std::mutex mutex_;
-    std::condition_variable cv_;
-    StreamingTTSResult pending_;
-    bool open_{false};
-    bool complete_{false};
-    std::string failure_;
-    /// Unused by this socket's absolute times, but the parser takes one.
-    double alignmentOffsetMs_{0.0};
 };
 
 } // namespace creatures::voice
