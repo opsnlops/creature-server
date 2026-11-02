@@ -98,6 +98,12 @@ std::string Configuration::getVoiceApiKey() const { return this->voiceApiKey; }
 
 void Configuration::setVoiceApiKey(std::string _voiceApiKey) { this->voiceApiKey = std::move(_voiceApiKey); }
 
+std::string Configuration::getExpressiveVoiceModel() const { return this->expressiveVoiceModel; }
+
+void Configuration::setExpressiveVoiceModel(std::string _expressiveVoiceModel) {
+    this->expressiveVoiceModel = std::move(_expressiveVoiceModel);
+}
+
 std::string Configuration::getHoneycombApiKey() const { return this->honeycombApiKey; }
 
 void Configuration::setHoneycombApiKey(std::string _honeycombApiKey) {

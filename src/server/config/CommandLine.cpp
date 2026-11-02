@@ -27,6 +27,7 @@
 #include "server/config/InterfaceIndex.h"
 #include "server/config/MongoUri.h"
 #include "server/namespace-stuffs.h"
+#include "server/voice/ElevenLabsModels.h"
 #include "util/environment.h"
 
 /*
@@ -191,6 +192,13 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     program.add_argument("-v", "--voice-api-key")
         .help("ElevenLabs API key")
         .default_value(environmentToString(VOICE_API_KEY_ENV, DEFAULT_VOICE_API_KEY))
+        .nargs(1);
+
+    program.add_argument("--expressive-voice-model")
+        .help("ElevenLabs model for dialog and pre-rendered voice files, which want performed audio tags more than "
+              "they want low latency. Ad-hoc speech is unaffected: it uses the creature's own voice.model_id")
+        .default_value(environmentToString(
+            EXPRESSIVE_VOICE_MODEL_ENV, configFile.stringOr("expressive_voice_model", DEFAULT_EXPRESSIVE_VOICE_MODEL)))
         .nargs(1);
 
     program.add_argument("-r", "--rhubarb-binary-path")
@@ -568,6 +576,27 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     }
     config->setLipSyncEngine(lipSyncEngine);
     debug("set lip sync engine to {}", lipSyncEngine);
+
+    auto expressiveVoiceModel = program.get<std::string>("--expressive-voice-model");
+    if (expressiveVoiceModel.empty()) {
+        // Name every layer it could have come from, the way the audio_mode
+        // error learned to (issue #242).
+        critical("expressive voice model cannot be empty (from the config file's expressive_voice_model, {}, or "
+                 "--expressive-voice-model)",
+                 EXPRESSIVE_VOICE_MODEL_ENV);
+        std::exit(1);
+    }
+    // Any non-empty model is accepted on purpose. Refusing one we don't
+    // recognize would defeat the point of making this configurable, since
+    // ElevenLabs ships models faster than we cut releases. A model that reads
+    // "[laughs]" aloud instead of laughing is still worth a word.
+    if (!voice::supportsAudioTags(expressiveVoiceModel)) {
+        warn("expressive voice model '{}' is not known to perform inline audio tags; dialog and voice files may "
+             "speak tags such as [laughs] aloud",
+             expressiveVoiceModel);
+    }
+    config->setExpressiveVoiceModel(expressiveVoiceModel);
+    debug("set expressive voice model to {}", expressiveVoiceModel);
 
     auto networkDeviceName = program.get<std::string>("-n");
     debug("read network device name {} from command line", networkDeviceName);

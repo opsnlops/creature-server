@@ -221,12 +221,13 @@ std::vector<uint8_t> readBinary(const std::filesystem::path &p) {
 std::string computeCacheKey(const std::vector<DialogInput> &turns) {
     // Stable JSON serialization keyed by short field names so the hash doesn't
     // shift if someone renames a struct field. Model identifier is prefixed
-    // so a future model bump cleanly invalidates the cache for these inputs.
+    // so a model change cleanly invalidates the cache for these inputs — which
+    // now happens for free when the configured model changes (issue #244).
     auto arr = nlohmann::json::array();
     for (const auto &t : turns) {
         arr.push_back({{"v", t.voiceId}, {"t", t.text}});
     }
-    std::string serialized = std::string(kExpressiveModelId) + "|" + arr.dump();
+    std::string serialized = expressiveModelId() + "|" + arr.dump();
     return util::sha256Hex(serialized);
 }
 

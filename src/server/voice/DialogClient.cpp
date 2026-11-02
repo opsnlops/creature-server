@@ -225,7 +225,7 @@ Result<DialogResult> DialogClient::generateDialog(const std::string &apiKey, con
     // are too slow for the ad-hoc paths, which refuse them, but dialog is
     // rendered ahead of time and wants v4's performed audio tags (issue #220).
     nlohmann::json body;
-    body["model_id"] = kExpressiveModelId;
+    body["model_id"] = expressiveModelId();
     auto inputsArr = nlohmann::json::array();
     for (const auto &in : inputs) {
         inputsArr.push_back({{"voice_id", in.voiceId}, {"text", in.text}});

@@ -150,7 +150,7 @@ class DialogClient {
      * Generate multi-character dialog via the ElevenLabs Text-to-Dialogue API.
      *
      * Endpoint: POST /v1/text-to-dialogue/with-timestamps?output_format={format}
-     * Model is kExpressiveModelId (eleven_v4) — the fast models are
+     * Model is expressiveModelId() (eleven_v4 by default) — the fast models are
      * server-rejected for this endpoint with HTTP 400 "does not support
      * dialogue", and the ad-hoc paths refuse the v3/v4 families as too slow.
      *

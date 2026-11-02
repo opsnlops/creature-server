@@ -103,7 +103,7 @@ VoiceService::generateCreatureSpeech(const api::MakeSoundFileRequest &request,
     helperRequest.outputDirectory = std::filesystem::path(creatures::config->getSoundFileLocation());
     helperRequest.parentSpan = speechSpan;
     helperRequest.voiceClient = client.getValue().value();
-    helperRequest.modelIdOverride = voice::kExpressiveModelId;
+    helperRequest.modelIdOverride = voice::expressiveModelId();
 
     auto result = voice::SpeechGenerationManager::generate(helperRequest);
     if (!result.isSuccess()) {

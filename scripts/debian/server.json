@@ -12,7 +12,12 @@
     "be overridden for one run without editing the file.",
     "",
     "SECRETS DO NOT BELONG HERE. VOICE_API_KEY and HONEYCOMB_API_KEY go in",
-    "/etc/default/creature-server, which the unit reads as an EnvironmentFile."
+    "/etc/default/creature-server, which the unit reads as an EnvironmentFile.",
+    "",
+    "expressive_voice_model is the ElevenLabs model for dialog and pre-rendered",
+    "voice files, which want performed audio tags more than low latency. Ad-hoc",
+    "speech is NOT this setting: each creature carries its own voice.model_id,",
+    "which has to be one of the fast families."
   ],
 
   "mongodb_uri": "mongodb://127.0.0.1/?serverSelectionTimeoutMS=2000",
@@ -25,5 +30,7 @@
 
   "audio_mode": "rtp",
 
-  "sound_channels": 2
+  "sound_channels": 2,
+
+  "expressive_voice_model": "eleven_v4"
 }

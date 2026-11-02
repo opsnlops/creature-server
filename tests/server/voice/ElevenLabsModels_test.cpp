@@ -1,10 +1,18 @@
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "server/config/Configuration.h"
 #include "server/voice/ElevenLabsModels.h"
 #include "server/voice/TextToViseme.h"
+
+namespace creatures {
+// Defined in TestGlobals.cpp, and null unless a test stands one up — the same
+// way DialogCache_test reaches it.
+extern std::shared_ptr<Configuration> config;
+} // namespace creatures
 
 namespace creatures::voice {
 
@@ -35,7 +43,49 @@ TEST(ElevenLabsModels, AdHocSpeechRefusesSlowAndNonStreamingModels) {
     EXPECT_FALSE(supportsAdHocSpeech("eleven_multilingual_v1"));
 }
 
-TEST(ElevenLabsModels, TheExpressiveModelPerformsTags) { EXPECT_TRUE(supportsAudioTags(kExpressiveModelId)); }
+TEST(ElevenLabsModels, TheDefaultExpressiveModelPerformsTags) {
+    EXPECT_TRUE(supportsAudioTags(kDefaultExpressiveModelId));
+}
+
+namespace {
+
+/// Exposes the protected setter, the same trick DialogCache_test uses.
+class TestConfiguration : public Configuration {
+  public:
+    using Configuration::setExpressiveVoiceModel;
+};
+
+/// Swaps the global Configuration for the duration of a test.
+class ExpressiveModelTest : public ::testing::Test {
+  protected:
+    void TearDown() override { config = saved_; }
+    std::shared_ptr<Configuration> saved_ = config;
+};
+
+} // namespace
+
+// The test binary almost never stands up a Configuration, and computeCacheKey()
+// reaches for the model from a couple of dozen tests. A null config has to mean
+// "the built-in default", not a crash (issue #244).
+TEST_F(ExpressiveModelTest, FallsBackToTheDefaultWithNoConfiguration) {
+    config.reset();
+    EXPECT_EQ(expressiveModelId(), std::string(kDefaultExpressiveModelId));
+}
+
+// The whole point of #244: switch models without a recompile.
+TEST_F(ExpressiveModelTest, ReadsTheConfiguredModel) {
+    auto testConfig = std::make_shared<TestConfiguration>();
+    testConfig->setExpressiveVoiceModel("eleven_v4_turbo");
+    config = testConfig;
+    EXPECT_EQ(expressiveModelId(), "eleven_v4_turbo");
+}
+
+// An unconfigured Configuration still carries the built-in default, so a
+// server started with no config file renders dialog exactly as before.
+TEST_F(ExpressiveModelTest, AnUnsetConfigurationStillHoldsTheDefault) {
+    config = std::make_shared<TestConfiguration>();
+    EXPECT_EQ(expressiveModelId(), std::string(kDefaultExpressiveModelId));
+}
 
 namespace {
 
