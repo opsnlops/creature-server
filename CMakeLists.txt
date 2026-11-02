@@ -233,6 +233,31 @@ FetchContent_MakeAvailable(ogg)
 # miniaudio is used only as an in-process WAV/MP3/FLAC decoder. Device I/O,
 # engine, and resource-manager code are disabled; ALSA/CoreAudio ownership
 # remains in the explicit native backends below.
+# WebSocket CLIENT. uWebSockets is server-only — its ClientApp.h is an
+# unimplemented stub (empty connect(), commented-out constructor, never
+# included), so it cannot talk to ElevenLabs. The controller already uses
+# IXWebSocket for its own server connection, so this keeps one WebSocket client
+# across both repos (issue #248).
+#
+# Unlike the controller's plain ws:// LAN link, ElevenLabs is wss:// only, so
+# TLS is on and pointed at the OpenSSL we already resolve above.
+set(USE_TLS ON CACHE BOOL "" FORCE)
+set(USE_OPEN_SSL ON CACHE BOOL "" FORCE)
+set(IXWEBSOCKET_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+        ixwebsocket
+        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
+        GIT_TAG v11.4.6
+        GIT_SHALLOW TRUE
+        EXCLUDE_FROM_ALL   # keep its install() rules (headers, .a, cmake config) out of our .deb
+)
+FetchContent_MakeAvailable(ixwebsocket)
+# Third-party warnings are not ours to fix, and this project builds with
+# -Wall -Wextra -Wpedantic -Wshadow as errors to pay attention to.
+if(TARGET ixwebsocket)
+    target_compile_options(ixwebsocket PRIVATE -w)
+endif()
+
 FetchContent_Declare(
         miniaudio
         GIT_REPOSITORY https://github.com/mackron/miniaudio.git
@@ -726,6 +751,7 @@ target_link_libraries(creature-server
         ogg
         ${MP3LAME_LIBRARIES}
         whisper
+        ixwebsocket
         OpenSSL::SSL
         OpenSSL::Crypto
         CURL::libcurl
@@ -913,6 +939,7 @@ add_executable(creature-server-test
         src/server/voice/SpeechTrackBuilder.cpp
         tests/server/voice/TurnConcat_test.cpp
         tests/server/voice/StreamingTTSClient_duration_test.cpp
+        tests/server/voice/DialogueWire_test.cpp
         tests/server/voice/ElevenLabsHttp_test.cpp
         tests/server/voice/ElevenLabsModels_test.cpp
         src/server/voice/ElevenLabsModels.cpp
@@ -1052,6 +1079,7 @@ target_link_libraries(creature-server-test
         gtest_main
         gmock_main
         Threads::Threads
+        ixwebsocket
         OpenSSL::SSL
         OpenSSL::Crypto
         CURL::libcurl

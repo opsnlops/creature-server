@@ -125,11 +125,36 @@ from getting the path working.
   creature's audio lands on its own channel and that the mouth rests through
   performed tags rather than mouthing them.
 
-## Out of scope
+## WebSocket client: IXWebSocket, not uWebSockets
 
-Replacing the hand-rolled framing with uWebSockets `ClientApp`. It exists in
-v20.79.0, but uSockets is built `LIBUS_NO_SSL` (CMakeLists.txt:136) because the
-LAN transport needs no TLS, and ElevenLabs is `wss://` only — so it would mean
-enabling OpenSSL in uSockets, a build change reaching the server transport, plus
-a dedicated loop thread to keep client I/O off the uWS loop. Framing is not the
-bottleneck. Tracked separately.
+The first instinct was to stop hand-rolling and use uWebSockets, now that it is
+the transport. That turned out not to be available: `ClientApp.h` in v20.79.0 is
+an unimplemented stub — `connect()` has an empty body, the constructor's one
+real line is commented out, the callbacks carry no payload so they could not
+deliver a message, it has no include guard, and nothing in uWS includes it. The
+author's own note inside it reads "needs a new http context with minimal
+client". uWebSockets is server-only.
+
+TLS was never the obstacle; the client simply does not exist. `uSockets` does
+offer `us_socket_context_connect(int ssl, ...)`, but that is transport only —
+the HTTP upgrade and all the framing would still be ours to write, which is the
+thing we were trying to stop doing.
+
+So the dialogue client uses **IXWebSocket v11.4.6**, the same client
+creature-controller already uses for its own server connection. Unlike the
+controller's plain `ws://` LAN link this one needs TLS, so our FetchContent sets
+`USE_TLS` and `USE_OPEN_SSL` against the OpenSSL already resolved for
+audio-cache hashing.
+
+`DialogueStreamClient` is therefore a separate class from `StreamingTTSClient`
+rather than a mode of it: they speak different endpoints over different
+transports, and the text-to-speech client's hand-rolled OpenSSL framing carries
+production fixes (#189, #190) not worth disturbing. What the two genuinely
+share — alignment parsing — is shared, as `wireKeys()` and
+`appendAlignmentChunk()` in `StreamingTTSClient.h`. No WebSocket framing is
+duplicated anywhere.
+
+Migrating the text-to-speech path onto IXWebSocket too would finish the job of
+removing hand-rolled framing from this repo. It is deliberately not part of this
+change: that path drives the live show, and it should follow once the dialogue
+client has proven itself on real birds.

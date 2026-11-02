@@ -546,28 +546,17 @@ StreamingTTSClient::receiveAllFrames(const std::string &outputFormat, ProgressCa
                     debug("StreamingTTSClient: no 'audio' key in frame #{}", wsFrameCount);
                 }
 
-                // Alignment (times are absolute, not per-chunk)
+                // Alignment (times are absolute, not per-chunk). Shared with
+                // the dialogue socket, which spells these fields differently.
                 if (json.contains("alignment") && !json["alignment"].is_null()) {
-                    auto &al = json["alignment"];
-                    if (al.contains("chars") && al.contains("charStartTimesMs") && al.contains("charDurationsMs")) {
-                        auto chars = al["chars"].get<std::vector<std::string>>();
-                        auto starts = al["charStartTimesMs"].get<std::vector<double>>();
-                        auto durs = al["charDurationsMs"].get<std::vector<double>>();
-                        size_t count = std::min({chars.size(), starts.size(), durs.size()});
-                        std::string chunkText;
-
-                        for (size_t i = 0; i < count; ++i) {
-                            TextToViseme::CharTiming ct;
-                            ct.character = chars[i].empty() ? ' ' : chars[i][0];
-                            ct.startTimeMs = starts[i];
-                            ct.durationMs = durs[i];
-                            result.charTimings.push_back(ct);
-                            result.alignmentText.push_back(ct.character);
-                            chunkText.push_back(ct.character);
-                        }
+                    const std::size_t before = result.alignmentText.size();
+                    const std::size_t count = appendAlignmentChunk(json["alignment"], WireDialect::TextToSpeech,
+                                                                   result.charTimings, result.alignmentText);
+                    if (count > 0) {
                         alignmentChunkCount++;
                         info("StreamingTTSClient: alignment chunk {}: {} chars, text='{}' (cumulative: {})",
-                             alignmentChunkCount, count, chunkText, result.charTimings.size());
+                             alignmentChunkCount, count, result.alignmentText.substr(before),
+                             result.charTimings.size());
                     }
                 }
             } catch (const std::exception &e) {
