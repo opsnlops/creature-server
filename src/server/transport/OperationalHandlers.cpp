@@ -58,6 +58,8 @@ std::pair<std::string, const char *> cacheDescription(const CacheType type) {
         return {"Fixture", "fixture"};
     case CacheType::DialogScriptList:
         return {"Dialog script list", "dialog_script_list"};
+    case CacheType::MusicPieceList:
+        return {"Music piece list", "music_piece_list"};
     case CacheType::StoryboardList:
         return {"Storyboard list", "storyboard_list"};
     case CacheType::StageList:
