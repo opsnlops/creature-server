@@ -202,7 +202,8 @@ void DialogueStreamClient::onTextFrame(const std::string &payload) {
     }
 
     if (json.contains("alignment") && !json["alignment"].is_null()) {
-        appendAlignmentChunk(json["alignment"], WireDialect::Dialogue, turn_.charTimings, turn_.alignmentText);
+        appendAlignmentChunk(json["alignment"], WireDialect::Dialogue, turn_.charTimings, turn_.alignmentText,
+                             alignmentOffsetMs_);
     }
 
     // Checked last on purpose: this frame usually carries the turn's final
@@ -258,6 +259,7 @@ Result<StreamingTTSResult> DialogueStreamClient::renderTurn(const std::string &v
         std::lock_guard<std::mutex> lock(mutex_);
         turn_ = StreamingTTSResult{};
         turn_.audioFormat = outputFormat_;
+        alignmentOffsetMs_ = 0.0;
         turnComplete_ = false;
         failure_.clear();
         ws_->sendUtf8Text(turn.dump());

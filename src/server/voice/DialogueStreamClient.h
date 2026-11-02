@@ -109,6 +109,10 @@ class DialogueStreamClient {
     bool turnComplete_{false};
     std::string failure_;     ///< non-empty once the socket has failed the turn
     StreamingTTSResult turn_; ///< accumulates while a turn is in flight
+    /// Where the next alignment chunk begins. This socket restarts every
+    /// chunk's times at zero, so without this the whole turn stacks on top of
+    /// itself and the beak barely moves (issue #252). Reset per turn.
+    double alignmentOffsetMs_{0.0};
 };
 
 } // namespace creatures::voice

@@ -43,7 +43,8 @@ TEST(DialogueWire, EachDialectHasItsOwnSpellings) {
 TEST(DialogueWire, ReadsTheDialogueSocketAlignment) {
     std::vector<TextToViseme::CharTiming> timings;
     std::string text;
-    EXPECT_EQ(appendAlignmentChunk(dialogueAlignment(), WireDialect::Dialogue, timings, text), 3u);
+    double offset = 0.0;
+    EXPECT_EQ(appendAlignmentChunk(dialogueAlignment(), WireDialect::Dialogue, timings, text, offset), 3u);
     ASSERT_EQ(timings.size(), 3u);
     EXPECT_EQ(text, "Hel");
     EXPECT_EQ(timings[0].character, 'H');
@@ -55,7 +56,8 @@ TEST(DialogueWire, ReadsTheDialogueSocketAlignment) {
 TEST(DialogueWire, ReadsTheTextToSpeechAlignment) {
     std::vector<TextToViseme::CharTiming> timings;
     std::string text;
-    EXPECT_EQ(appendAlignmentChunk(ttsAlignment(), WireDialect::TextToSpeech, timings, text), 3u);
+    double offset = 0.0;
+    EXPECT_EQ(appendAlignmentChunk(ttsAlignment(), WireDialect::TextToSpeech, timings, text, offset), 3u);
     ASSERT_EQ(timings.size(), 3u);
     EXPECT_EQ(text, "Hel");
     EXPECT_DOUBLE_EQ(timings[2].startTimeMs, 224.0);
@@ -66,8 +68,9 @@ TEST(DialogueWire, ReadsTheTextToSpeechAlignment) {
 TEST(DialogueWire, TheWrongDialectTakesNothingRatherThanGuessing) {
     std::vector<TextToViseme::CharTiming> timings;
     std::string text;
-    EXPECT_EQ(appendAlignmentChunk(dialogueAlignment(), WireDialect::TextToSpeech, timings, text), 0u);
-    EXPECT_EQ(appendAlignmentChunk(ttsAlignment(), WireDialect::Dialogue, timings, text), 0u);
+    double offset = 0.0;
+    EXPECT_EQ(appendAlignmentChunk(dialogueAlignment(), WireDialect::TextToSpeech, timings, text, offset), 0u);
+    EXPECT_EQ(appendAlignmentChunk(ttsAlignment(), WireDialect::Dialogue, timings, text, offset), 0u);
     EXPECT_TRUE(timings.empty());
     EXPECT_TRUE(text.empty());
 }
@@ -75,8 +78,9 @@ TEST(DialogueWire, TheWrongDialectTakesNothingRatherThanGuessing) {
 TEST(DialogueWire, AppendsAcrossChunksBecauseAlignmentArrivesInPieces) {
     std::vector<TextToViseme::CharTiming> timings;
     std::string text;
-    appendAlignmentChunk(dialogueAlignment(), WireDialect::Dialogue, timings, text);
-    appendAlignmentChunk(dialogueAlignment(), WireDialect::Dialogue, timings, text);
+    double offset = 0.0;
+    appendAlignmentChunk(dialogueAlignment(), WireDialect::Dialogue, timings, text, offset);
+    appendAlignmentChunk(dialogueAlignment(), WireDialect::Dialogue, timings, text, offset);
     EXPECT_EQ(timings.size(), 6u);
     EXPECT_EQ(text, "HelHel");
 }
@@ -87,7 +91,8 @@ TEST(DialogueWire, StopsAtTheShortestArray) {
         {"chars", {"a", "b", "c"}}, {"char_start_times_ms", {0, 10}}, {"char_durations_ms", {10, 10, 10, 10}}};
     std::vector<TextToViseme::CharTiming> timings;
     std::string text;
-    EXPECT_EQ(appendAlignmentChunk(ragged, WireDialect::Dialogue, timings, text), 2u);
+    double offset = 0.0;
+    EXPECT_EQ(appendAlignmentChunk(ragged, WireDialect::Dialogue, timings, text, offset), 2u);
     EXPECT_EQ(text, "ab");
 }
 
@@ -95,16 +100,74 @@ TEST(DialogueWire, AnEmptyCharacterBecomesASpace) {
     nlohmann::json withEmpty{{"chars", {""}}, {"char_start_times_ms", {0}}, {"char_durations_ms", {10}}};
     std::vector<TextToViseme::CharTiming> timings;
     std::string text;
-    EXPECT_EQ(appendAlignmentChunk(withEmpty, WireDialect::Dialogue, timings, text), 1u);
+    double offset = 0.0;
+    EXPECT_EQ(appendAlignmentChunk(withEmpty, WireDialect::Dialogue, timings, text, offset), 1u);
     EXPECT_EQ(text, " ");
 }
 
 TEST(DialogueWire, NonObjectsAndMissingFieldsAreRefusedQuietly) {
     std::vector<TextToViseme::CharTiming> timings;
     std::string text;
-    EXPECT_EQ(appendAlignmentChunk(nlohmann::json::array(), WireDialect::Dialogue, timings, text), 0u);
-    EXPECT_EQ(appendAlignmentChunk(nlohmann::json{{"chars", {"a"}}}, WireDialect::Dialogue, timings, text), 0u);
+    double offset = 0.0;
+    EXPECT_EQ(appendAlignmentChunk(nlohmann::json::array(), WireDialect::Dialogue, timings, text, offset), 0u);
+    EXPECT_EQ(appendAlignmentChunk(nlohmann::json{{"chars", {"a"}}}, WireDialect::Dialogue, timings, text, offset), 0u);
     EXPECT_TRUE(timings.empty());
+}
+
+// The bug that reached production (issue #252). The text-to-dialogue socket
+// restarts every alignment chunk's times at zero; the text-to-speech socket
+// reports them absolute. Concatenating the former stacks a whole utterance on
+// top of itself, which shipped as birds whose beaks barely moved: the alignment
+// claimed 11% of the audio was speech, and the mouths were open 11% of frames.
+TEST(DialogueWire, DialogueChunksAreRelativeAndMustBeOffset) {
+    // Two chunks, each starting from zero, as the socket really sends them.
+    const auto chunkOne =
+        nlohmann::json{{"chars", {"a", "b"}}, {"char_start_times_ms", {0, 40}}, {"char_durations_ms", {40, 40}}};
+    const auto chunkTwo =
+        nlohmann::json{{"chars", {"c", "d"}}, {"char_start_times_ms", {0, 40}}, {"char_durations_ms", {40, 40}}};
+
+    std::vector<TextToViseme::CharTiming> timings;
+    std::string text;
+    double offset = 0.0;
+    ASSERT_EQ(appendAlignmentChunk(chunkOne, WireDialect::Dialogue, timings, text, offset), 2u);
+    ASSERT_EQ(appendAlignmentChunk(chunkTwo, WireDialect::Dialogue, timings, text, offset), 2u);
+
+    ASSERT_EQ(timings.size(), 4u);
+    EXPECT_EQ(text, "abcd");
+    // The second chunk is pushed past the first, not laid on top of it.
+    EXPECT_DOUBLE_EQ(timings[0].startTimeMs, 0.0);
+    EXPECT_DOUBLE_EQ(timings[1].startTimeMs, 40.0);
+    EXPECT_DOUBLE_EQ(timings[2].startTimeMs, 80.0);
+    EXPECT_DOUBLE_EQ(timings[3].startTimeMs, 120.0);
+
+    for (std::size_t i = 1; i < timings.size(); ++i) {
+        EXPECT_GE(timings[i].startTimeMs, timings[i - 1].startTimeMs) << "timings must not go backwards";
+    }
+}
+
+// The text-to-speech socket's times are already absolute, so the offset must
+// NOT be applied there — doing so would push its second chunk into the future.
+TEST(DialogueWire, TextToSpeechChunksAreAbsoluteAndMustNotBeOffset) {
+    const auto chunkOne =
+        nlohmann::json{{"chars", {"a", "b"}}, {"charStartTimesMs", {0, 40}}, {"charDurationsMs", {40, 40}}};
+    const auto chunkTwo =
+        nlohmann::json{{"chars", {"c", "d"}}, {"charStartTimesMs", {80, 120}}, {"charDurationsMs", {40, 40}}};
+
+    std::vector<TextToViseme::CharTiming> timings;
+    std::string text;
+    double offset = 0.0;
+    ASSERT_EQ(appendAlignmentChunk(chunkOne, WireDialect::TextToSpeech, timings, text, offset), 2u);
+    ASSERT_EQ(appendAlignmentChunk(chunkTwo, WireDialect::TextToSpeech, timings, text, offset), 2u);
+
+    ASSERT_EQ(timings.size(), 4u);
+    EXPECT_DOUBLE_EQ(timings[2].startTimeMs, 80.0) << "an absolute time was shifted";
+    EXPECT_DOUBLE_EQ(timings[3].startTimeMs, 120.0);
+    EXPECT_DOUBLE_EQ(offset, 0.0) << "the offset must stay untouched on an absolute socket";
+}
+
+TEST(DialogueWire, EachDialectDeclaresItsTimingConvention) {
+    EXPECT_TRUE(wireKeys(WireDialect::Dialogue).chunkRelativeTimes);
+    EXPECT_FALSE(wireKeys(WireDialect::TextToSpeech).chunkRelativeTimes);
 }
 
 } // namespace creatures::voice

@@ -33,21 +33,26 @@ enum class WireDialect {
     Dialogue,
 };
 
-/// The JSON field names one socket uses, so callers read them from a single
-/// place instead of branching at each use.
+/// How one socket reports alignment: the field names, and whether the times in
+/// each chunk are absolute or start again from zero.
 struct WireKeys {
-    const char *final;     ///< boolean field marking the end of a stream or turn
-    const char *starts;    ///< alignment array of character start times, ms
-    const char *durations; ///< alignment array of character durations, ms
+    const char *final;       ///< boolean field marking the end of a stream or turn
+    const char *starts;      ///< alignment array of character start times, ms
+    const char *durations;   ///< alignment array of character durations, ms
+    bool chunkRelativeTimes; ///< true when each chunk's times restart at zero
 };
 
-/// Field names for a socket. The dialects differ only in spelling, but getting
-/// one wrong yields a well-formed stream with no lip sync at all.
+/// Field names and timing convention for a socket. The dialects differ in
+/// spelling AND in something far easier to miss: the text-to-speech socket
+/// reports absolute times, so chunks concatenate directly, while the
+/// text-to-dialogue socket restarts every chunk at zero. Concatenating the
+/// latter crams a whole utterance into its first chunk's worth of
+/// milliseconds, which reads as a bird that barely opens its beak (issue #252).
 constexpr WireKeys wireKeys(const WireDialect dialect) {
     if (dialect == WireDialect::Dialogue) {
-        return WireKeys{"is_final_audio_for_turn", "char_start_times_ms", "char_durations_ms"};
+        return WireKeys{"is_final_audio_for_turn", "char_start_times_ms", "char_durations_ms", true};
     }
-    return WireKeys{"isFinal", "charStartTimesMs", "charDurationsMs"};
+    return WireKeys{"isFinal", "charStartTimesMs", "charDurationsMs", false};
 }
 
 /**
@@ -124,18 +129,25 @@ struct StreamingTTSResult {
 /**
  * Pull one alignment object apart into character timings.
  *
- * Free, inline and side-effect free, so both sockets share one parser and both
- * dialects can be tested without a socket — the same reason
- * estimateAudioSeconds lives here. Appends to `charTimings` and
- * `alignmentText`, and returns how many characters it took.
+ * Free and inline so both sockets share one parser and both dialects can be
+ * tested without a socket — the same reason estimateAudioSeconds lives here.
+ * Appends to `charTimings` and `alignmentText`, and returns how many characters
+ * it took.
+ *
+ * `runningOffsetMs` carries the position of this chunk within the utterance.
+ * On a socket whose chunks restart at zero it is added to every start time and
+ * then advanced past this chunk; on one reporting absolute times it is left
+ * alone. Callers keep one per utterance and reset it between them — getting
+ * this wrong does not fail, it just stacks the whole utterance on top of
+ * itself (issue #252).
  *
  * Returns 0 when the object lacks the fields that dialect expects, which is
  * exactly what a dialect mix-up looks like: a perfectly well-formed stream
  * with no lip sync at all (issue #248).
  */
 inline std::size_t appendAlignmentChunk(const nlohmann::json &alignment, const WireDialect dialect,
-                                        std::vector<TextToViseme::CharTiming> &charTimings,
-                                        std::string &alignmentText) {
+                                        std::vector<TextToViseme::CharTiming> &charTimings, std::string &alignmentText,
+                                        double &runningOffsetMs) {
     if (!alignment.is_object()) {
         return 0;
     }
@@ -147,13 +159,20 @@ inline std::size_t appendAlignmentChunk(const nlohmann::json &alignment, const W
     const auto starts = alignment[keys.starts].get<std::vector<double>>();
     const auto durs = alignment[keys.durations].get<std::vector<double>>();
     const std::size_t count = std::min({chars.size(), starts.size(), durs.size()});
+    const double offset = keys.chunkRelativeTimes ? runningOffsetMs : 0.0;
+    double extent = 0.0;
     for (std::size_t i = 0; i < count; ++i) {
         TextToViseme::CharTiming timing;
         timing.character = chars[i].empty() ? ' ' : chars[i][0];
-        timing.startTimeMs = starts[i];
+        timing.startTimeMs = starts[i] + offset;
         timing.durationMs = durs[i];
         charTimings.push_back(timing);
         alignmentText.push_back(timing.character);
+        extent = std::max(extent, starts[i] + durs[i]);
+    }
+    if (keys.chunkRelativeTimes) {
+        // The next chunk begins where this one ended.
+        runningOffsetMs += extent;
     }
     return count;
 }
@@ -222,6 +241,8 @@ class StreamingTTSClient {
     bool open_{false};
     bool complete_{false};
     std::string failure_;
+    /// Unused by this socket's absolute times, but the parser takes one.
+    double alignmentOffsetMs_{0.0};
 };
 
 } // namespace creatures::voice

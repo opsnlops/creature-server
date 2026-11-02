@@ -83,6 +83,22 @@ TEST(DialogueStreamClientLive, RendersTurnsOverOneWarmSocket) {
     EXPECT_GT(firstTurn.charTimings.size(), 20u) << "no alignment — lip sync would be dead";
     EXPECT_FALSE(firstTurn.alignmentText.empty());
 
+    // The alignment has to SPAN the audio, not merely exist. This socket sends
+    // chunks whose times restart at zero, and concatenating them shipped a
+    // version where the alignment covered 11% of the audio — plenty of
+    // character timings, all stacked at the start, and birds whose beaks barely
+    // moved (issue #252). Counting entries cannot see that; only the span can.
+    const double lastStartMs = firstTurn.charTimings.back().startTimeMs;
+    const double audioMs = firstTurn.audioDurationSeconds * 1000.0;
+    EXPECT_GT(lastStartMs, audioMs * 0.7)
+        << "alignment spans only " << (100.0 * lastStartMs / audioMs) << "% of the audio; chunk offsets are wrong";
+    EXPECT_LT(lastStartMs, audioMs * 1.1) << "alignment runs past the end of the audio";
+
+    for (std::size_t i = 1; i < firstTurn.charTimings.size(); ++i) {
+        ASSERT_GE(firstTurn.charTimings[i].startTimeMs, firstTurn.charTimings[i - 1].startTimeMs)
+            << "character timings go backwards at index " << i;
+    }
+
     // A second turn on the SAME connection. This is what the whole design rests
     // on: the socket stays warm so later turns keep the earlier context, and
     // the per-turn flush closes each one out on time.

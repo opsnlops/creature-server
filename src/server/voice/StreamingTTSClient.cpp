@@ -82,8 +82,8 @@ void StreamingTTSClient::onFrame(const std::string &payload, const bool binary) 
     }
 
     if (json.contains("alignment") && !json["alignment"].is_null()) {
-        appendAlignmentChunk(json["alignment"], WireDialect::TextToSpeech, pending_.charTimings,
-                             pending_.alignmentText);
+        appendAlignmentChunk(json["alignment"], WireDialect::TextToSpeech, pending_.charTimings, pending_.alignmentText,
+                             alignmentOffsetMs_);
     }
 }
 
@@ -114,6 +114,7 @@ Result<StreamingTTSResult> StreamingTTSClient::generateSpeech(const std::string 
         complete_ = false;
         open_ = false;
         failure_.clear();
+        alignmentOffsetMs_ = 0.0;
     }
 
     ix::WebSocket socket;
