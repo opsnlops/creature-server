@@ -13,6 +13,7 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include "server/voice/DialogClient.h"
 #include "util/ObservabilityManager.h"
 #include "util/uuidUtils.h"
 
@@ -333,7 +334,9 @@ Result<CreatureSpeechResponse> VoiceClient::generateCreatureSpeech(const std::fi
     const auto fileBaseName = makeFileName(speechRequest);
     const auto transcriptPath = fileSavePath / fmt::format("{}.txt", fileBaseName);
     std::ofstream transcriptFile(transcriptPath);
-    if (!transcriptFile || !(transcriptFile << speechRequest.text)) {
+    // The transcript feeds lip sync, so it holds the spoken words only: an audio
+    // tag like [laughs] is performed, not said.
+    if (!transcriptFile || !(transcriptFile << DialogClient::stripTags(speechRequest.text))) {
         return Result<CreatureSpeechResponse>{
             ServerError(ServerError::Forbidden, "Unable to write the speech transcript")};
     }

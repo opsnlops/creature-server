@@ -92,6 +92,16 @@ class Configuration {
     /** @return API key for voice synthesis service */
     std::string getVoiceApiKey() const;
 
+    /**
+     * @return ElevenLabs model for dialog and pre-rendered voice files.
+     *
+     * Not the ad-hoc model: that one comes from the creature's own
+     * voice.model_id, because ad-hoc speech is latency-bound and needs one of
+     * the fast families. Configurable because ElevenLabs ships models faster
+     * than we cut releases (issue #244).
+     */
+    std::string getExpressiveVoiceModel() const;
+
     /** @return API key for Honeycomb observability service */
     std::string getHoneycombApiKey() const;
 
@@ -156,6 +166,9 @@ class Configuration {
 
     /** @param _voiceApiKey API key for voice synthesis service */
     void setVoiceApiKey(std::string _voiceApiKey);
+
+    /** @param _expressiveVoiceModel ElevenLabs model for dialog and voice files */
+    void setExpressiveVoiceModel(std::string _expressiveVoiceModel);
 
     /** @param _honeycombApiKey API key for Honeycomb observability service */
     void setHoneycombApiKey(std::string _honeycombApiKey);
@@ -257,6 +270,9 @@ class Configuration {
 
     /** API key for ElevenLabs voice synthesis service */
     std::string voiceApiKey = DEFAULT_VOICE_API_KEY;
+
+    /** ElevenLabs model for dialog and pre-rendered voice files */
+    std::string expressiveVoiceModel = DEFAULT_EXPRESSIVE_VOICE_MODEL;
 
     /** API key for Honeycomb observability service */
     std::string honeycombApiKey = DEFAULT_HONEYCOMB_API_KEY;

@@ -187,10 +187,12 @@ GHA's Debian-package job takes ~15–25 min per arch. The local Docker build, re
 # heavy deps layer gets pulled. Without this, every build is ~15 min cold.
 docker buildx build --platform linux/amd64 --target package \
     --cache-from type=gha,scope=package-ubuntu-24.04 \
+    --build-arg NINJA_JOBS=$(docker info --format '{{.NCPU}}') \
     -t creature-server-pkg-amd64 --load . &
 
 docker buildx build --platform linux/arm64 --target package \
     --cache-from type=gha,scope=package-ubuntu-24.04-arm \
+    --build-arg NINJA_JOBS=$(docker info --format '{{.NCPU}}') \
     -t creature-server-pkg-arm64 --load . &
 
 wait
@@ -214,6 +216,7 @@ ls -la out/debs/ | tail -3   # confirm the new .debs landed
 - `out/debs/` is gitignored — that's the canonical drop site so the deploy script can find them.
 - The `--target package` flag stops the build at the package stage; we don't need the runtime stage locally.
 - `--load` materializes the image into the local Docker daemon so `docker create` can pull files out.
+- `NINJA_JOBS` sets ninja's parallelism in both compile steps. The Dockerfile defaults to 8 for the GHA runners; passing Docker's CPU count lets a lone build use the whole machine. The value is part of the layer cache key, so the first build with a new value rebuilds the deps layer once; keep passing the same value and later builds reuse it.
 - Filename format is `creature-server_<version>-<unix-timestamp>_<arch>.deb` — cpack generates the timestamp suffix automatically. Two builds back-to-back of the same version produce two distinct filenames, which the apt repo accepts.
 - **First build after adding a new `src/server/X/` directory:** Phase 1 Docker cache busts once. Expect ~15 min for that build; subsequent ones return to ~2–5 min.
 - **If a build errors out:** check that `docker buildx` is set up (`docker buildx ls` should show a `*` next to the active builder). On a fresh machine: `docker buildx create --use`.

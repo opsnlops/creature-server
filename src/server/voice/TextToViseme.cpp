@@ -356,11 +356,35 @@ std::vector<RhubarbMouthCue> TextToViseme::charTimingsToMouthCues(const std::vec
     std::string currentWord;
     double wordStart = 0.0;
     double wordEnd = 0.0;
+    // Audio tags like [laughs] come back in the alignment with real timings, but
+    // they're performed, not spoken. Skipping them leaves a gap between words,
+    // which wordsToMouthCues fills with rest instead of mouthing "laughs".
+    int tagDepth = 0;
 
     for (size_t i = 0; i < chars.size(); ++i) {
         char c = chars[i].character;
         double charStartSec = chars[i].startTimeMs / 1000.0;
         double charEndSec = (chars[i].startTimeMs + chars[i].durationMs) / 1000.0;
+
+        if (c == '[') {
+            ++tagDepth;
+        } else if (c == ']') {
+            if (tagDepth > 0) {
+                --tagDepth;
+            }
+            continue;
+        }
+        if (tagDepth > 0) {
+            if (!currentWord.empty()) {
+                WordTiming wt;
+                wt.word = currentWord;
+                wt.startTime = wordStart;
+                wt.endTime = wordEnd;
+                words.push_back(wt);
+                currentWord.clear();
+            }
+            continue;
+        }
 
         if (std::isalpha(static_cast<unsigned char>(c)) || c == '\'') {
             if (currentWord.empty()) {

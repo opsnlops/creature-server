@@ -12,6 +12,8 @@
 #include "server/config/Configuration.h"
 #include "server/database.h"
 #include "server/namespace-stuffs.h"
+#include "server/voice/DialogClient.h"
+#include "server/voice/ElevenLabsModels.h"
 #include "server/voice/PcmWavWriter.h"
 
 namespace creatures::voice {
@@ -22,7 +24,10 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
             ServerError(ServerError::InvalidData, "Streaming speech generation requires a creature_id")};
     }
 
-    if (request.text.empty()) {
+    // Ad-hoc models can't act out audio tags and would read "[laughs]" aloud, so
+    // only the spoken words go to ElevenLabs, the transcript, and lip sync.
+    const std::string spokenText = DialogClient::stripTags(request.text);
+    if (spokenText.empty()) {
         return Result<StreamingSpeechResult>{
             ServerError(ServerError::InvalidData, "Streaming speech generation text may not be empty")};
     }
@@ -31,7 +36,7 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
                                                                    request.parentSpan);
     if (span) {
         span->setAttribute("creature.id", request.creatureId);
-        span->setAttribute("text.length", static_cast<int64_t>(request.text.size()));
+        span->setAttribute("text.length", static_cast<int64_t>(spokenText.size()));
         span->setAttribute("tts.method", std::string("elevenlabs_websocket"));
     }
 
@@ -95,25 +100,18 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
         float stability = voiceConfig["stability"].get<float>();
         float similarityBoost = voiceConfig["similarity_boost"].get<float>();
 
-        // Validate that the configured model supports WebSocket streaming.
-        // eleven_v3 and eleven_multilingual_v2 do NOT support the stream-input endpoint
-        // and will return 403. The creature's voice config must use a streaming-compatible
-        // model like eleven_turbo_v2_5 or eleven_flash_v2_5.
-        static const std::vector<std::string> nonStreamingModels = {"eleven_v3", "eleven_multilingual_v2",
-                                                                    "eleven_monolingual_v1", "eleven_multilingual_v1"};
-        for (const auto &blocked : nonStreamingModels) {
-            if (modelId == blocked) {
-                std::string errorMsg = fmt::format("Creature '{}' is configured with model '{}' which does not support "
-                                                   "WebSocket streaming. Change the creature's voice model to "
-                                                   "'eleven_turbo_v2_5' or 'eleven_flash_v2_5' in the creature config, "
-                                                   "then try again.",
-                                                   request.creatureId, modelId);
-                warn(errorMsg);
-                if (span) {
-                    span->setError(errorMsg);
-                }
-                return Result<StreamingSpeechResult>{ServerError(ServerError::InvalidData, errorMsg)};
+        // The stream-input WebSocket rejects the v3/v4 and older multilingual models,
+        // so the creature's voice config must name a fast streaming model.
+        if (!supportsAdHocSpeech(modelId)) {
+            std::string errorMsg = fmt::format("Creature '{}' is configured with model '{}' which does not support "
+                                               "WebSocket streaming. Change the creature's voice model to '{}' in the "
+                                               "creature config, then try again.",
+                                               request.creatureId, modelId, kRecommendedAdHocModelId);
+            warn(errorMsg);
+            if (span) {
+                span->setError(errorMsg);
             }
+            return Result<StreamingSpeechResult>{ServerError(ServerError::InvalidData, errorMsg)};
         }
 
         if (span) {
@@ -128,7 +126,7 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
 
         // Call ElevenLabs streaming API
         StreamingTTSClient client;
-        auto ttsResult = client.generateSpeech(creatures::config->getVoiceApiKey(), voiceId, modelId, request.text,
+        auto ttsResult = client.generateSpeech(creatures::config->getVoiceApiKey(), voiceId, modelId, spokenText,
                                                outputFormat, stability, similarityBoost, nullptr, span);
 
         if (!ttsResult.isSuccess()) {
@@ -153,7 +151,7 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
         auto transcriptPath = outputDir / "transcript.txt";
         {
             std::ofstream transcriptFile(transcriptPath);
-            transcriptFile << request.text;
+            transcriptFile << spokenText;
         }
 
         // Convert audio to 17-channel WAV
@@ -202,7 +200,7 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
             warn("No alignment data from ElevenLabs, generating basic lip sync from text timing");
             // Create a simple open/close pattern based on word boundaries
             double totalDuration = ttsData.audioDurationSeconds;
-            std::istringstream iss(request.text);
+            std::istringstream iss(spokenText);
             std::string word;
             std::vector<TextToViseme::WordTiming> wordTimings;
             int wordCount = 0;
@@ -212,7 +210,7 @@ Result<StreamingSpeechResult> StreamingSpeechGenerationManager::generate(const S
             if (wordCount > 0) {
                 double wordDuration = totalDuration / static_cast<double>(wordCount);
                 double time = 0.0;
-                std::istringstream iss2(request.text);
+                std::istringstream iss2(spokenText);
                 while (iss2 >> word) {
                     TextToViseme::WordTiming wt;
                     wt.word = word;

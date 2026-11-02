@@ -10,6 +10,8 @@
 #include "exception/exception.h"
 #include "server/config/Configuration.h"
 #include "server/database.h"
+#include "server/voice/DialogClient.h"
+#include "server/voice/ElevenLabsModels.h"
 #include "server/voice/PcmWavWriter.h"
 #include "spdlog/spdlog.h"
 #include <fmt/format.h>
@@ -123,6 +125,9 @@ Result<SpeechGenerationResult> SpeechGenerationManager::generate(const SpeechGen
             speechRequest.model_id = voiceConfig["model_id"].get<std::string>();
             speechRequest.stability = voiceConfig["stability"].get<float>();
             speechRequest.similarity_boost = voiceConfig["similarity_boost"].get<float>();
+            if (request.modelIdOverride) {
+                speechRequest.model_id = *request.modelIdOverride;
+            }
         } catch (const std::exception &e) {
             std::string errorMessage =
                 fmt::format("Failed to parse voice configuration for creature {}: {}", request.creatureId, e.what());
@@ -130,6 +135,15 @@ Result<SpeechGenerationResult> SpeechGenerationManager::generate(const SpeechGen
                 span->setError(errorMessage);
             }
             return Result<SpeechGenerationResult>{ServerError(ServerError::InvalidData, errorMessage)};
+        }
+
+        // A model that can't act out "[laughs]" would read it aloud.
+        if (!supportsAudioTags(speechRequest.model_id)) {
+            speechRequest.text = DialogClient::stripTags(speechRequest.text);
+            if (speechRequest.text.empty()) {
+                return Result<SpeechGenerationResult>{
+                    ServerError(ServerError::InvalidData, "Speech text contains only audio tags, no spoken words")};
+            }
         }
 
         if (span) {

@@ -88,6 +88,14 @@
 #define VOICE_API_KEY_ENV "VOICE_API_KEY"
 #define DEFAULT_VOICE_API_KEY ""
 
+// Model for the speech paths that want a performance more than they want low
+// latency: multi-character dialog and pre-rendered voice files (issues #220,
+// #244). Ad-hoc speech is deliberately not covered — it stays on the creature's
+// own voice.model_id, which is already per-creature configuration, and has to
+// be one of the fast families.
+#define EXPRESSIVE_VOICE_MODEL_ENV "EXPRESSIVE_VOICE_MODEL"
+#define DEFAULT_EXPRESSIVE_VOICE_MODEL "eleven_v4"
+
 #define RHUBARB_BINARY_PATH_ENV "RHUBARB_BINARY_PATH"
 #define DEFAULT_RHUBARB_BINARY_PATH "/usr/bin/rhubarb"
 
