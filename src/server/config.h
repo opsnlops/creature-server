@@ -105,9 +105,19 @@
 // text-to-dialogue socket serves only the v3/v4 families and refuses the fast
 // models with 403, while the text-to-speech socket refuses v3/v4 with 400. So
 // a tag-capable model means performed audio tags over the dialogue socket, and
-// anything else means the text-to-speech socket, as before (issue #248).
+// anything else means the text-to-speech socket (issue #248).
+//
+// The default is v4 Turbo because it won on both counts after a night on the
+// real birds: it performs audio tags instead of reading them aloud, AND it
+// reaches first audio in ~140 ms against ~193 ms for eleven_flash_v2_5, which
+// it replaced. The birds sound different but still themselves — the voice is
+// unchanged, the model rendering it is not.
+//
+// Setting this to a fast model still works and still uses the text-to-speech
+// socket, which is the escape hatch if ElevenLabs regresses on a model only
+// days old.
 #define ADHOC_VOICE_MODEL_ENV "ADHOC_VOICE_MODEL"
-#define DEFAULT_ADHOC_VOICE_MODEL "eleven_flash_v2_5"
+#define DEFAULT_ADHOC_VOICE_MODEL "eleven_v4_turbo"
 
 #define RHUBARB_BINARY_PATH_ENV "RHUBARB_BINARY_PATH"
 #define DEFAULT_RHUBARB_BINARY_PATH "/usr/bin/rhubarb"

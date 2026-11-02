@@ -23,8 +23,9 @@
     "replaces the old per-creature voice.model_id, which the server no longer",
     "reads. Its value also picks the socket: a v4 model performs audio tags",
     "like [sighs] over the text-to-dialogue socket and reaches first audio in",
-    "about 140 ms, while eleven_flash_v2_5 uses the text-to-speech socket as",
-    "before."
+    "about 140 ms, which beats the fast models. Setting a fast model such as",
+    "eleven_flash_v2_5 falls back to the text-to-speech socket, which is the",
+    "escape hatch if v4 ever regresses."
   ],
 
   "mongodb_uri": "mongodb://127.0.0.1/?serverSelectionTimeoutMS=2000",
@@ -41,5 +42,5 @@
 
   "expressive_voice_model": "eleven_v4",
 
-  "adhoc_voice_model": "eleven_flash_v2_5"
+  "adhoc_voice_model": "eleven_v4_turbo"
 }
