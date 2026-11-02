@@ -1,8 +1,16 @@
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -55,6 +63,45 @@ class AudioCacheTest : public ::testing::Test {
             return Result<void>{info.getError().value()};
         }
         return cache.saveToCache(source.string(), data.framesPerChannel, data.encodedFrames, info.getValue().value());
+    }
+
+    // The hostname-scoped directory the cache actually writes into.
+    fs::path hostRoot() const {
+        for (const auto &entry : fs::directory_iterator(root_ / ".opus_cache")) {
+            if (entry.is_directory()) {
+                return entry.path();
+            }
+        }
+        return {};
+    }
+
+    // The one cache entry whose directory name mentions `hint`.
+    fs::path entryDirFor(const std::string &hint) const {
+        for (const auto &entry : fs::directory_iterator(hostRoot())) {
+            if (entry.is_directory() && entry.path().filename().string().find(hint) != std::string::npos) {
+                return entry.path();
+            }
+        }
+        return {};
+    }
+
+    // Backdate an entry's last-read stamp. Production stamps the `.complete`
+    // marker on every cache read (issue #225), so this is how a test says
+    // "nothing has touched this entry in a while".
+    static void backdateLastRead(const fs::path &entryDir, std::chrono::seconds age) {
+        fs::last_write_time(entryDir / ".complete", fs::file_time_type::clock::now() - age);
+    }
+
+    static AudioCache::PrunePolicy idleAfter(std::chrono::seconds age) {
+        AudioCache::PrunePolicy policy;
+        policy.maxIdleAge = age;
+        return policy;
+    }
+
+    static AudioCache::PrunePolicy cappedAt(std::uintmax_t bytes) {
+        AudioCache::PrunePolicy policy;
+        policy.maxTotalBytes = bytes;
+        return policy;
     }
 
     fs::path root_;
@@ -495,6 +542,334 @@ TEST_F(AudioCacheTest, DryRunStillReportsAbandonedTemporaries) {
     ASSERT_TRUE(preview.isSuccess());
     EXPECT_EQ(preview.getValue().value().temporaryFiles, 1U) << "preview must report temps it would remove";
     EXPECT_TRUE(fs::exists(orphanTemp)) << "but must not actually remove them";
+}
+
+// --- issue #225: automatic prune policy (idle eviction + size cap) ---
+
+TEST_F(AudioCacheTest, ReadingAnEntryStampsItAsRecentlyUsed) {
+    // Last-use tracking cannot lean on atime (noatime/relatime mounts), so a
+    // cache read touches the `.complete` marker instead. Without this the
+    // idle tier would evict entries the show plays every night.
+    const auto source = writeSource("stamped.wav", "stamped-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x20)).isSuccess());
+
+    const auto entryDir = entryDirFor("stamped");
+    ASSERT_FALSE(entryDir.empty());
+    backdateLastRead(entryDir, std::chrono::hours(72));
+    const auto before = fs::last_write_time(entryDir / ".complete");
+
+    ASSERT_NE(cache.tryLoadFromCache(source.string()), nullptr);
+
+    EXPECT_GT(fs::last_write_time(entryDir / ".complete"), before)
+        << "a cache read must stamp the entry so a prune sees it as live";
+}
+
+TEST_F(AudioCacheTest, PruneEvictsEntriesIdleLongerThanThePolicy) {
+    const auto stale = writeSource("stale.wav", "stale-source");
+    const auto fresh = writeSource("fresh.wav", "fresh-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, stale, makeAudioData(0x21)).isSuccess());
+    ASSERT_TRUE(save(cache, fresh, makeAudioData(0x22)).isSuccess());
+
+    const auto staleDir = entryDirFor("stale");
+    ASSERT_FALSE(staleDir.empty());
+    backdateLastRead(staleDir, std::chrono::hours(72));
+
+    auto applied = cache.prune(idleAfter(std::chrono::hours(24)), /*dryRun=*/false);
+    ASSERT_TRUE(applied.isSuccess());
+    const auto report = applied.getValue().value();
+
+    EXPECT_EQ(report.idleEntries, 1U);
+    EXPECT_EQ(report.orphanedEntries, 0U);
+    EXPECT_FALSE(fs::exists(staleDir)) << "the idle entry should be gone";
+    EXPECT_NE(cache.tryLoadFromCache(fresh.string()), nullptr) << "the recently-read entry must survive";
+    EXPECT_GT(report.bytesReclaimed, 0U);
+}
+
+TEST_F(AudioCacheTest, OrphanOnlyPruneNeverEvictsAUsableIdleEntry) {
+    // pruneOrphanedEntries() is the historical, policy-free entry point and
+    // the manual fallback when no sweep is configured. It must stay purely
+    // about entries that can never be used again.
+    const auto source = writeSource("ancient.wav", "ancient-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x23)).isSuccess());
+    backdateLastRead(entryDirFor("ancient"), std::chrono::hours(24 * 400));
+
+    auto applied = cache.pruneOrphanedEntries(/*dryRun=*/false);
+    ASSERT_TRUE(applied.isSuccess());
+
+    EXPECT_EQ(applied.getValue().value().idleEntries, 0U);
+    EXPECT_EQ(applied.getValue().value().oversizeEntries, 0U);
+    EXPECT_NE(cache.tryLoadFromCache(source.string()), nullptr);
+}
+
+TEST_F(AudioCacheTest, PruneReportsTheBytesItLeftBehind) {
+    const auto source = writeSource("measured.wav", "measured-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x24)).isSuccess());
+
+    auto preview = cache.prune(AudioCache::PrunePolicy{}, /*dryRun=*/true);
+    ASSERT_TRUE(preview.isSuccess());
+    const auto report = preview.getValue().value();
+
+    // bytes_retained is the number that says whether the cache is a problem,
+    // and it is what the size cap is measured against.
+    EXPECT_GT(report.bytesRetained, 0U);
+    EXPECT_EQ(report.bytesReclaimed, 0U);
+}
+
+TEST_F(AudioCacheTest, SizeCapEvictsLeastRecentlyReadFirst) {
+    const auto oldest = writeSource("oldest.wav", "oldest-source");
+    const auto middle = writeSource("middle.wav", "middle-source");
+    const auto newest = writeSource("newest.wav", "newest-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, oldest, makeAudioData(0x25)).isSuccess());
+    ASSERT_TRUE(save(cache, middle, makeAudioData(0x26)).isSuccess());
+    ASSERT_TRUE(save(cache, newest, makeAudioData(0x27)).isSuccess());
+
+    backdateLastRead(entryDirFor("oldest"), std::chrono::hours(96));
+    backdateLastRead(entryDirFor("middle"), std::chrono::hours(48));
+
+    const auto oldestDir = entryDirFor("oldest");
+    ASSERT_FALSE(oldestDir.empty());
+
+    auto measured = cache.prune(AudioCache::PrunePolicy{}, /*dryRun=*/true);
+    ASSERT_TRUE(measured.isSuccess());
+    const auto total = measured.getValue().value().bytesRetained;
+    ASSERT_GT(total, 0U);
+
+    // A ceiling that only two of the three entries can fit under.
+    const auto ceiling = total * 2 / 3;
+    auto applied = cache.prune(cappedAt(ceiling), /*dryRun=*/false);
+    ASSERT_TRUE(applied.isSuccess());
+    const auto report = applied.getValue().value();
+
+    EXPECT_EQ(report.oversizeEntries, 1U);
+    EXPECT_EQ(report.idleEntries, 0U) << "no idle age was configured";
+    EXPECT_FALSE(fs::exists(oldestDir)) << "the least-recently-read entry is the one that should go";
+    EXPECT_NE(cache.tryLoadFromCache(middle.string()), nullptr);
+    EXPECT_NE(cache.tryLoadFromCache(newest.string()), nullptr);
+    EXPECT_LE(report.bytesRetained, ceiling);
+}
+
+TEST_F(AudioCacheTest, SizeCapLeavesAnUnderBudgetCacheAlone) {
+    const auto source = writeSource("roomy.wav", "roomy-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x28)).isSuccess());
+    backdateLastRead(entryDirFor("roomy"), std::chrono::hours(24 * 500));
+
+    auto applied = cache.prune(cappedAt(64ULL * 1024 * 1024 * 1024), /*dryRun=*/false);
+    ASSERT_TRUE(applied.isSuccess());
+
+    EXPECT_EQ(applied.getValue().value().oversizeEntries, 0U);
+    EXPECT_NE(cache.tryLoadFromCache(source.string()), nullptr)
+        << "age alone must not evict when only a size cap is configured";
+}
+
+TEST_F(AudioCacheTest, PolicyPruneDryRunDeletesNothingAndCreatesNothing) {
+    // The idle and size tiers must honor the same strictly-read-only dry run
+    // the unusable tiers do (issue #168): no deletions, no new .lock files,
+    // and no last-read stamps rewritten.
+    const auto source = writeSource("policypreview.wav", "policy-preview-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x29)).isSuccess());
+    const auto entryDir = entryDirFor("policypreview");
+    backdateLastRead(entryDir, std::chrono::hours(96));
+
+    auto snapshot = [&] {
+        std::vector<std::pair<std::string, fs::file_time_type>> state;
+        for (const auto &entry : fs::recursive_directory_iterator(root_ / ".opus_cache")) {
+            state.emplace_back(entry.path().string(), fs::last_write_time(entry.path()));
+        }
+        std::sort(state.begin(), state.end());
+        return state;
+    };
+
+    const auto before = snapshot();
+    AudioCache::PrunePolicy policy = idleAfter(std::chrono::hours(24));
+    policy.maxTotalBytes = 1; // aggressive on both tiers
+    auto preview = cache.prune(policy, /*dryRun=*/true);
+    ASSERT_TRUE(preview.isSuccess());
+    const auto after = snapshot();
+
+    EXPECT_EQ(before, after) << "a dry run must not create, remove, or re-stamp any file";
+    EXPECT_EQ(preview.getValue().value().idleEntries, 1U) << "but it must still report what it would evict";
+    EXPECT_NE(cache.tryLoadFromCache(source.string()), nullptr);
+}
+
+TEST_F(AudioCacheTest, PruneAbortsBetweenEntriesWhenAskedToStop) {
+    // Shutdown must not wait on a walk of a big or slow cache, so the sweep
+    // checks for an abort between entries (issue #225).
+    const auto first = writeSource("abort-one.wav", "one");
+    const auto second = writeSource("abort-two.wav", "two");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, first, makeAudioData(0x2A)).isSuccess());
+    ASSERT_TRUE(save(cache, second, makeAudioData(0x2B)).isSuccess());
+
+    AudioCache::PrunePolicy policy = idleAfter(std::chrono::seconds(1));
+    policy.abortRequested = [] { return true; };
+
+    auto applied = cache.prune(policy, /*dryRun=*/false);
+    ASSERT_TRUE(applied.isSuccess());
+    const auto report = applied.getValue().value();
+
+    EXPECT_TRUE(report.aborted);
+    EXPECT_EQ(report.entriesScanned, 0U) << "the abort is checked before any entry is examined";
+    EXPECT_NE(cache.tryLoadFromCache(first.string()), nullptr);
+    EXPECT_NE(cache.tryLoadFromCache(second.string()), nullptr);
+}
+
+TEST_F(AudioCacheTest, IdleEvictionNeverTouchesALockedEntry) {
+    // The guarantee that matters most for a live show: an entry another holder
+    // has locked is SKIPPED, never deleted. Pulling cache files out from under
+    // a session that is reading them is an audible mid-show failure, and the
+    // only cost of backing off is that the next sweep tries again.
+    const auto source = writeSource("locked.wav", "locked-source");
+    AudioCache cache(root_.string());
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x2C)).isSuccess());
+
+    const auto entryDir = entryDirFor("locked");
+    ASSERT_FALSE(entryDir.empty());
+    backdateLastRead(entryDir, std::chrono::hours(96));
+
+    // flock is per open file description, so a second descriptor in this same
+    // process conflicts exactly the way a peer process would.
+    const auto lockPath = entryDir.string() + ".lock";
+    const int heldFd = ::open(lockPath.c_str(), O_CREAT | O_RDWR, 0644);
+    ASSERT_GE(heldFd, 0);
+    ASSERT_EQ(::flock(heldFd, LOCK_EX | LOCK_NB), 0);
+
+    auto applied = cache.prune(idleAfter(std::chrono::hours(24)), /*dryRun=*/false);
+
+    ::flock(heldFd, LOCK_UN);
+    ::close(heldFd);
+
+    ASSERT_TRUE(applied.isSuccess());
+    const auto report = applied.getValue().value();
+    EXPECT_EQ(report.idleEntries, 0U) << "a locked entry must never be deleted";
+    EXPECT_GE(report.skippedEntries, 1U);
+    EXPECT_TRUE(fs::exists(entryDir));
+    EXPECT_NE(cache.tryLoadFromCache(source.string()), nullptr);
+}
+
+TEST_F(AudioCacheTest, PolicyForHostIsTighterInTravelMode) {
+    // The travel server is an 8 GB Pi with little disk headroom; the main
+    // server has 64 GB and room to keep a season of material warm.
+    ::unsetenv(AUDIO_CACHE_MAX_IDLE_DAYS_ENV);
+    ::unsetenv(AUDIO_CACHE_MAX_BYTES_ENV);
+
+    const auto main = AudioCache::PrunePolicy::forHost(/*travelMode=*/false);
+    const auto travel = AudioCache::PrunePolicy::forHost(/*travelMode=*/true);
+
+    ASSERT_TRUE(main.maxIdleAge.has_value());
+    ASSERT_TRUE(travel.maxIdleAge.has_value());
+    EXPECT_LT(travel.maxIdleAge->count(), main.maxIdleAge->count());
+    EXPECT_LT(travel.maxTotalBytes, main.maxTotalBytes);
+    EXPECT_GT(main.maxTotalBytes, 0U);
+}
+
+TEST_F(AudioCacheTest, PolicyForHostHonorsEnvironmentOverridesAndZeroDisables) {
+    ::setenv(AUDIO_CACHE_MAX_IDLE_DAYS_ENV, "0", 1);
+    ::setenv(AUDIO_CACHE_MAX_BYTES_ENV, "0", 1);
+    const auto disabled = AudioCache::PrunePolicy::forHost(/*travelMode=*/false);
+    EXPECT_FALSE(disabled.maxIdleAge.has_value()) << "0 days must disable idle eviction entirely";
+    EXPECT_EQ(disabled.maxTotalBytes, 0U) << "0 bytes must mean unbounded, not evict-everything";
+
+    ::setenv(AUDIO_CACHE_MAX_IDLE_DAYS_ENV, "7", 1);
+    ::setenv(AUDIO_CACHE_MAX_BYTES_ENV, "1048576", 1);
+    const auto overridden = AudioCache::PrunePolicy::forHost(/*travelMode=*/false);
+    ASSERT_TRUE(overridden.maxIdleAge.has_value());
+    EXPECT_EQ(overridden.maxIdleAge->count(), 7 * 24 * 3600);
+    EXPECT_EQ(overridden.maxTotalBytes, 1048576U);
+
+    ::unsetenv(AUDIO_CACHE_MAX_IDLE_DAYS_ENV);
+    ::unsetenv(AUDIO_CACHE_MAX_BYTES_ENV);
+}
+
+// --- issue #235: where the cache lives ---
+
+TEST_F(AudioCacheTest, DefaultsToTheHistoricalLocationInsideTheSoundLibrary) {
+    AudioCache cache(root_.string());
+    const auto where = fs::path(cache.cacheDirectory());
+
+    EXPECT_EQ(where.parent_path().filename().string(), ".opus_cache");
+    EXPECT_EQ(where.parent_path().parent_path(), root_) << "an unset override must change nothing";
+}
+
+TEST_F(AudioCacheTest, HonoursAConfiguredCacheRootOutsideTheSoundLibrary) {
+    const auto elsewhere = fs::temp_directory_path() / ("audio-cache-elsewhere-" + std::to_string(::getpid()));
+    fs::create_directories(elsewhere);
+
+    AudioCache cache(root_.string(), elsewhere.string());
+    const auto where = fs::path(cache.cacheDirectory());
+
+    // <override>/<hostname> — the hostname scoping is kept, because two hosts
+    // must never share entries.
+    EXPECT_EQ(where.parent_path(), elsewhere);
+    EXPECT_FALSE(where.filename().empty());
+
+    // And it genuinely works from there.
+    const auto source = writeSource("relocated.wav", "relocated-source");
+    ASSERT_TRUE(save(cache, source, makeAudioData(0x51)).isSuccess());
+    ASSERT_NE(cache.tryLoadFromCache(source.string()), nullptr);
+    EXPECT_FALSE(fs::exists(root_ / ".opus_cache")) << "nothing should have been written to the sound library";
+
+    std::error_code ec;
+    fs::remove_all(elsewhere, ec);
+}
+
+TEST_F(AudioCacheTest, RefusesACacheRootThatWouldPutItBackInTheSoundWalk) {
+    // The ONLY reason the default location is invisible to the sound-store
+    // walkers is that they skip dot-directories. A configured root inside the
+    // library without one would re-create issue #223 — 17 files per sound in
+    // the path of every GET /api/v1/sound, a 50-66 s stall — by configuration.
+    const auto unsafe = root_ / "packet-cache";
+
+    AudioCache cache(root_.string(), unsafe.string());
+    const auto where = fs::path(cache.cacheDirectory());
+
+    EXPECT_EQ(where.parent_path().filename().string(), ".opus_cache")
+        << "an unsafe override must fall back to the default, not be honoured";
+    EXPECT_FALSE(fs::exists(unsafe)) << "and must not create the directory it refused";
+}
+
+TEST_F(AudioCacheTest, ADotPrefixedRootInsideTheSoundLibraryIsFine) {
+    // Still inside the library, but the walkers skip it, so it is safe.
+    const auto safe = root_ / ".packets";
+
+    AudioCache cache(root_.string(), safe.string());
+
+    EXPECT_EQ(fs::path(cache.cacheDirectory()).parent_path(), safe);
+}
+
+TEST_F(AudioCacheTest, AnUnusableConfiguredRootFallsBackRatherThanLosingTheCache) {
+    // A mistyped setting should cost the faster location, not caching
+    // altogether: main.cpp turns a constructor throw into "no cache at all".
+    const auto unwritable = fs::temp_directory_path() / ("audio-cache-ro-" + std::to_string(::getpid()));
+    fs::create_directories(unwritable);
+    fs::permissions(unwritable, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+
+    std::unique_ptr<AudioCache> cache;
+    ASSERT_NO_THROW(cache = std::make_unique<AudioCache>(root_.string(), (unwritable / "nested").string()));
+
+    fs::permissions(unwritable, fs::perms::owner_all, fs::perm_options::replace);
+
+    ASSERT_NE(cache, nullptr);
+    EXPECT_EQ(fs::path(cache->cacheDirectory()).parent_path().filename().string(), ".opus_cache")
+        << "an unusable configured root must fall back to the working default";
+
+    const auto source = writeSource("fallback.wav", "fallback-source");
+    ASSERT_TRUE(save(*cache, source, makeAudioData(0x52)).isSuccess())
+        << "and the cache must still be usable afterwards";
+
+    // The resolved path is what callers and the startup log report, so it must
+    // say the default — claiming the configured location while sitting in the
+    // default one would send an operator looking in the wrong directory.
+    EXPECT_EQ(fs::path(cache->cacheDirectory()).parent_path(), root_ / ".opus_cache");
+
+    std::error_code ec;
+    fs::remove_all(unwritable, ec);
 }
 
 } // namespace

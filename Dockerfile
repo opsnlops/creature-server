@@ -90,6 +90,28 @@ COPY src/ /build/creature-server/src
 COPY tests/ /build/creature-server/tests
 COPY run_linux_tests.sh /build/creature-server/run_linux_tests.sh
 
+# The whole scripts/ tree, because cpack packages things from it: the maintainer
+# scripts and conffiles list under debian/, the /etc files, and the systemd
+# units. 136K, so copying all of it costs nothing.
+#
+# Deliberately the whole directory and not named subdirectories. Copying
+# scripts/debian/ alone was the first fix here, and adding the systemd units one
+# step later broke the build in exactly the same way — install() cannot find a
+# file that never entered the image. Anything new under scripts/ that packaging
+# needs now just works (issues #235, #237, #240).
+#
+# Phase 2, NOT phase 1: these change independently of the heavy FetchContent
+# deps, so copying them up there would bust that cache every time a config
+# default or a unit comment changes (issue #18). Phase 1 keeps its own narrow
+# copy of transport-route-manifest.py because the manifest check runs during
+# that configure.
+#
+# Note the silent half of this: install() fails loudly on a missing file, but
+# CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA resolves missing maintainer scripts to
+# nothing at all — a package that builds and installs while creating neither the
+# service user nor the cache directory.
+COPY scripts/ /build/creature-server/scripts
+
 # Real project version goes here, AFTER the deps_only layer is sealed. The
 # Phase 2 cmake reconfigure below re-reads VERSION.txt and applies it to
 # project() / Version.h / the .deb metadata. See issue #18.

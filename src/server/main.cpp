@@ -3,6 +3,7 @@
 //
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <filesystem>
 #include <locale>
@@ -30,6 +31,7 @@
 #include "Version.h"
 #include "model/PlaylistStatus.h"
 #include "server/animation/SessionManager.h"
+#include "server/audio/AudioCacheMaintenance.h"
 #include "server/audio/LocalAudioPlaybackCoordinator.h"
 #include "server/audio/NativeAudioPlaybackService.h"
 #include "server/audio/SoundPathResolver.h"
@@ -146,6 +148,11 @@ std::shared_ptr<audio::NativeAudioPlaybackService> nativeAudioPlaybackService;
 
 // Audio cache for pre-encoded Opus files
 std::shared_ptr<util::AudioCache> audioCache;
+
+// Background prune that keeps the on-disk Opus cache from growing forever
+// (issue #225). Held globally so the manual debug endpoint can preview against
+// the same policy the automatic sweep applies.
+std::shared_ptr<audio::AudioCacheMaintenance> audioCacheMaintenance;
 
 // Basename → canonical-path indexes over the two sound stores (issue #94).
 // Request threads look up here instead of walking the tree; Storage marks
@@ -486,18 +493,36 @@ int main(const int argc, char **argv) {
 
     // Initialize audio cache for faster Opus encoding
     try {
-        creatures::audioCache =
-            std::make_shared<creatures::util::AudioCache>(creatures::config->getSoundFileLocation());
+        // Where the encoded packets live: --audio-cache-dir, or
+        // AUDIO_CACHE_DIR, or empty for the historical location inside the
+        // sound library (issue #235). The main server's library is on a
+        // nightly-backed-up network volume whose benefits the cache cannot
+        // use, so pointing this at local disk is the faster choice there.
+        creatures::audioCache = std::make_shared<creatures::util::AudioCache>(creatures::config->getSoundFileLocation(),
+                                                                              creatures::config->getAudioCacheDir());
         creatures::rtp::AudioStreamBuffer::setAudioCacheInstance(creatures::audioCache);
         info("Audio cache initialized for faster Opus encoding");
 
         auto stats = creatures::audioCache->getStats();
         debug("Audio cache stats: {} cached files, {} hits, {} misses", stats.totalCachedFiles, stats.cacheHits,
               stats.cacheMisses);
+
+        // Nothing ever pruned this cache in production — see issue #225 — so
+        // it grew without bound inside the permanent sound root. The sweep
+        // runs on its own thread (never the 1 ms event loop) and its first
+        // pass is delayed, so startup never waits on a disk walk.
+        const auto prunePolicy = creatures::util::AudioCache::PrunePolicy::forHost(creatures::config->getTravelMode());
+        const auto pruneIntervalHours = creatures::environmentToUnsignedLongLong(
+            AUDIO_CACHE_PRUNE_INTERVAL_HOURS_ENV, DEFAULT_AUDIO_CACHE_PRUNE_INTERVAL_HOURS);
+        creatures::audioCacheMaintenance = std::make_shared<creatures::audio::AudioCacheMaintenance>(
+            creatures::audioCache, prunePolicy, std::chrono::seconds(AUDIO_CACHE_PRUNE_STARTUP_DELAY_SECONDS),
+            std::chrono::seconds(pruneIntervalHours * 3600ULL));
+        creatures::audioCacheMaintenance->start();
     } catch (const std::exception &e) {
         error("Failed to initialize audio cache: {}", e.what());
         warn("Audio will be encoded without caching (slower performance)");
         creatures::audioCache = nullptr;
+        creatures::audioCacheMaintenance = nullptr;
         creatures::rtp::AudioStreamBuffer::setAudioCacheInstance(nullptr);
     }
 
@@ -519,8 +544,26 @@ int main(const int argc, char **argv) {
     creatures::e131Server->init(creatures::config->getNetworkDevice(), version, creatures::config->getTravelMode());
     creatures::e131Server->start();
 
-    // TODO: Remove this, this is just for debugging. Universe 1000 is "production."
-    // creatures::e131Server->createUniverse(1000);
+    // Re-learn where each creature was last playing (issue #231). The runtime
+    // creature/universe map is filled only by POST /api/v1/creature/register,
+    // which controllers call at THEIR startup — so without this a server
+    // restart forgets every assignment until each controller happens to
+    // restart, and a dialog whose participant is powered off (or simply hasn't
+    // re-registered) is refused even though its audio belongs in the room
+    // regardless. A creature taken down for maintenance is still assigned to
+    // the universe it was last seen on.
+    if (creatures::db && creatures::creatureUniverseMap) {
+        auto rememberedResult = creatures::db->getCreatureLastKnownUniverses();
+        if (rememberedResult.isSuccess()) {
+            const auto remembered = rememberedResult.getValue().value();
+            for (const auto &[creatureId, universe] : remembered) {
+                creatures::creatureUniverseMap->put(creatureId, universe);
+            }
+            info("Restored {} creature/universe assignment(s) from the last run", remembered.size());
+        } else {
+            warn("Could not restore creature/universe assignments: {}", rememberedResult.getError()->getMessage());
+        }
+    }
 
     // Fire up the watchdog
     auto watchdog = std::make_shared<creatures::Watchdog>(creatures::db);
@@ -567,6 +610,12 @@ int main(const int argc, char **argv) {
 
     // Tell the E131Server to stop
     creatures::e131Server->shutdown();
+
+    // Ask the cache sweep to stop early: an in-flight prune abandons itself
+    // between entries, so this never adds to shutdown time.
+    if (creatures::audioCacheMaintenance) {
+        creatures::audioCacheMaintenance->shutdown();
+    }
 
     // Stop transport admission and join its request workers before tearing down
     // the remaining Mongo users or any shared application service.

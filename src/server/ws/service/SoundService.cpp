@@ -33,7 +33,7 @@ extern std::shared_ptr<Database> db;
 
 namespace fs = std::filesystem;
 
-namespace creatures ::ws {
+namespace creatures::ws {
 
 namespace {
 std::filesystem::path adHocRoot() { return std::filesystem::temp_directory_path() / "creature-adhoc"; }
@@ -174,8 +174,26 @@ Result<std::vector<Sound>> SoundService::getAllSounds(SpanParent parentSpan) {
             // renders under dialog/ — are listed too (issue #46). The emitted
             // file_name stays the basename, which the resolver looks up by walking
             // the tree, so the client contract is unchanged.
-            for (const auto &entry : fs::recursive_directory_iterator(path)) {
+            //
+            // Dot-directories are pruned via the shared rule: AudioCache keeps its
+            // Opus packet cache inside this very root (17 files per cached sound,
+            // bounded since issue #225 but still not ours to walk), and descending
+            // into it cost ~50 s per call — stat-ing files that the extension
+            // filter below then discards. Application work runs on a small bounded
+            // executor (4 workers, 8 queued), so each walk held a worker for its
+            // full duration: five concurrent list calls wedged the whole API for
+            // ~a minute. A 220 ms dialog render came back after 52 s, and once the
+            // queue filled, further requests were rejected outright with a 503
+            // "Application work queue is full" (issue #223).
+            auto iterator = fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied);
+            const auto end = fs::end(iterator);
+            for (auto it = fs::begin(iterator); it != end; ++it) {
+                const auto &entry = *it;
                 const auto &filepath = entry.path();
+                if (fs::is_directory(entry.status()) && creatures::audio::isSkippedSoundDirectory(filepath)) {
+                    it.disable_recursion_pending();
+                    continue;
+                }
                 if (fs::is_regular_file(entry.status())) {
                     std::string extension = filepath.extension().string();
                     if (acceptableExtensions.find(extension) != acceptableExtensions.end()) {

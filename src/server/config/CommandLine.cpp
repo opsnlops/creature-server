@@ -23,6 +23,8 @@
 #include "server/audio/AudioOutput.h"
 #include "server/audio/NativeAudioConfig.h"
 #include "server/config.h"
+#include "server/config/ConfigFile.h"
+#include "server/config/InterfaceIndex.h"
 #include "server/config/MongoUri.h"
 #include "server/namespace-stuffs.h"
 #include "util/environment.h"
@@ -34,11 +36,65 @@
 
 namespace creatures {
 
+namespace {
+
+/**
+ * Find --config in argv before argparse runs.
+ *
+ * Chicken-and-egg: the config file supplies the DEFAULTS argparse falls back
+ * on, so it has to be read before the parser is built — but the path to it
+ * comes from the command line. A small scan up front is the usual way out.
+ *
+ * Returns the path and whether it was given explicitly. An explicit path must
+ * exist; the default one is read only if it happens to be there, so a dev build
+ * with no /etc/creature needs no flag and no file.
+ */
+struct ConfigFileChoice {
+    std::string path{DEFAULT_CONFIG_FILE_PATH};
+    bool explicitlyGiven{false};
+};
+
+ConfigFileChoice findConfigFileArgument(int argc, char **argv) {
+    ConfigFileChoice choice;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg{argv[i]};
+        if (arg == "--config" && i + 1 < argc) {
+            choice.path = argv[i + 1];
+            choice.explicitlyGiven = true;
+        } else if (arg.rfind("--config=", 0) == 0) {
+            choice.path = arg.substr(std::string("--config=").size());
+            choice.explicitlyGiven = true;
+        }
+    }
+    return choice;
+}
+
+} // namespace
+
 std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **argv) {
 
     auto config = std::make_shared<Configuration>();
 
+    // The bottom layer of configuration: file < environment < command line.
+    const auto configChoice = findConfigFileArgument(argc, argv);
+    auto fileResult = ConfigFile::load(configChoice.path, configChoice.explicitlyGiven);
+    if (!fileResult.isSuccess()) {
+        critical(fileResult.getError()->getMessage());
+        std::exit(1);
+    }
+    const auto configFile = fileResult.getValue().value();
+    if (!configFile.sourcePath().empty()) {
+        info("reading configuration from {}", configFile.sourcePath());
+    }
+
     argparse::ArgumentParser program("creature-server", getVersion());
+
+    program.add_argument("--config")
+        .help(fmt::format("JSON configuration file, read before the environment and the rest of the command line "
+                          "(both of which override it). Defaults to {} when that file exists",
+                          DEFAULT_CONFIG_FILE_PATH))
+        .default_value(std::string{DEFAULT_CONFIG_FILE_PATH})
+        .nargs(1);
 
     program.add_argument("-g", "--use-gpio")
         .help("use the GPIO pins? (RPI only!)")
@@ -47,7 +103,7 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     program.add_argument("-d", "--mongodb-uri")
         .help("MongoDB URI to use")
-        .default_value(environmentToString(DB_URI_ENV, DEFAULT_DB_URI))
+        .default_value(environmentToString(DB_URI_ENV, configFile.stringOr("mongodb_uri", DEFAULT_DB_URI)))
         .nargs(1);
 
     program.add_argument("--http-max-connections")
@@ -103,7 +159,7 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     program.add_argument("-c", "--sound-channels")
         .help("number of sound channels to use")
-        .default_value(environmentToInt(SOUND_CHANNELS_ENV, DEFAULT_SOUND_CHANNELS))
+        .default_value(environmentToInt(SOUND_CHANNELS_ENV, configFile.intOr("sound_channels", DEFAULT_SOUND_CHANNELS)))
         .nargs(1)
         .scan<'i', int>();
 
@@ -115,12 +171,21 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     program.add_argument("-l", "--sounds-location")
         .help("location on the file system of the sound files")
-        .default_value(environmentToString(SOUND_FILE_LOCATION_ENV, DEFAULT_SOUND_FILE_LOCATION))
+        .default_value(environmentToString(SOUND_FILE_LOCATION_ENV,
+                                           configFile.stringOr("sounds_location", DEFAULT_SOUND_FILE_LOCATION)))
+        .nargs(1);
+
+    program.add_argument("--audio-cache-dir")
+        .help("where to keep the Opus packet cache; defaults to a hidden directory inside the sounds location. "
+              "Point this at local disk to keep the cache off slow or backed-up network storage (issue #235)")
+        .default_value(
+            environmentToString(AUDIO_CACHE_DIR_ENV, configFile.stringOr("audio_cache_dir", DEFAULT_AUDIO_CACHE_DIR)))
         .nargs(1);
 
     program.add_argument("-n", "--network-device")
         .help("network device to use")
-        .default_value(environmentToString(NETWORK_DEVICE_NAME_ENV, DEFAULT_NETWORK_DEVICE_NAME))
+        .default_value(environmentToString(NETWORK_DEVICE_NAME_ENV,
+                                           configFile.stringOr("network_device", DEFAULT_NETWORK_DEVICE_NAME)))
         .nargs(1);
 
     program.add_argument("-v", "--voice-api-key")
@@ -164,11 +229,6 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         .default_value(environmentToInt(STREAMING_TIMEOUT_FRAMES_ENV, DEFAULT_STREAMING_TIMEOUT_FRAMES))
         .scan<'i', int>()
         .nargs(1);
-
-    program.add_argument("--rtp-fragment")
-        .help("enable RTP packet fragmentation for standard MTU networks (WiFi, etc.)")
-        .default_value(environmentToInt(RTP_FRAGMENT_PACKETS_ENV, DEFAULT_RTP_FRAGMENT_PACKETS) == 1)
-        .implicit_value(true);
 
     program.add_argument("--rtp-audio-load-workers")
         .help("fixed worker count for cooperative RTP WAV/cache loads")
@@ -283,11 +343,18 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     const bool travelMode = program.get<bool>("--travel-mode");
     const bool explicitLocalAudio = program.get<bool>("--local-audio");
     const bool explicitRtpAudio = program.get<bool>("--rtp-audio");
-    std::string configuredAudioMode = environmentToString(AUDIO_MODE_ENV, DEFAULT_AUDIO_MODE);
+    std::string configuredAudioMode =
+        environmentToString(AUDIO_MODE_ENV, configFile.stringOr("audio_mode", DEFAULT_AUDIO_MODE));
     std::transform(configuredAudioMode.begin(), configuredAudioMode.end(), configuredAudioMode.begin(),
                    [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
     if (configuredAudioMode != "rtp" && configuredAudioMode != "local") {
-        critical("{} must be 'rtp' or 'local'", AUDIO_MODE_ENV);
+        // Name every place it could have come from, and quote what we got. This
+        // used to name only AUDIO_MODE, which sent anyone with a bad audio_mode
+        // in the config file looking at an environment variable they had never
+        // set (issue #242).
+        critical("audio mode must be 'rtp' or 'local', but got '{}' (from the config file's audio_mode, {}, or the "
+                 "built-in default)",
+                 configuredAudioMode, AUDIO_MODE_ENV);
         std::exit(1);
     }
     if (travelMode) {
@@ -308,14 +375,13 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         debug("using RTP audio streaming");
     }
 
-    // RTP fragmentation setting
-    auto rtpFragment = program.get<bool>("--rtp-fragment");
-    config->setRtpFragmentPackets(rtpFragment);
-    debug("RTP packet fragmentation: {}", rtpFragment ? "enabled" : "disabled");
-
     auto rtpAudioLoadWorkers = program.get<int>("--rtp-audio-load-workers");
+    // environmentSet, not just getenv != nullptr: an empty RTP_AUDIO_LOAD_WORKERS=
+    // used to count as an override here while the parser rejected it, so a
+    // travel Pi silently got the mainstage worker count AND an error log. The
+    // two checks have to agree on what "set" means (issue #242).
     const bool rtpAudioLoadWorkersOverridden =
-        program.is_used("--rtp-audio-load-workers") || std::getenv(RTP_AUDIO_LOAD_WORKERS_ENV) != nullptr;
+        program.is_used("--rtp-audio-load-workers") || environmentSet(RTP_AUDIO_LOAD_WORKERS_ENV);
     if (travelMode && !rtpAudioLoadWorkersOverridden) {
         // Travel mode currently forces local audio, but keep its effective
         // default safe for the Pi if that restriction changes later.
@@ -449,6 +515,16 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         debug("set our sound file location to {}", soundsLocation);
     }
 
+    // Empty means "use the default location", so unlike most settings an
+    // empty value here is meaningful rather than skipped.
+    auto audioCacheDir = program.get<std::string>("--audio-cache-dir");
+    config->setAudioCacheDir(audioCacheDir);
+    if (audioCacheDir.empty()) {
+        debug("audio cache location: default (inside the sounds location)");
+    } else {
+        info("audio cache location set to {}", audioCacheDir);
+    }
+
     auto voiceApiKey = program.get<std::string>("-v");
     debug("voice API key configured: {}", !voiceApiKey.empty());
     if (!voiceApiKey.empty()) {
@@ -498,11 +574,17 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
 
     // Try to convert the name to an index number
     try {
-        if (uint8_t networkDevice = getInterfaceIndex(networkDeviceName); networkDevice > 0) {
+        if (const uint16_t networkDevice = getInterfaceIndex(networkDeviceName); networkDevice > 0) {
             config->setNetworkDevice(networkDevice);
             debug("set our network device to {}", networkDevice);
         }
     } catch (const std::system_error &e) {
+        critical(e.what());
+        std::exit(1);
+    } catch (const std::out_of_range &e) {
+        // An index too large to store. Refusing to start is right: the
+        // alternative was binding multicast to whatever the truncated value
+        // happened to point at (issue #238).
         critical(e.what());
         std::exit(1);
     }
@@ -519,12 +601,11 @@ void CommandLine::listSoundDevices() { audio::listAudioOutputDevices(std::cout);
  * @param interfaceName the friendly name of an interface like "eth0" or "lo0"
  * @return the index of the interface, or throws if the interface can't be found
  */
-uint8_t CommandLine::getInterfaceIndex(const std::string &interfaceName) {
-    const uint8_t index = if_nametoindex(interfaceName.c_str());
-    if (index == 0) {
-        throw std::system_error(errno, std::generic_category(), "Failed to find interface: " + interfaceName);
-    }
-    return index;
+uint16_t CommandLine::getInterfaceIndex(const std::string &interfaceName) {
+    // if_nametoindex returns an unsigned int; keep it that wide until it has
+    // been checked, because assigning it to something narrower is exactly the
+    // bug this fixes (issue #238).
+    return narrowInterfaceIndex(if_nametoindex(interfaceName.c_str()), interfaceName);
 }
 
 void CommandLine::listNetworkDevices() {

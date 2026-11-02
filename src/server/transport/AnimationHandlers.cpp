@@ -250,7 +250,7 @@ PreparedResponse playPreparedAdHocAnimation(const std::string &body, const std::
         if (std::find(targetCreatures.begin(), targetCreatures.end(), track.creature_id) == targetCreatures.end())
             targetCreatures.push_back(track.creature_id);
     }
-    const auto universeResult = creatures::resolveCommonUniverse(targetCreatures);
+    const auto universeResult = creatures::resolvePlaybackUniverse(targetCreatures);
     if (!universeResult.isSuccess()) {
         const auto error = universeResult.getError().value();
         switch (error.getCode()) {
@@ -268,7 +268,15 @@ PreparedResponse playPreparedAdHocAnimation(const std::string &body, const std::
             return status(500, error.getMessage(), span);
         }
     }
-    const auto universe = universeResult.getValue().value();
+    const auto playbackUniverse = universeResult.getValue().value();
+    const auto universe = playbackUniverse.universe;
+    if (!playbackUniverse.unregistered.empty() && span) {
+        // The scene still includes them: their audio plays into the room, only
+        // their motion is missing (issue #233).
+        span->setAttribute("animation.creatures.absent", static_cast<int64_t>(playbackUniverse.unregistered.size()));
+        span->setAttribute("animation.creatures.absent_ids",
+                           creatures::joinStrings(playbackUniverse.unregistered, ","));
+    }
     const auto session = creatures::sessionManager->interruptIdleOnly(universe, animation, targetCreatures, span);
     if (!session.isSuccess())
         return failure(session.getError().value(), span);

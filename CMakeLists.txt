@@ -313,6 +313,11 @@ else()
 endif()
 
 #Install data files for packaging(DEB)
+#
+# Deliberately ABSOLUTE, and it must stay that way: the binary hardcodes this
+# same path in DEFAULT_WHISPER_MODEL_PATH and DEFAULT_CMU_DICT_PATH
+# (src/server/config.h). A relative destination would follow the packaging
+# prefix and could silently drift away from what the server looks for.
 set(CREATURE_INSTALL_DATA_DIR "/usr/share/creature-server/data")
 install(FILES ${WHISPER_MODEL_FILE}
         DESTINATION ${CREATURE_INSTALL_DATA_DIR}
@@ -731,11 +736,19 @@ if(TRUE)
     target_link_libraries(creature-server PRIVATE creature_uwebsockets)
 endif()
 
+# usr/bin, RELATIVE to the packaging prefix (which is "/" — see Package.cmake).
+#
+# These were absolute "/bin" and "/lib", which CMake honours as-is and so
+# bypassed the "/usr" prefix entirely: the package shipped the binary to
+# /bin/creature-server while the systemd units call /usr/bin/creature-server.
+# That only ever worked because /bin is a symlink to /usr/bin on a usr-merged
+# system, and shipping to the aliased path is what post-merge Debian asks
+# packages not to do (issue #237).
 install(TARGETS creature-server
         COMPONENT creature-server
-        RUNTIME DESTINATION "/bin"
-        LIBRARY DESTINATION "/lib"
-        DESTINATION "/bin"
+        RUNTIME DESTINATION "usr/bin"
+        LIBRARY DESTINATION "usr/lib"
+        DESTINATION "usr/bin"
 )
 
 endif() # EXISTS src/server/main.cpp
@@ -845,6 +858,8 @@ add_executable(creature-server-test
         src/model/Sound.cpp
         tests/runtime/Activity_test.cpp
         tests/server/animation/SessionManager_ownership_test.cpp
+        tests/server/creature/UniverseResolver_test.cpp
+        src/server/creature/UniverseResolver.cpp
         src/server/animation/SessionManager.cpp
         src/server/animation/PlaybackSession.cpp
         tests/fixture/FixturePatternRunner_test.cpp
@@ -853,6 +868,7 @@ add_executable(creature-server-test
         src/server/fixture/FixturePatternRunner.cpp
         tests/util/SetAttributeOverload_test.cpp
         tests/util/AudioCache_test.cpp
+        tests/util/Environment_test.cpp
         tests/util/Slugify_test.cpp
         tests/util/UuidValidation_test.cpp
         tests/server/ws/CreatureActivityMessage_test.cpp
@@ -870,6 +886,9 @@ add_executable(creature-server-test
         tests/server/storage/Storage_test.cpp
         tests/server/storage/StoragePublishers_test.cpp
         tests/server/config/MongoUri_test.cpp
+        tests/server/config/ConfigFile_test.cpp
+        tests/server/config/InterfaceIndex_test.cpp
+        src/server/config/ConfigFile.cpp
         src/server/config/MongoUri.cpp
         tests/server/transport/ApiDocumentation_test.cpp
         src/server/transport/ApiDocumentation.cpp

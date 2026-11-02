@@ -34,6 +34,19 @@ Database::getAllCreatures(creatures::SortBy /*sortBy*/, bool /*ascending*/,
     return Result<std::vector<creatures::Creature>>{std::vector<creatures::Creature>{}};
 }
 
+// Remembering the last known universe (issue #231). Succeeds silently so the
+// registration path under test is not made to fail by a bookkeeping write it
+// treats as best-effort anyway.
+Result<void> Database::setCreatureLastKnownUniverse(const creatureId_t & /*creatureId*/, universe_t /*universe*/,
+                                                    const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
+    return Result<void>{};
+}
+
+Result<std::unordered_map<creatureId_t, universe_t>>
+Database::getCreatureLastKnownUniverses(const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
+    return Result<std::unordered_map<creatureId_t, universe_t>>{std::unordered_map<creatureId_t, universe_t>{}};
+}
+
 Result<creatures::Creature> Database::upsertCreature(const std::string & /*creatureJson*/,
                                                      const std::shared_ptr<OperationSpan> & /*parentSpan*/) {
     if (g_pretendSuccess)

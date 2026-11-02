@@ -15,7 +15,12 @@ set(CPACK_PACKAGE_DESCRIPTION
         a websocket based service for playing and managing creatures."
         )
 
-set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+# "/" rather than "/usr" so install() can reach /etc and /var, which the config
+# file needs and which the /usr prefix made unreachable — an install()
+# DESTINATION of "/etc/..." under a "/usr" prefix is packaged as "/usr/etc/...".
+# Every destination is therefore spelled relative and starts with usr/ where it
+# belongs there (issue #237).
+set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 
 # Pull the version from the project
 set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
@@ -28,6 +33,66 @@ set(CPACK_DEBIAN_PACKAGE_RELEASE ${NOW})
 
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "April White <april@opsnlops.io>")
 
+# Maintainer scripts: create the creature-server system user and
+# /var/cache/creature-server on install, and remove the cache on purge
+# (issue #235). That is the FHS and Debian Policy location for
+# regenerable application data, which is exactly what the Opus packet cache is.
+#
+# These have to be maintainer scripts rather than install() calls, because
+# CPACK_PACKAGING_INSTALL_PREFIX below is /usr: an install() DESTINATION of
+# "/var/cache/..." would be packaged as "/usr/var/cache/...".
+#
+# They must stay executable in git, or dpkg refuses them.
+#
+# `conffiles` marks the two files under /etc as configuration, so dpkg preserves
+# local edits across upgrades and prompts on conflict. Built with raw CPack
+# rather than debhelper, nothing infers this from the path, so it is listed
+# explicitly — and without it an upgrade would silently overwrite the operator's
+# config, which is the one thing a config file must never do (issue #237).
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/debian/postinst;${CMAKE_CURRENT_SOURCE_DIR}/scripts/debian/postrm;${CMAKE_CURRENT_SOURCE_DIR}/scripts/debian/conffiles")
+
+# The systemd units, shipped the way creature-world ships its own
+# (debian/creature-world.service -> usr/lib/systemd/system/). Version-controlled
+# here so the deployment description lives with the code (issue #240).
+#
+# NOT conffiles, deliberately. A unit under /usr/lib/systemd/system is
+# package-managed, and systemd gives /etc/systemd/system precedence over it --
+# so a host with a hand-installed unit there keeps winning until that copy is
+# removed, and local changes belong in a drop-in under
+# /etc/systemd/system/creature-server.service.d/ rather than by editing this.
+# That is also the safe migration path: installing this package cannot change
+# what a host is currently running.
+#
+# Both units ship. They are two deployments of the same binary and only the
+# enabled one runs, so the travel unit is inert on the mainstage host and vice
+# versa.
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/scripts/systemd/creature-server.service
+               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/systemd/creature-server-travel.service
+        DESTINATION usr/lib/systemd/system
+        COMPONENT creature-server)
+
+# The packaged configuration. Version-controlled in this repo so the production
+# settings live with the code rather than only in a unit file, matching how
+# creature-world ships /etc/creature/world.json from the Swift monorepo.
+#
+# Secrets are NOT here: see scripts/debian/default for why.
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/scripts/debian/server.json
+        DESTINATION etc/creature
+        COMPONENT creature-server)
+# 0600, not the default 0644. This file holds the ElevenLabs and Honeycomb keys,
+# and shipping it world-readable would make moving them out of the unit
+# pointless — the whole reason for this file is that unit files under
+# /lib/systemd/system are readable by every user on the box.
+#
+# root-only is still correct for a unit running as a non-root User=, because
+# systemd reads EnvironmentFile= as root before dropping privileges.
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/scripts/debian/default
+        DESTINATION etc/default
+        RENAME creature-server
+        PERMISSIONS OWNER_READ OWNER_WRITE
+        COMPONENT creature-server)
+
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 
@@ -36,7 +101,9 @@ set(CPACK_DEBIAN_PACKAGE_CONFLICTS "libmongoclient0, libmongoc-dev, libmongoc-1.
 # Note: CPACK_DEBIAN_PACKAGE_SHLIBDEPS is ON, so all linked libraries are auto-detected.
 # Only list runtime-only dependencies here (not direct library links).
 # - locales-all: For proper locale support
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "locales-all")
+# - adduser: postinst creates the creature-server system user (Policy 9.2.2
+#            requires depending on it rather than assuming it is present)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "locales-all, adduser")
 
 # rhubarb-lip-sync is optional: only needed when --lip-sync-engine=rhubarb (legacy fallback)
 # The default engine is now whisper.cpp (bundled in the package)
@@ -44,11 +111,11 @@ set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "rhubarb-lip-sync")
 
 if(TRUE) # uWebSockets license notices ship with every package
     install(FILES ${uwebsockets_SOURCE_DIR}/LICENSE
-            DESTINATION share/doc/creature-server
+            DESTINATION usr/share/doc/creature-server
             RENAME uWebSockets.LICENSE
             COMPONENT creature-server)
     install(FILES ${uwebsockets_SOURCE_DIR}/uSockets/LICENSE
-            DESTINATION share/doc/creature-server
+            DESTINATION usr/share/doc/creature-server
             RENAME uSockets.LICENSE
             COMPONENT creature-server)
 endif()

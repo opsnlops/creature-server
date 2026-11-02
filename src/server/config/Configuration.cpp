@@ -60,6 +60,10 @@ void Configuration::setSoundChannels(const uint8_t _soundChannels) { this->sound
 
 std::string Configuration::getSoundFileLocation() const { return this->soundFileLocation; }
 
+std::string Configuration::getAudioCacheDir() const { return this->audioCacheDir; }
+
+void Configuration::setAudioCacheDir(std::string _audioCacheDir) { this->audioCacheDir = std::move(_audioCacheDir); }
+
 void Configuration::setSoundFileLocation(std::string _soundFileLocation) {
     this->soundFileLocation = std::move(_soundFileLocation);
 }
@@ -71,10 +75,6 @@ void Configuration::setAudioMode(const Configuration::AudioMode _mode) { this->a
 bool Configuration::getTravelMode() const { return this->travelMode; }
 
 void Configuration::setTravelMode(const bool _travelMode) { this->travelMode = _travelMode; }
-
-bool Configuration::getRtpFragmentPackets() const { return this->rtpFragmentPackets; }
-
-void Configuration::setRtpFragmentPackets(const bool _fragmentPackets) { this->rtpFragmentPackets = _fragmentPackets; }
 
 uint32_t Configuration::getRtpAudioLoadWorkers() const { return this->rtpAudioLoadWorkers; }
 

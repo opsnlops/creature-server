@@ -110,4 +110,91 @@ TEST(SensorReportJson, RejectsInvalidDynamixelTelemetry) {
     EXPECT_FALSE(dynamixelSensorReportFromJson(duplicateId).isSuccess());
 }
 
+// --- issue #229: the controller's `online` flag ---
+
+TEST(SensorReportJson, AcceptsTheOnlineFlagFromTheWorkbenchRig) {
+    // The exact shape the controller sends (DynamixelSensorHandler.cpp emits
+    // `online` unconditionally). Before #229 this whole report was rejected
+    // with "contains unknown field 'online'", which left the rig invisible to
+    // the sensor cache and the OTel gauges.
+    auto reading = validDynamixelReading();
+    reading["online"] = true;
+    const auto parsed =
+        dynamixelSensorReportFromJson({{"creature_id", CREATURE_ID}, {"dynamixel_motors", {std::move(reading)}}});
+
+    ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
+    ASSERT_EQ(parsed.getValue()->readings.size(), 1);
+    EXPECT_TRUE(parsed.getValue()->readings.front().online);
+}
+
+TEST(SensorReportJson, ParsesAnOfflineServoWithoutLosingTheReport) {
+    // The firmware reports EVERY configured servo every cycle, sending
+    // `D<id> 0.0 0 0 0 0` for one it did not hear from, so an absent servo is
+    // visibly absent rather than frozen at its last good reading. The report
+    // must still parse, and the flag must survive for consumers to act on.
+    nlohmann::json offline = {{"dxl_id", 7},      {"temperature_f", 0.0},  {"present_load", 0}, {"voltage_mv", 0},
+                              {"voltage_v", 0.0}, {"present_position", 0}, {"online", false}};
+    const auto parsed =
+        dynamixelSensorReportFromJson({{"creature_id", CREATURE_ID}, {"dynamixel_motors", {std::move(offline)}}});
+
+    ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
+    // Copy the report out first: Result::getValue() returns BY VALUE, so a
+    // reference into `parsed.getValue()->readings` dangles at the end of the
+    // statement that created the temporary.
+    const auto report = parsed.getValue().value();
+    ASSERT_EQ(report.readings.size(), 1);
+    const auto &motor = report.readings.front();
+    EXPECT_EQ(motor.dxlId, 7U);
+    EXPECT_FALSE(motor.online) << "an offline servo must not be reported as online";
+    EXPECT_EQ(motor.temperatureF, 0.0) << "its zeros are preserved verbatim; online is what makes them readable";
+}
+
+TEST(SensorReportJson, OmittedOnlineFlagDefaultsToOnline) {
+    // Firmware older than the flag omits it, and the controller defaults that
+    // case to true as well. Defaulting to false here would mark every healthy
+    // servo on an un-upgraded bus as offline and suppress all of its gauges.
+    auto reading = validDynamixelReading();
+    ASSERT_FALSE(reading.contains("online"));
+    const auto parsed =
+        dynamixelSensorReportFromJson({{"creature_id", CREATURE_ID}, {"dynamixel_motors", {std::move(reading)}}});
+
+    ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
+    ASSERT_EQ(parsed.getValue()->readings.size(), 1);
+    EXPECT_TRUE(parsed.getValue()->readings.front().online);
+}
+
+TEST(SensorReportJson, NullOnlineFlagDefaultsToOnline) {
+    auto reading = validDynamixelReading();
+    reading["online"] = nullptr;
+    const auto parsed =
+        dynamixelSensorReportFromJson({{"creature_id", CREATURE_ID}, {"dynamixel_motors", {std::move(reading)}}});
+
+    ASSERT_TRUE(parsed.isSuccess()) << parsed.getError()->getMessage();
+    EXPECT_TRUE(parsed.getValue()->readings.front().online);
+}
+
+TEST(SensorReportJson, RejectsANonBooleanOnlineFlag) {
+    // Accepting the field must not mean accepting anything in it — a string or
+    // number here means the controller contract drifted again, and that should
+    // be loud rather than silently coerced.
+    auto numeric = validDynamixelReading();
+    numeric["online"] = 1;
+    EXPECT_FALSE(
+        dynamixelSensorReportFromJson({{"creature_id", CREATURE_ID}, {"dynamixel_motors", {numeric}}}).isSuccess());
+
+    auto text = validDynamixelReading();
+    text["online"] = "true";
+    EXPECT_FALSE(
+        dynamixelSensorReportFromJson({{"creature_id", CREATURE_ID}, {"dynamixel_motors", {text}}}).isSuccess());
+}
+
+TEST(SensorReportJson, StillRejectsGenuinelyUnknownFields) {
+    // The allowlist is the thing that caught #229 in the first place; widening
+    // it by one key must not turn it into a sieve.
+    auto reading = validDynamixelReading();
+    reading["onlien"] = true; // plausible typo
+    EXPECT_FALSE(
+        dynamixelSensorReportFromJson({{"creature_id", CREATURE_ID}, {"dynamixel_motors", {reading}}}).isSuccess());
+}
+
 } // namespace creatures

@@ -5,6 +5,7 @@
 #include <chrono>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // Disable shadow warnings for MongoDB C++ driver headers (third-party code)
@@ -81,6 +82,28 @@ class Database {
      *
      * @return a `Result<creatures::Creature>` with the encoded creature that we can return to the client
      */
+    /**
+     * Remember which universe a creature was last seen on (issue #231).
+     *
+     * Playback targets a universe, and before this the only record was an
+     * in-memory, add-only map populated by POST /api/v1/creature/register —
+     * which controllers call at THEIR startup. A server restart therefore
+     * forgot every assignment, and a dialog whose participant had not
+     * re-registered was refused outright even though the creature's audio
+     * belongs in the room whether or not its body is powered on.
+     *
+     * Stored as database-owned metadata on the creature document, NOT as
+     * controller configuration: `creatureFromStoredJson` strips it before
+     * strict config parsing, the same way it strips `_id`.
+     */
+    Result<void> setCreatureLastKnownUniverse(const creatureId_t &creatureId, universe_t universe,
+                                              const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+
+    /// Every remembered creature→universe assignment, for warming the runtime
+    /// map at startup so a restart does not forget where the show is playing.
+    Result<std::unordered_map<creatureId_t, universe_t>>
+    getCreatureLastKnownUniverses(const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
+
     Result<creatures::Creature> upsertCreature(const std::string &creatureJson,
                                                const std::shared_ptr<OperationSpan> &parentSpan = nullptr);
 

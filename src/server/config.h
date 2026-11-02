@@ -36,6 +36,10 @@
 #define DEFAULT_HTTP_MAX_CONNECTIONS_PER_PEER 64
 #define DB_NAME "creature_server"
 #define CREATURES_COLLECTION "creatures"
+// Database-owned runtime state on the creature document, not controller
+// configuration: the universe we last saw this creature playing on. Stripped
+// before strict config parsing, the same way _id is (issue #231).
+#define CREATURE_LAST_KNOWN_UNIVERSE_FIELD "last_known_universe"
 #define ANIMATIONS_COLLECTION "animations"
 #define PLAYLISTS_COLLECTION "playlists"
 #define ADHOC_ANIMATIONS_COLLECTION "adhoc_animations"
@@ -110,8 +114,6 @@
 #define DEFAULT_EVENT_LOOP_TRACE_SAMPLING 0.0005 // 0.05% = 5 in 10000 frames
 
 // RTP Fragmentation - useful for WiFi and networks without jumbo frame support
-#define RTP_FRAGMENT_PACKETS_ENV "RTP_FRAGMENT_PACKETS"
-#define DEFAULT_RTP_FRAGMENT_PACKETS 0 // Disabled by default (assume jumbo frames)
 
 // Cooperative animation RTP audio loader. Main production servers have enough
 // CPU/RAM to keep several cache-hit loads resident; cache-miss encoding still
@@ -219,6 +221,65 @@ static constexpr std::size_t RTP_MAX_ENCODED_TOTAL_BYTES =
 #define RTP_AUDIO_MEMO_BYTES_ENV "RTP_AUDIO_MEMO_BYTES"
 #define DEFAULT_RTP_AUDIO_MEMO_BYTES (1024ULL * 1024ULL * 1024ULL)
 #define DEFAULT_RTP_AUDIO_MEMO_BYTES_TRAVEL (128ULL * 1024ULL * 1024ULL)
+
+// On-disk Opus cache growth bounds (issue #225).
+//
+// The cache stores 17 Opus channels per sound at RTP_BITRATE, so one minute of
+// cached material costs roughly 17 x 256 kbps = 32 MB. A three-minute music
+// piece is ~98 MB, which is why "the source WAV still exists" is not a
+// sufficient retention rule once the music library (#202) starts generating
+// material continuously: the live-source population itself grows without
+// bound, and orphan pruning can never reclaim any of it.
+//
+// Two tiers bound it, in this order:
+//
+//  * Idle eviction. An entry not READ in longer than the idle age is dropped.
+//    90 days means "not played in a quarter", comfortably out of rotation for
+//    a show that runs most days of the year, so this should only ever catch
+//    the long tail. It clears out the tail but bounds nothing by itself.
+//  * Size cap. Whatever survives is held under a byte ceiling by evicting
+//    strictly least-recently-read entries first. This is the tier that
+//    actually bounds the cache, and it logs a warning when it engages,
+//    because engaging means the library outgrew its budget.
+//
+// Travel mode gets both far tighter: the travel server is an 8 GB Pi with
+// little disk headroom, while the main server has 64 GB and room to keep a
+// season of material warm. Same split as the in-memory memo budget above.
+//
+// Either env var set to 0 disables that tier.
+// Where the on-disk Opus cache lives (issue #235). Unset keeps the historical
+// behaviour: a hostname-scoped `.opus_cache` INSIDE the sound library. Set, the
+// cache root becomes <AUDIO_CACHE_DIR>/<hostname>.
+//
+// Worth moving because the cache is derived, regenerable, hostname-scoped data:
+// nothing reads another host's entries and nothing needs it restored from a
+// backup, so storing it on the sound library's slow, nightly-backed-up network
+// volume pays that volume's cost on the cache's hot path and collects none of
+// its benefits.
+// Where the packaged JSON configuration lives (issue #237). Read before the
+// environment and the command line, both of which override it, so the file is
+// the base layer rather than an authority. Read only if present, so a dev build
+// with no /etc/creature needs neither the file nor the --config flag.
+#define DEFAULT_CONFIG_FILE_PATH "/etc/creature/server.json"
+
+#define AUDIO_CACHE_DIR_ENV "AUDIO_CACHE_DIR"
+#define DEFAULT_AUDIO_CACHE_DIR ""
+
+#define AUDIO_CACHE_MAX_IDLE_DAYS_ENV "AUDIO_CACHE_MAX_IDLE_DAYS"
+#define DEFAULT_AUDIO_CACHE_MAX_IDLE_DAYS 90ULL
+#define DEFAULT_AUDIO_CACHE_MAX_IDLE_DAYS_TRAVEL 21ULL
+
+#define AUDIO_CACHE_MAX_BYTES_ENV "AUDIO_CACHE_MAX_BYTES"
+#define DEFAULT_AUDIO_CACHE_MAX_BYTES (32ULL * 1024ULL * 1024ULL * 1024ULL)
+#define DEFAULT_AUDIO_CACHE_MAX_BYTES_TRAVEL (4ULL * 1024ULL * 1024ULL * 1024ULL)
+
+// How often the background sweep runs, and how long it waits after startup
+// before its first pass. The delay keeps the walk off the startup critical
+// path and out of contention with the first show's audio loads; the sweep
+// itself never runs on the 1 ms event loop thread (issue #225).
+#define AUDIO_CACHE_PRUNE_INTERVAL_HOURS_ENV "AUDIO_CACHE_PRUNE_INTERVAL_HOURS"
+#define DEFAULT_AUDIO_CACHE_PRUNE_INTERVAL_HOURS 6ULL
+static constexpr uint32_t AUDIO_CACHE_PRUNE_STARTUP_DELAY_SECONDS = 60;
 
 // One multicast group per channel: 239.19.63.[1-17]
 inline constexpr std::array<const char *, RTP_STREAMING_CHANNELS> RTP_GROUPS = {

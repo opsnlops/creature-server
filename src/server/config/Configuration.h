@@ -62,6 +62,16 @@ class Configuration {
     /** @return Directory path where sound files are stored */
     std::string getSoundFileLocation() const;
 
+    /**
+     * @return Where the on-disk Opus cache is kept, or empty for the default
+     *         (a hostname-scoped `.opus_cache` inside the sound library).
+     *
+     * Worth pointing elsewhere on the main server: the sound library lives on
+     * a nightly-backed-up network volume whose benefits the cache cannot use,
+     * while its slow seeks land on the cache's hot path (issue #235).
+     */
+    std::string getAudioCacheDir() const;
+
     /** @return Current audio mode (local playback or RTP streaming) */
     AudioMode getAudioMode() const;
 
@@ -69,7 +79,6 @@ class Configuration {
     bool getTravelMode() const;
 
     /** @return True if RTP packets should be fragmented for standard MTU networks */
-    bool getRtpFragmentPackets() const;
 
     /** @return Number of fixed workers used for cooperative RTP audio loads */
     uint32_t getRtpAudioLoadWorkers() const;
@@ -139,6 +148,9 @@ class Configuration {
     /** @param _soundFileLocation Directory path for sound files */
     void setSoundFileLocation(std::string _soundFileLocation);
 
+    /** @param _audioCacheDir Directory for the Opus cache, or empty for the default */
+    void setAudioCacheDir(std::string _audioCacheDir);
+
     /** @param _networkDevice Network interface device ID */
     void setNetworkDevice(uint16_t _networkDevice);
 
@@ -161,7 +173,6 @@ class Configuration {
     void setTravelMode(bool _travelMode);
 
     /** @param _fragmentPackets Whether to enable RTP packet fragmentation */
-    void setRtpFragmentPackets(bool _fragmentPackets);
 
     /** @param _workers Fixed cooperative RTP audio loader worker count */
     void setRtpAudioLoadWorkers(uint32_t _workers);
@@ -220,6 +231,7 @@ class Configuration {
 
     /** Directory path where sound files are stored */
     std::string soundFileLocation = DEFAULT_SOUND_FILE_LOCATION;
+    std::string audioCacheDir = DEFAULT_AUDIO_CACHE_DIR;
 
     /** Audio mode for playback */
     /** Workshop/default mode is RTP; local output is an explicit or travel-mode opt-in. */
@@ -229,7 +241,6 @@ class Configuration {
     bool travelMode = DEFAULT_TRAVEL_MODE;
 
     /** Whether to fragment RTP packets for standard MTU networks (WiFi, etc.) */
-    bool rtpFragmentPackets = DEFAULT_RTP_FRAGMENT_PACKETS;
 
     /** Fixed workers for cooperative RTP WAV reads/cache loads */
     uint32_t rtpAudioLoadWorkers = DEFAULT_RTP_AUDIO_LOAD_WORKERS;

@@ -1,0 +1,46 @@
+# /etc/default/creature-server
+#
+# Read by the systemd units via `EnvironmentFile=-`. The leading dash means the
+# service still starts if this file is absent, so a box boots fine before it
+# exists.
+#
+# This file is a dpkg conffile: package upgrades preserve your edits and dpkg
+# prompts before replacing it. It ships mode 0600 for the reason below.
+#
+# THIS FILE HOLDS SECRETS, and that is the whole point of it. Unit files are
+# world-readable under /usr/lib/systemd/system, so an API key in ExecStart is
+# readable by every user on the box; this file is not.
+#
+# Everything that is NOT a secret belongs in /etc/creature/server.json
+# (issue #237), which is also version-controlled in the creature-server repo.
+
+# ElevenLabs. Only needed to GENERATE new dialog audio — stage re-renders,
+# playback and streaming all work without it (issue #146). Leaving it unset on a
+# travel rig is a reasonable choice: it makes an accidental dialog render fail
+# loudly instead of quietly spending money.
+#VOICE_API_KEY=
+
+# Honeycomb. Unset means traces are simply not exported; the server logs a
+# connection error per batch and carries on. Survivable, but it makes a
+# production problem much harder to see.
+#HONEYCOMB_API_KEY=
+
+# ---------------------------------------------------------------------------
+# Travel rig only
+# ---------------------------------------------------------------------------
+# creature-server-travel.service bakes its settings into the unit as flags and
+# reads these two to override them. The mainstage unit does not use them — it
+# takes its settings from /etc/creature/server.json instead.
+#CREATURE_MONGO_URI=mongodb://127.0.0.1/?serverSelectionTimeoutMS=2000
+#CREATURE_SOUNDS=/srv/sounds
+
+# ---------------------------------------------------------------------------
+# Anything else to append to the command line
+# ---------------------------------------------------------------------------
+# Appended by both units. Flags beat both the environment and the config file,
+# so this is the place for a one-off experiment, e.g.:
+#   --audio-cache-dir /var/cache/creature-server   (keep the cache off the NAS)
+#   --network-device eth0
+#   --use-gpio                                     (Pi GPIO, off by default)
+#   --animation-delay-ms 120                       (audio sync compensation)
+#CREATURE_SERVER_EXTRA_ARGS=

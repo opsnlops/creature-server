@@ -31,6 +31,7 @@
 #include "JsonParser.h"
 #include "server/namespace-stuffs.h"
 #include "util/ObservabilityManager.h"
+#include "util/environment.h"
 
 namespace creatures {
 extern std::shared_ptr<ObservabilityManager> observability;
@@ -58,6 +59,49 @@ constexpr const char *CACHE_COMPLETE_MARKER = ".complete";
  * proceed unlocked — degraded to process-local exclusion, which is exactly
  * the behavior before this feature existed — and say so in the log.
  */
+/**
+ * Why a configured cache root must not be used, or nullopt if it is fine
+ * (issue #235).
+ *
+ * The only reason the default `.opus_cache` location is invisible to the
+ * sound-store walkers is that they skip dot-directories. A configured root
+ * inside the sound library WITHOUT a dot-prefixed component would put 17 files
+ * per cached sound back in the path of every sound listing — which is issue
+ * #223, a 50-66 s stall on GET /api/v1/sound, re-created by configuration.
+ *
+ * Compared lexically after weakly_canonical so it works for paths that do not
+ * exist yet, which the cache root usually does not on first run.
+ */
+std::optional<std::string> describeUnsafeCacheRoot(const std::string &cacheRoot, const std::string &soundRoot) {
+    std::error_code ec;
+    const auto canonicalCache = std::filesystem::weakly_canonical(cacheRoot, ec);
+    if (ec) {
+        return std::nullopt; // can't judge it; the writability check still will
+    }
+    std::error_code soundError;
+    const auto canonicalSound = std::filesystem::weakly_canonical(soundRoot, soundError);
+    if (soundError) {
+        return std::nullopt;
+    }
+
+    // Is the cache root at or beneath the sound library?
+    const auto relative = std::filesystem::relative(canonicalCache, canonicalSound, ec);
+    if (ec || relative.empty() || *relative.begin() == "..") {
+        return std::nullopt; // outside the sound library: nothing to worry about
+    }
+
+    for (const auto &component : relative) {
+        const auto name = component.string();
+        if (!name.empty() && name.front() == '.') {
+            return std::nullopt; // a dot component means the walkers skip it
+        }
+    }
+
+    return fmt::format("it is inside the sound library at {} with no dot-prefixed component, so every sound listing "
+                       "would walk the cache again (issue #223)",
+                       relative.string());
+}
+
 class ScopedFileLock {
   public:
     static constexpr auto ACQUIRE_TIMEOUT = std::chrono::seconds(5);
@@ -121,7 +165,8 @@ uint64_t stablePathHash(const std::string &value) {
 
 } // namespace
 
-AudioCache::AudioCache(const std::string &soundDirectory) : soundDirectory_(soundDirectory) {
+AudioCache::AudioCache(const std::string &soundDirectory, const std::string &cacheRootOverride)
+    : soundDirectory_(soundDirectory) {
 
     // Get hostname for per-machine cache isolation
     char hostname[256];
@@ -131,16 +176,40 @@ AudioCache::AudioCache(const std::string &soundDirectory) : soundDirectory_(soun
         hostname[sizeof(hostname) - 1] = '\0';
     }
 
-    // Create cache directory as a subdirectory of the sounds directory with hostname
-    cacheDirectory_ = std::filesystem::path(soundDirectory_) / ".opus_cache" / hostname;
+    // Historically the cache lived inside the sound library. That is still the
+    // default, so an unset AUDIO_CACHE_DIR changes nothing (issue #235).
+    const auto defaultRoot = std::filesystem::path(soundDirectory_) / ".opus_cache";
+    auto chosenRoot = defaultRoot;
 
-    // Ensure cache directory exists and is writable
+    if (!cacheRootOverride.empty()) {
+        if (const auto refusal = describeUnsafeCacheRoot(cacheRootOverride, soundDirectory_)) {
+            error("Refusing audio cache directory {}: {}. Using {} instead", cacheRootOverride, *refusal,
+                  defaultRoot.string());
+        } else {
+            chosenRoot = cacheRootOverride;
+        }
+    }
+
+    // Hostname scoping is load-bearing, not cosmetic: two hosts must never
+    // share entries, so it is applied whichever root was chosen.
+    cacheDirectory_ = (chosenRoot / hostname).string();
+
     auto result = ensureCacheDirectoryWritable();
+    if (!result.isSuccess() && chosenRoot != defaultRoot) {
+        // A mistyped setting should cost us the faster location, not caching
+        // altogether — main.cpp turns a throw here into "no cache at all".
+        warn("Audio cache directory {} is unusable ({}); falling back to {}", cacheDirectory_,
+             result.getError()->getMessage(), defaultRoot.string());
+        cacheDirectory_ = (defaultRoot / hostname).string();
+        chosenRoot = defaultRoot; // so the line logged below tells the truth
+        result = ensureCacheDirectoryWritable();
+    }
     if (!result.isSuccess()) {
         throw std::runtime_error(fmt::format("Failed to initialize audio cache: {}", result.getError()->getMessage()));
     }
 
-    debug("AudioCache initialized in directory: {} (hostname: {})", cacheDirectory_, hostname);
+    info("AudioCache initialized in directory: {} (hostname: {}){}", cacheDirectory_, hostname,
+         chosenRoot == defaultRoot ? "" : " [configured location]");
 }
 
 std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const std::string &sourceFilePath,
@@ -173,6 +242,12 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
             debug("Cache miss: files missing for {}", sourceFilePath);
             return nullptr;
         }
+
+        // Stamp the entry as read BEFORE reading it, not after (issue #225).
+        // The prune's idle and size tiers judge an entry by this timestamp, so
+        // stamping first means a long in-flight load already looks live to a
+        // concurrent sweep — belt and braces behind the advisory lock.
+        markEntryRead(getCacheDirectoryPath(sourceFilePath));
 
         // Get current source file info for validation
         auto sourceInfoResult = getSourceFileInfo(sourceFilePath);
@@ -544,12 +619,74 @@ Result<std::string> AudioCache::peekCachedSourcePath(const std::string &cacheCha
     }
 }
 
+AudioCache::PrunePolicy AudioCache::PrunePolicy::forHost(bool travelMode) {
+    PrunePolicy policy;
+
+    const auto idleDays = creatures::environmentToUnsignedLongLong(AUDIO_CACHE_MAX_IDLE_DAYS_ENV,
+                                                                   travelMode ? DEFAULT_AUDIO_CACHE_MAX_IDLE_DAYS_TRAVEL
+                                                                              : DEFAULT_AUDIO_CACHE_MAX_IDLE_DAYS);
+    if (idleDays > 0) {
+        policy.maxIdleAge = std::chrono::seconds(static_cast<std::chrono::seconds::rep>(idleDays * 24ULL * 3600ULL));
+    }
+
+    policy.maxTotalBytes = static_cast<std::uintmax_t>(creatures::environmentToUnsignedLongLong(
+        AUDIO_CACHE_MAX_BYTES_ENV, travelMode ? DEFAULT_AUDIO_CACHE_MAX_BYTES_TRAVEL : DEFAULT_AUDIO_CACHE_MAX_BYTES));
+
+    return policy;
+}
+
+std::string AudioCache::PrunePolicy::describe() const {
+    const auto idle =
+        maxIdleAge ? fmt::format("{} day(s)", maxIdleAge->count() / (24 * 3600)) : std::string("disabled");
+    const auto cap = maxTotalBytes > 0 ? fmt::format("{} MB", maxTotalBytes / (1024 * 1024)) : std::string("unbounded");
+    return fmt::format("idle eviction {}, size cap {}", idle, cap);
+}
+
+void AudioCache::markEntryRead(const std::string &cacheDirectory) const {
+    std::error_code ec;
+    const auto marker = std::filesystem::path(cacheDirectory) / CACHE_COMPLETE_MARKER;
+    std::filesystem::last_write_time(marker, std::filesystem::file_time_type::clock::now(), ec);
+    if (ec) {
+        // Best effort by design: a read-only or odd filesystem must not turn a
+        // perfectly good cache hit into a failure. The cost of losing the
+        // stamp is that the entry looks older than it is, and the prune's
+        // conservative defaults are what make that survivable.
+        debug("Could not stamp audio cache entry {} as read: {}", cacheDirectory, ec.message());
+    }
+}
+
+std::optional<std::filesystem::file_time_type>
+AudioCache::lastReadTime(const std::filesystem::path &cacheDirectory) const {
+    std::error_code ec;
+    auto when = std::filesystem::last_write_time(cacheDirectory / CACHE_COMPLETE_MARKER, ec);
+    if (!ec) {
+        return when;
+    }
+    // No readable marker: fall back to the directory itself, which at worst
+    // reports when the entry was written.
+    when = std::filesystem::last_write_time(cacheDirectory, ec);
+    if (!ec) {
+        return when;
+    }
+    return std::nullopt;
+}
+
 Result<AudioCache::PruneReport> AudioCache::pruneOrphanedEntries(bool dryRun,
                                                                  std::shared_ptr<OperationSpan> parentSpan) {
+    // The historical, orphan-only behavior: a default-constructed policy
+    // enables neither of the tiers that discard usable entries (issue #225).
+    return prune(PrunePolicy{}, dryRun, std::move(parentSpan));
+}
+
+Result<AudioCache::PruneReport> AudioCache::prune(const PrunePolicy &policy, bool dryRun,
+                                                  std::shared_ptr<OperationSpan> parentSpan) {
     auto span = observability ? observability->createChildOperationSpan("AudioCache.pruneOrphanedEntries", parentSpan)
                               : nullptr;
     if (span) {
         span->setAttribute("cache.prune.dry_run", dryRun);
+        span->setAttribute("cache.prune.max_idle_days",
+                           static_cast<int64_t>(policy.maxIdleAge ? policy.maxIdleAge->count() / (24 * 3600) : 0));
+        span->setAttribute("cache.prune.max_total_bytes", static_cast<int64_t>(policy.maxTotalBytes));
     }
 
     PruneReport report;
@@ -578,6 +715,70 @@ Result<AudioCache::PruneReport> AudioCache::pruneOrphanedEntries(bool dryRun,
         return bytes;
     };
 
+    // A complete entry whose source is still there: unusable-tier pruning
+    // leaves it alone, and it becomes a candidate for the idle and size tiers.
+    // The last-read time is SAMPLED here, before any sorting, which is why
+    // every eviction re-reads it under the entry's lock before deleting.
+    struct Candidate {
+        std::filesystem::path directory;
+        std::filesystem::file_time_type lastRead;
+        std::uintmax_t bytes{0};
+        /// The scan already failed to take this entry's lock, so an eviction
+        /// pass must not pay the acquisition timeout a second time for it.
+        bool lockUnavailable{false};
+    };
+    std::vector<Candidate> survivors;
+
+    // Delete one usable entry, under the same guards clearCache uses. Returns
+    // false when the entry was left alone, which is always the safe answer:
+    // removing a cache entry a live session is reading is an audible failure
+    // mid-show, and the only cost of keeping it is that the next sweep retries.
+    auto evict = [&](const Candidate &target, const char *reason) -> bool {
+        if (!dryRun && target.lockUnavailable) {
+            ++report.skippedEntries;
+            return false;
+        }
+
+        const auto keyMutex = getKeyMutexForCacheDir(target.directory.string());
+        std::lock_guard lock(*keyMutex);
+
+        if (!dryRun) {
+            // Exclusive against other processes sharing this cache. The lock
+            // file is a sibling of the directory, so remove_all cannot unlink
+            // the inode we hold it on (issue #93).
+            ScopedFileLock entryLock(target.directory.string() + ".lock", /*exclusive=*/true);
+            if (!entryLock.locked()) {
+                ++report.skippedEntries;
+                debug("Audio cache prune skipping {}: entry is locked by another process", target.directory.string());
+                return false;
+            }
+
+            // The sample was taken before sorting, so a play in between makes
+            // this entry live again. Re-read it under the lock and back out.
+            const auto fresh = lastReadTime(target.directory);
+            if (!fresh || *fresh > target.lastRead) {
+                ++report.skippedEntries;
+                debug("Audio cache prune skipping {}: read since it was sampled", target.directory.string());
+                return false;
+            }
+
+            std::error_code removeError;
+            std::filesystem::remove_all(target.directory, removeError);
+            if (removeError) {
+                ++report.skippedEntries;
+                warn("Audio cache prune could not remove {}: {}", target.directory.string(), removeError.message());
+                return false;
+            }
+            // The sibling lock file goes with it.
+            std::filesystem::remove(target.directory.string() + ".lock", removeError);
+        }
+
+        report.bytesReclaimed += target.bytes;
+        report.bytesRetained -= std::min(report.bytesRetained, target.bytes);
+        note(fmt::format("{} ({})", target.directory.string(), reason));
+        return true;
+    };
+
     try {
         std::error_code ec;
         if (!std::filesystem::exists(cacheDirectory_, ec) || ec) {
@@ -597,6 +798,9 @@ Result<AudioCache::PruneReport> AudioCache::pruneOrphanedEntries(bool dryRun,
         }
 
         for (const auto &searchRoot : searchRoots) {
+            if (report.aborted) {
+                break;
+            }
             std::vector<std::filesystem::path> entries;
             for (const auto &entry : std::filesystem::directory_iterator(searchRoot, ec)) {
                 if (ec) {
@@ -606,6 +810,14 @@ Result<AudioCache::PruneReport> AudioCache::pruneOrphanedEntries(bool dryRun,
             }
 
             for (const auto &path : entries) {
+                // Shutdown must not wait on a walk of a big (or slow, or
+                // network-mounted) cache, so a sweep can be abandoned between
+                // entries. Everything done so far is already durable.
+                if (policy.abortRequested && policy.abortRequested()) {
+                    report.aborted = true;
+                    break;
+                }
+
                 const auto name = path.filename().string();
 
                 // Abandoned temporaries anywhere under the cache root.
@@ -730,6 +942,7 @@ Result<AudioCache::PruneReport> AudioCache::pruneOrphanedEntries(bool dryRun,
                     // network mount hiccup, a permissions problem. Deleting on
                     // an inconclusive answer would wipe a healthy cache, so
                     // skip this entry and say why.
+                    ++report.skippedEntries;
                     warn("Audio cache prune skipping {}: cannot stat source {} ({})", path.string(), sourcePath,
                          existsError.message());
                     continue;
@@ -744,7 +957,69 @@ Result<AudioCache::PruneReport> AudioCache::pruneOrphanedEntries(bool dryRun,
                         // The sibling lock file goes with it.
                         std::filesystem::remove(path.string() + ".lock", removeError);
                     }
+                    continue;
                 }
+
+                // Usable, and staying — unless a policy tier below says
+                // otherwise. Measuring it here is what makes bytes_retained
+                // (and therefore the size cap) possible: ~18 stats per entry,
+                // which is why this only ever runs on a background thread.
+                const auto entryBytes = directorySize(path);
+                report.bytesRetained += entryBytes;
+                if (auto when = lastReadTime(path)) {
+                    survivors.push_back(Candidate{path, *when, entryBytes, !dryRun && !mayDelete});
+                } else {
+                    // With no readable timestamp the entry can never be judged
+                    // idle, so it is kept rather than guessed about.
+                    ++report.skippedEntries;
+                    warn("Audio cache prune cannot date {}; keeping it", path.string());
+                }
+            }
+        }
+
+        // --- Tier 2: idle eviction (issue #225) -------------------------------
+        // Usable, but nothing has read it in longer than the policy allows.
+        // Deleting it costs a re-encode on the next play, which is exactly what
+        // happens the first time any sound plays, so the only real risk is
+        // doing this to something still in rotation — hence a conservative
+        // default measured in months, not days. See config.h.
+        if (policy.maxIdleAge && !report.aborted) {
+            const auto cutoff = std::filesystem::file_time_type::clock::now() - *policy.maxIdleAge;
+            std::vector<Candidate> retained;
+            retained.reserve(survivors.size());
+            for (const auto &candidate : survivors) {
+                if (candidate.lastRead < cutoff && evict(candidate, "idle")) {
+                    ++report.idleEntries;
+                    continue;
+                }
+                retained.push_back(candidate);
+            }
+            survivors.swap(retained);
+        }
+
+        // --- Tier 3: size cap, least-recently-read first (issue #225) ---------
+        // The tier that actually BOUNDS the cache. Idle eviction clears the
+        // long tail but cannot bound a large, regularly-played library, and the
+        // library grows on its own now that music is generated continuously
+        // (#202). Engaging this tier means the library outgrew its budget, so
+        // it is loud about it.
+        if (policy.maxTotalBytes > 0 && !report.aborted && report.bytesRetained > policy.maxTotalBytes) {
+            warn("Audio cache holds {} bytes, over its {} byte ceiling; evicting least-recently-read entries "
+                 "(issue #225)",
+                 report.bytesRetained, policy.maxTotalBytes);
+            std::sort(survivors.begin(), survivors.end(),
+                      [](const Candidate &left, const Candidate &right) { return left.lastRead < right.lastRead; });
+            for (const auto &candidate : survivors) {
+                if (report.bytesRetained <= policy.maxTotalBytes) {
+                    break;
+                }
+                if (evict(candidate, "over size cap")) {
+                    ++report.oversizeEntries;
+                }
+            }
+            if (report.bytesRetained > policy.maxTotalBytes) {
+                warn("Audio cache is still {} bytes after pruning: every remaining entry is live or locked",
+                     report.bytesRetained);
             }
         }
 
@@ -754,13 +1029,20 @@ Result<AudioCache::PruneReport> AudioCache::pruneOrphanedEntries(bool dryRun,
             span->setAttribute("cache.prune.incomplete", static_cast<int64_t>(report.incompleteEntries));
             span->setAttribute("cache.prune.temporaries", static_cast<int64_t>(report.temporaryFiles));
             span->setAttribute("cache.prune.orphaned_locks", static_cast<int64_t>(report.orphanedLockFiles));
+            span->setAttribute("cache.prune.idle", static_cast<int64_t>(report.idleEntries));
+            span->setAttribute("cache.prune.oversize", static_cast<int64_t>(report.oversizeEntries));
+            span->setAttribute("cache.prune.skipped", static_cast<int64_t>(report.skippedEntries));
             span->setAttribute("cache.prune.bytes_reclaimed", static_cast<int64_t>(report.bytesReclaimed));
+            span->setAttribute("cache.prune.bytes_retained", static_cast<int64_t>(report.bytesRetained));
+            span->setAttribute("cache.prune.aborted", report.aborted);
             span->setSuccess();
         }
-        info("Audio cache prune ({}): scanned {} entr(ies), {} orphaned, {} incomplete, {} temp file(s), {} stale "
-             "lock(s), {} bytes",
-             dryRun ? "dry run" : "applied", report.entriesScanned, report.orphanedEntries, report.incompleteEntries,
-             report.temporaryFiles, report.orphanedLockFiles, report.bytesReclaimed);
+        info("Audio cache prune ({}{}): scanned {} entr(ies), {} orphaned, {} incomplete, {} idle, {} over cap, {} "
+             "temp file(s), {} stale lock(s), {} skipped, {} bytes reclaimed, {} bytes retained",
+             dryRun ? "dry run" : "applied", report.aborted ? ", aborted at shutdown" : "", report.entriesScanned,
+             report.orphanedEntries, report.incompleteEntries, report.idleEntries, report.oversizeEntries,
+             report.temporaryFiles, report.orphanedLockFiles, report.skippedEntries, report.bytesReclaimed,
+             report.bytesRetained);
         return Result<PruneReport>{report};
 
     } catch (const std::exception &e) {
