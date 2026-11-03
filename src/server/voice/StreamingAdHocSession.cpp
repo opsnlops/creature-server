@@ -33,6 +33,7 @@
 #include "server/voice/DialogClient.h"
 #include "server/voice/ElevenLabsModels.h"
 #include "server/voice/SpeechTrackBuilder.h"
+#include "server/voice/TurnText.h"
 #include "util/Slugify.h"
 #include "util/ThreadPriority.h"
 #include "util/cache.h"
@@ -313,6 +314,12 @@ Result<void> StreamingAdHocSession::start() {
     renderSeed_ = static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     std::mt19937 rng(static_cast<uint32_t>(renderSeed_));
 
+    // One model for every creature (issue #250), and its value picks the
+    // socket: tag-capable means performed tags over the dialogue socket.
+    const std::string adHocModel =
+        creatures::config ? creatures::config->getAdHocVoiceModel() : std::string{DEFAULT_ADHOC_VOICE_MODEL};
+    const bool useDialogueSocket = supportsAudioTags(adHocModel);
+
     participants_.clear();
     participants_.reserve(config_.creatureIds.size());
     std::unordered_map<uint16_t, std::string> channelOwner;
@@ -345,7 +352,10 @@ Result<void> StreamingAdHocSession::start() {
             participant.audioChannel = participant.creatureJson.value("audio_channel", static_cast<uint16_t>(1));
             auto voiceConfig = participant.creatureJson["voice"];
             participant.voiceId = voiceConfig["voice_id"].get<std::string>();
-            participant.modelId = voiceConfig["model_id"].get<std::string>();
+            // Not from the creature any more: one server setting decides it
+            // (issue #250). Kept on the participant for spans and the iXML
+            // provenance, which still record what rendered the audio.
+            participant.modelId = adHocModel;
             participant.stability = voiceConfig["stability"].get<float>();
             participant.similarityBoost = voiceConfig["similarity_boost"].get<float>();
         } catch (const std::exception &e) {
@@ -356,17 +366,6 @@ Result<void> StreamingAdHocSession::start() {
             return fail(ServerError(ServerError::InvalidData,
                                     fmt::format("Bad voice config for creature {}: {}", creatureId, e.what())),
                         "InvalidVoiceConfig");
-        }
-
-        // Ad-hoc speech needs a model fast enough to keep up with the conversation.
-        if (!supportsAdHocSpeech(participant.modelId)) {
-            // Name the creature: in a cast of several this is the whole
-            // diagnosis, and the world only sees the message.
-            return fail(ServerError(ServerError::InvalidData,
-                                    fmt::format("{}'s voice model '{}' is too slow for streaming ad-hoc speech; use "
-                                                "a fast model such as {}",
-                                                participant.name, participant.modelId, kRecommendedAdHocModelId)),
-                        "UnsupportedVoiceModel");
         }
 
         // Two creatures on one audio lane would talk over each other in the
@@ -437,6 +436,31 @@ Result<void> StreamingAdHocSession::start() {
         }
 
         participants_.push_back(std::move(participant));
+    }
+
+    // The socket demands every voice up front and refuses any it was not told
+    // about, so this can only happen once the cast is resolved.
+    if (useDialogueSocket) {
+        std::vector<std::string> voiceIds;
+        voiceIds.reserve(participants_.size());
+        for (const auto &participant : participants_) {
+            voiceIds.push_back(participant.voiceId);
+        }
+        auto client = std::make_unique<DialogueStreamClient>();
+        auto connected =
+            client->connect(creatures::config->getVoiceApiKey(), voiceIds, adHocModel, "pcm_48000", startSpan);
+        if (!connected.isSuccess()) {
+            // Deliberately fatal rather than a silent fall back to the
+            // text-to-speech socket: the two produce audibly different
+            // performances, and a session that quietly stopped performing its
+            // tags would be a puzzle to debug from the audio alone.
+            return fail(connected.getError().value(), "DialogueSocketUnavailable");
+        }
+        dialogueClient_ = std::move(client);
+        if (startSpan) {
+            startSpan->setAttribute("dialogue.socket", true);
+            startSpan->setAttribute("dialogue.model", adHocModel);
+        }
     }
 
     // Which universe to play into. Resolved from the participants that ARE
@@ -576,10 +600,14 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
                                         fmt::format("Streaming text chunk must contain between 1 and {} bytes",
                                                     MAX_STREAMING_AD_HOC_CHUNK_TEXT_BYTES))};
     }
-    // Ad-hoc voices use the fast models, which read "[laughs]" aloud instead of
-    // laughing. Everything downstream (TTS, transcript, provenance) sees only the
-    // spoken words.
-    const std::string text = DialogClient::stripTags(rawText);
+    // What ElevenLabs is asked to say, and what the server records. The
+    // dialogue socket performs inline tags like [sighs], so it is given the
+    // line as written; a fast model would read the tag aloud, so it gets the
+    // spoken words alone. Everything else downstream — transcript, animation
+    // title, exchange provenance — only ever sees the spoken words (#253).
+    const TurnText turnText = splitTurnText(rawText, dialogueClient_ != nullptr);
+    const std::string text = turnText.forRecord;
+    const std::string providerText = turnText.forProvider;
     if (text.empty()) {
         return Result<void>{
             ServerError(ServerError::InvalidData, "Streaming text chunk contains only audio tags, no spoken words")};
@@ -653,9 +681,13 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
         sentenceSpan->setAttribute("creature.id", speaker.creatureId);
         sentenceSpan->setAttribute("sentence.index", static_cast<int64_t>(sentenceIndex));
         sentenceSpan->setAttribute("sentence.length", static_cast<int64_t>(text.size()));
+        // True when this turn carries audio tags the model will act out, which
+        // is the difference between a sigh and the word "sighs" (#253).
+        sentenceSpan->setAttribute("sentence.tags_performed", providerText != text);
     }
 
-    std::packaged_task<Result<RenderedTurn>()> renderTask([this, text, sentenceIndex, speakerIndex, sentenceSpan,
+    std::packaged_task<Result<RenderedTurn>()> renderTask([this, text, providerText, sentenceIndex, speakerIndex,
+                                                           sentenceSpan,
                                                            renderReservation =
                                                                std::move(renderReservation)]() -> Result<RenderedTurn> {
         (void)renderReservation;
@@ -687,12 +719,19 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
                 prevIds.push_back(speakerBefore.lastRequestId);
             }
 
-            StreamingTTSClient client;
             // Request raw mono 48 kHz S16 PCM directly (issue #12). The
             // 17-channel WAV is wrapped in-process below; no ffmpeg decode hop.
-            auto ttsResult = client.generateSpeechREST(creatures::config->getVoiceApiKey(), speaker.voiceId,
-                                                       speaker.modelId, text, "pcm_48000", speaker.stability,
-                                                       speaker.similarityBoost, prevIds, nullptr, sentenceSpan);
+            //
+            // Either socket hands back a StreamingTTSResult, so everything
+            // downstream — the WAV wrap, the visemes, the provenance — is
+            // untouched by which one rendered the turn (issue #248).
+            StreamingTTSClient client;
+            Result<StreamingTTSResult> ttsResult =
+                dialogueClient_
+                    ? dialogueClient_->renderTurn(speaker.voiceId, providerText, sentenceSpan)
+                    : client.generateSpeechREST(creatures::config->getVoiceApiKey(), speaker.voiceId, speaker.modelId,
+                                                providerText, "pcm_48000", speaker.stability, speaker.similarityBoost,
+                                                prevIds, nullptr, sentenceSpan);
             if (!ttsResult.isSuccess()) {
                 const auto failure = ttsResult.getError().value();
                 lifecycleFailed_.store(true);
@@ -896,7 +935,13 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
             }
 
             // 7. Build animation object
-            auto textSlug = util::slugify(tts.alignmentText.empty() ? text : tts.alignmentText, 40, "speech");
+            // The dialogue socket echoes the tags back in its alignment, and an
+            // animation called "sighs-fine-we-ll-try-again" is named after a
+            // cue nobody says. Strip them back out before slugifying; fall
+            // back to the recorded text if that leaves nothing (#253).
+            const std::string alignmentWords =
+                tts.alignmentText.empty() ? std::string{} : DialogClient::stripTags(tts.alignmentText);
+            auto textSlug = util::slugify(alignmentWords.empty() ? text : alignmentWords, 40, "speech");
             Animation animation = participants_.front().baseAnimation;
             animation.id = animationId;
             animation.metadata.animation_id = animation.id;

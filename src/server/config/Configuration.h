@@ -102,6 +102,15 @@ class Configuration {
      */
     std::string getExpressiveVoiceModel() const;
 
+    /**
+     * @return ElevenLabs model for ad-hoc speech, for every creature.
+     *
+     * Replaces the old per-creature `voice.model_id`, which the server no
+     * longer reads (issue #250). A tag-capable value also selects the
+     * text-to-dialogue socket, so `[sighs]` is performed rather than spoken.
+     */
+    std::string getAdHocVoiceModel() const;
+
     /** @return API key for Honeycomb observability service */
     std::string getHoneycombApiKey() const;
 
@@ -169,6 +178,9 @@ class Configuration {
 
     /** @param _expressiveVoiceModel ElevenLabs model for dialog and voice files */
     void setExpressiveVoiceModel(std::string _expressiveVoiceModel);
+
+    /** @param _adHocVoiceModel ElevenLabs model for ad-hoc speech */
+    void setAdHocVoiceModel(std::string _adHocVoiceModel);
 
     /** @param _honeycombApiKey API key for Honeycomb observability service */
     void setHoneycombApiKey(std::string _honeycombApiKey);
@@ -273,6 +285,9 @@ class Configuration {
 
     /** ElevenLabs model for dialog and pre-rendered voice files */
     std::string expressiveVoiceModel = DEFAULT_EXPRESSIVE_VOICE_MODEL;
+
+    /** ElevenLabs model every creature speaks ad-hoc with */
+    std::string adHocVoiceModel = DEFAULT_ADHOC_VOICE_MODEL;
 
     /** API key for Honeycomb observability service */
     std::string honeycombApiKey = DEFAULT_HONEYCOMB_API_KEY;

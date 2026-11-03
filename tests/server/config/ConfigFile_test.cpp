@@ -41,7 +41,8 @@ TEST_F(ConfigFileTest, ReadsTheProductionSettings) {
         "network_device": "enp5s0f0np0",
         "audio_mode": "rtp",
         "sound_channels": 2,
-        "expressive_voice_model": "eleven_v4"
+        "expressive_voice_model": "eleven_v4",
+        "adhoc_voice_model": "eleven_v4_turbo"
     })");
 
     const auto loaded = ConfigFile::load(path, /*required=*/true);
@@ -54,6 +55,7 @@ TEST_F(ConfigFileTest, ReadsTheProductionSettings) {
     EXPECT_EQ(config.stringOr("audio_mode", "wrong"), "rtp");
     EXPECT_EQ(config.intOr("sound_channels", 99), 2);
     EXPECT_EQ(config.stringOr("expressive_voice_model", "wrong"), "eleven_v4");
+    EXPECT_EQ(config.stringOr("adhoc_voice_model", "wrong"), "eleven_v4_turbo");
     EXPECT_EQ(config.sourcePath(), path);
 }
 
@@ -140,7 +142,7 @@ TEST_F(ConfigFileTest, EveryKeyInThePackagedConfigIsAKnownKey) {
     // what the server accepts, which would make the package refuse to start.
     const auto &keys = ConfigFile::knownKeys();
     for (const auto &expected : {"mongodb_uri", "sounds_location", "audio_cache_dir", "network_device", "audio_mode",
-                                 "sound_channels", "expressive_voice_model"}) {
+                                 "sound_channels", "expressive_voice_model", "adhoc_voice_model"}) {
         EXPECT_NE(std::find(keys.begin(), keys.end(), expected), keys.end()) << expected << " should be accepted";
     }
 }

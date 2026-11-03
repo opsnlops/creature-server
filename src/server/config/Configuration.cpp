@@ -104,6 +104,12 @@ void Configuration::setExpressiveVoiceModel(std::string _expressiveVoiceModel) {
     this->expressiveVoiceModel = std::move(_expressiveVoiceModel);
 }
 
+std::string Configuration::getAdHocVoiceModel() const { return this->adHocVoiceModel; }
+
+void Configuration::setAdHocVoiceModel(std::string _adHocVoiceModel) {
+    this->adHocVoiceModel = std::move(_adHocVoiceModel);
+}
+
 std::string Configuration::getHoneycombApiKey() const { return this->honeycombApiKey; }
 
 void Configuration::setHoneycombApiKey(std::string _honeycombApiKey) {

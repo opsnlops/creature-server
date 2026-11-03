@@ -49,7 +49,6 @@
 #include "server/voice/SoundDataProcessor.h"
 #include "server/voice/SpeechGenerationManager.h"
 #include "server/voice/SpeechTrackBuilder.h"
-#include "server/voice/StreamingSpeechGenerationManager.h"
 #include "server/voice/TextToViseme.h"
 #include "server/voice/WavFileReader.h"
 #include "server/ws/service/DialogMusicService.h"
@@ -956,45 +955,16 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
         auto timestamp = fmt::format(
             "{:%Y%m%d%H%M%S}", std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()));
 
+        // REST only. This job used to try the text-to-speech WebSocket first
+        // and fall back to REST, but the WebSocket does not serve the v3/v4
+        // families, so once adhoc_voice_model defaulted to v4 Turbo the attempt
+        // always declined and the fallback always ran. The attempt, the manager
+        // behind it and the client method under that had one caller each and no
+        // tests, and produced nothing in production (issue #251).
         if (jobState.span) {
-            jobState.span->setAttribute("speech.attempted_engine", std::string("websocket_streaming"));
+            jobState.span->setAttribute("speech.engine_used", std::string("rest"));
         }
-
-        auto streamingResult = voice::StreamingSpeechGenerationManager::generate(speechRequest);
-        if (streamingResult.isSuccess()) {
-            auto streamingAssets = streamingResult.getValue().value();
-            info("Streaming TTS succeeded for job {} ({:.2f}s audio)", jobState.jobId,
-                 streamingAssets.audioDurationSeconds);
-            if (jobState.span) {
-                jobState.span->setAttribute("speech.engine_used", std::string("websocket_streaming"));
-                jobState.span->setAttribute("audio.duration_s", streamingAssets.audioDurationSeconds);
-            }
-
-            rhubarbData = streamingAssets.lipSyncData;
-            wavPath = streamingAssets.wavPath;
-            transcriptPath = streamingAssets.transcriptPath;
-            creature = streamingAssets.creature;
-            creatureName = creature.name.empty() ? creatureId : creature.name;
-            updateProgress(0.45f);
-
-            // Prewarm audio cache in background
-            auto cacheFuture = std::async(std::launch::async, [wp = wavPath, span = jobState.span]() {
-                debug("Starting background cache prewarm for {}", wp.string());
-                return prewarmAudioCache(wp, span);
-            });
-            auto cacheResult = cacheFuture.get();
-            if (!cacheResult.isSuccess()) {
-                warn("Audio cache prewarm failed: {}", cacheResult.getError()->getMessage());
-            }
-            updateProgress(0.55f);
-        } else {
-            // Streaming failed — fall back to REST TTS + lip sync
-            warn("Streaming TTS failed for job {}: {}, falling back to REST path", jobState.jobId,
-                 streamingResult.getError()->getMessage());
-            if (jobState.span) {
-                jobState.span->setAttribute("speech.engine_used", std::string("rest_fallback"));
-                jobState.span->setAttribute("speech.streaming_error", streamingResult.getError()->getMessage());
-            }
+        {
 
             auto speechResult = voice::SpeechGenerationManager::generate(speechRequest);
             if (!speechResult.isSuccess()) {
@@ -1059,28 +1029,6 @@ void JobWorker::handleAdHocSpeechJob(JobState &jobState) {
 
             rhubarbData = RhubarbSoundData::fromJsonString(lipSyncResult.getValue().value());
             updateProgress(0.55f);
-        }
-
-        // Rename WAV/transcript with descriptive names if streaming path was used
-        // (streaming path outputs generic names)
-        if (streamingResult.isSuccess()) {
-            auto creatureSlug = util::slugify(creatureName, 40, "speech");
-            auto baseName = fmt::format("adhoc_{}_{}_{}", creatureSlug, timestamp, textSlug);
-
-            auto renameFile = [&](std::filesystem::path &path, const std::string &ext) {
-                if (path.empty() || !std::filesystem::exists(path)) {
-                    return;
-                }
-                auto newPath = path.parent_path() / fmt::format("{}.{}", baseName, ext);
-                std::error_code renameEc;
-                std::filesystem::rename(path, newPath, renameEc);
-                if (!renameEc) {
-                    path = newPath;
-                }
-            };
-
-            renameFile(wavPath, "wav");
-            renameFile(transcriptPath, "txt");
         }
 
         if (jobState.span) {

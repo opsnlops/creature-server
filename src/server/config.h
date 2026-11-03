@@ -96,6 +96,29 @@
 #define EXPRESSIVE_VOICE_MODEL_ENV "EXPRESSIVE_VOICE_MODEL"
 #define DEFAULT_EXPRESSIVE_VOICE_MODEL "eleven_v4"
 
+// The model every creature speaks ad-hoc with. Settled here rather than per
+// creature: it describes how we talk to ElevenLabs, not anything about a bird,
+// and keeping it per creature had already drifted into one deprecated model,
+// one that no ad-hoc socket serves at all, and one creature with none (#250).
+//
+// Its value also chooses the socket, because the two cannot disagree: the
+// text-to-dialogue socket serves only the v3/v4 families and refuses the fast
+// models with 403, while the text-to-speech socket refuses v3/v4 with 400. So
+// a tag-capable model means performed audio tags over the dialogue socket, and
+// anything else means the text-to-speech socket (issue #248).
+//
+// The default is v4 Turbo because it won on both counts after a night on the
+// real birds: it performs audio tags instead of reading them aloud, AND it
+// reaches first audio in ~140 ms against ~193 ms for eleven_flash_v2_5, which
+// it replaced. The birds sound different but still themselves — the voice is
+// unchanged, the model rendering it is not.
+//
+// Setting this to a fast model still works and still uses the text-to-speech
+// socket, which is the escape hatch if ElevenLabs regresses on a model only
+// days old.
+#define ADHOC_VOICE_MODEL_ENV "ADHOC_VOICE_MODEL"
+#define DEFAULT_ADHOC_VOICE_MODEL "eleven_v4_turbo"
+
 #define RHUBARB_BINARY_PATH_ENV "RHUBARB_BINARY_PATH"
 #define DEFAULT_RHUBARB_BINARY_PATH "/usr/bin/rhubarb"
 

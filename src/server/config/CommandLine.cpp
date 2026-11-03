@@ -201,6 +201,14 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
             EXPRESSIVE_VOICE_MODEL_ENV, configFile.stringOr("expressive_voice_model", DEFAULT_EXPRESSIVE_VOICE_MODEL)))
         .nargs(1);
 
+    program.add_argument("--adhoc-voice-model")
+        .help("ElevenLabs model every creature speaks ad-hoc with, replacing the old per-creature voice.model_id. A "
+              "v3/v4 model also selects the text-to-dialogue socket, so audio tags such as [sighs] are performed "
+              "rather than read aloud")
+        .default_value(environmentToString(ADHOC_VOICE_MODEL_ENV,
+                                           configFile.stringOr("adhoc_voice_model", DEFAULT_ADHOC_VOICE_MODEL)))
+        .nargs(1);
+
     program.add_argument("-r", "--rhubarb-binary-path")
         .help("path to the Rhubarb Lip Sync binary")
         .default_value(environmentToString(RHUBARB_BINARY_PATH_ENV, DEFAULT_RHUBARB_BINARY_PATH))
@@ -597,6 +605,32 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     }
     config->setExpressiveVoiceModel(expressiveVoiceModel);
     debug("set expressive voice model to {}", expressiveVoiceModel);
+
+    auto adHocVoiceModel = program.get<std::string>("--adhoc-voice-model");
+    if (adHocVoiceModel.empty()) {
+        critical("ad-hoc voice model cannot be empty (from the config file's adhoc_voice_model, {}, or "
+                 "--adhoc-voice-model)",
+                 ADHOC_VOICE_MODEL_ENV);
+        std::exit(1);
+    }
+    // One of the two sockets has to be able to serve it. The older
+    // multilingual/monolingual models are served by neither, and a creature was
+    // quietly configured for one of those until #250 — every ad-hoc turn for it
+    // failed. Refusing at startup says so once instead.
+    if (!voice::supportsAudioTags(adHocVoiceModel) && !voice::supportsAdHocSpeech(adHocVoiceModel)) {
+        critical("ad-hoc voice model '{}' cannot serve ad-hoc speech: the text-to-speech socket refuses it and it "
+                 "does not perform audio tags, so the text-to-dialogue socket will not take it either. Try '{}' for "
+                 "low latency or a v4 model for performed audio tags (from the config file's adhoc_voice_model, {}, "
+                 "or --adhoc-voice-model)",
+                 adHocVoiceModel, voice::kRecommendedAdHocModelId, ADHOC_VOICE_MODEL_ENV);
+        std::exit(1);
+    }
+    config->setAdHocVoiceModel(adHocVoiceModel);
+    if (voice::supportsAudioTags(adHocVoiceModel)) {
+        info("ad-hoc speech will use the text-to-dialogue socket on {}, performing audio tags", adHocVoiceModel);
+    } else {
+        debug("ad-hoc speech will use the text-to-speech socket on {}", adHocVoiceModel);
+    }
 
     auto networkDeviceName = program.get<std::string>("-n");
     debug("read network device name {} from command line", networkDeviceName);

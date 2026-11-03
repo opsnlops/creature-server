@@ -16,7 +16,7 @@ const std::vector<std::string> &ConfigFile::knownKeys() {
     // worth moving out of it. Adding another is a line here plus one call site.
     static const std::vector<std::string> keys{
         "mongodb_uri", "sounds_location", "audio_cache_dir",        "network_device",
-        "audio_mode",  "sound_channels",  "expressive_voice_model",
+        "audio_mode",  "sound_channels",  "expressive_voice_model", "adhoc_voice_model",
     };
     return keys;
 }
