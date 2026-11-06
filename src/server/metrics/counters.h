@@ -49,6 +49,8 @@ struct SystemCountersSnapshot {
     uint64_t websocketPingsSent = 0;
     uint64_t websocketPongsReceived = 0;
     uint64_t rtpEncoderResets = 0;
+    uint64_t httpConnectionsActive = 0;
+    uint64_t httpConnectionsRefused = 0;
 };
 
 nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapshot);
@@ -83,6 +85,11 @@ class SystemCounters {
     void incrementWebsocketMessagesSent();
     void incrementWebsocketPingsSent();
     void incrementWebsocketPongsReceived();
+    // Connection admission state, pushed from the uWebSockets loop thread.
+    // httpConnectionsActive sitting flat at the configured limit with
+    // httpConnectionsRefused climbing is the signature of issue #216.
+    void setHttpConnectionMetrics(uint64_t active, uint64_t refused);
+
     void setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
                                 uint64_t rejected, uint64_t cancelled, uint64_t failed);
     void setLocalAudioPlaybackMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
@@ -108,6 +115,8 @@ class SystemCounters {
     uint64_t getRtcpReportsSent();
     uint64_t getRtcpSendFailures();
     uint64_t getRtpEncoderResets();
+    uint64_t getHttpConnectionsActive();
+    uint64_t getHttpConnectionsRefused();
     uint64_t getRtpAudioLoadersActive();
     uint64_t getRtpAudioLoadsQueued();
     uint64_t getRtpAudioLoadsAccepted();
@@ -154,6 +163,8 @@ class SystemCounters {
     std::atomic<uint64_t> rtcpReportsSent;
     std::atomic<uint64_t> rtcpSendFailures;
     std::atomic<uint64_t> rtpEncoderResets;
+    std::atomic<uint64_t> httpConnectionsActive;
+    std::atomic<uint64_t> httpConnectionsRefused;
     std::atomic<uint64_t> rtpAudioLoadersActive;
     std::atomic<uint64_t> rtpAudioLoadsQueued;
     std::atomic<uint64_t> rtpAudioLoadsAccepted;

@@ -45,6 +45,39 @@ inline nlohmann::json statusResponseToJson(const StatusResponse &response) {
     return json;
 }
 
+/**
+ * The health response is a status envelope plus the running version.
+ *
+ * It carries the version because nothing else reachable does. The root route
+ * sets a `Server: Creature-Server/x.y.z` header, but Apache replaces that
+ * header with its own on the way out, so from outside the proxy there was no
+ * way to ask a running server what it was. Deciding whether production had a
+ * fix meant reading dpkg over SSH.
+ *
+ * Deliberately its own shape rather than a field on StatusResponse: every
+ * error in the API answers with a StatusResponse, and the version has no
+ * business on any of those.
+ */
+struct HealthResponse {
+    std::string status;
+    int code;
+    std::string message;
+    std::string version;
+};
+
+inline HealthResponse makeHealthResponse(int code, std::string message, std::string version) {
+    return {defaultStatusForCode(code), code, std::move(message), std::move(version)};
+}
+
+inline nlohmann::json healthResponseToJson(const HealthResponse &response) {
+    return {
+        {"status", response.status},
+        {"code", response.code},
+        {"message", response.message},
+        {"version", response.version},
+    };
+}
+
 struct JsonSerialization {
     std::string bytes;
     bool invalidUtf8Replaced;

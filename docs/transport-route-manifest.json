@@ -1854,7 +1854,8 @@
       "handler": "health",
       "controller": "StaticController",
       "source": "src/server/transport/UWebSocketsServer.cpp",
-      "summary": "Returns OK if the server is healthy",
+      "summary": "Returns OK and the running server version",
+      "description": "The version is in the body because it is the only place that survives the reverse proxy: Apache replaces the Server header with its own, so this is how you ask a running server which build it is.",
       "tags": [
         "System"
       ],
