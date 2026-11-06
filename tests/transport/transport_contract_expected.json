@@ -131,9 +131,8 @@
     "status": 400
   },
   "GET /api/v1/health": {
-    "body": "{\"code\":200,\"message\":\"Server is operational\",\"status\":\"ok\"}",
+    "body": "{\"code\": 200, \"message\": \"Server is operational\", \"status\": \"ok\", \"version\": \"<semver>\"}",
     "headers": {
-      "content-length": "60",
       "content-type": "application/json; charset=utf-8"
     },
     "status": 200
@@ -146,7 +145,7 @@
     "status": 400
   },
   "GET /api/v1/metric/counters": {
-    "body": "{\"animationsPlayed\": \"int\", \"dmxEventsProcessed\": \"int\", \"eventsProcessed\": \"int\", \"framesStreamed\": \"int\", \"localAudioPlaybacksAccepted\": \"int\", \"localAudioPlaybacksActive\": \"int\", \"localAudioPlaybacksCompleted\": \"int\", \"localAudioPlaybacksFailed\": \"int\", \"localAudioPlaybacksQueued\": \"int\", \"localAudioPlaybacksRejected\": \"int\", \"localAudioPlaybacksReplaced\": \"int\", \"localAudioPlaybacksStopped\": \"int\", \"localAudioPlaybacksTimedOut\": \"int\", \"playlistStatusRequests\": \"int\", \"playlistsEventsProcessed\": \"int\", \"playlistsStarted\": \"int\", \"playlistsStopped\": \"int\", \"restRequestsProcessed\": \"int\", \"rtcpReportsSent\": \"int\", \"rtcpSendFailures\": \"int\", \"rtpAudioLoadersActive\": \"int\", \"rtpAudioLoadsAccepted\": \"int\", \"rtpAudioLoadsCancelled\": \"int\", \"rtpAudioLoadsCompleted\": \"int\", \"rtpAudioLoadsFailed\": \"int\", \"rtpAudioLoadsQueued\": \"int\", \"rtpAudioLoadsRejected\": \"int\", \"rtpCircuitBreakerTrips\": \"int\", \"rtpEncoderResets\": \"int\", \"rtpEventsProcessed\": \"int\", \"rtpSendFailures\": \"int\", \"rtpSendFailuresSuppressed\": \"int\", \"rtpSendRecoveries\": \"int\", \"soundFilesServed\": \"int\", \"soundsPlayed\": \"int\", \"totalFrames\": \"int\", \"websocketConnectionsProcessed\": \"int\", \"websocketMessagesReceived\": \"int\", \"websocketMessagesSent\": \"int\", \"websocketPingsSent\": \"int\", \"websocketPongsReceived\": \"int\"}",
+    "body": "{\"animationsPlayed\": \"int\", \"dmxEventsProcessed\": \"int\", \"eventsProcessed\": \"int\", \"framesStreamed\": \"int\", \"httpConnectionsActive\": \"int\", \"httpConnectionsRefused\": \"int\", \"localAudioPlaybacksAccepted\": \"int\", \"localAudioPlaybacksActive\": \"int\", \"localAudioPlaybacksCompleted\": \"int\", \"localAudioPlaybacksFailed\": \"int\", \"localAudioPlaybacksQueued\": \"int\", \"localAudioPlaybacksRejected\": \"int\", \"localAudioPlaybacksReplaced\": \"int\", \"localAudioPlaybacksStopped\": \"int\", \"localAudioPlaybacksTimedOut\": \"int\", \"playlistStatusRequests\": \"int\", \"playlistsEventsProcessed\": \"int\", \"playlistsStarted\": \"int\", \"playlistsStopped\": \"int\", \"restRequestsProcessed\": \"int\", \"rtcpReportsSent\": \"int\", \"rtcpSendFailures\": \"int\", \"rtpAudioLoadersActive\": \"int\", \"rtpAudioLoadsAccepted\": \"int\", \"rtpAudioLoadsCancelled\": \"int\", \"rtpAudioLoadsCompleted\": \"int\", \"rtpAudioLoadsFailed\": \"int\", \"rtpAudioLoadsQueued\": \"int\", \"rtpAudioLoadsRejected\": \"int\", \"rtpCircuitBreakerTrips\": \"int\", \"rtpEncoderResets\": \"int\", \"rtpEventsProcessed\": \"int\", \"rtpSendFailures\": \"int\", \"rtpSendFailuresSuppressed\": \"int\", \"rtpSendRecoveries\": \"int\", \"soundFilesServed\": \"int\", \"soundsPlayed\": \"int\", \"totalFrames\": \"int\", \"websocketConnectionsProcessed\": \"int\", \"websocketMessagesReceived\": \"int\", \"websocketMessagesSent\": \"int\", \"websocketPingsSent\": \"int\", \"websocketPongsReceived\": \"int\"}",
     "headers": {
       "content-type": "application/json; charset=utf-8"
     },
@@ -277,7 +276,6 @@
   "HEAD /api/v1/health": {
     "body": "",
     "headers": {
-      "content-length": "60",
       "content-type": "application/json; charset=utf-8"
     },
     "status": 200

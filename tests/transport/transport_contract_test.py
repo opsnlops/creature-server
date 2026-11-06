@@ -17,6 +17,7 @@ import io
 import json
 import math
 import os
+import re
 import socket
 import ssl
 import struct
@@ -61,6 +62,22 @@ class ContractConfig:
 
 
 CONFIG: ContractConfig | None = None
+
+
+HEALTH_ENVELOPE = {"status": "ok", "code": 200, "message": "Server is operational"}
+
+
+def assert_health_body(test, body) -> None:
+    """Health is the status envelope plus the running version.
+
+    The version is checked for shape, not value: it is whatever build answered,
+    which is the entire point of it being there.
+    """
+    test.assertEqual({name: body.get(name) for name in HEALTH_ENVELOPE}, HEALTH_ENVELOPE)
+    version = body.get("version")
+    test.assertIsInstance(version, str)
+    test.assertRegex(version, r"^\d+\.\d+\.\d+$")
+    test.assertEqual(set(body), set(HEALTH_ENVELOPE) | {"version"})
 
 
 def parse_base_url(base_url: str, allow_remote: bool) -> ContractConfig:
@@ -334,7 +351,7 @@ class TransportContractTests(unittest.TestCase):
         )
         self.assertEqual(code, 200)
         body = decode_json(self, headers, raw)
-        self.assertEqual(body, {"status": "ok", "code": 200, "message": "Server is operational"})
+        assert_health_body(self, body)
 
     def test_head_matches_health_get_without_a_body(self) -> None:
         get_code, get_headers, get_body = http_request(self.config, "GET", "/api/v1/health")
@@ -446,7 +463,7 @@ class TransportContractTests(unittest.TestCase):
             second = reader.read_http_response()
             self.assertEqual(first[0], 200)
             self.assertEqual(second[0], 200)
-            self.assertEqual(json.loads(second[2]), {"status": "ok", "code": 200, "message": "Server is operational"})
+            assert_health_body(self, json.loads(second[2]))
         finally:
             connection.close()
 

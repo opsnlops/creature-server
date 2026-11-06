@@ -48,6 +48,7 @@
 #include "server/transport/AnimationHandlers.h"
 #include "server/transport/ApiDocumentation.h"
 #include "server/transport/ApplicationExecutor.h"
+#include "server/transport/ConnectionAdmission.h"
 #include "server/transport/CreatureReadHandlers.h"
 #include "server/transport/DialogHandlers.h"
 #include "server/transport/DialogScriptHandlers.h"
@@ -122,6 +123,10 @@ struct WebSocketSession {
     std::deque<PendingWebSocketMessage> mailbox;
     std::string triggerTraceId;
     std::string triggerSpanId;
+    // This socket's charge against the connection limits, taken over from the
+    // HTTP context at upgrade because uWS stops reporting the socket's close
+    // there. Released in the WebSocket close handler (issue #216).
+    creatures::transport::AdmissionCharge admissionCharge;
 };
 
 using CreatureWebSocket = uWS::WebSocket<false, true, WebSocketSession>;
@@ -192,75 +197,44 @@ struct BodyState : DrainState {
     std::string body;
 };
 
-class ConnectionAdmission {
-  public:
-    ConnectionAdmission(const std::size_t maximumConnections, const std::size_t maximumConnectionsPerPeer)
-        : maximumConnections_(maximumConnections), maximumConnectionsPerPeer_(maximumConnectionsPerPeer) {}
+// Named apart from the template itself: this alias lives inside
+// creatures::transport's anonymous namespace, where reusing the name would
+// be ambiguous with the enclosing creatures::transport::ConnectionAdmission.
+using HttpConnectionAdmission = ConnectionAdmission<uWS::HttpResponse<false>>;
 
-    void update(uWS::HttpResponse<false> *response, const int change) {
-        if (change > 0) {
-            opened(response);
-        } else if (change < 0) {
-            closed(response);
-        }
+/**
+ * A refused connection is closed before its request is read, so it never
+ * becomes a request, a span or a status code of its own. Left unreported it is
+ * invisible: during issue #216 the whole API was dark for hours while every
+ * dashboard said the server was healthy. Report it as both a log line and a
+ * root span, using the admission.* vocabulary the rest of the server already
+ * speaks, so it can be found and grouped in Honeycomb.
+ *
+ * ConnectionAdmission throttles which refusals reach here, so a saturated peer
+ * cannot flood either channel. The exact count lives in the counters.
+ */
+void reportConnectionRefusal(const creatures::transport::AdmissionRefusal &refusal) {
+    spdlog::warn("Refusing a connection from {} before reading its request: {} ({} of {} in flight). {} refusals from "
+                 "this peer so far.",
+                 refusal.peer, refusal.scope, refusal.inFlight, refusal.limit, refusal.refusalsFromPeer);
+
+    if (!creatures::observability) {
+        return;
     }
-
-    void beginShutdown() { accepting_ = false; }
-
-  private:
-    struct Connection {
-        std::string peer;
-        bool admitted{false};
-    };
-
-    void opened(uWS::HttpResponse<false> *response) {
-        std::string peer(response->getRemoteAddressAsText());
-        if (peer.empty()) {
-            peer = "unknown";
-        }
-
-        const auto peerIterator = connectionsPerPeer_.find(peer);
-        const auto peerConnections = peerIterator == connectionsPerPeer_.end() ? std::size_t{0} : peerIterator->second;
-        const bool admitted =
-            accepting_ && activeConnections_ < maximumConnections_ && peerConnections < maximumConnectionsPerPeer_;
-        connections_.insert_or_assign(response, Connection{.peer = peer, .admitted = admitted});
-        if (!admitted) {
-            response->close();
-            return;
-        }
-
-        ++activeConnections_;
-        connectionsPerPeer_[peer] = peerConnections + 1;
+    const auto span = creatures::observability->createOperationSpan("Transport.connection.refused");
+    if (!span) {
+        return;
     }
-
-    void closed(uWS::HttpResponse<false> *response) {
-        const auto connection = connections_.find(response);
-        if (connection == connections_.end()) {
-            return;
-        }
-        if (connection->second.admitted) {
-            if (activeConnections_ > 0) {
-                --activeConnections_;
-            }
-            const auto peer = connectionsPerPeer_.find(connection->second.peer);
-            if (peer != connectionsPerPeer_.end()) {
-                if (peer->second > 1) {
-                    --peer->second;
-                } else {
-                    connectionsPerPeer_.erase(peer);
-                }
-            }
-        }
-        connections_.erase(connection);
-    }
-
-    std::size_t maximumConnections_;
-    std::size_t maximumConnectionsPerPeer_;
-    std::size_t activeConnections_{0};
-    bool accepting_{true};
-    std::unordered_map<void *, Connection> connections_;
-    std::unordered_map<std::string, std::size_t> connectionsPerPeer_;
-};
+    span->setAttribute("transport.framework", "uwebsockets");
+    span->setAttribute("network.peer.address", refusal.peer);
+    span->setAttribute("admission.outcome", "rejected");
+    span->setAttribute("admission.scope", std::string(refusal.scope));
+    span->setAttribute("admission.limit", static_cast<int64_t>(refusal.limit));
+    span->setAttribute("admission.in_flight", static_cast<int64_t>(refusal.inFlight));
+    span->setAttribute("admission.peer.refusals", static_cast<int64_t>(refusal.refusalsFromPeer));
+    span->setAttribute("error.type", "ConnectionRefused");
+    span->setError("Connection closed by admission before its request was read");
+}
 
 std::string statusLine(const int statusCode) {
     switch (statusCode) {
@@ -843,7 +817,16 @@ PreparedResponse rootResponse() {
                         {"And-The-Flowers-Croon", "of course"}}};
 }
 
-PreparedResponse healthResponse() { return statusResponse(200, "Server is operational"); }
+PreparedResponse healthResponse() {
+    // The version rides along so "which build is on prod?" is one curl rather
+    // than an SSH session and a dpkg query. The Server header cannot answer it:
+    // Apache overwrites that header with its own.
+    return PreparedResponse::json(
+        200, api::jsonToString(api::healthResponseToJson(
+                 api::makeHealthResponse(200, "Server is operational",
+                                         fmt::format("{}.{}.{}", CREATURE_SERVER_VERSION_MAJOR,
+                                                     CREATURE_SERVER_VERSION_MINOR, CREATURE_SERVER_VERSION_PATCH)))));
+}
 
 PreparedResponse apiDocsResponse() {
     return {.statusCode = 200,
@@ -940,7 +923,7 @@ void UWebSocketsServer::run() {
         auto *loop = uWS::Loop::get();
         LoopDispatcher dispatcher(loop);
         ApplicationExecutor applicationExecutor(APPLICATION_WORKER_COUNT, APPLICATION_QUEUE_LIMIT);
-        ConnectionAdmission admission(maximumConnections_, maximumConnectionsPerPeer_);
+        HttpConnectionAdmission admission(maximumConnections_, maximumConnectionsPerPeer_);
         RequestRegistry requestRegistry;
         FileStreamer fileStreamer(requestRegistry, dispatcher, maximumConnections_);
         uWS::App app;
@@ -1028,7 +1011,22 @@ void UWebSocketsServer::run() {
             };
         }
 
-        app.filter([&admission](auto *response, const int change) { admission.update(response, change); })
+        // The admission counts only move on the uWS loop thread, so publishing
+        // them here is just two atomic stores. Active sitting flat at the limit
+        // while refused climbs is the shape issue #216 made in production.
+        auto publishAdmissionMetrics = [&admission] {
+            if (creatures::metrics) {
+                creatures::metrics->setHttpConnectionMetrics(admission.activeConnections(),
+                                                             admission.refusedConnections());
+            }
+        };
+
+        app.filter([&admission, &publishAdmissionMetrics](auto *response, const int change) {
+               if (const auto refusal = admission.update(response, change)) {
+                   reportConnectionRefusal(*refusal);
+               }
+               publishAdmissionMetrics();
+           })
             .get("/",
                  [&requestRegistry](auto *response, auto *request) {
                      runBodylessRoute(
@@ -2210,7 +2208,7 @@ void UWebSocketsServer::run() {
                  .sendPingsAutomatically = true,
                  .maxLifetime = 0,
                  .upgrade =
-                     [&nextWebSocketConnectionId](auto *response, auto *request, auto *context) {
+                     [&nextWebSocketConnectionId, &admission](auto *response, auto *request, auto *context) {
                          const std::string traceparent(request->getHeader("traceparent"));
                          const auto [triggerTraceId, triggerSpanId] = traceIdsFromTraceparent(traceparent);
                          auto span = createRequestSpan(response, request, "GET", "/api/v1/websocket", "ws",
@@ -2224,6 +2222,11 @@ void UWebSocketsServer::run() {
                          session.connectionId = nextWebSocketConnectionId++;
                          session.triggerTraceId = triggerTraceId;
                          session.triggerSpanId = triggerSpanId;
+                         // Last thing before upgrading: the socket is about to
+                         // leave the HTTP context, which is the last moment the
+                         // response pointer is valid and the last chance to move
+                         // its admission charge somewhere that will outlive it.
+                         session.admissionCharge = admission.transferToWebSocket(response);
                          response->template upgrade<WebSocketSession>(
                              std::move(session), request->getHeader("sec-websocket-key"),
                              request->getHeader("sec-websocket-protocol"),
@@ -2284,9 +2287,15 @@ void UWebSocketsServer::run() {
                                        webSocket->getUserData()->connectionId);
                      },
                  .close =
-                     [&webSockets, &websocketConnectionCount](CreatureWebSocket *webSocket, const int code,
-                                                              const std::string_view message) {
-                         const auto connectionId = webSocket->getUserData()->connectionId;
+                     [&webSockets, &websocketConnectionCount, &admission, &publishAdmissionMetrics](
+                         CreatureWebSocket *webSocket, const int code, const std::string_view message) {
+                         auto *session = webSocket->getUserData();
+                         const auto connectionId = session->connectionId;
+                         // The HTTP close filter never fires for an upgraded
+                         // socket, so this is the only place the connection's
+                         // slot comes back (issue #216).
+                         admission.releaseWebSocket(session->admissionCharge);
+                         publishAdmissionMetrics();
                          webSockets.erase(connectionId);
                          if (websocketConnectionCount > 0) {
                              --websocketConnectionCount;

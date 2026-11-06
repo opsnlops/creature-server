@@ -920,6 +920,7 @@ add_executable(creature-server-test
         src/server/transport/ApiDocumentation.cpp
         tests/server/transport/ApplicationExecutor_test.cpp
         src/server/transport/ApplicationExecutor.cpp
+        tests/server/transport/ConnectionAdmission_test.cpp
         tests/server/transport/CreatureReadHandlers_test.cpp
         src/server/transport/CreatureReadHandlers.cpp
         tests/server/transport/FixtureReadHandlers_test.cpp
@@ -1018,6 +1019,7 @@ add_executable(creature-server-test
         tests/api/SoundRequests_test.cpp
         tests/api/AnimationRequests_test.cpp
         tests/api/DebugResponses_test.cpp
+        tests/api/HealthResponse_test.cpp
         tests/api/StreamingAdHocContracts_test.cpp
         tests/api/DialogStreamContracts_test.cpp
         tests/api/DialogContracts_test.cpp

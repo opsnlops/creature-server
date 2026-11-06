@@ -25,6 +25,8 @@ SystemCounters::SystemCounters() {
     rtcpReportsSent = 0;
     rtcpSendFailures = 0;
     rtpEncoderResets = 0;
+    httpConnectionsActive = 0;
+    httpConnectionsRefused = 0;
     rtpAudioLoadersActive = 0;
     rtpAudioLoadsQueued = 0;
     rtpAudioLoadsAccepted = 0;
@@ -99,6 +101,11 @@ void SystemCounters::incrementWebsocketPongsReceived() { websocketPongsReceived+
 
 void SystemCounters::incrementRtpEncoderResets() { rtpEncoderResets++; }
 
+void SystemCounters::setHttpConnectionMetrics(const uint64_t active, const uint64_t refused) {
+    httpConnectionsActive.store(active);
+    httpConnectionsRefused.store(refused);
+}
+
 void SystemCounters::setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
                                             uint64_t rejected, uint64_t cancelled, uint64_t failed) {
     rtpAudioLoadersActive.store(active);
@@ -161,6 +168,10 @@ uint64_t SystemCounters::getRtcpReportsSent() { return rtcpReportsSent.load(); }
 uint64_t SystemCounters::getRtcpSendFailures() { return rtcpSendFailures.load(); }
 
 uint64_t SystemCounters::getRtpEncoderResets() { return rtpEncoderResets.load(); }
+
+uint64_t SystemCounters::getHttpConnectionsActive() { return httpConnectionsActive.load(); }
+
+uint64_t SystemCounters::getHttpConnectionsRefused() { return httpConnectionsRefused.load(); }
 
 uint64_t SystemCounters::getRtpAudioLoadersActive() { return rtpAudioLoadersActive.load(); }
 
@@ -247,7 +258,9 @@ SystemCountersSnapshot SystemCounters::snapshot() const {
             websocketMessagesSent.load(),
             websocketPingsSent.load(),
             websocketPongsReceived.load(),
-            rtpEncoderResets.load()};
+            rtpEncoderResets.load(),
+            httpConnectionsActive.load(),
+            httpConnectionsRefused.load()};
 }
 
 nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapshot) {
@@ -291,7 +304,9 @@ nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapsh
             {"websocketMessagesSent", snapshot.websocketMessagesSent},
             {"websocketPingsSent", snapshot.websocketPingsSent},
             {"websocketPongsReceived", snapshot.websocketPongsReceived},
-            {"rtpEncoderResets", snapshot.rtpEncoderResets}};
+            {"rtpEncoderResets", snapshot.rtpEncoderResets},
+            {"httpConnectionsActive", snapshot.httpConnectionsActive},
+            {"httpConnectionsRefused", snapshot.httpConnectionsRefused}};
 }
 
 } // namespace creatures
