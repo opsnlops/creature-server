@@ -60,8 +60,8 @@ TEST(ServerMdnsRecords, TxtversComesFirst) {
 TEST(ServerMdnsRecords, RtpModeAdvertisesThePortsAndNotTheDevice) {
     const auto service = makeServerService(mainstageDetails());
 
-    EXPECT_THAT(service.txt, Contains(Pair("rtp_port", std::to_string(RTP_PORT))));
-    EXPECT_THAT(service.txt, Contains(Pair("rtcp_port", std::to_string(RTCP_PORT))));
+    EXPECT_THAT(service.txt, Contains(Pair("rtp_port", std::to_string(creatures::rtp::RTP_PORT))));
+    EXPECT_THAT(service.txt, Contains(Pair("rtcp_port", std::to_string(creatures::rtp::RTCP_PORT))));
     EXPECT_THAT(service.txt, Not(Contains(Key("audio_device"))));
 }
 

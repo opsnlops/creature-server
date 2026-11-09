@@ -26,8 +26,8 @@ namespace {
 /// Compile-time guarantee that the streaming-audio contract matches what we
 /// hard-code as our output shape. If either constant ever changes this file
 /// breaks fast at build time rather than silently writing a wrong-shape WAV.
-static_assert(RTP_STREAMING_CHANNELS == 17, "DialogWav writes a 17-channel WAV");
-static_assert(RTP_SRATE == 48000, "DialogWav writes a 48 kHz WAV");
+static_assert(creatures::rtp::CHANNEL_COUNT == 17, "DialogWav writes a 17-channel WAV");
+static_assert(creatures::rtp::SAMPLE_RATE == 48000, "DialogWav writes a 48 kHz WAV");
 
 constexpr uint16_t kBitsPerSample = 16;
 constexpr uint16_t kBytesPerSample = kBitsPerSample / 8;
@@ -70,9 +70,9 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     }
 
     // ---- Input validation.
-    if (assembled.sampleRate != static_cast<uint32_t>(RTP_SRATE)) {
-        std::string msg =
-            fmt::format("writeDialogWav: sample rate {} is not the required {} Hz", assembled.sampleRate, RTP_SRATE);
+    if (assembled.sampleRate != static_cast<uint32_t>(creatures::rtp::SAMPLE_RATE)) {
+        std::string msg = fmt::format("writeDialogWav: sample rate {} is not the required {} Hz", assembled.sampleRate,
+                                      creatures::rtp::SAMPLE_RATE);
         error(msg);
         if (span)
             span->setError(msg);
@@ -115,9 +115,10 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
             return Result<void>{ServerError(ServerError::InvalidData, msg)};
         }
         const uint16_t ch = it->second;
-        if (ch < 1 || ch >= RTP_STREAMING_CHANNELS) {
-            std::string msg = fmt::format("writeDialogWav: voice '{}' has audio_channel {} (must be 1..{}; {} is BGM)",
-                                          pc.voiceId, ch, RTP_STREAMING_CHANNELS - 1, RTP_STREAMING_CHANNELS);
+        if (ch < 1 || ch >= creatures::rtp::CHANNEL_COUNT) {
+            std::string msg =
+                fmt::format("writeDialogWav: voice '{}' has audio_channel {} (must be 1..{}; {} is BGM)", pc.voiceId,
+                            ch, creatures::rtp::CHANNEL_COUNT - 1, creatures::rtp::CHANNEL_COUNT);
             error(msg);
             if (span)
                 span->setError(msg);
@@ -146,7 +147,7 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     // file (header + data) must fit in 2^32 bytes. Realistic dialog scenes are
     // well under this — a 5-minute 17-channel 48k S16 file is ~490 MiB — but
     // reject explicitly rather than silently truncate the size field.
-    const std::uint64_t totalChannels = RTP_STREAMING_CHANNELS;
+    const std::uint64_t totalChannels = creatures::rtp::CHANNEL_COUNT;
     const std::uint64_t dataBytes64 = static_cast<std::uint64_t>(playbackSamples) * totalChannels * kBytesPerSample;
     if (dataBytes64 > std::numeric_limits<std::uint32_t>::max() - kWavHeaderBytes) {
         std::string msg = fmt::format(
@@ -168,7 +169,7 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     if (provenance && !provenance->empty()) {
         // Emit a complete 17-track TRACK_LIST (one per interleaved channel) so
         // Wave Agent / DAWs show the per-lane names (#51 follow-up).
-        ixmlChunk = makeIxmlChunk(buildIxml(*provenance, RTP_STREAMING_CHANNELS));
+        ixmlChunk = makeIxmlChunk(buildIxml(*provenance, creatures::rtp::CHANNEL_COUNT));
         const std::uint64_t withIxml = 36ull + dataBytes64 + ixmlChunk.size();
         if (withIxml > std::numeric_limits<std::uint32_t>::max()) {
             warn("writeDialogWav: scene too large to also carry a {}-byte iXML chunk; writing without provenance",
@@ -196,10 +197,11 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     out.write("fmt ", 4);
     writeU32LE(out, 16); // PCM fmt chunk size
     writeU16LE(out, kWavFormatPCM);
-    writeU16LE(out, static_cast<std::uint16_t>(RTP_STREAMING_CHANNELS));
-    writeU32LE(out, static_cast<std::uint32_t>(RTP_SRATE));
-    writeU32LE(out, static_cast<std::uint32_t>(RTP_SRATE) * RTP_STREAMING_CHANNELS * kBytesPerSample); // byte rate
-    writeU16LE(out, static_cast<std::uint16_t>(RTP_STREAMING_CHANNELS * kBytesPerSample));             // block align
+    writeU16LE(out, static_cast<std::uint16_t>(creatures::rtp::CHANNEL_COUNT));
+    writeU32LE(out, static_cast<std::uint32_t>(creatures::rtp::SAMPLE_RATE));
+    writeU32LE(out, static_cast<std::uint32_t>(creatures::rtp::SAMPLE_RATE) * creatures::rtp::CHANNEL_COUNT *
+                        kBytesPerSample);                                                         // byte rate
+    writeU16LE(out, static_cast<std::uint16_t>(creatures::rtp::CHANNEL_COUNT * kBytesPerSample)); // block align
     writeU16LE(out, kBitsPerSample);
     out.write("data", 4);
     writeU32LE(out, dataBytes);
@@ -208,10 +210,10 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
     // a nearly 1 GiB 17-channel buffer. int16_t is host-endian, and every
     // supported host is LE.
     static_assert(sizeof(int16_t) == 2, "int16_t is exactly 2 bytes");
-    std::vector<int16_t> interleaved(kInterleaveBlockFrames * RTP_STREAMING_CHANNELS, 0);
+    std::vector<int16_t> interleaved(kInterleaveBlockFrames * creatures::rtp::CHANNEL_COUNT, 0);
     for (std::size_t blockStart = 0; blockStart < playbackSamples; blockStart += kInterleaveBlockFrames) {
         const auto blockFrames = std::min(kInterleaveBlockFrames, playbackSamples - blockStart);
-        const auto blockValues = blockFrames * RTP_STREAMING_CHANNELS;
+        const auto blockValues = blockFrames * creatures::rtp::CHANNEL_COUNT;
         std::fill_n(interleaved.begin(), blockValues, 0);
 
         if (blockStart < assembled.totalSamples) {
@@ -219,7 +221,7 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
             for (const auto &vl : lanes) {
                 const auto &src = assembled.perCreature[vl.perCreatureIndex].pcm;
                 for (std::size_t frame = 0; frame < dialogFrames; ++frame) {
-                    interleaved[frame * RTP_STREAMING_CHANNELS + vl.lane] = src[blockStart + frame];
+                    interleaved[frame * creatures::rtp::CHANNEL_COUNT + vl.lane] = src[blockStart + frame];
                 }
             }
         }
@@ -227,7 +229,7 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
         if (blockStart < backgroundMusic.size()) {
             const auto musicFrames = std::min(blockFrames, backgroundMusic.size() - blockStart);
             for (std::size_t frame = 0; frame < musicFrames; ++frame) {
-                interleaved[frame * RTP_STREAMING_CHANNELS + (RTP_STREAMING_CHANNELS - 1)] =
+                interleaved[frame * creatures::rtp::CHANNEL_COUNT + (creatures::rtp::CHANNEL_COUNT - 1)] =
                     backgroundMusic[blockStart + frame];
             }
         }
@@ -253,7 +255,7 @@ Result<void> writeDialogWav(const DialogAssembled &assembled, const VoiceChannel
         return Result<void>{ServerError(ServerError::InternalError, msg)};
     }
 
-    const double durationS = static_cast<double>(playbackSamples) / static_cast<double>(RTP_SRATE);
+    const double durationS = static_cast<double>(playbackSamples) / static_cast<double>(creatures::rtp::SAMPLE_RATE);
     info("writeDialogWav: wrote {} ({} samples, {} voices on lanes, {:.2f}s, {} bytes data)", outPath.string(),
          playbackSamples, lanes.size(), durationS, dataBytes);
 

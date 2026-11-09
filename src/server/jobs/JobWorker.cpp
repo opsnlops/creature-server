@@ -603,8 +603,8 @@ void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
         return;
     }
     const auto channelCount = channelCountResult.getValue().value();
-    if (channelCount != RTP_STREAMING_CHANNELS) {
-        failJob(fmt::format("Expected {} channels but audio has {}", RTP_STREAMING_CHANNELS, channelCount));
+    if (channelCount != creatures::rtp::CHANNEL_COUNT) {
+        failJob(fmt::format("Expected {} channels but audio has {}", creatures::rtp::CHANNEL_COUNT, channelCount));
         return;
     }
 
@@ -673,9 +673,9 @@ void JobWorker::handleAnimationLipSyncJob(JobState &jobState) {
             creatureCache.emplace(creatureId, creature);
         }
 
-        if (creature.audio_channel == 0 || creature.audio_channel >= RTP_STREAMING_CHANNELS) {
+        if (creature.audio_channel == 0 || creature.audio_channel >= creatures::rtp::CHANNEL_COUNT) {
             failJob(fmt::format("Creature {} has invalid audio_channel {} (1-{} expected)", creatureId,
-                                creature.audio_channel, RTP_STREAMING_CHANNELS - 1));
+                                creature.audio_channel, creatures::rtp::CHANNEL_COUNT - 1));
             return;
         }
 
@@ -2289,7 +2289,7 @@ void JobWorker::handleDialogJob(JobState &jobState) {
         std::sort(
             provenance.tracks.begin(), provenance.tracks.end(),
             [](const voice::DialogTrackInfo &a, const voice::DialogTrackInfo &b) { return a.channel < b.channel; });
-        provenance.tracks.push_back({static_cast<uint16_t>(RTP_STREAMING_CHANNELS), "BGM"});
+        provenance.tracks.push_back({static_cast<uint16_t>(creatures::rtp::CHANNEL_COUNT), "BGM"});
 
         // Script snapshot: rawTurns is exactly what was rendered (a copy of the
         // saved script's turns when rendering from one), resolved to names.

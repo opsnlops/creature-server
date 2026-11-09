@@ -57,8 +57,8 @@ MdnsService makeServerService(const ServerDetails &details) {
     // Only one of these pairs is meaningful at a time, and advertising the other
     // would invite somebody to believe it.
     if (details.rtpAudio) {
-        service.txt.emplace_back("rtp_port", std::to_string(RTP_PORT));
-        service.txt.emplace_back("rtcp_port", std::to_string(RTCP_PORT));
+        service.txt.emplace_back("rtp_port", std::to_string(creatures::rtp::RTP_PORT));
+        service.txt.emplace_back("rtcp_port", std::to_string(creatures::rtp::RTCP_PORT));
     } else {
         service.txt.emplace_back("audio_device", details.audioDevice.empty() ? "default" : details.audioDevice);
     }

@@ -31,8 +31,8 @@ namespace creatures::rtp {
  */
 class RtcpSender {
   public:
-    using SynchronizationSources = std::array<uint32_t, RTP_STREAMING_CHANNELS>;
-    using SentOctets = std::array<uint32_t, RTP_STREAMING_CHANNELS>;
+    using SynchronizationSources = std::array<uint32_t, creatures::rtp::CHANNEL_COUNT>;
+    using SentOctets = std::array<uint32_t, creatures::rtp::CHANNEL_COUNT>;
 
     explicit RtcpSender(std::chrono::milliseconds reportInterval = std::chrono::milliseconds(RTCP_REPORT_INTERVAL_MS));
     ~RtcpSender();
@@ -57,8 +57,8 @@ class RtcpSender {
         SynchronizationSources synchronizationSources;
         RtpClockMapping clockMapping;
         AsyncAudioTraceContext traceContext;
-        std::array<uint32_t, RTP_STREAMING_CHANNELS> packetCounts{};
-        std::array<uint32_t, RTP_STREAMING_CHANNELS> octetCounts{};
+        std::array<uint32_t, creatures::rtp::CHANNEL_COUNT> packetCounts{};
+        std::array<uint32_t, creatures::rtp::CHANNEL_COUNT> octetCounts{};
         bool hasPackets{false};
         bool firstSuccessfulReportRecorded{false};
     };
@@ -69,8 +69,8 @@ class RtcpSender {
         SynchronizationSources synchronizationSources;
         RtpClockMapping clockMapping;
         AsyncAudioTraceContext traceContext;
-        std::array<uint32_t, RTP_STREAMING_CHANNELS> packetCounts;
-        std::array<uint32_t, RTP_STREAMING_CHANNELS> octetCounts;
+        std::array<uint32_t, creatures::rtp::CHANNEL_COUNT> packetCounts;
+        std::array<uint32_t, creatures::rtp::CHANNEL_COUNT> octetCounts;
         bool firstSuccessfulReport;
     };
 

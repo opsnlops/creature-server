@@ -154,11 +154,12 @@ class MultiOpusRtpServer {
     std::thread outputThread_;
 
     uvgrtp::context rtpContext_;
-    std::array<uvgrtp::session *, RTP_STREAMING_CHANNELS> rtpSessions_{};
-    std::array<uvgrtp::media_stream *, RTP_STREAMING_CHANNELS> mediaStreams_{};
+    std::array<uvgrtp::session *, creatures::rtp::CHANNEL_COUNT> rtpSessions_{};
+    std::array<uvgrtp::media_stream *, creatures::rtp::CHANNEL_COUNT> mediaStreams_{};
 
     // Each successive packet advances Opus encoder state. AudioStreamBuffer
     // applies the same silence pre-roll before encoding program frame zero.
-    std::array<std::array<std::vector<uint8_t>, RTP_PRIMING_FRAMES>, RTP_STREAMING_CHANNELS> encodedSilentFrames_;
+    std::array<std::array<std::vector<uint8_t>, RTP_PRIMING_FRAMES>, creatures::rtp::CHANNEL_COUNT>
+        encodedSilentFrames_;
 };
 } // namespace creatures::rtp

@@ -187,7 +187,7 @@ FetchContent_MakeAvailable(argparse)
 FetchContent_Declare(
         creature_common
         GIT_REPOSITORY https://github.com/opsnlops/creature-common.git
-        GIT_TAG        v0.1.0
+        GIT_TAG        v0.2.0
         EXCLUDE_FROM_ALL   # keep its install() rules out of our .deb, same as Opus
 )
 FetchContent_MakeAvailable(creature_common)
@@ -718,8 +718,6 @@ add_executable(creature-server
         src/server/rtp/opus/OpusEncoderWrapper.h
         src/server/rtp/MultiOpusRtpServer.cpp
         src/server/rtp/MultiOpusRtpServer.h
-        src/server/rtp/RtcpPacket.cpp
-        src/server/rtp/RtcpPacket.h
         src/server/rtp/RtcpSender.cpp
         src/server/rtp/RtcpSender.h
         src/server/rtp/RtpClockMapping.cpp
@@ -759,6 +757,7 @@ target_link_libraries(creature-server
         argparse
         e131_service
         creature::mdns
+        creature::rtp
         Threads::Threads
         uvgrtp
         opus
@@ -901,6 +900,7 @@ add_executable(creature-server-test
         tests/server/creature/UniverseResolver_test.cpp
         src/server/creature/UniverseResolver.cpp
         tests/server/network/ServerMdnsRecords_test.cpp
+        tests/server/rtp/ChannelGroupMapping_test.cpp
         src/server/network/ServerMdnsRecords.cpp
         src/server/animation/SessionManager.cpp
         src/server/animation/PlaybackSession.cpp
@@ -994,7 +994,6 @@ add_executable(creature-server-test
         src/server/rtp/AudioStreamBuffer.cpp
         tests/server/rtp/BoundedCommandQueue_test.cpp
         tests/server/rtp/OpusPriming_test.cpp
-        tests/server/rtp/RtcpPacket_test.cpp
         tests/server/rtp/RtpClockMapping_test.cpp
         tests/server/rtp/RtpFrameClock_test.cpp
         tests/server/rtp/RtpOutputCoordinator_test.cpp
@@ -1009,7 +1008,6 @@ add_executable(creature-server-test
         src/server/audio/SoundPathResolver.cpp
         src/server/audio/LocalAudioPlaybackCoordinator.cpp
         src/server/rtp/AudioLoadExecutor.cpp
-        src/server/rtp/RtcpPacket.cpp
         src/server/rtp/RtpClockMapping.cpp
         src/server/rtp/opus/OpusEncoderWrapper.cpp
         src/server/voice/DialogPreviewAssembly.cpp
@@ -1094,6 +1092,7 @@ target_link_libraries(creature-server-test
         argparse
         e131_service
         creature::mdns
+        creature::rtp
         opus
         ogg
         ${MP3LAME_LIBRARIES}

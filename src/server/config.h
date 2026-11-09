@@ -3,6 +3,10 @@
 #include <array>
 #include <cstdint>
 
+// The RTP/RTCP wire contract, shared with the controllers so neither side
+// can change a port, group or payload type on its own (creature-common#1).
+#include "creature/rtp/Protocol.h"
+
 #define DEBUG_DMX_SENDER 0
 #define DEBUG_STREAM_FRAMES 0
 
@@ -193,18 +197,17 @@
 // Using standard RTP port range for better compatibility with tools like Wireshark and VLC
 //
 
-static constexpr uint16_t RTP_PORT = 5004;                          // Standard RTP port
-static constexpr uint16_t RTCP_PORT = RTP_PORT + 1;                 // Conventional RTP control port
-static constexpr uint32_t RTCP_REPORT_INTERVAL_MS = 1000;           // Active-stream timing update cadence
-static constexpr int RTP_SRATE = 48000;                             // "Full" Opus rate (48 kHz)
-static constexpr int RTP_STREAMING_CHANNELS = 17;                   // 16 creatures + 1 BGM
-static constexpr int RTP_FRAME_MS = 10;                             // 10 ms frames
-static constexpr int RTP_SAMPLES = RTP_SRATE * RTP_FRAME_MS / 1000; // 480
+// The ports, sample rate, channel count, frame length, samples per frame and
+// Opus payload type are the wire contract, and they live in creature-common so
+// the server and the controllers cannot define them differently
+// (creature-common#1). Only the server's own tuning is left here.
+static constexpr uint32_t RTCP_REPORT_INTERVAL_MS = 1000; // Active-stream timing update cadence
 static constexpr uint8_t RTP_PRIMING_FRAMES = 4;
-static constexpr uint64_t RTP_PRIMING_DURATION_FRAMES = RTP_PRIMING_FRAMES * RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
-static constexpr int RTP_PCM_BYTES = RTP_SAMPLES * sizeof(int16_t) * RTP_STREAMING_CHANNELS;
+static constexpr uint64_t RTP_PRIMING_DURATION_FRAMES =
+    RTP_PRIMING_FRAMES * creatures::rtp::FRAME_MS / EVENT_LOOP_PERIOD_MS;
+static constexpr int RTP_PCM_BYTES =
+    creatures::rtp::SAMPLES_PER_FRAME * sizeof(int16_t) * creatures::rtp::CHANNEL_COUNT;
 static constexpr int RTP_STANDARD_MTU_PAYLOAD = 1452; // Standard ethernet MTU minus IP/UDP/RTP headers
-static constexpr int RTP_OPUS_PAYLOAD_PT = 96;        // dynamic PT we’ll advertise
 static constexpr int RTP_BITRATE = 256000;            // 256 kbps for Opus (super quality)
 
 // Aggregate audio-content ceilings (issue #93). One duration constant drives
@@ -221,7 +224,7 @@ static constexpr int RTP_BITRATE = 256000;            // 256 kbps for Opus (supe
 // and lowering this constant is the lever if that ever changes.
 static constexpr uint32_t RTP_MAX_AUDIO_SECONDS = 900;
 static constexpr std::size_t RTP_MAX_FRAMES_PER_CHANNEL =
-    static_cast<std::size_t>(RTP_MAX_AUDIO_SECONDS) * 1000 / RTP_FRAME_MS; // 90,000 ten-ms frames
+    static_cast<std::size_t>(RTP_MAX_AUDIO_SECONDS) * 1000 / creatures::rtp::FRAME_MS; // 90,000 ten-ms frames
 
 // Accounting overhead applied per encoded frame when budgeting memory: the
 // std::vector object plus a typical allocator header. Approximate on purpose —
@@ -240,8 +243,8 @@ static constexpr std::size_t RTP_ENCODED_VBR_HEADROOM_PERCENT = 150;
 // ceiling (~900 MB with headroom). Checked BEFORE allocation on the cache-read
 // path AND before publication on the save path.
 static constexpr std::size_t RTP_MAX_ENCODED_TOTAL_BYTES =
-    RTP_MAX_FRAMES_PER_CHANNEL * static_cast<std::size_t>(RTP_STREAMING_CHANNELS) *
-    (static_cast<std::size_t>(RTP_BITRATE) / 8 * RTP_FRAME_MS / 1000 + RTP_ENCODED_FRAME_OVERHEAD_BYTES) *
+    RTP_MAX_FRAMES_PER_CHANNEL * static_cast<std::size_t>(creatures::rtp::CHANNEL_COUNT) *
+    (static_cast<std::size_t>(RTP_BITRATE) / 8 * creatures::rtp::FRAME_MS / 1000 + RTP_ENCODED_FRAME_OVERHEAD_BYTES) *
     RTP_ENCODED_VBR_HEADROOM_PERCENT / 100;
 
 // In-memory retention budget for the AudioStreamBuffer memo (issue #93):
@@ -311,14 +314,6 @@ static constexpr std::size_t RTP_MAX_ENCODED_TOTAL_BYTES =
 #define AUDIO_CACHE_PRUNE_INTERVAL_HOURS_ENV "AUDIO_CACHE_PRUNE_INTERVAL_HOURS"
 #define DEFAULT_AUDIO_CACHE_PRUNE_INTERVAL_HOURS 6ULL
 static constexpr uint32_t AUDIO_CACHE_PRUNE_STARTUP_DELAY_SECONDS = 60;
-
-// One multicast group per channel: 239.19.63.[1-17]
-inline constexpr std::array<const char *, RTP_STREAMING_CHANNELS> RTP_GROUPS = {
-    "239.19.63.1",  "239.19.63.2",  "239.19.63.3",  "239.19.63.4",  "239.19.63.5",  "239.19.63.6",
-    "239.19.63.7",  "239.19.63.8",  "239.19.63.9",  "239.19.63.10", "239.19.63.11", "239.19.63.12",
-    "239.19.63.13", "239.19.63.14", "239.19.63.15", "239.19.63.16",
-    "239.19.63.17" // BGM
-};
 
 // Warning check for standard MTU (this will trigger on WiFi without fragmentation)
 static_assert(RTP_PCM_BYTES > RTP_STANDARD_MTU_PAYLOAD,

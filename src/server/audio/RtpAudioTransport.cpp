@@ -182,7 +182,7 @@ Result<framenum_t> RtpAudioTransport::dispatchNextChunk(framenum_t currentFrame)
         return Result<framenum_t>{ServerError(ServerError::InternalError, "Audio buffer disappeared")};
     }
 
-    constexpr framenum_t dispatchStep = RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
+    constexpr framenum_t dispatchStep = creatures::rtp::FRAME_MS / EVENT_LOOP_PERIOD_MS;
     size_t framesToSkip = 0;
 
     // Real-time audio cannot be caught up by blasting old packets. If the event

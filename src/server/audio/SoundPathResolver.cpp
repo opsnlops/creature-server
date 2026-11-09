@@ -426,8 +426,8 @@ std::optional<SoundStoreIndex::Entry> SoundStoreIndex::makeEntry(const fs::path 
             const auto wav = stream.getValue().value();
             entry.sampleRate = static_cast<uint32_t>(wav->sampleRate());
             entry.channels = wav->channels();
-            entry.rtpPlayable =
-                wav->sampleRate() == RTP_SRATE && wav->channels() == static_cast<uint16_t>(RTP_STREAMING_CHANNELS);
+            entry.rtpPlayable = wav->sampleRate() == creatures::rtp::SAMPLE_RATE &&
+                                wav->channels() == static_cast<uint16_t>(creatures::rtp::CHANNEL_COUNT);
         }
     }
     return entry;

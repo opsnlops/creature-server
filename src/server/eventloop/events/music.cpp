@@ -81,7 +81,7 @@ class StandaloneRtpCompletionCheckEvent : public EventBase<StandaloneRtpCompleti
             if (!eventLoop) {
                 return fail("Event loop unavailable during standalone completion check");
             }
-            constexpr framenum_t checkStep = RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
+            constexpr framenum_t checkStep = creatures::rtp::FRAME_MS / EVENT_LOOP_PERIOD_MS;
             eventLoop->scheduleEvent(std::make_shared<StandaloneRtpCompletionCheckEvent>(
                 this->frameNumber + checkStep, outputLease_, span_, skippedFramesTotal_, attempts_ + 1));
             return Result<framenum_t>{this->frameNumber};
@@ -169,7 +169,7 @@ class StandaloneRtpFrameEvent : public EventBase<StandaloneRtpFrameEvent> {
             return Result<framenum_t>{this->frameNumber};
         }
 
-        constexpr framenum_t dispatchStep = RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
+        constexpr framenum_t dispatchStep = creatures::rtp::FRAME_MS / EVENT_LOOP_PERIOD_MS;
         size_t framesToSkip = 0;
         const framenum_t currentFrame = eventLoop->getCurrentFrameNumber();
         if (currentFrame > this->frameNumber) {

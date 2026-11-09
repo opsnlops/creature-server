@@ -54,7 +54,8 @@ TEST(RtpClockMapping, WrapsTheRtpTimestampWithoutDisturbingNtp) {
 
 TEST(RtpClockMapping, MatchesFrameClockWhenLateFramesAreSkipped) {
     const auto monotonicEpoch = RtpClockMapping::MonotonicClock::time_point{};
-    const RtpClockMapping mapping(monotonicEpoch, RtpClockMapping::WallClock::time_point{}, 50'000U, RTP_SRATE);
+    const RtpClockMapping mapping(monotonicEpoch, RtpClockMapping::WallClock::time_point{}, 50'000U,
+                                  creatures::rtp::SAMPLE_RATE);
     RtpFrameClock frameClock(mapping.rtpEpoch());
 
     frameClock.advance(3); // Three late frames were not sent.

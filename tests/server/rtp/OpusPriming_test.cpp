@@ -17,7 +17,7 @@ TEST(OpusPriming, ProducesMatchingReceiverHistoryAndProgramState) {
     const auto discardedProgramPriming = encodePrimingSequence(programEncoder);
     EXPECT_EQ(transmittedPriming, discardedProgramPriming);
 
-    std::array<int16_t, RTP_SAMPLES> firstProgramFrame{};
+    std::array<int16_t, creatures::rtp::SAMPLES_PER_FRAME> firstProgramFrame{};
     for (size_t sampleIndex = 0; sampleIndex < firstProgramFrame.size(); ++sampleIndex) {
         firstProgramFrame[sampleIndex] = static_cast<int16_t>((sampleIndex % 97) * 200 - 9600);
     }

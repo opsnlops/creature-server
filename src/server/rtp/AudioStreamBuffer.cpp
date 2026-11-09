@@ -322,14 +322,14 @@ Result<size_t> AudioStreamBuffer::encodeMonoPcm(std::span<const int16_t> monoSam
         return Result<size_t>{ServerError(code, message)};
     };
 
-    if (audioChannel == 0 || audioChannel > RTP_STREAMING_CHANNELS) {
+    if (audioChannel == 0 || audioChannel > creatures::rtp::CHANNEL_COUNT) {
         return fail(ServerError::InvalidData, fmt::format("Audio channel {} is outside the RTP layout", audioChannel));
     }
     // Same truncation to whole 10 ms frames as a file load, so the two agree.
-    numberOfFramesPerChannel_ = monoSamples.size() / RTP_SAMPLES;
+    numberOfFramesPerChannel_ = monoSamples.size() / creatures::rtp::SAMPLES_PER_FRAME;
     if (numberOfFramesPerChannel_ == 0) {
         return fail(ServerError::InvalidData, fmt::format("PCM too short: {} samples, need at least {} for one frame",
-                                                          monoSamples.size(), RTP_SAMPLES));
+                                                          monoSamples.size(), creatures::rtp::SAMPLES_PER_FRAME));
     }
     if (numberOfFramesPerChannel_ > RTP_MAX_FRAMES_PER_CHANNEL) {
         return fail(ServerError::InvalidData, fmt::format("PCM too long: {} frames per channel (maximum supported: {})",
@@ -348,10 +348,10 @@ Result<size_t> AudioStreamBuffer::encodeMonoPcm(std::span<const int16_t> monoSam
             std::vector<std::vector<uint8_t>> frames(numberOfFramesPerChannel_);
             opus::Encoder encoder;
             static_cast<void>(opus::encodePrimingSequence(encoder));
-            std::array<int16_t, RTP_SAMPLES> frame{};
+            std::array<int16_t, creatures::rtp::SAMPLES_PER_FRAME> frame{};
             for (std::size_t frameIndex = 0; frameIndex < numberOfFramesPerChannel_; ++frameIndex) {
-                for (std::size_t s = 0; s < RTP_SAMPLES; ++s) {
-                    frame[s] = sampleAt(frameIndex * RTP_SAMPLES + s);
+                for (std::size_t s = 0; s < creatures::rtp::SAMPLES_PER_FRAME; ++s) {
+                    frame[s] = sampleAt(frameIndex * creatures::rtp::SAMPLES_PER_FRAME + s);
                 }
                 frames[frameIndex] = encoder.encode(frame.data());
             }
@@ -367,7 +367,7 @@ Result<size_t> AudioStreamBuffer::encodeMonoPcm(std::span<const int16_t> monoSam
         auto voiceFrames = encodeLane("voice", [&](std::size_t index) { return monoSamples[index]; });
         auto silentFrames = silentFuture.get();
 
-        for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+        for (uint8_t channelIndex = 0; channelIndex < creatures::rtp::CHANNEL_COUNT; ++channelIndex) {
             encodedOpusFrames_[channelIndex] = channelIndex == voiceIndex ? voiceFrames : silentFrames;
         }
     } catch (const std::exception &e) {
@@ -544,11 +544,11 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
     const auto wav = wavResult.getValue().value();
 
     // Validate audio format
-    if (wav->sampleRate() != RTP_SRATE || wav->channels() != RTP_STREAMING_CHANNELS) {
-        const auto errorMsg =
-            fmt::format("WAV file format not supported: {}, {} Hz, {} channels "
-                        "(expected {} Hz, {} channels, signed 16-bit PCM)",
-                        audioFilePath, wav->sampleRate(), wav->channels(), RTP_SRATE, RTP_STREAMING_CHANNELS);
+    if (wav->sampleRate() != creatures::rtp::SAMPLE_RATE || wav->channels() != creatures::rtp::CHANNEL_COUNT) {
+        const auto errorMsg = fmt::format("WAV file format not supported: {}, {} Hz, {} channels "
+                                          "(expected {} Hz, {} channels, signed 16-bit PCM)",
+                                          audioFilePath, wav->sampleRate(), wav->channels(),
+                                          creatures::rtp::SAMPLE_RATE, creatures::rtp::CHANNEL_COUNT);
         error(errorMsg);
         if (span) {
             span->setError(errorMsg);
@@ -566,18 +566,19 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
-    if (wav->totalFrames() > SIZE_MAX / RTP_STREAMING_CHANNELS) {
+    if (wav->totalFrames() > SIZE_MAX / creatures::rtp::CHANNEL_COUNT) {
         const auto errorMsg = fmt::format("WAV file sample count overflows address space: {}", audioFilePath);
         if (span) {
             span->setError(errorMsg);
         }
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
-    const auto totalSamples = static_cast<size_t>(wav->totalFrames()) * RTP_STREAMING_CHANNELS;
+    const auto totalSamples = static_cast<size_t>(wav->totalFrames()) * creatures::rtp::CHANNEL_COUNT;
     // The same duration ceiling the cache reader enforces (issue #93) — the
     // two paths used to disagree by a factor of ~60.
-    constexpr size_t MAX_RTP_PCM_SAMPLES =
-        RTP_MAX_FRAMES_PER_CHANNEL * static_cast<size_t>(RTP_SAMPLES) * RTP_STREAMING_CHANNELS;
+    constexpr size_t MAX_RTP_PCM_SAMPLES = RTP_MAX_FRAMES_PER_CHANNEL *
+                                           static_cast<size_t>(creatures::rtp::SAMPLES_PER_FRAME) *
+                                           creatures::rtp::CHANNEL_COUNT;
     if (totalSamples > MAX_RTP_PCM_SAMPLES) {
         const auto errorMsg =
             fmt::format("WAV file exceeds the {} second RTP audio ceiling: {}", RTP_MAX_AUDIO_SECONDS, audioFilePath);
@@ -588,7 +589,8 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
     }
 
     // Validate divisor to prevent division by zero
-    const auto samplesPerFrame = static_cast<uint64_t>(RTP_STREAMING_CHANNELS) * RTP_SAMPLES;
+    const auto samplesPerFrame =
+        static_cast<uint64_t>(creatures::rtp::CHANNEL_COUNT) * creatures::rtp::SAMPLES_PER_FRAME;
     if (samplesPerFrame == 0) {
         const auto errorMsg = "Invalid audio configuration: samplesPerFrame is zero";
         error(errorMsg);
@@ -632,8 +634,8 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         return Result<size_t>{ServerError(ServerError::InvalidData, errorMsg)};
     }
 
-    const size_t sampleFramesToEncode = numberOfFramesPerChannel_ * RTP_SAMPLES;
-    const size_t samplesToEncode = sampleFramesToEncode * RTP_STREAMING_CHANNELS;
+    const size_t sampleFramesToEncode = numberOfFramesPerChannel_ * creatures::rtp::SAMPLES_PER_FRAME;
+    const size_t samplesToEncode = sampleFramesToEncode * creatures::rtp::CHANNEL_COUNT;
     debug("WAV file loaded: {} declared samples, {} samples used for {} frames per channel", totalSamples,
           samplesToEncode, numberOfFramesPerChannel_);
 
@@ -642,9 +644,9 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
     while (sampleFramesRead < sampleFramesToEncode) {
         const size_t framesRemaining = sampleFramesToEncode - sampleFramesRead;
         const size_t framesRequested = std::min<size_t>(4096, framesRemaining);
-        auto readResult = wav->readInterleavedFrames(
-            std::span<int16_t>(pcmSamples)
-                .subspan(sampleFramesRead * RTP_STREAMING_CHANNELS, framesRequested * RTP_STREAMING_CHANNELS));
+        auto readResult = wav->readInterleavedFrames(std::span<int16_t>(pcmSamples)
+                                                         .subspan(sampleFramesRead * creatures::rtp::CHANNEL_COUNT,
+                                                                  framesRequested * creatures::rtp::CHANNEL_COUNT));
         if (!readResult.isSuccess()) {
             if (span) {
                 span->setError(readResult.getError()->getMessage());
@@ -679,9 +681,9 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         // Encode all 17 channels in parallel — each channel is independent
         // with its own Opus encoder state, so this is trivially parallelizable.
         // On the Ryzen 9 16-core server, all 17 channels encode simultaneously.
-        std::array<std::future<Result<size_t>>, RTP_STREAMING_CHANNELS> futures;
+        std::array<std::future<Result<size_t>>, creatures::rtp::CHANNEL_COUNT> futures;
 
-        for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+        for (uint8_t channelIndex = 0; channelIndex < creatures::rtp::CHANNEL_COUNT; ++channelIndex) {
             futures[channelIndex] = std::async(std::launch::async, [this, pcm, channelIndex, span]() -> Result<size_t> {
                 auto channelSpan = observability
                                        ? observability->createChildOperationSpan(
@@ -698,12 +700,13 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
                 static_cast<void>(opus::encodePrimingSequence(encoder));
 
                 for (std::size_t frameIndex = 0; frameIndex < numberOfFramesPerChannel_; ++frameIndex) {
-                    const int16_t *frameBase = pcm + frameIndex * RTP_SAMPLES * RTP_STREAMING_CHANNELS;
+                    const int16_t *frameBase =
+                        pcm + frameIndex * creatures::rtp::SAMPLES_PER_FRAME * creatures::rtp::CHANNEL_COUNT;
 
                     // De-interleave this channel's samples from the interleaved PCM
-                    std::array<int16_t, RTP_SAMPLES> mono{};
-                    for (std::size_t s = 0; s < RTP_SAMPLES; ++s) {
-                        mono[s] = frameBase[s * RTP_STREAMING_CHANNELS + channelIndex];
+                    std::array<int16_t, creatures::rtp::SAMPLES_PER_FRAME> mono{};
+                    for (std::size_t s = 0; s < creatures::rtp::SAMPLES_PER_FRAME; ++s) {
+                        mono[s] = frameBase[s * creatures::rtp::CHANNEL_COUNT + channelIndex];
                     }
 
                     encodedOpusFrames_[channelIndex][frameIndex] = encoder.encode(mono.data());
@@ -717,7 +720,7 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         }
 
         // Wait for all channels to complete
-        for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+        for (uint8_t channelIndex = 0; channelIndex < creatures::rtp::CHANNEL_COUNT; ++channelIndex) {
             auto channelResult = futures[channelIndex].get();
             if (!channelResult.isSuccess()) {
                 auto errorMsg = fmt::format("Opus encoding failed for channel {}: {}", channelIndex,
@@ -731,7 +734,7 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         }
 
         debug("Parallel encoding completed - {} frames × {} channels encoded to Opus", numberOfFramesPerChannel_,
-              RTP_STREAMING_CHANNELS);
+              creatures::rtp::CHANNEL_COUNT);
 
     } catch (const std::exception &e) {
         const auto errorMsg = fmt::format("Error while encoding WAV to Opus: {}", e.what());
@@ -761,7 +764,8 @@ Result<size_t> AudioStreamBuffer::loadWaveFile(const std::string &audioFilePath,
         span->setAttribute("frames_per_channel", static_cast<int64_t>(numberOfFramesPerChannel_));
     }
     if (span) {
-        span->setAttribute("total_frames", static_cast<int64_t>(numberOfFramesPerChannel_ * RTP_STREAMING_CHANNELS));
+        span->setAttribute("total_frames",
+                           static_cast<int64_t>(numberOfFramesPerChannel_ * creatures::rtp::CHANNEL_COUNT));
     }
 
     // Return the number of frames we successfully loaded

@@ -298,7 +298,7 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
         cachedData->encodedFrames[0] = std::move(firstChannelFrames);
 
         // Load remaining channels (1-16)
-        for (uint8_t ch = 1; ch < RTP_STREAMING_CHANNELS; ++ch) {
+        for (uint8_t ch = 1; ch < creatures::rtp::CHANNEL_COUNT; ++ch) {
             auto channelPath = getCacheFilePath(sourceFilePath, ch);
             auto channelResult = loadOggOpusWithMetadata(channelPath, aggregateBytes);
             if (!channelResult.isSuccess()) {
@@ -352,10 +352,10 @@ std::shared_ptr<AudioCache::CachedAudioData> AudioCache::tryLoadFromCache(const 
     }
 }
 
-Result<void>
-AudioCache::saveToCache(const std::string &sourceFilePath, std::size_t framesPerChannel,
-                        const std::array<std::vector<std::vector<uint8_t>>, RTP_STREAMING_CHANNELS> &encodedFrames,
-                        const SourceFileInfo &expectedSource, std::shared_ptr<OperationSpan> parentSpan) {
+Result<void> AudioCache::saveToCache(
+    const std::string &sourceFilePath, std::size_t framesPerChannel,
+    const std::array<std::vector<std::vector<uint8_t>>, creatures::rtp::CHANNEL_COUNT> &encodedFrames,
+    const SourceFileInfo &expectedSource, std::shared_ptr<OperationSpan> parentSpan) {
 
     auto span = observability ? observability->createChildOperationSpan("AudioCache.saveToCache", parentSpan) : nullptr;
 
@@ -374,7 +374,7 @@ AudioCache::saveToCache(const std::string &sourceFilePath, std::size_t framesPer
                 span->setError(errorMsg);
             return Result<void>{ServerError(ServerError::InvalidData, errorMsg)};
         }
-        for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
+        for (uint8_t ch = 0; ch < creatures::rtp::CHANNEL_COUNT; ++ch) {
             if (encodedFrames[ch].size() != framesPerChannel) {
                 const auto errorMsg = fmt::format("Cannot cache channel {} with {} frames; expected {}", ch,
                                                   encodedFrames[ch].size(), framesPerChannel);
@@ -457,7 +457,7 @@ AudioCache::saveToCache(const std::string &sourceFilePath, std::size_t framesPer
 
         // Save each channel through a temporary file. The completion marker is
         // written last, so a crash or partial write is always treated as a miss.
-        for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
+        for (uint8_t ch = 0; ch < creatures::rtp::CHANNEL_COUNT; ++ch) {
             auto cachePath = getCacheFilePath(sourceFilePath, ch);
             const auto temporaryPath = uniqueTemporaryPath(cachePath);
             std::filesystem::remove(temporaryPath, filesystemError);
@@ -1341,9 +1341,9 @@ AudioCache::loadOggOpusWithMetadata(const std::string &oggFilePath, std::size_t 
             auto jsonData = jsonResult.getValue().value();
             const auto cacheVersion = jsonData.value("version", 0U);
             const bool formatMatches = cacheVersion == AUDIO_CACHE_FORMAT_VERSION &&
-                                       jsonData.value("sample_rate", 0) == RTP_SRATE &&
-                                       jsonData.value("channels", 0) == RTP_STREAMING_CHANNELS &&
-                                       jsonData.value("frame_ms", 0) == RTP_FRAME_MS &&
+                                       jsonData.value("sample_rate", 0) == creatures::rtp::SAMPLE_RATE &&
+                                       jsonData.value("channels", 0) == creatures::rtp::CHANNEL_COUNT &&
+                                       jsonData.value("frame_ms", 0) == creatures::rtp::FRAME_MS &&
                                        jsonData.value("priming_frames", 0) == RTP_PRIMING_FRAMES &&
                                        jsonData.value("bitrate", 0) == RTP_BITRATE && jsonData.value("fec", false) &&
                                        jsonData.value("opus_version", std::string{}) == opus_get_version_string();
@@ -1492,9 +1492,9 @@ Result<void> AudioCache::saveAsOggOpusWithMetadata(const std::string &oggFilePat
             {"path", sourceInfo.filePath},
             {"size", sourceInfo.fileSize},
             {"checksum", sourceInfo.checksum},
-            {"sample_rate", RTP_SRATE},
-            {"channels", RTP_STREAMING_CHANNELS},
-            {"frame_ms", RTP_FRAME_MS},
+            {"sample_rate", creatures::rtp::SAMPLE_RATE},
+            {"channels", creatures::rtp::CHANNEL_COUNT},
+            {"frame_ms", creatures::rtp::FRAME_MS},
             {"priming_frames", RTP_PRIMING_FRAMES},
             {"bitrate", RTP_BITRATE},
             {"fec", true},
@@ -1567,7 +1567,7 @@ bool AudioCache::allCacheFilesExist(const std::string &sourceFilePath) const {
         return false;
     }
 
-    for (uint8_t ch = 0; ch < RTP_STREAMING_CHANNELS; ++ch) {
+    for (uint8_t ch = 0; ch < creatures::rtp::CHANNEL_COUNT; ++ch) {
         auto cachePath = getCacheFilePath(sourceFilePath, ch);
         if (!std::filesystem::exists(cachePath)) {
             return false;

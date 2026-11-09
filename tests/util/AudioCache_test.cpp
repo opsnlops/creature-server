@@ -46,7 +46,7 @@ class AudioCacheTest : public ::testing::Test {
     static AudioCache::CachedAudioData makeAudioData(uint8_t marker) {
         AudioCache::CachedAudioData data{};
         data.framesPerChannel = 2;
-        for (uint8_t channel = 0; channel < RTP_STREAMING_CHANNELS; ++channel) {
+        for (uint8_t channel = 0; channel < creatures::rtp::CHANNEL_COUNT; ++channel) {
             data.encodedFrames[channel] = {
                 {marker, channel, 0},
                 {marker, channel, 1},
