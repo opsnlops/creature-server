@@ -14,7 +14,7 @@ namespace creatures::voice {
 
 Result<std::size_t> writePcmToMultichannelWav(const std::vector<uint8_t> &pcmData, const std::filesystem::path &wavPath,
                                               uint16_t audioChannel, uint32_t sampleRate) {
-    const uint16_t totalChannels = RTP_STREAMING_CHANNELS;
+    const uint16_t totalChannels = creatures::rtp::CHANNEL_COUNT;
     const uint16_t bitsPerSample = 16;
     const uint16_t bytesPerSample = bitsPerSample / 8;
 

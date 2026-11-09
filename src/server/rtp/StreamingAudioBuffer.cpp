@@ -7,11 +7,11 @@
 namespace creatures::rtp {
 
 StreamingAudioBuffer::StreamingAudioBuffer(uint16_t audioChannel, uint32_t sampleRate,
-                                            std::shared_ptr<OperationSpan> parentSpan)
+                                           std::shared_ptr<OperationSpan> parentSpan)
     : audioChannel_(audioChannel), sampleRate_(sampleRate) {
 
     // Create Opus encoder: mono, 10ms frames at configured sample rate
-    int frameSamples = static_cast<int>(sampleRate_ * RTP_FRAME_MS / 1000); // 480 samples for 48kHz/10ms
+    int frameSamples = static_cast<int>(sampleRate_ * creatures::rtp::FRAME_MS / 1000); // 480 samples for 48kHz/10ms
     encoder_ = std::make_unique<opus::Encoder>(static_cast<int>(sampleRate_), 1, frameSamples, RTP_BITRATE, true);
 
     // Pre-encode a silence frame for underrun handling
@@ -48,7 +48,7 @@ void StreamingAudioBuffer::markComplete() {
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Encode any remaining partial frame (pad with silence)
-    int frameSamples = static_cast<int>(sampleRate_ * RTP_FRAME_MS / 1000);
+    int frameSamples = static_cast<int>(sampleRate_ * creatures::rtp::FRAME_MS / 1000);
     if (!pcmAccumulator_.empty()) {
         // Pad to frame boundary
         size_t remaining = pcmAccumulator_.size() % static_cast<size_t>(frameSamples);
@@ -90,7 +90,7 @@ size_t StreamingAudioBuffer::encodedFrameCount() const {
 
 void StreamingAudioBuffer::encodeAvailableFrames() {
     // Must be called with mutex_ held
-    int frameSamples = static_cast<int>(sampleRate_ * RTP_FRAME_MS / 1000);
+    int frameSamples = static_cast<int>(sampleRate_ * creatures::rtp::FRAME_MS / 1000);
 
     while (pcmAccumulator_.size() >= static_cast<size_t>(frameSamples)) {
         // Encode one 10ms frame

@@ -143,7 +143,7 @@ Result<framenum_t> RtpSilentFrameEvent::executeImpl() {
             return Result<framenum_t>{
                 ServerError(ServerError::InternalError, "Event loop unavailable during decoder priming")};
         }
-        constexpr framenum_t primingStep = RTP_FRAME_MS / EVENT_LOOP_PERIOD_MS;
+        constexpr framenum_t primingStep = creatures::rtp::FRAME_MS / EVENT_LOOP_PERIOD_MS;
         eventLoop->scheduleEvent(std::make_shared<RtpSilentFrameEvent>(frameNumber + primingStep, outputLease_,
                                                                        framesRemaining_ - 1, traceContext_));
     }

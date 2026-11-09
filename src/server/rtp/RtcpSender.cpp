@@ -15,9 +15,12 @@
 
 #include <fmt/format.h>
 
+#include "creature/rtp/Protocol.h"
+#include "creature/rtp/RtcpPacket.h"
+
 #include "server/metrics/counters.h"
 #include "server/namespace-stuffs.h"
-#include "server/rtp/RtcpPacket.h"
+#include "server/rtp/ChannelGroups.h"
 #include "util/ObservabilityManager.h"
 #include "util/threadName.h"
 
@@ -37,7 +40,7 @@ RtcpSender::RtcpSender(std::chrono::milliseconds reportInterval)
         try {
             worker_ = std::thread(&RtcpSender::run, this);
             ready_.store(true);
-            info("RTCP sender ready on port {} with CNAME '{}'", RTCP_PORT, canonicalName_);
+            info("RTCP sender ready on port {} with CNAME '{}'", creatures::rtp::RTCP_PORT, canonicalName_);
         } catch (const std::exception &exception) {
             error("Unable to start RTCP sender thread: {}; RTP audio will continue without synchronized timing",
                   exception.what());
@@ -45,7 +48,8 @@ RtcpSender::RtcpSender(std::chrono::milliseconds reportInterval)
             socket_ = -1;
         }
     } else {
-        error("RTCP sender unavailable on port {}; RTP audio will continue without synchronized timing", RTCP_PORT);
+        error("RTCP sender unavailable on port {}; RTP audio will continue without synchronized timing",
+              creatures::rtp::RTCP_PORT);
     }
 }
 
@@ -90,7 +94,7 @@ void RtcpSender::recordFrame(uint64_t generation, const SentOctets &sentOctets) 
         }
 
         bool anyPackets = false;
-        for (size_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+        for (size_t channelIndex = 0; channelIndex < creatures::rtp::CHANNEL_COUNT; ++channelIndex) {
             if (sentOctets[channelIndex] == 0) {
                 continue;
             }
@@ -202,9 +206,9 @@ bool RtcpSender::openSocket() {
     sockaddr_in localAddress{};
     localAddress.sin_family = AF_INET;
     localAddress.sin_addr.s_addr = htonl(INADDR_ANY);
-    localAddress.sin_port = htons(RTCP_PORT);
+    localAddress.sin_port = htons(creatures::rtp::RTCP_PORT);
     if (bind(socket_, reinterpret_cast<sockaddr *>(&localAddress), sizeof(localAddress)) < 0) {
-        error("Unable to bind RTCP source port {}: {}", RTCP_PORT, std::strerror(errno));
+        error("Unable to bind RTCP source port {}: {}", creatures::rtp::RTCP_PORT, std::strerror(errno));
         close(socket_);
         socket_ = -1;
         return false;
@@ -262,7 +266,7 @@ bool RtcpSender::sendReport(const ReportSnapshot &snapshot) noexcept {
         uint8_t firstFailedChannel = 0;
         int firstError = 0;
 
-        for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+        for (uint8_t channelIndex = 0; channelIndex < creatures::rtp::CHANNEL_COUNT; ++channelIndex) {
             const auto packet = buildRtcpSenderReport({
                 .synchronizationSource = snapshot.synchronizationSources[channelIndex],
                 .ntpTimestamp = timestamp.ntpTimestamp,
@@ -274,8 +278,9 @@ bool RtcpSender::sendReport(const ReportSnapshot &snapshot) noexcept {
 
             sockaddr_in destination{};
             destination.sin_family = AF_INET;
-            destination.sin_port = htons(RTCP_PORT);
-            if (inet_pton(AF_INET, RTP_GROUPS[channelIndex], &destination.sin_addr) != 1) {
+            destination.sin_port = htons(creatures::rtp::RTCP_PORT);
+            const auto group = creatures::rtp::groupForChannelIndex(channelIndex);
+            if (inet_pton(AF_INET, group.c_str(), &destination.sin_addr) != 1) {
                 if (failedChannels++ == 0) {
                     firstFailedChannel = channelIndex;
                     firstError = EINVAL;
@@ -341,9 +346,9 @@ void RtcpSender::recordFirstReport(const ReportSnapshot &snapshot, const RtpWall
         span->setAttribute("rtcp.sender.cname", canonicalName_);
         span->setAttribute("rtcp.sender.ssrc.first", static_cast<int64_t>(snapshot.synchronizationSources.front()));
         span->setAttribute("rtcp.sender.ssrc.last", static_cast<int64_t>(snapshot.synchronizationSources.back()));
-        span->setAttribute("rtcp.sender.ssrc.count", static_cast<int64_t>(RTP_STREAMING_CHANNELS));
+        span->setAttribute("rtcp.sender.ssrc.count", static_cast<int64_t>(creatures::rtp::CHANNEL_COUNT));
         span->setAttribute("rtcp.report.interval.ms", static_cast<int64_t>(reportInterval_.count()));
-        span->setAttribute("rtp.clock.rate", static_cast<int64_t>(RTP_SRATE));
+        span->setAttribute("rtp.clock.rate", static_cast<int64_t>(creatures::rtp::SAMPLE_RATE));
         span->setAttribute("rtp.timestamp", static_cast<int64_t>(timestamp.rtpTimestamp));
         span->setAttribute("rtcp.ntp.seconds", static_cast<int64_t>(timestamp.ntpTimestamp >> 32U));
         span->setAttribute("rtcp.ntp.fraction", static_cast<int64_t>(static_cast<uint32_t>(timestamp.ntpTimestamp)));
