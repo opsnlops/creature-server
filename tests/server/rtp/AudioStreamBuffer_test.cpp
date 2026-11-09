@@ -32,8 +32,8 @@ void writeLe(std::ofstream &out, uint32_t value, std::size_t bytes) {
 // Minimal canonical 17-channel / 48 kHz / s16 PCM WAV.
 void write17ChannelWav(const fs::path &path, std::size_t sampleFrames, int16_t sampleValue = 1000) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    const uint32_t channels = RTP_STREAMING_CHANNELS;
-    const uint32_t sampleRate = RTP_SRATE;
+    const uint32_t channels = creatures::rtp::CHANNEL_COUNT;
+    const uint32_t sampleRate = creatures::rtp::SAMPLE_RATE;
     const uint32_t bytesPerFrame = channels * 2;
     const uint32_t dataBytes = static_cast<uint32_t>(sampleFrames) * bytesPerFrame;
 
@@ -103,7 +103,7 @@ TEST_F(AudioStreamBufferTest, MonoPcmEncodeMatchesLoadingTheFileItWasWrittenTo) 
     ASSERT_NE(fromFile, nullptr);
     ASSERT_EQ(fromPcm->getFrameCount(), 50U);
     ASSERT_EQ(fromFile->getFrameCount(), 50U);
-    for (uint8_t channel = 0; channel < RTP_STREAMING_CHANNELS; ++channel) {
+    for (uint8_t channel = 0; channel < creatures::rtp::CHANNEL_COUNT; ++channel) {
         for (std::size_t frame = 0; frame < 50; ++frame) {
             ASSERT_EQ(fromPcm->getEncodedFrame(channel, frame), fromFile->getEncodedFrame(channel, frame))
                 << "channel " << int(channel) << " frame " << frame;
@@ -149,7 +149,7 @@ TEST_F(AudioStreamBufferTest, MonoPcmEncodeRejectsBadInput) {
     ASSERT_TRUE(creatures::voice::writePcmToMultichannelWav(pcmBytes, path, 1, 48000).isSuccess());
     EXPECT_EQ(AudioStreamBuffer::loadFromMonoPcm(path.string(), mono, 0), nullptr);
     EXPECT_EQ(AudioStreamBuffer::loadFromMonoPcm(path.string(), mono, 18), nullptr);
-    std::vector<int16_t> tooShort(RTP_SAMPLES - 1, 0);
+    std::vector<int16_t> tooShort(creatures::rtp::SAMPLES_PER_FRAME - 1, 0);
     EXPECT_EQ(AudioStreamBuffer::loadFromMonoPcm(path.string(), tooShort, 1), nullptr);
 }
 
@@ -294,8 +294,8 @@ TEST_F(AudioStreamBufferTest, RejectsWrongChannelCount) {
     writeLe(out, 16, 4);
     writeLe(out, 1, 2);
     writeLe(out, 2, 2); // stereo
-    writeLe(out, RTP_SRATE, 4);
-    writeLe(out, RTP_SRATE * 4, 4);
+    writeLe(out, creatures::rtp::SAMPLE_RATE, 4);
+    writeLe(out, creatures::rtp::SAMPLE_RATE * 4, 4);
     writeLe(out, 4, 2);
     writeLe(out, 16, 2);
     out.write("data", 4);

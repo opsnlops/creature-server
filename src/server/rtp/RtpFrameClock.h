@@ -10,7 +10,7 @@ namespace creatures::rtp {
 /**
  * RTP sample clock shared by every channel in a multichannel frame.
  *
- * Opus packets contain RTP_SAMPLES samples, so advancing one encoded frame
+ * Opus packets contain creatures::rtp::SAMPLES_PER_FRAME samples, so advancing one encoded frame
  * always advances the clock by exactly 480 at the configured 48kHz/10ms
  * format. Unsigned overflow intentionally follows RTP's 32-bit wraparound.
  */
@@ -21,7 +21,7 @@ class RtpFrameClock {
     void reset(uint32_t timestamp) { nextTimestamp_ = timestamp; }
 
     void advance(size_t frameCount = 1) {
-        nextTimestamp_ += static_cast<uint32_t>(frameCount * static_cast<size_t>(RTP_SAMPLES));
+        nextTimestamp_ += static_cast<uint32_t>(frameCount * static_cast<size_t>(creatures::rtp::SAMPLES_PER_FRAME));
     }
 
     [[nodiscard]] uint32_t current() const { return nextTimestamp_; }

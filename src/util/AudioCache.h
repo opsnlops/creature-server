@@ -50,7 +50,7 @@ class AudioCache {
      */
     struct CachedAudioData {
         std::size_t framesPerChannel;
-        std::array<std::vector<std::vector<uint8_t>>, RTP_STREAMING_CHANNELS> encodedFrames;
+        std::array<std::vector<std::vector<uint8_t>>, creatures::rtp::CHANNEL_COUNT> encodedFrames;
         // Payload + per-frame overhead, accumulated by the reader as it
         // budgets the load. Carried out so the buffer doesn't re-walk ~1.5M
         // frame vectors to recompute a number we already have (issue #93).
@@ -104,9 +104,10 @@ class AudioCache {
      * a cache hit forever. Takes the frames by reference so the caller doesn't
      * copy ~hundreds of MB into a temporary struct.
      */
-    Result<void> saveToCache(const std::string &sourceFilePath, std::size_t framesPerChannel,
-                             const std::array<std::vector<std::vector<uint8_t>>, RTP_STREAMING_CHANNELS> &encodedFrames,
-                             const SourceFileInfo &expectedSource, std::shared_ptr<OperationSpan> parentSpan = nullptr);
+    Result<void>
+    saveToCache(const std::string &sourceFilePath, std::size_t framesPerChannel,
+                const std::array<std::vector<std::vector<uint8_t>>, creatures::rtp::CHANNEL_COUNT> &encodedFrames,
+                const SourceFileInfo &expectedSource, std::shared_ptr<OperationSpan> parentSpan = nullptr);
 
     /**
      * @brief Fingerprint a source file (stat + SHA-256).

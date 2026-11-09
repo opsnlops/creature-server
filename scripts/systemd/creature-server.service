@@ -4,6 +4,11 @@ Documentation=https://github.com/opsnlops/creature-server
 After=network-online.target
 Wants=network-online.target
 
+# We advertise ourselves over mDNS through avahi-daemon. Only After=, not
+# Wants=: advertising is a convenience and the publisher waits for the daemon
+# on its own, so a missing Avahi must not keep the server from starting.
+After=avahi-daemon.service
+
 # The sound library is an NFS mount on the NAS. Deliberately Wants= and not
 # Requires=: if the mount is late the server exits and Restart= brings it
 # straight back, which converges faster than expressing mount readiness here.

@@ -135,7 +135,7 @@ class AudioStreamBuffer {
     std::size_t approximateBytes_{0};
 
     // Layout: encodedOpusFrames_[channel][frame] -> bytes
-    std::array<std::vector<std::vector<uint8_t>>, RTP_STREAMING_CHANNELS> encodedOpusFrames_;
+    std::array<std::vector<std::vector<uint8_t>>, creatures::rtp::CHANNEL_COUNT> encodedOpusFrames_;
 
     // Static cache instance shared across all AudioStreamBuffer instances
     static std::shared_ptr<util::AudioCache> sharedAudioCacheInstance_;

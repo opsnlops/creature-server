@@ -18,7 +18,8 @@ namespace creatures::rtp::opus {
 
 class Encoder {
   public:
-    Encoder(int sampleRate = RTP_SRATE, int channels = 1, int frameSamples = RTP_SAMPLES, int bitrate = RTP_BITRATE,
+    Encoder(int sampleRate = creatures::rtp::SAMPLE_RATE, int channels = 1,
+            int frameSamples = creatures::rtp::SAMPLES_PER_FRAME, int bitrate = RTP_BITRATE,
             bool enableForwardErrorCorrection = true);
 
     ~Encoder();

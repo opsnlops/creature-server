@@ -23,6 +23,7 @@
 #include "server/metrics/counters.h"
 #include "server/namespace-stuffs.h"
 #include "server/rtp/AudioStreamBuffer.h"
+#include "server/rtp/ChannelGroups.h"
 #include "server/rtp/opus/OpusEncoderWrapper.h"
 #include "server/rtp/opus/OpusPriming.h"
 #include "util/ObservabilityManager.h"
@@ -40,8 +41,8 @@ namespace {
 
 uint32_t randomSynchronizationSourceBase() {
     std::random_device randomDevice;
-    std::uniform_int_distribution<uint32_t> distribution(1U,
-                                                         std::numeric_limits<uint32_t>::max() - RTP_STREAMING_CHANNELS);
+    std::uniform_int_distribution<uint32_t> distribution(1U, std::numeric_limits<uint32_t>::max() -
+                                                                 creatures::rtp::CHANNEL_COUNT);
     return distribution(randomDevice);
 }
 
@@ -49,30 +50,32 @@ uint32_t randomSynchronizationSourceBase() {
 
 MultiOpusRtpServer::MultiOpusRtpServer() {
     try {
-        for (size_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+        for (size_t channelIndex = 0; channelIndex < creatures::rtp::CHANNEL_COUNT; ++channelIndex) {
             // Create session with multicast address
-            rtpSessions_[channelIndex] = rtpContext_.create_session(RTP_GROUPS[channelIndex]);
+            rtpSessions_[channelIndex] = rtpContext_.create_session(creatures::rtp::groupForChannelIndex(channelIndex));
             if (!rtpSessions_[channelIndex]) {
                 throw std::runtime_error(fmt::format("unable to create RTP session for channel {}", channelIndex));
             }
 
             // Create media stream with local port, remote port, format, and flags
-            mediaStreams_[channelIndex] = rtpSessions_[channelIndex]->create_stream(RTP_PORT,        // source port
-                                                                                    RTP_PORT,        // destination port
-                                                                                    RTP_FORMAT_OPUS, // format
-                                                                                    RCE_SEND_ONLY);  // flags
+            mediaStreams_[channelIndex] =
+                rtpSessions_[channelIndex]->create_stream(creatures::rtp::RTP_PORT, // source port
+                                                          creatures::rtp::RTP_PORT, // destination port
+                                                          RTP_FORMAT_OPUS,          // format
+                                                          RCE_SEND_ONLY);           // flags
             if (!mediaStreams_[channelIndex]) {
                 throw std::runtime_error(fmt::format("unable to create RTP stream for channel {}", channelIndex));
             }
 
             // Override the dynamic payload type so VLC/Wireshark recognize Opus (payload type 96)
-            if (mediaStreams_[channelIndex]->configure_ctx(RCC_DYN_PAYLOAD_TYPE, RTP_OPUS_PAYLOAD_PT) != RTP_OK) {
+            if (mediaStreams_[channelIndex]->configure_ctx(RCC_DYN_PAYLOAD_TYPE, creatures::rtp::OPUS_PAYLOAD_TYPE) !=
+                RTP_OK) {
                 throw std::runtime_error(
                     fmt::format("unable to configure RTP payload type for channel {}", channelIndex));
             }
 
             // Configure the clock rate for accurate timing (48 kHz)
-            if (mediaStreams_[channelIndex]->configure_ctx(RCC_CLOCK_RATE, RTP_SRATE) != RTP_OK) {
+            if (mediaStreams_[channelIndex]->configure_ctx(RCC_CLOCK_RATE, creatures::rtp::SAMPLE_RATE) != RTP_OK) {
                 throw std::runtime_error(
                     fmt::format("unable to configure RTP clock rate for channel {}", channelIndex));
             }
@@ -89,7 +92,7 @@ MultiOpusRtpServer::MultiOpusRtpServer() {
         outputThread_ = std::thread(&MultiOpusRtpServer::runOutputWorker, this);
         isServerReady_.store(true);
 
-        info("MultiOpusRtpServer initialized with {} channels, starting SSRC: {}", RTP_STREAMING_CHANNELS,
+        info("MultiOpusRtpServer initialized with {} channels, starting SSRC: {}", creatures::rtp::CHANNEL_COUNT,
              currentSynchronizationSourceIdentifier_);
     } catch (const std::exception &exception) {
         isServerReady_.store(false);
@@ -106,7 +109,7 @@ MultiOpusRtpServer::~MultiOpusRtpServer() {
     }
     rtcpSender_.shutdown();
 
-    for (size_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+    for (size_t channelIndex = 0; channelIndex < creatures::rtp::CHANNEL_COUNT; ++channelIndex) {
         if (rtpSessions_[channelIndex] && mediaStreams_[channelIndex]) {
             rtpSessions_[channelIndex]->destroy_stream(mediaStreams_[channelIndex]);
         }
@@ -567,7 +570,7 @@ void MultiOpusRtpServer::recordOutputException(const OutputCommand &command, con
 
 rtp_error_t MultiOpusRtpServer::send(uint8_t channelIndex, const std::vector<uint8_t> &opusEncodedFrame,
                                      uint32_t timestamp) {
-    if (channelIndex >= RTP_STREAMING_CHANNELS || !mediaStreams_[channelIndex]) {
+    if (channelIndex >= creatures::rtp::CHANNEL_COUNT || !mediaStreams_[channelIndex]) {
         return RTP_INVALID_VALUE;
     }
 
@@ -582,7 +585,7 @@ void MultiOpusRtpServer::rotateSynchronizationSourceIdentifiers(uint64_t generat
     currentSynchronizationSourceIdentifier_ = nextSynchronizationSourceIdentifier_;
     RtcpSender::SynchronizationSources synchronizationSources{};
 
-    for (size_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+    for (size_t channelIndex = 0; channelIndex < creatures::rtp::CHANNEL_COUNT; ++channelIndex) {
         if (mediaStreams_[channelIndex]) {
             // Assign fresh SSRC, then increment for next channel
             const uint32_t synchronizationSource = nextSynchronizationSourceIdentifier_++;
@@ -603,7 +606,7 @@ MultiOpusRtpServer::OutputResult MultiOpusRtpServer::sendSilentFrameSet(size_t p
     const uint32_t timestamp = frameClock_.current();
     OutputResult frameResult{RTP_OK, 0, timestamp, {}};
 
-    for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+    for (uint8_t channelIndex = 0; channelIndex < creatures::rtp::CHANNEL_COUNT; ++channelIndex) {
         const auto &encodedFrame = encodedSilentFrames_[channelIndex][primingFrameIndex];
         const auto transmissionResult = send(channelIndex, encodedFrame, timestamp);
         if (transmissionResult != RTP_OK && frameResult.error == RTP_OK) {
@@ -621,7 +624,7 @@ MultiOpusRtpServer::OutputResult MultiOpusRtpServer::sendAudioFrameSet(const Aud
     const uint32_t timestamp = frameClock_.current();
     OutputResult frameResult{RTP_OK, 0, timestamp, {}};
 
-    for (uint8_t channelIndex = 0; channelIndex < RTP_STREAMING_CHANNELS; ++channelIndex) {
+    for (uint8_t channelIndex = 0; channelIndex < creatures::rtp::CHANNEL_COUNT; ++channelIndex) {
         const auto &encodedFrame = buffer.getEncodedFrame(channelIndex, frameIndex);
         const auto transmissionResult = send(channelIndex, encodedFrame, timestamp);
         if (transmissionResult != RTP_OK && frameResult.error == RTP_OK) {
@@ -635,7 +638,7 @@ MultiOpusRtpServer::OutputResult MultiOpusRtpServer::sendAudioFrameSet(const Aud
 }
 
 RtpClockMapping MultiOpusRtpServer::resetFrameTimestamp() {
-    auto clockMapping = RtpClockMapping::capture(RTP_SRATE);
+    auto clockMapping = RtpClockMapping::capture(creatures::rtp::SAMPLE_RATE);
     frameClock_.reset(clockMapping.rtpEpoch());
     return clockMapping;
 }

@@ -16,6 +16,7 @@ RUN apt update && apt install -y \
         libbson-dev \
         libcurl4-openssl-dev \
         libasound2-dev \
+        libavahi-client-dev \
         libmp3lame-dev \
         libprotobuf-dev \
         libpthreadpool-dev \

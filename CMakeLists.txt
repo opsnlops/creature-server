@@ -180,6 +180,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(argparse)
 
+#creature-common — the mDNS library the controller and audio router already
+#share (issue #255). Declared AFTER fmt so it uses ours instead of fetching a
+#second copy. Its own tests only build when it's the top-level project, so
+#nothing lands in our suite.
+FetchContent_Declare(
+        creature_common
+        GIT_REPOSITORY https://github.com/opsnlops/creature-common.git
+        GIT_TAG        v0.2.0
+        EXCLUDE_FROM_ALL   # keep its install() rules out of our .deb, same as Opus
+)
+FetchContent_MakeAvailable(creature_common)
+
 #nlohmann_json is provided by OpenTelemetry's FetchContent below.
 #Configure it before OTel fetches it.
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
@@ -535,6 +547,7 @@ file(GLOB serverFiles CONFIGURE_DEPENDS
         src/server/stage/*
         src/server/storage/*
         src/server/storyboard/*
+        src/server/network/*
         src/server/transport/*
         src/server/voice/*
         src/server/watchdog/*
@@ -705,8 +718,6 @@ add_executable(creature-server
         src/server/rtp/opus/OpusEncoderWrapper.h
         src/server/rtp/MultiOpusRtpServer.cpp
         src/server/rtp/MultiOpusRtpServer.h
-        src/server/rtp/RtcpPacket.cpp
-        src/server/rtp/RtcpPacket.h
         src/server/rtp/RtcpSender.cpp
         src/server/rtp/RtcpSender.h
         src/server/rtp/RtpClockMapping.cpp
@@ -745,6 +756,8 @@ target_link_libraries(creature-server
         opentelemetry_exporter_otlp_http_metric
         argparse
         e131_service
+        creature::mdns
+        creature::rtp
         Threads::Threads
         uvgrtp
         opus
@@ -886,6 +899,9 @@ add_executable(creature-server-test
         tests/server/animation/SessionManager_ownership_test.cpp
         tests/server/creature/UniverseResolver_test.cpp
         src/server/creature/UniverseResolver.cpp
+        tests/server/network/ServerMdnsRecords_test.cpp
+        tests/server/rtp/ChannelGroupMapping_test.cpp
+        src/server/network/ServerMdnsRecords.cpp
         src/server/animation/SessionManager.cpp
         src/server/animation/PlaybackSession.cpp
         tests/fixture/FixturePatternRunner_test.cpp
@@ -979,7 +995,6 @@ add_executable(creature-server-test
         src/server/rtp/AudioStreamBuffer.cpp
         tests/server/rtp/BoundedCommandQueue_test.cpp
         tests/server/rtp/OpusPriming_test.cpp
-        tests/server/rtp/RtcpPacket_test.cpp
         tests/server/rtp/RtpClockMapping_test.cpp
         tests/server/rtp/RtpFrameClock_test.cpp
         tests/server/rtp/RtpOutputCoordinator_test.cpp
@@ -994,7 +1009,6 @@ add_executable(creature-server-test
         src/server/audio/SoundPathResolver.cpp
         src/server/audio/LocalAudioPlaybackCoordinator.cpp
         src/server/rtp/AudioLoadExecutor.cpp
-        src/server/rtp/RtcpPacket.cpp
         src/server/rtp/RtpClockMapping.cpp
         src/server/rtp/opus/OpusEncoderWrapper.cpp
         src/server/voice/DialogPreviewAssembly.cpp
@@ -1079,6 +1093,8 @@ target_link_libraries(creature-server-test
         opentelemetry_exporter_otlp_http_metric
         argparse
         e131_service
+        creature::mdns
+        creature::rtp
         opus
         ogg
         ${MP3LAME_LIBRARIES}

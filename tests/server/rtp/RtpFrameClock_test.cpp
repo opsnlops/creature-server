@@ -13,9 +13,9 @@ TEST(RtpFrameClock, AdvancesOneTenMillisecondOpusFrameAtATime) {
 
     EXPECT_EQ(clock.current(), 1000U);
     clock.advance();
-    EXPECT_EQ(clock.current(), 1000U + RTP_SAMPLES);
+    EXPECT_EQ(clock.current(), 1000U + creatures::rtp::SAMPLES_PER_FRAME);
     clock.advance(4);
-    EXPECT_EQ(clock.current(), 1000U + 5U * RTP_SAMPLES);
+    EXPECT_EQ(clock.current(), 1000U + 5U * creatures::rtp::SAMPLES_PER_FRAME);
 }
 
 TEST(RtpFrameClock, WrapsOnTheThirtyTwoBitRtpTimeline) {
@@ -23,7 +23,8 @@ TEST(RtpFrameClock, WrapsOnTheThirtyTwoBitRtpTimeline) {
 
     clock.advance();
 
-    EXPECT_EQ(clock.current(), static_cast<uint32_t>(std::numeric_limits<uint32_t>::max() - 100U + RTP_SAMPLES));
+    EXPECT_EQ(clock.current(),
+              static_cast<uint32_t>(std::numeric_limits<uint32_t>::max() - 100U + creatures::rtp::SAMPLES_PER_FRAME));
 }
 
 TEST(RtpFrameClock, ResetStartsAFreshStreamTimeline) {

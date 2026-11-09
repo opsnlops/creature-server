@@ -17,7 +17,7 @@ using PrimingSequence = std::array<std::vector<uint8_t>, RTP_PRIMING_FRAMES>;
  * the packet sequence for the receiver and the matching state for frame zero.
  */
 inline PrimingSequence encodePrimingSequence(Encoder &encoder) {
-    const std::array<int16_t, RTP_SAMPLES> silentFrame{};
+    const std::array<int16_t, creatures::rtp::SAMPLES_PER_FRAME> silentFrame{};
     PrimingSequence sequence;
     for (size_t frameIndex = 0; frameIndex < sequence.size(); ++frameIndex) {
         sequence[frameIndex] = encoder.encode(silentFrame.data());

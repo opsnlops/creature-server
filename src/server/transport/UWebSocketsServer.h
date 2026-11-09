@@ -28,6 +28,8 @@ class UWebSocketsServer final : public TransportServer {
     void start() override;
     void shutdown() override;
 
+    [[nodiscard]] uint16_t boundPort() const override;
+
   private:
     enum class StartState {
         NotStarted,
@@ -40,7 +42,7 @@ class UWebSocketsServer final : public TransportServer {
     void run();
     void publishStartState(StartState state, std::string error = {});
 
-    std::mutex lifecycleMutex_;
+    mutable std::mutex lifecycleMutex_; // mutable: boundPort() is const but reads under the lock
     std::condition_variable lifecycleCondition_;
     std::thread thread_;
     StartState startState_{StartState::NotStarted};
@@ -49,6 +51,7 @@ class UWebSocketsServer final : public TransportServer {
     void *app_{nullptr};
     std::function<void()> shutdownAction_;
     bool shutdownRequested_{false};
+    uint16_t boundPort_{0};
     uint32_t maximumConnections_;
     uint32_t maximumConnectionsPerPeer_;
 };
