@@ -3,6 +3,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "creature/rtp/Protocol.h"
+
 #include "server/config.h"
 #include "server/network/ServerMdnsRecords.h"
 
@@ -98,6 +100,33 @@ TEST(ServerMdnsRecords, TravelModeSaysSo) {
     EXPECT_THAT(service.txt, Contains(Pair("audio_channels", "2")));
 }
 
+TEST(ServerMdnsRecords, RtpModeReportsTheStreamedChannelsNotTheLocalDevice) {
+    // The main rig has sound_channels: 2 in server.json for a local device it
+    // never uses in RTP mode. Publishing that next to audio=rtp read as "this
+    // server streams 2 channels", which is the opposite of true.
+    const Configuration config;
+    ASSERT_EQ(config.getAudioMode(), Configuration::AudioMode::RTP) << "this test assumes the RTP default";
+
+    const auto details = serverDetailsFrom(config, "Fuzzball", "3.51.12", 8000);
+
+    EXPECT_EQ(details.audioChannels, creatures::rtp::CHANNEL_COUNT) << "17 multicast channels, not the local device";
+    EXPECT_EQ(details.audioSampleRate, creatures::rtp::SAMPLE_RATE);
+}
+
+TEST(ServerMdnsRecords, LocalModeReportsTheConfiguredDevice) {
+    // The mirror case: with local output the configured device is exactly what
+    // matters, so that is what gets published.
+    auto details = mainstageDetails();
+    details.rtpAudio = false;
+    details.audioChannels = 2;
+    details.audioSampleRate = 48000;
+
+    const auto service = makeServerService(details);
+
+    EXPECT_THAT(service.txt, Contains(Pair("audio", "local")));
+    EXPECT_THAT(service.txt, Contains(Pair("audio_channels", "2")));
+}
+
 TEST(ServerMdnsRecords, PublishesNoPtpKeysBeforeTheFirstCheck) {
     // A record built before the watcher has read anything must not assert
     // "unknown" — it has no reading, which is different from a bad one.
@@ -170,8 +199,6 @@ TEST(ServerMdnsRecords, DetailsComeFromTheConfiguration) {
     // Whatever the defaults are, they must be the ones we advertise
     EXPECT_EQ(details.travelMode, config.getTravelMode());
     EXPECT_EQ(details.rtpAudio, config.getAudioMode() == Configuration::AudioMode::RTP);
-    EXPECT_EQ(details.audioChannels, config.getSoundChannels());
-    EXPECT_EQ(details.audioSampleRate, config.getSoundFrequency());
     EXPECT_EQ(details.soundLibrary, config.getSoundFileLocation());
     EXPECT_EQ(details.lipSyncEngine, config.getLipSyncEngine());
     EXPECT_EQ(details.networkInterface, config.getNetworkDevice());

@@ -6,6 +6,7 @@
 
 #include "server/network/ServerMdnsRecords.h"
 
+#include "creature/rtp/Protocol.h"
 #include "creature/timesync/TimeSync.h"
 
 #include "server/config.h"
@@ -29,8 +30,17 @@ ServerDetails serverDetailsFrom(const Configuration &config, std::string name, s
     details.travelMode = config.getTravelMode();
     details.rtpAudio = config.getAudioMode() == Configuration::AudioMode::RTP;
 
-    details.audioChannels = config.getSoundChannels();
-    details.audioSampleRate = config.getSoundFrequency();
+    // Report the audio this server actually produces, which depends on the mode.
+    // In RTP mode that is the 17 multicast channels at the Opus rate; the local
+    // sound_channels setting describes a device we are not using, and publishing
+    // it here read as "this server streams 2 channels" on the main rig.
+    if (details.rtpAudio) {
+        details.audioChannels = creatures::rtp::CHANNEL_COUNT;
+        details.audioSampleRate = creatures::rtp::SAMPLE_RATE;
+    } else {
+        details.audioChannels = config.getSoundChannels();
+        details.audioSampleRate = config.getSoundFrequency();
+    }
     details.audioDevice = config.getSoundDeviceName().value_or("");
 
     details.soundLibrary = config.getSoundFileLocation();
