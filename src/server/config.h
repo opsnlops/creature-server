@@ -38,6 +38,13 @@
 // phc_index -1, so it derives the device from the interface; this is only a
 // default, and the NIC has moved once already (creature-common#3).
 #define PHC_DEVICE_ENV "PHC_DEVICE"
+
+// The TAI-UTC offset to assume when neither ptp4l nor the kernel will supply
+// one. On this grandmaster neither does: ptp4l will not vouch for an
+// untraceable clock, and systemd-timesyncd never sets the kernel's. The
+// library default is 37, which the CGPM made effectively permanent in 2022;
+// this exists so a surprise does not need a rebuild (creature-common#10).
+#define PHC_TAI_OFFSET_ENV "PHC_TAI_OFFSET"
 #define DEFAULT_SERVER_PORT 8000
 #define HTTP_MAX_CONNECTIONS_ENV "HTTP_MAX_CONNECTIONS"
 #define DEFAULT_HTTP_MAX_CONNECTIONS 512

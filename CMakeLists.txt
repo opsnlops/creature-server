@@ -187,7 +187,7 @@ FetchContent_MakeAvailable(argparse)
 FetchContent_Declare(
         creature_common
         GIT_REPOSITORY https://github.com/opsnlops/creature-common.git
-        GIT_TAG        v0.4.0
+        GIT_TAG        v0.4.2
         EXCLUDE_FROM_ALL   # keep its install() rules out of our .deb, same as Opus
 )
 FetchContent_MakeAvailable(creature_common)

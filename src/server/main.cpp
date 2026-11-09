@@ -601,9 +601,11 @@ int main(const int argc, char **argv) {
     // is not a failure: the reading is simply absent.
     const auto phcDevice = creatures::environmentToString(PHC_DEVICE_ENV, creatures::timesync::DEFAULT_PHC_DEVICE);
     auto timeSyncLogger = std::make_shared<creatures::SharedLibraryLogger>("");
+    const auto taiOffsetSeconds = static_cast<int32_t>(
+        creatures::environmentToInt(PHC_TAI_OFFSET_ENV, creatures::timesync::DEFAULT_TAI_OFFSET_SECONDS));
     creatures::timesync::TimeSyncWatcher timeSyncWatcher(
-        timeSyncLogger,
-        std::make_unique<creatures::timesync::TimeSyncMonitor>(creatures::timesync::PTP4L_READ_ONLY_SOCKET, phcDevice));
+        timeSyncLogger, std::make_unique<creatures::timesync::TimeSyncMonitor>(
+                            creatures::timesync::PTP4L_READ_ONLY_SOCKET, phcDevice, taiOffsetSeconds));
 
 #if CREATURE_HAS_AVAHI
     auto mdnsLogger = std::make_shared<creatures::SharedLibraryLogger>("mDNS: ");
