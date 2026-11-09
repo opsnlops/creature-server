@@ -17,9 +17,11 @@ import argparse
 import base64
 import concurrent.futures
 import hashlib
+import http.client
 import http.server
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -35,12 +37,15 @@ import uwebsockets_otel_mongo_gate_test as otel_gate
 
 
 FIXTURE_ID = "8e3a4b5c-1d2f-4e6a-9b0c-7f8e9d0a1b2c"
+MAX_CONNECTIONS = 64
+MAX_CONNECTIONS_PER_PEER = 48
 MONGO_TIMEOUT_MS = 500
 REQUEST_COUNT = 32
 
 
 class ProductionServer:
     def __init__(self, executable: Path, network_device: str) -> None:
+        self.executable = executable
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             self.port = reservation.getsockname()[1]
@@ -60,9 +65,9 @@ class ProductionServer:
         command = [
                 str(executable),
                 "--http-max-connections",
-                "64",
+                str(MAX_CONNECTIONS),
                 "--http-max-connections-per-peer",
-                "48",
+                str(MAX_CONNECTIONS_PER_PEER),
                 "--mongodb-uri",
                 mongo_uri,
                 "--sounds-location",
@@ -141,9 +146,30 @@ def require(condition: bool, message: str) -> None:
 def check_static_contract(server: ProductionServer) -> None:
     code, headers, raw = contract.http_request(server.config, "GET", "/api/v1/health")
     require(code == 200, f"health returned {code}")
-    require(json.loads(raw) == {"status": "ok", "code": 200, "message": "Server is operational"},
-            "health response changed")
+    health = json.loads(raw)
+    require(
+        {name: health.get(name) for name in ("status", "code", "message")}
+        == {"status": "ok", "code": 200, "message": "Server is operational"},
+        f"health envelope changed: {health!r}",
+    )
     require(headers.get("content-type") == "application/json; charset=utf-8", "health content type changed")
+
+    # Health reports the running version so "what is on prod?" is one curl.
+    # Apache overwrites the Server header, so the body is the only place it
+    # survives the proxy. Compare it against what the binary says about itself:
+    # a hardcoded or stale string would pass a shape check but fail this.
+    reported = health.get("version")
+    require(
+        isinstance(reported, str) and re.fullmatch(r"\d+\.\d+\.\d+", reported) is not None,
+        f"health version {reported!r} is not a semver string",
+    )
+    built = subprocess.run(
+        [str(server.executable), "--version"], capture_output=True, text=True, timeout=10
+    ).stdout.strip()
+    require(
+        reported == built,
+        f"health reported version {reported!r} but the binary reports {built!r}",
+    )
 
     code, headers, raw = contract.http_request(server.config, "GET", "/api/docs")
     require(code == 200 and b"Creature Server API" in raw, "API browser was not served")
@@ -267,6 +293,141 @@ def check_websocket_contract(server: ProductionServer, *, require_message_limit:
         oversized.close()
 
 
+def connection_is_admitted(server: ProductionServer) -> bool:
+    """Whether admission lets a fresh connection through at all.
+
+    A refused connection is closed before its request is read, so it never
+    becomes an HTTP status — it reaches the client as a reset mid-exchange.
+    """
+    try:
+        code, _, _ = contract.http_request(server.config, "GET", "/api/v1/health")
+    except (OSError, http.client.HTTPException):
+        return False
+    return code == 200
+
+
+def wait_until_admitted(server: ProductionServer, timeout: float = 2.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while True:
+        if connection_is_admitted(server):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.02)
+
+
+def check_websocket_admission_slots_are_released(server: ProductionServer,
+                                                 capture: otel_gate.OtlpCapture) -> None:
+    """Issue #216, from both sides.
+
+    uWebSockets adopts an upgraded socket into its WebSocket context, so the
+    HTTP close filter never fires for it again. Unless the WebSocket releases
+    the charge itself, every upgrade is a permanent phantom against its peer,
+    and because Apache proxies to localhost every external client shares that
+    one budget. Half one catches the leak. Half two catches the overcorrection
+    of simply not counting WebSockets at all, which would sail through half one
+    while handing out unbounded sockets.
+    """
+    lifetimes = MAX_CONNECTIONS_PER_PEER + 12
+    for index in range(lifetimes):
+        try:
+            connection, _ = open_websocket(server)
+        except (AssertionError, OSError, http.client.HTTPException) as error:
+            raise AssertionError(
+                f"WebSocket upgrade {index + 1} of {lifetimes} from one address was refused ({error}); "
+                f"the first {MAX_CONNECTIONS_PER_PEER} exhausted the per-peer limit, so closed upgrades "
+                "are not releasing their admission slots"
+            ) from error
+        connection.close()
+    require(
+        wait_until_admitted(server),
+        f"a plain request was refused after {lifetimes} sequential WebSocket lifetimes from one address: "
+        "upgraded sockets are leaking their admission slots",
+    )
+
+    # Give the loop a moment to finish retiring those closes before counting.
+    time.sleep(0.1)
+
+    held: list[socket.socket] = []
+    try:
+        refused_at: int | None = None
+        for attempt in range(MAX_CONNECTIONS_PER_PEER + 4):
+            try:
+                connection, _ = open_websocket(server)
+            except (AssertionError, OSError, http.client.HTTPException):
+                refused_at = attempt
+                break
+            held.append(connection)
+        require(
+            refused_at is not None,
+            f"admission never refused a {MAX_CONNECTIONS_PER_PEER + 4}th concurrent WebSocket from one address: "
+            "open WebSockets are no longer counted against the per-peer limit",
+        )
+        require(
+            len(held) == MAX_CONNECTIONS_PER_PEER,
+            f"admission allowed {len(held)} concurrent WebSockets from one address, "
+            f"expected exactly the {MAX_CONNECTIONS_PER_PEER} it was configured for",
+        )
+    finally:
+        for connection in held:
+            connection.close()
+
+    require(
+        wait_until_admitted(server),
+        "closing every held WebSocket did not return the peer's admission slots",
+    )
+
+    # A plain request being admitted is not quite the whole story: prove the
+    # upgrade path itself is still open, since that is the one that leaked.
+    # (Taken from the earlier attempt at this fix, PR #217.)
+    try:
+        recovered, _ = open_websocket(server)
+    except (AssertionError, OSError, http.client.HTTPException) as error:
+        raise AssertionError(
+            f"a fresh WebSocket upgrade was refused after the peer recovered ({error})"
+        ) from error
+    recovered.close()
+
+    # A refusal is invisible unless it is reported: it never becomes a request,
+    # so there is no status code and no request span to find it by. Half two
+    # just forced one, so it must now be on the wire (issue #216).
+    spans = capture.wait_for_spans({"Transport.connection.refused"}, timeout=12)
+    refusals = [span for span in spans if span.get("name") == "Transport.connection.refused"]
+    require(bool(refusals), "no Transport.connection.refused span reached the collector")
+    attributes = refusals[-1].get("attributes", {})
+    for name, expected in (
+        ("admission.outcome", "rejected"),
+        ("admission.scope", "connection.peer"),
+        ("transport.framework", "uwebsockets"),
+        ("network.peer.address", "127.0.0.1"),
+    ):
+        require(
+            attributes.get(name) == expected,
+            f"refusal span {name} was {attributes.get(name)!r}, expected {expected!r}",
+        )
+    require(
+        attributes.get("admission.limit") == MAX_CONNECTIONS_PER_PEER,
+        f"refusal span admission.limit was {attributes.get('admission.limit')!r}, "
+        f"expected {MAX_CONNECTIONS_PER_PEER}",
+    )
+
+    # And the counters have to carry it too: a flat admission.in_flight at the
+    # limit with refusals climbing is the shape worth alerting on.
+    code, _, raw = contract.http_request(server.config, "GET", "/api/v1/metric/counters")
+    require(code == 200, f"counters route returned {code}")
+    counters = json.loads(raw)
+    for name in ("httpConnectionsActive", "httpConnectionsRefused"):
+        require(name in counters, f"counters route is missing {name}")
+    require(
+        counters["httpConnectionsRefused"] >= 1,
+        f"httpConnectionsRefused was {counters['httpConnectionsRefused']}, expected the forced refusals to count",
+    )
+    require(
+        counters["httpConnectionsActive"] >= 1,
+        "httpConnectionsActive should at least count the connection asking the question",
+    )
+
+
 def check_websocket_trace(capture: otel_gate.OtlpCapture) -> None:
     spans = capture.wait_for_spans({"WebSocket.inbound"}, timeout=12)
     candidates = [
@@ -380,7 +541,21 @@ def contract_snapshot(server: ProductionServer) -> dict[str, dict[str, object]]:
         status, headers, body = contract.http_request(server.config, method, path)
         selected_headers = {name: headers[name] for name in compared_headers if name in headers}
         normalized_body = body
-        if path == "/api/v1/metric/counters":
+        if path == "/api/v1/health":
+            # The body embeds the version; pin the envelope and the presence
+            # and shape of the version, not the value. check_static_contract
+            # is what holds the value to the running binary.
+            # content-length tracks the version string's length, and HEAD
+            # reports what GET would send, so it moves on every bump too.
+            selected_headers.pop("content-length", None)
+            if body:
+                envelope = json.loads(body)
+                version = envelope.get("version")
+                envelope["version"] = (
+                    "<semver>" if isinstance(version, str) and re.fullmatch(r"\d+\.\d+\.\d+", version) else version
+                )
+                normalized_body = json.dumps(envelope, sort_keys=True).encode()
+        elif path == "/api/v1/metric/counters":
             selected_headers.pop("content-length", None)
             counters = json.loads(body) if body else {}
             normalized_body = json.dumps({name: type(value).__name__ for name, value in counters.items()},
@@ -597,6 +772,7 @@ def main() -> int:
             print(f"recorded {len(snapshot)} cases to {EXPECTED_PATH}")
         else:
             check_contract_snapshot(snapshot)
+        check_websocket_admission_slots_are_released(uwebsockets, capture)
         regular_uwebsockets_shutdown = uwebsockets.stop(timeout=2.0)
         require(
             regular_uwebsockets_shutdown < 2.0,
@@ -613,7 +789,7 @@ def main() -> int:
 
         print(
             f"PASS: {len(snapshot)} recorded-contract cases, WebSocket ordering/tracing, API browser, "
-            "dead-Mongo deadline, disconnect, saturation isolation, and "
+            "dead-Mongo deadline, disconnect, saturation isolation, WebSocket admission slots, and "
             f"shutdown ({uwebsockets_shutdown:.3f}s)"
         )
         return 0

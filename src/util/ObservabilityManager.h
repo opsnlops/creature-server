@@ -165,6 +165,10 @@ class ObservabilityManager {
 
     // Individual counter instruments - we'll create these once and reuse them
     // This avoids the overhead of looking them up every time we export
+    // Connection admission. Active pinned at the configured limit while
+    // refused climbs is the signature of issue #216.
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> httpConnectionsActiveGauge_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Gauge<double>> httpConnectionsRefusedGauge_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> totalFramesCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> eventsProcessedCounter_;
     opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> framesStreamedCounter_;

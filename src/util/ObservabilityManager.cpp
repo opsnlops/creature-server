@@ -179,6 +179,14 @@ void ObservabilityManager::initializeMetricInstruments() {
         "creature_server_rtp_circuit_breaker_trips",
         "Total times the RTP send-failure circuit breaker terminated an output generation", "{trips}");
 
+    httpConnectionsActiveGauge_ = meter_->CreateDoubleGauge(
+        "creature_server_http_connections_active",
+        "Inbound connections currently charged against the admission limits, WebSockets included", "{connections}");
+
+    httpConnectionsRefusedGauge_ = meter_->CreateDoubleGauge(
+        "creature_server_http_connections_refused",
+        "Connections closed by admission before their request was read, since start", "{connections}");
+
     rtpAudioLoadersActiveGauge_ = meter_->CreateDoubleGauge(
         "creature_server_rtp_audio_loaders_active", "Cooperative RTP audio loader jobs currently running", "{jobs}");
 
@@ -422,6 +430,8 @@ void ObservabilityManager::exportMetrics(const std::shared_ptr<SystemCounters> &
 
     // Gauges record the absolute reading every cycle — no delta tracking, and no
     // skip-if-unchanged, so a steady value keeps reporting instead of going stale.
+    httpConnectionsActiveGauge_->Record(static_cast<double>(metrics->getHttpConnectionsActive()));
+    httpConnectionsRefusedGauge_->Record(static_cast<double>(metrics->getHttpConnectionsRefused()));
     rtpAudioLoadersActiveGauge_->Record(static_cast<double>(metrics->getRtpAudioLoadersActive()));
     rtpAudioLoadsQueuedGauge_->Record(static_cast<double>(metrics->getRtpAudioLoadsQueued()));
 
