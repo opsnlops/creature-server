@@ -919,6 +919,11 @@ void UWebSocketsServer::shutdown() {
     }
 }
 
+uint16_t UWebSocketsServer::boundPort() const {
+    std::lock_guard lock(lifecycleMutex_);
+    return boundPort_;
+}
+
 void UWebSocketsServer::publishStartState(const StartState state, std::string error) {
     {
         std::lock_guard lock(lifecycleMutex_);
@@ -2313,6 +2318,10 @@ void UWebSocketsServer::run() {
             publishStartState(StartState::Failed,
                               fmt::format("uWebSockets failed to listen on port {}", configuredPort));
             return;
+        }
+        {
+            std::lock_guard lock(lifecycleMutex_);
+            boundPort_ = static_cast<uint16_t>(configuredPort);
         }
 
         websocketBroadcastThread = std::jthread([&dispatcher, &app, &websocketConnectionCount,

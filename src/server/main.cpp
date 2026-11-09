@@ -46,6 +46,11 @@
 #include "server/fixture/FixturePatternRunner.h"
 #include "server/gpio/gpio.h"
 #include "server/jobs/JobManager.h"
+#include "server/logging/SharedLibraryLogger.h"
+#include "server/network/ServerMdnsRecords.h"
+#if CREATURE_HAS_AVAHI
+#include "creature/network/AvahiPublisher.h"
+#endif
 #include "server/jobs/JobWorker.h"
 #include "server/metrics/StatusLights.h"
 #include "server/metrics/counters.h"
@@ -573,6 +578,26 @@ int main(const int argc, char **argv) {
     auto webServer = creatures::transport::createTransportServer(*creatures::config);
     webServer->start();
 
+    // Advertise ourselves over mDNS, so nothing on the network has to be told
+    // where the server lives (issue #255). Deliberately after start() returns:
+    // it blocks until the listener is bound, so the port we advertise is the
+    // port that was actually bound, and a server that failed to start never
+    // announces itself.
+    //
+    // Advertising is a convenience. A publisher that can't start says so and is
+    // otherwise ignored — the show does not depend on it.
+#if CREATURE_HAS_AVAHI
+    auto mdnsLogger = std::make_shared<creatures::SharedLibraryLogger>("mDNS: ");
+    const auto mdnsService = creatures::network::makeServerService(creatures::network::serverDetailsFrom(
+        *creatures::config, creatures::network::serverMdnsName(), version, webServer->boundPort()));
+    creatures::network::AvahiPublisher mdnsPublisher(mdnsLogger, mdnsService);
+    if (mdnsPublisher.start()) {
+        info("advertising {} as {} on port {}", mdnsService.type, mdnsService.name, mdnsService.port);
+    } else {
+        warn("couldn't advertise over mDNS; carrying on without it");
+    }
+#endif
+
     // Seed the metric send task
     const auto metricSendEvent = std::make_shared<creatures::CounterSendEvent>(SEND_COUNTERS_FRAMES);
     creatures::eventLoop->scheduleEvent(metricSendEvent);
@@ -616,6 +641,12 @@ int main(const int argc, char **argv) {
     if (creatures::audioCacheMaintenance) {
         creatures::audioCacheMaintenance->shutdown();
     }
+
+    // Stop advertising before the listener goes away, so nothing discovers a
+    // server that is on its way out.
+#if CREATURE_HAS_AVAHI
+    mdnsPublisher.stop();
+#endif
 
     // Stop transport admission and join its request workers before tearing down
     // the remaining Mongo users or any shared application service.
