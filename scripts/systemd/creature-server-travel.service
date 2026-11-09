@@ -4,6 +4,11 @@ Documentation=https://github.com/opsnlops/creature-server
 After=network-online.target docker.service
 Wants=network-online.target
 
+# We advertise ourselves over mDNS through avahi-daemon. Only After=, not
+# Wants=: advertising is a convenience and the publisher waits for the daemon
+# on its own, so a missing Avahi must not keep the server from starting.
+After=avahi-daemon.service
+
 # MongoDB runs as a Docker container on the travel server (`mongodb`, mongo:4.4)
 # rather than as a native service, so dockerd has to be up first.
 #

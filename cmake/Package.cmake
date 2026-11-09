@@ -103,7 +103,11 @@ set(CPACK_DEBIAN_PACKAGE_CONFLICTS "libmongoclient0, libmongoc-dev, libmongoc-1.
 # - locales-all: For proper locale support
 # - adduser: postinst creates the creature-server system user (Policy 9.2.2
 #            requires depending on it rather than assuming it is present)
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "locales-all, adduser")
+# - avahi-daemon: the mDNS advertisement publishes through it over D-Bus
+#            (issue #255). SHLIBDEPS picks up libavahi-client3 on its own since
+#            we link it; only the daemon needs listing. Matches the controller
+#            and audio-router packages.
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "locales-all, adduser, avahi-daemon")
 
 # rhubarb-lip-sync is optional: only needed when --lip-sync-engine=rhubarb (legacy fallback)
 # The default engine is now whisper.cpp (bundled in the package)

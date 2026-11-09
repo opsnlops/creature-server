@@ -180,6 +180,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(argparse)
 
+#creature-common — the mDNS library the controller and audio router already
+#share (issue #255). Declared AFTER fmt so it uses ours instead of fetching a
+#second copy. Its own tests only build when it's the top-level project, so
+#nothing lands in our suite.
+FetchContent_Declare(
+        creature_common
+        GIT_REPOSITORY https://github.com/opsnlops/creature-common.git
+        GIT_TAG        v0.1.0
+        EXCLUDE_FROM_ALL   # keep its install() rules out of our .deb, same as Opus
+)
+FetchContent_MakeAvailable(creature_common)
+
 #nlohmann_json is provided by OpenTelemetry's FetchContent below.
 #Configure it before OTel fetches it.
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
@@ -535,6 +547,7 @@ file(GLOB serverFiles CONFIGURE_DEPENDS
         src/server/stage/*
         src/server/storage/*
         src/server/storyboard/*
+        src/server/network/*
         src/server/transport/*
         src/server/voice/*
         src/server/watchdog/*
@@ -745,6 +758,7 @@ target_link_libraries(creature-server
         opentelemetry_exporter_otlp_http_metric
         argparse
         e131_service
+        creature::mdns
         Threads::Threads
         uvgrtp
         opus
@@ -886,6 +900,8 @@ add_executable(creature-server-test
         tests/server/animation/SessionManager_ownership_test.cpp
         tests/server/creature/UniverseResolver_test.cpp
         src/server/creature/UniverseResolver.cpp
+        tests/server/network/ServerMdnsRecords_test.cpp
+        src/server/network/ServerMdnsRecords.cpp
         src/server/animation/SessionManager.cpp
         src/server/animation/PlaybackSession.cpp
         tests/fixture/FixturePatternRunner_test.cpp
@@ -1077,6 +1093,7 @@ target_link_libraries(creature-server-test
         opentelemetry_exporter_otlp_http_metric
         argparse
         e131_service
+        creature::mdns
         opus
         ogg
         ${MP3LAME_LIBRARIES}
