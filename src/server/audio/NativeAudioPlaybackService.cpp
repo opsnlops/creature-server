@@ -16,7 +16,7 @@
 #include "AlsaMixerControl.h"
 #include "DecodedAudioStream.h"
 #include "MonoWavDownmixer.h"
-#include "util/threadName.h"
+#include "creature/thread/ThreadName.h"
 
 namespace creatures::audio {
 namespace {
@@ -308,7 +308,7 @@ bool NativeAudioPlaybackService::restoreKeepaliveLocked() {
 }
 
 void NativeAudioPlaybackService::keepaliveLoop() {
-    setThreadName("NativeAudioKeepalive");
+    setThreadName("AudioKeepalive");
     uint64_t consecutiveRefillFailures = 0;
     while (!shutdownRequested_.load(std::memory_order_acquire)) {
         if (!playbackActive_.load(std::memory_order_acquire)) {

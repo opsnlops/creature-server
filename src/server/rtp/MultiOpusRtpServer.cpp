@@ -19,6 +19,7 @@
 #include <uvgrtp/util.hh>
 
 #include "MultiOpusRtpServer.h"
+#include "creature/thread/ThreadName.h"
 #include "server/config.h"
 #include "server/metrics/counters.h"
 #include "server/namespace-stuffs.h"
@@ -27,7 +28,6 @@
 #include "server/rtp/opus/OpusEncoderWrapper.h"
 #include "server/rtp/opus/OpusPriming.h"
 #include "util/ObservabilityManager.h"
-#include "util/threadName.h"
 #include "util/websocketUtils.h"
 
 using namespace creatures::rtp;

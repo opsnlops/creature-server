@@ -48,9 +48,12 @@
 #include "server/jobs/JobManager.h"
 #include "server/logging/SharedLibraryLogger.h"
 #include "server/network/ServerMdnsRecords.h"
+
+#include "creature/timesync/TimeSyncMonitor.h"
 #if CREATURE_HAS_AVAHI
 #include "creature/network/AvahiPublisher.h"
 #endif
+#include "creature/thread/ThreadName.h"
 #include "server/jobs/JobWorker.h"
 #include "server/metrics/StatusLights.h"
 #include "server/metrics/counters.h"
@@ -66,7 +69,6 @@
 #include "util/cache.h"
 #include "util/environment.h"
 #include "util/loggingUtils.h"
-#include "util/threadName.h"
 #include "util/websocketUtils.h"
 #include "watchdog/Watchdog.h"
 
@@ -264,7 +266,10 @@ int main(const int argc, char **argv) {
                                       CREATURE_SERVER_VERSION_PATCH);
 
     // Set up our thread name
-    setThreadName(fmt::format("creature-server::main version {}", version));
+    // "main <version>" rather than the old long form: Linux caps thread names at
+    // 15 bytes, and the old one truncated to "creature-server" — colliding with
+    // the local-audio thread and losing the version, which was the point of it.
+    creatures::setThreadName(fmt::format("main {}", version));
 
     // Create our metric counters
     creatures::metrics = std::make_shared<creatures::SystemCounters>();
@@ -586,10 +591,25 @@ int main(const int argc, char **argv) {
     //
     // Advertising is a convenience. A publisher that can't start says so and is
     // otherwise ignored — the show does not depend on it.
+    // PTP health. This host is the grandmaster, so the reading that matters is
+    // the system-to-PHC offset: phc2sys here runs CLOCK_REALTIME -> PHC, and if
+    // it stops, our own clock stays NTP-correct while every creature follows a
+    // free-running PHC away from the schedule we hand them — with nothing in
+    // the kernel's clock status to say so (creature-common#3).
+    //
+    // Watching only; it changes no timing decision. A device that can't be read
+    // is not a failure: the reading is simply absent.
+    const auto phcDevice = creatures::environmentToString(PHC_DEVICE_ENV, creatures::timesync::DEFAULT_PHC_DEVICE);
+    auto timeSyncLogger = std::make_shared<creatures::SharedLibraryLogger>("");
+    creatures::timesync::TimeSyncWatcher timeSyncWatcher(
+        timeSyncLogger,
+        std::make_unique<creatures::timesync::TimeSyncMonitor>(creatures::timesync::PTP4L_READ_ONLY_SOCKET, phcDevice));
+
 #if CREATURE_HAS_AVAHI
     auto mdnsLogger = std::make_shared<creatures::SharedLibraryLogger>("mDNS: ");
-    const auto mdnsService = creatures::network::makeServerService(creatures::network::serverDetailsFrom(
-        *creatures::config, creatures::network::serverMdnsName(), version, webServer->boundPort()));
+    const auto mdnsDetails = creatures::network::serverDetailsFrom(
+        *creatures::config, creatures::network::serverMdnsName(), version, webServer->boundPort());
+    const auto mdnsService = creatures::network::makeServerService(mdnsDetails, timeSyncWatcher.current());
     creatures::network::AvahiPublisher mdnsPublisher(mdnsLogger, mdnsService);
     if (mdnsPublisher.start()) {
         info("advertising {} as {} on port {}", mdnsService.type, mdnsService.name, mdnsService.port);
@@ -608,6 +628,15 @@ int main(const int argc, char **argv) {
         // dead-Mongo budget. This is the main thread, not the sacred 1 ms
         // creature event loop.
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        // The watcher checks every few seconds and logs only on a change, so
+        // this is cheap. A change republishes the record, exactly as the audio
+        // router does it.
+        if (const auto timeSync = timeSyncWatcher.poll()) {
+#if CREATURE_HAS_AVAHI
+            mdnsPublisher.updateTxt(creatures::network::makeServerService(mdnsDetails, *timeSync).txt);
+#endif
+        }
     }
 
     // Now that we're back in a normal execution context, log the signal

@@ -6,6 +6,8 @@
 
 #include "server/network/ServerMdnsRecords.h"
 
+#include "creature/timesync/TimeSync.h"
+
 #include "server/config.h"
 
 namespace creatures::network {
@@ -38,7 +40,7 @@ ServerDetails serverDetailsFrom(const Configuration &config, std::string name, s
     return details;
 }
 
-MdnsService makeServerService(const ServerDetails &details) {
+MdnsService makeServerService(const ServerDetails &details, const timesync::TimeSyncStatus &timeSync) {
     MdnsService service;
     service.name = mdnsInstanceName(details.name);
     service.type = CREATURE_SERVER_SERVICE_TYPE;
@@ -66,6 +68,14 @@ MdnsService makeServerService(const ServerDetails &details) {
     service.txt.emplace_back("sound_library", details.soundLibrary);
     service.txt.emplace_back("lipsync", details.lipSyncEngine);
     service.txt.emplace_back("network_interface", std::to_string(details.networkInterface));
+
+    // PTP state, the same keys the controllers and the audio router publish, so
+    // one browse of the network shows whether every host agrees on the time and
+    // on who the grandmaster is. Only once it has actually been checked:
+    // SyncState::Unknown before the first poll would be a claim, not a reading.
+    if (timeSync.state != timesync::SyncState::Unknown || timeSync.ptp.available) {
+        timesync::appendTimeSyncTxt(service.txt, timeSync);
+    }
 
     return service;
 }

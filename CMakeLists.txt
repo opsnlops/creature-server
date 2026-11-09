@@ -187,7 +187,7 @@ FetchContent_MakeAvailable(argparse)
 FetchContent_Declare(
         creature_common
         GIT_REPOSITORY https://github.com/opsnlops/creature-common.git
-        GIT_TAG        v0.2.0
+        GIT_TAG        v0.4.0
         EXCLUDE_FROM_ALL   # keep its install() rules out of our .deb, same as Opus
 )
 FetchContent_MakeAvailable(creature_common)
@@ -758,6 +758,8 @@ target_link_libraries(creature-server
         e131_service
         creature::mdns
         creature::rtp
+        creature::thread
+        creature::timesync
         Threads::Threads
         uvgrtp
         opus
@@ -1071,7 +1073,6 @@ add_executable(creature-server-test
         src/util/uuidUtils.cpp
         src/util/Result.cpp
         src/util/environment.cpp
-        src/util/threadName.cpp
         tests/server/FakeObservabilityManager.cpp
         tests/server/FakeDatabase.cpp
         tests/server/FakeSpans.cpp
@@ -1095,6 +1096,8 @@ target_link_libraries(creature-server-test
         e131_service
         creature::mdns
         creature::rtp
+        creature::thread
+        creature::timesync
         opus
         ogg
         ${MP3LAME_LIBRARIES}

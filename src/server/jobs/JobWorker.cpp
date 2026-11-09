@@ -56,12 +56,12 @@
 #include "server/ws/service/MusicService.h"
 #include "server/ws/service/VoiceService.h"
 
+#include "creature/thread/ThreadName.h"
 #include "util/ObservabilityManager.h"
 #include "util/Sha256.h"
 #include "util/Slugify.h"
 #include "util/cache.h"
 #include "util/helpers.h"
-#include "util/threadName.h"
 #include "util/uuidUtils.h"
 #include "util/websocketUtils.h"
 

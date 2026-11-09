@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include "util/threadName.h"
+#include "creature/thread/ThreadName.h"
 
 namespace creatures::transport {
 

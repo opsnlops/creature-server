@@ -39,6 +39,7 @@
 #include "api/SoundRequests.h"
 #include "api/VoiceContracts.h"
 #include "api/WebSocketEnvelope.h"
+#include "creature/thread/ThreadName.h"
 #include "model/Animation.h"
 #include "model/Notice.h"
 #include "model/Playlist.h"
@@ -71,7 +72,6 @@
 #include "util/ObservabilityManager.h"
 #include "util/environment.h"
 #include "util/helpers.h"
-#include "util/threadName.h"
 
 namespace creatures {
 extern std::shared_ptr<SystemCounters> metrics;
@@ -917,7 +917,7 @@ void UWebSocketsServer::publishStartState(const StartState state, std::string er
 }
 
 void UWebSocketsServer::run() {
-    setThreadName("uWebSockets::run");
+    setThreadName("WebsocketLoop");
     try {
         const auto configuredPort = environmentToInt(SERVER_PORT_ENV, DEFAULT_SERVER_PORT);
         if (configuredPort < 1 || configuredPort > 65535) {
@@ -2335,7 +2335,7 @@ void UWebSocketsServer::run() {
 
         websocketBroadcastThread = std::jthread([&dispatcher, &app, &websocketConnectionCount,
                                                  &outboundWebSocketSequence](const std::stop_token stopToken) {
-            setThreadName("uWebSockets::broadcast");
+            setThreadName("WebsocketBcast");
             std::string message;
             while (!stopToken.stop_requested()) {
                 if (!creatures::websocketOutgoingMessages) {

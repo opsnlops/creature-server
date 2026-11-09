@@ -11,8 +11,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "creature/thread/ThreadName.h"
 #include "util/ObservabilityManager.h"
-#include "util/threadName.h"
 
 namespace creatures {
 extern std::shared_ptr<ObservabilityManager> observability;
@@ -327,7 +327,7 @@ const char *LocalAudioPlaybackCoordinator::outcomeName(PlaybackOutcome outcome) 
 }
 
 void LocalAudioPlaybackCoordinator::workerLoop() {
-    setThreadName("creature-server::local-audio");
+    setThreadName("LocalAudio");
 
     while (true) {
         JobRecord record;

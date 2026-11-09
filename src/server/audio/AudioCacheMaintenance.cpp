@@ -7,10 +7,10 @@
 
 #include <spdlog/spdlog.h>
 
+#include "creature/thread/ThreadName.h"
 #include "server/audio/AudioCacheMaintenance.h"
 #include "server/namespace-stuffs.h"
 #include "util/ObservabilityManager.h"
-#include "util/threadName.h"
 
 namespace creatures {
 extern std::shared_ptr<ObservabilityManager> observability;
@@ -73,7 +73,7 @@ void AudioCacheMaintenance::sweep() {
 }
 
 void AudioCacheMaintenance::run() {
-    setThreadName("audioCacheMaintenance::run");
+    setThreadName("AudioCachePrune");
 
     // Delay the first pass so startup never contends with a disk walk.
     if (!sleepUnlessStopping(startupDelay_)) {

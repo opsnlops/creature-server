@@ -33,6 +33,11 @@
     "mongodb://10.19.63.5/?serverSelectionTimeoutMS=750&connectTimeoutMS=500&socketTimeoutMS=1000&waitQueueTimeoutMS=" \
     "250&wTimeoutMS=750"
 #define SERVER_PORT_ENV "SERVER_PORT"
+
+// Which PTP hardware clock to compare CLOCK_REALTIME against. ptp4l runs with
+// phc_index -1, so it derives the device from the interface; this is only a
+// default, and the NIC has moved once already (creature-common#3).
+#define PHC_DEVICE_ENV "PHC_DEVICE"
 #define DEFAULT_SERVER_PORT 8000
 #define HTTP_MAX_CONNECTIONS_ENV "HTTP_MAX_CONNECTIONS"
 #define DEFAULT_HTTP_MAX_CONNECTIONS 512

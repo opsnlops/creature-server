@@ -98,6 +98,54 @@ TEST(ServerMdnsRecords, TravelModeSaysSo) {
     EXPECT_THAT(service.txt, Contains(Pair("audio_channels", "2")));
 }
 
+TEST(ServerMdnsRecords, PublishesNoPtpKeysBeforeTheFirstCheck) {
+    // A record built before the watcher has read anything must not assert
+    // "unknown" — it has no reading, which is different from a bad one.
+    const auto service = makeServerService(mainstageDetails());
+    EXPECT_THAT(service.txt, Not(Contains(Key("ptp"))));
+    EXPECT_THAT(service.txt, Not(Contains(Key("ptp_port"))));
+}
+
+TEST(ServerMdnsRecords, PublishesTheGrandmasterPtpStateOnceChecked) {
+    timesync::PtpReading ptp;
+    ptp.available = true;
+    ptp.portState = "MASTER";
+    ptp.gmIdentity = "380525.fffe.33ef92";
+
+    timesync::ClockReading clock;
+    clock.available = true;
+    clock.synced = true;
+    clock.maxErrorUs = 500;
+
+    timesync::PhcReading phc;
+    phc.available = true;
+    phc.offsetNs = 1'200;
+
+    const auto service = makeServerService(mainstageDetails(), timesync::evaluateTimeSync(ptp, clock, phc));
+
+    EXPECT_THAT(service.txt, Contains(Pair("ptp", "synced")));
+    EXPECT_THAT(service.txt, Contains(Pair("ptp_port", "MASTER")));
+    EXPECT_THAT(service.txt, Contains(Pair("ptp_gm", "380525.fffe.33ef92")));
+    EXPECT_THAT(service.txt, Contains(Pair("clock_synced", "yes")));
+    EXPECT_THAT(service.txt, Contains(Pair("phc_offset_ns", "1200")));
+}
+
+TEST(ServerMdnsRecords, StillFitsOnePacketWithPtpState) {
+    timesync::PtpReading ptp;
+    ptp.available = true;
+    ptp.portState = "MASTER";
+    ptp.gmIdentity = "380525.fffe.33ef92";
+    timesync::ClockReading clock;
+    clock.available = true;
+    clock.synced = true;
+    timesync::PhcReading phc;
+    phc.available = true;
+    phc.offsetNs = -999'999;
+
+    auto service = makeServerService(mainstageDetails(), timesync::evaluateTimeSync(ptp, clock, phc));
+    EXPECT_LE(fitTxtRecord(service), MDNS_TXT_RECORD_TARGET_BYTES);
+}
+
 TEST(ServerMdnsRecords, FitsInOnePacket) {
     auto service = makeServerService(mainstageDetails());
     EXPECT_LE(fitTxtRecord(service), MDNS_TXT_RECORD_TARGET_BYTES);
