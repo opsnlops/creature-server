@@ -107,7 +107,7 @@ class ProductionServer:
                 code, _, _ = contract.http_request(self.config, "GET", "/api/v1/health")
                 if code == 200:
                     return
-            except (ConnectionError, OSError) as error:
+            except (ConnectionError, EOFError, OSError) as error:
                 last_error = error
             time.sleep(0.05)
         raise AssertionError(
@@ -301,7 +301,7 @@ def connection_is_admitted(server: ProductionServer) -> bool:
     """
     try:
         code, _, _ = contract.http_request(server.config, "GET", "/api/v1/health")
-    except (OSError, http.client.HTTPException):
+    except (EOFError, OSError, http.client.HTTPException):
         return False
     return code == 200
 
@@ -328,11 +328,17 @@ def check_websocket_admission_slots_are_released(server: ProductionServer,
     of simply not counting WebSockets at all, which would sail through half one
     while handing out unbounded sockets.
     """
+    # Every attempt below catches EOFError alongside the socket errors. Admission
+    # refuses by closing the connection *before reading the request*, so the
+    # client's send often succeeds into a buffer and the refusal only surfaces
+    # when the response read returns nothing — which HttpSocketReader reports as
+    # EOFError, not OSError. Which of the two you get is a race, and it was lost
+    # on an arm64 runner: the refusal escaped as EOFError and failed this test.
     lifetimes = MAX_CONNECTIONS_PER_PEER + 12
     for index in range(lifetimes):
         try:
             connection, _ = open_websocket(server)
-        except (AssertionError, OSError, http.client.HTTPException) as error:
+        except (AssertionError, EOFError, OSError, http.client.HTTPException) as error:
             raise AssertionError(
                 f"WebSocket upgrade {index + 1} of {lifetimes} from one address was refused ({error}); "
                 f"the first {MAX_CONNECTIONS_PER_PEER} exhausted the per-peer limit, so closed upgrades "
@@ -354,7 +360,7 @@ def check_websocket_admission_slots_are_released(server: ProductionServer,
         for attempt in range(MAX_CONNECTIONS_PER_PEER + 4):
             try:
                 connection, _ = open_websocket(server)
-            except (AssertionError, OSError, http.client.HTTPException):
+            except (AssertionError, EOFError, OSError, http.client.HTTPException):
                 refused_at = attempt
                 break
             held.append(connection)
@@ -382,7 +388,7 @@ def check_websocket_admission_slots_are_released(server: ProductionServer,
     # (Taken from the earlier attempt at this fix, PR #217.)
     try:
         recovered, _ = open_websocket(server)
-    except (AssertionError, OSError, http.client.HTTPException) as error:
+    except (AssertionError, EOFError, OSError, http.client.HTTPException) as error:
         raise AssertionError(
             f"a fresh WebSocket upgrade was refused after the peer recovered ({error})"
         ) from error
