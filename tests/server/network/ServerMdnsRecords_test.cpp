@@ -155,8 +155,15 @@ TEST(ServerMdnsRecords, PublishesTheGrandmasterPtpStateOnceChecked) {
     EXPECT_THAT(service.txt, Contains(Pair("ptp", "synced")));
     EXPECT_THAT(service.txt, Contains(Pair("ptp_port", "MASTER")));
     EXPECT_THAT(service.txt, Contains(Pair("ptp_gm", "380525.fffe.33ef92")));
-    EXPECT_THAT(service.txt, Contains(Pair("clock_synced", "yes")));
     EXPECT_THAT(service.txt, Contains(Pair("phc_offset_ns", "1200")));
+
+    // No clock_synced on a master, even with a clock this check would pass.
+    // It is a client's verdict, and on this host it could only ever read "no":
+    // maxerror sat at 1.7-2.0 s because timesyncd polls far less often than the
+    // 10 ms budget, while STA_UNSYNC stayed clear in 20,600 samples. A field
+    // that can only say one thing is a field that misleads whoever reads it
+    // (creature-common#10, #12).
+    EXPECT_THAT(service.txt, Not(Contains(Key("clock_synced"))));
 }
 
 TEST(ServerMdnsRecords, StillFitsOnePacketWithPtpState) {
