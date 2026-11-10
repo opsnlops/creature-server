@@ -51,6 +51,19 @@ struct SystemCountersSnapshot {
     uint64_t rtpEncoderResets = 0;
     uint64_t httpConnectionsActive = 0;
     uint64_t httpConnectionsRefused = 0;
+
+    // The PTP hardware clock offset, shaped like creature-common's PhcReading
+    // rather than given a second shape here. Signed, because the offset falls
+    // either side of zero -- the show server ranges -6.4 to +5.5 us -- and
+    // paired with a validity flag, because a host with no PHC has no reading
+    // at all, and publishing 0 there would report a measurement nobody made.
+    //
+    // A gauge, not a counter. It lives here because the mDNS record is
+    // republished only when the sync state changes, which freezes the offset it
+    // carries between flips: one ten-minute watch read 50360 ns forty times
+    // running, having caught the flip and then nothing at all (#261).
+    int64_t phcOffsetNs = 0;
+    bool phcOffsetAvailable = false;
 };
 
 nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapshot);
@@ -90,6 +103,11 @@ class SystemCounters {
     // httpConnectionsRefused climbing is the signature of issue #216.
     void setHttpConnectionMetrics(uint64_t active, uint64_t refused);
 
+    // The PHC offset, pushed from the main loop's time-sync poll. The watcher
+    // refreshes its reading every few seconds whether or not the state changed,
+    // so this follows the clock rather than the last flip.
+    void setPhcOffset(bool available, int64_t offsetNs);
+
     void setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
                                 uint64_t rejected, uint64_t cancelled, uint64_t failed);
     void setLocalAudioPlaybackMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
@@ -117,6 +135,8 @@ class SystemCounters {
     uint64_t getRtpEncoderResets();
     uint64_t getHttpConnectionsActive();
     uint64_t getHttpConnectionsRefused();
+    int64_t getPhcOffsetNs();
+    bool getPhcOffsetAvailable();
     uint64_t getRtpAudioLoadersActive();
     uint64_t getRtpAudioLoadsQueued();
     uint64_t getRtpAudioLoadsAccepted();
@@ -165,6 +185,8 @@ class SystemCounters {
     std::atomic<uint64_t> rtpEncoderResets;
     std::atomic<uint64_t> httpConnectionsActive;
     std::atomic<uint64_t> httpConnectionsRefused;
+    std::atomic<int64_t> phcOffsetNs;
+    std::atomic<bool> phcOffsetAvailable;
     std::atomic<uint64_t> rtpAudioLoadersActive;
     std::atomic<uint64_t> rtpAudioLoadsQueued;
     std::atomic<uint64_t> rtpAudioLoadsAccepted;

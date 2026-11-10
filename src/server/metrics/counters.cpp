@@ -27,6 +27,8 @@ SystemCounters::SystemCounters() {
     rtpEncoderResets = 0;
     httpConnectionsActive = 0;
     httpConnectionsRefused = 0;
+    phcOffsetNs = 0;
+    phcOffsetAvailable = false;
     rtpAudioLoadersActive = 0;
     rtpAudioLoadsQueued = 0;
     rtpAudioLoadsAccepted = 0;
@@ -105,6 +107,15 @@ void SystemCounters::setHttpConnectionMetrics(const uint64_t active, const uint6
     httpConnectionsActive.store(active);
     httpConnectionsRefused.store(refused);
 }
+
+void SystemCounters::setPhcOffset(const bool available, const int64_t offsetNs) {
+    phcOffsetAvailable.store(available);
+    phcOffsetNs.store(offsetNs);
+}
+
+int64_t SystemCounters::getPhcOffsetNs() { return phcOffsetNs.load(); }
+
+bool SystemCounters::getPhcOffsetAvailable() { return phcOffsetAvailable.load(); }
 
 void SystemCounters::setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
                                             uint64_t rejected, uint64_t cancelled, uint64_t failed) {
@@ -260,7 +271,9 @@ SystemCountersSnapshot SystemCounters::snapshot() const {
             websocketPongsReceived.load(),
             rtpEncoderResets.load(),
             httpConnectionsActive.load(),
-            httpConnectionsRefused.load()};
+            httpConnectionsRefused.load(),
+            phcOffsetNs.load(),
+            phcOffsetAvailable.load()};
 }
 
 nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapshot) {
@@ -306,7 +319,9 @@ nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapsh
             {"websocketPongsReceived", snapshot.websocketPongsReceived},
             {"rtpEncoderResets", snapshot.rtpEncoderResets},
             {"httpConnectionsActive", snapshot.httpConnectionsActive},
-            {"httpConnectionsRefused", snapshot.httpConnectionsRefused}};
+            {"httpConnectionsRefused", snapshot.httpConnectionsRefused},
+            {"phcOffsetNs", snapshot.phcOffsetNs},
+            {"phcOffsetAvailable", snapshot.phcOffsetAvailable}};
 }
 
 } // namespace creatures
