@@ -4,11 +4,11 @@
 #include "blockingconcurrentqueue.h"
 
 #include "api/WebSocketEnvelope.h"
+#include "creature/thread/ThreadName.h"
 #include "model/VirtualStatusLights.h"
 #include "server/gpio/gpio.h"
 #include "server/metrics/StatusLights.h"
 #include "server/metrics/counters.h"
-#include "util/threadName.h"
 
 #include "server/config.h"
 #include "server/namespace-stuffs.h"
@@ -48,7 +48,7 @@ void StatusLights::start() {
 
 void StatusLights::run() {
 
-    setThreadName("StatusLights::run");
+    setThreadName("StatusLights");
 
     debug("starting the status light loop");
 

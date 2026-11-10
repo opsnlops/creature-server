@@ -4,6 +4,7 @@
 #include <string>
 
 #include "creature/network/MdnsService.h"
+#include "creature/timesync/TimeSync.h"
 #include "server/config/Configuration.h"
 
 namespace creatures::network {
@@ -60,7 +61,12 @@ std::string serverMdnsName();
 
 /**
  * Describe this running server for mDNS
+ *
+ * @param details what this server is
+ * @param timeSync the PTP/clock state to advertise. The default means "not
+ *        checked", which publishes nothing rather than claiming "unknown" —
+ *        a record built before the first check shouldn't assert anything.
  */
-MdnsService makeServerService(const ServerDetails &details);
+MdnsService makeServerService(const ServerDetails &details, const timesync::TimeSyncStatus &timeSync = {});
 
 } // namespace creatures::network

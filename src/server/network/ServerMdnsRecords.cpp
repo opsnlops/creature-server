@@ -6,6 +6,9 @@
 
 #include "server/network/ServerMdnsRecords.h"
 
+#include "creature/rtp/Protocol.h"
+#include "creature/timesync/TimeSync.h"
+
 #include "server/config.h"
 
 namespace creatures::network {
@@ -27,8 +30,17 @@ ServerDetails serverDetailsFrom(const Configuration &config, std::string name, s
     details.travelMode = config.getTravelMode();
     details.rtpAudio = config.getAudioMode() == Configuration::AudioMode::RTP;
 
-    details.audioChannels = config.getSoundChannels();
-    details.audioSampleRate = config.getSoundFrequency();
+    // Report the audio this server actually produces, which depends on the mode.
+    // In RTP mode that is the 17 multicast channels at the Opus rate; the local
+    // sound_channels setting describes a device we are not using, and publishing
+    // it here read as "this server streams 2 channels" on the main rig.
+    if (details.rtpAudio) {
+        details.audioChannels = creatures::rtp::CHANNEL_COUNT;
+        details.audioSampleRate = creatures::rtp::SAMPLE_RATE;
+    } else {
+        details.audioChannels = config.getSoundChannels();
+        details.audioSampleRate = config.getSoundFrequency();
+    }
     details.audioDevice = config.getSoundDeviceName().value_or("");
 
     details.soundLibrary = config.getSoundFileLocation();
@@ -38,7 +50,7 @@ ServerDetails serverDetailsFrom(const Configuration &config, std::string name, s
     return details;
 }
 
-MdnsService makeServerService(const ServerDetails &details) {
+MdnsService makeServerService(const ServerDetails &details, const timesync::TimeSyncStatus &timeSync) {
     MdnsService service;
     service.name = mdnsInstanceName(details.name);
     service.type = CREATURE_SERVER_SERVICE_TYPE;
@@ -66,6 +78,14 @@ MdnsService makeServerService(const ServerDetails &details) {
     service.txt.emplace_back("sound_library", details.soundLibrary);
     service.txt.emplace_back("lipsync", details.lipSyncEngine);
     service.txt.emplace_back("network_interface", std::to_string(details.networkInterface));
+
+    // PTP state, the same keys the controllers and the audio router publish, so
+    // one browse of the network shows whether every host agrees on the time and
+    // on who the grandmaster is. Only once it has actually been checked:
+    // SyncState::Unknown before the first poll would be a claim, not a reading.
+    if (timeSync.state != timesync::SyncState::Unknown || timeSync.ptp.available) {
+        timesync::appendTimeSyncTxt(service.txt, timeSync);
+    }
 
     return service;
 }

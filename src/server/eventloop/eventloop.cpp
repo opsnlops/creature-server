@@ -13,12 +13,12 @@
 
 #include "spdlog/spdlog.h"
 
+#include "creature/thread/ThreadName.h"
 #include "server/config.h"
 #include "server/config/Configuration.h"
 #include "server/eventloop/eventloop.h"
 #include "server/metrics/counters.h"
 #include "util/ObservabilityManager.h"
-#include "util/threadName.h"
 
 namespace creatures {
 

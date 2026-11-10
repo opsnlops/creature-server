@@ -3,9 +3,9 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#include "creature/thread/ThreadName.h"
 #include "server/database.h"
 #include "util/StoppableThread.h"
-#include "util/threadName.h"
 
 #include "Watchdog.h"
 
