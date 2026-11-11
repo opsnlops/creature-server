@@ -639,6 +639,13 @@ int main(const int argc, char **argv) {
             mdnsPublisher.updateTxt(creatures::network::makeServerService(mdnsDetails, *timeSync).txt);
 #endif
         }
+
+        // The record is republished only on a state change, so the offset it
+        // carries stops moving between flips. Publish the watcher's cached
+        // reading every time around as well, so the offset can be polled and
+        // graphed instead of read once and trusted (#261).
+        const auto &phcReading = timeSyncWatcher.current().phc;
+        creatures::metrics->setPhcOffset(phcReading.available, phcReading.offsetNs);
     }
 
     // Now that we're back in a normal execution context, log the signal
