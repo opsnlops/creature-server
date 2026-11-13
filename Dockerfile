@@ -13,6 +13,7 @@ RUN apt update && apt install -y \
         file \
         clang-19 \
         git \
+        help2man \
         libbson-dev \
         libcurl4-openssl-dev \
         libasound2-dev \
@@ -25,11 +26,23 @@ RUN apt update && apt install -y \
         libsystemd-dev \
         libutf8proc-dev \
         libuv1-dev \
+        locales-all \
         ninja-build \
         pkgconf \
         protobuf-compiler \
         util-linux \
         uuid-dev
+
+# Two of those are not compilers and deserve a word.
+#
+# help2man generates the manual page, which it does by RUNNING the binary we
+# just built and capturing --help. That is also why locales-all is here and no
+# longer only in the package stage below: main() calls
+# std::locale::global(std::locale("en_US.UTF-8")) before anything else, and a
+# default debian:trixie image carries only C, C.utf8 and POSIX -- so the
+# binary throws "locale::facet::_S_create_c_locale name not valid" and exits
+# before printing any help at all. The builder has to be able to run what it
+# builds.
 
 # Use the clang-19 we installed above (without this, CMake picks Debian's default gcc)
 ENV CC=clang-19
@@ -113,6 +126,12 @@ COPY run_linux_tests.sh /build/creature-server/run_linux_tests.sh
 # service user nor the cache directory.
 COPY scripts/ /build/creature-server/scripts
 
+# The hand-written half of the manual page (SERVICE, CONFIGURATION, FILES,
+# EXAMPLES), spliced into the generated options by help2man --include. Copied
+# here in Phase 2 rather than up with docs/transport-route-manifest.json so
+# that editing the prose rebuilds only the final layers.
+COPY docs/man/ /build/creature-server/docs/man
+
 # Real project version goes here, AFTER the deps_only layer is sealed. The
 # Phase 2 cmake reconfigure below re-reads VERSION.txt and applies it to
 # project() / Version.h / the .deb metadata. See issue #18.
@@ -128,10 +147,13 @@ RUN cd /build/creature-server/build && cmake .. && ninja -j${NINJA_JOBS}
 # artifact stage, not a runtime image; production installs the resulting .deb.
 FROM build AS package
 
-# The .deb declares this runtime dependency. Install it in the validation stage
-# so the extracted payload runs under the same en_US.UTF-8 locale contract as
-# an installed package, rather than under the intentionally minimal builder.
-RUN apt update && apt install -y --no-install-recommends locales-all
+# locales-all used to be installed here, so the extracted payload would run
+# under the same en_US.UTF-8 locale contract as an installed package rather
+# than under an intentionally minimal builder. The builder is no longer
+# locale-free -- help2man has to run the binary to generate the manual page --
+# so this stage inherits the locale from `build` above and the install would be
+# a no-op. The .deb still declares locales-all as a runtime dependency, which
+# is what actually matters on a creature.
 
 # Make a package
 RUN mkdir -p /package

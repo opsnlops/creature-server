@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import glob
+import gzip
+import re
 import subprocess
 import sys
 import tempfile
@@ -14,6 +16,73 @@ from pathlib import Path
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def strip_roff(page: str) -> str:
+    """Reduce roff markup to the words a reader actually sees.
+
+    help2man escapes every hyphen as \\- and wraps option names in font
+    switches, so "--voice-api-key" appears in the body as
+    \\fB\\-\\-voice\\-api\\-key\\fR. Searching the raw page for a plain option name
+    therefore only ever matches the SYNOPSIS, which is a much weaker check
+    than it looks.
+    """
+    plain = re.sub(r"\\f(?:\(CW|[BIRP])", "", page)
+    plain = plain.replace("\\,", "").replace("\\/", "")
+    return plain.replace("\\-", "-")
+
+
+def check_manual_page(root: Path) -> None:
+    """Check the packaged manual page against the options the parser defines.
+
+    Debian Policy 12.1 wants a manual page for every program, and the fleet
+    packaging policy wants it to cover every option plus the on-disk
+    configuration. The options half is generated from --help by help2man at
+    build time, so the interesting failures are not "someone forgot to write
+    it" but the quiet ones: a generation step that half worked, or a heading
+    rewrite that stopped matching.
+    """
+    page_path = root / "usr/share/man/man8/creature-server.8.gz"
+    require(page_path.is_file(), "package does not ship /usr/share/man/man8/creature-server.8.gz")
+    page = gzip.decompress(page_path.read_bytes()).decode("utf-8")
+    plain = strip_roff(page)
+
+    # help2man files argparse's "Optional arguments:" as a .SS subsection of
+    # DESCRIPTION, so the build rewrites it into a real OPTIONS section. If
+    # argparse ever changes that wording the rewrite silently stops matching
+    # and the page ships with its options buried -- this is what catches it.
+    for heading in (".SH OPTIONS", ".SH CONFIGURATION", ".SH FILES", ".SH SERVICE"):
+        require(heading in page, f"manual page is missing its {heading} section")
+
+    # Every long option the parser defines has to be documented, in the body
+    # and not merely in the synopsis. This is the whole reason the page is
+    # generated rather than hand-written: there are three dozen options and a
+    # hand-maintained list goes stale within a release.
+    parser_source = Path(__file__).parents[2] / "src/server/config/CommandLine.cpp"
+    require(parser_source.is_file(), f"cannot find the option definitions at {parser_source}")
+    options = sorted(set(re.findall(r'"(--[a-z0-9-]+)"', parser_source.read_text())))
+    require(len(options) > 20, f"only found {len(options)} options in {parser_source.name}; regex is wrong")
+
+    body = plain[plain.index(".SH OPTIONS"):]
+    undocumented = [option for option in options if option not in body]
+    require(not undocumented, f"manual page does not document {len(undocumented)} option(s): {undocumented}")
+
+    # help2man generates the page by RUNNING the binary, so the build
+    # machine's environment reaches a file we then publish. These two options
+    # print their current value as their default, so a builder with the keys
+    # exported would bake a live credential into the package.
+    for option in ("--voice-api-key", "--honeycomb-api-key"):
+        match = re.search(re.escape(option) + r".{0,400}?\[default:(.*?)\]", body, re.DOTALL)
+        require(match is not None, f"{option} has no documented default, so it cannot be checked for a leak")
+        assert match is not None
+        default = match.group(1).strip()
+        require(
+            default in ('""', "''"),
+            f"{option} documents a non-empty default ({default!r}) -- a credential from the build "
+            f"environment has leaked into the manual page",
+        )
+
+    print(f"PASS: manual page documents all {len(options)} options and leaks no credentials")
 
 
 def main() -> int:
@@ -42,6 +111,8 @@ def main() -> int:
         notices = root / "usr/share/doc/creature-server"
         require((notices / "uWebSockets.LICENSE").is_file(), "uWebSockets license notice is missing")
         require((notices / "uSockets.LICENSE").is_file(), "uSockets license notice is missing")
+
+        check_manual_page(root)
 
         links = subprocess.run(
             ["ldd", str(executable)], check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT

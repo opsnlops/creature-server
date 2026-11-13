@@ -792,6 +792,88 @@ install(TARGETS creature-server
         DESTINATION "usr/bin"
 )
 
+#
+# The manual page.
+#
+# Debian Policy 12.1 is blunt about this: "If no manual page is available,
+# this is considered as a bug." The fleet packaging policy goes further and
+# wants the page to cover every command line option AND how to configure the
+# program on the filesystem.
+#
+# So it is built in two halves:
+#
+#   - The OPTIONS half is GENERATED from --help by help2man, which means it
+#     cannot drift from the binary. There are 36 options; a hand-maintained
+#     list would be wrong within a release or two.
+#   - The filesystem half (SERVICE, CONFIGURATION, FILES, EXAMPLES) is
+#     hand-written in docs/man/creature-server.8.h2m and spliced in with
+#     --include, because --help knows nothing about /etc or systemd.
+#
+# Linux only. The page ships inside the .deb, and generating it means RUNNING
+# the binary we just built, so it belongs on the platform we package for. A
+# macOS dev build skips it entirely and is unaffected.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+
+    # REQUIRED: if we are building on Linux we are building something that will
+    # be packaged, and a package without a manual page is the bug Policy
+    # describes. Better to fail configure than to ship one silently.
+    find_program(HELP2MAN_EXECUTABLE help2man REQUIRED)
+
+    set(manPageInclude "${CMAKE_CURRENT_SOURCE_DIR}/docs/man/creature-server.8.h2m")
+    set(manPage "${CMAKE_CURRENT_BINARY_DIR}/creature-server.8")
+    set(manPageGz "${CMAKE_CURRENT_BINARY_DIR}/creature-server.8.gz")
+
+    add_custom_command(
+            OUTPUT ${manPageGz}
+
+            # help2man works by RUNNING the binary, so this build machine's
+            # environment leaks straight into a file we then ship.
+            # --voice-api-key and --honeycomb-api-key print their current value
+            # as the default, so a builder with those exported would bake a
+            # live secret into the package. MONGO_URI would pin one host's
+            # database into it. Scrub all three.
+            COMMAND ${CMAKE_COMMAND} -E env
+                        --unset=VOICE_API_KEY
+                        --unset=HONEYCOMB_API_KEY
+                        --unset=MONGO_URI
+                    ${HELP2MAN_EXECUTABLE}
+                        --section=8
+                        --no-info
+                        --name "the server that runs April's Creature Workshop"
+                        --version-string=${PROJECT_VERSION}
+                        --include=${manPageInclude}
+                        --output=${manPage}
+                        $<TARGET_FILE:creature-server>
+
+            # argparse heads its option list "Optional arguments:", and
+            # help2man files any line ending in a colon as a .SS subsection --
+            # so without this the options land as a subsection of DESCRIPTION
+            # and the page has no OPTIONS section at all. Promote it.
+            #
+            # If argparse ever changes that wording this rewrite stops
+            # matching, which is why the package gate in
+            # tests/transport/debian_package_smoke_test.py asserts .SH OPTIONS
+            # is present: the build fails loudly rather than shipping a page
+            # whose options are buried.
+            COMMAND sed -i -E "s/^\\.SS \"?Optional arguments:?\"?$/.SH OPTIONS/" ${manPage}
+
+            # Policy 12.1 requires gzip -9. The -n keeps the timestamp out for
+            # reproducibility, and -k keeps the uncompressed page around so the
+            # test can read it without unpacking anything.
+            COMMAND gzip -9 -n -k -f ${manPage}
+
+            DEPENDS creature-server ${manPageInclude}
+            COMMENT "Generating creature-server.8 from --help with help2man"
+            VERBATIM)
+
+    add_custom_target(creature-server-manpage ALL DEPENDS ${manPageGz})
+
+    install(FILES ${manPageGz}
+            DESTINATION usr/share/man/man8
+            COMPONENT creature-server)
+
+endif()
+
 endif() # EXISTS src/server/main.cpp
 
 #

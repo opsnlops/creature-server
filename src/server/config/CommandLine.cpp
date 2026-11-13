@@ -84,9 +84,14 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
         std::exit(1);
     }
     const auto configFile = fileResult.getValue().value();
-    if (!configFile.sourcePath().empty()) {
-        info("reading configuration from {}", configFile.sourcePath());
-    }
+
+    // Deliberately NOT logged yet. Our logger writes to stdout, and this runs
+    // before parse_args() -- so on a host that has a config file, anything
+    // logged here lands in the output of --help. help2man builds the manual
+    // page from exactly that output, which would bake a line about this
+    // machine's config file into the shipped page. Logged after parsing
+    // instead, below.
+    const std::string configFileSource = configFile.sourcePath();
 
     argparse::ArgumentParser program("creature-server", getVersion());
 
@@ -335,6 +340,11 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     if (program.get<bool>("--list-network-devices")) {
         listNetworkDevices();
         std::exit(0);
+    }
+
+    // Safe to log now: --help and the device listings have already exited.
+    if (!configFileSource.empty()) {
+        info("reading configuration from {}", configFileSource);
     }
 
     debug("Parsing the command line options");
