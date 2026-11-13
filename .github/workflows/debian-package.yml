@@ -47,6 +47,15 @@ jobs:
       - name: Copy Package
         run: mkdir ${{github.workspace}}/package/ && docker cp temp-container:/package/ ${{github.workspace}}/
 
+      # Report-only, by April's ruling (2026-11-12): print what lintian finds
+      # and raise a ::warning::, but never fail the build. A gate switched on
+      # before anyone has read the output is a gate that gets disabled within a
+      # day. Per-tag fix-versus-override decisions are hers, and turning this
+      # into a real gate is a later, separate choice. The script runs lintian
+      # inside debian:trixie, because this runner is Ubuntu. See issue #266.
+      - name: Lintian (report only)
+        run: ${{github.workspace}}/scripts/report_lintian.sh ${{github.workspace}}/package
+
       - name: Save artifact
         uses: actions/upload-artifact@v7
         with:
