@@ -49,6 +49,29 @@ External dependencies are fetched automatically via FetchContent:
 - nlohmann/json for JSON handling
 - Google Test for unit testing
 
+One dependency is *not* fetched and has to be present on the machine:
+
+- **help2man**, on Linux only, to generate the manual page. `find_program(...
+  REQUIRED)` means a Linux configure fails without it; `apt install help2man`.
+  macOS builds skip the manual page entirely and need nothing.
+
+The manual page is built in two halves, because Debian Policy 12.1 requires one
+and the fleet packaging policy requires it to cover both the options and the
+on-disk configuration:
+
+- the **OPTIONS** section is generated from `--help` by help2man, so it cannot
+  drift from the 36 options the parser actually defines
+- **SERVICE / CONFIGURATION / FILES / EXAMPLES** are hand-written in
+  `docs/man/creature-server.8.h2m` and spliced in with `--include`
+
+Two things to know if you touch it. help2man works by *running* the binary, so
+nothing may be printed to stdout before `parse_args()` — our logger writes to
+stdout, so a log line there lands in the shipped page. And the build machine's
+environment reaches the page through argparse's printed defaults, which is why
+generation scrubs `VOICE_API_KEY`, `HONEYCOMB_API_KEY` and `MONGO_URI`: without
+that, a builder with those exported would publish a live credential inside the
+.deb. The package gate asserts both key options still document an empty default.
+
 ## Architecture
 
 ### Core Components

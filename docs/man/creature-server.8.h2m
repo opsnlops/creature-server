@@ -1,0 +1,148 @@
+[NAME]
+creature-server \- the server that runs April's Creature Workshop
+
+[DESCRIPTION]
+.B creature-server
+is the brain of the show. It serves the REST and WebSocket API the Creature
+Console and Creature World talk to, runs the 1 ms event loop that schedules
+everything in real time, sends DMX/E1.31 to each creature, streams RTP/Opus
+audio to the room, renders dialog through ElevenLabs, and keeps animations and
+playlists in MongoDB.
+.PP
+It is normally started by systemd rather than by hand; see
+.B SERVICE
+below. The options are listed in
+.B OPTIONS
+and may also be supplied through the configuration file or the environment,
+as described in
+.BR CONFIGURATION .
+
+[SERVICE]
+Two units ship with the package, for the two deployments of the same binary.
+Only the one you enable runs, so the other is inert.
+.TP
+.B creature-server.service
+The mainstage installation.
+.TP
+.B creature-server-travel.service
+The travel rig, which plays audio locally rather than over RTP.
+.PP
+Enable and start the one you want:
+.PP
+.nf
+.RS
+systemctl enable --now creature-server.service
+.RE
+.fi
+.PP
+Both units are installed to
+.I /usr/lib/systemd/system
+and are not configuration files. Because
+.I /etc/systemd/system
+takes precedence over that directory, local changes belong in a drop\-in rather
+than in an edited copy of the unit:
+.PP
+.nf
+.RS
+systemctl edit creature-server.service
+.RE
+.fi
+
+[CONFIGURATION]
+Settings are resolved in three layers, each overriding the one before it:
+.PP
+.RS
+configuration file < environment < command line
+.RE
+.PP
+So a flag always wins, and the file is only the floor. The file is read before
+the command line is parsed, because it supplies the defaults the parser falls
+back on.
+.PP
+The configuration file is JSON. An
+.B unknown key is a startup error
+rather than something quietly ignored, which is deliberate: a typo in a key
+name should stop the server, not silently change nothing. Keys beginning with
+an underscore are treated as comments and ignored, so you can annotate the
+file.
+.PP
+Secrets do not belong in the configuration file or in a unit file, both of
+which are world\-readable. They belong in the
+.B EnvironmentFile
+described under
+.BR FILES ,
+which systemd reads as root before dropping privileges, so it can be mode 0600
+and owned by root even though the service itself does not run as root.
+
+[FILES]
+.TP
+.I /etc/creature/server.json
+The main configuration file, shipped by the package and registered as a
+conffile, so your edits survive an upgrade. Override the location with
+.BR \-\-config .
+.TP
+.I /etc/default/creature-server
+Environment file read by both systemd units. This is where
+.B VOICE_API_KEY
+and
+.B HONEYCOMB_API_KEY
+go. Mode 0600, owned by root.
+.TP
+.I /usr/lib/systemd/system/creature-server.service
+The mainstage service unit. See
+.B SERVICE
+above.
+.TP
+.I /usr/lib/systemd/system/creature-server-travel.service
+The travel service unit.
+.TP
+.I /var/cache/creature-server
+Regenerable cached data, owned by the
+.B creature-server
+system user the package creates. Safe to delete; it will be rebuilt.
+.TP
+.I sounds/
+Sound files, relative to the working directory unless
+.B \-\-sounds-location
+says otherwise. The Opus packet cache lives in a hidden directory inside it
+unless
+.B \-\-audio-cache-dir
+points elsewhere \(em worth doing when the sounds live on slow or backed\-up
+network storage.
+
+[EXAMPLES]
+Ask the running binary what audio and network devices it can see, which is the
+usual first step when configuring a new host:
+.PP
+.nf
+.RS
+creature-server \-\-list-sound-devices
+creature-server \-\-list-network-devices
+.RE
+.fi
+.PP
+Run against a specific configuration file, for a second instance or a test:
+.PP
+.nf
+.RS
+creature-server \-\-config /etc/creature/server-test.json
+.RE
+.fi
+.PP
+Run the travel configuration by hand, playing audio out of the local sound
+card instead of over RTP:
+.PP
+.nf
+.RS
+creature-server \-\-travel-mode \-\-local-audio \-\-network-device eth0
+.RE
+.fi
+
+[SEE ALSO]
+.BR systemctl (1),
+.BR systemd.service (5),
+.BR journalctl (1)
+.PP
+The server's own API documentation is served at
+.I /api/v1/openapi.json
+once it is running.
