@@ -1,8 +1,11 @@
 #include "Storage.h"
 
 #include <fstream>
+#include <mutex>
 #include <system_error>
 #include <utility>
+
+#include <unistd.h> // getpid, for the root writability probe
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -27,13 +30,95 @@ namespace creatures::storage {
 
 namespace {
 
-// Subdir names under the system temp root. Mirror what JobWorker.cpp +
-// DialogCache.cpp had inline before this facade existed — keeping the same
-// directory names means existing TTL crons + in-flight files keep working
-// across the cutover.
-constexpr const char *kAdHocSubdir = "creature-adhoc";
-constexpr const char *kJobScratchSubdir = "creature-lipsync";
-constexpr const char *kGenerationCacheSubdir = "creature-adhoc/dialog-cache";
+// Subdir names under the ad-hoc cache root (issue #271). They used to carry a
+// "creature-" prefix because they sat directly in the system temp directory
+// alongside everyone else's files; under /var/cache/creature-server the prefix
+// would just repeat the parent.
+constexpr const char *kAdHocSubdir = "adhoc";
+constexpr const char *kJobScratchSubdir = "scratch";
+constexpr const char *kGenerationCacheSubdir = "dialog-cache";
+
+// What these buckets were called under the system temp directory before #271.
+// Read, never written: an ad-hoc sound_file is stored ABSOLUTE, so rows written
+// before the upgrade still point at /tmp/creature-adhoc/... until the ad-hoc
+// collection's 12 hour TTL expires them. See resolveSoundPath below.
+constexpr const char *kLegacyAdHocDirName = "creature-adhoc";
+
+// Can we actually write here? `create_directories` succeeding is not the same
+// answer: /var/cache exists on every host, and a unit running as a user that
+// is not in the creature-server group would otherwise discover the problem one
+// failed render at a time. Probe name carries the pid, because two servers
+// sharing a root must not race on it (issue #165).
+bool rootIsWritable(const std::filesystem::path &dir) {
+    const auto probe = dir / fmt::format(".write-probe.{}", static_cast<long>(::getpid()));
+    std::error_code ec;
+    {
+        std::ofstream out(probe, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            return false;
+        }
+        out << 'x';
+        out.flush();
+        if (!out) {
+            std::filesystem::remove(probe, ec);
+            return false;
+        }
+    }
+    std::filesystem::remove(probe, ec);
+    return true;
+}
+
+// Where the ad-hoc pipeline's three buckets live.
+//
+// Memoized on the CONFIGURED value rather than resolved once and for all: in
+// production the configuration never changes after startup, so this is one
+// resolution and one warning for the life of the process, which is the point
+// -- every bucket has to agree on the answer, because a root that moved under
+// a running session would strand the files it had already written and the
+// sweeper would not find them either. Keying on the configured string is what
+// keeps it testable, since a test that points config somewhere else gets an
+// answer rather than whatever the first test latched.
+std::filesystem::path adHocCacheRoot() {
+    static std::mutex resolveMutex;
+    static std::string lastConfigured;
+    static std::filesystem::path lastResolved;
+    static bool haveResolved = false;
+
+    auto configured = creatures::config ? creatures::config->getAdHocCacheDir() : std::string(DEFAULT_ADHOC_CACHE_DIR);
+
+    std::lock_guard lock(resolveMutex);
+    if (haveResolved && configured == lastConfigured) {
+        return lastResolved;
+    }
+
+    const auto resolve = [&configured]() -> std::filesystem::path {
+        std::error_code tempEc;
+        if (configured.empty()) {
+            return std::filesystem::temp_directory_path(tempEc);
+        }
+
+        const std::filesystem::path candidate(configured);
+        std::error_code ec;
+        std::filesystem::create_directories(candidate, ec);
+        if (!ec && rootIsWritable(candidate)) {
+            return candidate;
+        }
+
+        // Loud, and with the reason. A quiet fall back to the temp directory
+        // is exactly how issue #271 happened: /tmp on the main server is a
+        // 31 GB tmpfs, so landing there spends RAM the show needs.
+        const auto fallback = std::filesystem::temp_directory_path(tempEc);
+        warn("storage: cannot use ad-hoc cache root {} ({}); falling back to {}. On a packaged install this means "
+             "/var/cache/creature-server is missing or not writable by this unit's User= (issue #271)",
+             candidate.string(), ec ? ec.message() : std::string("not writable"), fallback.string());
+        return fallback;
+    };
+
+    lastResolved = resolve();
+    lastConfigured = configured;
+    haveResolved = true;
+    return lastResolved;
+}
 
 // Compute the root path for a persistence bucket WITHOUT creating it.
 std::filesystem::path bareRoot(Persistence persistence) {
@@ -41,11 +126,11 @@ std::filesystem::path bareRoot(Persistence persistence) {
     case Persistence::Permanent:
         return std::filesystem::path(creatures::config ? creatures::config->getSoundFileLocation() : std::string{});
     case Persistence::AdHoc:
-        return std::filesystem::temp_directory_path() / kAdHocSubdir;
+        return adHocCacheRoot() / kAdHocSubdir;
     case Persistence::JobScratch:
-        return std::filesystem::temp_directory_path() / kJobScratchSubdir;
+        return adHocCacheRoot() / kJobScratchSubdir;
     case Persistence::GenerationCache:
-        return std::filesystem::temp_directory_path() / kGenerationCacheSubdir;
+        return adHocCacheRoot() / kGenerationCacheSubdir;
     }
     return {};
 }
@@ -349,13 +434,57 @@ void broadcastCacheInvalidation(CacheType type) {
     scheduleInvalidation(type);
 }
 
+namespace {
+
+// Ad-hoc renders are stored ABSOLUTE (the StoragePath convention: only
+// Permanent is relative), so every row written before #271 points into
+// /tmp/creature-adhoc/... After the move those files are under
+// <adhoc-cache-root>/adhoc/. Rather than rewrite the rows -- they expire from
+// Mongo in 12 hours on their own -- re-root the path when the original is gone.
+//
+// Only ever a fallback: a path that still exists is returned untouched, so a
+// host that fell back to the temp directory anyway keeps working.
+std::filesystem::path remapLegacyAdHocPath(const std::filesystem::path &absolute) {
+    std::error_code ec;
+    if (std::filesystem::exists(absolute, ec) && !ec) {
+        return absolute;
+    }
+
+    // Find the legacy directory name and keep everything below it.
+    std::filesystem::path tail;
+    bool found = false;
+    for (const auto &part : absolute) {
+        if (found) {
+            tail /= part;
+        } else if (part == kLegacyAdHocDirName) {
+            found = true;
+        }
+    }
+    if (!found || tail.empty()) {
+        return absolute;
+    }
+
+    auto rootResult = root(Persistence::AdHoc);
+    if (!rootResult.isSuccess()) {
+        return absolute;
+    }
+    auto candidate = rootResult.getValue().value() / tail;
+    if (std::filesystem::exists(candidate, ec) && !ec) {
+        debug("storage: re-rooted pre-#271 ad-hoc path {} to {}", absolute.string(), candidate.string());
+        return candidate;
+    }
+    return absolute;
+}
+
+} // namespace
+
 std::filesystem::path resolveSoundPath(const std::string &stored) {
     if (stored.empty()) {
         return {};
     }
     std::filesystem::path p(stored);
     if (p.is_absolute()) {
-        return p;
+        return remapLegacyAdHocPath(p);
     }
     // Relative paths resolve under the Permanent root by convention. If config
     // isn't initialized (test contexts) we fall back to the raw relative path

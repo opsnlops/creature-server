@@ -72,6 +72,17 @@ class Configuration {
      */
     std::string getAudioCacheDir() const;
 
+    /**
+     * @return Where the ad-hoc pipeline keeps its working files
+     *
+     * The `AdHoc`, `GenerationCache` and `JobScratch` storage buckets live
+     * under here. Defaults to /var/cache/creature-server, which is the FHS
+     * home for regenerable application data; `storage::root()` falls back to
+     * the system temp directory (loudly) if it cannot be created, so a dev box
+     * without the packaged directory still works (issue #271).
+     */
+    std::string getAdHocCacheDir() const;
+
     /** @return Current audio mode (local playback or RTP streaming) */
     AudioMode getAudioMode() const;
 
@@ -170,6 +181,9 @@ class Configuration {
     /** @param _audioCacheDir Directory for the Opus cache, or empty for the default */
     void setAudioCacheDir(std::string _audioCacheDir);
 
+    /** @param _adHocCacheDir Where the ad-hoc pipeline keeps its working files */
+    void setAdHocCacheDir(std::string _adHocCacheDir);
+
     /** @param _networkDevice Network interface device ID */
     void setNetworkDevice(uint16_t _networkDevice);
 
@@ -257,6 +271,9 @@ class Configuration {
     /** Directory path where sound files are stored */
     std::string soundFileLocation = DEFAULT_SOUND_FILE_LOCATION;
     std::string audioCacheDir = DEFAULT_AUDIO_CACHE_DIR;
+
+    /** Root of the ad-hoc pipeline's working files (issue #271) */
+    std::string adHocCacheDir = DEFAULT_ADHOC_CACHE_DIR;
 
     /** Audio mode for playback */
     /** Workshop/default mode is RTP; local output is an explicit or travel-mode opt-in. */

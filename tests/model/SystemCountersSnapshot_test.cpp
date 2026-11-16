@@ -15,9 +15,10 @@ TEST(SystemCountersSnapshotTest, PreservesEveryCounterWireKey) {
     // Negative on purpose: every other counter is unsigned, and the PHC offset
     // is the one field that legitimately goes below zero.
     counters.setPhcOffset(true, -6400);
+    counters.setAdHocCacheBytes(true, 4096);
 
     const auto json = systemCountersSnapshotToJson(counters.snapshot());
-    EXPECT_EQ(json.size(), 45);
+    EXPECT_EQ(json.size(), 47);
     EXPECT_EQ(json.at("totalFrames"), 1);
     EXPECT_EQ(json.at("rtpSendFailures"), 1);
     EXPECT_EQ(json.at("websocketMessagesSent"), 1);
@@ -28,6 +29,10 @@ TEST(SystemCountersSnapshotTest, PreservesEveryCounterWireKey) {
     EXPECT_EQ(json.at("httpConnectionsRefused"), 18);
     EXPECT_EQ(json.at("phcOffsetNs"), -6400);
     EXPECT_EQ(json.at("phcOffsetAvailable"), true);
+    // Paired scalar + flag rather than a nullable number, for the same reason
+    // phcOffsetNs is (#261): the frozen contract records value types.
+    EXPECT_EQ(json.at("adHocCacheBytes"), 4096);
+    EXPECT_EQ(json.at("adHocCacheBytesAvailable"), true);
 }
 
 TEST(SystemCountersSnapshotTest, ReportsNoPhcReadingRatherThanAnOffsetOfZero) {

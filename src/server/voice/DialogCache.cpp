@@ -56,17 +56,23 @@ Result<void> validateCacheAddress(const std::string &cacheKey, const std::string
 
 /// Root of the on-disk dialog cache. Delegated to the storage facade
 /// (Persistence::GenerationCache) so there's one place in the codebase that
-/// owns "where do bytes live?" (issue #11). The existing cron sweep keeps
-/// working — it cleans by directory, not by who wrote it.
+/// owns "where do bytes live?" (issue #11).
+///
+/// Bounded by the periodic ad-hoc sweep (util::CacheMaintenance over
+/// AdHocStore, issue #271), which treats each <cacheKey>/ directory as its own
+/// expirable entry. Earlier comments here described "the existing cron sweep":
+/// there was never a cron, only a startup-only pass that judged this whole
+/// tree by its root's mtime and therefore never reclaimed any of it.
 std::filesystem::path dialogCacheRoot() {
     auto r = creatures::storage::root(creatures::storage::Persistence::GenerationCache);
     if (r.isSuccess()) {
         return r.getValue().value();
     }
-    // Fallback to the path the facade would have computed if root() failed
-    // to mkdir. Same directory the cron sweeps, so loaders still find existing
-    // files even in this degraded state.
-    return std::filesystem::temp_directory_path() / "creature-adhoc" / "dialog-cache";
+    // root() only fails when it cannot mkdir, having already fallen back to
+    // the system temp directory. Nothing better to try here, so return the
+    // path it would have used and let the open fail where it can be reported.
+    warn("DialogCache: storage::root(GenerationCache) failed: {}", r.getError()->getMessage());
+    return std::filesystem::temp_directory_path() / "dialog-cache";
 }
 
 /// Root of the DURABLE store for accepted takes (issue #146).

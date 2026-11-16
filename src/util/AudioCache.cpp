@@ -619,7 +619,7 @@ Result<std::string> AudioCache::peekCachedSourcePath(const std::string &cacheCha
     }
 }
 
-AudioCache::PrunePolicy AudioCache::PrunePolicy::forHost(bool travelMode) {
+AudioCache::PrunePolicy AudioCache::prunePolicyForHost(bool travelMode) {
     PrunePolicy policy;
 
     const auto idleDays = creatures::environmentToUnsignedLongLong(AUDIO_CACHE_MAX_IDLE_DAYS_ENV,
@@ -633,13 +633,6 @@ AudioCache::PrunePolicy AudioCache::PrunePolicy::forHost(bool travelMode) {
         AUDIO_CACHE_MAX_BYTES_ENV, travelMode ? DEFAULT_AUDIO_CACHE_MAX_BYTES_TRAVEL : DEFAULT_AUDIO_CACHE_MAX_BYTES));
 
     return policy;
-}
-
-std::string AudioCache::PrunePolicy::describe() const {
-    const auto idle =
-        maxIdleAge ? fmt::format("{} day(s)", maxIdleAge->count() / (24 * 3600)) : std::string("disabled");
-    const auto cap = maxTotalBytes > 0 ? fmt::format("{} MB", maxTotalBytes / (1024 * 1024)) : std::string("unbounded");
-    return fmt::format("idle eviction {}, size cap {}", idle, cap);
 }
 
 void AudioCache::markEntryRead(const std::string &cacheDirectory) const {
@@ -699,83 +692,61 @@ Result<AudioCache::PruneReport> AudioCache::prune(const PrunePolicy &policy, boo
         }
     };
 
-    // Best-effort size accounting: a directory's size is the sum of its files.
-    auto directorySize = [](const std::filesystem::path &dir) -> std::uintmax_t {
-        std::uintmax_t bytes = 0;
-        std::error_code ec;
-        for (const auto &entry : std::filesystem::recursive_directory_iterator(dir, ec)) {
-            if (ec) {
-                break;
-            }
-            std::error_code sizeError;
-            if (entry.is_regular_file(sizeError) && !sizeError) {
-                bytes += entry.file_size(sizeError);
-            }
-        }
-        return bytes;
-    };
-
     // A complete entry whose source is still there: unusable-tier pruning
-    // leaves it alone, and it becomes a candidate for the idle and size tiers.
-    // The last-read time is SAMPLED here, before any sorting, which is why
-    // every eviction re-reads it under the entry's lock before deleting.
-    struct Candidate {
-        std::filesystem::path directory;
-        std::filesystem::file_time_type lastRead;
-        std::uintmax_t bytes{0};
-        /// The scan already failed to take this entry's lock, so an eviction
-        /// pass must not pay the acquisition timeout a second time for it.
-        bool lockUnavailable{false};
-    };
+    // leaves it alone, and it becomes a candidate for the idle and size tiers
+    // in util::applyPrunePolicyTiers. The last-read time is SAMPLED here,
+    // before any sorting, which is why every eviction re-reads it under the
+    // entry's lock before deleting.
+    using Candidate = creatures::util::PruneCandidate;
     std::vector<Candidate> survivors;
 
     // Delete one usable entry, under the same guards clearCache uses. Returns
     // false when the entry was left alone, which is always the safe answer:
     // removing a cache entry a live session is reading is an audible failure
     // mid-show, and the only cost of keeping it is that the next sweep retries.
-    auto evict = [&](const Candidate &target, const char *reason) -> bool {
+    creatures::util::PruneEvictFn evict = [&](const Candidate &target, const char *reason) -> bool {
         if (!dryRun && target.lockUnavailable) {
             ++report.skippedEntries;
             return false;
         }
 
-        const auto keyMutex = getKeyMutexForCacheDir(target.directory.string());
+        const auto keyMutex = getKeyMutexForCacheDir(target.path.string());
         std::lock_guard lock(*keyMutex);
 
         if (!dryRun) {
             // Exclusive against other processes sharing this cache. The lock
             // file is a sibling of the directory, so remove_all cannot unlink
             // the inode we hold it on (issue #93).
-            ScopedFileLock entryLock(target.directory.string() + ".lock", /*exclusive=*/true);
+            ScopedFileLock entryLock(target.path.string() + ".lock", /*exclusive=*/true);
             if (!entryLock.locked()) {
                 ++report.skippedEntries;
-                debug("Audio cache prune skipping {}: entry is locked by another process", target.directory.string());
+                debug("Audio cache prune skipping {}: entry is locked by another process", target.path.string());
                 return false;
             }
 
             // The sample was taken before sorting, so a play in between makes
             // this entry live again. Re-read it under the lock and back out.
-            const auto fresh = lastReadTime(target.directory);
-            if (!fresh || *fresh > target.lastRead) {
+            const auto fresh = lastReadTime(target.path);
+            if (!fresh || *fresh > target.lastUsed) {
                 ++report.skippedEntries;
-                debug("Audio cache prune skipping {}: read since it was sampled", target.directory.string());
+                debug("Audio cache prune skipping {}: read since it was sampled", target.path.string());
                 return false;
             }
 
             std::error_code removeError;
-            std::filesystem::remove_all(target.directory, removeError);
+            std::filesystem::remove_all(target.path, removeError);
             if (removeError) {
                 ++report.skippedEntries;
-                warn("Audio cache prune could not remove {}: {}", target.directory.string(), removeError.message());
+                warn("Audio cache prune could not remove {}: {}", target.path.string(), removeError.message());
                 return false;
             }
             // The sibling lock file goes with it.
-            std::filesystem::remove(target.directory.string() + ".lock", removeError);
+            std::filesystem::remove(target.path.string() + ".lock", removeError);
         }
 
         report.bytesReclaimed += target.bytes;
         report.bytesRetained -= std::min(report.bytesRetained, target.bytes);
-        note(fmt::format("{} ({})", target.directory.string(), reason));
+        note(fmt::format("{} ({})", target.path.string(), reason));
         return true;
     };
 
@@ -908,7 +879,7 @@ Result<AudioCache::PruneReport> AudioCache::prune(const PrunePolicy &policy, boo
                 const auto marker = path / CACHE_COMPLETE_MARKER;
                 if (!std::filesystem::is_regular_file(marker, ec) || ec) {
                     ++report.incompleteEntries;
-                    report.bytesReclaimed += directorySize(path);
+                    report.bytesReclaimed += creatures::util::directorySizeBytes(path);
                     note(path.string());
                     if (!dryRun) {
                         std::error_code removeError;
@@ -925,7 +896,7 @@ Result<AudioCache::PruneReport> AudioCache::prune(const PrunePolicy &policy, boo
                 if (!sourceResult.isSuccess()) {
                     // Unreadable metadata is itself unusable cache.
                     ++report.incompleteEntries;
-                    report.bytesReclaimed += directorySize(path);
+                    report.bytesReclaimed += creatures::util::directorySizeBytes(path);
                     note(path.string());
                     if (!dryRun) {
                         std::error_code removeError;
@@ -949,7 +920,7 @@ Result<AudioCache::PruneReport> AudioCache::prune(const PrunePolicy &policy, boo
                 }
                 if (!sourceExists) {
                     ++report.orphanedEntries;
-                    report.bytesReclaimed += directorySize(path);
+                    report.bytesReclaimed += creatures::util::directorySizeBytes(path);
                     note(fmt::format("{} (source gone: {})", path.string(), sourcePath));
                     if (!dryRun) {
                         std::error_code removeError;
@@ -964,7 +935,7 @@ Result<AudioCache::PruneReport> AudioCache::prune(const PrunePolicy &policy, boo
                 // otherwise. Measuring it here is what makes bytes_retained
                 // (and therefore the size cap) possible: ~18 stats per entry,
                 // which is why this only ever runs on a background thread.
-                const auto entryBytes = directorySize(path);
+                const auto entryBytes = creatures::util::directorySizeBytes(path);
                 report.bytesRetained += entryBytes;
                 if (auto when = lastReadTime(path)) {
                     survivors.push_back(Candidate{path, *when, entryBytes, !dryRun && !mayDelete});
@@ -977,51 +948,12 @@ Result<AudioCache::PruneReport> AudioCache::prune(const PrunePolicy &policy, boo
             }
         }
 
-        // --- Tier 2: idle eviction (issue #225) -------------------------------
-        // Usable, but nothing has read it in longer than the policy allows.
-        // Deleting it costs a re-encode on the next play, which is exactly what
-        // happens the first time any sound plays, so the only real risk is
-        // doing this to something still in rotation — hence a conservative
-        // default measured in months, not days. See config.h.
-        if (policy.maxIdleAge && !report.aborted) {
-            const auto cutoff = std::filesystem::file_time_type::clock::now() - *policy.maxIdleAge;
-            std::vector<Candidate> retained;
-            retained.reserve(survivors.size());
-            for (const auto &candidate : survivors) {
-                if (candidate.lastRead < cutoff && evict(candidate, "idle")) {
-                    ++report.idleEntries;
-                    continue;
-                }
-                retained.push_back(candidate);
-            }
-            survivors.swap(retained);
-        }
-
-        // --- Tier 3: size cap, least-recently-read first (issue #225) ---------
-        // The tier that actually BOUNDS the cache. Idle eviction clears the
-        // long tail but cannot bound a large, regularly-played library, and the
-        // library grows on its own now that music is generated continuously
-        // (#202). Engaging this tier means the library outgrew its budget, so
-        // it is loud about it.
-        if (policy.maxTotalBytes > 0 && !report.aborted && report.bytesRetained > policy.maxTotalBytes) {
-            warn("Audio cache holds {} bytes, over its {} byte ceiling; evicting least-recently-read entries "
-                 "(issue #225)",
-                 report.bytesRetained, policy.maxTotalBytes);
-            std::sort(survivors.begin(), survivors.end(),
-                      [](const Candidate &left, const Candidate &right) { return left.lastRead < right.lastRead; });
-            for (const auto &candidate : survivors) {
-                if (report.bytesRetained <= policy.maxTotalBytes) {
-                    break;
-                }
-                if (evict(candidate, "over size cap")) {
-                    ++report.oversizeEntries;
-                }
-            }
-            if (report.bytesRetained > policy.maxTotalBytes) {
-                warn("Audio cache is still {} bytes after pruning: every remaining entry is live or locked",
-                     report.bytesRetained);
-            }
-        }
+        // --- The policy tiers: idle, then size cap (issues #225, #271) --------
+        // Shared with the ad-hoc store's sweeper. Everything above this line is
+        // what only THIS cache can judge -- orphaned sources, crashed saves,
+        // abandoned temporaries. Everything below was the same decision in both
+        // places, so it lives in util/CachePrune.cpp now.
+        creatures::util::applyPrunePolicyTiers(policy, survivors, report, evict, "Audio cache");
 
         if (span) {
             span->setAttribute("cache.prune.entries_scanned", static_cast<int64_t>(report.entriesScanned));

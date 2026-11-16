@@ -25,7 +25,16 @@
     "like [sighs] over the text-to-dialogue socket and reaches first audio in",
     "about 140 ms, which beats the fast models. Setting a fast model such as",
     "eleven_flash_v2_5 falls back to the text-to-speech socket, which is the",
-    "escape hatch if v4 ever regresses."
+    "escape hatch if v4 ever regresses.",
+    "",
+    "adhoc_cache_dir is where the ad-hoc pipeline keeps its working files: the",
+    "renders themselves, the ElevenLabs generation cache and per-job scratch.",
+    "It used to be the system temp directory, which on this host is a 31 GB",
+    "tmpfs -- so an afternoon of 17-channel renders spent RAM until the machine",
+    "wedged (issue #271). /var/cache is the FHS home for data the server can",
+    "always regenerate. The server creates the subdirectories itself and a",
+    "periodic sweep bounds them; the value here matches the compiled-in default",
+    "and is spelled out so it is visible to whoever reads this file next."
   ],
 
   "mongodb_uri": "mongodb://127.0.0.1/?serverSelectionTimeoutMS=2000",
@@ -33,6 +42,8 @@
   "sounds_location": "/mnt/creatures/sounds",
 
   "audio_cache_dir": "/var/cache/creature-server",
+
+  "adhoc_cache_dir": "/var/cache/creature-server",
 
   "network_device": "enp5s0f0np0",
 

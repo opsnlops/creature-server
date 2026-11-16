@@ -31,7 +31,6 @@
 #include "Version.h"
 #include "model/PlaylistStatus.h"
 #include "server/animation/SessionManager.h"
-#include "server/audio/AudioCacheMaintenance.h"
 #include "server/audio/LocalAudioPlaybackCoordinator.h"
 #include "server/audio/NativeAudioPlaybackService.h"
 #include "server/audio/SoundPathResolver.h"
@@ -48,6 +47,8 @@
 #include "server/jobs/JobManager.h"
 #include "server/logging/SharedLibraryLogger.h"
 #include "server/network/ServerMdnsRecords.h"
+#include "server/storage/AdHocStore.h"
+#include "util/CacheMaintenance.h"
 
 #include "creature/timesync/TimeSyncMonitor.h"
 #if CREATURE_HAS_AVAHI
@@ -159,7 +160,10 @@ std::shared_ptr<util::AudioCache> audioCache;
 // Background prune that keeps the on-disk Opus cache from growing forever
 // (issue #225). Held globally so the manual debug endpoint can preview against
 // the same policy the automatic sweep applies.
-std::shared_ptr<audio::AudioCacheMaintenance> audioCacheMaintenance;
+std::shared_ptr<util::CacheMaintenance> audioCacheMaintenance;
+
+// The same class, sweeping the ad-hoc pipeline's working files (issue #271).
+std::shared_ptr<util::CacheMaintenance> adHocCacheMaintenance;
 
 // Basename → canonical-path indexes over the two sound stores (issue #94).
 // Request threads look up here instead of walking the tree; Storage marks
@@ -177,57 +181,6 @@ std::shared_ptr<class SessionManager> sessionManager;
 std::shared_ptr<jobs::JobManager> jobManager;
 std::shared_ptr<jobs::JobWorker> jobWorker;
 } // namespace creatures
-
-namespace {
-
-void cleanupAdHocTempDirectory(uint32_t ttlHours) {
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    auto tempRoot = fs::temp_directory_path(ec) / "creature-adhoc";
-    if (ec || !fs::exists(tempRoot, ec)) {
-        return;
-    }
-
-    auto now = std::chrono::system_clock::now();
-    auto cutoff = now - std::chrono::hours(ttlHours);
-
-    for (const auto &entry : fs::directory_iterator(tempRoot, ec)) {
-        if (ec) {
-            warn("Unable to iterate temp directory {}: {}", tempRoot.string(), ec.message());
-            break;
-        }
-        if (!entry.is_directory()) {
-            continue;
-        }
-
-        std::error_code timeEc;
-        auto lastWrite = fs::last_write_time(entry, timeEc);
-        if (timeEc) {
-            warn("Unable to read timestamp for {}: {}", entry.path().string(), timeEc.message());
-            continue;
-        }
-
-#if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L
-        auto lastWriteSys = std::chrono::clock_cast<std::chrono::system_clock>(lastWrite);
-#else
-        auto lastWriteSys = std::chrono::system_clock::time_point(
-            std::chrono::duration_cast<std::chrono::system_clock::duration>(lastWrite.time_since_epoch()));
-#endif
-
-        if (lastWriteSys < cutoff) {
-            std::error_code removeEc;
-            fs::remove_all(entry.path(), removeEc);
-            if (removeEc) {
-                warn("Failed to remove expired ad-hoc temp directory {}: {}", entry.path().string(),
-                     removeEc.message());
-            } else {
-                info("Removed expired ad-hoc temp directory {}", entry.path().string());
-            }
-        }
-    }
-}
-
-} // namespace
 
 // Records which signal was received, so the main loop can log it after
 // returning to a context where spdlog is safe to call (the previous
@@ -325,8 +278,6 @@ int main(const int argc, char **argv) {
         auto error = exchangeIndexResult.getError().value();
         warn("Unable to ensure ad-hoc exchange indexes: {}", error.getMessage());
     }
-    cleanupAdHocTempDirectory(creatures::config->getAdHocAnimationTtlHours());
-
     // RTP mode never probes a local output device. This keeps the normal
     // headless production path independent of ALSA/CoreAudio availability.
     if (creatures::config->getAudioMode() != creatures::Configuration::AudioMode::RTP) {
@@ -521,12 +472,22 @@ int main(const int argc, char **argv) {
         // it grew without bound inside the permanent sound root. The sweep
         // runs on its own thread (never the 1 ms event loop) and its first
         // pass is delayed, so startup never waits on a disk walk.
-        const auto prunePolicy = creatures::util::AudioCache::PrunePolicy::forHost(creatures::config->getTravelMode());
+        const auto prunePolicy = creatures::util::AudioCache::prunePolicyForHost(creatures::config->getTravelMode());
         const auto pruneIntervalHours = creatures::environmentToUnsignedLongLong(
             AUDIO_CACHE_PRUNE_INTERVAL_HOURS_ENV, DEFAULT_AUDIO_CACHE_PRUNE_INTERVAL_HOURS);
-        creatures::audioCacheMaintenance = std::make_shared<creatures::audio::AudioCacheMaintenance>(
-            creatures::audioCache, prunePolicy, std::chrono::seconds(AUDIO_CACHE_PRUNE_STARTUP_DELAY_SECONDS),
-            std::chrono::seconds(pruneIntervalHours * 3600ULL));
+        auto audioCacheForSweep = creatures::audioCache;
+        creatures::audioCacheMaintenance = std::make_shared<creatures::util::CacheMaintenance>(
+            creatures::util::CacheMaintenance::Config{.subject = "Audio cache",
+                                                      .threadName = "AudioCachePrune",
+                                                      .spanName = "AudioCacheMaintenance.sweep",
+                                                      .startupDelay =
+                                                          std::chrono::seconds(AUDIO_CACHE_PRUNE_STARTUP_DELAY_SECONDS),
+                                                      .interval = std::chrono::seconds(pruneIntervalHours * 3600ULL)},
+            prunePolicy,
+            [audioCacheForSweep](const creatures::util::CachePrunePolicy &policy, bool dryRun,
+                                 std::shared_ptr<creatures::OperationSpan> span) {
+                return audioCacheForSweep->prune(policy, dryRun, std::move(span));
+            });
         creatures::audioCacheMaintenance->start();
     } catch (const std::exception &e) {
         error("Failed to initialize audio cache: {}", e.what());
@@ -534,6 +495,52 @@ int main(const int argc, char **argv) {
         creatures::audioCache = nullptr;
         creatures::audioCacheMaintenance = nullptr;
         creatures::rtp::AudioStreamBuffer::setAudioCacheInstance(nullptr);
+    }
+
+    // The ad-hoc pipeline's working files (issue #271). This replaces a
+    // startup-only pass that, on a server which is up for a month at a time,
+    // effectively never ran -- and when it did, could not see a loose
+    // `dialog_*.wav` in the root or anything inside `preview-exports/` and
+    // `dialog-cache/`, because it judged each tree by the tree's own mtime.
+    //
+    // Same thread class as the Opus cache above. Its idle tier is the ad-hoc
+    // animation TTL, so --adhoc-animation-ttl-hours governs the Mongo records
+    // and the files together.
+    {
+        const auto adHocPolicy = creatures::storage::AdHocStore::prunePolicyForHost(
+            creatures::config->getTravelMode(), creatures::config->getAdHocAnimationTtlHours());
+        const auto adHocIntervalHours = creatures::environmentToUnsignedLongLong(
+            ADHOC_CACHE_PRUNE_INTERVAL_HOURS_ENV, DEFAULT_ADHOC_CACHE_PRUNE_INTERVAL_HOURS);
+        creatures::adHocCacheMaintenance = std::make_shared<creatures::util::CacheMaintenance>(
+            creatures::util::CacheMaintenance::Config{.subject = "Ad-hoc store",
+                                                      .threadName = "AdHocPrune",
+                                                      .spanName = "AdHocCacheMaintenance.sweep",
+                                                      .startupDelay =
+                                                          std::chrono::seconds(ADHOC_CACHE_PRUNE_STARTUP_DELAY_SECONDS),
+                                                      .interval = std::chrono::seconds(adHocIntervalHours * 3600ULL)},
+            adHocPolicy,
+            [](const creatures::util::CachePrunePolicy &policy, bool dryRun,
+               std::shared_ptr<creatures::OperationSpan> span) {
+                auto result = creatures::storage::AdHocStore::prune(policy, dryRun, span);
+                // Publish what the sweep left behind, so Honeycomb can alert
+                // before the root fills rather than after. A gauge pushed from
+                // a background poll, like phcOffsetNs (#261) -- nothing walks a
+                // directory on the counter path.
+                if (result.isSuccess() && !dryRun && creatures::metrics) {
+                    creatures::metrics->setAdHocCacheBytes(true, result.getValue()->bytesRetained);
+                }
+                return result;
+            });
+        creatures::adHocCacheMaintenance->start();
+
+        // Where the files actually landed, which is not necessarily what was
+        // configured: storage::root() falls back to the system temp directory
+        // if the configured root cannot be written. Logged unconditionally so
+        // the answer is in the journal before anyone needs it.
+        if (auto adHocRootResult = creatures::storage::root(creatures::storage::Persistence::AdHoc);
+            adHocRootResult.isSuccess()) {
+            info("Ad-hoc working files: {}", adHocRootResult.getValue().value().string());
+        }
     }
 
     // Initialize whisper lip sync engine if configured
@@ -678,6 +685,9 @@ int main(const int argc, char **argv) {
     // between entries, so this never adds to shutdown time.
     if (creatures::audioCacheMaintenance) {
         creatures::audioCacheMaintenance->shutdown();
+    }
+    if (creatures::adHocCacheMaintenance) {
+        creatures::adHocCacheMaintenance->shutdown();
     }
 
     // Stop advertising before the listener goes away, so nothing discovers a

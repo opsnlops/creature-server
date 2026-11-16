@@ -64,6 +64,18 @@ struct SystemCountersSnapshot {
     // running, having caught the flip and then nothing at all (#261).
     int64_t phcOffsetNs = 0;
     bool phcOffsetAvailable = false;
+
+    // How many bytes the ad-hoc pipeline's working files were holding after the
+    // last sweep (issue #271). A gauge, pushed from the sweep thread: nothing
+    // here walks a directory, because this snapshot is taken every 15 seconds
+    // on the counter-send path.
+    //
+    // Scalar plus a validity flag, not a nullable number -- the frozen
+    // transport contract records value TYPES, so a null would record
+    // differently on a machine that had not swept yet (the phcOffsetNs
+    // lesson, #261). False until the first sweep completes.
+    uint64_t adHocCacheBytes = 0;
+    bool adHocCacheBytesAvailable = false;
 };
 
 nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapshot);
@@ -108,6 +120,9 @@ class SystemCounters {
     // so this follows the clock rather than the last flip.
     void setPhcOffset(bool available, int64_t offsetNs);
 
+    /// Pushed from the ad-hoc sweep thread once a pass completes (issue #271).
+    void setAdHocCacheBytes(bool available, uint64_t bytes);
+
     void setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
                                 uint64_t rejected, uint64_t cancelled, uint64_t failed);
     void setLocalAudioPlaybackMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
@@ -137,6 +152,8 @@ class SystemCounters {
     uint64_t getHttpConnectionsRefused();
     int64_t getPhcOffsetNs();
     bool getPhcOffsetAvailable();
+    uint64_t getAdHocCacheBytes();
+    bool getAdHocCacheBytesAvailable();
     uint64_t getRtpAudioLoadersActive();
     uint64_t getRtpAudioLoadsQueued();
     uint64_t getRtpAudioLoadsAccepted();
@@ -187,6 +204,8 @@ class SystemCounters {
     std::atomic<uint64_t> httpConnectionsRefused;
     std::atomic<int64_t> phcOffsetNs;
     std::atomic<bool> phcOffsetAvailable;
+    std::atomic<uint64_t> adHocCacheBytes;
+    std::atomic<bool> adHocCacheBytesAvailable;
     std::atomic<uint64_t> rtpAudioLoadersActive;
     std::atomic<uint64_t> rtpAudioLoadsQueued;
     std::atomic<uint64_t> rtpAudioLoadsAccepted;

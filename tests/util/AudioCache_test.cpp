@@ -759,8 +759,8 @@ TEST_F(AudioCacheTest, PolicyForHostIsTighterInTravelMode) {
     ::unsetenv(AUDIO_CACHE_MAX_IDLE_DAYS_ENV);
     ::unsetenv(AUDIO_CACHE_MAX_BYTES_ENV);
 
-    const auto main = AudioCache::PrunePolicy::forHost(/*travelMode=*/false);
-    const auto travel = AudioCache::PrunePolicy::forHost(/*travelMode=*/true);
+    const auto main = AudioCache::prunePolicyForHost(/*travelMode=*/false);
+    const auto travel = AudioCache::prunePolicyForHost(/*travelMode=*/true);
 
     ASSERT_TRUE(main.maxIdleAge.has_value());
     ASSERT_TRUE(travel.maxIdleAge.has_value());
@@ -772,13 +772,13 @@ TEST_F(AudioCacheTest, PolicyForHostIsTighterInTravelMode) {
 TEST_F(AudioCacheTest, PolicyForHostHonorsEnvironmentOverridesAndZeroDisables) {
     ::setenv(AUDIO_CACHE_MAX_IDLE_DAYS_ENV, "0", 1);
     ::setenv(AUDIO_CACHE_MAX_BYTES_ENV, "0", 1);
-    const auto disabled = AudioCache::PrunePolicy::forHost(/*travelMode=*/false);
+    const auto disabled = AudioCache::prunePolicyForHost(/*travelMode=*/false);
     EXPECT_FALSE(disabled.maxIdleAge.has_value()) << "0 days must disable idle eviction entirely";
     EXPECT_EQ(disabled.maxTotalBytes, 0U) << "0 bytes must mean unbounded, not evict-everything";
 
     ::setenv(AUDIO_CACHE_MAX_IDLE_DAYS_ENV, "7", 1);
     ::setenv(AUDIO_CACHE_MAX_BYTES_ENV, "1048576", 1);
-    const auto overridden = AudioCache::PrunePolicy::forHost(/*travelMode=*/false);
+    const auto overridden = AudioCache::prunePolicyForHost(/*travelMode=*/false);
     ASSERT_TRUE(overridden.maxIdleAge.has_value());
     EXPECT_EQ(overridden.maxIdleAge->count(), 7 * 24 * 3600);
     EXPECT_EQ(overridden.maxTotalBytes, 1048576U);

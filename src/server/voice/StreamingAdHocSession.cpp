@@ -743,7 +743,14 @@ Result<void> StreamingAdHocSession::addTurn(const std::string &creatureId, const
 
             // 2. Wrap raw PCM into a 17-channel WAV (in-process; previously
             // ffmpeg via AudioConverter::convertMp3ToWav). See issue #12.
-            auto tempDir = std::filesystem::temp_directory_path() / "creature-adhoc" / sessionId_;
+            // Through the storage facade (issue #271): this bucket moved off
+            // the system temp directory, which on the main server is a 31 GB
+            // tmpfs that an afternoon of 17-channel renders can fill.
+            auto adHocRootResult = creatures::storage::root(creatures::storage::Persistence::AdHoc);
+            if (!adHocRootResult.isSuccess()) {
+                return Result<RenderedTurn>{adHocRootResult.getError().value()};
+            }
+            auto tempDir = adHocRootResult.getValue().value() / sessionId_;
             std::filesystem::create_directories(tempDir);
 
             auto wavPath = tempDir / fmt::format("s{}.wav", sentenceIndex);
@@ -1286,9 +1293,22 @@ Result<StreamingFinishResult> StreamingAdHocSession::finish(SpanParent triggerSp
         transcript = fullText_;
     }
 
-    // Write transcript
-    auto tempDir = std::filesystem::temp_directory_path() / "creature-adhoc" / sessionId_;
-    std::filesystem::create_directories(tempDir);
+    // The session's working directory, through the storage facade (issue
+    // #271). Not optional: this is where the rendered sentence WAVs already
+    // are and where the stitched output goes, so a root we cannot reach is a
+    // failed finish rather than a missing transcript.
+    auto sessionRootResult = creatures::storage::root(creatures::storage::Persistence::AdHoc);
+    if (!sessionRootResult.isSuccess()) {
+        const auto rootError = sessionRootResult.getError().value();
+        warn("StreamingAdHocSession cannot reach its ad-hoc root: {}", rootError.getMessage());
+        if (finishSpan) {
+            finishSpan->setError(rootError.getMessage());
+        }
+        return Result<StreamingFinishResult>{rootError};
+    }
+    auto tempDir = sessionRootResult.getValue().value() / sessionId_;
+    std::error_code tempDirEc;
+    std::filesystem::create_directories(tempDir, tempDirEc);
     {
         std::ofstream f(tempDir / "transcript.txt");
         f << transcript;

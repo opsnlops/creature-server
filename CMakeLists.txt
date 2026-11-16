@@ -1028,6 +1028,9 @@ add_executable(creature-server-test
         tests/server/transport/RequestRegistry_test.cpp
         src/server/transport/RequestRegistry.cpp
         src/server/storage/Storage.cpp
+        tests/server/storage/AdHocStore_test.cpp
+        src/server/storage/AdHocStore.cpp
+        tests/util/CachePrune_test.cpp
         src/server/config/Configuration.cpp
         tests/server/FakeWebsocketUtils.cpp
         tests/server/voice/DialogClient_stripTags_test.cpp
@@ -1151,6 +1154,7 @@ add_executable(creature-server-test
         src/server/ws/dto/websocket/MessageTypes.cpp
         src/util/JsonParser.cpp
         src/util/AudioCache.cpp
+        src/util/CachePrune.cpp
         src/util/helpers.cpp
         src/util/uuidUtils.cpp
         src/util/Result.cpp
