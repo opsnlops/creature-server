@@ -64,6 +64,10 @@ std::string Configuration::getAudioCacheDir() const { return this->audioCacheDir
 
 void Configuration::setAudioCacheDir(std::string _audioCacheDir) { this->audioCacheDir = std::move(_audioCacheDir); }
 
+std::string Configuration::getAdHocCacheDir() const { return this->adHocCacheDir; }
+
+void Configuration::setAdHocCacheDir(std::string _adHocCacheDir) { this->adHocCacheDir = std::move(_adHocCacheDir); }
+
 void Configuration::setSoundFileLocation(std::string _soundFileLocation) {
     this->soundFileLocation = std::move(_soundFileLocation);
 }

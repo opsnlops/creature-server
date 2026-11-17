@@ -327,6 +327,49 @@ static constexpr std::size_t RTP_MAX_ENCODED_TOTAL_BYTES =
 #define DEFAULT_AUDIO_CACHE_PRUNE_INTERVAL_HOURS 6ULL
 static constexpr uint32_t AUDIO_CACHE_PRUNE_STARTUP_DELAY_SECONDS = 60;
 
+// Where the ad-hoc pipeline keeps its working files (issue #271): the
+// `AdHoc`, `GenerationCache` and `JobScratch` buckets in
+// `creatures::storage`. This used to be `std::filesystem::temp_directory_path()`,
+// which on the mainstage host is a 31 GB tmpfs -- so an afternoon of ad-hoc
+// renders at 1.63 MB per second of 17-channel audio spent RAM until the box
+// wedged.
+//
+// /var/cache/<package> is the FHS 5.5 and Debian Policy 9.1.1 home for data a
+// program generates by expensive work, must keep valid across invocations and
+// reboots, and can always regenerate -- which is precisely an ad-hoc render.
+// Same reasoning, and the same directory, as the Opus packet cache (#235).
+//
+// The default lives HERE rather than only in the packaged server.json, because
+// that file is a dpkg conffile: a host with local edits would keep writing to
+// /tmp after an upgrade, and the fix has to land with the package.
+#define ADHOC_CACHE_DIR_ENV "ADHOC_CACHE_DIR"
+#define DEFAULT_ADHOC_CACHE_DIR "/var/cache/creature-server"
+
+// Ceiling on the ad-hoc root, evicted least-recently-used first once the idle
+// tier has run. The root had no bound at all before #271.
+//
+// 16 GiB on the main server is deliberately less than the 31 GB tmpfs it used
+// to share, so the new location is not just a bigger place to leak into; the
+// travel Pi has 8 GB of RAM and a small disk, so it gets 2 GiB. Set to 0 to
+// disable the tier.
+#define ADHOC_CACHE_MAX_BYTES_ENV "ADHOC_CACHE_MAX_BYTES"
+#define DEFAULT_ADHOC_CACHE_MAX_BYTES (16ULL * 1024ULL * 1024ULL * 1024ULL)
+#define DEFAULT_ADHOC_CACHE_MAX_BYTES_TRAVEL (2ULL * 1024ULL * 1024ULL * 1024ULL)
+
+// How often the ad-hoc sweep runs. Hourly rather than the Opus cache's six
+// hours because this root turns over far faster: its idle tier is the ad-hoc
+// animation TTL (12 h by default, --adhoc-animation-ttl-hours), so one knob
+// still governs both the Mongo TTL and the files on disk.
+#define ADHOC_CACHE_PRUNE_INTERVAL_HOURS_ENV "ADHOC_CACHE_PRUNE_INTERVAL_HOURS"
+#define DEFAULT_ADHOC_CACHE_PRUNE_INTERVAL_HOURS 1ULL
+static constexpr uint32_t ADHOC_CACHE_PRUNE_STARTUP_DELAY_SECONDS = 90;
+
+// Nothing this young is ever evicted, by either tier. The size tier sorts by
+// age and would otherwise be free to delete the directory a streaming session
+// is writing into right now -- the idle tier alone cannot protect it, because
+// the cap ignores the idle cutoff by design.
+static constexpr uint32_t ADHOC_CACHE_MIN_AGE_SECONDS = 15 * 60;
+
 // Warning check for standard MTU (this will trigger on WiFi without fragmentation)
 static_assert(RTP_PCM_BYTES > RTP_STANDARD_MTU_PAYLOAD,
               "Audio chunk size requires fragmentation on standard MTU networks");

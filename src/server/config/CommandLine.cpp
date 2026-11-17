@@ -188,6 +188,14 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
             environmentToString(AUDIO_CACHE_DIR_ENV, configFile.stringOr("audio_cache_dir", DEFAULT_AUDIO_CACHE_DIR)))
         .nargs(1);
 
+    program.add_argument("--adhoc-cache-dir")
+        .help("where the ad-hoc pipeline keeps its working files (renders, the generation cache, job scratch). "
+              "Defaults to /var/cache/creature-server, the FHS home for regenerable data; falls back to the "
+              "system temp directory if that cannot be created (issue #271)")
+        .default_value(
+            environmentToString(ADHOC_CACHE_DIR_ENV, configFile.stringOr("adhoc_cache_dir", DEFAULT_ADHOC_CACHE_DIR)))
+        .nargs(1);
+
     program.add_argument("-n", "--network-device")
         .help("network device to use")
         .default_value(environmentToString(NETWORK_DEVICE_NAME_ENV,
@@ -550,6 +558,16 @@ std::shared_ptr<Configuration> CommandLine::parseCommandLine(int argc, char **ar
     } else {
         info("audio cache location set to {}", audioCacheDir);
     }
+
+    // Unlike --audio-cache-dir, empty is NOT meaningful here: there is no
+    // "historical location" to fall back to on purpose. An operator who clears
+    // it gets the compiled-in default rather than a path of "".
+    auto adHocCacheDir = program.get<std::string>("--adhoc-cache-dir");
+    if (adHocCacheDir.empty()) {
+        adHocCacheDir = DEFAULT_ADHOC_CACHE_DIR;
+    }
+    config->setAdHocCacheDir(adHocCacheDir);
+    info("ad-hoc working files location set to {}", adHocCacheDir);
 
     auto voiceApiKey = program.get<std::string>("-v");
     debug("voice API key configured: {}", !voiceApiKey.empty());

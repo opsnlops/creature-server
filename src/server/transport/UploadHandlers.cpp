@@ -22,6 +22,7 @@
 #include "server/config/Configuration.h"
 #include "server/jobs/JobManager.h"
 #include "server/jobs/JobWorker.h"
+#include "server/storage/Storage.h"
 #include "server/transport/HandlerSupport.h"
 #include "server/voice/LipSyncProcessor.h"
 #include "server/voice/RhubarbData.h"
@@ -95,7 +96,13 @@ PreparedResponse generateLipSyncFromUpload(const std::string &filename, const st
         span->setAttribute("upload.sanitized_filename", sanitizedFilename);
     }
 
-    const auto tempDir = fs::temp_directory_path() / "creature-server" / "lipsync-uploads" / util::generateUUID();
+    // Job scratch, through the facade (issue #271). An uploaded 17-channel WAV
+    // is easily hundreds of megabytes, and the system temp directory on the
+    // main server is a tmpfs -- so this used to buffer the upload in RAM.
+    auto scratchRootResult = creatures::storage::root(creatures::storage::Persistence::JobScratch);
+    if (!scratchRootResult.isSuccess())
+        return errorStatus(500, "Lip sync unavailable: no scratch space", span, "TempDirFailure");
+    const auto tempDir = scratchRootResult.getValue().value() / "lipsync-uploads" / util::generateUUID();
     std::error_code ec;
     fs::create_directories(tempDir, ec);
     if (ec)

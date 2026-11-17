@@ -29,6 +29,8 @@ SystemCounters::SystemCounters() {
     httpConnectionsRefused = 0;
     phcOffsetNs = 0;
     phcOffsetAvailable = false;
+    adHocCacheBytes = 0;
+    adHocCacheBytesAvailable = false;
     rtpAudioLoadersActive = 0;
     rtpAudioLoadsQueued = 0;
     rtpAudioLoadsAccepted = 0;
@@ -116,6 +118,15 @@ void SystemCounters::setPhcOffset(const bool available, const int64_t offsetNs) 
 int64_t SystemCounters::getPhcOffsetNs() { return phcOffsetNs.load(); }
 
 bool SystemCounters::getPhcOffsetAvailable() { return phcOffsetAvailable.load(); }
+
+void SystemCounters::setAdHocCacheBytes(const bool available, const uint64_t bytes) {
+    adHocCacheBytesAvailable.store(available);
+    adHocCacheBytes.store(bytes);
+}
+
+uint64_t SystemCounters::getAdHocCacheBytes() { return adHocCacheBytes.load(); }
+
+bool SystemCounters::getAdHocCacheBytesAvailable() { return adHocCacheBytesAvailable.load(); }
 
 void SystemCounters::setRtpAudioLoadMetrics(uint64_t active, uint64_t queued, uint64_t accepted, uint64_t completed,
                                             uint64_t rejected, uint64_t cancelled, uint64_t failed) {
@@ -273,7 +284,9 @@ SystemCountersSnapshot SystemCounters::snapshot() const {
             httpConnectionsActive.load(),
             httpConnectionsRefused.load(),
             phcOffsetNs.load(),
-            phcOffsetAvailable.load()};
+            phcOffsetAvailable.load(),
+            adHocCacheBytes.load(),
+            adHocCacheBytesAvailable.load()};
 }
 
 nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapshot) {
@@ -321,7 +334,9 @@ nlohmann::json systemCountersSnapshotToJson(const SystemCountersSnapshot &snapsh
             {"httpConnectionsActive", snapshot.httpConnectionsActive},
             {"httpConnectionsRefused", snapshot.httpConnectionsRefused},
             {"phcOffsetNs", snapshot.phcOffsetNs},
-            {"phcOffsetAvailable", snapshot.phcOffsetAvailable}};
+            {"phcOffsetAvailable", snapshot.phcOffsetAvailable},
+            {"adHocCacheBytes", snapshot.adHocCacheBytes},
+            {"adHocCacheBytesAvailable", snapshot.adHocCacheBytesAvailable}};
 }
 
 } // namespace creatures

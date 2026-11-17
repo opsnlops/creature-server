@@ -36,7 +36,18 @@ namespace fs = std::filesystem;
 namespace creatures::ws {
 
 namespace {
-std::filesystem::path adHocRoot() { return std::filesystem::temp_directory_path() / "creature-adhoc"; }
+// Through the facade, so this agrees with where the pipeline actually writes.
+// It read temp_directory_path() directly until issue #271 moved the ad-hoc
+// bucket under /var/cache/creature-server, which would have left this serving
+// an empty directory.
+std::filesystem::path adHocRoot() {
+    auto r = creatures::storage::root(creatures::storage::Persistence::AdHoc);
+    if (r.isSuccess()) {
+        return r.getValue().value();
+    }
+    warn("SoundService: storage::root(AdHoc) failed: {}", r.getError()->getMessage());
+    return {};
+}
 
 template <typename T, typename SpanT>
 Result<T> soundServiceError(const std::shared_ptr<SpanT> &span, const ServerError &serviceError,

@@ -9,13 +9,13 @@
 #include "api/JobResponses.h"
 #include "api/JsonResponse.h"
 #include "model/PlaylistStatus.h"
-#include "server/audio/AudioCacheMaintenance.h"
 #include "server/audio/SoundPathResolver.h"
 #include "server/config.h"
 #include "server/jobs/JobManager.h"
 #include "server/rtp/AudioStreamBuffer.h"
 #include "server/storage/Storage.h"
 #include "util/AudioCache.h"
+#include "util/CacheMaintenance.h"
 #include "util/ObservabilityManager.h"
 #include "util/UuidValidation.h"
 
@@ -23,7 +23,7 @@ namespace creatures {
 extern std::shared_ptr<audio::SoundStoreIndex> permanentSoundIndex;
 extern std::shared_ptr<audio::SoundStoreIndex> adHocSoundIndex;
 extern std::shared_ptr<util::AudioCache> audioCache;
-extern std::shared_ptr<audio::AudioCacheMaintenance> audioCacheMaintenance;
+extern std::shared_ptr<util::CacheMaintenance> audioCacheMaintenance;
 extern std::shared_ptr<jobs::JobManager> jobManager;
 extern std::shared_ptr<ObservabilityManager> observability;
 } // namespace creatures

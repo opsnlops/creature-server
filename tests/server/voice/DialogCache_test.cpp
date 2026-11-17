@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "server/config/Configuration.h"
+#include "server/storage/Storage.h"
 #include "server/voice/DialogCache.h"
 #include "server/voice/DialogClient.h"
 #include "server/voice/PcmWavWriter.h"
@@ -33,7 +34,13 @@ using creatures::voice::WavProvenance;
 namespace {
 
 std::filesystem::path cacheDirFor(const std::string &cacheKey) {
-    return std::filesystem::temp_directory_path() / "creature-adhoc" / "dialog-cache" / cacheKey;
+    // Through the facade, so this follows the configured ad-hoc cache root
+    // rather than assuming the system temp directory (issue #271). It computed
+    // the old path by hand, which after the move meant a test that wiped "the
+    // cache" was wiping an empty directory somewhere else.
+    auto rootResult = creatures::storage::root(creatures::storage::Persistence::GenerationCache);
+    EXPECT_TRUE(rootResult.isSuccess());
+    return rootResult.getValue().value() / cacheKey;
 }
 
 /// RAII helper that wipes the cache directory for whatever cache_keys a test
@@ -305,7 +312,7 @@ TEST(DialogCacheList, OrphanJsonWithoutPcmIsIgnored) {
 // =============================================================================
 // Durable accepted-take store (issue #146).
 //
-// The ephemeral cache lives in temp space that a cron sweep or a reboot may
+// The ephemeral cache lives in space the periodic ad-hoc sweep (#271) may
 // delete. An ACCEPTED take must outlive that: on a machine with a cold cache
 // the render was silently regenerating through ElevenLabs and producing a
 // different performance than the one the user auditioned.
@@ -348,7 +355,7 @@ class AcceptedTakeTest : public ::testing::Test {
 
 TEST_F(AcceptedTakeTest, SurvivesTheEphemeralCacheBeingWiped) {
     // The whole point: accept a take, blow away the cache the way a reboot or
-    // the cron sweep would, and it must still load.
+    // the ad-hoc sweep would, and it must still load.
     CacheScope scope;
     const auto key = computeCacheKey({turn("voice-A", "durable please")});
     scope.track(key);

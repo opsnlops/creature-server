@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "server/config.h"
+#include "util/CachePrune.h"
 #include "util/ObservabilityManager.h"
 #include "util/Result.h"
 
@@ -145,50 +146,25 @@ class AudioCache {
      * is tuned to be conservative rather than tidy. See config.h for how the
      * production defaults are chosen and why travel mode differs.
      */
-    struct PrunePolicy {
-        /// Entries not read in longer than this are evicted. Unset = keep forever.
-        std::optional<std::chrono::seconds> maxIdleAge{};
-
-        /// Ceiling on the retained cache, in bytes. 0 = unbounded.
-        std::uintmax_t maxTotalBytes{0};
-
-        /// Checked between entries so a long sweep can be abandoned at
-        /// shutdown instead of delaying it. Unset = run to completion.
-        std::function<bool()> abortRequested{};
-
-        /**
-         * @brief The policy this host should run with.
-         *
-         * Reads AUDIO_CACHE_MAX_IDLE_DAYS / AUDIO_CACHE_MAX_BYTES, falling
-         * back to the mode-appropriate defaults in config.h. Resolved ONCE at
-         * startup rather than per sweep, so the policy in the logs is the
-         * policy in effect.
-         */
-        static PrunePolicy forHost(bool travelMode);
-
-        /// Human-readable summary, for the startup log line.
-        std::string describe() const;
-    };
+    /// The policy and report types are shared with the ad-hoc store's sweeper
+    /// (issue #271): the two tiers described above turned out to be exactly
+    /// what a second cache needed, so they live in util/CachePrune.h now. The
+    /// aliases keep this cache's vocabulary — and its call sites — unchanged.
+    using PrunePolicy = creatures::util::CachePrunePolicy;
+    using PruneReport = creatures::util::CachePruneReport;
 
     /**
-     * @brief What a prune pass found and (unless dry-run) removed.
+     * @brief The policy this host should run with.
+     *
+     * Reads AUDIO_CACHE_MAX_IDLE_DAYS / AUDIO_CACHE_MAX_BYTES, falling back to
+     * the mode-appropriate defaults in config.h. Resolved ONCE at startup
+     * rather than per sweep, so the policy in the logs is the policy in effect.
+     *
+     * A static member of the cache rather than of the policy, because the
+     * policy type is now shared and the environment variables it reads are
+     * this cache's alone.
      */
-    struct PruneReport {
-        std::size_t entriesScanned{0};
-        std::size_t orphanedEntries{0};   // source file no longer exists
-        std::size_t incompleteEntries{0}; // no completion marker (crashed save)
-        std::size_t temporaryFiles{0};    // abandoned *.tmp.<pid>.<n>
-        std::size_t orphanedLockFiles{0}; // .lock whose cache directory is gone
-        std::size_t idleEntries{0};       // usable, but unread past maxIdleAge
-        std::size_t oversizeEntries{0};   // usable, evicted LRU to fit maxTotalBytes
-        std::size_t skippedEntries{0};    // candidate that raced a read, or lock unavailable
-        std::uintmax_t bytesReclaimed{0};
-        std::uintmax_t bytesRetained{0}; // size of the cache the pass left behind
-        bool dryRun{true};
-        bool aborted{false}; // shutdown interrupted the sweep
-        // Bounded sample of what was (or would be) removed, for the operator.
-        std::vector<std::string> removed;
-    };
+    static PrunePolicy prunePolicyForHost(bool travelMode);
 
     /**
      * @brief Remove cache entries that can never be used again (issue #166).
